@@ -106,7 +106,9 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
-| `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared; off removes the template's `# Memory` section at render time |
+| `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
+| `memory.prompt` | built-in template | Always-injected half of the `{{MEMORY}}` block, editable on the Memory tab — carries `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` |
+| `memory.workspace_prompt` | built-in template | Appended only in a persistent Workspace, editable on the Memory tab — carries `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`); reserved for the MCP adapter layer |
 
@@ -151,10 +153,11 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{AGENTS_MD}}` | Full text of `AGENTS.md` |
 | `{{VAULT_KEYS}}` | List of Vault key names (names only) |
 | `{{SKILL_METADATA}}` | Metadata of installed Skills |
-| `{{MEMORY_USER_DIR}}` | Absolute path of the user memory directory (inside the `# Memory` section) |
-| `{{MEMORY_USER_INDEX}}` | Content of the user scope's `MEMORY.md` index (capped at 200 lines) |
-| `{{MEMORY_DIR}}` | The current Workspace's memory directory (inside the `## Workspace memory` subsection) |
-| `{{MEMORY_INDEX}}` | Content of the Workspace scope's `MEMORY.md` index (capped at 200 lines) |
+| `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
+| `{{MEMORY_USER_DIR}}` | Inside the Memory prompts: absolute path of the user memory directory |
+| `{{MEMORY_USER_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (capped at 200 lines) |
+| `{{MEMORY_DIR}}` | Inside `memory.workspace_prompt` only: the current Workspace's memory directory |
+| `{{MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (capped at 200 lines) |
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
@@ -214,11 +217,11 @@ updated_at: 2026-08-07
 
 Each `MEMORY.md` lists its scope's memories one line each — `- [Title](file.md) — hook`, links relative to the scope directory — and is updated in the same round as the file, so the two never disagree.
 
-Only the indexes reach the context, through the `# Memory` section of the system prompt template — ordinary visible template text with the same status as the `# Vault` / `# Skills` statements, ending in a `## Workspace memory` subsection. Four placeholders carry the dynamic parts: `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` for the user scope, `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` for the Workspace scope. Injected index content is fenced by `[user_memory_index]` / `[workspace_memory_index]` marker pairs so the model can tell it from instruction; a blank index injects an explicit "nothing saved yet" note, and injection is capped at 200 lines per scope (one memory per line by convention) — past the cap a truncation note tells the model to open the full `MEMORY.md` itself, and the file on disk is never touched. Topic bodies are read on demand by the model.
+Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. It expands to `memory.prompt` — what Memory is for, the save mechanics, the user scope and its index, carrying `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` — plus `memory.workspace_prompt` with `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` when the Session runs in a persistent Workspace. Both prompts are per-Agent config, editable on the settings page's Memory tab. Injected index content is fenced by `[user_memory_index]` / `[workspace_memory_index]` marker pairs so the model can tell it from instruction; a blank index injects an explicit "nothing saved yet" note, and injection is capped at 200 lines per scope (one memory per line by convention) — past the cap a truncation note tells the model to open the full `MEMORY.md` itself, and the file on disk is never touched. Topic bodies are read on demand by the model.
 
-Rendering only ever removes, never invents. When `memory.enabled` is off, the whole `# Memory` section — heading to the next same-level heading — is left out; when the Session runs in a temporary Workspace, only the `## Workspace memory` subsection is, so such a Session is never told about a directory it does not have. The stored template is never rewritten, and the assembled prompt is recorded in `session_meta`. A hand-edited template that drops the headings keeps its text with the memory placeholders blanked — keep both headings if you want the conditional behavior. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
+The two halves are separate config keys because substitution has no conditionals: each half only ever names placeholders defined wherever it appears, so a temporary Workspace is never told about a `{{MEMORY_DIR}}` it does not have — the rule for choosing between the scopes lives in the Workspace half for the same reason. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 
-An Agent created before Memory has no `# Memory` section and injects nothing; the settings page's Memory tab offers inserting the default section into its template (before `# Environment`) as an explicit one-click action — nothing inserts automatically.
+A template without `{{MEMORY}}` injects no Memory — an Agent created before Memory shipped, for instance. The Memory tab reports this and offers inserting the placeholder (before `# Environment`) as an explicit one-click action; nothing is ever spliced in automatically. The assembled prompt is recorded in `session_meta`.
 
 To read, delete or ask the Agent to edit what it has saved, use the settings page's [Memory tab](/web-app#agent-settings-agents).
 

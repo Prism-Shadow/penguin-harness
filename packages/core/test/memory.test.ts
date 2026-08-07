@@ -1,7 +1,7 @@
 /**
  * Memory: key derivation, temporary-Workspace exclusion, directory preparation, frontmatter
- * parsing, and the template's `# Memory` section rendering (conditional heading strips, index
- * substitution and its cap).
+ * parsing, and the `{{MEMORY}}` prompt block (marker-fenced indexes, the cap, and the
+ * no-placeholder / no-workspace_prompt degradations).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -245,11 +245,10 @@ describe("frontmatter", () => {
   });
 });
 
-describe("# Memory section rendering", () => {
-  /** Marker lines of each half of the section, so a test can assert which scopes were rendered. */
+describe("{{MEMORY}} rendering", () => {
+  /** Marker lines of each half of the block, so a test can assert which scopes were rendered. */
   const USER_LINE = "User memory directory:";
   const WORKSPACE_LINE = "Workspace memory directory:";
-  const WORKSPACE_HEADING = "## Workspace memory";
 
   const bothScopes: SessionMemory = {
     userDir: "/data/memory/user",
@@ -266,17 +265,17 @@ describe("# Memory section rendering", () => {
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, bothScopes);
     expect(prompt).toContain("/data/memory/user");
     expect(prompt).toContain("/data/memory/my-app-12345678");
-    expect(prompt).toContain(WORKSPACE_HEADING);
     expect(prompt).toContain(
       "[user_memory_index]\n- [pnpm](prefers-pnpm.md) — package manager\n[/user_memory_index]",
     );
     expect(prompt).toContain(
       "[workspace_memory_index]\n- [testing](testing-conventions.md) — how tests run\n[/workspace_memory_index]",
     );
+    expect(prompt).not.toContain("{{MEMORY}}");
     expect(prompt).not.toContain(MEMORY_INDEX_EMPTY_NOTE);
   });
 
-  it("strips the ## Workspace memory subsection when the Session has no Workspace scope", async () => {
+  it("renders the User half alone when the Session has no Workspace scope", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
       userDir: "/data/memory/user",
@@ -284,13 +283,11 @@ describe("# Memory section rendering", () => {
     });
     expect(prompt).toContain(USER_LINE);
     expect(prompt).toContain("/data/memory/user");
-    // The subsection disappears wholesale — heading, prose and fence — so a temporary
-    // Workspace's Session is never told about a directory it does not have.
-    expect(prompt).not.toContain(WORKSPACE_HEADING);
+    // The Workspace half is a separate config key precisely so it can be left out entirely:
+    // a temporary Workspace must never be told about a directory it does not have.
     expect(prompt).not.toContain(WORKSPACE_LINE);
+    // The scope-choice rule lives in the Workspace half, so a one-scope Session never sees it.
     expect(prompt).not.toContain("filed too narrowly");
-    // The strip ends exactly at the next heading; the Environment section survives.
-    expect(prompt).toContain("# Environment");
   });
 
   it("states a scope's store is empty when its index has no content yet", async () => {
@@ -317,11 +314,11 @@ describe("# Memory section rendering", () => {
     expect(prompt).toContain("showing 200 of 220 lines");
   });
 
-  it("strips the whole # Memory section — subsection included — when the Session has no Memory", async () => {
+  it("injects nothing at all when the Session has no Memory", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state);
+    expect(prompt).not.toContain("{{MEMORY}}");
     expect(prompt).not.toContain("# Memory");
-    expect(prompt).not.toContain(WORKSPACE_HEADING);
     expect(prompt).not.toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
     // Neighboring sections are untouched.
@@ -329,23 +326,38 @@ describe("# Memory section rendering", () => {
     expect(prompt).toContain("# Environment");
   });
 
-  it("leaves a template without a Memory section untouched, and blanks stray placeholders", async () => {
+  it("injects no Memory into a template without the placeholder — nothing is spliced in", async () => {
     const state = await agentState();
     const bare: AgentState = {
       ...state,
       systemConfig: { ...state.systemConfig, system_prompt: "# Role\nDo things.\n# Environment" },
     };
-    // No headings, no placeholders: rendering neither invents a section nor fails.
+    // The Memory tab offers inserting {{MEMORY}} explicitly; rendering never adds it itself.
     expect(assembleSystemPrompt(bare, undefined, undefined, undefined, bothScopes)).toBe(
       "# Role\nDo things.\n# Environment",
     );
-    // A hand-edited template that kept a placeholder but dropped the headings: the placeholder
-    // blanks when the Session has no Memory rather than leaking its literal text.
-    const stray: AgentState = {
+  });
+
+  it("keeps the User half when the config carries no workspace_prompt", async () => {
+    const state = await agentState();
+    const noWorkspaceBlock: AgentState = {
       ...state,
-      systemConfig: { ...state.systemConfig, system_prompt: "X {{MEMORY_USER_DIR}} Y" },
+      systemConfig: {
+        ...state.systemConfig,
+        memory: { ...state.systemConfig.memory, workspace_prompt: undefined },
+      },
     };
-    expect(assembleSystemPrompt(stray)).toBe("X  Y");
+    // An Agent whose config predates the Workspace half degrades to User-scope-only rather
+    // than losing Memory altogether.
+    const prompt = assembleSystemPrompt(
+      noWorkspaceBlock,
+      undefined,
+      undefined,
+      undefined,
+      bothScopes,
+    );
+    expect(prompt).toContain(USER_LINE);
+    expect(prompt).not.toContain(WORKSPACE_LINE);
   });
 
   it("reaches the Session prompt with both scopes, or the User scope alone for a temporary Workspace", async () => {
@@ -370,9 +382,8 @@ describe("# Memory section rendering", () => {
 
   it("is left out of the Session prompt when the Agent config disables Memory", async () => {
     const agent = await createAgent({ root });
-    agent.state.systemConfig.memory = { enabled: false };
+    agent.state.systemConfig.memory = { ...agent.state.systemConfig.memory, enabled: false };
     const session = await agent.createSession({ workspaceDir: workspace });
-    expect(sessionPrompt(session)).not.toContain("# Memory");
     expect(sessionPrompt(session)).not.toContain(USER_LINE);
     expect(sessionPrompt(session)).not.toContain(WORKSPACE_LINE);
     // No Workspace scope appears; only the User scope from Agent State init.

@@ -1,7 +1,7 @@
 /**
  * Memory routes (`agent_state/memory/`), all Project-member operations:
  *   GET    /api/projects/:p/agents/:a/memory                        # switch + scope groups (user scope first)
- *   POST   /api/projects/:p/agents/:a/memory/template-section        # insert the default # Memory section into the template
+ *   POST   /api/projects/:p/agents/:a/memory/template-placeholder    # insert the {{MEMORY}} placeholder into the template
  *   GET    /api/projects/:p/agents/:a/memory/scopes/:key/files      # one scope's topic files
  *   GET    …/memory/scopes/:key/files/:name                         # one topic file's content
  *   DELETE …/memory/scopes/:key/files/:name                         # delete + prune its index lines
@@ -37,9 +37,9 @@ export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // The explicit adoption path for a template that predates Memory (idempotent config write).
-  app.post("/template-section", async (c) => {
+  app.post("/template-placeholder", async (c) => {
     const { projectId, agentId } = scope(c);
-    return c.json(await deps.memoryService.insertTemplateSection(projectId, agentId));
+    return c.json(await deps.memoryService.insertTemplatePlaceholder(projectId, agentId));
   });
 
   app.get("/scopes/:scopeKey/files", async (c) => {

@@ -477,9 +477,14 @@ export const en: Strings = {
     enable: "Enable memory",
     userScope: "User memory",
     templateMissing:
-      "The prompt template has no # Memory section, so memory never enters the context.",
-    insertSection: "Insert the default Memory section",
-    insertSectionDone: "Inserted",
+      "The prompt template has no {{MEMORY}} placeholder, so memory never enters the context.",
+    insertPlaceholder: "Insert the {{MEMORY}} placeholder",
+    insertPlaceholderDone: "Inserted",
+    promptSection: "Memory prompt",
+    promptSectionHint:
+      "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
+    promptLabel: "Main prompt",
+    workspacePromptLabel: "Workspace addendum",
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",

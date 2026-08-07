@@ -33,7 +33,7 @@ import { Switch } from "../../components/ui/switch";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { Drawer } from "../../components/ui/drawer";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -82,6 +82,10 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [memoryPrompt, setMemoryPrompt] = useState("");
+  const [workspacePrompt, setWorkspacePrompt] = useState("");
+  const [promptsOpen, setPromptsOpen] = useState(false);
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
   const [editRequirement, setEditRequirement] = useState("");
@@ -92,7 +96,12 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     setGroups(null);
     setError(null);
     try {
-      const overview = await api.getMemoryOverview(projectId, agentId);
+      const [overview, configView] = await Promise.all([
+        api.getMemoryOverview(projectId, agentId),
+        api.getAgentConfig(projectId, agentId),
+      ]);
+      setMemoryPrompt(configView.config.memory.prompt);
+      setWorkspacePrompt(configView.config.memory.workspacePrompt);
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
@@ -131,16 +140,32 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   };
 
   /** The explicit adoption path for an agent whose template predates Memory: one idempotent config write. */
-  const insertSection = async () => {
+  const insertPlaceholder = async () => {
     if (!projectId) return;
     try {
-      const overview = await api.insertMemoryTemplateSection(projectId, agentId);
+      const overview = await api.insertMemoryPlaceholder(projectId, agentId);
       setTemplateHasMemory(overview.templateHasMemory);
-      toastSuccess(S.memory.insertSectionDone);
+      toastSuccess(S.memory.insertPlaceholderDone);
     } catch (e) {
       toastError(apiErrorText(e));
     }
   };
+
+  /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
+  const savePrompts = () =>
+    requestSave(() => {
+      if (!projectId) return;
+      void api
+        .putAgentConfig(projectId, agentId, {
+          config: { memory: { prompt: memoryPrompt, workspacePrompt } },
+        })
+        .then((res) => {
+          setMemoryPrompt(res.config.memory.prompt);
+          setWorkspacePrompt(res.config.memory.workspacePrompt);
+          toastSuccess(S.common.saved);
+        })
+        .catch((e: unknown) => toastError(apiErrorText(e)));
+    });
 
   const openView = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
     if (!projectId) return;
@@ -271,8 +296,8 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       {!templateHasMemory && (
         <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
           <p className="text-xs text-amber-800 dark:text-amber-300">{S.memory.templateMissing}</p>
-          <Button size="sm" onClick={() => void insertSection()}>
-            {S.memory.insertSection}
+          <Button size="sm" onClick={() => void insertPlaceholder()}>
+            {S.memory.insertPlaceholder}
           </Button>
         </div>
       )}
@@ -340,6 +365,53 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           )}
         </div>
       )}
+
+      <section className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
+        <button
+          type="button"
+          aria-expanded={promptsOpen}
+          onClick={() => setPromptsOpen((v) => !v)}
+          className="flex w-full items-center gap-2.5 bg-gray-50 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+        >
+          <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {S.memory.promptSection}
+          </span>
+          <span className="min-w-0 flex-1" />
+          <Chevron open={promptsOpen} className="text-gray-400" />
+        </button>
+        <div
+          className={`grid transition-[grid-template-rows] duration-200 ease-out ${promptsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+        >
+          <div className="overflow-hidden" inert={!promptsOpen}>
+            <div className="space-y-2.5 border-t border-gray-200 p-3.5 dark:border-gray-800">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {S.memory.promptSectionHint}
+              </p>
+              <Textarea
+                label={S.memory.promptLabel}
+                size="sm"
+                rows={12}
+                value={memoryPrompt}
+                onChange={(e) => setMemoryPrompt(e.target.value)}
+              />
+              <Textarea
+                label={S.memory.workspacePromptLabel}
+                size="sm"
+                rows={6}
+                value={workspacePrompt}
+                onChange={(e) => setWorkspacePrompt(e.target.value)}
+              />
+              <div className="flex justify-end">
+                <Button size="sm" variant="primary" onClick={savePrompts}>
+                  {S.common.save}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {saveConfirm}
 
       <Drawer
         open={viewing !== null}

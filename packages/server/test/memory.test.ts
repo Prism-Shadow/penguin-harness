@@ -73,7 +73,7 @@ describe("memory api", () => {
 
     const body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
     expect(body.enabled).toBe(true);
-    // A freshly created Agent gets the current default template, which carries # Memory.
+    // A freshly created Agent gets the current default template, which carries {{MEMORY}}.
     expect(body.templateHasMemory).toBe(true);
     expect(body.memoryDir).toBe(memoryDir(t.root, projectId, "default_agent"));
     expect(body.scopes).toHaveLength(2);
@@ -188,8 +188,8 @@ describe("memory api", () => {
     expect(((await on.json()) as AgentConfigResponse).config.memory.enabled).toBe(true);
   });
 
-  it("reports a template without the Memory section and inserts the default one on request", async () => {
-    // Simulate an Agent from before Memory: replace the template with one lacking the section.
+  it("reports a template without the {{MEMORY}} placeholder and inserts it on request", async () => {
+    // Simulate an Agent from before Memory: replace the template with one lacking the placeholder.
     const put = await owner.put(configPath, {
       config: { systemPrompt: "# Role\nDo things.\n# Environment" },
     });
@@ -197,28 +197,44 @@ describe("memory api", () => {
     let body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
     expect(body.templateHasMemory).toBe(false);
 
-    const inserted = await owner.post(`${memoryPath}/template-section`, {});
+    const inserted = await owner.post(`${memoryPath}/template-placeholder`, {});
     expect(inserted.status).toBe(200);
     body = (await inserted.json()) as MemoryOverviewResponse;
     expect(body.templateHasMemory).toBe(true);
 
     const cfg = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
-    expect(cfg.config.systemPrompt).toContain("# Memory");
     // Inserted at the position the default template gives it: before # Environment.
-    expect(cfg.config.systemPrompt.indexOf("# Memory")).toBeLessThan(
+    expect(cfg.config.systemPrompt.indexOf("{{MEMORY}}")).toBeGreaterThan(-1);
+    expect(cfg.config.systemPrompt.indexOf("{{MEMORY}}")).toBeLessThan(
       cfg.config.systemPrompt.indexOf("# Environment"),
     );
 
     // Idempotent: a second call changes nothing and still succeeds.
-    const again = await owner.post(`${memoryPath}/template-section`, {});
+    const again = await owner.post(`${memoryPath}/template-placeholder`, {});
     expect(again.status).toBe(200);
     const cfgAgain = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
     expect(cfgAgain.config.systemPrompt).toBe(cfg.config.systemPrompt);
   });
 
+  it("round-trips the memory prompts through the config route, reporting defaults until set", async () => {
+    const before = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
+    // A fresh default agent stores the built-in prompts in its own yaml.
+    expect(before.config.memory.prompt).toContain("[user_memory_index]");
+    expect(before.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
+
+    const put = await owner.put(configPath, {
+      config: { memory: { prompt: "# Memory\ncustom {{MEMORY_USER_INDEX}}" } },
+    });
+    expect(put.status).toBe(200);
+    const after = (await put.json()) as AgentConfigResponse;
+    expect(after.config.memory.prompt).toBe("# Memory\ncustom {{MEMORY_USER_INDEX}}");
+    // The untouched half keeps its value.
+    expect(after.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
+  });
+
   it("404s for a non-member on every Memory route", async () => {
     expect((await outsider.get(memoryPath)).status).toBe(404);
-    expect((await outsider.post(`${memoryPath}/template-section`, {})).status).toBe(404);
+    expect((await outsider.post(`${memoryPath}/template-placeholder`, {})).status).toBe(404);
     expect((await outsider.get(filesPath())).status).toBe(404);
     expect((await outsider.get(`${filesPath()}/x.md`)).status).toBe(404);
     expect((await outsider.delete(`${filesPath()}/x.md`)).status).toBe(404);
