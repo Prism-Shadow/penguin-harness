@@ -465,7 +465,7 @@ export const zh = {
     promptLabel: "主提示词",
     workspacePromptLabel: "工作区附加段",
     itemCount: (n: number): string => `${n} 条`,
-    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行保存值得记住的内容",
+    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
     view: "查看",
     edit: "编辑",
