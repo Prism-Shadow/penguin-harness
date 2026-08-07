@@ -210,7 +210,7 @@ updated_at: 2026-08-07
 - Integration tests connect to a real database; no mock repositories.
 ```
 
-`type` is `user` (who the user is — role, expertise, standing preferences; the user scope's type), `feedback` (how the user wants the Agent to work, with the why), `project` (decisions, constraints and plans with their reasons) or `reference` (stable entry points into external systems, documents and services). What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
+`type` is `user` (who the user is — role, expertise, standing preferences; the user scope's type), `feedback` (how the user wants the Agent to work, with the why), `project` (decisions, constraints and plans with their reasons) or `reference` (stable entry points into external systems, documents and services). A topic that turns out to be wrong is deleted together with its index line, and dates are written absolute (`YYYY-MM-DD`) — relative ones mean nothing to a later Session. What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
 
 Each `MEMORY.md` lists its scope's memories one line each — `- [Title](file.md) — hook`, links relative to the scope directory — and is updated in the same round as the file, so the two never disagree.
 
