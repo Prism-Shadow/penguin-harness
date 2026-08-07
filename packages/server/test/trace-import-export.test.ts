@@ -189,7 +189,10 @@ describe("trace-import-export", () => {
 
   it("import: malformed middle line → 400 invalid_trace", async () => {
     const lines = toContent(sampleTrace(SID)).split("\n");
-    lines[1] = "{not json"; // corrupt a middle line (non-final: parseTraceLines throws loudly)
+    // Corrupt a middle (non-final) line. Read paths skip malformed middle lines (#215
+    // recovery), but import validates strictly (onMalformed: "throw") — damage in an
+    // uploaded file is reported, not silently dropped.
+    lines[1] = "{not json";
     const res = await owner.post(`${base()}/import`, { dataBase64: b64(lines.join("\n")) });
     expect(res.status).toBe(400);
     expect(await errorCode(res)).toBe("invalid_trace");
