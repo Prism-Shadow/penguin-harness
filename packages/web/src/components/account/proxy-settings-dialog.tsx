@@ -1,5 +1,5 @@
 /**
- * Admin proxy options dialog (server-global, design § "出网与系统代理"), opened from
+ * Admin proxy options dialog (server-global), opened from
  * the sidebar user menu. A form, not a live surface: two switches — "Application uses
  * the proxy" (the server's own outbound dispatcher) and "Agent environment uses the
  * proxy" (command subprocess environments) — share one proxy address, and nothing is
@@ -7,7 +7,7 @@
  * validates and normalizes the address (bare "host:port" is stored as
  * "http://host:port"); a rejected address renders inline under the input (models-dialog
  * convention) and the atomic PUT writes nothing. Save with no modifications sends no
- * request and toasts "no changes" (the app's form convention, 06-PROTOTYPE); success
+ * request and toasts "no changes" (the app's form convention); success
  * toasts and closes. Settings hydrate fresh on every open; the controls and Save stay
  * disabled until they arrive, and Cancel/Esc discards edits.
  */

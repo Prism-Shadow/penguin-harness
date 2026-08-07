@@ -1,5 +1,5 @@
 /**
- * Outbound networking and the admin proxy settings (design § "出网与系统代理").
+ * Outbound networking and the admin proxy settings.
  *
  * Node 24's built-in fetch does not read the proxy environment variables
  * (NODE_USE_ENV_PROXY is ineffective on 24.18), so the server routes ALL of its own

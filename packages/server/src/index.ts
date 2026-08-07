@@ -89,7 +89,7 @@ const appHost = loopbackHostRoles(config.host)?.app ?? config.host;
  * Second loopback listener so the preview origin is actually reachable.
  *
  * Workspace HTML previews are served from the loopback counterpart of the host the App
- * is used on (`127.0.0.1` <-> `localhost`, see design § "Workspace 文件预览"). On most
+ * is used on (`127.0.0.1` <-> `localhost`). On most
  * systems `localhost` resolves to `::1` first, so a server bound only to `127.0.0.1`
  * would leave every preview URL refusing connections. Binding `::1` as well closes that
  * gap. Failure is non-fatal — the App keeps working, previews just fall back.

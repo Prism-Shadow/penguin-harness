@@ -64,8 +64,9 @@ export interface AuthResponse {
 export interface MeResponse {
   user: UserInfo;
   /**
-   * Whether Workspace HTML previews open on a separate origin (see design §
-   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * Whether Workspace HTML previews open on a separate origin (the loopback
+   * counterpart of the App host, or PENGUIN_PREVIEW_ORIGIN when set). False means this
+   * deployment has no usable preview origin —
    * the App is reached on something other than a loopback name and
    * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
    * where `localStorage`, cookies and third-party embeds do not work. Computed per
@@ -76,7 +77,7 @@ export interface MeResponse {
    * Whether this server runs in desktop mode (spawned by the desktop shell with
    * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
    * initial-password banner and the self-update entry, and omits the old-password
-   * field when changing the password. See design § "桌面端原型".
+   * field when changing the password.
    */
   desktopMode: boolean;
   /**
@@ -120,7 +121,7 @@ export interface AdminPasswordResetRequest {
 }
 
 /**
- * Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"):
+ * Admin-level server-global settings (SQLite server_settings):
  * two independent proxy switches sharing one optional explicit address. In every
  * on-state the effective NO_PROXY always includes localhost/127.0.0.1/::1 (loopback is
  * never proxied), and changes apply to newly initiated connections/spawns immediately —
@@ -726,7 +727,7 @@ export interface MessagesPageInfo {
   before?: string;
   /**
    * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
-   * window: the client offsets its global `第 N 轮` numbering by this, so a partial
+   * window: the client offsets its global "round N" numbering by this, so a partial
    * window never mis-numbers. 0 when the window starts at the beginning.
    */
   earlierTurns: number;

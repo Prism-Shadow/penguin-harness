@@ -1,6 +1,6 @@
 /**
- * OS-proxy resolution for the embedded server (design § "出网与系统代理"): on the
- * desktop, "system proxy" means the real operating-system setting. The shell resolves
+ * OS-proxy resolution for the embedded server: on the desktop, "system proxy" means
+ * the real operating-system setting. The shell resolves
  * it through Electron's resolveProxy when forking the server and injects the result
  * into the child environment as HTTP_PROXY / HTTPS_PROXY — the server's dispatcher
  * (while the admin app-proxy switch is on) and agent commands (while the agent-proxy

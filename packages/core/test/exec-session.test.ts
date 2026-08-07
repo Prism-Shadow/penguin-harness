@@ -313,7 +313,7 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.HOST = "127.0.0.1";
     process.env.PENGUIN_CLI_ENTRY = "/opt/penguin/lib/dist/index.js";
     process.env.PENGUIN_WEB_DIST = "/opt/penguin/web";
-    // The desktop shell's process credentials (see design § "桌面端原型"): a leaked token
+    // The desktop shell's process credentials: a leaked token
     // would let an Agent-run command call the server's shutdown endpoint.
     process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
     process.env.PENGUIN_PORT_FILE = "/tmp/port-file";

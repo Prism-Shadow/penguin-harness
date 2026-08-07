@@ -5,7 +5,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 
-/** Key of the "application uses the proxy" switch (the server's own outbound dispatcher, design § "出网与系统代理"); default on. */
+/** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
 
 /** Key of the "agent environment uses the proxy" switch (command subprocess env policy); default on. */

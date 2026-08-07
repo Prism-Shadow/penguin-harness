@@ -33,7 +33,7 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only user-menu row opening the proxy options dialog (design § "出网与系统代理"). */
+    /** Admin-only user-menu row opening the proxy options dialog. */
     proxyMenu: "Proxy options…",
     proxyDialogTitle: "Proxy options",
     /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */

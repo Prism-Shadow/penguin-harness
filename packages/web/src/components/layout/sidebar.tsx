@@ -236,9 +236,9 @@ export function Sidebar({
     }
   };
   /**
-   * Admin-only server-global proxy settings dialog (design § "出网与系统代理"): the
-   * menu carries only the opener row; the controls, their live-save semantics, and the
-   * open-time hydration all live in ProxySettingsDialog.
+   * Admin-only server-global proxy settings dialog: the menu carries only the opener
+   * row; the controls, their form semantics, and the open-time hydration all live in
+   * ProxySettingsDialog.
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;

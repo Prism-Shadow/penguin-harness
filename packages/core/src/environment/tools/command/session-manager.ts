@@ -89,7 +89,7 @@ const STRIPPED_ENV_KEYS = new Set([
 /**
  * Proxy variables removed IN ADDITION when the host supplies a proxy policy (`proxyEnv`,
  * see {@link CommandSessionManager}): the Web server's proxy settings must keep commands
- * from just inheriting the serving process's proxy environment (design § "出网与系统代理").
+ * from just inheriting the serving process's proxy environment.
  * In `strip` mode NO_PROXY is deliberately NOT removed — with no proxy variables left it
  * is inert, and removing it would change behavior for commands that set their own proxy.
  * In `inject` mode the inherited NO_PROXY is replaced too (the policy carries the merged

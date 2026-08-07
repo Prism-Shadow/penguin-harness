@@ -2,8 +2,7 @@
  * Admin server-settings routes (admin only, 403 for non-admins):
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings
  * (currently the proxy settings: the "application uses the proxy" and "agent
- * environment uses the proxy" switches and their shared explicit address, design
- * § "出网与系统代理").
+ * environment uses the proxy" switches and their shared explicit address).
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent

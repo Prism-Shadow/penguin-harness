@@ -159,7 +159,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Command-subprocess proxy policy for core (design § "出网与系统代理"), keyed on the
+  // Command-subprocess proxy policy for core, keyed on the
   // "agent environment uses the proxy" switch (the app switch only drives the server's
   // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
   // with an explicit address → inject that address (with the merged loopback NO_PROXY)
@@ -359,7 +359,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // cookie had ever been set on that host — act as the user. So the preview host serves ONLY
   // /preview/*: /api answers 401 (it never sets or honors a cookie there, closing both the
   // login and the stale-cookie paths), and everything else 302s to the canonical App host.
-  // See design § "Workspace 文件预览". Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
+  // Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
   // use that origin rather than the loopback counterpart, so 127.0.0.1 is an ordinary App
   // access point and must not be locked down — deployments enforce the equivalent at the
   // reverse proxy (route only /preview/* to the App on the preview origin).
@@ -437,7 +437,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the
   // signed token in the path is the only credential. Mounted before static hosting so the
-  // SPA fallback cannot swallow it. See design § "Workspace 文件预览".
+  // SPA fallback cannot swallow it.
   app.route("/preview", previewRoutes(deps));
 
   // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.
