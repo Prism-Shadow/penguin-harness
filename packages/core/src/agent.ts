@@ -30,7 +30,7 @@ import {
   type ModelRef,
   type ProjectConfig,
 } from "./state/index.js";
-import { GenerativeModel, ToolCallIdAllocator } from "./llm/index.js";
+import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,
@@ -132,18 +132,8 @@ export interface ResumeSessionOptions {
   baseUrl?: string;
 }
 
-/**
- * Effective compaction threshold: capped at 75% of the model's `context_window` —
- * the threshold must stay well below the hard window limit, otherwise small-window
- * models get rejected by the provider (a non-retryable 400) before compaction even
- * triggers, and the compaction request itself (old context + prompt + summary output)
- * also needs headroom. Not clamped when `<=0` (disabled) or the window is unknown.
- */
-export function effectiveMaxContextLength(configured: number, contextWindow: unknown): number {
-  if (configured <= 0) return configured;
-  if (typeof contextWindow !== "number") return configured;
-  return Math.min(configured, Math.floor(contextWindow * 0.75));
-}
+// Compaction-threshold derivation (`effectiveMaxContextLength`) lives with the rest of the
+// window arithmetic in llm/context-limits.ts; re-exported by llm/index.js.
 
 /**
  * Output cap for meta requests (title generation / vision describing): these carry their own
@@ -719,6 +709,11 @@ export class Agent {
               thinkingLevel: "none",
               // The describing budget, tightened by the vision entry's own pinned cap when smaller.
               maxTokens: metaMaxTokens(2048, visionEntry.max_tokens),
+              // Same window derivation as ordinary requests (a formality here: the meta
+              // budget is far below any real window, so the clamp never binds).
+              ...(visionEntry.context_window !== undefined
+                ? { contextWindow: visionEntry.context_window }
+                : {}),
               requestTimeoutMs: 60_000,
             }),
         };
@@ -749,10 +744,12 @@ export class Agent {
     });
     const tools = await environment.listTools();
 
-    // Effective output cap: the entry's per-model annotation wins over the Agent's
-    // system_config value — the fit is a model trait: the seeded per-Agent default (32000)
-    // cannot fit into e.g. a 32768-token context window together with any prompt, so a
-    // small-window model needs its own pinned cap. Unset inherits the Agent value.
+    // Configured output cap: the entry's per-model annotation wins over the Agent's
+    // system_config value; unset inherits the Agent value. This is a ceiling, not the
+    // literal wire value: GenerativeModel clamps each request's effective cap to what the
+    // entry's context window can still fit (see llm/context-limits.ts, issue #218), so the
+    // seeded per-Agent default (32000) no longer needs a manual per-model override to work
+    // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
     const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
 
     // LLM constructor args are extracted into a constant so they can be reused as-is when
@@ -801,6 +798,11 @@ export class Agent {
         thinkingLevel: "none",
         // The meta budget, tightened by the entry's pinned per-model cap when smaller.
         maxTokens: metaMaxTokens(300, modelEntry.max_tokens),
+        // Same window derivation as ordinary requests (a formality here: the meta budget
+        // is far below any real window, so the clamp never binds).
+        ...(modelEntry.context_window !== undefined
+          ? { contextWindow: modelEntry.context_window }
+          : {}),
         requestTimeoutMs: 30_000,
       });
 

@@ -60,7 +60,7 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
 | `aborted` | user interrupt | stop, hand back to the user |
