@@ -33,15 +33,18 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
+    /** Admin-only user-menu row opening the proxy settings dialog (design § "出网与系统代理"). */
+    proxyMenu: "HTTP proxy…",
+    proxyDialogTitle: "HTTP proxy",
+    /** The dialog's switch label: saved immediately on toggle. */
     useSystemProxy: "Use HTTP proxy",
-    /** Row tooltip: scope (server + its child processes, server-wide), address precedence, and the loopback exemption. */
+    /** Visible dialog text: scope (server + its child processes, server-wide), address precedence, and the loopback exemption. */
     useSystemProxyHint:
-      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through an HTTP proxy — the address configured below when set, otherwise the system proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
+      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through an HTTP proxy — the configured proxy address when set, otherwise the system proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
     /** Explicit proxy address input (shown while the proxy switch is on; committed on Enter/blur). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Input tooltip: precedence over the environment variables and the accepted forms. */
+    /** Input helper text: precedence over the environment variables and the accepted forms. */
     proxyAddressHint:
       "When set, the server and agent command subprocesses use this proxy (it takes precedence over the environment variables); accepts http://host[:port], https://host[:port], or host[:port]. Leave empty to follow HTTP_PROXY / HTTPS_PROXY.",
     theme: "Theme",

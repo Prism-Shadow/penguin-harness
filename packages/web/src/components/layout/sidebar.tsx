@@ -19,7 +19,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type {
-  ServerSettings,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -76,6 +75,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
@@ -236,72 +236,11 @@ export function Sidebar({
     }
   };
   /**
-   * Admin-only server-global proxy settings (design § "出网与系统代理"): null = not
-   * hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown — same
-   * laziness as the version info above, and non-admins never call the endpoint (the
-   * rows are not rendered for them either). A failed hydration stays null (rows
-   * disabled) and is retried on the next open.
+   * Admin-only server-global proxy settings dialog (design § "出网与系统代理"): the
+   * menu carries only the opener row; the controls, their live-save semantics, and the
+   * open-time hydration all live in ProxySettingsDialog.
    */
-  const [serverSettings, setServerSettings] = useState<ServerSettings | null>(null);
-  /** Proxy-address input draft (committed on Enter/blur; synced from the stored value). */
-  const [proxyUrlDraft, setProxyUrlDraft] = useState("");
-  /** In-flight proxy-address save — guards the Enter-then-blur double commit. */
-  const proxyUrlSaving = useRef(false);
-  useEffect(() => {
-    if (!userOpen || user?.isAdmin !== true || serverSettings !== null) return;
-    let cancelled = false;
-    void api
-      .adminGetSettings()
-      .then((res) => {
-        if (cancelled) return;
-        setServerSettings(res.settings);
-        setProxyUrlDraft(res.settings.proxyUrl ?? "");
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [userOpen, user?.isAdmin, serverSettings]);
-  /** Saved immediately on toggle (the user-menu quick-control convention): optimistic flip, reverted with a toast on failure. */
-  const setUseSystemProxy = (value: boolean) => {
-    setServerSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: value }));
-    void api
-      .adminPutSettings({ useSystemProxy: value })
-      .then((res) => setServerSettings(res.settings))
-      .catch((e: unknown) => {
-        setServerSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: !value }));
-        toastError(apiErrorText(e));
-      });
-  };
-  /**
-   * Commits the proxy-address input (Enter/blur): no-ops when unchanged, otherwise lets
-   * the server validate and normalize — the echoed settings replace the draft (e.g.
-   * "proxy:8080" comes back as "http://proxy:8080"), a rejected value reverts it with
-   * the error toast.
-   */
-  const commitProxyUrl = () => {
-    if (serverSettings === null || proxyUrlSaving.current) return;
-    const stored = serverSettings.proxyUrl ?? "";
-    if (proxyUrlDraft.trim() === stored) {
-      setProxyUrlDraft(stored); // canonicalize a whitespace-only edit back to the stored value
-      return;
-    }
-    proxyUrlSaving.current = true;
-    void api
-      .adminPutSettings({ proxyUrl: proxyUrlDraft })
-      .then((res) => {
-        setServerSettings(res.settings);
-        setProxyUrlDraft(res.settings.proxyUrl ?? "");
-        toastSuccess(S.common.saved);
-      })
-      .catch((e: unknown) => {
-        setProxyUrlDraft(stored);
-        toastError(apiErrorText(e));
-      })
-      .finally(() => {
-        proxyUrlSaving.current = false;
-      });
-  };
+  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -1073,40 +1012,6 @@ export function Sidebar({
             <SettingRow label={S.settings.showCliSessions}>
               <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
-            {/* Admin-only, server-global (all users): the proxy switch saves immediately
-                on toggle; the tooltip spells out the scope, address precedence and the
-                loopback exemption. Both controls are disabled (showing the defaults: on,
-                empty) until the stored values have hydrated, so a click can never write
-                a value the admin was not looking at. The address row shows only while
-                the switch is on and commits on Enter/blur — the server normalizes (bare
-                host:port comes back as http://…) or rejects, and the echoed value
-                replaces the draft either way. */}
-            {user?.isAdmin && (
-              <>
-                <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
-                  <Switch
-                    checked={serverSettings?.useSystemProxy ?? true}
-                    onChange={setUseSystemProxy}
-                    disabled={serverSettings === null}
-                  />
-                </SettingRow>
-                {(serverSettings?.useSystemProxy ?? true) && (
-                  <SettingRow label={S.settings.proxyAddress} title={S.settings.proxyAddressHint}>
-                    <Input
-                      size="sm"
-                      value={proxyUrlDraft}
-                      placeholder={S.settings.proxyAddressPlaceholder}
-                      disabled={serverSettings === null}
-                      onChange={(e) => setProxyUrlDraft(e.target.value)}
-                      onBlur={commitProxyUrl}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitProxyUrl();
-                      }}
-                    />
-                  </SettingRow>
-                )}
-              </>
-            )}
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
@@ -1119,6 +1024,21 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
+            {/* Admin-only, server-global proxy settings: one menu row opening the
+                dialog (same idiom as Change password above) — the switch, address
+                input and their live-save semantics live in ProxySettingsDialog. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setProxySettingsOpen(true);
+                }}
+              >
+                {S.settings.proxyMenu}
+              </button>
+            )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
                 layout: the menu used to stack a release-notes link, an admin "Update now" row
                 and this check row on top of each other). It reads "Check for updates" and runs
@@ -1216,6 +1136,7 @@ export function Sidebar({
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
@@ -1436,18 +1357,9 @@ function SessionRow({
   );
 }
 
-function SettingRow({
-  label,
-  title,
-  children,
-}: {
-  label: string;
-  /** Optional row tooltip (e.g. the system-proxy row's scope + loopback-exemption hint). */
-  title?: string;
-  children: ReactNode;
-}) {
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div {...(title !== undefined ? { title } : {})}>
+    <div>
       <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
       {children}
     </div>
