@@ -75,6 +75,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
@@ -235,34 +236,11 @@ export function Sidebar({
     }
   };
   /**
-   * Admin-only "use system HTTP proxy" switch (server-global, design § "出网与系统代理"):
-   * null = not hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown —
-   * same laziness as the version info above, and non-admins never call the endpoint (the
-   * row is not rendered for them either). A failed hydration stays null (row disabled)
-   * and is retried on the next open.
+   * Admin-only server-global proxy settings dialog: the menu carries only the opener
+   * row; the controls, their form semantics, and the open-time hydration all live in
+   * ProxySettingsDialog.
    */
-  const [useSystemProxy, setUseSystemProxyState] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!userOpen || user?.isAdmin !== true || useSystemProxy !== null) return;
-    let cancelled = false;
-    void api
-      .adminGetSettings()
-      .then((res) => {
-        if (!cancelled) setUseSystemProxyState(res.settings.useSystemProxy);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [userOpen, user?.isAdmin, useSystemProxy]);
-  /** Saved immediately on toggle (the user-menu quick-control convention): optimistic flip, reverted with a toast on failure. */
-  const setUseSystemProxy = (value: boolean) => {
-    setUseSystemProxyState(value);
-    void api.adminPutSettings({ useSystemProxy: value }).catch((e: unknown) => {
-      setUseSystemProxyState(!value);
-      toastError(apiErrorText(e));
-    });
-  };
+  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -1034,19 +1012,6 @@ export function Sidebar({
             <SettingRow label={S.settings.showCliSessions}>
               <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
-            {/* Admin-only, server-global (all users), saved immediately on toggle; the
-                tooltip spells out the scope and the loopback exemption. Disabled (showing
-                the default: on) until the stored value has hydrated, so a click can never
-                write a value the admin was not looking at. */}
-            {user?.isAdmin && (
-              <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
-                <Switch
-                  checked={useSystemProxy ?? true}
-                  onChange={setUseSystemProxy}
-                  disabled={useSystemProxy === null}
-                />
-              </SettingRow>
-            )}
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
@@ -1059,6 +1024,21 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
+            {/* Admin-only, server-global proxy settings: one menu row opening the
+                dialog (same idiom as Change password above) — the switch, address
+                input and their live-save semantics live in ProxySettingsDialog. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setProxySettingsOpen(true);
+                }}
+              >
+                {S.settings.proxyMenu}
+              </button>
+            )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
                 layout: the menu used to stack a release-notes link, an admin "Update now" row
                 and this check row on top of each other). It reads "Check for updates" and runs
@@ -1156,6 +1136,7 @@ export function Sidebar({
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
@@ -1376,18 +1357,9 @@ function SessionRow({
   );
 }
 
-function SettingRow({
-  label,
-  title,
-  children,
-}: {
-  label: string;
-  /** Optional row tooltip (e.g. the system-proxy row's scope + loopback-exemption hint). */
-  title?: string;
-  children: ReactNode;
-}) {
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div {...(title !== undefined ? { title } : {})}>
+    <div>
       <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
       {children}
     </div>
