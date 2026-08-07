@@ -59,9 +59,9 @@ function sha256Hex(value: string): string {
 
 /**
  * How a session was established: "password" via the login form, "desktop" via the
- * desktop shell's one-shot token (see design § "桌面端原型 · 桌面登录"). Persisted per
- * session so desktop-specific allowances (password change without the old password)
- * apply only to sessions the shell itself opened. Legacy rows (NULL) read as "password".
+ * desktop shell's one-shot token. Persisted per session so desktop-specific allowances
+ * (password change without the old password) apply only to sessions the shell itself
+ * opened. Legacy rows (NULL) read as "password".
  */
 export type SessionVia = "password" | "desktop";
 

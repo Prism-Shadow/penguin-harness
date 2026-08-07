@@ -36,7 +36,7 @@ export interface ServerConfig {
    * `https://preview.example.com`. It must differ from the App origin by **hostname** —
    * cookies ignore ports, so a second port would still share the session cookie. Unset
    * is the norm locally: the loopback counterpart (`127.0.0.1` <-> `localhost`) is
-   * derived per request instead. See design § "Workspace 文件预览".
+   * derived per request instead.
    */
   previewOrigin: string | null;
   /**
@@ -45,7 +45,7 @@ export interface ServerConfig {
    * `penguin-<4 digits>` password, printed once to the server console. In desktop mode
    * an unpinned value resolves to a FULLY random password instead (never printed):
    * sign-in there goes through the shell's one-shot token, so nobody needs to read the
-   * seed. See design § "桌面端原型 · 桌面登录".
+   * seed.
    */
   seedAdminPassword: string | null;
   /** Login session validity period (7 days). */
@@ -56,7 +56,7 @@ export interface ServerConfig {
    * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
    * shell. Non-null enables the one-shot desktop-login and Bearer-token shutdown
    * endpoints and requires a loopback HOST — desktop mode passes the token through a
-   * URL, which must never leave the machine. See design § "桌面端原型".
+   * URL, which must never leave the machine.
    */
   desktopToken: string | null;
   /**

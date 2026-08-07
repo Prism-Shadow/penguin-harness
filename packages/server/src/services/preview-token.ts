@@ -1,8 +1,7 @@
 /**
  * Signed tokens for Workspace HTML preview on a separate origin.
  *
- * The preview origin deliberately differs from the App origin (see
- * design/specs/05-ARCHITECTURE.md § "Workspace 文件预览"), so it never receives the
+ * The preview origin deliberately differs from the App origin, so it never receives the
  * session cookie — cookies are keyed by host and ignore port, which is why the two
  * must differ by hostname and not merely by port. Authorization therefore travels in
  * the URL as a short-lived HMAC token instead.

@@ -12,7 +12,6 @@
  *   where killing a child is a hard TerminateProcess).
  *
  * Comparisons hash both sides first so timingSafeEqual gets equal-length buffers.
- * Docs: design § "桌面端原型 · 桌面登录".
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 

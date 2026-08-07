@@ -837,7 +837,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
-  // preview origin (see design § "Workspace 文件预览").
+  // preview origin.
   //
   // A redirect rather than a JSON endpoint the UI fetches, because the alternative is
   // worse on two counts: opening the tab after an await trips popup blockers, and a

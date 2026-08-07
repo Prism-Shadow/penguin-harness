@@ -12,8 +12,6 @@
  * lets third-party embeds run. That only stays safe while the host check below holds —
  * this same process also answers on the App origin, and serving Agent-written HTML there
  * would be a same-origin XSS with full API access.
- *
- * Design: design/specs/05-ARCHITECTURE.md § "Workspace 文件预览".
  */
 import { Hono } from "hono";
 import type { SessionsRepo } from "../../db/repos/sessions.js";

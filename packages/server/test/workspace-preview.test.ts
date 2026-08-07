@@ -4,7 +4,7 @@
  *
  * The load-bearing case is "same token, App origin's Host": the preview route answers on
  * the same process as the App, so if it served Agent-written HTML there, it would be a
- * same-origin XSS with the session cookie attached. See design § "Workspace 文件预览".
+ * same-origin XSS with the session cookie attached.
  */
 import fs from "node:fs/promises";
 import path from "node:path";

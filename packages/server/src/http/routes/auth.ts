@@ -47,7 +47,7 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   // token for a standard admin cookie session and lands on the app — the desktop user
   // never sees the login page. 404 outside desktop mode (the route "doesn't exist");
   // a wrong or already-used token is a plain 401 with no distinction, so a leaked URL
-  // reveals nothing and cannot be replayed. See design § "桌面端原型 · 桌面登录".
+  // reveals nothing and cannot be replayed.
   app.get("/desktop-login", (c) => {
     const desktop = deps.desktop;
     if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
