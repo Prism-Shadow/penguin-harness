@@ -34,7 +34,6 @@ import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { Drawer } from "../../components/ui/drawer";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { EmptyState } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
@@ -359,9 +358,6 @@ export function MemoryTab({ agentId }: { agentId: string }) {
               </section>
             );
           })}
-          {groups.every((g) => g.files.length === 0) && (
-            <EmptyState title={S.memory.emptyUserScope} />
-          )}
         </div>
       )}
 
