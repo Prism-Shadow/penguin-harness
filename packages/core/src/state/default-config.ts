@@ -98,29 +98,25 @@ export interface MemoryConfig {
  * `system_config.yaml` and editable on the Web App's Memory tab.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools, in the two memory directories named below (they already exist — write into them directly). Each memory is one file holding one fact, with frontmatter:
+Your long-term record across sessions: Markdown files you maintain with the file tools, in the two memory directories named below (they already exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
-name: <short-kebab-case-slug, matching the file name>
-description: <one-line summary — used to decide relevance during recall>
+name: <kebab-case-slug, matching the file name>
+description: <one line — used to decide relevance during recall>
 type: user | feedback | project | reference
 updated_at: <YYYY-MM-DD>
 ---
 
-<the fact; for feedback/project, follow with **Why:** and **How to apply:** lines. Link related memories with [[their-name]].>
+<the fact; for feedback/project add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
 \`\`\`
 
-In the body, link related memories with \`[[name]]\`, where \`name\` is the other memory's slug. Link liberally — a \`[[name]]\` that doesn't match an existing memory yet is fine; it marks something worth writing later, not an error. Write dates absolute (\`YYYY-MM-DD\`): "next week" means nothing to a later session.
+Types: \`user\` — who the user is (role, expertise, preferences); lives in the user directory. \`feedback\` — how the user wants you to work, with the why. \`project\` — ongoing work, goals, constraints not derivable from the code. \`reference\` — pointers to external resources. The last three live in the workspace directory.
 
-\`user\` — who the user is (role, expertise, preferences); belongs in the user directory. \`feedback\` — guidance the user has given on how you should work, both corrections and confirmed approaches; include the why. \`project\` — ongoing work, goals, or constraints not derivable from the code or git history. \`reference\` — pointers to external resources (URLs, dashboards, tickets). The last three belong in the workspace directory.
-
-After writing the file, add a one-line pointer in that directory's \`MEMORY.md\` (\`- [Title](file.md) — hook\`). \`MEMORY.md\` is the index injected below — one line per memory, no frontmatter, never put memory content there — and it is updated in the same round as the file, deletions included, so the two never disagree.
-
-Before saving, check the indexes for a memory that already covers the subject — update that file rather than creating a duplicate; delete memories that turn out to be wrong. Don't save what the code, config or git history already states, short-lived task progress or debugging notes, credentials or other secrets, unconfirmed guesses, or long stretches of transcript; if asked to remember one of those, ask what was non-obvious about it and save that instead. Memory is shared with everyone who can reach this agent, so sensitive personal data does not belong in it.
+Each directory's \`MEMORY.md\` is its index, injected below: one line per memory (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
 
 User memory directory: {{MEMORY_USER_DIR}}
-What stays true wherever you work: who the user is, their standing preferences, reference material not tied to one codebase. Every one of your sessions reads it, so hold it to a higher bar than anything else. Its index:
+What holds wherever you work; every one of your sessions reads it. Its index:
 [user_memory_index]
 {{MEMORY_USER_INDEX}}
 [/user_memory_index]`;
@@ -132,7 +128,7 @@ What stays true wherever you work: who the user is, their standing preferences, 
  * scope and no choice to make, so it never sees the rule at all.
  */
 export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `Workspace memory directory: {{MEMORY_DIR}}
-Facts about the workspace you are working in now. Something about the user that would still hold in a different project goes in the user directory; something about this codebase goes here — when unsure, write here, since a note filed too narrowly can be moved up later while one filed too widely is read by every session from then on. Its index:
+Facts about the workspace you are working in now. What would still hold in a different project goes in the user directory; when unsure, write here. Its index:
 [workspace_memory_index]
 {{MEMORY_INDEX}}
 [/workspace_memory_index]`;

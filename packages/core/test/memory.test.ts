@@ -287,7 +287,7 @@ describe("{{MEMORY}} rendering", () => {
     // a temporary Workspace must never be told about a directory it does not have.
     expect(prompt).not.toContain(WORKSPACE_LINE);
     // The scope-choice rule lives in the Workspace half, so a one-scope Session never sees it.
-    expect(prompt).not.toContain("filed too narrowly");
+    expect(prompt).not.toContain("Facts about the workspace");
   });
 
   it("states a scope's store is empty when its index has no content yet", async () => {
