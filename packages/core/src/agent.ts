@@ -270,9 +270,9 @@ export class Agent {
       this.state.projectId,
       this.state.agentId,
     );
-    // Workspace Memory for this Session: null when the Agent has Memory off or the Workspace is a
-    // temporary one (nothing worth remembering outlives it), which also means no directory is
-    // created for it. Reads the current index every time, like the vault and Skills above.
+    // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
+    // the user scope only (nothing written against it could ever be read back). Reads the
+    // current indexes every time, like the vault and Skills above.
     const memory = await resolveSessionMemory({
       root: this.state.root,
       projectId: this.state.projectId,

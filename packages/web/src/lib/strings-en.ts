@@ -17,7 +17,6 @@ export const en: Strings = {
     skills: "Skills",
     models: "Models",
     usage: "Cost Center",
-    memory: "Memory",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
@@ -474,56 +473,34 @@ export const en: Strings = {
   },
 
   memory: {
-    desc: "Long-term memory across Sessions (stored in agent_state/memory/): topic files kept per Workspace, with one index, memory/AGENTS.md, shared by all of them. The index enters the model context; topic bodies are read on demand. The agent maintains memory with its file tools — you can also edit it by hand.",
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): user memory applies everywhere, Workspace memory is kept per directory, and every scope carries its own MEMORY.md index. Indexes enter the model context; bodies are read on demand. Content edits happen in chat, by the agent.",
     enable: "Enable memory",
     enabledHint:
-      "The memory index enters the agent's context, and a new Session with a persistent Workspace gets its memory directory prepared.",
+      "Memory indexes enter the agent's context, and a new Session with a persistent Workspace gets its memory directory prepared.",
     disabledHint:
-      "Memory does not enter the agent's context right now; existing files are kept and stay editable here.",
-    templateMissingHint:
-      "This system_prompt carries no {{MEMORY}} placeholder (the agent predates memory), so nothing is injected. Insert the placeholder on the Prompt tab, or restore the default configuration from Overview.",
+      "Off: nothing is injected and no memory directory is prepared for new Sessions; existing files are all kept and can still be viewed or deleted.",
     dirLabel: "Memory directory",
-    workspaceCount: (n: number): string =>
-      n === 0
-        ? "No Workspace memory directory yet"
-        : `${n} Workspace memory director${n === 1 ? "y" : "ies"}`,
-    /** The Agent-level scope (memory/agent/), shared by every Session including those in a temporary Workspace. */
-    agentScope: "Agent-level",
-    agentScopeHint:
-      "Memory that holds wherever the agent works: the user's standing preferences, and reference material not tied to one codebase. Every Session reads it, and a Session in a temporary Workspace can write nowhere else.",
-    /** Tree badges on an Agent whose memory never reaches the model. */
-    offBadge: "Off",
-    noPlaceholderBadge: "No placeholder",
-    openSettings: "Open Agent settings",
-    manageLink: "Manage this agent's memories in Memory →",
-    selectFile: "Pick the memory index or a topic file",
-    noWorkspaces:
-      "No Workspace memory directory yet — one is created when a Session runs in a persistent Workspace.",
-    fileCount: (n: number): string => `${n} topic file${n === 1 ? "" : "s"}`,
-    indexFile: "Memory index memory/AGENTS.md",
-    indexRow: "Memory index",
-    indexHint:
-      "Shared by every Workspace, grouped by workspace key; opens at the selected Workspace's group",
-    noFiles: "This Workspace has no topic file yet",
-    newFile: "New topic",
-    newFileTitle: "New topic file",
-    rename: "Rename",
-    renameTitle: "Rename topic file",
+    userScope: "User memory",
+    userScopeHint:
+      "Holds what applies across Workspaces: who the user is, standing preferences, and references not tied to one codebase. Every session reads it, temporary Workspaces included.",
+    itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
+    emptyScope:
+      "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
+    emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
+    view: "View",
+    edit: "Edit",
     delete: "Delete",
-    deleteTitle: "Delete topic file",
+    deleteTitle: "Delete this memory?",
     deleteConfirm: (name: string): string =>
-      `Delete topic file "${name}"? The file cannot be recovered, and index entries pointing at it are removed too.`,
+      `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
     deleteDone: "Deleted",
-    fileName: "File name",
-    fileNameHint: "Letters, digits, dots, underscores and hyphens, ending in .md",
-    fileNameInvalid:
-      "Invalid file name: only letters, digits, dots, underscores and hyphens, ending in .md",
-    fileNameTaken: "That file name already exists",
-    frontmatterMissing:
-      "A topic file must open with frontmatter: name, description, type and updated_at wrapped in `---`",
-    frontmatterNameRequired: "Frontmatter is missing name",
-    frontmatterTypeInvalid: "Frontmatter type must be feedback, project or reference",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string, filePath: string): string =>
+      `Please update a memory: ${title}\nFile: ${filePath}`,
+    editPromptTail:
+      "After editing, update the MEMORY.md index line and updated_at in the same directory.\nWhat to change: ",
     types: {
+      user: "User",
       feedback: "Feedback",
       project: "Project",
       reference: "Reference",

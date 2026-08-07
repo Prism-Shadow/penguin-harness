@@ -19,7 +19,6 @@ export const zh = {
     skills: "技能库",
     models: "模型库",
     usage: "成本中心",
-    memory: "记忆中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
@@ -244,7 +243,7 @@ export const zh = {
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
       [
         "{{MEMORY}}",
-        "注入记忆区块：memory.prompt（Agent 级作用域与索引）加上 memory.workspace_prompt（仅持久 Workspace）；关闭记忆时为空",
+        "注入记忆区块并决定其位置：memory.prompt（用户记忆）加上 memory.workspace_prompt（仅持久 Workspace）；模板缺省时区块注入到 # Environment 之前，关闭记忆时为空",
       ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
@@ -454,50 +453,32 @@ export const zh = {
   },
 
   memory: {
-    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：按 Workspace 分目录保存主题文件，全部 Workspace 共用一份索引 memory/AGENTS.md。索引进入模型上下文，主题正文由模型按需读取。记忆由模型用文件工具维护，也可手工编辑。",
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：用户记忆全局生效，Workspace 记忆按目录隔离，每个作用域有自己的 MEMORY.md 索引。索引进入模型上下文，正文由模型按需读取；内容修改在对话中由 agent 完成。",
     enable: "启用记忆",
     enabledHint:
       "记忆索引会进入 Agent 上下文；使用持久 Workspace 的新 Session 会准备对应的记忆目录。",
-    disabledHint: "记忆当前不会进入 Agent 上下文；已有文件保留，仍可在此管理。",
-    templateMissingHint:
-      "当前 system_prompt 不含 {{MEMORY}} 占位符（Agent 创建于记忆功能之前），因此记忆不会注入。可在 Prompt 页插入该占位符，或在概览页恢复默认配置。",
+    disabledHint:
+      "已关闭：不注入上下文、也不为新 Session 创建记忆目录；已有文件全部保留，仍可查看与删除。",
     dirLabel: "记忆目录",
-    workspaceCount: (n: number): string =>
-      n === 0 ? "尚无 Workspace 记忆目录" : `${n} 个 Workspace 记忆目录`,
-    /** The Agent-level scope (memory/agent/), shared by every Session including those in a temporary Workspace. */
-    agentScope: "Agent 级",
-    agentScopeHint:
-      "跨 Workspace 通用的记忆：用户的长期偏好、与具体代码库无关的参考。每个 Session 都会读到，临时 Workspace 的会话只能写这里。",
-    /** Tree badges on an Agent whose memory never reaches the model. */
-    offBadge: "已关闭",
-    noPlaceholderBadge: "无占位符",
-    openSettings: "前往 Agent 设置",
-    manageLink: "在记忆中心管理本 Agent 的记忆内容 →",
-    selectFile: "从左侧选择记忆索引或主题文件",
-    noWorkspaces: "尚无 Workspace 记忆目录：使用持久 Workspace 创建 Session 后会自动生成。",
-    fileCount: (n: number): string => `${n} 个主题文件`,
-    indexFile: "记忆索引 memory/AGENTS.md",
-    indexRow: "记忆索引",
-    indexHint: "全部 Workspace 共用；按 workspace key 分组，打开时定位到当前分组",
-    noFiles: "该 Workspace 尚无主题文件",
-    newFile: "新建主题",
-    newFileTitle: "新建主题文件",
-    rename: "重命名",
-    renameTitle: "重命名主题文件",
+    userScope: "用户记忆",
+    userScopeHint:
+      "跨 Workspace 通用：用户身份与长期偏好、与具体代码库无关的参考。所有会话（含临时 Workspace）都会读到。",
+    itemCount: (n: number): string => `${n} 条`,
+    emptyScope: "这个 Workspace 还没有记忆——agent 会在会话中自行保存值得记住的内容",
+    emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
+    view: "查看",
+    edit: "编辑",
     delete: "删除",
-    deleteTitle: "删除主题文件",
+    deleteTitle: "删除这条记忆？",
     deleteConfirm: (name: string): string =>
-      `确认删除主题文件「${name}」？文件不可恢复，索引中指向它的条目会一并清理。`,
+      `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
     deleteDone: "已删除",
-    fileName: "文件名",
-    fileNameHint: "字母、数字、点、下划线与连字符，且以 .md 结尾",
-    fileNameInvalid: "文件名不合法：仅字母、数字、点、下划线与连字符，且需以 .md 结尾",
-    fileNameTaken: "该文件名已存在",
-    frontmatterMissing:
-      "主题文件需要以 frontmatter 开头：`---` 包裹的 name、description、type、updated_at",
-    frontmatterNameRequired: "frontmatter 缺少 name",
-    frontmatterTypeInvalid: "frontmatter 的 type 必须是 feedback、project 或 reference",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string, filePath: string): string =>
+      `请帮我更新一条记忆：${title}\n文件：${filePath}`,
+    editPromptTail: "改完后请同步更新同目录 MEMORY.md 的索引行和 updated_at。\n修改要求：",
     types: {
+      user: "用户",
       feedback: "反馈",
       project: "项目",
       reference: "参考",

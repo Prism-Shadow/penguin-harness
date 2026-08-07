@@ -13,7 +13,7 @@ packages/web/src
 ├── state/        # auth / project / sessions / theme / locale contexts
 ├── lib/omni/     # OmniMessage stream → view-model reducer; connect-first + dedup stream controller
 ├── components/   # ui primitives (modal / drawer / select …) and the app layout
-└── features/     # chat / agents / skills / models / usage / memory / traces / benchmark / admin pages
+└── features/     # chat / agents / skills / models / usage / traces / benchmark / admin pages
 ```
 
 ## Startup and Login
@@ -68,13 +68,13 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | --- | --- |
 | Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
-| Memory | Workspace Memory's Agent-level switch, the memory directory, and the way in to the [Memory page](#memory-memory) |
+| Memory | The Agent-level switch, then every memory grouped by scope — user memory first, then one group per Workspace — with view / delete / edit-via-chat actions per row |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
 | Tools | Built-in tool table (incl. per-tool call_description switches) and MCP server JSON configuration |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 
-The Memory tab holds configuration only — memory's *content* is browsed and edited on the [Memory page](#memory-memory). Its switch writes immediately rather than joining the tab-level Save, so turning Memory off never drags an unrelated half-finished edit along with it. Turning it off keeps every file and leaves the Memory page fully usable: it only stops Memory from entering the agent's context and from preparing directories for new Sessions. The tab also warns when an agent is enabled but its prompt template carries no `{{MEMORY}}` placeholder — enabled, yet injecting nothing.
+The Memory tab's switch writes immediately rather than joining the tab-level Save, so turning Memory off never drags an unrelated half-finished edit along with it. Turning it off keeps every file and the tab fully usable: it only stops Memory from entering the agent's context and from preparing directories for new Sessions. Rows are read-only on purpose — **View** opens the rendered body in a drawer, **Delete** confirms and also removes the file's `MEMORY.md` index lines, and **Edit** jumps to a new chat with this agent, prefilled with the memory's file path and an instruction to keep the index and `updated_at` in step; a Workspace memory's edit chat also pins that Workspace, so the editing Session reads the very index it is changing. For the storage model, see [Configuration](/configuration#memory).
 
 Scheduled tasks fire on a fixed period (minimum 5 minutes) and run only while the service is running.
 
@@ -92,12 +92,6 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 - Summary cards: today / last 7 days / cumulative;
 - Charts: per-Agent share, per-model success rates, daily Token and cost trends;
 - A server error panel summarizing recent server-side error records.
-
-## Memory (/memory)
-
-Workspace Memory across the Project's Agents, as a tree: Agent → scope → topic file. Under each Agent sit the shared index `memory/AGENTS.md`, then the **Agent-level** scope, then one node per Workspace — the index covers every scope so it belongs to the Agent, and the Agent scope leads the rest because it is the one every Session reads (a Session in a temporary Workspace has no other). The right side edits whatever is selected. Create a topic file from the `+` on a scope row; rename and delete act on the selected file.
-
-Editing here writes the same files the agent maintains itself with its file tools. Renaming or deleting a topic file also repoints or removes the index links that named it, so the index never lists a file that is gone. An Agent whose memory cannot reach the model is marked in the tree — **Off** for the switch, **No placeholder** for a prompt template with no `{{MEMORY}}` — and both link back to the Agent's Memory tab. For the storage model, see [Configuration](/configuration#workspace-memory).
 
 ## Trace Browser (/traces)
 

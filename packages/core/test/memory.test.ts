@@ -1,6 +1,6 @@
 /**
- * Workspace Memory: key derivation, temporary-Workspace exclusion, directory preparation,
- * frontmatter parsing, and the `{{MEMORY}}` prompt block.
+ * Memory: key derivation, temporary-Workspace exclusion, directory preparation, frontmatter
+ * parsing, and the `{{MEMORY}}` prompt block with its no-placeholder fallback.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -10,26 +10,27 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   createAgent,
-  AGENT_SCOPE_KEY,
   MEMORY_INDEX_EMPTY_NOTE,
+  MEMORY_INDEX_FILENAME,
   MEMORY_PLACEHOLDER,
+  USER_SCOPE_KEY,
   WORKSPACE_MARKER_FILENAME,
-  agentMemoryDir,
   assembleSystemPrompt,
-  ensureAgentMemoryDir,
+  ensureUserMemoryDir,
   ensureWorkspaceMemoryDir,
   isTemporaryWorkspace,
   loadOrInitAgentState,
   memoryDir,
-  memoryIndexPath,
+  memoryScopeDir,
   parseMemoryFrontmatter,
-  readMemoryIndex,
+  readScopeIndex,
   readWorkspaceMarker,
   resolveSessionMemory,
-  workspaceMemoryDir,
+  userMemoryDir,
   workspaceMemoryKey,
   workspaceMemoryKeyForRealPath,
   type AgentState,
+  type SessionMemory,
 } from "../src/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
 
@@ -111,7 +112,7 @@ describe("temporary Workspace detection", () => {
 });
 
 describe("directory preparation", () => {
-  it("creates the Workspace directory and records the Workspace path in its marker", async () => {
+  it("creates the Workspace directory with an empty index and records the path in its marker", async () => {
     const key = await workspaceMemoryKey(workspace);
     const dir = await ensureWorkspaceMemoryDir({
       root,
@@ -120,8 +121,9 @@ describe("directory preparation", () => {
       workspaceKey: key,
       workspacePath: workspace,
     });
-    expect(dir).toBe(workspaceMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, key));
+    expect(dir).toBe(memoryScopeDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, key));
     expect(await readWorkspaceMarker(dir)).toBe(workspace);
+    expect(await readScopeIndex(dir)).toBe("");
     // Idempotent: a second call neither fails nor rewrites a different path.
     await ensureWorkspaceMemoryDir({
       root,
@@ -130,13 +132,27 @@ describe("directory preparation", () => {
       workspaceKey: key,
       workspacePath: workspace,
     });
-    expect(await fs.readdir(dir)).toEqual([WORKSPACE_MARKER_FILENAME]);
+    expect((await fs.readdir(dir)).sort()).toEqual(
+      [WORKSPACE_MARKER_FILENAME, MEMORY_INDEX_FILENAME].sort(),
+    );
   });
 
-  it("reads an absent index as an empty string, and no topic file is preprovisioned", async () => {
+  it("initializes Agent State with the User scope and its empty index, and no topic file", async () => {
     await agentState();
-    expect(await readMemoryIndex(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).toBe("");
-    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([]);
+    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([
+      USER_SCOPE_KEY,
+    ]);
+    const userDir = userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    expect(await fs.readdir(userDir)).toEqual([MEMORY_INDEX_FILENAME]);
+    expect(await readScopeIndex(userDir)).toBe("");
+  });
+
+  it("never overwrites an existing index", async () => {
+    await agentState();
+    const userDir = userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    await fs.writeFile(path.join(userDir, MEMORY_INDEX_FILENAME), "- [a](a.md) — hook\n", "utf8");
+    await ensureUserMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    expect(await readScopeIndex(userDir)).toBe("- [a](a.md) — hook\n");
   });
 });
 
@@ -161,37 +177,41 @@ describe("resolveSessionMemory", () => {
     );
   }
 
-  it("prepares both scopes and returns the index for a persistent Workspace", async () => {
+  it("prepares both scopes and returns each scope's own index for a persistent Workspace", async () => {
     await agentState();
+    const userDir = userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
     await fs.writeFile(
-      memoryIndexPath(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
-      "# Memory\n\n## group\n",
+      path.join(userDir, MEMORY_INDEX_FILENAME),
+      "- [pnpm](prefers-pnpm.md) — package manager\n",
       "utf8",
     );
     const memory = await resolve({ workspaceDir: workspace, enabled: true });
+    expect(memory?.userDir).toBe(userDir);
+    expect(memory?.userIndex).toContain("prefers-pnpm.md");
     expect(memory?.workspace?.key).toBe(await workspaceMemoryKey(workspace));
-    expect(memory?.index).toContain("## group");
+    expect(memory?.workspace?.index).toBe("");
     await expect(fs.stat(memory!.workspace!.dir)).resolves.toBeTruthy();
-    expect(memory?.agentDir).toBe(agentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
-    await expect(fs.stat(memory!.agentDir)).resolves.toBeTruthy();
   });
 
-  it("returns null and creates nothing when Memory is disabled", async () => {
+  it("returns null and creates no Workspace scope when Memory is disabled", async () => {
     await agentState();
     expect(await resolve({ workspaceDir: workspace, enabled: false })).toBeNull();
-    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([]);
+    // The User scope from Agent State init stays; the point is nothing new appears.
+    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([
+      USER_SCOPE_KEY,
+    ]);
   });
 
-  it("gives a temporary Workspace the Agent scope and no Workspace scope", async () => {
+  it("gives a temporary Workspace the User scope and no Workspace scope", async () => {
     await agentState();
     const tmp = tempWorkspacePath();
     await fs.mkdir(tmp, { recursive: true });
     const memory = await resolve({ workspaceDir: tmp, enabled: true });
-    // The Agent scope is the only place such a Session could write and have it read back.
-    expect(memory?.agentDir).toBe(agentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
+    // The User scope is the only place such a Session could write and have it read back.
+    expect(memory?.userDir).toBe(userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
     expect(memory?.workspace).toBeUndefined();
     expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([
-      AGENT_SCOPE_KEY,
+      USER_SCOPE_KEY,
     ]);
   });
 });
@@ -199,19 +219,24 @@ describe("resolveSessionMemory", () => {
 describe("frontmatter", () => {
   it("reads name / description / type / updated_at", () => {
     const parsed = parseMemoryFrontmatter(
-      "---\nname: Testing conventions\ndescription: how tests run\ntype: feedback\nupdated_at: 2026-07-30\n---\n\n- body\n",
-      "feedback_testing.md",
+      "---\nname: testing-conventions\ndescription: how tests run\ntype: feedback\nupdated_at: 2026-08-07\n---\n\n- body\n",
+      "testing-conventions.md",
     );
     expect(parsed).toEqual({
-      name: "Testing conventions",
+      name: "testing-conventions",
       description: "how tests run",
       type: "feedback",
-      updatedAt: "2026-07-30",
+      updatedAt: "2026-08-07",
     });
   });
 
-  it("falls back to the file name and drops an unknown type", () => {
+  it("accepts the user type", () => {
     const parsed = parseMemoryFrontmatter("---\ntype: user\n---\nbody\n", "notes.md");
+    expect(parsed).toEqual({ name: "notes.md", description: "", type: "user" });
+  });
+
+  it("falls back to the file name and drops an unknown type", () => {
+    const parsed = parseMemoryFrontmatter("---\ntype: diary\n---\nbody\n", "notes.md");
     expect(parsed).toEqual({ name: "notes.md", description: "" });
   });
 
@@ -222,34 +247,42 @@ describe("frontmatter", () => {
 
 describe("{{MEMORY}} injection", () => {
   /** Marker lines of each half of the block, so a test can assert which scopes were rendered. */
-  const AGENT_LINE = "Agent memory directory:";
+  const USER_LINE = "User memory directory:";
   const WORKSPACE_LINE = "Workspace memory directory:";
 
-  const bothScopes = {
-    agentDir: "/data/memory/agent",
-    workspace: { key: "my-app-12345678", dir: "/data/memory/my-app-12345678" },
-    index:
-      "# Memory\n\n## my-app-12345678\n\n- [Testing](my-app-12345678/feedback_testing.md) — how tests run",
+  const bothScopes: SessionMemory = {
+    userDir: "/data/memory/user",
+    userIndex: "- [pnpm](prefers-pnpm.md) — package manager",
+    workspace: {
+      key: "my-app-12345678",
+      dir: "/data/memory/my-app-12345678",
+      index: "- [testing](testing-conventions.md) — how tests run",
+    },
   };
 
-  it("renders both scopes with their directories and the index substituted", async () => {
+  it("renders both scopes, each index fenced by its own marker pair", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, bothScopes);
-    expect(prompt).toContain("/data/memory/agent");
+    expect(prompt).toContain("/data/memory/user");
     expect(prompt).toContain("/data/memory/my-app-12345678");
-    expect(prompt).toContain("- [Testing](my-app-12345678/feedback_testing.md) — how tests run");
+    expect(prompt).toContain(
+      "[user_memory_index]\n- [pnpm](prefers-pnpm.md) — package manager\n[/user_memory_index]",
+    );
+    expect(prompt).toContain(
+      "[workspace_memory_index]\n- [testing](testing-conventions.md) — how tests run\n[/workspace_memory_index]",
+    );
     expect(prompt).not.toContain(MEMORY_PLACEHOLDER);
     expect(prompt).not.toContain(MEMORY_INDEX_EMPTY_NOTE);
   });
 
-  it("renders the Agent scope alone when the Session has no Workspace scope", async () => {
+  it("renders the User scope alone when the Session has no Workspace scope", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
-      agentDir: "/data/memory/agent",
-      index: "# Memory\n",
+      userDir: "/data/memory/user",
+      userIndex: "",
     });
-    expect(prompt).toContain(AGENT_LINE);
-    expect(prompt).toContain("/data/memory/agent");
+    expect(prompt).toContain(USER_LINE);
+    expect(prompt).toContain("/data/memory/user");
     // The Workspace half is a separate config key precisely so it can be left out entirely:
     // a temporary Workspace must never be told about a directory it does not have.
     expect(prompt).not.toContain(WORKSPACE_LINE);
@@ -257,53 +290,58 @@ describe("{{MEMORY}} injection", () => {
     expect(prompt).not.toContain("Choosing between the two");
   });
 
-  it("states the store is empty when the index has no content yet", async () => {
+  it("states a scope's store is empty when its index has no content yet", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
       ...bothScopes,
-      index: "  \n",
+      workspace: { ...bothScopes.workspace!, index: "  \n" },
     });
-    expect(prompt).toContain(MEMORY_INDEX_EMPTY_NOTE);
+    // Only the blank Workspace index gets the note; the User index keeps its content.
+    expect(prompt).toContain(`[workspace_memory_index]\n${MEMORY_INDEX_EMPTY_NOTE}`);
+    expect(prompt).toContain("- [pnpm](prefers-pnpm.md) — package manager");
   });
 
   it("injects nothing at all when the Session has no Memory", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state);
     expect(prompt).not.toContain(MEMORY_PLACEHOLDER);
-    expect(prompt).not.toContain(AGENT_LINE);
+    expect(prompt).not.toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
   });
 
-  it("reaches the Session prompt with both scopes, or the Agent scope alone for a temporary Workspace", async () => {
+  it("reaches the Session prompt with both scopes, or the User scope alone for a temporary Workspace", async () => {
     const agent = await createAgent({ root });
     const withWorkspace = await agent.createSession({ workspaceDir: workspace });
     const key = await workspaceMemoryKey(workspace);
     expect(sessionPrompt(withWorkspace)).toContain(
-      workspaceMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, key),
+      memoryScopeDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, key),
     );
     expect(sessionPrompt(withWorkspace)).toContain(WORKSPACE_LINE);
 
-    // No Workspace given: the SDK allocates a temporary one, which gets the Agent scope only.
+    // No Workspace given: the SDK allocates a temporary one, which gets the User scope only.
     const temporary = await agent.createSession();
     expect(sessionPrompt(temporary)).toContain(
-      agentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
     );
     expect(sessionPrompt(temporary)).not.toContain(WORKSPACE_LINE);
     expect(
       (await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).sort(),
-    ).toEqual([AGENT_SCOPE_KEY, key].sort());
+    ).toEqual([USER_SCOPE_KEY, key].sort());
   });
 
   it("is left out of the Session prompt when the Agent config disables Memory", async () => {
     const agent = await createAgent({ root });
     agent.state.systemConfig.memory = { ...agent.state.systemConfig.memory, enabled: false };
     const session = await agent.createSession({ workspaceDir: workspace });
-    expect(sessionPrompt(session)).not.toContain(AGENT_LINE);
+    expect(sessionPrompt(session)).not.toContain(USER_LINE);
     expect(sessionPrompt(session)).not.toContain(WORKSPACE_LINE);
-    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([]);
+    // No Workspace scope appears; only the User scope from Agent State init.
+    expect(await fs.readdir(memoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID))).toEqual([
+      USER_SCOPE_KEY,
+    ]);
   });
 
-  it("injects nothing when the Agent's template carries no {{MEMORY}} placeholder", async () => {
+  it("splices the block in before # Environment when the template has no {{MEMORY}}", async () => {
     const state = await agentState();
     const stripped: AgentState = {
       ...state,
@@ -312,12 +350,34 @@ describe("{{MEMORY}} injection", () => {
         system_prompt: state.systemConfig.system_prompt.split(MEMORY_PLACEHOLDER).join(""),
       },
     };
+    // The switch is the only on/off channel: a template that predates Memory (or dropped the
+    // placeholder) still injects, at the position the default template gives the placeholder.
     const prompt = assembleSystemPrompt(stripped, undefined, undefined, undefined, bothScopes);
-    expect(prompt).not.toContain("/data/memory/my-app-12345678");
-    expect(prompt).not.toContain("/data/memory/agent");
+    expect(prompt).toContain("/data/memory/user");
+    expect(prompt.indexOf(USER_LINE)).toBeLessThan(prompt.indexOf("# Environment"));
   });
 
-  it("keeps the Agent half when the config carries no workspace_prompt", async () => {
+  it("appends the block at the end when the template has no # Environment heading either", async () => {
+    const state = await agentState();
+    const bare: AgentState = {
+      ...state,
+      systemConfig: { ...state.systemConfig, system_prompt: "# Role\nDo things." },
+    };
+    const prompt = assembleSystemPrompt(bare, undefined, undefined, undefined, bothScopes);
+    expect(prompt.startsWith("# Role\nDo things.")).toBe(true);
+    expect(prompt).toContain(USER_LINE);
+  });
+
+  it("adds nothing to a placeholder-free template when the Session has no Memory", async () => {
+    const state = await agentState();
+    const bare: AgentState = {
+      ...state,
+      systemConfig: { ...state.systemConfig, system_prompt: "# Role\nDo things.\n# Environment" },
+    };
+    expect(assembleSystemPrompt(bare)).toBe("# Role\nDo things.\n# Environment");
+  });
+
+  it("keeps the User half when the config carries no workspace_prompt", async () => {
     const state = await agentState();
     const noWorkspaceBlock: AgentState = {
       ...state,
@@ -326,7 +386,7 @@ describe("{{MEMORY}} injection", () => {
         memory: { ...state.systemConfig.memory, workspace_prompt: undefined },
       },
     };
-    // An Agent whose config predates the Workspace half degrades to Agent-scope-only rather
+    // An Agent whose config predates the Workspace half degrades to User-scope-only rather
     // than losing Memory altogether.
     const prompt = assembleSystemPrompt(
       noWorkspaceBlock,
@@ -335,28 +395,28 @@ describe("{{MEMORY}} injection", () => {
       undefined,
       bothScopes,
     );
-    expect(prompt).toContain(AGENT_LINE);
+    expect(prompt).toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
   });
 });
 
-describe("ensureAgentMemoryDir", () => {
-  it("creates the Agent scope directory and leaves no .workspace marker", async () => {
+describe("ensureUserMemoryDir", () => {
+  it("creates the User scope directory with its index and leaves no .workspace marker", async () => {
     await agentState();
-    const dir = await ensureAgentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    expect(dir).toBe(agentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
+    const dir = await ensureUserMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
+    expect(dir).toBe(userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID));
     // The marker records the path a key was hashed from; this scope stands for no path.
     expect(await readWorkspaceMarker(dir)).toBeUndefined();
     // Idempotent: a second Session must not fail on an existing directory.
-    await expect(ensureAgentMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).resolves.toBe(
+    await expect(ensureUserMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).resolves.toBe(
       dir,
     );
   });
 
   it("is a name no generated workspace key can collide with", async () => {
     // Every generated key is `<base>-<8 hex>`, so it always carries a hyphen.
-    const key = workspaceMemoryKeyForRealPath("/home/dev/agent");
-    expect(key).not.toBe(AGENT_SCOPE_KEY);
-    expect(key.startsWith(`${AGENT_SCOPE_KEY}-`)).toBe(true);
+    const key = workspaceMemoryKeyForRealPath("/home/dev/user");
+    expect(key).not.toBe(USER_SCOPE_KEY);
+    expect(key.startsWith(`${USER_SCOPE_KEY}-`)).toBe(true);
   });
 });

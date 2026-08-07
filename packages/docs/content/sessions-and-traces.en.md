@@ -31,8 +31,8 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
         │                             # tools/, skills/, schedule/
-        │   └── memory/               # Workspace Memory: the shared AGENTS.md index plus
-        │                             # one directory of topic files per Workspace
+        │   └── memory/               # Memory: user/ plus one directory per Workspace,
+        │                             # each with its own MEMORY.md index
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)

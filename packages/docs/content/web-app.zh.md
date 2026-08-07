@@ -13,7 +13,7 @@ packages/web/src
 ├── state/        # auth / project / sessions / theme / locale 五个 context
 ├── lib/omni/     # OmniMessage 流 → 渲染视图模型 reducer;连接先行 + 去重的流控制器
 ├── components/   # ui 原语(modal / drawer / select …)与应用布局
-└── features/     # chat / agents / skills / models / usage / memory / traces / benchmark / admin 各页面
+└── features/     # chat / agents / skills / models / usage / traces / benchmark / admin 各页面
 ```
 
 ## 启动与登录
@@ -67,13 +67,13 @@ penguin web
 | --- | --- |
 | Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
-| Memory | Workspace 记忆的 Agent 级开关、记忆目录，以及进入[记忆中心](#记忆中心memory)的入口 |
+| Memory | Agent 级开关，以及按作用域分组的全部记忆——用户记忆在前、每个 Workspace 一组——每行提供查看 / 删除 / 对话编辑 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
 | Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 的 JSON 配置 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 
-Memory 标签页只放配置，记忆的**内容**在[记忆中心](#记忆中心memory)浏览与编辑。该页的开关拨动即写入，不参与标签页的保存按钮，因此关闭记忆不会连带把别处未改完的内容一起存盘。关闭记忆也不会删除任何文件，记忆中心仍可正常管理——只是记忆不再进入 Agent 上下文，也不再为新 Session 准备目录。该页还会在 Agent 已启用、但 system_prompt 不含 `{{MEMORY}}` 占位符时给出警告——启用了，却什么也没注入。
+Memory 标签页的开关拨动即写入，不参与标签页的保存按钮，因此关闭记忆不会连带把别处未改完的内容一起存盘。关闭记忆也不会删除任何文件，标签页仍可正常查看与删除——只是记忆不再进入 Agent 上下文，也不再为新 Session 准备目录。记忆行有意不提供就地编辑：**查看**在抽屉中渲染正文；**删除**先确认，并同步清掉该文件在 `MEMORY.md` 中的索引行；**编辑**跳转到与该 Agent 的新对话，预填记忆文件路径与"同步更新索引行和 updated_at"的提醒——Workspace 记忆的编辑对话还会锁定对应 Workspace，让编辑会话恰好读到它正在修改的那份索引。存储模型见[配置说明](/configuration#记忆)。
 
 定时任务按固定周期触发（最短 5 分钟），且仅在服务运行期间执行。
 
@@ -91,12 +91,6 @@ Memory 标签页只放配置，记忆的**内容**在[记忆中心](#记忆中�
 - 概览卡片：今日 / 近 7 天 / 累计用量；
 - 图表：各 Agent 占比、各模型成功率、每日 Token 与费用趋势；
 - 服务端错误面板：汇总最近的服务端错误记录。
-
-## 记忆中心（/memory）
-
-以树的形式浏览 Project 下各 Agent 的 Workspace 记忆：Agent → 作用域 → 主题文件。每个 Agent 名下依次是统一索引 `memory/AGENTS.md`、**Agent 级**作用域，然后是各个 Workspace——索引覆盖所有作用域，所以挂在 Agent 名下；Agent 级排在最前，因为它是每个 Session 都会读到的那一层（临时 Workspace 的会话只有它）。右侧编辑当前选中的内容。新建主题文件用作用域行上的 `+`，重命名与删除作用于选中的文件。
-
-这里写入的就是 Agent 自己用文件工具维护的那批文件。重命名或删除主题文件时，索引中指向它的链接会一并改写或清除，索引不会列出已不存在的文件。记忆无法进入模型的 Agent 会在树上标出——开关关闭标 **已关闭**，system_prompt 不含 `{{MEMORY}}` 标 **无占位符**——两者都可回到该 Agent 的 Memory 标签页处理。存储模型见[配置说明](/configuration#workspace-记忆)。
 
 ## Trace 浏览（/traces）
 

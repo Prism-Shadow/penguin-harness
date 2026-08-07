@@ -31,8 +31,9 @@ import {
   DATE_PLACEHOLDER,
   MEMORY_PLACEHOLDER,
   MEMORY_DIR_PLACEHOLDER,
-  MEMORY_AGENT_DIR_PLACEHOLDER,
-  MEMORY_AGENTS_MD_PLACEHOLDER,
+  MEMORY_INDEX_PLACEHOLDER,
+  MEMORY_USER_DIR_PLACEHOLDER,
+  MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
   type MemoryConfig,
   agentStateVersion,
@@ -46,7 +47,7 @@ import {
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
-import type { SessionMemory } from "./memory.js";
+import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
@@ -158,7 +159,9 @@ export async function loadOrInitAgentState(opts?: {
     await Promise.all([
       fs.mkdir(stateDir, { recursive: true }),
       fs.mkdir(toolsDir(root, projectId, agentId), { recursive: true }),
-      fs.mkdir(memoryDir(root, projectId, agentId), { recursive: true }),
+      // Creates memory/user/ (and memory/ above it) with an empty MEMORY.md, so the User scope
+      // exists from the Agent's first day; Workspace scopes appear at Session creation.
+      ensureUserMemoryDir(root, projectId, agentId),
       fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
       fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
     ]);
@@ -276,43 +279,67 @@ function vaultKeysList(keys: string[]): string {
   return keys.map((key) => `- ${key}`).join("\n");
 }
 
+/** An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads "nothing saved" instead of a blank line. */
+function indexOrEmptyNote(index: string): string {
+  const trimmed = index.trim();
+  return trimmed.length > 0 ? trimmed : MEMORY_INDEX_EMPTY_NOTE;
+}
+
 /**
- * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the Agent scope and the
- * shared index, which every Session has), plus `memory.workspace_prompt` when the Session also
- * runs in a persistent Workspace. An empty string when this Session has no Memory (disabled) or
- * the config carries no Memory prompt.
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
+ * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
+ * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or the
+ * config carries no Memory prompt.
  *
  * The two blocks are separate config keys because substitution has no conditionals: each block
  * only ever names placeholders that are defined wherever it appears, so a temporary Workspace is
  * never told about a `{{MEMORY_DIR}}` it does not have.
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
- * is `MEMORY_INDEX_EMPTY_NOTE`, standing in for an index that does not exist yet so the model
- * reads "nothing saved" instead of a blank line. Topic bodies are never injected — the index
- * says what exists, and the model opens what it needs.
+ * is `MEMORY_INDEX_EMPTY_NOTE`, standing in for an index that does not exist yet. Topic bodies
+ * are never injected — the indexes say what exists, and the model opens what it needs.
  */
 function memorySection(
   config: MemoryConfig | undefined,
   memory: SessionMemory | null | undefined,
 ): string {
   if (!config?.prompt || !memory) return "";
-  const index = memory.index.trim();
-  const substituteShared = (text: string): string =>
+  const substituteUser = (text: string): string =>
     text
-      .split(MEMORY_AGENT_DIR_PLACEHOLDER)
-      .join(memory.agentDir)
-      .split(MEMORY_AGENTS_MD_PLACEHOLDER)
-      .join(index.length > 0 ? index : MEMORY_INDEX_EMPTY_NOTE);
+      .split(MEMORY_USER_DIR_PLACEHOLDER)
+      .join(memory.userDir)
+      .split(MEMORY_USER_INDEX_PLACEHOLDER)
+      .join(indexOrEmptyNote(memory.userIndex));
 
-  const agentBlock = substituteShared(config.prompt).trim();
+  const userBlock = substituteUser(config.prompt).trim();
   const workspace = memory.workspace;
-  if (!workspace || !config.workspace_prompt) return agentBlock;
-  const workspaceBlock = substituteShared(config.workspace_prompt)
+  if (!workspace || !config.workspace_prompt) return userBlock;
+  const workspaceBlock = substituteUser(config.workspace_prompt)
     .split(MEMORY_DIR_PLACEHOLDER)
     .join(workspace.dir)
+    .split(MEMORY_INDEX_PLACEHOLDER)
+    .join(indexOrEmptyNote(workspace.index))
     .trim();
-  if (workspaceBlock.length === 0) return agentBlock;
-  return agentBlock.length > 0 ? `${agentBlock}\n\n${workspaceBlock}` : workspaceBlock;
+  if (workspaceBlock.length === 0) return userBlock;
+  return userBlock.length > 0 ? `${userBlock}\n\n${workspaceBlock}` : workspaceBlock;
+}
+
+/**
+ * Splices the rendered Memory block into a template that carries no `{{MEMORY}}` placeholder:
+ * before the `# Environment` heading when one exists (the position the default template gives
+ * the placeholder), else appended at the end. This makes `memory.enabled` the only on/off
+ * channel — an Agent whose template predates Memory needs no migration, and the placeholder
+ * only chooses the position. In-memory only; the stored template is never rewritten, and the
+ * assembled prompt is recorded in session_meta for audit.
+ */
+function withMemoryFallback(assembled: string, memoryBlock: string): string {
+  if (memoryBlock.length === 0) return assembled;
+  // The default templates head the section with `# Environment`; accept any heading level.
+  const heading = /^#+ Environment[ \t]*$/m.exec(assembled);
+  if (heading) {
+    return `${assembled.slice(0, heading.index)}${memoryBlock}\n\n${assembled.slice(heading.index)}`;
+  }
+  return `${assembled}\n\n${memoryBlock}`;
 }
 
 /**
@@ -476,18 +503,21 @@ function withShellLineFallback(
  * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
  * written directly into the system Prompt template itself (the Prompt is fully
  * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
- * never auto-injected. Sole exception: on win32 a template without `{{SHELL}}` gets a `- Shell:`
- * line injected at render time (see `withShellLineFallback`).
+ * never auto-injected. Two render-time exceptions: on win32 a template without `{{SHELL}}` gets
+ * a `- Shell:` line injected (see `withShellLineFallback`), and a template without `{{MEMORY}}`
+ * still gets the rendered Memory block spliced in before `# Environment` (see
+ * `withMemoryFallback`) — so `memory.enabled` is the only Memory on/off channel.
  *
  * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
- * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block when
- * this Session has Memory (enabled + a persistent Workspace), and to an empty string otherwise —
- * only that block's own `{{MEMORY_DIR}}` / `{{MEMORY_AGENTS_MD}}` carry Memory content, and topic
- * bodies are always read on demand rather than injected. A custom template that removes a
- * placeholder gets no corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project
- * directory — the app data root the default prompt labels "App Data Dir".
+ * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block
+ * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
+ * Memory is disabled — only those blocks' own `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` /
+ * `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` carry Memory content, and topic bodies are always read
+ * on demand rather than injected. A custom template that removes any other placeholder gets no
+ * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory — the app
+ * data root the default prompt labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -498,11 +528,12 @@ export function assembleSystemPrompt(
   memory?: SessionMemory | null,
 ): string {
   const template = state.systemConfig.system_prompt;
+  const memoryBlock = memorySection(state.systemConfig.memory, memory);
   const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
     .split(MEMORY_PLACEHOLDER)
-    .join(memorySection(state.systemConfig.memory, memory))
+    .join(memoryBlock)
     .split(VAULT_KEYS_PLACEHOLDER)
     .join(vaultKeysList(vaultKeys ?? []))
     .split(SKILL_METADATA_PLACEHOLDER)
@@ -528,7 +559,10 @@ export function assembleSystemPrompt(
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
     .trim();
-  return withShellLineFallback(assembled, template, sessionEnvironment);
+  const withMemory = template.includes(MEMORY_PLACEHOLDER)
+    ? assembled
+    : withMemoryFallback(assembled, memoryBlock);
+  return withShellLineFallback(withMemory, template, sessionEnvironment);
 }
 
 /**

@@ -29,6 +29,10 @@ export const MARKER_TAGS = {
   modelSwitchFrom: "model_switch_from",
   /** AGENTS.md wrapper inside the system prompt (static template text). */
   developerInstructions: "developer_instructions",
+  /** User-scope Memory index wrapper inside the system prompt's Memory block (static template text). */
+  userMemoryIndex: "user_memory_index",
+  /** Workspace-scope Memory index wrapper inside the system prompt's Memory block (static template text). */
+  workspaceMemoryIndex: "workspace_memory_index",
 } as const;
 
 /** Inner tags used inside a transcribed turn block (`[turn_aborted]` / `[turn_retried]`). */

@@ -15,7 +15,6 @@ import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { SkillsPage } from "./features/skills/skills-page";
 import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
-import { MemoryPage } from "./features/memory/memory-page";
 import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { AdminUsersPage } from "./features/admin/admin-users-page";
@@ -54,7 +53,6 @@ export function AppRouter() {
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/models" element={<ModelsPage />} />
           <Route path="/usage" element={<UsagePage />} />
-          <Route path="/memory" element={<MemoryPage />} />
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />

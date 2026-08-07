@@ -510,7 +510,7 @@ export interface AgentCompactionConfigDto {
   prompt?: string;
 }
 
-/** Workspace Memory switch. Reported as the effective value (a config with no `memory` section reads as enabled, matching core). */
+/** Memory switch. Reported as the effective value (a config with no `memory` section reads as enabled, matching core). */
 export interface AgentMemoryConfigDto {
   enabled: boolean;
 }
@@ -557,18 +557,18 @@ export interface AgentConfigUpdateRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace Memory
+// Memory
 // ---------------------------------------------------------------------------
 
-/** One Memory scope directory: `agent_state/memory/agent/` or `agent_state/memory/<workspaceKey>/`. */
-export interface MemoryWorkspaceInfo {
-  /** Directory name under `memory/`, and the group heading used in the index. */
-  workspaceKey: string;
-  /** Set on the Agent scope (`memory/agent/`), which is shared by every Session including those in a temporary Workspace; absent on a Workspace. */
-  agentScope?: true;
-  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the Agent scope (it stands for no path) and for a directory written before the marker existed or edited by hand. */
+/** One Memory scope directory: `agent_state/memory/user/` or `agent_state/memory/<workspaceKey>/`. */
+export interface MemoryScopeInfo {
+  /** Directory name under `memory/`: `user`, or a Workspace's `<safe-basename>-<hash>` key. */
+  scopeKey: string;
+  /** `user` — the scope every Session reads, temporary Workspaces included; `workspace` — one Workspace's scope. */
+  kind: "user" | "workspace";
+  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
   workspacePath?: string;
-  /** Number of Markdown topic files in the directory. */
+  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
   fileCount: number;
   /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
   updatedAt?: string;
@@ -576,14 +576,14 @@ export interface MemoryWorkspaceInfo {
 
 /** One Memory topic file, as listed (frontmatter only — the body is fetched per file). */
 export interface MemoryFileInfo {
-  /** File name inside the Workspace Memory directory, e.g. `feedback_testing.md`. */
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
   name: string;
   /** Frontmatter `name`; falls back to the file name. */
   title: string;
   /** Frontmatter `description`; empty when the file declares none. */
   description: string;
-  /** Frontmatter `type`; unset when missing or not one of feedback / project / reference. */
-  type?: "feedback" | "project" | "reference";
+  /** Frontmatter `type`; unset when missing or unknown. */
+  type?: "user" | "feedback" | "project" | "reference";
   /** Frontmatter `updated_at`, verbatim. */
   updatedAt?: string;
   /** File size in bytes. */
@@ -592,44 +592,25 @@ export interface MemoryFileInfo {
   modifiedAt: string;
 }
 
-/** GET …/memory — the tab's landing payload: the switch, the shared index, and every Workspace group. */
+/** GET …/memory — the tab's landing payload: the switch and every scope group, user scope first. */
 export interface MemoryOverviewResponse {
   /** Whether Memory reaches the model context (the Agent-level switch). */
   enabled: boolean;
-  /** Whether this Agent's prompt template still carries the `{{MEMORY}}` placeholder — an Agent created before Memory shipped has none, so nothing is injected even while enabled. */
-  templateInjects: boolean;
   /** Absolute path of `agent_state/memory/`. */
   memoryDir: string;
-  /** Content of the shared index `memory/AGENTS.md` (empty string when it does not exist yet). */
-  index: string;
-  workspaces: MemoryWorkspaceInfo[];
+  scopes: MemoryScopeInfo[];
 }
 
-/** GET …/memory/workspaces/:key/files */
+/** GET …/memory/scopes/:key/files */
 export interface MemoryFilesResponse {
-  workspaceKey: string;
+  scopeKey: string;
   files: MemoryFileInfo[];
 }
 
-/** GET …/memory/workspaces/:key/files/:name */
+/** GET …/memory/scopes/:key/files/:name */
 export interface MemoryFileResponse {
-  workspaceKey: string;
+  scopeKey: string;
   file: MemoryFileInfo;
-  content: string;
-}
-
-/** PUT bodies for a topic file and for the shared index. */
-export interface MemoryFileUpdateRequest {
-  content: string;
-}
-
-/** POST …/memory/workspaces/:key/files/:name/rename */
-export interface MemoryFileRenameRequest {
-  name: string;
-}
-
-/** GET|PUT …/memory/index */
-export interface MemoryIndexResponse {
   content: string;
 }
 
