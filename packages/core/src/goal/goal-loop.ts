@@ -18,9 +18,9 @@
  *   user interrupt) or a final assistant notice with `stop_reason: "failed"` (the engine's
  *   max_turns cutoff emits exactly that, and no abort event): the model never got to write
  *   the file, so re-firing would loop the same cutoff forever, and
- * - an explicit round cap when the caller sets one (`maxRounds` > 0; there is no default
- *   cap — an unbudgeted goal runs until the model claims a terminal state or the user
- *   aborts, mirroring the unlimited `max_turns` default).
+ * - a hard round cap (`maxRounds`, default 100) as a runaway backstop independent of the
+ *   budget — without it an unbudgeted goal whose model simply never writes the file would
+ *   loop without bound; an explicit -1 disables the cap.
  * All of these stop the loop without re-firing. The loop writes GOAL.yaml exactly once,
  * at creation; afterwards it only READS `status` — every ending leaves the model's own
  * last write on disk (system endings exist only as the `goal_finished` outcome), which is
@@ -54,14 +54,17 @@ export interface GoalLoopOptions {
   /** Token budget; omitted or `UNLIMITED_BUDGET` (-1) means no budget. */
   budget?: number;
   /**
-   * Optional hard cap on regular rounds, independent of the budget (when set, the budget
+   * Hard cap on regular rounds, a runaway backstop independent of the budget (the budget
    * wrap-up may run one round past it, so the true bound is maxRounds + 1 — the wrap-up
-   * fires once and cannot loop). Omitted or -1 = no cap: goals stop only on a model-claimed
-   * terminal state, budget exhaustion, or abort. Not a host knob (tests use it).
+   * fires once and cannot loop). Default 100 — far above any legitimate goal (each round is
+   * a full Task), so hosts don't expose it as a knob; an explicit -1 disables the cap.
    */
   maxRounds?: number;
   signal?: AbortSignal;
 }
+
+/** Default `maxRounds`: the runaway backstop for goals with no (or a huge) budget. */
+export const GOAL_MAX_ROUNDS = 100;
 
 /** Whether this message is the **main** session's abort event (subagent aborts don't end the goal). */
 function isMainAbort(msg: OmniMessage): boolean {
@@ -86,7 +89,7 @@ export async function* runGoalLoop(
   opts: GoalLoopOptions,
 ): AsyncGenerator<OmniMessage> {
   const budget = opts.budget ?? UNLIMITED_BUDGET;
-  const maxRounds = opts.maxRounds ?? -1;
+  const maxRounds = opts.maxRounds ?? GOAL_MAX_ROUNDS;
   // The objective is the user's own text: leading machine-prefixed blocks (a [use_skills]
   // invocation, a handoff note) belong to round 1's body but not to the re-injected task
   // statement or the goal file.
@@ -138,7 +141,7 @@ export async function* runGoalLoop(
       yield finish("aborted");
       return;
     }
-    // Explicit caller-set round cap only (no default backstop; see the header).
+    // Runaway backstop, independent of the budget (which may be unlimited); -1 disables.
     if (maxRounds > 0 && rounds >= maxRounds) {
       yield finish("aborted");
       return;

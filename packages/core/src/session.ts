@@ -83,7 +83,7 @@ export interface SessionConfig {
 export interface GoalRunOptions {
   /** Token budget; omitted or -1 (`UNLIMITED_BUDGET`) means no budget. */
   budget?: number;
-  /** Optional hard cap on rounds — not a host knob; omitted or -1 = no cap (see goal-loop.ts). */
+  /** Hard cap on rounds — a runaway backstop, not a host knob (default 100; -1 disables; see goal-loop.ts). */
   maxRounds?: number;
 }
 
