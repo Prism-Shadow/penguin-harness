@@ -97,7 +97,7 @@ export interface AppDeps {
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
-  /** Admin-level server-global settings (currently the "use system HTTP proxy" switch). */
+  /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
   authService: AuthService;
   adminService: AdminService;
@@ -159,16 +159,17 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Command-subprocess proxy policy for core (design § "出网与系统代理"), derived from
-  // the persisted settings: off → strip HTTP(S)_PROXY/ALL_PROXY; on with an explicit
-  // address → inject that address (with the merged loopback NO_PROXY) over whatever the
-  // environment carries; on without an address → pass the environment through. A getter,
-  // not a snapshot: it is re-read at every command spawn, so a settings change reaches
-  // already-loaded Sessions. Threaded through BOTH core entry paths — the loader
-  // (resume/self-heal) and SessionService (creation, whose runtime the manager adopts
-  // for the first Task).
+  // Command-subprocess proxy policy for core (design § "出网与系统代理"), keyed on the
+  // "agent environment uses the proxy" switch (the app switch only drives the server's
+  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
+  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
+  // over whatever the environment carries; on without an address → pass the environment
+  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
+  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
+  // the manager adopts for the first Task).
   const proxyEnv = (): ProxyEnvPolicy | null => {
-    if (!serverSettingsRepo.getUseSystemProxy()) return { mode: "strip" };
+    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
     const url = serverSettingsRepo.getProxyUrl();
     return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
   };

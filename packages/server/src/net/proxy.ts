@@ -8,8 +8,10 @@
  * admin-level settings — undici's fetch resolves the global dispatcher per call, so a
  * settings change takes effect for newly initiated connections without a restart.
  *
- * Dispatcher per settings state:
- *   - off: a plain `Agent` — direct connections, proxy variables ignored;
+ * Dispatcher per settings state (keyed on the "application uses the proxy" switch; the
+ * separate agent-environment switch never touches the dispatcher — it only drives the
+ * command-subprocess policy in app.ts):
+ *   - app switch off: a plain `Agent` — direct connections, proxy variables ignored;
  *   - on, no explicit address (default): `EnvHttpProxyAgent` — honors HTTP_PROXY /
  *     HTTPS_PROXY (both spellings; undici reads the lowercase name first) with a
  *     NO_PROXY list merged from the environment plus the loopback names;
@@ -28,9 +30,10 @@
  *
  * The values persisted in server_settings stay authoritative (the routes read/write the
  * repo); this module only mirrors them into the process-global dispatcher. The command
- * subprocess side (stripping the proxy variables when off, injecting the explicit
- * address when set) lives in core (CommandSessionManager, threaded through the session
- * loader as a ProxyEnvPolicy getter), not here.
+ * subprocess side — keyed on the agent-environment switch: strip the proxy variables
+ * when it is off, inject the explicit address when set, pass through otherwise — lives
+ * in core (CommandSessionManager, threaded through the session loader as a
+ * ProxyEnvPolicy getter), not here.
  */
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
 import type { Dispatcher } from "undici";
@@ -38,10 +41,10 @@ import type { Dispatcher } from "undici";
 /** Loopback names every effective NO_PROXY must contain (see module doc). */
 export const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"] as const;
 
-/** The admin-level proxy settings the dispatcher mirrors (persisted in server_settings). */
+/** The slice of the admin proxy settings the dispatcher mirrors (persisted in server_settings). */
 export interface ProxySettings {
-  /** The "use HTTP proxy" switch (default on). */
-  useSystemProxy: boolean;
+  /** The "application uses the proxy" switch (default on). */
+  proxyForApp: boolean;
   /** Explicit proxy URL (normalized, see {@link normalizeProxyUrl}); null = follow the proxy environment variables. */
   proxyUrl: string | null;
 }
@@ -119,16 +122,16 @@ export function envProxyAgentOptions(
 
 /**
  * Builds the global dispatcher for a settings state (pure choice, exported for tests):
- * off → direct-connect Agent, on → EnvHttpProxyAgent (env-driven, or pinned to the
- * explicit address; see {@link envProxyAgentOptions}).
+ * app switch off → direct-connect Agent, on → EnvHttpProxyAgent (env-driven, or pinned
+ * to the explicit address; see {@link envProxyAgentOptions}).
  */
 export function buildProxyDispatcher(settings: ProxySettings, env?: NodeJS.ProcessEnv): Dispatcher {
-  if (!settings.useSystemProxy) return new Agent();
+  if (!settings.proxyForApp) return new Agent();
   return new EnvHttpProxyAgent(envProxyAgentOptions(settings.proxyUrl, env));
 }
 
 /** Current settings mirrored for the dispatcher (the DB rows are the persisted truth). */
-let current: ProxySettings = { useSystemProxy: true, proxyUrl: null };
+let current: ProxySettings = { proxyForApp: true, proxyUrl: null };
 /** True once the startup entry has installed undici globally (never in tests). */
 let installed = false;
 
@@ -155,12 +158,9 @@ export function installGlobalProxyDispatcher(): void {
  * installed runtime (tests) it only records the state.
  */
 export function applyProxySettings(settings: ProxySettings): void {
-  if (
-    settings.useSystemProxy === current.useSystemProxy &&
-    settings.proxyUrl === current.proxyUrl
-  ) {
+  if (settings.proxyForApp === current.proxyForApp && settings.proxyUrl === current.proxyUrl) {
     return;
   }
-  current = { useSystemProxy: settings.useSystemProxy, proxyUrl: settings.proxyUrl };
+  current = { proxyForApp: settings.proxyForApp, proxyUrl: settings.proxyUrl };
   if (installed) setGlobalDispatcher(buildProxyDispatcher(current));
 }

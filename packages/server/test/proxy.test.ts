@@ -122,11 +122,11 @@ describe("envProxyAgentOptions", () => {
 });
 
 describe("buildProxyDispatcher", () => {
-  it("off → plain Agent; on → EnvHttpProxyAgent, with or without an explicit address", async () => {
-    const off = buildProxyDispatcher({ useSystemProxy: false, proxyUrl: null }, {});
-    const onEnv = buildProxyDispatcher({ useSystemProxy: true, proxyUrl: null }, {});
+  it("app switch off → plain Agent; on → EnvHttpProxyAgent, with or without an explicit address", async () => {
+    const off = buildProxyDispatcher({ proxyForApp: false, proxyUrl: null }, {});
+    const onEnv = buildProxyDispatcher({ proxyForApp: true, proxyUrl: null }, {});
     const onExplicit = buildProxyDispatcher(
-      { useSystemProxy: true, proxyUrl: "http://explicit.example:3128" },
+      { proxyForApp: true, proxyUrl: "http://explicit.example:3128" },
       {},
     );
     try {
@@ -171,7 +171,7 @@ describe("buildProxyDispatcher", () => {
     // is honored on its own, and the loopback exemption proves the merge alone (not an
     // ambient NO_PROXY) produced it.
     const dispatcher = buildProxyDispatcher(
-      { useSystemProxy: true, proxyUrl: `http://127.0.0.1:${proxyPort}` },
+      { proxyForApp: true, proxyUrl: `http://127.0.0.1:${proxyPort}` },
       {},
     );
     try {

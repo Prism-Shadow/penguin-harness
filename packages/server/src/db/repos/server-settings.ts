@@ -5,8 +5,19 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 
-/** Key of the "use HTTP proxy" switch (design § "出网与系统代理"); default on. */
-const USE_SYSTEM_PROXY_KEY = "use_system_proxy";
+/** Key of the "application uses the proxy" switch (the server's own outbound dispatcher, design § "出网与系统代理"); default on. */
+const PROXY_FOR_APP_KEY = "proxy_for_app";
+
+/** Key of the "agent environment uses the proxy" switch (command subprocess env policy); default on. */
+const PROXY_FOR_AGENT_KEY = "proxy_for_agent";
+
+/**
+ * Legacy single-switch key from the unreleased #225 iteration (never in a release): read
+ * as the fallback default for BOTH new switches while their own keys are absent, so a
+ * main-branch deployment that had toggled it keeps its choice. Read-only adoption — the
+ * legacy key is never written back, and either new key, once set, wins for its switch.
+ */
+const LEGACY_USE_SYSTEM_PROXY_KEY = "use_system_proxy";
 
 /** Key of the explicit proxy address; absent/null = follow the proxy environment variables. */
 const PROXY_URL_KEY = "proxy_url";
@@ -29,13 +40,29 @@ export class ServerSettingsRepo {
       .run(key, value);
   }
 
-  /** The "use HTTP proxy" switch; an absent (or unreadable) row reads as the default: on. */
-  getUseSystemProxy(): boolean {
-    return this.get(USE_SYSTEM_PROXY_KEY) !== "false";
+  /** Shared switch read: this key if present, else the legacy single switch, else the default: on. */
+  private getProxySwitch(key: string): boolean {
+    const raw = this.get(key);
+    if (raw !== null) return raw !== "false";
+    return this.get(LEGACY_USE_SYSTEM_PROXY_KEY) !== "false";
   }
 
-  setUseSystemProxy(value: boolean): void {
-    this.set(USE_SYSTEM_PROXY_KEY, JSON.stringify(value));
+  /** The "application uses the proxy" switch (the server's own outbound dispatcher). */
+  getProxyForApp(): boolean {
+    return this.getProxySwitch(PROXY_FOR_APP_KEY);
+  }
+
+  setProxyForApp(value: boolean): void {
+    this.set(PROXY_FOR_APP_KEY, JSON.stringify(value));
+  }
+
+  /** The "agent environment uses the proxy" switch (command subprocess env policy). */
+  getProxyForAgent(): boolean {
+    return this.getProxySwitch(PROXY_FOR_AGENT_KEY);
+  }
+
+  setProxyForAgent(value: boolean): void {
+    this.set(PROXY_FOR_AGENT_KEY, JSON.stringify(value));
   }
 
   /**

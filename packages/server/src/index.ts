@@ -23,8 +23,8 @@ loadDotenv({ quiet: true });
 
 // Outbound proxy support, installed at the earliest point (right after dotenv, which may
 // itself define HTTP_PROXY): replaces globalThis.fetch with undici's and sets the global
-// dispatcher, starting from the defaults (switch on, no explicit address). The persisted
-// values can only be read once the database is open, so they are applied via
+// dispatcher, starting from the defaults (app switch on, no explicit address). The
+// persisted values can only be read once the database is open, so they are applied via
 // applyProxySettings right after buildAppDeps below — nothing in between makes an
 // outbound request. See net/proxy.ts.
 installGlobalProxyDispatcher();
@@ -49,11 +49,11 @@ if (existingLock) {
 
 const deps = buildAppDeps(config);
 // The database is open now: bring the dispatcher in line with the persisted proxy
-// settings (absent rows read as the defaults: switch on, no explicit address) before
-// the first possible outbound request (update check, LLM calls — all behind HTTP
-// handlers).
+// settings (absent rows read as the defaults: app switch on, no explicit address)
+// before the first possible outbound request (update check, LLM calls — all behind
+// HTTP handlers).
 applyProxySettings({
-  useSystemProxy: deps.serverSettingsRepo.getUseSystemProxy(),
+  proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
   proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
 });
 const app = createApp(deps);

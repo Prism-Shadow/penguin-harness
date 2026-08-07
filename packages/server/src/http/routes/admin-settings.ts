@@ -1,11 +1,14 @@
 /**
  * Admin server-settings routes (admin only, 403 for non-admins):
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings
- * (currently the proxy settings: the "use HTTP proxy" switch and the explicit proxy
- * address, design § "出网与系统代理").
+ * (currently the proxy settings: the "application uses the proxy" and "agent
+ * environment uses the proxy" switches and their shared explicit address, design
+ * § "出网与系统代理").
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
- * rebuilt so new outbound connections follow the change without a restart.
+ * rebuilt so new outbound connections follow the change without a restart (the agent
+ * switch needs no push — the command-subprocess policy getter re-reads the repo at
+ * every spawn).
  */
 import { Hono } from "hono";
 import type { ServerSettingsResponse } from "../../api/types.js";
@@ -46,7 +49,8 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   const settings = (): ServerSettingsResponse => ({
     settings: {
-      useSystemProxy: deps.serverSettingsRepo.getUseSystemProxy(),
+      proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
+      proxyForAgent: deps.serverSettingsRepo.getProxyForAgent(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
     },
   });
@@ -56,16 +60,18 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
   app.put("/", async (c) => {
     const body = await readJson(c);
     // Validate every provided field before writing any: a partial PUT with one invalid
-    // field must leave the other untouched too.
-    const useSystemProxy = optionalBoolean(body, "useSystemProxy");
+    // field must leave the others untouched too.
+    const proxyForApp = optionalBoolean(body, "proxyForApp");
+    const proxyForAgent = optionalBoolean(body, "proxyForAgent");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
-    if (useSystemProxy !== undefined) deps.serverSettingsRepo.setUseSystemProxy(useSystemProxy);
+    if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
+    if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);
-    // Mirror into the process: rebuilds the global fetch dispatcher (live change, no
-    // restart; a no-op when nothing effectively changed).
+    // Mirror the app switch + address into the process: rebuilds the global fetch
+    // dispatcher (live change, no restart; a no-op when nothing effectively changed).
     applyProxySettings({
-      useSystemProxy: deps.serverSettingsRepo.getUseSystemProxy(),
+      proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
     });
     return c.json(settings());

@@ -119,25 +119,33 @@ export interface AdminPasswordResetRequest {
   password: string;
 }
 
-/** Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"). */
+/**
+ * Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"):
+ * two independent proxy switches sharing one optional explicit address. In every
+ * on-state the effective NO_PROXY always includes localhost/127.0.0.1/::1 (loopback is
+ * never proxied), and changes apply to newly initiated connections/spawns immediately —
+ * no restart.
+ */
 export interface ServerSettings {
   /**
-   * "Use HTTP proxy" (default on): whether the server process and its child processes
-   * reach the internet through an HTTP proxy — the explicit `proxyUrl` when set,
-   * otherwise the proxy named by HTTP_PROXY / HTTPS_PROXY (both spellings). Off =
-   * direct connections, with the proxy variables also stripped from agent command
-   * subprocess environments. Either way the effective NO_PROXY always includes
-   * localhost/127.0.0.1/::1 (loopback is never proxied). Changes apply to newly
-   * initiated connections immediately — no restart.
+   * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
+   * requests, the update check, image fetches). On with `proxyUrl` set = that address
+   * for both http and https; on without an address = the proxy environment variables
+   * HTTP_PROXY / HTTPS_PROXY (both spellings); off = always direct.
    */
-  useSystemProxy: boolean;
+  proxyForApp: boolean;
   /**
-   * Explicit proxy address (canonical `http(s)://host[:port]`), or null = follow the
-   * proxy environment variables. Only consulted while `useSystemProxy` is on; when set
-   * it governs both http and https traffic, taking precedence over HTTP_PROXY /
-   * HTTPS_PROXY — the loopback NO_PROXY exemption still applies — and agent command
-   * subprocesses get it injected as HTTP_PROXY / HTTPS_PROXY (plus lowercase twins),
-   * overriding inherited values.
+   * "Agent environment uses the proxy" (default on): agent command subprocess
+   * environments. On with `proxyUrl` set = HTTP_PROXY / HTTPS_PROXY (plus lowercase
+   * twins) injected as that address with the merged NO_PROXY, overriding inherited
+   * values; on without an address = the host environment passes through unchanged;
+   * off = the proxy variables are stripped (NO_PROXY kept).
+   */
+  proxyForAgent: boolean;
+  /**
+   * The shared explicit proxy address (canonical `http(s)://host[:port]`), or null =
+   * follow the proxy environment variables. When set it takes precedence over
+   * HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
    */
   proxyUrl: string | null;
 }
@@ -148,7 +156,8 @@ export interface ServerSettingsResponse {
 
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
-  useSystemProxy?: boolean;
+  proxyForApp?: boolean;
+  proxyForAgent?: boolean;
   /**
    * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
    * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,

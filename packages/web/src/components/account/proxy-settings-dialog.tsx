@@ -1,46 +1,53 @@
 /**
- * Admin HTTP-proxy settings dialog (server-global, design § "出网与系统代理"), opened
- * from the sidebar user menu. A LIVE settings surface, not a form: the switch saves
- * immediately on toggle (optimistic, reverted with a toast on failure) and the address
- * commits on Enter/blur — the server validates and normalizes (bare "host:port" comes
- * back as "http://host:port"), the echoed settings replace the draft, and a rejected
- * value reverts it with the error toast. Hence no Save/Cancel footer; closing is the
- * Modal's own affordances (header X, Esc, overlay).
- *
- * Settings hydrate on every open (always fresh, even if another admin changed them
- * meanwhile); both controls are disabled until they arrive, so a click can never write
- * a value the admin was not looking at. The scope/loopback hint that used to live in a
- * row tooltip is visible dialog text here.
+ * Admin proxy options dialog (server-global, design § "出网与系统代理"), opened from
+ * the sidebar user menu. A form, not a live surface: two switches — "Application uses
+ * the proxy" (the server's own outbound dispatcher) and "Agent environment uses the
+ * proxy" (command subprocess environments) — share one proxy address, and nothing is
+ * written until Save, which applies everything atomically via a single PUT. The server
+ * validates and normalizes the address (bare "host:port" is stored as
+ * "http://host:port"); a rejected address renders inline under the input (models-dialog
+ * convention) and the atomic PUT writes nothing. Save with no modifications sends no
+ * request and toasts "no changes" (the app's form convention, 06-PROTOTYPE); success
+ * toasts and closes. Settings hydrate fresh on every open; the controls and Save stay
+ * disabled until they arrive, and Cancel/Esc discards edits.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ServerSettings } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Modal } from "../ui/modal";
 import { Switch } from "../ui/switch";
-import { toastError, toastSuccess } from "../ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 
 export function ProxySettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  /** null = not hydrated yet (controls disabled, showing the defaults: on, empty). */
+  /** Stored settings as hydrated on open (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<ServerSettings | null>(null);
-  /** Proxy-address input draft (committed on Enter/blur; synced from the stored value). */
-  const [proxyUrlDraft, setProxyUrlDraft] = useState("");
-  /** In-flight proxy-address save — guards the Enter-then-blur double commit. */
-  const proxyUrlSaving = useRef(false);
+  // Form drafts; the pre-hydration values mirror the server defaults (on, on, empty).
+  const [proxyForApp, setProxyForApp] = useState(true);
+  const [proxyForAgent, setProxyForAgent] = useState(true);
+  const [proxyUrl, setProxyUrl] = useState("");
+  /** Inline error under the address input (the server's invalid_proxy_url rejection). */
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setSettings(null);
-    setProxyUrlDraft("");
+    setAddressError(null);
+    setBusy(false);
     void api
       .adminGetSettings()
       .then((res) => {
         if (cancelled) return;
         setSettings(res.settings);
-        setProxyUrlDraft(res.settings.proxyUrl ?? "");
+        setProxyForApp(res.settings.proxyForApp);
+        setProxyForAgent(res.settings.proxyForAgent);
+        setProxyUrl(res.settings.proxyUrl ?? "");
       })
       .catch((e: unknown) => {
         // Controls stay disabled; closing and reopening retries the fetch.
@@ -51,75 +58,73 @@ export function ProxySettingsDialog({ open, onClose }: { open: boolean; onClose:
     };
   }, [open]);
 
-  /** Saved immediately on toggle: optimistic flip, reverted with a toast on failure. */
-  const setUseSystemProxy = (value: boolean) => {
-    setSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: value }));
-    void api
-      .adminPutSettings({ useSystemProxy: value })
-      .then((res) => setSettings(res.settings))
-      .catch((e: unknown) => {
-        setSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: !value }));
-        toastError(apiErrorText(e));
-      });
-  };
-
-  /**
-   * Commits the proxy-address input (Enter/blur): no-ops when unchanged, otherwise lets
-   * the server validate and normalize (see the module doc).
-   */
-  const commitProxyUrl = () => {
-    if (settings === null || proxyUrlSaving.current) return;
-    const stored = settings.proxyUrl ?? "";
-    if (proxyUrlDraft.trim() === stored) {
-      setProxyUrlDraft(stored); // canonicalize a whitespace-only edit back to the stored value
+  const save = async () => {
+    if (settings === null || busy) return;
+    const unchanged =
+      proxyForApp === settings.proxyForApp &&
+      proxyForAgent === settings.proxyForAgent &&
+      proxyUrl.trim() === (settings.proxyUrl ?? "");
+    if (unchanged) {
+      toastInfo(S.common.noChangesToSave);
       return;
     }
-    proxyUrlSaving.current = true;
-    void api
-      .adminPutSettings({ proxyUrl: proxyUrlDraft })
-      .then((res) => {
-        setSettings(res.settings);
-        setProxyUrlDraft(res.settings.proxyUrl ?? "");
-        toastSuccess(S.common.saved);
-      })
-      .catch((e: unknown) => {
-        setProxyUrlDraft(stored);
+    setBusy(true);
+    setAddressError(null);
+    try {
+      await api.adminPutSettings({ proxyForApp, proxyForAgent, proxyUrl });
+      toastSuccess(S.common.saved);
+      onClose();
+    } catch (e) {
+      // The address is the only validated field: its rejection renders inline;
+      // anything else (auth, network) is a generic failure toast.
+      if (e instanceof ApiError && e.code === "invalid_proxy_url") {
+        setAddressError(apiErrorText(e));
+      } else {
         toastError(apiErrorText(e));
-      })
-      .finally(() => {
-        proxyUrlSaving.current = false;
-      });
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
+  const hydrated = settings !== null;
   return (
-    <Modal open={open} title={S.settings.proxyDialogTitle} onClose={onClose}>
+    <Modal
+      open={open}
+      title={S.settings.proxyDialogTitle}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.useSystemProxy}</span>
-          <Switch
-            checked={settings?.useSystemProxy ?? true}
-            onChange={setUseSystemProxy}
-            disabled={settings === null}
-          />
+          <span className="text-sm font-medium">{S.settings.proxyForApp}</span>
+          <Switch checked={proxyForApp} onChange={setProxyForApp} disabled={!hydrated} />
         </div>
-        {(settings?.useSystemProxy ?? true) && (
-          <Input
-            label={S.settings.proxyAddress}
-            size="sm"
-            value={proxyUrlDraft}
-            placeholder={S.settings.proxyAddressPlaceholder}
-            disabled={settings === null}
-            hint={S.settings.proxyAddressHint}
-            onChange={(e) => setProxyUrlDraft(e.target.value)}
-            onBlur={commitProxyUrl}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitProxyUrl();
-            }}
-          />
-        )}
-        <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-          {S.settings.useSystemProxyHint}
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">{S.settings.proxyForAgent}</span>
+          <Switch checked={proxyForAgent} onChange={setProxyForAgent} disabled={!hydrated} />
+        </div>
+        <Input
+          label={S.settings.proxyAddress}
+          size="sm"
+          value={proxyUrl}
+          placeholder={S.settings.proxyAddressPlaceholder}
+          disabled={!hydrated}
+          {...(addressError !== null ? { error: addressError } : {})}
+          onChange={(e) => {
+            setProxyUrl(e.target.value);
+            if (addressError !== null) setAddressError(null);
+          }}
+        />
       </div>
     </Modal>
   );

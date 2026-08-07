@@ -35,20 +35,15 @@ export const zh = {
     language: "语言",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    /** Admin-only user-menu row opening the proxy settings dialog (design § "出网与系统代理"). */
-    proxyMenu: "HTTP 代理…",
-    proxyDialogTitle: "HTTP 代理",
-    /** The dialog's switch label: saved immediately on toggle. */
-    useSystemProxy: "使用 HTTP 代理",
-    /** Visible dialog text: scope (server + its child processes, server-wide), address precedence, and the loopback exemption. */
-    useSystemProxyHint:
-      "服务端及其子进程（更新检查、LLM 请求、Agent 命令）出网时是否使用 HTTP 代理：填写了代理地址则用该地址，否则用 HTTP_PROXY / HTTPS_PROXY 环境变量指定的系统代理，对整个服务端全局生效；回环地址（localhost、127.0.0.1、::1）始终直连。关闭后服务端一律直连，并从 Agent 命令子进程环境中移除代理变量。",
-    /** Explicit proxy address input (shown while the proxy switch is on; committed on Enter/blur). */
+    /** Admin-only user-menu row opening the proxy options dialog (design § "出网与系统代理"). */
+    proxyMenu: "代理选项",
+    proxyDialogTitle: "代理选项",
+    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    proxyForApp: "应用程序使用代理",
+    proxyForAgent: "Agent 环境使用代理",
+    /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Input helper text: precedence over the environment variables and the accepted forms. */
-    proxyAddressHint:
-      "填写后服务端与 Agent 命令子进程都改用该代理（优先于环境变量），支持 http://主机[:端口]、https://主机[:端口] 或 主机[:端口]；留空则跟随 HTTP_PROXY / HTTPS_PROXY 环境变量。",
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
