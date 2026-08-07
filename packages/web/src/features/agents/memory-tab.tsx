@@ -83,6 +83,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [switchBusy, setSwitchBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [memoryPrompt, setMemoryPrompt] = useState("");
+  const [workspacePrompt, setWorkspacePrompt] = useState("");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
@@ -99,6 +100,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         api.getAgentConfig(projectId, agentId),
       ]);
       setMemoryPrompt(configView.config.memory.prompt);
+      setWorkspacePrompt(configView.config.memory.workspacePrompt);
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
@@ -148,14 +150,17 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     }
   };
 
-  /** Saves the memory prompt through the ordinary config write (confirm-first, like the other settings tabs). */
-  const savePrompt = () =>
+  /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
+  const savePrompts = () =>
     requestSave(() => {
       if (!projectId) return;
       void api
-        .putAgentConfig(projectId, agentId, { config: { memory: { prompt: memoryPrompt } } })
+        .putAgentConfig(projectId, agentId, {
+          config: { memory: { prompt: memoryPrompt, workspacePrompt } },
+        })
         .then((res) => {
           setMemoryPrompt(res.config.memory.prompt);
+          setWorkspacePrompt(res.config.memory.workspacePrompt);
           toastSuccess(S.common.saved);
         })
         .catch((e: unknown) => toastError(apiErrorText(e)));
@@ -370,13 +375,21 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           </p>
         </div>
         <Textarea
+          label={S.memory.promptLabel}
           size="sm"
-          rows={14}
+          rows={12}
           value={memoryPrompt}
           onChange={(e) => setMemoryPrompt(e.target.value)}
         />
+        <Textarea
+          label={S.memory.workspacePromptLabel}
+          size="sm"
+          rows={6}
+          value={workspacePrompt}
+          onChange={(e) => setWorkspacePrompt(e.target.value)}
+        />
         <div className="flex justify-end">
-          <Button size="sm" variant="primary" onClick={savePrompt}>
+          <Button size="sm" variant="primary" onClick={savePrompts}>
             {S.common.save}
           </Button>
         </div>

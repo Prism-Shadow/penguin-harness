@@ -510,11 +510,13 @@ export interface AgentCompactionConfigDto {
   prompt?: string;
 }
 
-/** Memory config. Both fields report effective values (a config with no `memory` section reads as enabled with the built-in prompt, matching core); the prompt is edited on the Memory tab. */
+/** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
 export interface AgentMemoryConfigDto {
   enabled: boolean;
-  /** The `{{MEMORY}}` block, carrying the four `{{MEMORY_*}}` placeholders; its `[workspace_memory]` region is kept only in persistent-Workspace Sessions. */
+  /** The always-injected half of the `{{MEMORY}}` block (carries `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}`). */
   prompt: string;
+  /** Appended only in a persistent Workspace (carries `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}`). */
+  workspacePrompt: string;
 }
 
 /** Structured view of system_config.yaml (for the edit form). */
