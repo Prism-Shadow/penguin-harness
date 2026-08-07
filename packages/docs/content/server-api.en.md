@@ -67,6 +67,17 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
+In desktop mode (the server spawned by the desktop app) the whole surface answers `403` with code `desktop_single_user`: the desktop app is single-user, so user management is disabled — existing users in the data root are untouched.
+
+### Server Settings (admin only)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy}}` |
+| PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+
+`useSystemProxy` is the "use system HTTP proxy" switch (default on): while on, the server and its child processes honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings) for outbound traffic; while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In either state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Toggling takes effect for newly initiated connections immediately — no restart.
+
 ### Version and Self-Update
 
 | Method | Path | Description |
@@ -88,7 +99,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/members | Add a member: `{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | Remove a member |
 
-Member writes are owner-only.
+Member writes are owner-only. The member routes also answer `403 desktop_single_user` in desktop mode (see User Administration above).
 
 ### Models
 
@@ -135,7 +146,7 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 | POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
-On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
+On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.
 
 ### Usage and Traces (Agent Level)
 

@@ -116,10 +116,31 @@ jobs:
       # message) and both standalone installers. The stamped installers then select the same immutable OSS/GitHub
       # release when run directly. BUILD_DATE is stamped alongside core with this run's UTC date.
       - name: Stamp release version
+        env:
+          # Referenced as a plain shell variable so the run block stays free of GitHub
+          # expressions: scripts/test-installer.sh replays this block verbatim as sh.
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           printf '%s\n' "$TAG" | grep -Eq '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
+          # Guard: release prep must bump the repo to the tag's version (root + packages/*/package.json
+          # and core's VERSION constant move together in the release: X.Y.Z PR). v0.2.1 was tagged with
+          # a 0.2.0 repo, so every dev/source build nagged about updates until the repo caught up —
+          # fail the tag push instead. Manual dispatch (EVENT_NAME unset in replays) only warns,
+          # keeping legacy tags rebuildable; installer-test fixtures have no package.json, so the
+          # check self-skips there.
+          if [ -f package.json ]; then
+            PKG_V="$(node -p 'require("./package.json").version')"
+            if [ "$PKG_V" != "$V" ]; then
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see CONTRIBUTING.md)."
+              if [ "${EVENT_NAME:-}" = "push" ]; then
+                echo "error: $MSG" >&2
+                exit 1
+              fi
+              echo "warning: $MSG (continuing: manual dispatch)" >&2
+            fi
+          fi
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
           SH_MARKER='EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"'
@@ -506,9 +527,27 @@ jobs:
       # workspace:* dep to the dependency's current version, so the versions must match.
       # BUILD_DATE is stamped alongside VERSION with this run's UTC date (the repo keeps null for dev builds).
       - name: Stamp release version
+        env:
+          # Same shell-variable indirection as the release job's stamp step (no GitHub
+          # expressions in the body; see scripts/test-installer.sh).
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
+          # Same repo-version guard as the release job: both jobs start from a tag push in
+          # parallel, so the check must fail here too or npm would publish from a tag whose
+          # repo version was never bumped. Manual dispatch only warns (legacy-tag retries).
+          if [ -f package.json ]; then
+            PKG_V="$(node -p 'require("./package.json").version')"
+            if [ "$PKG_V" != "$V" ]; then
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json and core VERSION during release prep, then re-tag (see CONTRIBUTING.md)."
+              if [ "${EVENT_NAME:-}" = "push" ]; then
+                echo "error: $MSG" >&2
+                exit 1
+              fi
+              echo "warning: $MSG (continuing: manual dispatch)" >&2
+            fi
+          fi
           grep -q 'export const VERSION = "' packages/core/src/index.ts
           sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
           D="$(date -u +%Y-%m-%d)"

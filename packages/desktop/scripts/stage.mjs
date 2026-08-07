@@ -2,20 +2,25 @@
  * Assemble the self-contained app directory electron-builder packs (stage/app).
  *
  * `pnpm deploy --prod` materializes this package plus its production dependency tree —
- * including the workspace packages — into a portable directory whose symlinks all stay
- * inside it (verified: the server boots from the deploy dir as-is). On top of that:
+ * including the workspace packages (@prismshadow/penguin-cli among them, so the staged
+ * node_modules carries cli + server + core + skills) — into a portable directory whose
+ * symlinks all stay inside it (verified: the server boots from the deploy dir as-is).
+ * On top of that:
  * - prune dev files (sources, configs) so only dist/, node_modules/ and package.json ship;
  * - copy the web build to `node_modules/@prismshadow/penguin-server/web-dist`, the npm
  *   package layout the server's static-hosting lookup checks first;
+ * - copy build/icon.png into the app dir (the runtime window icon, see src/app-icon.ts);
+ * - generate the `penguin` CLI launchers into `bin/` (POSIX + Windows, see
+ *   src/launcher.ts): they run the bundled CLI on the app's Electron runtime as Node;
  * - ensure `stage/minigit` exists (may be empty): the Windows CI job downloads MinGit
  *   into it, and electron-builder's win extraResources entry must always have a source.
  *
- * Run from anywhere; all paths are derived from this file's location.
+ * Run from anywhere (after `pnpm -r build`); all paths derive from this file's location.
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(pkgDir, "..", "..");
@@ -75,6 +80,44 @@ if (!fs.existsSync(path.join(webDist, "index.html"))) {
 // lands the files in the real package dir, which is exactly where the server looks.
 const serverPkg = path.join(appDir, "node_modules", "@prismshadow", "penguin-server");
 fs.cpSync(webDist, path.join(serverPkg, "web-dist"), { recursive: true, dereference: true });
+
+// The shell forks the server by this exact path, and the CLI launchers point at the
+// CLI entry: verify both landed in the deploy tree before packing.
+const launcherModule = path.join(pkgDir, "dist", "launcher.js");
+for (const [what, file] of [
+  ["server entry", path.join(serverPkg, "dist", "index.js")],
+  [
+    "CLI entry",
+    path.join(appDir, "node_modules", "@prismshadow", "penguin-cli", "dist", "index.js"),
+  ],
+  ["launcher generator (dist/launcher.js)", launcherModule],
+]) {
+  if (!fs.existsSync(file)) {
+    console.error(`[stage] missing ${what} (${file}) — run \`pnpm -r build\` first.`);
+    process.exit(1);
+  }
+}
+
+// Runtime window icon: same app-dir-relative location as the dev run (build/icon.png),
+// so src/app-icon.ts resolves it identically in both layouts.
+const iconSrc = path.join(pkgDir, "build", "icon.png");
+if (!fs.existsSync(iconSrc)) {
+  console.error("[stage] build/icon.png is missing — run `node scripts/render-icon.mjs`.");
+  process.exit(1);
+}
+fs.mkdirSync(path.join(appDir, "build"), { recursive: true });
+fs.copyFileSync(iconSrc, path.join(appDir, "build", "icon.png"));
+
+// CLI launchers (bin/penguin, bin/penguin.cmd): generated, not committed — the script
+// text lives in src/launcher.ts so it is unit-tested with the rest of the shell.
+const { posixLauncherScript, windowsLauncherScript } = await import(
+  pathToFileURL(launcherModule).href
+);
+const binDir = path.join(appDir, "bin");
+fs.mkdirSync(binDir, { recursive: true });
+fs.writeFileSync(path.join(binDir, "penguin"), posixLauncherScript(), { mode: 0o755 });
+fs.chmodSync(path.join(binDir, "penguin"), 0o755);
+fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 
 fs.mkdirSync(path.join(stageDir, "minigit"), { recursive: true });
 

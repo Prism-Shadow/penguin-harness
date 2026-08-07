@@ -51,6 +51,12 @@ export interface SessionServiceDeps {
   sources: SessionSources;
   /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
   traceIndex: TraceIndexService;
+  /**
+   * "Use system HTTP proxy" switch threading (same getter the session loader passes,
+   * see createCoreSessionLoader): the runtime created here is adopted by the manager
+   * and runs the Session's first Task, so it needs the strip policy too.
+   */
+  stripProxyEnv?: () => boolean;
 }
 
 export class SessionService {
@@ -319,6 +325,7 @@ export class SessionService {
       root: this.deps.root,
       projectId: args.projectId,
       agentId: args.agentId,
+      ...(this.deps.stripProxyEnv ? { stripProxyEnv: this.deps.stripProxyEnv } : {}),
     });
     let session;
     try {

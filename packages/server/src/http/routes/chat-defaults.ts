@@ -47,7 +47,7 @@ export function chatDefaultsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
 
     // Not validated as an existing directory on purpose: the default is a prefill, and the
-    // directory is (re)checked when a Session is actually created. "" = clear (auto temp).
+    // directory is (re)checked when a Session is actually created. "" = clear (temporary workspace).
     const workspace = optionalString(body, "workspace", { maxLen: 4096, label: "workspace" });
     if (workspace !== undefined && workspace !== "") req.workspace = workspace;
 

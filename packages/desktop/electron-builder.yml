@@ -24,6 +24,10 @@ nodeGypRebuild: false
 
 mac:
   category: public.app-category.developer-tools
+  # Brand icon (rendered from packages/web/public/penguin-logo.svg by
+  # scripts/render-icon.mjs, committed): electron-builder converts the 1024px PNG to
+  # icns itself (app-builder-lib iconConverter; >=512px required).
+  icon: build/icon.png
   # No Developer ID yet (M4): identity null skips codesign instead of failing.
   identity: null
   # Version-less artifact names, following the CLI bundles (penguin-darwin-arm64.tar.gz):
@@ -38,6 +42,9 @@ mac:
       arch: [arm64, x64]
 
 win:
+  # Same source PNG; electron-builder converts it to the multi-size ico embedded in the
+  # exe (>=256px required).
+  icon: build/icon.png
   artifactName: penguin-desktop-win32-${arch}.${ext}
   target:
     - target: nsis
@@ -54,6 +61,9 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 linux:
+  # Pre-rendered freedesktop icon set (scripts/render-icon.mjs): a directory of NxN.png
+  # files is used as-is for AppImage/deb, no conversion step.
+  icon: build/icons
   # The scoped package name is not a valid executable file name.
   executableName: penguin-harness
   # ${arch} expands to each Linux target's own convention — x86_64 for AppImage, amd64
@@ -68,3 +78,11 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
+
+deb:
+  # Extended copies of electron-builder's default scripts (overriding REPLACES them):
+  # they additionally create/remove the /usr/bin/penguin symlink to the staged CLI
+  # launcher (resources/app/bin/penguin), so a deb install gets the `penguin` command
+  # on PATH without the in-app install flow the other formats use.
+  afterInstall: build/linux/after-install.tpl
+  afterRemove: build/linux/after-remove.tpl

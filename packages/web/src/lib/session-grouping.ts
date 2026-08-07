@@ -4,10 +4,10 @@
  * There is no Workspace entity on the server: a Session only carries the plain
  * filesystem path locked in at creation (SessionInfo.workspace), so grouping works
  * on those path strings. Sessions created without an explicit Workspace get an
- * auto-created temp directory shaped like `<agentDir>/workspaces/tmp-<8hex>`
+ * auto-created temporary workspace shaped like `<agentDir>/workspaces/tmp-<8hex>`
  * (packages/core/src/internal/session-support.ts, createTempWorkspace); each of
  * those is single-use, so per-path groups would be one-session noise — they are all
- * merged into ONE trailing "temp workspaces" group instead.
+ * merged into ONE trailing "temporary workspaces" group instead.
  */
 import type {
   SessionCategory,
@@ -15,16 +15,16 @@ import type {
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
 
-/** Group key of the merged auto-temp group ("\0" can never appear in a filesystem path, so it never collides with a real Workspace). */
+/** Group key of the merged temporary-workspace group ("\0" can never appear in a filesystem path, so it never collides with a real Workspace). */
 export const TEMP_WORKSPACE_GROUP_KEY = "\0temp-workspaces";
 
-/** Auto-created temp Workspace tail: `workspaces/tmp-<8hex>` (either path separator; core supports win32). */
+/** Auto-created temporary Workspace tail: `workspaces/tmp-<8hex>` (either path separator; core supports win32). */
 const TEMP_WORKSPACE_RE = /[/\\]workspaces[/\\]tmp-[0-9a-f]{8}$/;
 
 /**
- * Whether a Session's Workspace is an auto-created temp directory. An empty path
- * also counts as "auto temp": the server always backfills the resolved path, so
- * this is defensive only.
+ * Whether a Session's Workspace is an auto-created temporary workspace. An empty
+ * path also counts as one: the server always backfills the resolved path, so this
+ * is defensive only.
  */
 export function isTempWorkspace(workspace: string): boolean {
   const p = workspace.trim();
@@ -114,10 +114,10 @@ export interface GroupCounts {
 
 /**
  * Folds the per-Agent per-Workspace-path category counts (SessionsResponse.workspaceCounts)
- * into workspace-mode groups, keyed like groupSessionsByWorkspace (exact path; auto-temp
- * paths merged into the temp group). The sidebar labels a group's folders and decides its
- * "More" from its own share — never from an Agent's other Workspaces, which would
- * advertise folders whose content lives in other groups.
+ * into workspace-mode groups, keyed like groupSessionsByWorkspace (exact path;
+ * temporary-workspace paths merged into the temp group). The sidebar labels a group's
+ * folders and decides its "More" from its own share — never from an Agent's other
+ * Workspaces, which would advertise folders whose content lives in other groups.
  */
 export function aggregateWorkspaceCounts(
   byAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>,
@@ -179,7 +179,7 @@ export interface WorkspaceGroup<T = SessionInfo> {
   label: string;
   /** Full path for tooltips; null for the merged temp group (its members' paths all differ). */
   fullPath: string | null;
-  /** True for the merged auto-temp group. */
+  /** True for the merged temporary-workspace group. */
   temp: boolean;
   /** Member Sessions, newest first (createdAt desc). */
   sessions: T[];

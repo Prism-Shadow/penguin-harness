@@ -67,6 +67,17 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
 | DELETE | /api/admin/users/:userId | 删除用户 |
 
+桌面模式下（server 由桌面应用拉起）整组路由返回 `403`、错误码 `desktop_single_user`：桌面应用是单用户形态，用户管理整体停用——数据根中已有的用户不受影响。
+
+### 服务端设置（仅管理员）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {useSystemProxy}}` |
+| PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
+
+`useSystemProxy` 即「使用系统 HTTP 代理」开关（默认开）：开时服务端及其子进程出网遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY（大小写并存）；关时服务端一律直连，并从 Agent 命令子进程环境中剥除代理变量（NO_PROXY 保留）。任一状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。切换即时生效（对新发起的连接），无需重启。
+
 ### 版本与在线更新
 
 | 方法 | 路径 | 说明 |
@@ -88,7 +99,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/members | 添加成员：`{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | 移除成员 |
 
-成员写操作仅限 Owner。
+成员写操作仅限 Owner。成员路由在桌面模式下同样返回 `403 desktop_single_user`（见上文「用户管理」）。
 
 ### 模型
 
@@ -135,7 +146,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
-创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时目录，审批模式默认 `allow-all`。
+创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。
 
 ### 用量与 Trace（Agent 级）
 

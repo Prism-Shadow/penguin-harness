@@ -41,6 +41,11 @@ describe("model-catalog", () => {
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
+    // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
+    // the Z.AI direct glm-5.1 remains in the catalog.
+    expect(ids).not.toContain("z-ai/glm-5.1");
+    expect(ids).not.toContain("Pro/zai-org/GLM-5.1");
+    expect(ids).toContain("glm-5.1");
   });
 
   it("every provider is in MODEL_PROVIDERS (custom only groups user-defined models; the catalog never uses it)", () => {
@@ -175,10 +180,10 @@ describe("model-catalog", () => {
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
       "tencent/hy3",
+      "thinkingmachines/inkling",
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.2",
-      "z-ai/glm-5.1",
     ]);
     for (const m of or) {
       expect(m.clientType).toBe("openai");
@@ -186,9 +191,11 @@ describe("model-catalog", () => {
     }
     const fw = MODEL_CATALOG.filter((m) => m.provider === "fireworks");
     expect(fw.map((m) => [m.modelId, m.supportsVision])).toEqual([
+      ["accounts/fireworks/models/deepseek-v4-flash-0731", false],
       ["accounts/fireworks/models/deepseek-v4-flash", false],
       ["accounts/fireworks/models/deepseek-v4-pro", false],
       ["accounts/fireworks/models/glm-5p2", false],
+      ["accounts/fireworks/models/inkling", true],
       ["accounts/fireworks/models/kimi-k3", true],
       ["accounts/fireworks/models/kimi-k2p7-code", true],
       ["accounts/fireworks/models/minimax-m3", true],
@@ -206,7 +213,6 @@ describe("model-catalog", () => {
       "meituan-longcat/LongCat-2.0",
       "moonshotai/Kimi-K2.7-Code",
       "Pro/moonshotai/Kimi-K2.6",
-      "Pro/zai-org/GLM-5.1",
       "Qwen/Qwen3.6-35B-A3B",
       "zai-org/GLM-5.2",
     ]);
@@ -370,14 +376,18 @@ describe("model-catalog", () => {
       ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
       ["moonshot", "kimi-k2.6", "openrouter", "moonshotai/kimi-k2.6"],
       ["moonshot", "kimi-k2.6", "siliconflow", "Pro/moonshotai/Kimi-K2.6"],
-      ["zhipu", "glm-5.1", "openrouter", "z-ai/glm-5.1"],
-      ["zhipu", "glm-5.1", "siliconflow", "Pro/zai-org/GLM-5.1"],
     ] as const) {
       expect(
         catalogEntryFor(gatewayProvider, gatewayId)!.displayName,
         `${gatewayProvider}/${gatewayId}`,
       ).toBe(catalogEntryFor(directProvider, directId)!.displayName);
     }
+    // Inkling has no direct-vendor group (Thinking Machines Lab is gateway-only); its two
+    // gateway listings still share one display name, with the vendor prefix stripped.
+    expect(catalogEntryFor("openrouter", "thinkingmachines/inkling")!.displayName).toBe("Inkling");
+    expect(catalogEntryFor("fireworks", "accounts/fireworks/models/inkling")!.displayName).toBe(
+      "Inkling",
+    );
   });
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {

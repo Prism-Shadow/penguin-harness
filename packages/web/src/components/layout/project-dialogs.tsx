@@ -20,7 +20,11 @@ import {
 } from "../../lib/semantic-id";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
-import { clearDraftModelRef } from "../../features/chat/draft-cache";
+import { clearDraftChatDefaults, clearDraftModelRef } from "../../features/chat/draft-cache";
+import {
+  dispatchChatDefaultsChanged,
+  type ChatDefaultsChangedDetail,
+} from "../../features/chat/chat-defaults-event";
 import { ModelSelect } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -168,7 +172,7 @@ export function CreateProjectDialog({
  * deletion (owner); members see the name and member list read-only.
  */
 export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user } = useAuth();
+  const { user, desktopMode } = useAuth();
   const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
   const [members, setMembers] = useState<MemberInfo[] | null>(null);
   const [newMemberId, setNewMemberId] = useState("");
@@ -192,14 +196,18 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
     setConfirmDelete(false);
     setName(savedName);
     setNameError(undefined);
-    api
-      .listMembers(projectId)
-      .then((res) => setMembers(res.members))
-      .catch((e: unknown) => setLoadError(apiErrorText(e)));
+    // Desktop mode is single-user: the member section is hidden below and the server
+    // rejects the member routes (desktop_single_user), so nothing is fetched.
+    if (!desktopMode) {
+      api
+        .listMembers(projectId)
+        .then((res) => setMembers(res.members))
+        .catch((e: unknown) => setLoadError(apiErrorText(e)));
+    }
     // savedName is read at open time only: retyping in the field must not be clobbered by a
     // list refresh, and reopening the dialog re-seeds it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId]);
+  }, [open, projectId, desktopMode]);
 
   if (!currentProject || !projectId) return null;
 
@@ -302,76 +310,85 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           <p className="mt-1 font-mono text-xs text-gray-400">{projectId}</p>
         </div>
 
-        <div>
-          <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
-          {loadError ? (
-            <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
-          ) : members === null ? (
-            <p className="text-xs text-gray-400">{S.common.loading}</p>
-          ) : (
-            // Member permission table: username / role / actions; cells never wrap.
-            // Last row (owner only) = add member: small username input + add button (new members are always the member role).
-            <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-                    <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
-                      {S.common.username}
-                    </th>
-                    <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
-                    <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
-                      {S.common.actions}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                  {members.map((m) => (
-                    <tr key={m.userId}>
-                      <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
-                      <td className="whitespace-nowrap px-2.5 py-1.5">
-                        <Badge tone="gray">{m.role}</Badge>
-                      </td>
-                      <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                        {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
-                          <Button size="sm" variant="ghost" onClick={() => void doRemove(m.userId)}>
-                            {S.project.removeMember}
+        {/* Member management does not exist in the single-user desktop app. */}
+        {!desktopMode && (
+          <div>
+            <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
+            {loadError ? (
+              <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
+            ) : members === null ? (
+              <p className="text-xs text-gray-400">{S.common.loading}</p>
+            ) : (
+              // Member permission table: username / role / actions; cells never wrap.
+              // Last row (owner only) = add member: small username input + add button (new members are always the member role).
+              <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
+                      <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
+                        {S.common.username}
+                      </th>
+                      <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
+                        {S.common.role}
+                      </th>
+                      <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
+                        {S.common.actions}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+                    {members.map((m) => (
+                      <tr key={m.userId}>
+                        <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
+                        <td className="whitespace-nowrap px-2.5 py-1.5">
+                          <Badge tone="gray">{m.role}</Badge>
+                        </td>
+                        <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                          {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void doRemove(m.userId)}
+                            >
+                              {S.project.removeMember}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {isOwner && (
+                      <tr>
+                        <td className="px-2.5 py-1.5">
+                          <Input
+                            placeholder={S.common.username}
+                            size="sm"
+                            value={newMemberId}
+                            onChange={(e) => setNewMemberId(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void addMember();
+                            }}
+                          />
+                        </td>
+                        <td className="whitespace-nowrap px-2.5 py-1.5">
+                          <Badge tone="gray">member</Badge>
+                        </td>
+                        <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                          <Button
+                            size="sm"
+                            disabled={!newMemberId.trim()}
+                            onClick={() => void addMember()}
+                          >
+                            {S.project.addMember}
                           </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {isOwner && (
-                    <tr>
-                      <td className="px-2.5 py-1.5">
-                        <Input
-                          placeholder={S.common.username}
-                          size="sm"
-                          value={newMemberId}
-                          onChange={(e) => setNewMemberId(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") void addMember();
-                          }}
-                        />
-                      </td>
-                      <td className="whitespace-nowrap px-2.5 py-1.5">
-                        <Badge tone="gray">member</Badge>
-                      </td>
-                      <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                        <Button
-                          size="sm"
-                          disabled={!newMemberId.trim()}
-                          onClick={() => void addMember()}
-                        >
-                          {S.project.addMember}
-                        </Button>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
 
@@ -479,10 +496,21 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
    * One Save persists both writes: the `[default_chat]` block (whole-block PUT — a field
    * left "not set" is simply omitted, which clears it) and, when changed, the default
    * model via the narrow route. Failures toast and keep the edits for retry.
+   *
+   * Each landed write also resets the saving user's new-conversation draft so new chats
+   * pick the change up instead of being shadowed by the values a previous /chat/new visit
+   * pinned into the cache: the corresponding cache fields are stripped (typed text and
+   * staged skills always survive), and one same-tab event carries the fresh values to any
+   * MOUNTED draft view — its component state still holds the old selections and its
+   * debounced persist would silently write them right back over the stripped cache.
    */
   const save = async () => {
     if (busy || (!blockDirty && !modelDirty)) return;
     setBusy(true);
+    // Collected per landed write, dispatched in `finally`: when the block PUT lands but the
+    // model PUT throws, the block change still happened server-side and live views must
+    // still reseed from it.
+    let changed: ChatDefaultsChangedDetail | null = null;
     try {
       if (blockDirty) {
         const body: ChatDefaultsDto = {
@@ -491,7 +519,14 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
           ...(approval ? { approvalMode: approval as ApprovalMode } : {}),
           ...(thinking ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] } : {}),
         };
-        setSaved(await api.putChatDefaults(projectId, body));
+        const stored = await api.putChatDefaults(projectId, body);
+        setSaved(stored);
+        // Release the draft-cached Agent / Workspace / approval pins so the next
+        // /chat/new seeds from the just-saved block. The model pin is deliberately NOT
+        // touched here: it is the switch-becomes-default carry-over, released only below
+        // when the default model itself changed.
+        if (user) clearDraftChatDefaults(user.userId, projectId);
+        changed = { projectId, defaults: stored };
       }
       if (modelDirty && modelRef) {
         const res = await api.putDefaultModel(projectId, {
@@ -502,10 +537,12 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
         // Same follow-through as the models page: drop the draft-cached model pin so open
         // drafts pick up the new default.
         if (user) clearDraftModelRef(user.userId, projectId);
+        changed = { ...(changed ?? { projectId }), defaultModel: res.defaultModel };
       }
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
+      if (changed) dispatchChatDefaultsChanged(changed);
       setBusy(false);
     }
   };
@@ -595,7 +632,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             <div className="sm:col-span-2">
               <FieldLabel>{S.chat.workspace}</FieldLabel>
               {/* The draft page's dir-browser pill: browse server directories, edit the path
-                  inline, or clear back to the auto temp directory. */}
+                  inline, or clear back to a temporary workspace. */}
               <WorkspaceSelect
                 projectId={projectId}
                 workspace={workspace}

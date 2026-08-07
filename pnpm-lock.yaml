@@ -114,6 +114,9 @@ importers:
 
   packages/desktop:
     dependencies:
+      '@prismshadow/penguin-cli':
+        specifier: workspace:*
+        version: file:packages/cli(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
@@ -264,6 +267,9 @@ importers:
       tar:
         specifier: ^7.5.21
         version: 7.5.22
+      undici:
+        specifier: ^7.29.0
+        version: 7.29.0
       yaml:
         specifier: ^2.5.0
         version: 2.9.0
@@ -7279,8 +7285,7 @@ snapshots:
 
   undici@6.28.0: {}
 
-  undici@7.29.0:
-    optional: true
+  undici@7.29.0: {}
 
   unified@11.0.5:
     dependencies:

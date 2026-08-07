@@ -30,7 +30,7 @@ export const pillClass =
 
 /**
  * Workspace selection (pill dropdown): the button shows the selected directory name (empty =
- * auto temporary directory). The menu browses server-side directories: **the current path can be
+ * a temporary workspace). The menu browses server-side directories: **the current path can be
  * edited directly** at the top (Enter/blur commits it, an invalid directory toasts and reverts
  * to the previous path), the list omits hidden directories, and the hint text sits at the bottom
  * of the menu; only loads on first expand. On narrow screens the menu docks to whichever side
@@ -72,16 +72,39 @@ export function WorkspaceSelect({
     setPathDraft(dir?.path ?? "");
   }, [dir]);
 
-  /** Browses level by level (clicking a directory/parent); an empty string means the server's home directory (the default starting point). */
+  /**
+   * Monotonic id of the newest loadDir request. Only the newest request may publish its
+   * result: navigations race (rows stay visible while a fetch is in flight, and the path row
+   * accepts commits at any time), and without the guard a slow older response would overwrite
+   * a newer one — silently relocating the browsing position — or clear `loading` while the
+   * newer request is still in flight.
+   */
+  const loadSeq = useRef(0);
+
+  /**
+   * Browses level by level (clicking a directory/parent); an empty string means the server's
+   * home directory (the default starting point). `onError` overrides the default error-row
+   * handling (the path-edit commit toasts and reverts instead); it only ever fires for the
+   * newest request, like every other outcome.
+   */
   const loadDir = useCallback(
-    (abs: string) => {
+    (abs: string, opts?: { onError?: () => void }) => {
+      const seq = ++loadSeq.current;
       setLoading(true);
       setError(null);
       api
         .listDirs(projectId, abs)
-        .then(setDir)
-        .catch((e: unknown) => setError(apiErrorText(e)))
-        .finally(() => setLoading(false));
+        .then((res) => {
+          if (seq === loadSeq.current) setDir(res);
+        })
+        .catch((e: unknown) => {
+          if (seq !== loadSeq.current) return;
+          if (opts?.onError) opts.onError();
+          else setError(apiErrorText(e));
+        })
+        .finally(() => {
+          if (seq === loadSeq.current) setLoading(false);
+        });
     },
     [projectId],
   );
@@ -113,23 +136,28 @@ export function WorkspaceSelect({
     }
   };
 
-  /** Commits the edited path: navigates to it if it exists, otherwise toasts and reverts to the current browsing position. */
-  const commitPathEdit = async () => {
+  /**
+   * Commits the edited path: navigates to it if it exists, otherwise toasts and reverts to
+   * the current browsing position. Routed through loadDir so the commit shows the loading
+   * row and participates in the same request sequencing as row clicks — a raw listDirs here
+   * used to race them and could land after (and clobber) a newer navigation.
+   */
+  const commitPathEdit = () => {
     const p = pathDraft.trim();
     if (!p || p === dir?.path) {
       setPathDraft(dir?.path ?? "");
       return;
     }
-    try {
-      setDir(await api.listDirs(projectId, p));
-    } catch {
-      toastError(S.chat.workspaceDirInvalid);
-      setPathDraft(dir?.path ?? "");
-    }
+    loadDir(p, {
+      onError: () => {
+        toastError(S.chat.workspaceDirInvalid);
+        setPathDraft(dir?.path ?? "");
+      },
+    });
   };
 
   const trimmed = workspace.trim();
-  // Pill short name: the last segment of the directory name (root gives "/"); shows "auto temp directory" when empty.
+  // Pill short name: the last segment of the directory name (root gives "/"); shows "temporary workspace" when empty.
   const label = trimmed ? (trimmed.split("/").filter(Boolean).pop() ?? "/") : S.chat.workspaceAuto;
   const parentPath = dir?.parent ?? null;
   // Hidden directories (starting with .) are excluded from the list.
@@ -208,11 +236,11 @@ export function WorkspaceSelect({
               aria-label={S.chat.workspace}
               {...noAutofill}
               onChange={(e) => setPathDraft(e.target.value)}
-              onBlur={() => void commitPathEdit()}
+              onBlur={commitPathEdit}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                   e.preventDefault();
-                  void commitPathEdit();
+                  commitPathEdit();
                 } else if (e.key === "Escape") {
                   // Discard the edit: only reverts the draft; Escape bubbles up to Dropdown, which closes the menu.
                   setPathDraft(dir?.path ?? "");
@@ -235,12 +263,16 @@ export function WorkspaceSelect({
           </div>
           {/* Directory list (excludes hidden directories) */}
           <ul className="max-h-40 overflow-y-auto py-1">
+            {/* Rows are disabled while a load is in flight: they still show the PREVIOUS
+                directory until the response lands, so clicks during the window would resend
+                stale targets (N clicks on "parent" all resending the same dir.parent). */}
             {parentPath !== null && (
               <li>
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => loadDir(parentPath)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800"
                 >
                   ↰ {S.chat.workspaceUp}
                 </button>
@@ -250,8 +282,9 @@ export function WorkspaceSelect({
               <li key={entry.path}>
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => loadDir(entry.path)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   <svg
                     width="13"
@@ -284,8 +317,9 @@ export function WorkspaceSelect({
                 </span>
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => loadDir("")}
-                  className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                 >
                   {S.common.retry}
                 </button>
@@ -293,7 +327,7 @@ export function WorkspaceSelect({
             )}
           </ul>
         </div>
-        {/* When a directory has been specified, offer a one-click way back to the auto temp directory */}
+        {/* When a directory has been specified, offer a one-click way back to a temporary workspace */}
         {trimmed && (
           <button
             type="button"

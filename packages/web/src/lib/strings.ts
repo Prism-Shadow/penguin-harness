@@ -35,6 +35,11 @@ export const zh = {
     language: "语言",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
+    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
+    useSystemProxy: "使用系统 HTTP 代理",
+    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxyHint:
+      "服务端及其子进程（更新检查、LLM 请求、Agent 命令）出网时是否使用 HTTP_PROXY / HTTPS_PROXY 环境变量指定的代理，对整个服务端全局生效；回环地址（localhost、127.0.0.1、::1）始终直连。关闭后服务端一律直连，并从 Agent 命令子进程环境中移除代理变量。",
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
@@ -85,6 +90,13 @@ export const zh = {
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
     /** 非管理员看到的说明（可查看更新说明，但不能在此执行更新），替代 confirmBody。 */
     adminOnly: "只有管理员可以在这里执行更新。",
+  },
+
+  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  notify: {
+    taskCompleteTitle: "任务完成",
+    /** `session` is the Session title (defaultSessionTitle when unnamed). */
+    taskCompleteBody: (session: string): string => `「${session}」已完成，点击查看`,
   },
 
   common: {
@@ -180,7 +192,7 @@ export const zh = {
     chatDefaultsNotSet: "未设置",
     chatDefaultsApprovalNotSet: "未设置（默认全部放行）",
     chatDefaultsThinkingNotSet: "未设置（跟随智能体配置）",
-    chatDefaultsWorkspaceHint: "留空表示自动临时目录",
+    chatDefaultsWorkspaceHint: "留空表示使用临时工作区",
     /** 模型默认值与模型页同源（同一个 default_model），此处仅是另一处入口。 */
     chatDefaultsModelHint: "与模型页的默认模型同步",
     deleteProject: "删除 Project",
@@ -490,7 +502,7 @@ export const zh = {
     targetNew: "每次新建会话",
     targetSession: "绑定 Session",
     sessionId: "Session id",
-    workspace: "Workspace（可选，留空自动创建）",
+    workspace: "Workspace（可选，留空自动创建临时工作区）",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
@@ -585,8 +597,8 @@ export const zh = {
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
-    workspaceAuto: "自动临时目录",
-    workspaceClear: "改用自动临时目录",
+    workspaceAuto: "临时工作区",
+    workspaceClear: "改用临时工作区",
     workspaceDirInvalid: "目录不存在或无法访问，已回退",
     /** 侧栏对话列表的分组切换（默认按工作区）与工作区分组。 */
     groupByWorkspace: "按工作区分组",
@@ -717,7 +729,7 @@ Benchmark：
     defaultSessionTitle: "新对话",
     model: "Model",
     workspace: "Workspace",
-    workspaceHint: "留空自动创建临时目录；指定时必须是服务器上已存在的目录",
+    workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
     approvalMode: "审批模式",
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
@@ -1112,6 +1124,7 @@ Benchmark：
       password_mismatch: "当前密码不正确。",
       invalid_password: "密码至少 8 位。",
       admin_required: "仅管理员可执行此操作。",
+      desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
       agent_not_found: "该 Agent 已不存在。",
       unknown_agent: "该 Agent 不存在于本 Project。",
@@ -1129,6 +1142,7 @@ Benchmark：
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
       dir_not_absolute: "目录必须是绝对路径。",
+      dir_not_found: "该目录不存在或不可访问。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",

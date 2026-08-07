@@ -98,6 +98,7 @@ Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); age
 | GPT 5.6          | OpenRouter                                                                       |
 | Gemini 3.6 Flash | Google Gemini, OpenRouter                                                        |
 | Claude 5         | Anthropic, OpenRouter                                                            |
+| Inkling          | OpenRouter, Fireworks AI                                                         |
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 

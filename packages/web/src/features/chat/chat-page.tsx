@@ -59,6 +59,7 @@ import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
+import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
@@ -602,6 +603,34 @@ export function ChatPage() {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [projectId]);
+
+  // Project new-chat defaults saved in this tab (project-settings dialog) with a CHANGED
+  // default model: refetch the model config so the "project default" marker and a later
+  // draft mount see the fresh default. models goes null first — DraftView's model
+  // fallback holds off while null, so it cannot re-pin the stale default from the old
+  // response in the meantime (the mounted draft's own selection comes straight from the
+  // event payload, see DraftView.onDefaultsChanged); a failed refetch leaves models null,
+  // the same degraded state as a failed mount fetch.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    const onEvent = (e: Event) => {
+      const detail = chatDefaultsChangedDetail(e, projectId);
+      if (!detail || detail.defaultModel === undefined) return;
+      setModels(null);
+      api
+        .getModels(projectId)
+        .then((res) => {
+          if (!cancelled) setModels(res);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
     };
   }, [projectId]);
 

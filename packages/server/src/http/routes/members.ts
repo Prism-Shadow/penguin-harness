@@ -2,15 +2,19 @@
  * Member authorization routes:
  * GET|POST /api/projects/:p/members, DELETE /api/projects/:p/members/:userId.
  * Reading requires access; adding/removing is owner-only (validated inside the service).
+ * Desktop mode rejects the whole surface (single-user; 403 `desktop_single_user`).
  */
 import { Hono } from "hono";
 import type { MemberAddResponse, MembersResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import { rejectInDesktopMode } from "./desktop.js";
 import { pathParam, readJson, requireString, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 export function membersRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+
+  app.use("*", rejectInDesktopMode(deps));
 
   app.get("/", (c) => {
     // Defensive id validation (FD-4).

@@ -33,6 +33,11 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
+    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
+    useSystemProxy: "Use system HTTP proxy",
+    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxyHint:
+      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -85,6 +90,13 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+  },
+
+  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  notify: {
+    taskCompleteTitle: "Task completed",
+    /** `session` is the Session title (defaultSessionTitle when unnamed). */
+    taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
   },
 
   common: {
@@ -187,7 +199,7 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = auto temp directory",
+    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
@@ -512,7 +524,7 @@ export const en: Strings = {
     targetNew: "New session each time",
     targetSession: "Bound Session",
     sessionId: "Session id",
-    workspace: "Workspace (optional, auto-created when empty)",
+    workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -608,13 +620,13 @@ export const en: Strings = {
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
-    workspaceAuto: "Auto temp directory",
-    workspaceClear: "Use auto temp directory instead",
+    workspaceAuto: "Temporary workspace",
+    workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
-    tempWorkspaces: "Temp workspaces",
+    tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -740,7 +752,7 @@ Scenarios:
     model: "Model",
     workspace: "Workspace",
     workspaceHint:
-      "Leave empty for an auto-created temp directory; if set, it must be an existing directory on the server",
+      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -1138,6 +1150,7 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
       unknown_agent: "That agent does not exist in this Project.",
@@ -1155,6 +1168,7 @@ Scenarios:
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
       dir_not_absolute: "The directory must be an absolute path.",
+      dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",

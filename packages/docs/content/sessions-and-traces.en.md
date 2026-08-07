@@ -13,7 +13,7 @@ Six levels: Project → Agent → Workspace → Session → Task → Request.
 | --- | --- |
 | Project | Top-level unit organizing Agents; owns the model and credential configuration; in the multi-user Web setup, users and Projects are many-to-many |
 | Agent | The executing subject; has exactly one Agent State (a persistent directory); one Agent can serve many Workspaces |
-| Workspace | The working directory of one run — the only file scope the model sees; an explicit `workspaceDir` must already exist, otherwise a temp Workspace `workspaces/tmp-<8hex>` is created |
+| Workspace | The working directory of one run — the only file scope the model sees; an explicit `workspaceDir` must already exist, otherwise a temporary Workspace `workspaces/tmp-<8hex>` is created |
 | Session | A continuous conversation under one (Agent, Workspace); model and Workspace are locked at Session creation; ids look like `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
 | Task | One execution goal started by one Prompt; consists of one or more consecutive Requests |
 | Request | One LLM API call: context and tool definitions in, streamed output out |
@@ -39,7 +39,7 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
         │                             # convention, not a path the code creates, so tooling is
         │                             # installed once for any task; project dependencies stay
         │                             # in the project
-        ├── workspaces/               # temp Workspaces (tmp-<8hex>)
+        ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
         ├── benchmarks/               # capability Benchmark cases and scores
         └── snapshots/                # Agent State version snapshots
 ```

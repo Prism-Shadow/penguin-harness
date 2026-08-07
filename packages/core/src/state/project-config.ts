@@ -128,7 +128,7 @@ export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
  * New-chat defaults (`[default_chat]`): per-Project prefill for newly created chats.
  * Every key is optional and independent:
  * - `agent_id`: the Agent preselected on the draft page (must name an existing Agent);
- * - `workspace`: the prefilled Workspace directory (absent/empty = auto temp directory);
+ * - `workspace`: the prefilled Workspace directory (absent/empty = a temporary workspace);
  * - `approval_mode`: the prefilled approval mode (absent = the built-in "allow-all");
  * - `thinking_level`: fallback thinking level for Agents whose config has no explicit
  *   `model.thinking_level` (see Agent's thinking-level resolution chain in agent.ts).

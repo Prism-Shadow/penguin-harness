@@ -76,6 +76,16 @@ export interface CreateAgentOptions {
   projectId?: string;
   /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin/data). */
   root?: string;
+  /**
+   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY;
+   * NO_PROXY is kept) are stripped from exec_command subprocess environments of every
+   * Session this Agent creates or resumes — and of its subagents' Sessions, which
+   * inherit the getter. The Web server threads its admin-level "use system HTTP proxy"
+   * switch (off state) through here; the getter is re-read at every command spawn, so a
+   * toggle needs no restart. Absent = proxy allowed (SDK/CLI standalone use follows the
+   * user's own shell environment).
+   */
+  stripProxyEnv?: () => boolean;
 }
 
 export interface CreateSessionOptions {
@@ -149,13 +159,15 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig);
+  return new Agent(state, projectConfig, opts.stripProxyEnv);
 }
 
 export class Agent {
   constructor(
     readonly state: AgentState,
     readonly projectConfig: ProjectConfig,
+    /** See {@link CreateAgentOptions.stripProxyEnv}; forwarded into every Session's Environment. */
+    private readonly stripProxyEnv?: () => boolean,
   ) {}
 
   /**
@@ -181,7 +193,7 @@ export class Agent {
    */
   async createSession(opts: CreateSessionOptions = {}): Promise<Session> {
     // Model is validated first (before creating the Workspace, so failure leaves no
-    // temp directory behind): the reference must be the complete (provider, model_id)
+    // temporary workspace behind): the reference must be the complete (provider, model_id)
     // pair — the config's unique key — and must name an entry in the Project config; a
     // reference outside the config throws immediately rather than passing silently,
     // otherwise credentials, pricing, and the context window would all be unavailable.
@@ -217,7 +229,7 @@ export class Agent {
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
-    // the wrong location); a temp Workspace is only created when unspecified.
+    // the wrong location); a temporary workspace is only created when unspecified.
     let workspaceDir: string;
     if (opts.workspaceDir) {
       workspaceDir = path.resolve(opts.workspaceDir);
@@ -226,7 +238,7 @@ export class Agent {
         stat = await fs.stat(workspaceDir);
       } catch {
         throw new Error(
-          `Workspace does not exist: ${workspaceDir}. Specify an existing directory, or omit the Workspace to use a temporary directory.`,
+          `Workspace does not exist: ${workspaceDir}. Specify an existing directory, or omit the Workspace to use a temporary workspace.`,
         );
       }
       if (!stat.isDirectory()) {
@@ -582,7 +594,15 @@ export class Agent {
         }
         const childAgent =
           agentId !== undefined && agentId !== parentAgentId
-            ? await createAgent({ root, projectId, agentId })
+            ? await createAgent({
+                root,
+                projectId,
+                agentId,
+                // A child Agent loads its own vault/config, but the proxy-strip getter is
+                // host policy, not Agent state: the subagent's commands run in the same
+                // serving process, so they follow the same switch as the parent's.
+                ...(parentAgent.stripProxyEnv ? { stripProxyEnv: parentAgent.stripProxyEnv } : {}),
+              })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
         // model pair fully omitted it reuses the parent's resolved (provider, model_id) —
@@ -724,6 +744,7 @@ export class Agent {
       ),
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
+      ...(this.stripProxyEnv ? { stripProxyEnv: this.stripProxyEnv } : {}),
     });
     const tools = await environment.listTools();
 

@@ -46,8 +46,8 @@ test("sidebar shows 20 sessions plus a More row; More loads the 21st and then di
   });
   expect(put.ok(), "put models").toBeTruthy();
 
-  // Seed 21 sessions (each gets its own auto temp Workspace; the sidebar merges them into
-  // the single temp-workspace group, so the display cap applies to one group).
+  // Seed 21 sessions (each gets its own temporary Workspace; the sidebar merges them into
+  // the single temporary-workspace group, so the display cap applies to one group).
   for (let i = 0; i < TOTAL; i++) {
     const res = await page.request.post(
       `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,

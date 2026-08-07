@@ -20,13 +20,20 @@ let updateCache: UpdateCheckResponse | null = null;
 let updatePromise: Promise<UpdateCheckResponse> | null = null;
 
 /**
- * Mounted hooks subscribe here so forceUpdateCheck (the sidebar's manual "check for
- * updates" action) can push its fresh result to every consumer at once — the footer,
- * the update dot, the reminder rows, and the draft page's version line all react
- * without a remount. The lazy fetch path doesn't need this (each hook awaits the
- * shared promise itself); only an out-of-band refresh does.
+ * Mounted hooks subscribe here so any refresh of the module cache reaches every
+ * consumer at once — the footer, the update dots, the reminder rows, and the draft
+ * page's version line all react without a remount. Two paths push: forceUpdateCheck
+ * (the sidebar's manual "check for updates" action) and the lazy fetch resolving.
+ * Active hooks await the shared promise themselves, but passive ones (active=false,
+ * e.g. the collapsed rail's avatar dot) only ever read the cache — without the lazy
+ * push they would miss a result that lands while they are mounted.
  */
 const listeners = new Set<() => void>();
+
+/** Pushes the current module cache to every mounted hook (see the listeners comment). */
+function notifyAll(): void {
+  for (const notify of listeners) notify();
+}
 
 /** How one manual update check ended, for user feedback — exactly one notice per outcome. */
 export type UpdateCheckOutcome =
@@ -79,6 +86,7 @@ export function useVersionInfo(active: boolean): VersionInfo {
 
     versionPromise ??= api.getVersion().then((res) => {
       versionCache = res;
+      notifyAll();
       return res;
     });
     versionPromise
@@ -91,6 +99,7 @@ export function useVersionInfo(active: boolean): VersionInfo {
 
     updatePromise ??= api.checkUpdate().then((res) => {
       updateCache = res;
+      notifyAll();
       return res;
     });
     updatePromise
@@ -130,6 +139,6 @@ export async function forceUpdateCheck(): Promise<UpdateCheckResponse> {
     if (updatePromise === promise) updatePromise = null;
     throw e;
   } finally {
-    for (const notify of listeners) notify();
+    notifyAll();
   }
 }

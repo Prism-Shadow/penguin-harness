@@ -4,7 +4,7 @@
  * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
- * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
+ * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
  * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
@@ -234,6 +234,35 @@ export function Sidebar({
       setUpdateChecking(false);
     }
   };
+  /**
+   * Admin-only "use system HTTP proxy" switch (server-global, design § "出网与系统代理"):
+   * null = not hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown —
+   * same laziness as the version info above, and non-admins never call the endpoint (the
+   * row is not rendered for them either). A failed hydration stays null (row disabled)
+   * and is retried on the next open.
+   */
+  const [useSystemProxy, setUseSystemProxyState] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!userOpen || user?.isAdmin !== true || useSystemProxy !== null) return;
+    let cancelled = false;
+    void api
+      .adminGetSettings()
+      .then((res) => {
+        if (!cancelled) setUseSystemProxyState(res.settings.useSystemProxy);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [userOpen, user?.isAdmin, useSystemProxy]);
+  /** Saved immediately on toggle (the user-menu quick-control convention): optimistic flip, reverted with a toast on failure. */
+  const setUseSystemProxy = (value: boolean) => {
+    setUseSystemProxyState(value);
+    void api.adminPutSettings({ useSystemProxy: value }).catch((e: unknown) => {
+      setUseSystemProxyState(!value);
+      toastError(apiErrorText(e));
+    });
+  };
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -457,7 +486,7 @@ export function Sidebar({
    * chat" uses default_agent; this explicit intent overrides the previously selected Agent in
    * the draft cache (the rest of the draft content, such as the message body, is preserved).
    * The workspace-mode group header's "+" additionally carries that group's Workspace path
-   * ("" = the auto temp directory), pre-filling the draft's Workspace selection the same way.
+   * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
   const newChat = (agentId?: string, workspace?: string) => {
     if (agentId) setCurrentAgentId(agentId);
@@ -909,7 +938,7 @@ export function Sidebar({
                   actions={
                     <>
                       <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = auto temp directory); the Agent is the current one, falling back to default_agent */}
+                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
                       <button
                         type="button"
                         title={S.chat.newSessionInWorkspace}
@@ -949,13 +978,22 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setUserOpen(!userOpen)}
+              {...(newVersion !== null
+                ? {
+                    // The dot alone is mysterious: name the release on the trigger (hover
+                    // tooltip + accessible name), in the update row's exact wording.
+                    title: S.update.newVersion(newVersion),
+                    "aria-label": `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`,
+                  }
+                : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
                 {/* Update reminder dot: only once the lazy check has actually run and found a
-                    newer release. The border (sidebar background color) separates it from the
-                    avatar for every accent — the neutral accent matches the avatar fill. */}
+                    newer release (the trigger button's tooltip/label above explains it). The
+                    border (sidebar background color) separates it from the avatar for every
+                    accent — the neutral accent matches the avatar fill. */}
                 {updateAvailable && (
                   <span
                     aria-hidden
@@ -996,6 +1034,19 @@ export function Sidebar({
             <SettingRow label={S.settings.showCliSessions}>
               <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
+            {/* Admin-only, server-global (all users), saved immediately on toggle; the
+                tooltip spells out the scope and the loopback exemption. Disabled (showing
+                the default: on) until the stored value has hydrated, so a click can never
+                write a value the admin was not looking at. */}
+            {user?.isAdmin && (
+              <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
+                <Switch
+                  checked={useSystemProxy ?? true}
+                  onChange={setUseSystemProxy}
+                  disabled={useSystemProxy === null}
+                />
+              </SettingRow>
+            )}
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
@@ -1068,8 +1119,10 @@ export function Sidebar({
                 )}
               </button>
             )}
-            {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
-            {user?.isAdmin && (
+            {/* User management is visible only to admins (the page route also has its own
+                guard as a fallback), and never in desktop mode: the desktop app is
+                single-user and the server rejects the routes (desktop_single_user). */}
+            {user?.isAdmin && !desktopMode && (
               <button
                 type="button"
                 className={menuItemClass}
@@ -1323,9 +1376,18 @@ function SessionRow({
   );
 }
 
-function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+function SettingRow({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  /** Optional row tooltip (e.g. the system-proxy row's scope + loopback-exemption hint). */
+  title?: string;
+  children: ReactNode;
+}) {
   return (
-    <div>
+    <div {...(title !== undefined ? { title } : {})}>
       <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
       {children}
     </div>

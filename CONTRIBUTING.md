@@ -109,6 +109,12 @@ pnpm test:e2e                                        # core live-model e2e, need
   before creating the tag** — the release workflow reads it from the tag's checkout, so a
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
+- **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
+  `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
+  `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
+  version. The release workflow refuses a tag push whose version does not match the
+  repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a
+  0.2.0 repo, and every dev build nagged about an update until the repo caught up).
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright
