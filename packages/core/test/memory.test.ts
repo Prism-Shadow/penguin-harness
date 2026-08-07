@@ -288,7 +288,7 @@ describe("# Memory section rendering", () => {
     // Workspace's Session is never told about a directory it does not have.
     expect(prompt).not.toContain(WORKSPACE_HEADING);
     expect(prompt).not.toContain(WORKSPACE_LINE);
-    expect(prompt).not.toContain("Choosing between the two");
+    expect(prompt).not.toContain("filed too narrowly");
     // The strip ends exactly at the next heading; the Environment section survives.
     expect(prompt).toContain("# Environment");
   });

@@ -82,21 +82,36 @@ export interface MemoryConfig {
  * predates Memory — an explicit action, nothing inserts automatically.
  */
 export const DEFAULT_MEMORY_SECTION = `# Memory
-Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive later — the user's standing feedback and preferences, decisions and constraints together with their reasons, and stable entry points into external systems.
+Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools, in the two memory directories named below (they already exist — write into them directly). Each memory is one file holding one fact, with frontmatter:
 
-Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and open any topic file that might already cover the subject; then update that topic instead of opening a near-duplicate, and delete a topic that turned out to be wrong — its index line goes in the same round. A genuinely new subject becomes \`<topic>.md\` in one of the memory directories named here, with frontmatter \`name\` (kebab-case, matching the file name), \`description\` (one line used to decide relevance during recall), \`type\` and \`updated_at\` (YYYY-MM-DD), plus one line in that directory's \`MEMORY.md\` index: \`- [Title](<topic>.md) — hook\`. Update the index in the same round as the file, so the two never disagree. In the body, link related memories with \`[[name]]\` (a name that does not exist yet is fine — it marks something worth writing later); for \`feedback\` and \`project\` topics add **Why:** and **How to apply:** lines, and write dates absolute (\`YYYY-MM-DD\`) — "next week" means nothing to a later session.
+\`\`\`markdown
+---
+name: <short-kebab-case-slug, matching the file name>
+description: <one-line summary — used to decide relevance during recall>
+type: user | feedback | project | reference
+updated_at: <YYYY-MM-DD>
+---
 
-Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so sensitive personal data does not belong in it.
+<the fact; for feedback/project, follow with **Why:** and **How to apply:** lines. Link related memories with [[their-name]].>
+\`\`\`
+
+In the body, link related memories with \`[[name]]\`, where \`name\` is the other memory's slug. Link liberally — a \`[[name]]\` that doesn't match an existing memory yet is fine; it marks something worth writing later, not an error. Write dates absolute (\`YYYY-MM-DD\`): "next week" means nothing to a later session.
+
+\`user\` — who the user is (role, expertise, preferences); belongs in the user directory. \`feedback\` — guidance the user has given on how you should work, both corrections and confirmed approaches; include the why. \`project\` — ongoing work, goals, or constraints not derivable from the code or git history. \`reference\` — pointers to external resources (URLs, dashboards, tickets). The last three belong in the workspace directory.
+
+After writing the file, add a one-line pointer in that directory's \`MEMORY.md\` (\`- [Title](file.md) — hook\`). \`MEMORY.md\` is the index injected below — one line per memory, no frontmatter, never put memory content there — and it is updated in the same round as the file, deletions included, so the two never disagree.
+
+Before saving, check the indexes for a memory that already covers the subject — update that file rather than creating a duplicate; delete memories that turn out to be wrong. Don't save what the code, config or git history already states, short-lived task progress or debugging notes, credentials or other secrets, unconfirmed guesses, or long stretches of transcript; if asked to remember one of those, ask what was non-obvious about it and save that instead. Memory is shared with everyone who can reach this agent, so sensitive personal data does not belong in it.
 
 User memory directory: {{MEMORY_USER_DIR}}
-This holds what stays true wherever you work: who the user is, their standing preferences (\`type: user\`), and reference material not tied to one codebase. Every one of your sessions reads it, so hold what you put here to a higher bar than anything else. Its index:
+What stays true wherever you work: who the user is, their standing preferences, reference material not tied to one codebase. Every one of your sessions reads it, so hold it to a higher bar than anything else. Its index:
 [user_memory_index]
 {{MEMORY_USER_INDEX}}
 [/user_memory_index]
 
 ## Workspace memory
 Workspace memory directory: {{MEMORY_DIR}}
-This holds facts about the workspace you are working in now; \`type\` is \`feedback\`, \`project\` or \`reference\`. Choosing between the two: something about the user that would still hold in a different project goes in the user directory; something about this codebase goes in the workspace directory — when unsure, write to the workspace directory, since a note filed too narrowly can be moved up later while one filed too widely is read by every session from then on. Its index:
+Facts about the workspace you are working in now. Something about the user that would still hold in a different project goes in the user directory; something about this codebase goes here — when unsure, write here, since a note filed too narrowly can be moved up later while one filed too widely is read by every session from then on. Its index:
 [workspace_memory_index]
 {{MEMORY_INDEX}}
 [/workspace_memory_index]`;
