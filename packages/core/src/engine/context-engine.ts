@@ -410,7 +410,7 @@ export class ContextEngine {
   private taskRunning = false;
 
   constructor(private readonly deps: ContextEngineDeps) {
-    this.maxTurns = deps.maxTurns ?? 100;
+    this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
