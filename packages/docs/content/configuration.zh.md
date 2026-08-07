@@ -106,9 +106,7 @@ output = 0.857143
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
-| `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
-| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半：记忆使用说明、用户作用域与其索引，含 `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` |
-| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加：Workspace 作用域、其索引与二选一规则，含 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` |
+| `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录；关闭时渲染阶段移除模板的 `# Memory` 小节 |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
@@ -153,7 +151,10 @@ compaction:
 | `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
-| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板缺省该占位符时区块仍会注入（拼接在 `# Environment` 之前）——占位符只决定位置 |
+| `{{MEMORY_USER_DIR}}` | 用户记忆目录的绝对路径（`# Memory` 小节内） |
+| `{{MEMORY_USER_INDEX}}` | 用户作用域 `MEMORY.md` 索引的内容（最多 200 行） |
+| `{{MEMORY_DIR}}` | 当前 Workspace 的记忆目录（`## Workspace memory` 子节内） |
+| `{{MEMORY_INDEX}}` | Workspace 作用域 `MEMORY.md` 索引的内容（最多 200 行） |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -213,11 +214,11 @@ updated_at: 2026-08-07
 
 每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
 
-进入上下文的只有索引。创建 Session 时，Harness 准备好各作用域目录（用户作用域在创建 Agent 时即已建立）、读取各自的 `MEMORY.md`，再从该 Agent 自己的配置渲染出 `{{MEMORY}}`：`memory.prompt` 恒定注入，其中 `{{MEMORY_USER_DIR}}` 替换为用户作用域目录、`{{MEMORY_USER_INDEX}}` 替换为其索引；持久 Workspace 下再追加 `memory.workspace_prompt`，其中 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` 替换为该 Workspace 的目录与索引。注入的索引内容由 `[user_memory_index]` / `[workspace_memory_index]` 成对 marker 包裹，便于模型区分注入内容与指令；空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），超出部分以截断提示替代、由模型自行读取完整 `MEMORY.md`——磁盘上的文件不受影响。主题正文由模型按需读取。
+进入上下文的只有索引，载体是系统提示词模板中的 `# Memory` 小节——和 `# Vault` / `# Skills` 一样的普通可见模板文本，可直接编辑，结尾带一个 `## Workspace memory` 子节。四个占位符承载动态内容：用户作用域的 `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}`，Workspace 作用域的 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}`。注入的索引内容由 `[user_memory_index]` / `[workspace_memory_index]` 成对 marker 包裹，便于模型区分注入内容与指令；空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），超出部分以截断提示替代、由模型自行读取完整 `MEMORY.md`——磁盘上的文件不受影响。主题正文由模型按需读取。
 
-两半之所以是两个独立配置键：替换引擎没有条件分支，因此每一半只能提及在它出现的场合必定有值的占位符——临时 Workspace 不会被告知一个它并不存在的 `{{MEMORY_DIR}}`。作用域二选一的规则同理放在 Workspace 那一半：只有一个作用域的会话没得选，也就不必看到这条规则。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
+渲染只做删除、从不凭空添加。`memory.enabled` 关闭时，整个 `# Memory` 小节（从标题到下一个同级标题）不进上下文；会话运行在临时 Workspace 时只移除 `## Workspace memory` 子节——这类会话永远不会被告知一个它没有的目录。磁盘上的模板不会被改写，组装后的完整提示词记录在 `session_meta`。手工改掉这两个标题的模板保留原文、只把记忆占位符置空——想保留条件行为就保留标题。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 
-`memory.enabled` 是唯一的开关通道。模板中没有 `{{MEMORY}}` 占位符的 Agent——创建于记忆功能之前，或模板删掉了占位符——渲染时仍会注入记忆区块，拼接在 `# Environment` 标题之前（找不到该标题则追加到末尾）；磁盘上的模板不会被改写，组装后的完整提示词记录在 `session_meta` 中。恢复的 Session 沿用创建时冻结的提示词，索引更新在下一个新 Session 生效。
+创建于记忆功能之前的 Agent 模板中没有 `# Memory` 小节，不会注入任何内容；设置页记忆标签提供"插入默认 Memory 小节"的一键操作（插到 `# Environment` 之前）——不存在任何自动插入。
 
 查看、删除或让 Agent 修改已保存的记忆，见设置页的[记忆标签](/web-app#agent-设置agents)。
 

@@ -27,6 +27,8 @@ import path from "node:path";
 import {
   MEMORY_INDEX_FILENAME,
   USER_SCOPE_KEY,
+  hasMemorySection,
+  insertMemorySection,
   memoryDir,
   memoryScopeDir,
   parseMemoryFrontmatter,
@@ -60,9 +62,27 @@ export class MemoryService {
     const view = await this.agentConfigService.getConfig(projectId, agentId);
     return {
       enabled: view.config.memory.enabled,
+      templateHasMemory: hasMemorySection(view.config.systemPrompt),
       memoryDir: memoryDir(this.root, projectId, agentId),
       scopes: await this.listScopes(projectId, agentId),
     };
+  }
+
+  /**
+   * Inserts the default `# Memory` section into the Agent's prompt template — the explicit
+   * adoption path for an Agent created before Memory shipped; nothing inserts automatically.
+   * Idempotent: a template that already carries the section is left as it is (the refreshed
+   * overview reports `templateHasMemory` either way).
+   */
+  async insertTemplateSection(projectId: string, agentId: string): Promise<MemoryOverviewResponse> {
+    const view = await this.agentConfigService.getConfig(projectId, agentId);
+    const next = insertMemorySection(view.config.systemPrompt);
+    if (next !== view.config.systemPrompt) {
+      await this.agentConfigService.updateConfig(projectId, agentId, {
+        config: { systemPrompt: next },
+      });
+    }
+    return this.overview(projectId, agentId);
   }
 
   /**

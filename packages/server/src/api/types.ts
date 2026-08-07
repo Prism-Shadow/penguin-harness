@@ -596,6 +596,8 @@ export interface MemoryFileInfo {
 export interface MemoryOverviewResponse {
   /** Whether Memory reaches the model context (the Agent-level switch). */
   enabled: boolean;
+  /** Whether the prompt template carries the `# Memory` section (or its placeholders). An Agent created before Memory has none and injects nothing; POST …/memory/template-section inserts the default section explicitly. */
+  templateHasMemory: boolean;
   /** Absolute path of `agent_state/memory/`. */
   memoryDir: string;
   scopes: MemoryScopeInfo[];

@@ -73,6 +73,8 @@ describe("memory api", () => {
 
     const body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
     expect(body.enabled).toBe(true);
+    // A freshly created Agent gets the current default template, which carries # Memory.
+    expect(body.templateHasMemory).toBe(true);
     expect(body.memoryDir).toBe(memoryDir(t.root, projectId, "default_agent"));
     expect(body.scopes).toHaveLength(2);
     // The user scope leads the list (default_agent was initialized with it on disk).
@@ -186,8 +188,37 @@ describe("memory api", () => {
     expect(((await on.json()) as AgentConfigResponse).config.memory.enabled).toBe(true);
   });
 
+  it("reports a template without the Memory section and inserts the default one on request", async () => {
+    // Simulate an Agent from before Memory: replace the template with one lacking the section.
+    const put = await owner.put(configPath, {
+      config: { systemPrompt: "# Role\nDo things.\n# Environment" },
+    });
+    expect(put.status).toBe(200);
+    let body = (await (await owner.get(memoryPath)).json()) as MemoryOverviewResponse;
+    expect(body.templateHasMemory).toBe(false);
+
+    const inserted = await owner.post(`${memoryPath}/template-section`, {});
+    expect(inserted.status).toBe(200);
+    body = (await inserted.json()) as MemoryOverviewResponse;
+    expect(body.templateHasMemory).toBe(true);
+
+    const cfg = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
+    expect(cfg.config.systemPrompt).toContain("# Memory");
+    // Inserted at the position the default template gives it: before # Environment.
+    expect(cfg.config.systemPrompt.indexOf("# Memory")).toBeLessThan(
+      cfg.config.systemPrompt.indexOf("# Environment"),
+    );
+
+    // Idempotent: a second call changes nothing and still succeeds.
+    const again = await owner.post(`${memoryPath}/template-section`, {});
+    expect(again.status).toBe(200);
+    const cfgAgain = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
+    expect(cfgAgain.config.systemPrompt).toBe(cfg.config.systemPrompt);
+  });
+
   it("404s for a non-member on every Memory route", async () => {
     expect((await outsider.get(memoryPath)).status).toBe(404);
+    expect((await outsider.post(`${memoryPath}/template-section`, {})).status).toBe(404);
     expect((await outsider.get(filesPath())).status).toBe(404);
     expect((await outsider.get(`${filesPath()}/x.md`)).status).toBe(404);
     expect((await outsider.delete(`${filesPath()}/x.md`)).status).toBe(404);

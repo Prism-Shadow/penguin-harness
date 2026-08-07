@@ -29,14 +29,12 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
-  MEMORY_PLACEHOLDER,
   MEMORY_DIR_PLACEHOLDER,
   MEMORY_INDEX_PLACEHOLDER,
   MEMORY_USER_DIR_PLACEHOLDER,
   MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
   MEMORY_INDEX_MAX_LINES,
-  type MemoryConfig,
   agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -298,60 +296,22 @@ function indexForInjection(index: string): string {
 }
 
 /**
- * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
- * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
- * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or the
- * config carries no Memory prompt.
- *
- * The two blocks are separate config keys because substitution has no conditionals: each block
- * only ever names placeholders that are defined wherever it appears, so a temporary Workspace is
- * never told about a `{{MEMORY_DIR}}` it does not have.
- *
- * Every word of the block comes from `system_config.yaml`; the only text this function can add
- * is `MEMORY_INDEX_EMPTY_NOTE`, standing in for an index that does not exist yet. Topic bodies
- * are never injected — the indexes say what exists, and the model opens what it needs.
+ * Removes one heading-delimited section from a template: from the `#…# <title>` heading line to
+ * the next heading of the same or a higher level (or the end of the text). This is how the
+ * Memory sections are conditional while staying ordinary visible template text — `# Memory`
+ * disappears when Memory is off, and its `## Workspace memory` subsection when the Session has
+ * no Workspace scope. Rendering only ever removes, never invents; a template whose headings
+ * were edited away simply keeps its text, with the memory placeholders blanked by substitution.
+ * A missing heading is a no-op.
  */
-function memorySection(
-  config: MemoryConfig | undefined,
-  memory: SessionMemory | null | undefined,
-): string {
-  if (!config?.prompt || !memory) return "";
-  const substituteUser = (text: string): string =>
-    text
-      .split(MEMORY_USER_DIR_PLACEHOLDER)
-      .join(memory.userDir)
-      .split(MEMORY_USER_INDEX_PLACEHOLDER)
-      .join(indexForInjection(memory.userIndex));
-
-  const userBlock = substituteUser(config.prompt).trim();
-  const workspace = memory.workspace;
-  if (!workspace || !config.workspace_prompt) return userBlock;
-  const workspaceBlock = substituteUser(config.workspace_prompt)
-    .split(MEMORY_DIR_PLACEHOLDER)
-    .join(workspace.dir)
-    .split(MEMORY_INDEX_PLACEHOLDER)
-    .join(indexForInjection(workspace.index))
-    .trim();
-  if (workspaceBlock.length === 0) return userBlock;
-  return userBlock.length > 0 ? `${userBlock}\n\n${workspaceBlock}` : workspaceBlock;
-}
-
-/**
- * Splices the rendered Memory block into a template that carries no `{{MEMORY}}` placeholder:
- * before the `# Environment` heading when one exists (the position the default template gives
- * the placeholder), else appended at the end. This makes `memory.enabled` the only on/off
- * channel — an Agent whose template predates Memory needs no migration, and the placeholder
- * only chooses the position. In-memory only; the stored template is never rewritten, and the
- * assembled prompt is recorded in session_meta for audit.
- */
-function withMemoryFallback(assembled: string, memoryBlock: string): string {
-  if (memoryBlock.length === 0) return assembled;
-  // The default templates head the section with `# Environment`; accept any heading level.
-  const heading = /^#+ Environment[ \t]*$/m.exec(assembled);
-  if (heading) {
-    return `${assembled.slice(0, heading.index)}${memoryBlock}\n\n${assembled.slice(heading.index)}`;
-  }
-  return `${assembled}\n\n${memoryBlock}`;
+function stripHeadingSection(text: string, title: string): string {
+  const heading = new RegExp(`^(#+) ${title}[ \\t]*$`, "m").exec(text);
+  if (!heading) return text;
+  const level = heading[1]!.length;
+  const bodyStart = heading.index + heading[0].length;
+  const next = new RegExp(`^#{1,${level}} `, "m").exec(text.slice(bodyStart));
+  const end = next ? bodyStart + next.index : text.length;
+  return text.slice(0, heading.index) + text.slice(end);
 }
 
 /**
@@ -515,21 +475,22 @@ function withShellLineFallback(
  * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
  * written directly into the system Prompt template itself (the Prompt is fully
  * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
- * never auto-injected. Two render-time exceptions: on win32 a template without `{{SHELL}}` gets
- * a `- Shell:` line injected (see `withShellLineFallback`), and a template without `{{MEMORY}}`
- * still gets the rendered Memory block spliced in before `# Environment` (see
- * `withMemoryFallback`) — so `memory.enabled` is the only Memory on/off channel.
+ * never auto-injected. Rendering removes but never invents: when Memory is off the template's
+ * `# Memory` section is stripped, and when the Session has no Workspace scope its
+ * `## Workspace memory` subsection is (see `stripHeadingSection`) — the Memory prompt itself is
+ * ordinary template text, not injected config. Sole additive exception: on win32 a template
+ * without `{{SHELL}}` gets a `- Shell:` line injected (see `withShellLineFallback`).
  *
  * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
- * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block
- * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
- * Memory is disabled — only those blocks' own `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` /
- * `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` carry Memory content, and topic bodies are always read
- * on demand rather than injected. A custom template that removes any other placeholder gets no
- * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory — the app
- * data root the default prompt labels "App Data Dir".
+ * string if empty/not provided). The four `{{MEMORY_*}}` placeholders carry the scope
+ * directories and each scope's `MEMORY.md` index (capped, empty-note substituted) — topic
+ * bodies are always read on demand rather than injected; without a Session Memory they blank,
+ * which only matters to a hand-edited template whose Memory headings were removed. A custom
+ * template that removes any placeholder gets no corresponding content injected.
+ * `{{PROJECT_DIR}}` resolves to the Project directory — the app data root the default prompt
+ * labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -539,13 +500,25 @@ export function assembleSystemPrompt(
   skillMetadata?: SkillMetadata[],
   memory?: SessionMemory | null,
 ): string {
-  const template = state.systemConfig.system_prompt;
-  const memoryBlock = memorySection(state.systemConfig.memory, memory);
+  const raw = state.systemConfig.system_prompt;
+  // Conditional sections first, on the template text: placeholders inside a removed section
+  // vanish with it, and the substitutions below blank any survivors.
+  const template = !memory
+    ? stripHeadingSection(raw, "Memory")
+    : memory.workspace
+      ? raw
+      : stripHeadingSection(raw, "Workspace memory");
   const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
-    .split(MEMORY_PLACEHOLDER)
-    .join(memoryBlock)
+    .split(MEMORY_USER_DIR_PLACEHOLDER)
+    .join(memory?.userDir ?? "")
+    .split(MEMORY_USER_INDEX_PLACEHOLDER)
+    .join(memory ? indexForInjection(memory.userIndex) : "")
+    .split(MEMORY_DIR_PLACEHOLDER)
+    .join(memory?.workspace?.dir ?? "")
+    .split(MEMORY_INDEX_PLACEHOLDER)
+    .join(memory?.workspace ? indexForInjection(memory.workspace.index) : "")
     .split(VAULT_KEYS_PLACEHOLDER)
     .join(vaultKeysList(vaultKeys ?? []))
     .split(SKILL_METADATA_PLACEHOLDER)
@@ -571,10 +544,7 @@ export function assembleSystemPrompt(
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
     .trim();
-  const withMemory = template.includes(MEMORY_PLACEHOLDER)
-    ? assembled
-    : withMemoryFallback(assembled, memoryBlock);
-  return withShellLineFallback(withMemory, template, sessionEnvironment);
+  return withShellLineFallback(assembled, raw, sessionEnvironment);
 }
 
 /**

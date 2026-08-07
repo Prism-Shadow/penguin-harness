@@ -123,7 +123,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | DELETE | /agents/:agentId | 删除 Agent |
 | GET / PUT | /agents/:agentId/config | 读写配置（AGENTS.md + system_config.yaml，PUT 保留 YAML 注释） |
 | GET / PUT | /agents/:agentId/vault | Vault 环境变量（值掩码显示；PUT 全表替换） |
-| GET | /agents/:agentId/memory | 记忆总览：开关与各作用域条目——用户作用域（`user`，`kind: "user"`）在前，其后为各 Workspace |
+| GET | /agents/:agentId/memory | 记忆总览：开关、模板是否含 `# Memory` 小节，以及各作用域条目——用户作用域（`user`，`kind: "user"`）在前，其后为各 Workspace |
+| POST | /agents/:agentId/memory/template-section | 向提示词模板插入默认 `# Memory` 小节（幂等；创建于记忆功能之前的 Agent 的显式采用路径） |
 | GET | /agents/:agentId/memory/scopes/:key/files | 列出单个作用域的主题文件（frontmatter + 文件信息）；`:key` 为 workspace key 或 `user` |
 | GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | 读取单个主题文件 / 删除它（并同步清理其 `MEMORY.md` 索引行） |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |

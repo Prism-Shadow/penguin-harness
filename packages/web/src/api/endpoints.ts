@@ -219,6 +219,13 @@ const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =
 export const getMemoryOverview = (projectId: string, agentId: string) =>
   apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId));
 
+/** Inserts the default # Memory section into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
+export const insertMemoryTemplateSection = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(`${memoryBase(projectId, agentId)}/template-section`, {
+    method: "POST",
+    body: {},
+  });
+
 export const getMemoryFiles = (projectId: string, agentId: string, scopeKey: string) =>
   apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey));
 

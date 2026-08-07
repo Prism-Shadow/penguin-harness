@@ -36,21 +36,13 @@ export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 /** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
 export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
-/**
- * Expands to the rendered `memory.prompt` block, plus `memory.workspace_prompt` when the
- * Session has a persistent Workspace; nothing at all when Memory is off. A template without
- * this placeholder still gets the block — spliced in before the `# Environment` heading at
- * render time — so the `memory.enabled` switch is the only on/off channel and the placeholder
- * only chooses the position (see `assembleSystemPrompt`).
- */
-export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
-/** Inside `memory.workspace_prompt` only: the current Workspace's Memory directory — a temporary Workspace has none, which is why it is not available in `memory.prompt`. */
+/** Inside the template's `## Workspace memory` subsection: the current Workspace's Memory directory. Blank when the Session has no Workspace scope (the subsection itself is removed then — see `assembleSystemPrompt`). */
 export const MEMORY_DIR_PLACEHOLDER = "{{MEMORY_DIR}}";
-/** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index. */
+/** Inside the template's `## Workspace memory` subsection: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
 export const MEMORY_INDEX_PLACEHOLDER = "{{MEMORY_INDEX}}";
-/** Inside either Memory prompt: the User scope's Memory directory (`memory/user/`), which every Session has. */
+/** Inside the template's `# Memory` section: the User scope's Memory directory (`memory/user/`), which every Session has. */
 export const MEMORY_USER_DIR_PLACEHOLDER = "{{MEMORY_USER_DIR}}";
-/** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index. */
+/** Inside the template's `# Memory` section: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
 export const MEMORY_USER_INDEX_PLACEHOLDER = "{{MEMORY_USER_INDEX}}";
 
 /**
@@ -69,27 +61,45 @@ export interface CompactionConfig {
 }
 
 /**
- * Memory config (the `memory` section of `system_config.yaml`).
+ * Memory config (the `memory` section of `system_config.yaml`). The Memory prompt text itself
+ * is not config: it is the `# Memory` section of the system prompt template, ordinary visible
+ * template text like the # Vault / # Skills statements.
  * Docs: /docs/configuration § "Memory".
  */
 export interface MemoryConfig {
-  /** Whether Memory enters the model context and its directories are prepared; defaults to true. */
+  /** Whether Memory enters the model context and its directories are prepared; defaults to true. Off removes the template's `# Memory` section at render time — the stored template is never rewritten. */
   enabled?: boolean;
-  /**
-   * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the User scope and
-   * its index — carrying the `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` injection points.
-   * Defaults to the built-in value (editable config, not hardcoded).
-   */
-  prompt?: string;
-  /**
-   * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
-   * scope and the rule for choosing between the two, carrying `{{MEMORY_DIR}}` /
-   * `{{MEMORY_INDEX}}`. A separate key rather than a conditional inside `prompt` because
-   * substitution has no conditionals — a temporary Workspace would otherwise be told about a
-   * directory it does not have.
-   */
-  workspace_prompt?: string;
 }
+
+/**
+ * The `# Memory` section of the default system prompt: static template text with the same
+ * status as the # Vault / # Skills statements — fully visible and editable in
+ * `system_config.yaml` — with four placeholders for the dynamic parts. Rendering only ever
+ * removes, never invents: `memory.enabled: false` drops the whole section, a Session without a
+ * Workspace scope drops the `## Workspace memory` subsection (see `assembleSystemPrompt`).
+ *
+ * Exported standalone so `insertMemorySection` can offer it to an Agent whose template
+ * predates Memory — an explicit action, nothing inserts automatically.
+ */
+export const DEFAULT_MEMORY_SECTION = `# Memory
+Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive later — the user's standing feedback and preferences, decisions and constraints together with their reasons, and stable entry points into external systems.
+
+Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and open any topic file that might already cover the subject; then update that topic instead of opening a near-duplicate. A genuinely new subject becomes \`<topic>.md\` in one of the memory directories named here, with frontmatter \`name\` (kebab-case, matching the file name), \`description\` (one line used to decide relevance during recall), \`type\` and \`updated_at\` (YYYY-MM-DD), plus one line in that directory's \`MEMORY.md\` index: \`- [Title](<topic>.md) — hook\`. Update the index in the same round as the file, so the two never disagree. In the body, link related memories with \`[[name]]\` (a name that does not exist yet is fine — it marks something worth writing later); for \`feedback\` and \`project\` topics add **Why:** and **How to apply:** lines.
+
+Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so sensitive personal data does not belong in it.
+
+User memory directory: {{MEMORY_USER_DIR}}
+This holds what stays true wherever you work: who the user is, their standing preferences (\`type: user\`), and reference material not tied to one codebase. Every one of your sessions reads it, so hold what you put here to a higher bar than anything else. Its index:
+[user_memory_index]
+{{MEMORY_USER_INDEX}}
+[/user_memory_index]
+
+## Workspace memory
+Workspace memory directory: {{MEMORY_DIR}}
+This holds facts about the workspace you are working in now; \`type\` is \`feedback\`, \`project\` or \`reference\`. Choosing between the two: something about the user that would still hold in a different project goes in the user directory; something about this codebase goes in the workspace directory — when unsure, write to the workspace directory, since a note filed too narrowly can be moved up later while one filed too widely is read by every session from then on. Its index:
+[workspace_memory_index]
+{{MEMORY_INDEX}}
+[/workspace_memory_index]`;
 
 /**
  * System-level config for Agent State, serialized as `system_config.yaml`.
@@ -113,7 +123,7 @@ export interface SystemConfig {
   };
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
-  /** Memory (enabled by default; the `{{MEMORY}}` placeholder chooses the position, a template without one gets the block before `# Environment`). */
+  /** Memory (enabled by default; off removes the template's `# Memory` section at render time). */
   memory?: MemoryConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
@@ -184,7 +194,7 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
 {{SKILL_METADATA}}
 
-{{MEMORY}}
+${DEFAULT_MEMORY_SECTION}
 
 # Environment
 - Platform: {{PLATFORM}}
@@ -198,47 +208,6 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
 
-/**
- * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block. It states
- * what Memory is for, what must never be written to it, the mechanics of one save (read the
- * index, prefer updating an existing topic, create a topic file with frontmatter, refresh the
- * index line), and the User scope — the one scope every Session has, a Session in a temporary
- * Workspace included. The placeholders inside it are the only Memory content the Harness
- * injects; the `[user_memory_index]` marker pair (see markers/tags.ts) fences the index so the
- * model can tell injected content from instruction.
- *
- * Rendered whenever Memory is enabled; `DEFAULT_MEMORY_WORKSPACE_PROMPT` is appended to it when
- * the Session also has a persistent Workspace.
- */
-export const DEFAULT_MEMORY_PROMPT = `# Memory
-Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools. Keep in it what you could not re-derive later — the user's standing feedback and preferences, decisions and constraints together with their reasons, and stable entry points into external systems.
-
-Save only what is specific, durable, and worth having in a later session. Before writing, read the index below and open any topic file that might already cover the subject; then update that topic instead of opening a near-duplicate. A genuinely new subject becomes \`<topic>.md\` in one of the memory directories named here, with frontmatter \`name\` (kebab-case, matching the file name), \`description\` (one line used to decide relevance during recall), \`type\` and \`updated_at\` (YYYY-MM-DD), plus one line in that directory's \`MEMORY.md\` index: \`- [Title](<topic>.md) — hook\`. Update the index in the same round as the file, so the two never disagree. In the body, link related memories with \`[[name]]\` (a name that does not exist yet is fine — it marks something worth writing later); for \`feedback\` and \`project\` topics add **Why:** and **How to apply:** lines.
-
-Never save what the code, config or git history already states; short-lived task progress or debugging notes; credentials, tokens or other secrets; guesses you have not confirmed; or long stretches of transcript. Memory is shared with everyone who can reach this agent, so sensitive personal data does not belong in it.
-
-User memory directory: {{MEMORY_USER_DIR}}
-This holds what stays true wherever you work: who the user is, their standing preferences (\`type: user\`), and reference material not tied to one codebase. Every one of your sessions reads it, so hold what you put here to a higher bar than anything else. Its index:
-[user_memory_index]
-{{MEMORY_USER_INDEX}}
-[/user_memory_index]`;
-
-/**
- * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
- * `DEFAULT_MEMORY_PROMPT` only when the Session runs in a persistent Workspace.
- *
- * The rule for choosing between the two scopes lives here rather than in the always-injected
- * half on purpose: a Session in a temporary Workspace has one scope and no choice to make, so it
- * never sees the rule at all.
- */
-export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `Workspace memory directory: {{MEMORY_DIR}}
-This holds facts about the workspace you are working in now; \`type\` is \`feedback\`, \`project\` or \`reference\`. Its index:
-[workspace_memory_index]
-{{MEMORY_INDEX}}
-[/workspace_memory_index]
-
-Choosing between the two: something about the user that would still hold in a different project goes in the user directory; something about this codebase goes in the workspace directory. When you are unsure, write to the workspace directory — a note filed too narrowly can be moved up later, while one filed too widely is read by every session from then on.`;
-
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
 
@@ -248,6 +217,33 @@ export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been
  * never touched — and a truncation note tells the model to open the full index itself.
  */
 export const MEMORY_INDEX_MAX_LINES = 200;
+
+/** Whether a template already carries the Memory section: its heading, or any of its four placeholders (a rewritten template may have kept the placeholders and dropped the heading). */
+export function hasMemorySection(template: string): boolean {
+  return (
+    /^#+ Memory[ \t]*$/m.test(template) ||
+    template.includes(MEMORY_USER_DIR_PLACEHOLDER) ||
+    template.includes(MEMORY_USER_INDEX_PLACEHOLDER) ||
+    template.includes(MEMORY_DIR_PLACEHOLDER) ||
+    template.includes(MEMORY_INDEX_PLACEHOLDER)
+  );
+}
+
+/**
+ * Inserts `DEFAULT_MEMORY_SECTION` into a template that has none: before the `# Environment`
+ * heading (the position the default template gives it), else appended at the end. Idempotent —
+ * a template that already carries the section comes back unchanged. This is the explicit
+ * adoption path for Agents created before Memory shipped (the Web App's Memory tab offers it);
+ * nothing ever inserts automatically.
+ */
+export function insertMemorySection(template: string): string {
+  if (hasMemorySection(template)) return template;
+  const heading = /^#+ Environment[ \t]*$/m.exec(template);
+  if (heading) {
+    return `${template.slice(0, heading.index)}${DEFAULT_MEMORY_SECTION}\n\n${template.slice(heading.index)}`;
+  }
+  return `${template.trimEnd()}\n\n${DEFAULT_MEMORY_SECTION}\n`;
+}
 
 /**
  * Built-in default compaction Prompt (summarize mode): tells the model the summary will
@@ -600,8 +596,6 @@ export function defaultSystemConfig(): SystemConfig {
     },
     memory: {
       enabled: true,
-      prompt: DEFAULT_MEMORY_PROMPT,
-      workspace_prompt: DEFAULT_MEMORY_WORKSPACE_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),

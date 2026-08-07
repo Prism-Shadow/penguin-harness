@@ -252,10 +252,10 @@ export const en: Strings = {
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
-      [
-        "{{MEMORY}}",
-        "Injects the memory block: memory.prompt (the Agent scope and the index) plus memory.workspace_prompt (persistent Workspaces only); empty when memory is off",
-      ],
+      ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory (inside # Memory)"],
+      ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
+      ["{{MEMORY_DIR}}", "The current workspace's memory directory (inside ## Workspace memory)"],
+      ["{{MEMORY_INDEX}}", "Content of the workspace MEMORY.md index (truncated past 200 lines)"],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
@@ -476,6 +476,10 @@ export const en: Strings = {
     desc: "Long-term memory across Sessions (stored in agent_state/memory/): user memory applies to all of this agent's sessions, Workspace memory is kept per directory, and every scope carries its own MEMORY.md index. Indexes enter the model context; bodies are read on demand. Content edits happen in chat, by the agent. Turning the switch off only stops injection and deletes nothing.",
     enable: "Enable memory",
     userScope: "User memory",
+    templateMissing:
+      "The prompt template has no # Memory section, so memory never enters the context.",
+    insertSection: "Insert the default Memory section",
+    insertSectionDone: "Inserted",
     workspaceScope: (name: string): string => `Workspace memory: ${name}`,
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:

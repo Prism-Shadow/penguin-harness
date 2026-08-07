@@ -70,6 +70,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const projectId = currentProject?.projectId ?? null;
 
   const [enabled, setEnabled] = useState(true);
+  const [templateHasMemory, setTemplateHasMemory] = useState(true);
   const [memoryDir, setMemoryDir] = useState("");
   const [groups, setGroups] = useState<ScopeGroup[] | null>(null);
   // Tab-level error is the initial load failure only; actions report via toast.
@@ -85,6 +86,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     try {
       const overview = await api.getMemoryOverview(projectId, agentId);
       setEnabled(overview.enabled);
+      setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
       // Files are the source of truth and each scope is one request; fetch them in parallel.
       setGroups(
@@ -117,6 +119,18 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       toastError(apiErrorText(e));
     } finally {
       setSwitchBusy(false);
+    }
+  };
+
+  /** The explicit adoption path for an agent whose template predates Memory: one idempotent config write. */
+  const insertSection = async () => {
+    if (!projectId) return;
+    try {
+      const overview = await api.insertMemoryTemplateSection(projectId, agentId);
+      setTemplateHasMemory(overview.templateHasMemory);
+      toastSuccess(S.memory.insertSectionDone);
+    } catch (e) {
+      toastError(apiErrorText(e));
     }
   };
 
@@ -221,6 +235,15 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
         <Switch checked={enabled} onChange={(v) => void toggleEnabled(v)} disabled={switchBusy} />
       </div>
+
+      {!templateHasMemory && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
+          <p className="text-xs text-amber-800 dark:text-amber-300">{S.memory.templateMissing}</p>
+          <Button size="sm" onClick={() => void insertSection()}>
+            {S.memory.insertSection}
+          </Button>
+        </div>
+      )}
 
       {groups === null ? (
         <SkeletonList rows={4} />
