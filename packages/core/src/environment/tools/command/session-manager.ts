@@ -11,6 +11,7 @@
  */
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
+import type { ProxyEnvPolicy } from "../../../interfaces.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;
@@ -86,18 +87,26 @@ const STRIPPED_ENV_KEYS = new Set([
 ]);
 
 /**
- * Proxy variables removed IN ADDITION when the host asks for it (`stripProxyEnv`, see
- * {@link CommandSessionManager}): the Web server's "use system HTTP proxy" switch in the
- * off state must keep commands from inheriting the serving process's proxy environment
- * (design § "出网与系统代理"). NO_PROXY is deliberately NOT stripped — with no proxy
- * variables left it is inert, and removing it would change behavior for commands that
- * set their own proxy. Matched case-insensitively like {@link STRIPPED_ENV_KEYS}, which
- * also covers the conventional lowercase spellings (http_proxy etc.).
+ * Proxy variables removed IN ADDITION when the host supplies a proxy policy (`proxyEnv`,
+ * see {@link CommandSessionManager}): the Web server's proxy settings must keep commands
+ * from just inheriting the serving process's proxy environment.
+ * In `strip` mode NO_PROXY is deliberately NOT removed — with no proxy variables left it
+ * is inert, and removing it would change behavior for commands that set their own proxy.
+ * In `inject` mode the inherited NO_PROXY is replaced too (the policy carries the merged
+ * list), and ALL_PROXY stays removed rather than replaced: the explicit app-level proxy
+ * outranks ambient env wholesale. Matched case-insensitively like
+ * {@link STRIPPED_ENV_KEYS}, which also covers the conventional lowercase spellings
+ * (http_proxy etc.).
  */
 const PROXY_ENV_KEYS = new Set(["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]);
 
-/** The host environment minus {@link STRIPPED_ENV_KEYS} (and {@link PROXY_ENV_KEYS} when asked). */
-function hostEnvForChild(stripProxy: boolean): NodeJS.ProcessEnv {
+/**
+ * The host environment minus {@link STRIPPED_ENV_KEYS}, with the proxy policy applied:
+ * `strip` removes {@link PROXY_ENV_KEYS}; `inject` additionally replaces NO_PROXY and
+ * sets the explicit proxy variables (both spellings — programs disagree on which they
+ * read); null passes the proxy variables through untouched.
+ */
+function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // Matched case-insensitively rather than deleting the upper-case spellings: Windows resolves
   // environment names without regard to case but stores whatever casing was written, so a
@@ -106,8 +115,17 @@ function hostEnvForChild(stripProxy: boolean): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(process.env)) {
     const name = key.toUpperCase();
     if (STRIPPED_ENV_KEYS.has(name)) continue;
-    if (stripProxy && PROXY_ENV_KEYS.has(name)) continue;
+    if (policy !== null && PROXY_ENV_KEYS.has(name)) continue;
+    if (policy?.mode === "inject" && name === "NO_PROXY") continue;
     env[key] = value;
+  }
+  if (policy?.mode === "inject") {
+    env.HTTP_PROXY = policy.url;
+    env.http_proxy = policy.url;
+    env.HTTPS_PROXY = policy.url;
+    env.https_proxy = policy.url;
+    env.NO_PROXY = policy.noProxy;
+    env.no_proxy = policy.noProxy;
   }
   return env;
 }
@@ -121,16 +139,17 @@ export class CommandSessionManager {
   /** Agent vault environment variables: injected into the child process on every spawn (values never enter the model context, only the environment). */
   private readonly vault: Record<string, string>;
   /**
-   * When it returns true, {@link PROXY_ENV_KEYS} are removed from the child environment
-   * too. A getter rather than a boolean: the hosting server's "use system HTTP proxy"
-   * switch is toggled at runtime, and re-reading at every spawn makes the toggle reach
-   * Sessions that are already running. Absent = proxy allowed (SDK/CLI standalone use).
+   * Proxy policy for the child environment (see {@link ProxyEnvPolicy}: strip the proxy
+   * variables, inject an explicit proxy over the inherited ones, or null = pass
+   * through). A getter rather than a snapshot: the hosting server's proxy settings
+   * change at runtime, and re-reading at every spawn makes a change reach Sessions that
+   * are already running. Absent = pass through (SDK/CLI standalone use).
    */
-  private readonly stripProxyEnv: (() => boolean) | undefined;
+  private readonly proxyEnv: (() => ProxyEnvPolicy | null) | undefined;
 
-  constructor(opts?: { vault?: Record<string, string>; stripProxyEnv?: () => boolean }) {
+  constructor(opts?: { vault?: Record<string, string>; proxyEnv?: () => ProxyEnvPolicy | null }) {
     this.vault = opts?.vault ?? {};
-    this.stripProxyEnv = opts?.stripProxyEnv;
+    this.proxyEnv = opts?.proxyEnv;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */
@@ -144,10 +163,11 @@ export class CommandSessionManager {
       // Spread order is priority: vault overrides host variables of the same name, but must
       // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
       // interactive hangs) must never be overridable by vault. The host side is stripped of
-      // the harness's own variables first (see STRIPPED_ENV_KEYS; plus the proxy variables
-      // when stripProxyEnv says so); the vault still wins, so a user who genuinely wants
-      // PORT — or a proxy — in commands can set it there.
-      env: { ...hostEnvForChild(this.stripProxyEnv?.() === true), ...this.vault, ...HARDENED_ENV },
+      // the harness's own variables first (see STRIPPED_ENV_KEYS) and has the proxyEnv
+      // policy applied (strip or inject); the vault still wins — over an injected proxy
+      // too — so a user who genuinely wants PORT, or their own proxy, in commands can set
+      // it there.
+      env: { ...hostEnvForChild(this.proxyEnv?.() ?? null), ...this.vault, ...HARDENED_ENV },
     });
   }
 

@@ -8,7 +8,7 @@ import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
 import { toolCall } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
+import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
@@ -313,7 +313,7 @@ describe("harness environment variables never reach a spawned command", () => {
     process.env.HOST = "127.0.0.1";
     process.env.PENGUIN_CLI_ENTRY = "/opt/penguin/lib/dist/index.js";
     process.env.PENGUIN_WEB_DIST = "/opt/penguin/web";
-    // The desktop shell's process credentials (see design § "桌面端原型"): a leaked token
+    // The desktop shell's process credentials: a leaked token
     // would let an Agent-run command call the server's shutdown endpoint.
     process.env.PENGUIN_DESKTOP_TOKEN = "secret-desktop-token";
     process.env.PENGUIN_PORT_FILE = "/tmp/port-file";
@@ -407,14 +407,21 @@ describe("harness environment variables never reach a spawned command", () => {
   });
 });
 
-describe("proxy variables are stripped from commands when the host opts out", () => {
-  // The Web server's "use system HTTP proxy" switch (off state) threads stripProxyEnv
-  // through Agent -> Environment -> CommandSessionManager; standalone Environments (no
-  // getter) keep the historical pass-through.
+describe("proxyEnv policy governs the proxy variables commands inherit", () => {
+  // The Web server's proxy settings thread a ProxyEnvPolicy getter through
+  // Agent -> Environment -> CommandSessionManager: strip (switch off), inject (explicit
+  // address), or null (passthrough); standalone Environments (no getter) keep the
+  // historical pass-through.
   const KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] as const;
   const saved: Partial<Record<(typeof KEYS)[number], string | undefined>> = {};
-  let strip = true;
-  let stripEnv: Environment;
+  let policy: ProxyEnvPolicy | null = null;
+  let policyEnv: Environment;
+
+  const INJECT: ProxyEnvPolicy = {
+    mode: "inject",
+    url: "http://explicit.example:3128",
+    noProxy: "corp.example,localhost,127.0.0.1,::1",
+  };
 
   beforeEach(() => {
     for (const k of KEYS) saved[k] = process.env[k];
@@ -422,24 +429,24 @@ describe("proxy variables are stripped from commands when the host opts out", ()
     process.env.HTTPS_PROXY = "http://proxy.corp.example:8443";
     process.env.ALL_PROXY = "socks5://proxy.corp.example:1080";
     process.env.NO_PROXY = "localhost,127.0.0.1,::1";
-    strip = true;
-    stripEnv = new Environment({
+    policy = { mode: "strip" };
+    policyEnv = new Environment({
       workspaceDir: tmp,
       toolConfig: sessionConfig(),
-      stripProxyEnv: () => strip,
+      proxyEnv: () => policy,
     });
   });
   afterEach(() => {
-    stripEnv.dispose();
+    policyEnv.dispose();
     for (const k of KEYS) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
   });
 
-  it("HTTP(S)_PROXY/ALL_PROXY are removed, NO_PROXY stays (inert without them)", async () => {
+  it("strip: HTTP(S)_PROXY/ALL_PROXY are removed, NO_PROXY stays (inert without them)", async () => {
     const READ = KEYS.map((k) => `${k}=[' + (process.env.${k} ?? '') + ']`).join(" ");
-    const res = await runTool(stripEnv, "exec_command", {
+    const res = await runTool(policyEnv, "exec_command", {
       cmd: `node -e "console.log('${READ}')"`,
     });
     expect(res.output).toContain(
@@ -447,10 +454,10 @@ describe("proxy variables are stripped from commands when the host opts out", ()
     );
   });
 
-  it("a lowercase spelling is stripped too (the conventional POSIX form)", async () => {
+  it("strip: a lowercase spelling is stripped too (the conventional POSIX form)", async () => {
     process.env.https_proxy = "http://proxy.corp.example:8443";
     try {
-      const res = await runTool(stripEnv, "exec_command", {
+      const res = await runTool(policyEnv, "exec_command", {
         cmd: `node -e "console.log('s=[' + (process.env.https_proxy ?? '') + ']')"`,
       });
       expect(res.output).toContain("s=[]");
@@ -459,9 +466,54 @@ describe("proxy variables are stripped from commands when the host opts out", ()
     }
   });
 
-  it("the getter is re-read at every spawn, so a live toggle needs no new Environment", async () => {
-    strip = false;
-    const res = await runTool(stripEnv, "exec_command", {
+  it("inject: the explicit proxy overrides the inherited variables, both spellings", async () => {
+    policy = INJECT;
+    const READ =
+      "H=[' + (process.env.HTTP_PROXY ?? '') + '] h=[' + (process.env.http_proxy ?? '') + '] " +
+      "S=[' + (process.env.HTTPS_PROXY ?? '') + '] s=[' + (process.env.https_proxy ?? '') + ']";
+    const res = await runTool(policyEnv, "exec_command", {
+      cmd: `node -e "console.log('${READ}')"`,
+    });
+    expect(res.output).toContain(
+      "H=[http://explicit.example:3128] h=[http://explicit.example:3128] " +
+        "S=[http://explicit.example:3128] s=[http://explicit.example:3128]",
+    );
+  });
+
+  it("inject: NO_PROXY is replaced with the policy's merged list and ALL_PROXY is removed", async () => {
+    policy = INJECT;
+    const READ =
+      "N=[' + (process.env.NO_PROXY ?? '') + '] n=[' + (process.env.no_proxy ?? '') + '] " +
+      "A=[' + (process.env.ALL_PROXY ?? '') + ']";
+    const res = await runTool(policyEnv, "exec_command", {
+      cmd: `node -e "console.log('${READ}')"`,
+    });
+    expect(res.output).toContain(
+      "N=[corp.example,localhost,127.0.0.1,::1] n=[corp.example,localhost,127.0.0.1,::1] A=[]",
+    );
+  });
+
+  it("inject: the vault still wins — a per-Agent proxy outranks the injected one", async () => {
+    policy = INJECT;
+    const vaultEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      vault: { HTTP_PROXY: "http://vault.example:9999" },
+      proxyEnv: () => policy,
+    });
+    try {
+      const res = await runTool(vaultEnv, "exec_command", {
+        cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("H=[http://vault.example:9999]");
+    } finally {
+      vaultEnv.dispose();
+    }
+  });
+
+  it("the getter is re-read at every spawn, so a live settings change needs no new Environment", async () => {
+    policy = null;
+    const res = await runTool(policyEnv, "exec_command", {
       cmd: `node -e "console.log('H=[' + (process.env.HTTP_PROXY ?? '') + ']')"`,
     });
     expect(res.output).toContain("H=[http://proxy.corp.example:8080]");

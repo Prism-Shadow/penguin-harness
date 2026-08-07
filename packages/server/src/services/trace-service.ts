@@ -2,9 +2,10 @@
  * Trace service.
  *
  * History messages: all of the Session's index files concatenated in order
- * (readTraceTolerant, tolerating a truncated last line), containing only the
- * complete messages and events that were actually written to Trace (naturally
- * excluding partial_*); in-flight increments are continued by SSE.
+ * (readTraceTolerant, tolerating a truncated last line and skipping malformed
+ * middle lines), containing only the complete messages and events that were
+ * actually written to Trace (naturally excluding partial_*); in-flight
+ * increments are continued by SSE.
  * Performance analysis is derived from a single Trace file: nearest-neighbor
  * pairing of request_begin/end, tool call duration pairing, reconnect / compaction
  * counts, and Token trend.
@@ -1206,7 +1207,9 @@ export class TraceService {
     const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
     let records: OmniMessage[];
     try {
-      records = parseTraceLines(content);
+      // Strict parse: import is the gate for user-supplied files, so a malformed middle
+      // line is reported as 400 rather than silently dropped (read paths skip it instead).
+      records = parseTraceLines(content, { onMalformed: "throw" });
     } catch {
       throw invalid("The file is not valid Trace JSONL.");
     }

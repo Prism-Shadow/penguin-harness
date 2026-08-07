@@ -127,8 +127,13 @@ interface EnvironmentConfig {
   sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
-  stripProxyEnv?: () => boolean;            // true = strip HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept) from command subprocesses; re-read per spawn, absent = proxy allowed
+  proxyEnv?: () => ProxyEnvPolicy | null;   // command-subprocess proxy policy; re-read per spawn, absent or null = pass through
 }
+
+// "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
+// proxy over the inherited env: HTTP(S)_PROXY (+ lowercase twins) = url, NO_PROXY = noProxy
+// (supplied pre-merged by the caller), inherited ALL_PROXY removed. Vault entries still win.
+type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent

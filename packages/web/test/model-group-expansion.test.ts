@@ -1,21 +1,38 @@
 /**
  * model-group-expansion.ts unit tests: the models page's default-collapsed vendor groups.
- * Only DeepSeek (the catalog's first provider) is expanded on first paint; the state is a
+ * Only DeepSeek (the catalog's first provider) is expanded on a first visit; the state is a
  * set of EXPANDED ids so groups arriving late (user-defined groups load with the rows)
  * default to collapsed without being known up front. While a search query is active every
  * rendered group is force-opened — groupModelRows only returns match-holding groups when
  * searching, and a match hidden inside a collapsed group would look like a missing result —
- * without touching the stored set.
+ * without touching the stored set. The user's toggles persist per Project (localStorage,
+ * injectable storage): nothing stored or corrupted storage falls back to the default, a
+ * stored empty array is honored as "all collapsed", and stale ids of since-deleted groups
+ * stay inert.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
 import {
   defaultExpandedProviders,
+  expandedGroupsKey,
   isGroupExpanded,
+  loadExpandedProviders,
+  saveExpandedProviders,
   toggleExpandedProvider,
 } from "../src/features/models/model-group-expansion";
+import type { ExpansionStorage } from "../src/features/models/model-group-expansion";
 import { groupModelRows } from "../src/features/models/model-grouping";
 import type { ModelRowLike } from "../src/features/models/model-grouping";
+
+/** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
+function memStorage(): ExpansionStorage & { map: Map<string, string> } {
+  const map = new Map<string, string>();
+  return {
+    map,
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+  };
+}
 
 describe("defaultExpandedProviders", () => {
   it("contains exactly deepseek, the first provider of the catalog", () => {
@@ -85,5 +102,82 @@ describe("toggleExpandedProvider", () => {
     expect(withoutDeepseek.has("deepseek")).toBe(false);
     expect(withoutDeepseek.has("anthropic")).toBe(true);
     expect(withAnthropic.has("deepseek")).toBe(true);
+  });
+});
+
+describe("persisted expansion (per-Project localStorage)", () => {
+  it("nothing stored — or no Project yet — falls back to the DeepSeek-only default", () => {
+    const s = memStorage();
+    expect([...loadExpandedProviders("p1", s)]).toEqual(["deepseek"]);
+    expect([...loadExpandedProviders(null, s)]).toEqual(["deepseek"]);
+    expect(s.map.size).toBe(0); // load never writes; save without a Project is a no-op
+    saveExpandedProviders(null, new Set(["openai"]), s);
+    expect(s.map.size).toBe(0);
+  });
+
+  it("toggle → save → load round-trips the user's set", () => {
+    const s = memStorage();
+    let set = loadExpandedProviders("p1", s);
+    set = toggleExpandedProvider(set, "anthropic"); // open anthropic
+    set = toggleExpandedProvider(set, "deepseek"); // close deepseek
+    saveExpandedProviders("p1", set, s);
+    const restored = loadExpandedProviders("p1", s);
+    expect(restored).toEqual(new Set(["anthropic"]));
+    expect(restored).not.toBe(set); // fresh instance per load (React state discipline)
+  });
+
+  it("a stored empty array IS a choice (all collapsed), not a fallback to the default", () => {
+    const s = memStorage();
+    saveExpandedProviders("p1", new Set(), s);
+    expect(loadExpandedProviders("p1", s).size).toBe(0);
+  });
+
+  it("invalid JSON / non-array shapes fall back to the default; junk array elements are dropped", () => {
+    const s = memStorage();
+    for (const raw of ["{not json", '"deepseek"', "42", "null", "{}", ""]) {
+      s.map.set(expandedGroupsKey("p1"), raw);
+      expect([...loadExpandedProviders("p1", s)]).toEqual(["deepseek"]);
+    }
+    // An array survives element-level junk: non-strings are filtered, strings kept.
+    s.map.set(expandedGroupsKey("p1"), '["anthropic", 7, null, {"x": 1}]');
+    expect([...loadExpandedProviders("p1", s)]).toEqual(["anthropic"]);
+  });
+
+  it("Projects are isolated: each key holds its own set", () => {
+    const s = memStorage();
+    saveExpandedProviders("p1", new Set(["openai"]), s);
+    saveExpandedProviders("p2", new Set(["moonshot", "my-proxy"]), s);
+    expect([...loadExpandedProviders("p1", s)]).toEqual(["openai"]);
+    expect(loadExpandedProviders("p2", s)).toEqual(new Set(["moonshot", "my-proxy"]));
+    // A third Project is untouched by the writes above and opens on the default.
+    expect([...loadExpandedProviders("p3", s)]).toEqual(["deepseek"]);
+  });
+
+  it("stale ids of since-deleted groups are harmless and survive round-trips", () => {
+    const s = memStorage();
+    saveExpandedProviders("p1", new Set(["deepseek", "deleted-group"]), s);
+    const restored = loadExpandedProviders("p1", s);
+    // Membership renders nothing by itself: current groups derive exactly as before …
+    expect(isGroupExpanded(restored, "deepseek", false)).toBe(true);
+    expect(isGroupExpanded(restored, "anthropic", false)).toBe(false);
+    // … and the stored id cannot resurrect the group: only groups the rows produce render.
+    const rows: ModelRowLike[] = [{ provider: "deepseek", modelId: "deepseek-chat" }];
+    expect(groupModelRows(rows, "").some((g) => g.provider.id === "deleted-group")).toBe(false);
+    // Toggling other groups keeps the stale id inert but persisted (pruning is not load's job).
+    saveExpandedProviders("p1", toggleExpandedProvider(restored, "anthropic"), s);
+    expect(loadExpandedProviders("p1", s).has("deleted-group")).toBe(true);
+  });
+
+  it("storage throwing (quota/private mode): save does not throw, load yields the default", () => {
+    const broken: ExpansionStorage = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    };
+    expect(() => saveExpandedProviders("p1", new Set(["openai"]), broken)).not.toThrow();
+    expect([...loadExpandedProviders("p1", broken)]).toEqual(["deepseek"]);
   });
 });

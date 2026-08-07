@@ -1103,9 +1103,10 @@ export function ChatPage() {
               <circle cx="19" cy="18.5" r="2.5" />
               <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
             </svg>
-            {/* Below sm the button is icon-only (title/aria keep the name), same rule as the
-                workspace button next to it: the label ate the title's room on phones. */}
-            <span className="hidden sm:inline">{S.chat.openAgents}</span>
+            {/* At md widths the pinned sidebar leaves less room than the viewport breakpoint
+                suggests. Keep both panel actions icon-only until lg so the running status and
+                live stats retain their own layout space. */}
+            <span className="hidden lg:inline">{S.chat.openAgents}</span>
             {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
             {anySubagentPending && (
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -1136,9 +1137,10 @@ export function ChatPage() {
             >
               <path d={STAT_ICONS.folder} />
             </svg>
-            {/* Below sm the button is icon-only (title/aria keep the name): the label plus the
-                running indicator squeezed the session title to nothing on phones. */}
-            <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
+            {/* Below lg the button is icon-only (title/aria keep the name): between md and lg
+                the pinned sidebar makes the chat toolbar substantially narrower than the
+                viewport, so the action labels would squeeze the status into the Token stats. */}
+            <span className="hidden lg:inline">{S.chat.openWorkspace}</span>
           </button>
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show

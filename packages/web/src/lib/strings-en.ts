@@ -33,11 +33,15 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
-    useSystemProxy: "Use system HTTP proxy",
-    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
-    useSystemProxyHint:
-      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
+    /** Admin-only user-menu row opening the proxy options dialog. */
+    proxyMenu: "Proxy options…",
+    proxyDialogTitle: "Proxy options",
+    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    proxyForApp: "Application uses the proxy",
+    proxyForAgent: "Agent environment uses the proxy",
+    /** The shared explicit proxy address (empty = follow the proxy environment variables). */
+    proxyAddress: "Proxy address",
+    proxyAddressPlaceholder: "Empty = follow system proxy",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -1175,6 +1179,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_proxy_url:
+        "Invalid proxy address — use http://host[:port], https://host[:port], or host[:port].",
       invalid_trace: "This file is not a valid Trace file.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",

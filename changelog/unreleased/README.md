@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-03] Web App: medium-width chat toolbars keep the running indicator and live statistics separate by collapsing the Agents panel and Workspace actions to accessible icon-only buttons until the large-screen breakpoint. ([details](2026-08-03-chat-toolbar-layout.md))
+
 - [2026-08-06] Desktop app: penguin brand icons on every platform, task-completion system notifications (renderer-only, desktop sessions), explicit single-user mode (user/member management rejected with `desktop_single_user` and hidden), and a bundled `penguin` CLI on PATH (automatic on deb; menu-driven install elsewhere, no system Node needed). ([details](2026-08-06-desktop-app.md))
 
 - [2026-08-06] Admin "use system HTTP proxy" switch: server-wide proxy control (default on, live toggle, loopback exemption), off-state proxy-env stripping for agent subprocesses, OS-proxy injection on desktop. ([details](2026-08-06-system-proxy-switch.md))

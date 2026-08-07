@@ -13,7 +13,7 @@ SDK 的唯一执行入口是 `session.run(newMessages, opts?)`：输入本次新
 session.run(newMessages, { approve, signal })
   │  存在上次中断的补发内容?→ 前置到本轮输入
   ▼
-┌── 轮循环(≤ max_turns,默认 100)──────────────────────────────┐
+┌── 轮循环(≤ max_turns,默认 -1 不限制)────────────────────────┐
 │                                                               │
 │  request_begin                                                │
 │  LLM.streamGenerate(newMessages)                              │

@@ -65,7 +65,11 @@ export interface SystemConfig {
   version?: number;
   /** System-level Prompt (relatively stable; should not be modified frequently). */
   system_prompt: string;
-  /** Max LLM turns per Task (a runtime parameter that belongs to Agent config, not specified when creating a Session). */
+  /**
+   * Max LLM turns per Task (a runtime parameter that belongs to Agent config, not specified
+   * when creating a Session). A positive integer caps the Task; -1 (the default) removes the
+   * cap so long runs are never cut off mid-task. Valid values are > 0 or exactly -1.
+   */
   max_turns?: number;
   model?: {
     max_tokens?: number;
@@ -492,7 +496,9 @@ export function defaultSystemConfig(): SystemConfig {
   return {
     version: 1,
     system_prompt: DEFAULT_SYSTEM_PROMPT,
-    max_turns: 100,
+    // -1 = unlimited (same sentinel as compaction.max_session_turns): an agent run is never
+    // cut off by a turn cap unless the user configures a positive limit themselves.
+    max_turns: -1,
     model: {
       max_tokens: 32000,
       thinking_level: "medium",
