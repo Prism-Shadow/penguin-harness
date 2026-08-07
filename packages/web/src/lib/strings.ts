@@ -459,7 +459,6 @@ export const zh = {
     templateMissing: "提示词模板中没有 # Memory 小节，记忆不会进入上下文。",
     insertSection: "插入默认 Memory 小节",
     insertSectionDone: "已插入",
-    workspaceScope: (name: string): string => `工作区记忆：${name}`,
     itemCount: (n: number): string => `${n} 条`,
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行保存值得记住的内容",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",

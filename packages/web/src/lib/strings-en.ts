@@ -480,7 +480,6 @@ export const en: Strings = {
       "The prompt template has no # Memory section, so memory never enters the context.",
     insertSection: "Insert the default Memory section",
     insertSectionDone: "Inserted",
-    workspaceScope: (name: string): string => `Workspace memory: ${name}`,
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",

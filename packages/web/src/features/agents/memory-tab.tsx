@@ -31,6 +31,7 @@ import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
+import { Chevron } from "../../components/ui/chevron";
 import { Drawer } from "../../components/ui/drawer";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -80,6 +81,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   // Tab-level error is the initial load failure only; actions report via toast.
   const [error, setError] = useState<string | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
   const [editRequirement, setEditRequirement] = useState("");
@@ -221,9 +223,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const scopeTitle = (scope: MemoryScopeInfo): string =>
     scope.kind === "user"
       ? S.memory.userScope
-      : S.memory.workspaceScope(
-          scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey,
-        );
+      : (scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey);
 
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
@@ -281,32 +281,60 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         <SkeletonList rows={4} />
       ) : (
         <div className={enabled ? "space-y-5" : "space-y-5 opacity-60"}>
-          {groups.map(({ scope, files }) => (
-            <section key={scope.scopeKey}>
-              <div className="mb-1.5 flex items-baseline gap-2.5">
-                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  {scopeTitle(scope)}
-                </h3>
-                {scope.kind === "workspace" && scope.workspacePath !== undefined && (
-                  <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
-                    {scope.workspacePath}
+          {groups.map(({ scope, files }) => {
+            const open = !collapsed.has(scope.scopeKey);
+            return (
+              <section
+                key={scope.scopeKey}
+                className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
+              >
+                {/* Group header (same convention as the skill library groups): the whole row toggles collapse. */}
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(scope.scopeKey)) next.delete(scope.scopeKey);
+                      else next.add(scope.scopeKey);
+                      return next;
+                    })
+                  }
+                  className="flex w-full items-center gap-2.5 bg-gray-50 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+                >
+                  <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    {scopeTitle(scope)}
                   </span>
-                )}
-                <span className="ml-auto shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                  {S.memory.itemCount(files.length)}
-                </span>
-              </div>
-              {files.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-gray-300 px-4 py-4 text-center text-xs text-gray-400 dark:border-gray-700 dark:text-gray-500">
-                  {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
-                </p>
-              ) : (
-                <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
-                  {files.map((file) => fileRow(scope, file))}
-                </ul>
-              )}
-            </section>
-          ))}
+                  {scope.kind === "workspace" && scope.workspacePath !== undefined && (
+                    <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                      {scope.workspacePath}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1" />
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {S.memory.itemCount(files.length)}
+                  </span>
+                  <Chevron open={open} className="text-gray-400" />
+                </button>
+                <div
+                  className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                >
+                  {/* inert while collapsed: rows at zero height shouldn't still be Tab-focusable or clickable. */}
+                  <div className="overflow-hidden" inert={!open}>
+                    {files.length === 0 ? (
+                      <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                        {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                        {files.map((file) => fileRow(scope, file))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </section>
+            );
+          })}
           {groups.every((g) => g.files.length === 0) && (
             <EmptyState title={S.memory.emptyUserScope} />
           )}
