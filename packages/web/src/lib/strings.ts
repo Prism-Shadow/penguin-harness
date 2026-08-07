@@ -325,12 +325,13 @@ export const zh = {
     editTitle: "模型配置",
     addTitle: "新增模型（OpenAI 协议）",
     addTitleVendor: "新增模型",
-    addProtocolHint:
-      "新增模型固定走 OpenAI Chat Completions 兼容协议（不按模型 id 自动路由），base URL 填其兼容端点",
-    addAutoRouteHint:
-      "该分组的新模型按上游 id 由 AgentHub 自动路由到厂商官方客户端：base URL 留空即官方端点，API key 留空按解析出的客户端读取环境变量",
+    addProtocolHint: "新增模型走 OpenAI Chat Completions 兼容协议，base URL 填其兼容端点",
+    /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
+    vendorProtocolHint: (vendor: string): string =>
+      `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
+    /** Non-blocking warning under the model id (preset direct-vendor groups, adding): the typed id is not a recognized official model id. */
     autoRouteNone:
-      "该 id 无法被 AgentHub 自动路由：请核对 id，或改在 Custom / 自建分组下以 OpenAI 协议接入",
+      "该 id 不是可识别的官方模型 id：请核对，或改在 Custom / 自建分组以 OpenAI 兼容接口接入",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:

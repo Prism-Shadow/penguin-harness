@@ -1463,14 +1463,18 @@ function ModelDialog({
           </div>
         )}
 
-        {/* Adding a model: protocol note first (first-party provider group = auto-route
-            by id; custom / self-defined group / gateway = fixed OpenAI protocol), then
-            the identity fields ("get model id / API key" links next to the respective
-            inputs; fill in the id to test connectivity — verify before saving). */}
+        {/* Adding a model: protocol note first (preset direct-vendor group = only the
+            vendor's official protocol, named via the group label — the in-field suffix
+            on the base URL below says which path; custom / self-defined group / gateway
+            = fixed OpenAI protocol), then the identity fields ("get model id / API key"
+            links next to the respective inputs; fill in the id to test connectivity —
+            verify before saving). */}
         {isNew && (
           <>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {vendorGroup ? S.models.addAutoRouteHint : S.models.addProtocolHint}
+              {vendorGroup && dialogProvider
+                ? S.models.vendorProtocolHint(dialogProvider.label)
+                : S.models.addProtocolHint}
             </p>
             {identityFields}
           </>

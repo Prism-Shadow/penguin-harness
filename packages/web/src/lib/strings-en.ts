@@ -351,11 +351,11 @@ export const en: Strings = {
     addTitle: "Add model (OpenAI protocol)",
     addTitleVendor: "Add model",
     addProtocolHint:
-      "New models always use the OpenAI Chat Completions protocol (no auto-routing by model id); set the base URL to a compatible endpoint",
-    addAutoRouteHint:
-      "New models in this group are auto-routed by their upstream id to the vendor's official client: leave the base URL empty for the official endpoint, and an empty API key falls back to the resolved client's environment variable",
+      "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
+    vendorProtocolHint: (vendor: string): string =>
+      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     autoRouteNone:
-      "AgentHub cannot auto-route this id: double-check it, or add the model under Custom / a user-defined group with the OpenAI protocol",
+      "This id is not a recognized official model id: double-check it, or add the model under Custom / a user-defined group with an OpenAI-compatible endpoint",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
