@@ -86,6 +86,8 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [workspacePrompt, setWorkspacePrompt] = useState("");
   const mainPromptRef = useRef<HTMLTextAreaElement>(null);
   const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
+  // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
+  const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
@@ -404,6 +406,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           size="sm"
           rows={12}
           value={memoryPrompt}
+          onFocus={() => setLastPromptField("main")}
           onChange={(e) => setMemoryPrompt(e.target.value)}
         />
         <Textarea
@@ -413,23 +416,19 @@ export function MemoryTab({ agentId }: { agentId: string }) {
           size="sm"
           rows={6}
           value={workspacePrompt}
+          onFocus={() => setLastPromptField("workspace")}
           onChange={(e) => setWorkspacePrompt(e.target.value)}
         />
-        {/* Placeholder reference, the Prompt tab's convention — each token inserts into the field it belongs to. */}
+        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last. */}
         <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
           <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
           <ul className="space-y-1">
-            {[
-              ...S.memory.promptPlaceholders.map(([token, desc]) => [token, desc, "main"] as const),
-              ...S.memory.workspacePromptPlaceholders.map(
-                ([token, desc]) => [token, desc, "workspace"] as const,
-              ),
-            ].map(([token, desc, field]) => (
+            {S.memory.promptPlaceholders.map(([token, desc]) => (
               <li key={token} className="flex items-center gap-3 text-xs">
                 <button
                   type="button"
                   onClick={() =>
-                    field === "main"
+                    lastPromptField === "main"
                       ? insertPromptToken(mainPromptRef, memoryPrompt, setMemoryPrompt, token!)
                       : insertPromptToken(
                           workspacePromptRef,

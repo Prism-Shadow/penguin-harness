@@ -485,14 +485,18 @@ export const en: Strings = {
       "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
     promptLabel: "Main prompt",
     workspacePromptLabel: "Workspace addendum",
-    /** Memory-prompt placeholder reference: the first two insert into the main prompt, the last two into the workspace addendum. */
+    /** Memory-prompt placeholder reference; a chip inserts into whichever field was focused last. */
     promptPlaceholders: [
       ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory"],
       ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
-    ],
-    workspacePromptPlaceholders: [
-      ["{{MEMORY_DIR}}", "The current workspace's memory directory"],
-      ["{{MEMORY_INDEX}}", "Content of the workspace MEMORY.md index (truncated past 200 lines)"],
+      [
+        "{{MEMORY_DIR}}",
+        "The current workspace's memory directory; effective only in the workspace addendum",
+      ],
+      [
+        "{{MEMORY_INDEX}}",
+        "Content of the workspace MEMORY.md index (truncated past 200 lines); effective only in the workspace addendum",
+      ],
     ],
     insertToken: "Insert at the cursor",
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
