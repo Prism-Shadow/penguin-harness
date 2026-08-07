@@ -243,6 +243,13 @@ Choosing between the two: something about the user that would still hold in a di
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
 
 /**
+ * Cap on injected index lines per scope (one memory per line by convention), so a runaway
+ * `MEMORY.md` cannot flood the context. Only the injection is capped — the file on disk is
+ * never touched — and a truncation note tells the model to open the full index itself.
+ */
+export const MEMORY_INDEX_MAX_LINES = 200;
+
+/**
  * Built-in default compaction Prompt (summarize mode): tells the model the summary will
  * replace the transcript as its only record (so it must include everything needed to
  * continue the task) and that no tools may be called. The format is shown as a concrete

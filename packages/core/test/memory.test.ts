@@ -301,6 +301,19 @@ describe("{{MEMORY}} injection", () => {
     expect(prompt).toContain("- [pnpm](prefers-pnpm.md) — package manager");
   });
 
+  it("caps an injected index at 200 lines and notes the truncation", async () => {
+    const state = await agentState();
+    const lines = Array.from({ length: 220 }, (_, i) => `- [m${i}](m${i}.md) — hook`);
+    const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
+      userDir: "/data/memory/user",
+      userIndex: lines.join("\n"),
+    });
+    expect(prompt).toContain("- [m199](m199.md) — hook");
+    // The file on disk keeps all 220 lines; only the injection is capped.
+    expect(prompt).not.toContain("- [m200](m200.md) — hook");
+    expect(prompt).toContain("showing 200 of 220 lines");
+  });
+
   it("injects nothing at all when the Session has no Memory", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state);

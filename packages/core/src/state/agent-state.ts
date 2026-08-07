@@ -35,6 +35,7 @@ import {
   MEMORY_USER_DIR_PLACEHOLDER,
   MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
+  MEMORY_INDEX_MAX_LINES,
   type MemoryConfig,
   agentStateVersion,
   defaultAgentsMd,
@@ -279,10 +280,21 @@ function vaultKeysList(keys: string[]): string {
   return keys.map((key) => `- ${key}`).join("\n");
 }
 
-/** An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads "nothing saved" instead of a blank line. */
-function indexOrEmptyNote(index: string): string {
+/**
+ * An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads
+ * "nothing saved" instead of a blank line. Injection is capped at `MEMORY_INDEX_MAX_LINES`
+ * lines (one memory per line by convention) — past the cap the rest is replaced by a note
+ * telling the model to open the full file, and the file itself is never touched.
+ */
+function indexForInjection(index: string): string {
   const trimmed = index.trim();
-  return trimmed.length > 0 ? trimmed : MEMORY_INDEX_EMPTY_NOTE;
+  if (trimmed.length === 0) return MEMORY_INDEX_EMPTY_NOTE;
+  const lines = trimmed.split("\n");
+  if (lines.length <= MEMORY_INDEX_MAX_LINES) return trimmed;
+  return [
+    ...lines.slice(0, MEMORY_INDEX_MAX_LINES),
+    `(index truncated: showing ${MEMORY_INDEX_MAX_LINES} of ${lines.length} lines — open MEMORY.md for the rest)`,
+  ].join("\n");
 }
 
 /**
@@ -309,7 +321,7 @@ function memorySection(
       .split(MEMORY_USER_DIR_PLACEHOLDER)
       .join(memory.userDir)
       .split(MEMORY_USER_INDEX_PLACEHOLDER)
-      .join(indexOrEmptyNote(memory.userIndex));
+      .join(indexForInjection(memory.userIndex));
 
   const userBlock = substituteUser(config.prompt).trim();
   const workspace = memory.workspace;
@@ -318,7 +330,7 @@ function memorySection(
     .split(MEMORY_DIR_PLACEHOLDER)
     .join(workspace.dir)
     .split(MEMORY_INDEX_PLACEHOLDER)
-    .join(indexOrEmptyNote(workspace.index))
+    .join(indexForInjection(workspace.index))
     .trim();
   if (workspaceBlock.length === 0) return userBlock;
   return userBlock.length > 0 ? `${userBlock}\n\n${workspaceBlock}` : workspaceBlock;

@@ -473,16 +473,9 @@ export const en: Strings = {
   },
 
   memory: {
-    desc: "Long-term memory across Sessions (stored in agent_state/memory/): user memory applies everywhere, Workspace memory is kept per directory, and every scope carries its own MEMORY.md index. Indexes enter the model context; bodies are read on demand. Content edits happen in chat, by the agent.",
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): user memory applies to all of this agent's sessions, Workspace memory is kept per directory, and every scope carries its own MEMORY.md index. Indexes enter the model context; bodies are read on demand. Content edits happen in chat, by the agent. Turning the switch off only stops injection and deletes nothing.",
     enable: "Enable memory",
-    enabledHint:
-      "Memory indexes enter the agent's context, and a new Session with a persistent Workspace gets its memory directory prepared.",
-    disabledHint:
-      "Off: nothing is injected and no memory directory is prepared for new Sessions; existing files are all kept and can still be viewed or deleted.",
-    dirLabel: "Memory directory",
     userScope: "User memory",
-    userScopeHint:
-      "Holds what applies across Workspaces: who the user is, standing preferences, and references not tied to one codebase. Every session reads it, temporary Workspaces included.",
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",

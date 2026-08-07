@@ -213,7 +213,7 @@ updated_at: 2026-08-07
 
 每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
 
-进入上下文的只有索引。创建 Session 时，Harness 准备好各作用域目录（用户作用域在创建 Agent 时即已建立）、读取各自的 `MEMORY.md`，再从该 Agent 自己的配置渲染出 `{{MEMORY}}`：`memory.prompt` 恒定注入，其中 `{{MEMORY_USER_DIR}}` 替换为用户作用域目录、`{{MEMORY_USER_INDEX}}` 替换为其索引；持久 Workspace 下再追加 `memory.workspace_prompt`，其中 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` 替换为该 Workspace 的目录与索引。注入的索引内容由 `[user_memory_index]` / `[workspace_memory_index]` 成对 marker 包裹，便于模型区分注入内容与指令；空索引会注入一句"尚未保存任何内容"的占位说明。主题正文由模型按需读取。
+进入上下文的只有索引。创建 Session 时，Harness 准备好各作用域目录（用户作用域在创建 Agent 时即已建立）、读取各自的 `MEMORY.md`，再从该 Agent 自己的配置渲染出 `{{MEMORY}}`：`memory.prompt` 恒定注入，其中 `{{MEMORY_USER_DIR}}` 替换为用户作用域目录、`{{MEMORY_USER_INDEX}}` 替换为其索引；持久 Workspace 下再追加 `memory.workspace_prompt`，其中 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` 替换为该 Workspace 的目录与索引。注入的索引内容由 `[user_memory_index]` / `[workspace_memory_index]` 成对 marker 包裹，便于模型区分注入内容与指令；空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），超出部分以截断提示替代、由模型自行读取完整 `MEMORY.md`——磁盘上的文件不受影响。主题正文由模型按需读取。
 
 两半之所以是两个独立配置键：替换引擎没有条件分支，因此每一半只能提及在它出现的场合必定有值的占位符——临时 Workspace 不会被告知一个它并不存在的 `{{MEMORY_DIR}}`。作用域二选一的规则同理放在 Workspace 那一半：只有一个作用域的会话没得选，也就不必看到这条规则。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 
