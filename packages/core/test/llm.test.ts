@@ -21,6 +21,7 @@ import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
 import {
   EventTranslator,
   GenerativeModel,
+  MIN_OUTPUT_TOKENS,
   ToolCallIdAllocator,
   buildUniConfig,
   isAuthenticationError,
@@ -1397,6 +1398,121 @@ describe("GenerativeModel per-request thinking level", () => {
     await drainAll(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "xhigh" }));
     expect(configs[0] !== undefined && "thinking_level" in configs[0]).toBe(false);
     expect(configs[1]?.thinking_level).toBe(ThinkingLevel.XHIGH);
+  });
+});
+
+describe("GenerativeModel per-request output cap (window clamp, issue #218)", () => {
+  // Same capturing pattern as the thinking-level suite: the openStream seam receives the
+  // per-request resolved UniConfig, whose max_tokens is the value that would go on the
+  // wire. The fake stream's usage_metadata drives lastRequestTotal between requests.
+  function windowModel(opts: {
+    maxTokens?: number;
+    contextWindow?: number;
+    promptTokens?: number;
+  }): { model: GenerativeModel; configs: (UniConfig | undefined)[] } {
+    const configs: (UniConfig | undefined)[] = [];
+    class WindowModel extends GenerativeModel {
+      protected override openStream(
+        _uni: UniMessage,
+        _signal: AbortSignal,
+        config?: UniConfig,
+      ): AsyncIterable<UniEvent> {
+        configs.push(config);
+        return (async function* () {
+          yield ev({
+            content_items: [{ type: "text", text: "ok" }],
+            finish_reason: "stop",
+            usage_metadata: {
+              cached_tokens: 0,
+              prompt_tokens: opts.promptTokens ?? 1,
+              thoughts_tokens: 0,
+              response_tokens: 1,
+            },
+          });
+        })();
+      }
+    }
+    const model = new WindowModel({
+      modelId: "claude-sonnet-4-6",
+      tools: [],
+      ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+      ...(opts.contextWindow !== undefined ? { contextWindow: opts.contextWindow } : {}),
+    });
+    return { model, configs };
+  }
+
+  async function drainAll(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<void> {
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+  }
+
+  it("is a no-op for a big window: the configured cap goes out unchanged", async () => {
+    // No contextWindow → the assumed 128000 default; a small prompt leaves the subtraction
+    // far above the configured cap, so min() returns it verbatim.
+    const { model, configs } = windowModel({ maxTokens: 32000 });
+    await drainAll(model.streamGenerate({ newMessages: [userText("hi")] }));
+    expect(configs[0]?.max_tokens).toBe(32000);
+  });
+
+  it("clamps the first request of a small-window model below the window (the vLLM 400)", async () => {
+    // The issue #218 report: window 32768 with the seeded cap 32000 — the fixed cap
+    // overflowed the window on the very first request. The clamped value must leave the
+    // estimated input plus safety margin inside the window while staying positive.
+    const { model, configs } = windowModel({ maxTokens: 32000, contextWindow: 32768 });
+    await drainAll(model.streamGenerate({ newMessages: [userText("hello vllm")] }));
+    const cap = configs[0]?.max_tokens ?? 0;
+    expect(cap).toBeLessThan(32000);
+    expect(cap).toBeGreaterThan(30000); // tiny prompt: only the estimate + margin is shaved off
+  });
+
+  it("shrinks the cap as the measured context grows; floors instead of going non-positive", async () => {
+    const { model, configs } = windowModel({
+      maxTokens: 32000,
+      contextWindow: 32768,
+      promptTokens: 30_000,
+    });
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")] }));
+    // Request 2 reasons from request 1's real token_usage (total ≈ 30001): the remaining
+    // window is ~1.7k, so the cap lands between the floor and 2k.
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")] }));
+    const second = configs[1]?.max_tokens ?? 0;
+    expect(second).toBeLessThan(2000);
+    expect(second).toBeGreaterThanOrEqual(MIN_OUTPUT_TOKENS);
+    expect(second).toBeLessThan(configs[0]?.max_tokens ?? 0);
+  });
+
+  it("clamps to the deterministic floor once the window is exhausted (degenerate case)", async () => {
+    // A measured context beyond the window (compaction disabled/misconfigured): the cap
+    // pins at MIN_OUTPUT_TOKENS — never zero or negative, which providers reject outright.
+    const { model, configs } = windowModel({
+      maxTokens: 32000,
+      contextWindow: 32768,
+      promptTokens: 40_000,
+    });
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")] }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")] }));
+    expect(configs[1]?.max_tokens).toBe(MIN_OUTPUT_TOKENS);
+  });
+
+  it("keeps the no-explicit-cap contract: without a configured cap nothing goes on the wire", async () => {
+    // The provider's own default already bounds output by the remaining window; the clamp
+    // must not invent a cap where the config said "none".
+    const { model, configs } = windowModel({ contextWindow: 32768, promptTokens: 30_000 });
+    await drainAll(model.streamGenerate({ newMessages: [userText("a")] }));
+    await drainAll(model.streamGenerate({ newMessages: [userText("b")] }));
+    expect(configs[0] !== undefined && "max_tokens" in configs[0]).toBe(false);
+    expect(configs[1] !== undefined && "max_tokens" in configs[1]).toBe(false);
+  });
+
+  it("setHistory seeds the input estimate, so a resumed session clamps its first request", async () => {
+    const { model, configs } = windowModel({ maxTokens: 32000, contextWindow: 32768 });
+    // ~30k estimated tokens of replayed history (120k ASCII chars): without the seed the
+    // first request after resume would reason from an empty context and send ~31k.
+    model.setHistory([userText("x".repeat(120_000))]);
+    await drainAll(model.streamGenerate({ newMessages: [userText("continue")] }));
+    const cap = configs[0]?.max_tokens ?? 0;
+    expect(cap).toBeLessThan(2000);
+    expect(cap).toBeGreaterThanOrEqual(MIN_OUTPUT_TOKENS);
   });
 });
 

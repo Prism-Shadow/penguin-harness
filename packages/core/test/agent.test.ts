@@ -24,7 +24,7 @@ import {
   saveProjectConfig,
   setVaultEntry,
 } from "../src/index.js";
-import { effectiveMaxContextLength, metaMaxTokens } from "../src/agent.js";
+import { metaMaxTokens } from "../src/agent.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
 import type { EnvironmentConfig, EnvironmentServices, SubagentRunner } from "../src/interfaces.js";
@@ -79,15 +79,8 @@ afterEach(async () => {
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
 
-describe("effectiveMaxContextLength (compaction threshold clamped to the model window)", () => {
-  it("clamps to 75% of a small model window; leaves big/unknown windows and off untouched", () => {
-    expect(effectiveMaxContextLength(128000, 32768)).toBe(24576); // small window: clamp to 75%
-    expect(effectiveMaxContextLength(128000, 200000)).toBe(128000); // ample window: unchanged
-    expect(effectiveMaxContextLength(-1, 32768)).toBe(-1); // off: no clamping
-    expect(effectiveMaxContextLength(0, 32768)).toBe(0); // off: no clamping
-    expect(effectiveMaxContextLength(128000, "unknown")).toBe(128000); // unknown window: no clamping
-  });
-});
+// effectiveMaxContextLength moved to llm/context-limits.ts; its derivation (window-derived
+// compaction threshold, issue #218) is covered in test/context-limits.test.ts.
 
 describe("metaMaxTokens (meta-request budget tightened by the per-model cap)", () => {
   it("keeps the budget unless the per-model cap is smaller; never raises it", () => {

@@ -21,8 +21,8 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | --- | --- |
 | `provider` | Config group name; paired with `model_id` it forms the unique key |
 | `model_id` | Upstream request id |
-| `context_window` | Context window |
-| `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. Lower it for small-context models: the per-Agent default (32000) cannot fit into e.g. a 32k window together with any prompt. Omitting the field on a Web full-table save clears it |
+| `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset is assumed to be 128000 — set the real value for models with smaller windows |
+| `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
 | `client_type` | Protocol hint (e.g. `openai`); inferred by AgentHub from the model id when omitted |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
@@ -76,6 +76,13 @@ The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwe
 The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
 
 Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max (not exhaustive).
+
+## Local / self-hosted OpenAI-compatible endpoints (e.g. vLLM)
+
+A local inference server is just a `custom` entry: `client_type = "openai"`, `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), and the served model name as `model_id`. Two settings make it run smoothly:
+
+- **Enable tool calling server-side.** For vLLM, start the server with `--enable-auto-tool-choice` and the `--tool-call-parser` matching your model (e.g. `hermes` for Qwen, `llama3_json` for Llama 3.x); without them tool calls arrive as plain text and the agent loop cannot execute anything.
+- **Set the entry's `context_window` to the server's real window** — for vLLM, the `--max-model-len` value (e.g. `32768`). The per-request output cap and the compaction threshold both derive from this window automatically: requests clamp `max_tokens` to what the window still fits, and compaction fires before the window overflows, so no hand-tuned `max_tokens` is needed. Left unset, the window is assumed to be 128000, and a smaller real window will reject requests.
 
 ## Thinking levels
 

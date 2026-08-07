@@ -69,6 +69,12 @@ import type {
   ToolDefinition,
 } from "../interfaces.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
+import {
+  approximateMessagesTokens,
+  approximateTokens,
+  effectiveMaxOutputTokens,
+  resolveContextWindow,
+} from "./context-limits.js";
 
 // ---------------------------------------------------------------------------
 // Pure conversion function: OmniMessage[] → a single UniMessage (unit-testable, no network)
@@ -1028,6 +1034,25 @@ export class GenerativeModel implements LLMInterface {
    * instance rebuilt on compaction; defaults to a fresh one.
    */
   private readonly toolCallIds: ToolCallIdAllocator;
+  /** Configured output cap (`GenerativeModelConfig.maxTokens`); the per-request clamp derives the effective cap from it (see effectiveMaxTokens). */
+  private readonly configuredMaxTokens: number | undefined;
+  /** Model context window; unknown falls back to DEFAULT_CONTEXT_WINDOW (the web app displays the same assumption). */
+  private readonly contextWindow: number;
+  /**
+   * Construction-time estimate of the fixed request prefix (system prompt + tool schemas):
+   * the input-size floor for the first request of this object, before any real
+   * `token_usage` exists (the prefix is part of every request but never part of
+   * `newMessages`).
+   */
+  private readonly baseInputTokens: number;
+  /**
+   * The most recent completed request's `token_usage.request.total` — the freshest real
+   * measure of this context's size. The next request's input is that total plus the newly
+   * appended messages (the previous output became part of the context; providers stripping
+   * historical thinking only make this an overestimate, the safe direction). 0 until the
+   * first request completes; `setHistory` seeds an estimate on resume.
+   */
+  private lastRequestTotal = 0;
 
   /** Cumulative session tokens. */
   sessionTokens: TokenCounts = emptyTokenCounts();
@@ -1048,18 +1073,59 @@ export class GenerativeModel implements LLMInterface {
     this.defaultThinkingLevel = config.thinkingLevel;
     this.requestTimeoutMs = config.requestTimeoutMs ?? 120000;
     this.toolCallIds = config.toolCallIds ?? new ToolCallIdAllocator();
+    this.configuredMaxTokens = config.maxTokens;
+    this.contextWindow = resolveContextWindow(config.contextWindow);
+    this.baseInputTokens =
+      approximateTokens(config.systemPrompt ?? "") +
+      approximateTokens(JSON.stringify(this.uniConfig.tools ?? []));
   }
 
   /**
    * The UniConfig for one request: the shared frozen config plus this request's effective
    * thinking level (per-request override, else the construction-time default; neither → the
-   * key stays off the wire, preserving the provider default).
+   * key stays off the wire, preserving the provider default) and this request's effective
+   * output cap (the window-derived clamp below; equal to the configured cap for big-window
+   * models, so the frozen value goes out unchanged).
    */
-  private requestConfig(override: ThinkingLevelName | undefined): UniConfig {
+  private requestConfig(
+    override: ThinkingLevelName | undefined,
+    newMessages: OmniMessage[],
+  ): UniConfig {
     const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
-    return thinking === undefined
-      ? this.uniConfig
-      : { ...this.uniConfig, thinking_level: thinking };
+    const maxTokens = this.effectiveMaxTokens(newMessages);
+    let cfg = this.uniConfig;
+    if (thinking !== undefined) cfg = { ...cfg, thinking_level: thinking };
+    if (maxTokens !== undefined && maxTokens !== this.uniConfig.max_tokens) {
+      cfg = { ...cfg, max_tokens: maxTokens };
+    }
+    return cfg;
+  }
+
+  /**
+   * Per-request output cap: `min(configured max_tokens, context_window − estimated input −
+   * safety margin)`, floored — recomputed for every request (compaction requests included:
+   * they run through the same path, exactly when the context is largest) from the freshest
+   * input knowledge this object has: the last completed request's real `token_usage` total
+   * plus a character-heuristic estimate of the newly appended messages (no tokenizer;
+   * see context-limits.ts). Fixes issue #218: a fixed cap (the seeded 32000) that ignores
+   * the input made every request to a small-window model (e.g. a 32k vLLM) fail provider
+   * validation with a non-retryable 400.
+   *
+   * Interplay with compaction: the engine's compaction threshold is derived at
+   * `context_window − COMPACTION_HEADROOM` (see effectiveMaxContextLength), so under normal
+   * operation the context is summarized before the remaining window ever nears the
+   * MIN_OUTPUT_TOKENS floor; the floor only binds when compaction is disabled or the window
+   * is misconfigured, where a deterministic small cap beats a provider rejection.
+   * `undefined` = no positive cap configured: the key stays off the wire and the provider's
+   * own remaining-window default applies (the existing `-1` contract).
+   */
+  private effectiveMaxTokens(newMessages: OmniMessage[]): number | undefined {
+    return effectiveMaxOutputTokens(
+      this.configuredMaxTokens,
+      this.contextWindow,
+      Math.max(this.lastRequestTotal, this.baseInputTokens) +
+        approximateMessagesTokens(newMessages),
+    );
   }
 
   /**
@@ -1158,9 +1224,11 @@ export class GenerativeModel implements LLMInterface {
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
     try {
-      const it = this.openStream(uniMessage, ac.signal, this.requestConfig(params.thinkingLevel))[
-        Symbol.asyncIterator
-      ]();
+      const it = this.openStream(
+        uniMessage,
+        ac.signal,
+        this.requestConfig(params.thinkingLevel, params.newMessages),
+      )[Symbol.asyncIterator]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
         // interrupt while this generator is suspended at the `yield` below (the typical case —
@@ -1264,6 +1332,10 @@ export class GenerativeModel implements LLMInterface {
     // Normal completion: backfill stop + the complete model_msg, and produce token_usage.
     for (const msg of translator.finish()) yield msg;
     const requestTokens = translator.getRequestTokens();
+    // The provider-measured context size, feeding the next request's output-cap clamp
+    // (see effectiveMaxTokens). Only a completed request updates it: an interrupted or
+    // failed attempt was never committed, so the context did not grow.
+    this.lastRequestTotal = requestTokens.total;
     this.sessionTokens = addTokenCounts(this.sessionTokens, requestTokens);
     yield tokenUsage(this.sessionTokens, requestTokens);
     return { status: "completed" };
@@ -1289,6 +1361,14 @@ export class GenerativeModel implements LLMInterface {
         this.toolCallIds.markUsed(p.tool_call_id);
       }
     }
+    // The injected history is context this object's first request carries without any
+    // token_usage having measured it: seed the input-size tracker with an estimate so the
+    // output-cap clamp (effectiveMaxTokens) doesn't reason from an empty context on a
+    // resumed session. The first completed request replaces this with the real total.
+    this.lastRequestTotal = Math.max(
+      this.lastRequestTotal,
+      this.baseInputTokens + approximateMessagesTokens(history),
+    );
     this.client.setHistory(groupHistoryToUniMessages(history));
   }
 

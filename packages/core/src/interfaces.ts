@@ -110,8 +110,18 @@ export interface GenerativeModelConfig {
   tools: ToolDefinition[];
   /** Full system Prompt after placeholder substitution in the system_config.system_prompt template. */
   systemPrompt?: string;
+  /**
+   * Model context window (tokens, from the model entry). Used to clamp each request's
+   * effective output cap so `input + max_tokens` stays inside the window (issue #218);
+   * unset assumes `DEFAULT_CONTEXT_WINDOW` (128000, see llm/context-limits.ts).
+   */
   contextWindow?: number;
-  /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
+  /**
+   * Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the
+   * request). A positive cap is a ceiling, not a constant: each request sends
+   * `min(maxTokens, contextWindow − estimated input − safety margin)` (see
+   * llm/context-limits.ts) so small-window models never fail provider validation.
+   */
   maxTokens?: number;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
