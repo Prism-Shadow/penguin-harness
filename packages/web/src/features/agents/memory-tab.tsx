@@ -1,0 +1,572 @@
+/**
+ * Agent settings page "Memory" tab: the switch, then every memory the Agent keeps, grouped by
+ * scope — user memory first (read by every Session), then one group per Workspace (labeled by
+ * its `.workspace` path, newest activity first).
+ *
+ * The tab is read + delete only, matching the API: a memory's content is the model's document,
+ * so "edit" opens a modal first — the requirement field and a live preview of the generated
+ * prompt, the same shape as the skill import modal — and then jumps to a new chat with this
+ * Agent and the prompt as the prefilled draft (the same draft-cache route). For a Workspace
+ * memory the draft also pins that Workspace, so the editing Session is injected with the very
+ * index it is about to change. Deleting confirms first and also drops the file's MEMORY.md
+ * index lines (server-side).
+ *
+ * The switch writes immediately rather than joining a tab-level Save, so turning Memory off
+ * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
+ * fully usable; it only stops Memory from entering the context and from preparing directories
+ * for new Sessions.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
+import { useNavigate } from "react-router";
+import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
+import * as api from "../../api/endpoints";
+import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
+import { formatRelativeDate } from "../../lib/format";
+import { useAuth } from "../../state/auth";
+import { useLocale } from "../../state/locale";
+import { useProject } from "../../state/project";
+import { Button } from "../../components/ui/button";
+import { Modal } from "../../components/ui/modal";
+import { Textarea } from "../../components/ui/input";
+import { Switch } from "../../components/ui/switch";
+import { Badge, type BadgeTone } from "../../components/ui/badge";
+import { Chevron } from "../../components/ui/chevron";
+import { Drawer } from "../../components/ui/drawer";
+import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
+import { SkeletonList } from "../../components/ui/skeleton";
+import { toastError, toastSuccess } from "../../components/ui/toast";
+import { Md } from "../chat/md";
+import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { buildMemoryEditPrompt } from "./memory-edit-source";
+
+/** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
+function bodyWithoutFrontmatter(content: string): string {
+  return content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
+
+/** Badge tone per topic type (unknown/missing types render no badge at all). */
+const TYPE_TONES: Record<NonNullable<MemoryFileInfo["type"]>, BadgeTone> = {
+  user: "brand",
+  feedback: "amber",
+  project: "gray",
+  reference: "green",
+};
+
+/** One scope group as the tab renders it: the overview entry plus its listed files. */
+interface ScopeGroup {
+  scope: MemoryScopeInfo;
+  files: MemoryFileInfo[];
+}
+
+/** A memory selected for an action (view drawer / delete confirm). */
+interface Selected {
+  scope: MemoryScopeInfo;
+  file: MemoryFileInfo;
+}
+
+export function MemoryTab({
+  agentId,
+  onConfigChanged,
+}: {
+  agentId: string;
+  /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
+  onConfigChanged?: () => void;
+}) {
+  const navigate = useNavigate();
+  const { locale } = useLocale();
+  const userId = useAuth().user?.userId ?? null;
+  const { currentProject, setCurrentAgentId } = useProject();
+  const projectId = currentProject?.projectId ?? null;
+
+  const [enabled, setEnabled] = useState(true);
+  const [templateHasMemory, setTemplateHasMemory] = useState(true);
+  const [memoryDir, setMemoryDir] = useState("");
+  const [groups, setGroups] = useState<ScopeGroup[] | null>(null);
+  // Tab-level error is the initial load failure only; actions report via toast.
+  const [error, setError] = useState<string | null>(null);
+  const [switchBusy, setSwitchBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [memoryPrompt, setMemoryPrompt] = useState("");
+  const [workspacePrompt, setWorkspacePrompt] = useState("");
+  const mainPromptRef = useRef<HTMLTextAreaElement>(null);
+  const workspacePromptRef = useRef<HTMLTextAreaElement>(null);
+  // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
+  const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
+  const { requestSave, element: saveConfirm } = useSaveConfirm();
+  const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
+  const [editing, setEditing] = useState<Selected | null>(null);
+  const [editRequirement, setEditRequirement] = useState("");
+  const [removing, setRemoving] = useState<Selected | null>(null);
+
+  const load = useCallback(async () => {
+    if (!projectId || !agentId) return;
+    setGroups(null);
+    setError(null);
+    try {
+      const [overview, configView] = await Promise.all([
+        api.getMemoryOverview(projectId, agentId),
+        api.getAgentConfig(projectId, agentId),
+      ]);
+      setMemoryPrompt(configView.config.memory.prompt);
+      setWorkspacePrompt(configView.config.memory.workspacePrompt);
+      setEnabled(overview.enabled);
+      setTemplateHasMemory(overview.templateHasMemory);
+      setMemoryDir(overview.memoryDir);
+      // Files are the source of truth and each scope is one request; fetch them in parallel.
+      setGroups(
+        await Promise.all(
+          overview.scopes.map(async (scope) => {
+            try {
+              return {
+                scope,
+                files: (await api.getMemoryFiles(projectId, agentId, scope.scopeKey)).files,
+              };
+            } catch {
+              // One unreadable scope (bad hand-made directory name, raced delete) must not
+              // blank the whole tab; it lists as an empty group instead.
+              return { scope, files: [] };
+            }
+          }),
+        ),
+      );
+    } catch (e) {
+      setError(apiErrorText(e));
+    }
+  }, [projectId, agentId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggleEnabled = async (next: boolean) => {
+    if (!projectId) return;
+    setSwitchBusy(true);
+    try {
+      const res = await api.putAgentConfig(projectId, agentId, {
+        config: { memory: { enabled: next } },
+      });
+      setEnabled(res.config.memory.enabled);
+      toastSuccess(S.common.saved);
+      onConfigChanged?.();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setSwitchBusy(false);
+    }
+  };
+
+  /** The explicit adoption path for an agent whose template predates Memory: one idempotent config write. */
+  const insertPlaceholder = async () => {
+    if (!projectId) return;
+    try {
+      const overview = await api.insertMemoryPlaceholder(projectId, agentId);
+      setTemplateHasMemory(overview.templateHasMemory);
+      toastSuccess(S.memory.insertPlaceholderDone);
+      onConfigChanged?.();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  /** Same contract as the Prompt tab's inserter: execCommand keeps the textarea's native undo stack, with a state-splice fallback. */
+  const insertPromptToken = (
+    ref: RefObject<HTMLTextAreaElement | null>,
+    value: string,
+    setValue: (next: string) => void,
+    token: string,
+  ) => {
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      const inserted = document.execCommand?.("insertText", false, token);
+      if (inserted) return; // onChange updates state from e.target.value
+    }
+    const start = el ? el.selectionStart : value.length;
+    const end = el ? el.selectionEnd : value.length;
+    setValue(value.slice(0, start) + token + value.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = start + token.length;
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
+  const savePrompts = () =>
+    requestSave(() => {
+      if (!projectId) return;
+      void api
+        .putAgentConfig(projectId, agentId, {
+          config: { memory: { prompt: memoryPrompt, workspacePrompt } },
+        })
+        .then((res) => {
+          setMemoryPrompt(res.config.memory.prompt);
+          setWorkspacePrompt(res.config.memory.workspacePrompt);
+          toastSuccess(S.common.saved);
+          onConfigChanged?.();
+        })
+        .catch((e: unknown) => toastError(apiErrorText(e)));
+    });
+
+  const openView = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
+    if (!projectId) return;
+    try {
+      const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name);
+      setViewing({ scope, file: res.file, content: res.content });
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  const memoryFilePath = (scope: MemoryScopeInfo, file: MemoryFileInfo) =>
+    `${memoryDir}/${scope.scopeKey}/${file.name}`;
+
+  /** Opens the edit modal (closing the view drawer if it is up): requirement field + prompt preview, then the chat jump. */
+  const openEditor = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
+    setViewing(null);
+    setEditRequirement("");
+    setEditing({ scope, file });
+  };
+
+  const editPrompt = editing
+    ? buildMemoryEditPrompt(
+        editing.file.title,
+        memoryFilePath(editing.scope, editing.file),
+        editRequirement,
+      )
+    : "";
+
+  const copyEditPrompt = () => {
+    void navigator.clipboard
+      .writeText(editPrompt)
+      .then(() => toastSuccess(S.memory.editCopied))
+      .catch(() => toastError(S.common.unknownError));
+  };
+
+  /**
+   * The edit-via-chat jump: prefill the draft (merging over what is already cached, clearing a
+   * stale `/agent` handoff chip that would forward the prompt to a different Agent), pin this
+   * Agent — and for a Workspace memory pin that Workspace too, so the editing Session reads the
+   * index it is editing.
+   */
+  const openEditChat = () => {
+    if (!editing || !userId || !projectId) return;
+    const { scope } = editing;
+    const key = draftKey(userId, projectId);
+    saveDraft(key, {
+      ...loadDraft(key),
+      agentId,
+      text: editPrompt,
+      ...(scope.workspacePath !== undefined ? { workspace: scope.workspacePath } : {}),
+      skills: [],
+      handoffAgentId: undefined,
+    });
+    setCurrentAgentId(agentId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, {
+      state: {
+        agentId,
+        ...(scope.workspacePath !== undefined ? { workspace: scope.workspacePath } : {}),
+      },
+    });
+  };
+
+  const confirmRemove = async () => {
+    if (!projectId || !removing) return;
+    const target = removing;
+    setRemoving(null);
+    try {
+      await api.deleteMemoryFile(projectId, agentId, target.scope.scopeKey, target.file.name);
+      toastSuccess(S.memory.deleteDone);
+      if (viewing && viewing.file.name === target.file.name) setViewing(null);
+      await load();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  if (error) return <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
+
+  const scopeTitle = (scope: MemoryScopeInfo): string =>
+    scope.kind === "user"
+      ? S.memory.userScope
+      : (scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey);
+
+  const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <Button size="sm" onClick={() => void openView(scope, file)}>
+        {S.memory.view}
+      </Button>
+      <Button size="sm" onClick={() => openEditor(scope, file)}>
+        {S.memory.edit}
+      </Button>
+      <Button size="sm" variant="danger" onClick={() => setRemoving({ scope, file })}>
+        {S.memory.delete}
+      </Button>
+    </div>
+  );
+
+  const fileRow = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
+    <li key={file.name} className="flex items-center gap-3 px-3.5 py-2.5">
+      {file.type !== undefined && (
+        <Badge tone={TYPE_TONES[file.type]}>{S.memory.types[file.type]}</Badge>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
+          {file.title}
+        </p>
+        {file.description && (
+          <p className="truncate text-xs text-gray-500 dark:text-gray-400">{file.description}</p>
+        )}
+      </div>
+      <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+        {file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale)}
+      </span>
+      {rowActions(scope, file)}
+    </li>
+  );
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{S.memory.desc}</p>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
+        <Switch checked={enabled} onChange={(v) => void toggleEnabled(v)} disabled={switchBusy} />
+      </div>
+
+      {!templateHasMemory && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
+          <p className="text-xs text-amber-800 dark:text-amber-300">{S.memory.templateMissing}</p>
+          <Button size="sm" onClick={() => void insertPlaceholder()}>
+            {S.memory.insertPlaceholder}
+          </Button>
+        </div>
+      )}
+
+      {groups === null ? (
+        <SkeletonList rows={4} />
+      ) : (
+        <div className={enabled ? "space-y-5" : "space-y-5 opacity-60"}>
+          {groups.map(({ scope, files }) => {
+            const open = !collapsed.has(scope.scopeKey);
+            return (
+              <section
+                key={scope.scopeKey}
+                className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
+              >
+                {/* Group header (same convention as the skill library groups): the whole row toggles collapse. */}
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(scope.scopeKey)) next.delete(scope.scopeKey);
+                      else next.add(scope.scopeKey);
+                      return next;
+                    })
+                  }
+                  className="flex w-full items-center gap-2.5 bg-gray-50 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+                >
+                  <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    {scopeTitle(scope)}
+                  </span>
+                  {scope.kind === "workspace" && scope.workspacePath !== undefined && (
+                    <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                      {scope.workspacePath}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1" />
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {S.memory.itemCount(files.length)}
+                  </span>
+                  <Chevron open={open} className="text-gray-400" />
+                </button>
+                <div
+                  className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                >
+                  {/* inert while collapsed: rows at zero height shouldn't still be Tab-focusable or clickable. */}
+                  <div className="overflow-hidden" inert={!open}>
+                    {files.length === 0 ? (
+                      <p className="px-4 py-4 text-center text-xs text-gray-400 dark:text-gray-500">
+                        {scope.kind === "user" ? S.memory.emptyUserScope : S.memory.emptyScope}
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+                        {files.map((file) => fileRow(scope, file))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+
+      <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {S.memory.promptSection}
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            {S.memory.promptSectionHint}
+          </p>
+        </div>
+        <Textarea
+          ref={mainPromptRef}
+          label={S.memory.promptLabel}
+          mono
+          size="sm"
+          rows={12}
+          value={memoryPrompt}
+          onFocus={() => setLastPromptField("main")}
+          onChange={(e) => setMemoryPrompt(e.target.value)}
+        />
+        <Textarea
+          ref={workspacePromptRef}
+          label={S.memory.workspacePromptLabel}
+          mono
+          size="sm"
+          rows={6}
+          value={workspacePrompt}
+          onFocus={() => setLastPromptField("workspace")}
+          onChange={(e) => setWorkspacePrompt(e.target.value)}
+        />
+        {/* Placeholder reference, the Prompt tab's convention — a chip inserts into whichever field was focused last. */}
+        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+          <p className="mb-2 text-xs font-semibold text-gray-500">{S.agent.placeholdersTitle}</p>
+          <ul className="space-y-1">
+            {S.memory.promptPlaceholders.map(([token, desc]) => (
+              <li key={token} className="flex items-center gap-3 text-xs">
+                <button
+                  type="button"
+                  onClick={() =>
+                    lastPromptField === "main"
+                      ? insertPromptToken(mainPromptRef, memoryPrompt, setMemoryPrompt, token!)
+                      : insertPromptToken(
+                          workspacePromptRef,
+                          workspacePrompt,
+                          setWorkspacePrompt,
+                          token!,
+                        )
+                  }
+                  title={S.memory.insertToken}
+                  className="shrink-0 rounded border border-gray-200 bg-white px-1.5 py-0.5 font-mono font-semibold text-gray-800 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700"
+                >
+                  {token}
+                </button>
+                <span className="text-gray-500 dark:text-gray-400">{desc}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex justify-end">
+          <Button size="sm" variant="primary" onClick={savePrompts}>
+            {S.common.save}
+          </Button>
+        </div>
+      </section>
+
+      {saveConfirm}
+
+      <Drawer
+        open={viewing !== null}
+        side="right"
+        title={viewing?.file.title ?? ""}
+        onClose={() => setViewing(null)}
+        widthClass="max-w-lg"
+      >
+        {viewing && (
+          <div className="flex h-full flex-col">
+            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                {viewing.file.type !== undefined && (
+                  <Badge tone={TYPE_TONES[viewing.file.type]}>
+                    {S.memory.types[viewing.file.type]}
+                  </Badge>
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
+                </span>
+              </div>
+              {viewing.file.description && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {viewing.file.description}
+                </p>
+              )}
+              <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
+                <Md text={bodyWithoutFrontmatter(viewing.content)} />
+              </div>
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+              <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
+                {S.memory.edit}
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
+                {S.memory.delete}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      <Modal
+        open={editing !== null}
+        title={S.memory.editTitle}
+        onClose={() => setEditing(null)}
+        widthClass="sm:max-w-lg"
+      >
+        {editing && (
+          <div className="space-y-2.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.editWhy}</p>
+            <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
+              {memoryFilePath(editing.scope, editing.file)}
+            </p>
+            <Textarea
+              label={S.memory.editRequirementLabel}
+              size="sm"
+              rows={2}
+              value={editRequirement}
+              onChange={(e) => setEditRequirement(e.target.value)}
+              placeholder={S.memory.editRequirementPlaceholder}
+            />
+            <Textarea
+              label={S.memory.editPromptLabel}
+              size="sm"
+              rows={6}
+              readOnly
+              value={editPrompt}
+              className="text-gray-600 dark:text-gray-300"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={copyEditPrompt}>
+                {S.memory.editCopyPrompt}
+              </Button>
+              <Button size="sm" variant="primary" onClick={openEditChat}>
+                {S.memory.editOpenChat}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        open={removing !== null}
+        tone="danger"
+        title={S.memory.deleteTitle}
+        confirmLabel={S.memory.delete}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => void confirmRemove()}
+      >
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          {removing ? S.memory.deleteConfirm(removing.file.title) : ""}
+        </p>
+      </ConfirmModal>
+    </div>
+  );
+}

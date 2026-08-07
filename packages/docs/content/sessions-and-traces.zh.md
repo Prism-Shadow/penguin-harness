@@ -30,7 +30,9 @@ PenguinHarness 的全部运行数据都落在本地文件系统：配置是可�
 └── agents/
     └── <agent>/
         ├── agent_state/              # system_config.yaml、AGENTS.md、.vault.toml、
-        │                             # tools/、memory/、skills/、schedule/
+        │                             # tools/、skills/、schedule/
+        │   └── memory/               # 记忆：user/ 加每个 Workspace 一个目录，
+        │                             # 各自带一份 MEMORY.md 索引
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # 临时文件，按 Session id 建子目录（如粘贴的图片）

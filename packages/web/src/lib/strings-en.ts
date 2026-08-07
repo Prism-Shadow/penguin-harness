@@ -240,6 +240,7 @@ export const en: Strings = {
     backToList: "Back to Agents",
     tabOverview: "Overview",
     tabPrompt: "Prompt",
+    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
@@ -255,6 +256,10 @@ export const en: Strings = {
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
+      [
+        "{{MEMORY}}",
+        "Injects the memory block: memory.prompt plus memory.workspace_prompt (persistent workspaces only); empty when memory is off",
+      ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{DATE}}", "Current date"],
@@ -467,6 +472,66 @@ export const en: Strings = {
     pricingAllOrNone: "Fill all three prices",
     pricingInvalid: "Must be a number",
     contextWindowInvalid: "Must be a number",
+  },
+
+  memory: {
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): the agent saves what is worth keeping as it works, and you can also just ask it to remember something. User memory applies to all of this agent's sessions; workspace memory is kept per workspace. Memory edits are made by the agent in chat. Turning the switch off only stops memory from being used and deletes nothing.",
+    enable: "Enable memory",
+    userScope: "User memory",
+    templateMissing:
+      "The prompt template has no {{MEMORY}} placeholder, so memory never enters the context.",
+    insertPlaceholder: "Insert the {{MEMORY}} placeholder",
+    insertPlaceholderDone: "Inserted",
+    promptSection: "Memory prompt",
+    promptSectionHint:
+      "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
+    promptLabel: "Main prompt",
+    workspacePromptLabel: "Workspace addendum",
+    /** Memory-prompt placeholder reference; a chip inserts into whichever field was focused last. */
+    promptPlaceholders: [
+      ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory"],
+      ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
+      [
+        "{{MEMORY_DIR}}",
+        "The current workspace's memory directory; effective only in the workspace addendum",
+      ],
+      [
+        "{{MEMORY_INDEX}}",
+        "Content of the workspace MEMORY.md index (truncated past 200 lines); effective only in the workspace addendum",
+      ],
+    ],
+    insertToken: "Insert at the cursor",
+    itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
+    emptyScope:
+      "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
+    emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
+    view: "View",
+    edit: "Edit",
+    editTitle: "Edit memory",
+    editWhy:
+      "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
+    editRequirementLabel: "What to change",
+    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editPromptLabel: "Prompt preview",
+    editCopyPrompt: "Copy prompt",
+    editCopied: "Copied",
+    editOpenChat: "Open a new chat",
+    delete: "Delete",
+    deleteTitle: "Delete this memory?",
+    deleteConfirm: (name: string): string =>
+      `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteDone: "Deleted",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string, filePath: string): string =>
+      `Please update a memory: ${title}\nFile: ${filePath}`,
+    editPromptTail:
+      "After editing, update the MEMORY.md index line and updated_at in the same directory.\nWhat to change: ",
+    types: {
+      user: "User",
+      feedback: "Feedback",
+      project: "Project",
+      reference: "Reference",
+    },
   },
 
   vault: {

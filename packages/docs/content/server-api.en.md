@@ -129,6 +129,10 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | DELETE | /agents/:agentId | Delete an Agent |
 | GET / PUT | /agents/:agentId/config | Read / write config (AGENTS.md + system_config.yaml; PUT preserves YAML comments) |
 | GET / PUT | /agents/:agentId/vault | Vault environment variables (values masked; PUT is a full replace) |
+| GET | /agents/:agentId/memory | Memory overview: the switch, whether the template carries `{{MEMORY}}`, and one entry per scope — the user scope (`user`, `kind: "user"`) first, then the Workspaces |
+| POST | /agents/:agentId/memory/template-placeholder | Insert the `{{MEMORY}}` placeholder into the prompt template (idempotent; the explicit adoption path for an Agent created before Memory) |
+| GET | /agents/:agentId/memory/scopes/:key/files | List one scope's topic files (frontmatter + stats); `:key` is a workspace key or `user` |
+| GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | Read one topic file / delete it (also pruning its `MEMORY.md` index lines) |
 | GET | /agents/:agentId/export | Export the Agent State snapshot (tar.gz download) |
 | POST | /agents/:agentId/import | Import a snapshot: `{dataBase64, confirm?}`; 409 on version conflict without confirm |
 | GET / POST | /agents/:agentId/skills | List / install installed Skills |

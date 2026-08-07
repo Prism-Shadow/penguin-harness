@@ -106,6 +106,9 @@ output = 0.857143
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
+| `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
+| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` |
+| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
@@ -151,6 +154,11 @@ compaction:
 | `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
+| `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
+| `{{MEMORY_USER_DIR}}` | 记忆提示词内：用户记忆目录的绝对路径 |
+| `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多 200 行） |
+| `{{MEMORY_DIR}}` | 仅 `memory.workspace_prompt` 内：当前 Workspace 的记忆目录 |
+| `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多 200 行） |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -166,6 +174,57 @@ compaction:
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
+
+## 记忆
+
+`agent_state/memory/` 保存 Agent 跨 Session 的长期记忆：用户反馈、项目决策、协作约定与外部系统入口——这些无法从 Workspace 或代码历史可靠重新推导。它不是上下文压缩：压缩保存单个 Session 的短期工作状态。
+
+记忆有两个作用域，都归属于单个 Agent，绝不跨 Agent 共享：
+
+- **用户作用域**（`memory/user/`）——无论在哪工作都成立的内容：用户是谁、其长期偏好、与具体代码库无关的参考。每个 Session 都会读到，包括运行在临时 Workspace 中的会话——那种会话没有别处可写。
+- **Workspace 作用域**（`memory/<workspace_key>/`）——关于某一个 Workspace 的事实。同一 Agent、同一 Workspace 的多个 Session 共享；不同 Workspace 的主题文件相互隔离。
+
+每个作用域各带一份 `MEMORY.md` 索引；不同 Agent 即使使用同一 Workspace 也各自维护。记忆位于 Agent State，因此随导出、导入与快照一同流转，Project 内有权访问该 Agent 的成员都能读到——所以凭据与敏感个人信息绝不应写入。
+
+```text
+agent_state/memory/
+├── user/                         # 用户作用域（无 marker：它不对应任何路径）
+│   ├── MEMORY.md                 # 本作用域索引
+│   └── prefers-pnpm.md
+└── my-app-a81f32c4/              # 单个 Workspace
+    ├── .workspace                # 该 key 对应的 Workspace 路径
+    ├── MEMORY.md
+    └── testing-conventions.md
+```
+
+`user` 是保留目录名。之所以安全：生成的 workspace key 一律是 `<base>-<8 位十六进制>`，必然含连字符——不含连字符的名字永远不会被生成出来。
+
+workspace key 为 `<安全 basename>-<真实路径 sha256 的 8 位十六进制>`。身份只由实际目录决定，与 Git 无关：指向同一目录的两个软链接得到同一 key；目录移动或重命名后视为新的 Workspace（旧记忆仍以旧 key 留在磁盘上）。PenguinHarness 自动创建的临时 Workspace（位于 `agents/<agent_id>/workspaces/` 下）没有 Workspace 作用域，子 Agent 继承该临时 Workspace 时同样没有：临时 Workspace 是每个 Session 分配一个，之后不会有任何 Session 再跑进去读它。这类会话仍然拥有用户作用域——它能学到的东西本来也属于那一层。
+
+主题文件按语义划分，不按 Task、Session 或日期划分，并带 frontmatter：
+
+```markdown
+---
+name: testing-conventions
+description: 项目的测试环境和验证规则
+type: feedback
+updated_at: 2026-08-07
+---
+
+- 集成测试必须连接真实数据库，不使用 mock repository。
+```
+
+`type` 取 `user`（用户是谁——角色、专长、长期偏好；用户作用域的类型）、`feedback`（用户明确给出、未来应持续遵守的反馈与偏好）、`project`（无法仅从代码推导的决策、约束与计划及其理由）或 `reference`（外部系统、文档与服务的稳定入口）。记错的主题连同其索引行一并删除；日期写绝对日期（`YYYY-MM-DD`），相对日期对后续 Session 没有意义。不应保存：可从代码、配置或 Git 历史直接获得的事实；短期任务进度与调试流水；凭据、Token 等敏感值；未经确认的推测；大段对话原文。
+
+每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
+
+进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范、用户作用域与其索引，含 `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}`——持久 Workspace 的会话再追加 `memory.workspace_prompt`（含 `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑。注入的索引内容由 `[user_memory_index]` / `[workspace_memory_index]` 成对 marker 包裹，便于模型区分注入内容与指令；空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），超出部分以截断提示替代、由模型自行读取完整 `MEMORY.md`——磁盘上的文件不受影响。主题正文由模型按需读取。
+
+两半之所以是两个独立配置键：替换引擎没有条件分支，因此每一半只能提及在它出现的场合必定有值的占位符——临时 Workspace 不会被告知一个它并不存在的 `{{MEMORY_DIR}}`，作用域二选一的规则也因此放在 Workspace 那一半。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
+
+模板中没有 `{{MEMORY}}` 的 Agent（例如创建于记忆功能之前）不会注入任何内容；记忆标签页会给出提示并提供一键插入占位符（插到 `# Environment` 之前）——不存在任何自动拼接。组装后的完整提示词记录在 `session_meta`。
+
+查看、删除或让 Agent 修改已保存的记忆，见设置页的[记忆标签](/web-app#agent-设置agents)。
 
 ## Vault
 
