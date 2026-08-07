@@ -40,14 +40,7 @@ import { SchedulesTab } from "./schedules-tab";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey =
-  | "overview"
-  | "prompt"
-  | "memory"
-  | "runtime"
-  | "tools"
-  | "skills"
-  | "vault"
-  | "schedules";
+  "overview" | "prompt" | "memory" | "runtime" | "tools" | "skills" | "vault" | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
