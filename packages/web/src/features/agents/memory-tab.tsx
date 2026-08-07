@@ -83,8 +83,6 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const [switchBusy, setSwitchBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [memoryPrompt, setMemoryPrompt] = useState("");
-  const [workspacePrompt, setWorkspacePrompt] = useState("");
-  const [promptsOpen, setPromptsOpen] = useState(false);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
@@ -101,7 +99,6 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         api.getAgentConfig(projectId, agentId),
       ]);
       setMemoryPrompt(configView.config.memory.prompt);
-      setWorkspacePrompt(configView.config.memory.workspacePrompt);
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
@@ -151,17 +148,14 @@ export function MemoryTab({ agentId }: { agentId: string }) {
     }
   };
 
-  /** Saves both memory prompts through the ordinary config write (confirm-first, like the other settings tabs). */
-  const savePrompts = () =>
+  /** Saves the memory prompt through the ordinary config write (confirm-first, like the other settings tabs). */
+  const savePrompt = () =>
     requestSave(() => {
       if (!projectId) return;
       void api
-        .putAgentConfig(projectId, agentId, {
-          config: { memory: { prompt: memoryPrompt, workspacePrompt } },
-        })
+        .putAgentConfig(projectId, agentId, { config: { memory: { prompt: memoryPrompt } } })
         .then((res) => {
           setMemoryPrompt(res.config.memory.prompt);
-          setWorkspacePrompt(res.config.memory.workspacePrompt);
           toastSuccess(S.common.saved);
         })
         .catch((e: unknown) => toastError(apiErrorText(e)));
@@ -366,48 +360,25 @@ export function MemoryTab({ agentId }: { agentId: string }) {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
-        <button
-          type="button"
-          aria-expanded={promptsOpen}
-          onClick={() => setPromptsOpen((v) => !v)}
-          className="flex w-full items-center gap-2.5 bg-gray-50 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
-        >
-          <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+      <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
             {S.memory.promptSection}
-          </span>
-          <span className="min-w-0 flex-1" />
-          <Chevron open={promptsOpen} className="text-gray-400" />
-        </button>
-        <div
-          className={`grid transition-[grid-template-rows] duration-200 ease-out ${promptsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-        >
-          <div className="overflow-hidden" inert={!promptsOpen}>
-            <div className="space-y-2.5 border-t border-gray-200 p-3.5 dark:border-gray-800">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {S.memory.promptSectionHint}
-              </p>
-              <Textarea
-                label={S.memory.promptLabel}
-                size="sm"
-                rows={12}
-                value={memoryPrompt}
-                onChange={(e) => setMemoryPrompt(e.target.value)}
-              />
-              <Textarea
-                label={S.memory.workspacePromptLabel}
-                size="sm"
-                rows={6}
-                value={workspacePrompt}
-                onChange={(e) => setWorkspacePrompt(e.target.value)}
-              />
-              <div className="flex justify-end">
-                <Button size="sm" variant="primary" onClick={savePrompts}>
-                  {S.common.save}
-                </Button>
-              </div>
-            </div>
-          </div>
+          </h3>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            {S.memory.promptSectionHint}
+          </p>
+        </div>
+        <Textarea
+          size="sm"
+          rows={14}
+          value={memoryPrompt}
+          onChange={(e) => setMemoryPrompt(e.target.value)}
+        />
+        <div className="flex justify-end">
+          <Button size="sm" variant="primary" onClick={savePrompt}>
+            {S.common.save}
+          </Button>
         </div>
       </section>
 

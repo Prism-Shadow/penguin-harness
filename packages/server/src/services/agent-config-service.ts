@@ -11,7 +11,6 @@ import fs from "node:fs/promises";
 import { parseDocument, parse as parseYaml } from "yaml";
 import {
   DEFAULT_MEMORY_PROMPT,
-  DEFAULT_MEMORY_WORKSPACE_PROMPT,
   agentsMdPath,
   agentStateDir,
   agentStateVersion,
@@ -152,10 +151,6 @@ export class AgentConfigService {
     const memoryDto: AgentMemoryConfigDto = {
       enabled: memory.enabled !== false,
       prompt: typeof memory.prompt === "string" ? memory.prompt : DEFAULT_MEMORY_PROMPT,
-      workspacePrompt:
-        typeof memory.workspace_prompt === "string"
-          ? memory.workspace_prompt
-          : DEFAULT_MEMORY_WORKSPACE_PROMPT,
     };
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
@@ -272,7 +267,6 @@ export class AgentConfigService {
       const memory = asRecord(cfg.memory);
       setIfProvided(["memory", "enabled"], optionalBoolean(memory, "enabled"));
       setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
-      setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
     }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));

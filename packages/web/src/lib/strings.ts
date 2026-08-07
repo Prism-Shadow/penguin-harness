@@ -461,9 +461,7 @@ export const zh = {
     insertPlaceholderDone: "已插入",
     promptSection: "记忆提示词",
     promptSectionHint:
-      "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
-    promptLabel: "主提示词",
-    workspacePromptLabel: "工作区附加段",
+      "注入模板 {{MEMORY}} 占位符的内容；[workspace_memory] 区块仅在持久工作区的会话中保留。",
     itemCount: (n: number): string => `${n} 条`,
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行保存值得记住的内容",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",

@@ -216,11 +216,11 @@ describe("memory api", () => {
     expect(cfgAgain.config.systemPrompt).toBe(cfg.config.systemPrompt);
   });
 
-  it("round-trips the memory prompts through the config route, reporting defaults until set", async () => {
+  it("round-trips the memory prompt through the config route", async () => {
     const before = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
-    // A fresh default agent stores the built-in prompts in its own yaml.
+    // A fresh default agent stores the built-in prompt — conditional region included — in its own yaml.
     expect(before.config.memory.prompt).toContain("[user_memory_index]");
-    expect(before.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
+    expect(before.config.memory.prompt).toContain("[workspace_memory]");
 
     const put = await owner.put(configPath, {
       config: { memory: { prompt: "# Memory\ncustom {{MEMORY_USER_INDEX}}" } },
@@ -228,8 +228,6 @@ describe("memory api", () => {
     expect(put.status).toBe(200);
     const after = (await put.json()) as AgentConfigResponse;
     expect(after.config.memory.prompt).toBe("# Memory\ncustom {{MEMORY_USER_INDEX}}");
-    // The untouched half keeps its value.
-    expect(after.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
   });
 
   it("404s for a non-member on every Memory route", async () => {

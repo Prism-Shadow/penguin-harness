@@ -298,15 +298,19 @@ function indexForInjection(index: string): string {
 }
 
 /**
- * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
- * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
- * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or the
- * config carries no Memory prompt. Both prompts are per-Agent config, editable on the Web
- * App's Memory tab.
- *
- * The two blocks are separate config keys because substitution has no conditionals: each block
- * only ever names placeholders that are defined wherever it appears, so a temporary Workspace
- * is never told about a `{{MEMORY_DIR}}` it does not have.
+ * The `[workspace_memory]` … `[/workspace_memory]` region of `memory.prompt`: the one
+ * conditional part of the block, holding everything a Session without a Workspace scope must
+ * not see. Lazy so a prompt may carry several regions; the markers sit on their own lines in
+ * the default prompt but the pattern does not require it.
+ */
+const WORKSPACE_MEMORY_REGION = /\[workspace_memory\]\n?([\s\S]*?)\[\/workspace_memory\]\n?/g;
+
+/**
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` — per-Agent config,
+ * editable on the Web App's Memory tab — with its `[workspace_memory]` region kept (markers
+ * stripped) when the Session runs in a persistent Workspace and removed wholesale otherwise,
+ * so a temporary Workspace is never told about a directory it does not have. An empty string
+ * when this Session has no Memory (disabled) or the config carries no Memory prompt.
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
  * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). Topic
@@ -317,24 +321,20 @@ function memorySection(
   memory: SessionMemory | null | undefined,
 ): string {
   if (!config?.prompt || !memory) return "";
-  const substituteUser = (text: string): string =>
-    text
-      .split(MEMORY_USER_DIR_PLACEHOLDER)
-      .join(memory.userDir)
-      .split(MEMORY_USER_INDEX_PLACEHOLDER)
-      .join(indexForInjection(memory.userIndex));
-
-  const userBlock = substituteUser(config.prompt).trim();
   const workspace = memory.workspace;
-  if (!workspace || !config.workspace_prompt) return userBlock;
-  const workspaceBlock = substituteUser(config.workspace_prompt)
+  const shaped = workspace
+    ? config.prompt.replace(WORKSPACE_MEMORY_REGION, "$1")
+    : config.prompt.replace(WORKSPACE_MEMORY_REGION, "").replace(/\n{3,}/g, "\n\n");
+  return shaped
+    .split(MEMORY_USER_DIR_PLACEHOLDER)
+    .join(memory.userDir)
+    .split(MEMORY_USER_INDEX_PLACEHOLDER)
+    .join(indexForInjection(memory.userIndex))
     .split(MEMORY_DIR_PLACEHOLDER)
-    .join(workspace.dir)
+    .join(workspace?.dir ?? "")
     .split(MEMORY_INDEX_PLACEHOLDER)
-    .join(indexForInjection(workspace.index))
+    .join(workspace ? indexForInjection(workspace.index) : "")
     .trim();
-  if (workspaceBlock.length === 0) return userBlock;
-  return userBlock.length > 0 ? `${userBlock}\n\n${workspaceBlock}` : workspaceBlock;
 }
 
 /**

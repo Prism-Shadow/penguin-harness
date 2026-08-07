@@ -272,6 +272,9 @@ describe("{{MEMORY}} rendering", () => {
       "[workspace_memory_index]\n- [testing](testing-conventions.md) — how tests run\n[/workspace_memory_index]",
     );
     expect(prompt).not.toContain("{{MEMORY}}");
+    // The conditional region's markers never leak into a rendered prompt.
+    expect(prompt).not.toContain("[workspace_memory]");
+    expect(prompt).not.toContain("[/workspace_memory]");
     expect(prompt).not.toContain(MEMORY_INDEX_EMPTY_NOTE);
   });
 
@@ -338,26 +341,29 @@ describe("{{MEMORY}} rendering", () => {
     );
   });
 
-  it("keeps the User half when the config carries no workspace_prompt", async () => {
+  it("keeps the [workspace_memory] region's content in a persistent Workspace and removes it in a temporary one", async () => {
     const state = await agentState();
-    const noWorkspaceBlock: AgentState = {
+    const custom: AgentState = {
       ...state,
       systemConfig: {
         ...state.systemConfig,
-        memory: { ...state.systemConfig.memory, workspace_prompt: undefined },
+        memory: {
+          enabled: true,
+          prompt: "HEAD\n[workspace_memory]\nWS {{MEMORY_DIR}}\n[/workspace_memory]\nTAIL",
+        },
       },
     };
-    // An Agent whose config predates the Workspace half degrades to User-scope-only rather
-    // than losing Memory altogether.
-    const prompt = assembleSystemPrompt(
-      noWorkspaceBlock,
-      undefined,
-      undefined,
-      undefined,
-      bothScopes,
-    );
-    expect(prompt).toContain(USER_LINE);
-    expect(prompt).not.toContain(WORKSPACE_LINE);
+    const withWorkspace = assembleSystemPrompt(custom, undefined, undefined, undefined, bothScopes);
+    expect(withWorkspace).toContain("WS /data/memory/my-app-12345678");
+    expect(withWorkspace).not.toContain("[workspace_memory]");
+
+    const without = assembleSystemPrompt(custom, undefined, undefined, undefined, {
+      userDir: "/data/memory/user",
+      userIndex: "",
+    });
+    expect(without).toContain("HEAD");
+    expect(without).toContain("TAIL");
+    expect(without).not.toContain("WS ");
   });
 
   it("reaches the Session prompt with both scopes, or the User scope alone for a temporary Workspace", async () => {

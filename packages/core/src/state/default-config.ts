@@ -37,19 +37,19 @@ export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
 /**
- * Expands to the rendered `memory.prompt` block, plus `memory.workspace_prompt` when the
- * Session runs in a persistent Workspace; an empty string when Memory is off. A template
- * without this placeholder injects no Memory at all — the Web App's Memory tab offers
- * inserting it as an explicit action, nothing is spliced in automatically.
+ * Expands to the rendered `memory.prompt` block (its `[workspace_memory]` region kept only in a
+ * persistent Workspace); an empty string when Memory is off. A template without this
+ * placeholder injects no Memory at all — the Web App's Memory tab offers inserting it as an
+ * explicit action, nothing is spliced in automatically.
  */
 export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
-/** Inside `memory.workspace_prompt` only: the current Workspace's Memory directory — a temporary Workspace has none, which is why it is not available in `memory.prompt`. */
+/** Inside the Memory prompt's `[workspace_memory]` region: the current Workspace's Memory directory — a temporary Workspace has none, which is why the region is removed there. */
 export const MEMORY_DIR_PLACEHOLDER = "{{MEMORY_DIR}}";
-/** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
+/** Inside the Memory prompt's `[workspace_memory]` region: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
 export const MEMORY_INDEX_PLACEHOLDER = "{{MEMORY_INDEX}}";
-/** Inside either Memory prompt: the User scope's Memory directory (`memory/user/`), which every Session has. */
+/** Inside the Memory prompt: the User scope's Memory directory (`memory/user/`), which every Session has. */
 export const MEMORY_USER_DIR_PLACEHOLDER = "{{MEMORY_USER_DIR}}";
-/** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
+/** Inside the Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
 export const MEMORY_USER_INDEX_PLACEHOLDER = "{{MEMORY_USER_INDEX}}";
 
 /**
@@ -68,34 +68,31 @@ export interface CompactionConfig {
 }
 
 /**
- * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
- * the Web App's Memory tab and rendered into the template's `{{MEMORY}}` placeholder.
+ * Memory config (the `memory` section of `system_config.yaml`). The prompt is editable on the
+ * Web App's Memory tab and rendered into the template's `{{MEMORY}}` placeholder.
  * Docs: /docs/configuration § "Memory".
  */
 export interface MemoryConfig {
   /** Whether Memory enters the model context and its directories are prepared; defaults to true. */
   enabled?: boolean;
   /**
-   * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the save mechanics,
-   * and the User scope with its index — carrying the `{{MEMORY_USER_DIR}}` /
-   * `{{MEMORY_USER_INDEX}}` injection points. Defaults to the built-in value.
+   * The `{{MEMORY}}` block: what Memory is for, the save mechanics, and both scopes with their
+   * indexes — carrying the `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` /
+   * `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` injection points. The Workspace part sits inside a
+   * `[workspace_memory]` … `[/workspace_memory]` region: rendering keeps its content (markers
+   * stripped) in a persistent Workspace and removes the whole region in a temporary one, so
+   * such a Session is never told about a directory it does not have. Defaults to the built-in
+   * value.
    */
   prompt?: string;
-  /**
-   * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
-   * scope, its index and the rule for choosing between the two — carrying `{{MEMORY_DIR}}` /
-   * `{{MEMORY_INDEX}}`. A separate key rather than a conditional inside `prompt` because
-   * substitution has no conditionals — a temporary Workspace would otherwise be told about a
-   * directory it does not have.
-   */
-  workspace_prompt?: string;
 }
 
 /**
- * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
- * template-example form — a fenced frontmatter example, the type glossary, the index contract
- * and the hygiene rules, then the User scope and its marker-fenced index. Stored per-Agent in
- * `system_config.yaml` and editable on the Web App's Memory tab.
+ * Built-in default Memory Prompt (the `{{MEMORY}}` block), in template-example form — a fenced
+ * frontmatter example, the type glossary, the index contract and the hygiene rules, then the
+ * User scope and its marker-fenced index, then the Workspace part inside its conditional
+ * `[workspace_memory]` region. Stored per-Agent in `system_config.yaml` and editable on the
+ * Web App's Memory tab.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
 Memory is your long-term record across sessions: Markdown files you maintain yourself with the file tools, in the two memory directories named below (they already exist — write into them directly). Each memory is one file holding one fact, with frontmatter:
@@ -123,19 +120,15 @@ User memory directory: {{MEMORY_USER_DIR}}
 What stays true wherever you work: who the user is, their standing preferences, reference material not tied to one codebase. Every one of your sessions reads it, so hold it to a higher bar than anything else. Its index:
 [user_memory_index]
 {{MEMORY_USER_INDEX}}
-[/user_memory_index]`;
+[/user_memory_index]
 
-/**
- * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
- * `memory.prompt` only when the Session runs in a persistent Workspace. The rule for choosing
- * between the two scopes lives here on purpose: a Session in a temporary Workspace has one
- * scope and no choice to make, so it never sees the rule at all.
- */
-export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `Workspace memory directory: {{MEMORY_DIR}}
+[workspace_memory]
+Workspace memory directory: {{MEMORY_DIR}}
 Facts about the workspace you are working in now. Something about the user that would still hold in a different project goes in the user directory; something about this codebase goes here — when unsure, write here, since a note filed too narrowly can be moved up later while one filed too widely is read by every session from then on. Its index:
 [workspace_memory_index]
 {{MEMORY_INDEX}}
-[/workspace_memory_index]`;
+[/workspace_memory_index]
+[/workspace_memory]`;
 
 /**
  * System-level config for Agent State, serialized as `system_config.yaml`.
@@ -627,7 +620,6 @@ export function defaultSystemConfig(): SystemConfig {
     memory: {
       enabled: true,
       prompt: DEFAULT_MEMORY_PROMPT,
-      workspace_prompt: DEFAULT_MEMORY_WORKSPACE_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),

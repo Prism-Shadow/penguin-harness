@@ -33,6 +33,8 @@ export const MARKER_TAGS = {
   userMemoryIndex: "user_memory_index",
   /** Workspace-scope Memory index wrapper inside the system prompt's Memory block (static template text). */
   workspaceMemoryIndex: "workspace_memory_index",
+  /** Conditional region inside memory.prompt: kept (markers stripped) in a persistent Workspace, removed wholesale in a temporary one. */
+  workspaceMemory: "workspace_memory",
 } as const;
 
 /** Inner tags used inside a transcribed turn block (`[turn_aborted]` / `[turn_retried]`). */

@@ -482,9 +482,7 @@ export const en: Strings = {
     insertPlaceholderDone: "Inserted",
     promptSection: "Memory prompt",
     promptSectionHint:
-      "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
-    promptLabel: "Main prompt",
-    workspacePromptLabel: "Workspace addendum",
+      "What the template's {{MEMORY}} placeholder expands to; the [workspace_memory] region is kept only in sessions with a persistent workspace.",
     itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
