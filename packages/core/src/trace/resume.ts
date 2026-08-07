@@ -77,12 +77,32 @@ export interface ResumeResult {
 /** Content of the pairing-backfill placeholder output (the tool hadn't finished and no output was persisted before the process exited). */
 const PROCESS_EXIT_PLACEHOLDER = "[interrupted: process exited before the tool finished]";
 
+/** Options for `parseTraceLines`. */
+export interface ParseTraceLinesOptions {
+  /**
+   * Handling of a malformed line **in the middle** of the content (the trailing truncated
+   * line is always tolerated and ignored, see `parseTraceLines`):
+   *   - "skip" (default): drop that line and keep every parseable record. Reading a Trace back
+   *     is best-effort — the corruption already happened, and throwing away the whole file
+   *     helps no one. Replay is built to stay structurally valid with records missing (crash
+   *     tolerance, pairing backfill), so surviving records still resume.
+   *   - "throw": rethrow the JSON parse error. For validating untrusted input where damage
+   *     should be reported instead of silently repaired (server-side Trace import).
+   */
+  onMalformed?: "skip" | "throw";
+  /** Called for each skipped malformed middle line (1-based line number). Not called for the tolerated trailing truncated line. */
+  onSkip?: (lineNumber: number, error: unknown) => void;
+}
+
 /**
  * Parse Trace JSONL content. Tolerates a **truncated last line** left behind by an abnormal
- * process exit (that line is ignored); corruption in the middle is outside the crash window
- * (append-only, single writer), so it throws loudly.
+ * process exit (that line is silently ignored). A malformed line in the **middle** — e.g. a
+ * record torn by the pre-fix concurrent-append interleaving (#215) — is skipped by default
+ * (reported via `onSkip`), keeping every parseable record; pass `onMalformed: "throw"` to
+ * make middle corruption a hard error instead.
  */
-export function parseTraceLines(content: string): OmniMessage[] {
+export function parseTraceLines(content: string, options?: ParseTraceLinesOptions): OmniMessage[] {
+  const onMalformed = options?.onMalformed ?? "skip";
   const lines = content.split("\n");
   const out: OmniMessage[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -92,16 +112,30 @@ export function parseTraceLines(content: string): OmniMessage[] {
       out.push(JSON.parse(line) as OmniMessage);
     } catch (err) {
       const isLastNonEmpty = lines.slice(i + 1).every((l) => l.trim().length === 0);
-      if (isLastNonEmpty) break;
-      throw err;
+      if (isLastNonEmpty) break; // truncated tail: expected crash artifact, ignore silently
+      if (onMalformed === "throw") throw err;
+      options?.onSkip?.(i + 1, err);
     }
   }
   return out;
 }
 
-/** Read and parse a Trace file (tolerates a truncated last line). */
+/**
+ * Read and parse a Trace file, best-effort: tolerates a truncated last line, and skips
+ * malformed middle lines (files damaged by the pre-fix concurrent-append bug, #215) while
+ * keeping every parseable record. Skipped lines are diagnosed once per read on stderr.
+ */
 export async function readTraceTolerant(path: string): Promise<OmniMessage[]> {
-  return parseTraceLines(await readFile(path, "utf8"));
+  const skipped: number[] = [];
+  const messages = parseTraceLines(await readFile(path, "utf8"), {
+    onSkip: (lineNumber) => skipped.push(lineNumber),
+  });
+  if (skipped.length > 0) {
+    process.stderr.write(
+      `[trace] skipped ${skipped.length} malformed line(s) [${skipped.join(", ")}] in ${path}\n`,
+    );
+  }
+  return messages;
 }
 
 /** A located Trace file: its path, containing date-directory name, and index. */

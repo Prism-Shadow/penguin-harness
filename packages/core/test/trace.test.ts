@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   assistantText,
+  imageUrlMessage,
   partialText,
   sessionMeta,
   subagentEvent,
@@ -13,6 +14,7 @@ import {
   emptyTokenCounts,
   withOrigin,
 } from "../src/omnimessage/index.js";
+import type { OmniMessage } from "../src/omnimessage/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
 
 const SESSION_ID = "sess_abc";
@@ -154,5 +156,91 @@ describe("Writer", () => {
 
     // append-only verification: the old file's row count does not increase.
     expect((await readTrace(firstPath)).length).toBe(2);
+  });
+
+  // #215 regression: appends come from multiple async producers in one process (the LLM stream
+  // driver plus each parallel tool), and fs.appendFile splits multi-MB payloads into multiple
+  // underlying writes — without serialization a concurrent append can land mid-record.
+  describe("concurrency (#215)", () => {
+    it("keeps a multi-MB record intact under concurrent small appends", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      // Several MB, like a base64 image Data URL — large enough that fs.appendFile splits it
+      // into multiple underlying writes (Node chunks the data at 512 KiB), small enough to
+      // keep the test fast.
+      const big = imageUrlMessage(`data:image/png;base64,${"A".repeat(3 * 1024 * 1024)}`);
+      const submitted: OmniMessage[] = [
+        meta(),
+        big,
+        ...[1, 2, 3, 4, 5].map((i) => assistantText(`small ${i}`)),
+      ];
+      // Submit every write before awaiting any: concurrent producers, submission order known.
+      await Promise.all(submitted.map((msg) => writer.write(msg)));
+
+      // Every non-empty line parses independently, and count and order match submission.
+      const raw = await readFile(writer.currentPath(), "utf8");
+      const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+      expect(lines).toEqual(submitted.map((msg) => JSON.stringify(msg)));
+      for (const line of lines) expect(() => JSON.parse(line)).not.toThrow();
+    });
+
+    it("serializes rotate() against in-flight writes: shard boundaries follow submission order", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      const firstPath = writer.currentPath();
+      // A large record right before the rotation: the rotation must wait for the whole
+      // append, and writes submitted after it must land in the next shard.
+      const big = imageUrlMessage(`data:image/png;base64,${"B".repeat(2 * 1024 * 1024)}`);
+      const shardOne: OmniMessage[] = [meta(), big];
+      const shardTwo: OmniMessage[] = [meta(), assistantText("new context")];
+      await Promise.all([
+        writer.write(shardOne[0]!),
+        writer.write(shardOne[1]!),
+        writer.rotate(),
+        writer.write(shardTwo[0]!),
+        writer.write(shardTwo[1]!),
+      ]);
+
+      const secondPath = writer.currentPath();
+      expect(secondPath.endsWith(`${SESSION_ID}_002.jsonl`)).toBe(true);
+      const firstLines = (await readFile(firstPath, "utf8"))
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+      const secondLines = (await readFile(secondPath, "utf8"))
+        .split("\n")
+        .filter((line) => line.trim().length > 0);
+      expect(firstLines).toEqual(shardOne.map((msg) => JSON.stringify(msg)));
+      expect(secondLines).toEqual(shardTwo.map((msg) => JSON.stringify(msg)));
+    });
+
+    it("a failed write rejects its own caller without wedging subsequent writes", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      // Occupy the date-dir path with a regular file so mkdir (and the append) must fail.
+      const dateDirPath = join(tracesDir, "2026-01-09");
+      await writeFile(dateDirPath, "blocker", "utf8");
+      const results = await Promise.allSettled([
+        writer.write(meta()),
+        writer.write(assistantText("also blocked")),
+      ]);
+      // Each failure surfaces to its own caller (callers log it as best-effort)...
+      expect(results.map((r) => r.status)).toEqual(["rejected", "rejected"]);
+
+      // ...and the chain is not wedged: once the cause clears, later writes land normally.
+      await rm(dateDirPath);
+      const recovered = assistantText("after recovery");
+      await writer.write(recovered);
+      const rows = await readTrace(writer.currentPath());
+      expect(rows).toEqual([recovered]);
+    });
   });
 });
