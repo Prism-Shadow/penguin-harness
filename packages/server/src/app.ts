@@ -13,7 +13,9 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
+import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type { ServerConfig } from "./config.js";
+import { mergedNoProxy } from "./net/proxy.js";
 import { openDatabase } from "./db/database.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
@@ -157,12 +159,19 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Proxy-off also strips HTTP(S)_PROXY/ALL_PROXY from agent command subprocess
-  // environments (design § "出网与系统代理"). A getter, not a snapshot: it is re-read at
-  // every command spawn, so a toggle reaches already-loaded Sessions. Threaded through
-  // BOTH core entry paths — the loader (resume/self-heal) and SessionService (creation,
-  // whose runtime the manager adopts for the first Task).
-  const stripProxyEnv = () => !serverSettingsRepo.getUseSystemProxy();
+  // Command-subprocess proxy policy for core (design § "出网与系统代理"), derived from
+  // the persisted settings: off → strip HTTP(S)_PROXY/ALL_PROXY; on with an explicit
+  // address → inject that address (with the merged loopback NO_PROXY) over whatever the
+  // environment carries; on without an address → pass the environment through. A getter,
+  // not a snapshot: it is re-read at every command spawn, so a settings change reaches
+  // already-loaded Sessions. Threaded through BOTH core entry paths — the loader
+  // (resume/self-heal) and SessionService (creation, whose runtime the manager adopts
+  // for the first Task).
+  const proxyEnv = (): ProxyEnvPolicy | null => {
+    if (!serverSettingsRepo.getUseSystemProxy()) return { mode: "strip" };
+    const url = serverSettingsRepo.getProxyUrl();
+    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+  };
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
@@ -214,8 +223,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader:
-      overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { stripProxyEnv }),
+    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -264,7 +272,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projectConfig: projectConfigService,
     sources: sessionSources,
     traceIndex,
-    stripProxyEnv,
+    proxyEnv,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).

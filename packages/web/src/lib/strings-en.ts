@@ -34,10 +34,16 @@ export const en: Strings = {
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
     /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
-    useSystemProxy: "Use system HTTP proxy",
-    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxy: "Use HTTP proxy",
+    /** Row tooltip: scope (server + its child processes, server-wide), address precedence, and the loopback exemption. */
     useSystemProxyHint:
-      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
+      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through an HTTP proxy — the address configured below when set, otherwise the system proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
+    /** Explicit proxy address input (shown while the proxy switch is on; committed on Enter/blur). */
+    proxyAddress: "Proxy address",
+    proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Input tooltip: precedence over the environment variables and the accepted forms. */
+    proxyAddressHint:
+      "When set, the server and agent command subprocesses use this proxy (it takes precedence over the environment variables); accepts http://host[:port], https://host[:port], or host[:port]. Leave empty to follow HTTP_PROXY / HTTPS_PROXY.",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -1175,6 +1181,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_proxy_url:
+        "Invalid proxy address — use http://host[:port], https://host[:port], or host[:port].",
       invalid_trace: "This file is not a valid Trace file.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",

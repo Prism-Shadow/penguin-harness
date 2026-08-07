@@ -6,6 +6,9 @@
  * (and, while the admin switch is on, agent commands) then honor it. Variables already
  * present in the shell's environment are never overridden (same idiom as
  * bundledShellEnv): an explicitly configured environment wins over the OS lookup.
+ * An admin-configured explicit proxy address (server_settings `proxyUrl`) in turn wins
+ * over BOTH at the server's dispatcher and in agent command env injection — what this
+ * module injects is only the "follow the system proxy" default the server falls back to.
  *
  * Only the entry point touches Electron, behind a dynamic import; the parsing and the
  * override check stay pure so they unit-test without an Electron runtime.

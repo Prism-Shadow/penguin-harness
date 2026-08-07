@@ -73,10 +73,12 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/settings | 服务端全局设置：`{settings: {useSystemProxy}}` |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {useSystemProxy, proxyUrl}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
 
-`useSystemProxy` 即「使用系统 HTTP 代理」开关（默认开）：开时服务端及其子进程出网遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY（大小写并存）；关时服务端一律直连，并从 Agent 命令子进程环境中剥除代理变量（NO_PROXY 保留）。任一状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。切换即时生效（对新发起的连接），无需重启。
+`useSystemProxy` 即「使用 HTTP 代理」开关（默认开）：开时服务端及其子进程出网使用 HTTP 代理——填写了 `proxyUrl` 则用该地址，否则遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（大小写并存）；关时服务端一律直连，并从 Agent 命令子进程环境中剥除代理变量（NO_PROXY 保留）。任一状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。修改即时生效（对新发起的连接），无需重启。
+
+`proxyUrl` 即显式代理地址（默认 null = 跟随环境变量）：开关开启且填写了地址时，http 与 https 流量都走该地址，**优先于代理环境变量**——无需配置任何环境变量；Agent 命令子进程环境同时被注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）与合并后的 NO_PROXY，覆盖继承值。开关关闭时地址保留但不生效。PUT 校验：先 trim；空串或 null 即清除地址；接受 `http://主机[:端口]`、`https://主机[:端口]` 与裸 `主机[:端口]`（规范化为 `http://主机[:端口]`——只存储规范化后的值，响应回显存储形态）；其余一律 `400`，错误码 `invalid_proxy_url`。
 
 ### 版本与在线更新
 

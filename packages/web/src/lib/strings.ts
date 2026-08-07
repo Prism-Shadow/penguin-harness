@@ -36,10 +36,16 @@ export const zh = {
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
     /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
-    useSystemProxy: "使用系统 HTTP 代理",
-    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
+    useSystemProxy: "使用 HTTP 代理",
+    /** Row tooltip: scope (server + its child processes, server-wide), address precedence, and the loopback exemption. */
     useSystemProxyHint:
-      "服务端及其子进程（更新检查、LLM 请求、Agent 命令）出网时是否使用 HTTP_PROXY / HTTPS_PROXY 环境变量指定的代理，对整个服务端全局生效；回环地址（localhost、127.0.0.1、::1）始终直连。关闭后服务端一律直连，并从 Agent 命令子进程环境中移除代理变量。",
+      "服务端及其子进程（更新检查、LLM 请求、Agent 命令）出网时是否使用 HTTP 代理：填写了代理地址则用该地址，否则用 HTTP_PROXY / HTTPS_PROXY 环境变量指定的系统代理，对整个服务端全局生效；回环地址（localhost、127.0.0.1、::1）始终直连。关闭后服务端一律直连，并从 Agent 命令子进程环境中移除代理变量。",
+    /** Explicit proxy address input (shown while the proxy switch is on; committed on Enter/blur). */
+    proxyAddress: "代理地址",
+    proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Input tooltip: precedence over the environment variables and the accepted forms. */
+    proxyAddressHint:
+      "填写后服务端与 Agent 命令子进程都改用该代理（优先于环境变量），支持 http://主机[:端口]、https://主机[:端口] 或 主机[:端口]；留空则跟随 HTTP_PROXY / HTTPS_PROXY 环境变量。",
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
@@ -1149,6 +1155,8 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
+      invalid_proxy_url:
+        "代理地址无效：应为 http://主机[:端口]、https://主机[:端口] 或 主机[:端口]。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },

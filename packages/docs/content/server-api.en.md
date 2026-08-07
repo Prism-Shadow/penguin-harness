@@ -73,10 +73,12 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy}}` |
+| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy, proxyUrl}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
 
-`useSystemProxy` is the "use system HTTP proxy" switch (default on): while on, the server and its child processes honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings) for outbound traffic; while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In either state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Toggling takes effect for newly initiated connections immediately — no restart.
+`useSystemProxy` is the "use HTTP proxy" switch (default on): while on, the server and its child processes reach the internet through an HTTP proxy — the explicit `proxyUrl` when set, otherwise the system proxy named by HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings); while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In any state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Changes take effect for newly initiated connections immediately — no restart.
+
+`proxyUrl` is the explicit proxy address (default null = follow the environment variables): while the switch is on and an address is set, it governs both http and https traffic and **takes precedence over the proxy environment variables** — no environment variable needs to be configured — and agent command subprocesses get it injected as `HTTP_PROXY` / `HTTPS_PROXY` (plus lowercase twins) with the merged NO_PROXY, overriding inherited values. While the switch is off the address is kept but unused. Validation on PUT: the value is trimmed; empty or null clears the address; accepted forms are `http://host[:port]`, `https://host[:port]`, and bare `host[:port]` (normalized to `http://host[:port]` — only normalized values are stored, and the response echoes the stored form); anything else is `400` with code `invalid_proxy_url`.
 
 ### Version and Self-Update
 

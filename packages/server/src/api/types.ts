@@ -122,14 +122,24 @@ export interface AdminPasswordResetRequest {
 /** Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"). */
 export interface ServerSettings {
   /**
-   * "Use system HTTP proxy" (default on): whether the server process and its child
-   * processes reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY
-   * (both spellings). Off = direct connections, with the proxy variables also stripped
-   * from agent command subprocess environments. Either way the effective NO_PROXY always
-   * includes localhost/127.0.0.1/::1 (loopback is never proxied). Toggling applies to
-   * newly initiated connections immediately — no restart.
+   * "Use HTTP proxy" (default on): whether the server process and its child processes
+   * reach the internet through an HTTP proxy — the explicit `proxyUrl` when set,
+   * otherwise the proxy named by HTTP_PROXY / HTTPS_PROXY (both spellings). Off =
+   * direct connections, with the proxy variables also stripped from agent command
+   * subprocess environments. Either way the effective NO_PROXY always includes
+   * localhost/127.0.0.1/::1 (loopback is never proxied). Changes apply to newly
+   * initiated connections immediately — no restart.
    */
   useSystemProxy: boolean;
+  /**
+   * Explicit proxy address (canonical `http(s)://host[:port]`), or null = follow the
+   * proxy environment variables. Only consulted while `useSystemProxy` is on; when set
+   * it governs both http and https traffic, taking precedence over HTTP_PROXY /
+   * HTTPS_PROXY — the loopback NO_PROXY exemption still applies — and agent command
+   * subprocesses get it injected as HTTP_PROXY / HTTPS_PROXY (plus lowercase twins),
+   * overriding inherited values.
+   */
+  proxyUrl: string | null;
 }
 
 export interface ServerSettingsResponse {
@@ -139,6 +149,13 @@ export interface ServerSettingsResponse {
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
   useSystemProxy?: boolean;
+  /**
+   * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
+   * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,
+   * and the response echoes the stored form). Empty/whitespace-only or null clears the
+   * address (follow the environment variables); anything else is 400 `invalid_proxy_url`.
+   */
+  proxyUrl?: string | null;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */

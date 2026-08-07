@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type {
+  ServerSettings,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -235,33 +236,71 @@ export function Sidebar({
     }
   };
   /**
-   * Admin-only "use system HTTP proxy" switch (server-global, design § "出网与系统代理"):
-   * null = not hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown —
-   * same laziness as the version info above, and non-admins never call the endpoint (the
-   * row is not rendered for them either). A failed hydration stays null (row disabled)
-   * and is retried on the next open.
+   * Admin-only server-global proxy settings (design § "出网与系统代理"): null = not
+   * hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown — same
+   * laziness as the version info above, and non-admins never call the endpoint (the
+   * rows are not rendered for them either). A failed hydration stays null (rows
+   * disabled) and is retried on the next open.
    */
-  const [useSystemProxy, setUseSystemProxyState] = useState<boolean | null>(null);
+  const [serverSettings, setServerSettings] = useState<ServerSettings | null>(null);
+  /** Proxy-address input draft (committed on Enter/blur; synced from the stored value). */
+  const [proxyUrlDraft, setProxyUrlDraft] = useState("");
+  /** In-flight proxy-address save — guards the Enter-then-blur double commit. */
+  const proxyUrlSaving = useRef(false);
   useEffect(() => {
-    if (!userOpen || user?.isAdmin !== true || useSystemProxy !== null) return;
+    if (!userOpen || user?.isAdmin !== true || serverSettings !== null) return;
     let cancelled = false;
     void api
       .adminGetSettings()
       .then((res) => {
-        if (!cancelled) setUseSystemProxyState(res.settings.useSystemProxy);
+        if (cancelled) return;
+        setServerSettings(res.settings);
+        setProxyUrlDraft(res.settings.proxyUrl ?? "");
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [userOpen, user?.isAdmin, useSystemProxy]);
+  }, [userOpen, user?.isAdmin, serverSettings]);
   /** Saved immediately on toggle (the user-menu quick-control convention): optimistic flip, reverted with a toast on failure. */
   const setUseSystemProxy = (value: boolean) => {
-    setUseSystemProxyState(value);
-    void api.adminPutSettings({ useSystemProxy: value }).catch((e: unknown) => {
-      setUseSystemProxyState(!value);
-      toastError(apiErrorText(e));
-    });
+    setServerSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: value }));
+    void api
+      .adminPutSettings({ useSystemProxy: value })
+      .then((res) => setServerSettings(res.settings))
+      .catch((e: unknown) => {
+        setServerSettings((prev) => (prev === null ? prev : { ...prev, useSystemProxy: !value }));
+        toastError(apiErrorText(e));
+      });
+  };
+  /**
+   * Commits the proxy-address input (Enter/blur): no-ops when unchanged, otherwise lets
+   * the server validate and normalize — the echoed settings replace the draft (e.g.
+   * "proxy:8080" comes back as "http://proxy:8080"), a rejected value reverts it with
+   * the error toast.
+   */
+  const commitProxyUrl = () => {
+    if (serverSettings === null || proxyUrlSaving.current) return;
+    const stored = serverSettings.proxyUrl ?? "";
+    if (proxyUrlDraft.trim() === stored) {
+      setProxyUrlDraft(stored); // canonicalize a whitespace-only edit back to the stored value
+      return;
+    }
+    proxyUrlSaving.current = true;
+    void api
+      .adminPutSettings({ proxyUrl: proxyUrlDraft })
+      .then((res) => {
+        setServerSettings(res.settings);
+        setProxyUrlDraft(res.settings.proxyUrl ?? "");
+        toastSuccess(S.common.saved);
+      })
+      .catch((e: unknown) => {
+        setProxyUrlDraft(stored);
+        toastError(apiErrorText(e));
+      })
+      .finally(() => {
+        proxyUrlSaving.current = false;
+      });
   };
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
@@ -1034,18 +1073,39 @@ export function Sidebar({
             <SettingRow label={S.settings.showCliSessions}>
               <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
-            {/* Admin-only, server-global (all users), saved immediately on toggle; the
-                tooltip spells out the scope and the loopback exemption. Disabled (showing
-                the default: on) until the stored value has hydrated, so a click can never
-                write a value the admin was not looking at. */}
+            {/* Admin-only, server-global (all users): the proxy switch saves immediately
+                on toggle; the tooltip spells out the scope, address precedence and the
+                loopback exemption. Both controls are disabled (showing the defaults: on,
+                empty) until the stored values have hydrated, so a click can never write
+                a value the admin was not looking at. The address row shows only while
+                the switch is on and commits on Enter/blur — the server normalizes (bare
+                host:port comes back as http://…) or rejects, and the echoed value
+                replaces the draft either way. */}
             {user?.isAdmin && (
-              <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
-                <Switch
-                  checked={useSystemProxy ?? true}
-                  onChange={setUseSystemProxy}
-                  disabled={useSystemProxy === null}
-                />
-              </SettingRow>
+              <>
+                <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
+                  <Switch
+                    checked={serverSettings?.useSystemProxy ?? true}
+                    onChange={setUseSystemProxy}
+                    disabled={serverSettings === null}
+                  />
+                </SettingRow>
+                {(serverSettings?.useSystemProxy ?? true) && (
+                  <SettingRow label={S.settings.proxyAddress} title={S.settings.proxyAddressHint}>
+                    <Input
+                      size="sm"
+                      value={proxyUrlDraft}
+                      placeholder={S.settings.proxyAddressPlaceholder}
+                      disabled={serverSettings === null}
+                      onChange={(e) => setProxyUrlDraft(e.target.value)}
+                      onBlur={commitProxyUrl}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitProxyUrl();
+                      }}
+                    />
+                  </SettingRow>
+                )}
+              </>
             )}
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">

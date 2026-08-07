@@ -293,14 +293,31 @@ export interface EnvironmentConfig {
    */
   vault?: Record<string, string>;
   /**
-   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
-   * casing; NO_PROXY is kept) are stripped from exec_command / input_command subprocess
-   * environments. Threaded by the Web server from its admin-level "use system HTTP proxy"
-   * switch (off state); re-read at every spawn so a toggle needs no restart. Absent =
-   * proxy allowed (the default for SDK/CLI standalone use).
+   * Proxy policy for exec_command / input_command subprocess environments (see
+   * {@link ProxyEnvPolicy}). Threaded by the Web server from its admin-level proxy
+   * settings; re-read at every spawn so a settings change needs no restart. Absent, or a
+   * getter returning null = the host environment passes through unchanged (the default
+   * for SDK/CLI standalone use).
    */
-  stripProxyEnv?: () => boolean;
+  proxyEnv?: () => ProxyEnvPolicy | null;
 }
+
+/**
+ * Proxy policy applied to command subprocess environments (see
+ * {@link EnvironmentConfig.proxyEnv}):
+ * - `{ mode: "strip" }` — the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
+ *   casing) are removed; NO_PROXY is kept (inert without them, and commands that set
+ *   their own proxy still honor it). The hosting server's proxy switch in the off state.
+ * - `{ mode: "inject", url, noProxy }` — the explicit proxy wins over ambient env:
+ *   HTTP_PROXY / HTTPS_PROXY (plus their lowercase twins) are set to `url` and
+ *   NO_PROXY / no_proxy to `noProxy`, overriding inherited values; an inherited
+ *   ALL_PROXY (any casing) is removed for the same reason. The caller supplies `noProxy`
+ *   pre-merged (the hosting server includes the loopback names).
+ * - `null` (or no getter at all) — pass through unchanged.
+ * The Agent vault still overrides whichever of these the policy produced: a per-Agent
+ * explicit variable outranks the host-level policy.
+ */
+export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 /**
  * An approved tool-call execution request.
