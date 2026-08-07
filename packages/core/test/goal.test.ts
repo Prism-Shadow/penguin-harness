@@ -297,6 +297,18 @@ describe("runGoalLoop", () => {
     expect(await readGoalStatus(file)).toBe("active");
   });
 
+  it("has no default round cap: an unbudgeted goal runs past 100 rounds to completion", async () => {
+    // Regression for the removed 100-round backstop: round 103 finally claims complete,
+    // which the old default cap would have cut off as `aborted` at round 100.
+    const behaviors = Array.from({ length: 103 }, (_, i) =>
+      i === 102 ? { then: () => setStatus("complete") } : {},
+    );
+    const session = fakeSession(behaviors);
+    const { outcome } = await drain(runGoalLoop(session, { text: "o", goalFilePath: file }));
+    expect(outcome).toEqual({ outcome: "complete", rounds: 103, tokensUsed: 0 });
+    expect(session.prompts).toHaveLength(103);
+  });
+
   it("an abort landing between rounds stops the loop without a phantom round", async () => {
     const ac = new AbortController();
     // The signal aborts AFTER round 1's stream ends — no abort event ever hits the stream,
