@@ -40,7 +40,7 @@ export interface SessionConfig {
   llm: LLMInterface;
   environment: EnvironmentInterface;
   trace?: TraceSink;
-  /** Maximum LLM turns per Task (default 100; -1 removes the cap). */
+  /** Maximum LLM turns per Task; -1 removes the cap (the agent-config default). When omitted, the engine's SDK fallback of 100 applies. */
   maxTurns?: number;
   /** Creates a new LLM object after compaction (carries over the Session's accumulated Token count); context compaction is unavailable if not provided. */
   createLLM?: (sessionTokens: TokenCounts) => LLMInterface;

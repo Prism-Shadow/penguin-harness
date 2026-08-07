@@ -13,7 +13,7 @@ This page shows the context_engine's overall flow first, then breaks down each s
 session.run(newMessages, { approve, signal })
   │  carry-over from a previous interrupt? → prepend to this run's input
   ▼
-┌── turn loop (≤ max_turns, default 100) ───────────────────────┐
+┌── turn loop (≤ max_turns; default -1 = no cap) ───────────────┐
 │                                                               │
 │  request_begin                                                │
 │  LLM.streamGenerate(newMessages)                              │

@@ -98,7 +98,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
-| `max_turns` | `100` | Maximum LLM turns per Task (-1 removes the cap) |
+| `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token limit per Request (-1 = no cap, provider default) |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
@@ -122,7 +122,8 @@ version: 3
 system_prompt: |
   …
 
-max_turns: 100
+# -1 (the default) = unlimited; set a positive integer to cap the turns of a single Task.
+max_turns: -1
 
 model:
   max_tokens: 32000

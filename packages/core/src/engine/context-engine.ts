@@ -165,7 +165,7 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
+  /** Maximum LLM turns for a single Task; -1 removes the cap (the agent-config default). When omitted, falls back to 100 for direct SDK construction. */
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults

@@ -479,7 +479,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(deniedMsg).toBeDefined();
   });
 
-  it("max_turns default is 100", () => {
+  it("engine maxTurns fallback stays 100 when the option is omitted (direct SDK construction)", () => {
     const engine = new ContextEngine({
       llm: new FakeLLM(),
       environment: new Environment({
@@ -487,7 +487,9 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         toolConfig: execCommandToolConfig(),
       }),
     });
-    // Reads the default via a private field (white-box, only testing the default).
+    // Reads the fallback via a private field (white-box, only testing the fallback). This is
+    // the SDK-construction fallback for an omitted option — distinct from the agent-config
+    // default (defaultSystemConfig().max_turns is -1 = unlimited, asserted in state.test.ts).
     expect((engine as unknown as { maxTurns: number }).maxTurns).toBe(100);
   });
 
