@@ -453,11 +453,12 @@ export const zh = {
   },
 
   memory: {
-    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：用户记忆对本 Agent 的所有会话生效，Workspace 记忆按目录隔离，每个作用域有自己的 MEMORY.md 索引。索引进入模型上下文，正文由模型按需读取；内容修改在对话中由 agent 完成。关闭开关只停止注入，不删除任何文件。",
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：用户记忆对本 Agent 的所有会话生效，工作区记忆按目录隔离，每个作用域有自己的 MEMORY.md 索引。索引进入模型上下文，正文由模型按需读取；内容修改在对话中由 agent 完成。关闭开关只停止注入，不删除任何文件。",
     enable: "启用记忆",
     userScope: "用户记忆",
+    workspaceScope: (name: string): string => `工作区记忆：${name}`,
     itemCount: (n: number): string => `${n} 条`,
-    emptyScope: "这个 Workspace 还没有记忆——agent 会在会话中自行保存值得记住的内容",
+    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行保存值得记住的内容",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
     view: "查看",
     edit: "编辑",

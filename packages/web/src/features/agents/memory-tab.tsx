@@ -175,7 +175,9 @@ export function MemoryTab({ agentId }: { agentId: string }) {
   const scopeTitle = (scope: MemoryScopeInfo): string =>
     scope.kind === "user"
       ? S.memory.userScope
-      : (scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey);
+      : S.memory.workspaceScope(
+          scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey,
+        );
 
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
