@@ -1,5 +1,5 @@
 /**
- * Desktop shell main process (design § "桌面端原型").
+ * Desktop shell main process.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when

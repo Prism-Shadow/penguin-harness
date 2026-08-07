@@ -1,4 +1,4 @@
-# Desktop packages (design § "桌面端原型 · 打包与更新", milestone M3).
+# Desktop packages: Electron installers for the desktop shell.
 #
 # Reusable three-OS matrix: stage the pnpm-deploy app tree, run electron-builder, and
 # upload the installers as workflow artifacts named desktop-<OS>. release.yml calls this
