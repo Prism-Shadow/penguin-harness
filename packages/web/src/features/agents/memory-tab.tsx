@@ -230,7 +230,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
       <Button size="sm" onClick={() => void openView(scope, file)}>
         {S.memory.view}
       </Button>
-      <Button size="sm" variant="primary" onClick={() => openEditor(scope, file)}>
+      <Button size="sm" onClick={() => openEditor(scope, file)}>
         {S.memory.edit}
       </Button>
       <Button size="sm" variant="danger" onClick={() => setRemoving({ scope, file })}>
@@ -371,11 +371,7 @@ export function MemoryTab({ agentId }: { agentId: string }) {
               </div>
             </div>
             <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-              <Button
-                size="sm"
-                variant="primary"
-                onClick={() => openEditor(viewing.scope, viewing.file)}
-              >
+              <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
                 {S.memory.edit}
               </Button>
               <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
