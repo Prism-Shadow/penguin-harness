@@ -36,6 +36,7 @@ import type {
 } from "../interfaces.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import { McpToolAdapter } from "./mcp/client.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { SubagentSessionManager } from "./tools/subagent/index.js";
 import {
@@ -93,6 +94,8 @@ export class Environment implements EnvironmentInterface {
   private readonly truncatedToolOutputArchive: TruncatedToolOutputArchive | null;
   /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
   private readonly tools: Map<string, BuiltinTool>;
+  /** MCP adapter (connects declared mcpServers, exposes their tools as BuiltinTool). Null when none configured. */
+  private mcpAdapter: McpToolAdapter | null = null;
   /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
@@ -129,10 +132,35 @@ export class Environment implements EnvironmentInterface {
     }
   }
 
+  /**
+   * Async factory: connects any declared MCP servers before the Environment is usable. The
+   * constructor stays synchronous (callers that don't configure mcpServers can keep using it),
+   * but when mcpServers is non-empty you MUST use create() so the adapter can connect.
+   */
+  static async create(config: EnvironmentConfig): Promise<Environment> {
+    const env = new Environment(config);
+    const servers = config.toolConfig.mcpServers ?? [];
+    if (servers.length > 0) {
+      const adapter = new McpToolAdapter(servers);
+      await adapter.init();
+      env.mcpAdapter = adapter;
+      const services = {
+        ...config.services,
+        commandSessions: env.commandSessions,
+        subagentSessions: env.subagentSessions,
+      };
+      for (const def of adapter.listToolDefinitions()) {
+        env.tools.set(def.name, adapter.toBuiltinTool(def));
+      }
+    }
+    return env;
+  }
+
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent). Idempotent. */
   dispose(): void {
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
+    this.mcpAdapter?.dispose();
   }
 
   /**
@@ -148,13 +176,16 @@ export class Environment implements EnvironmentInterface {
    * is left to a later adapter layer.
    */
   async listTools(): Promise<ToolDefinition[]> {
-    return this.toolConfig.customTools
+    const builtins = this.toolConfig.customTools
       .filter((tool) => this.tools.has(tool.name))
       .map((tool) => ({
         name: tool.name,
         description: tool.description,
         ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
       }));
+    // Merge in enumerated MCP tool definitions (the "later adapter layer").
+    const mcp = this.mcpAdapter ? this.mcpAdapter.listToolDefinitions() : [];
+    return [...builtins, ...mcp];
   }
 
   /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. */
