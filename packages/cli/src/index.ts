@@ -17,6 +17,7 @@ import { Command } from "commander";
 import { VERSION } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
+import { registerProvenanceCommand } from "./commands/provenance.js";
 import { registerChatCommand } from "./commands/chat.js";
 import { registerServeCommands } from "./commands/serve.js";
 import { registerUpdateCommand } from "./commands/update.js";
@@ -34,6 +35,7 @@ program
 
 registerConfigCommand(program, t);
 registerRunCommand(program, t);
+registerProvenanceCommand(program, t);
 registerChatCommand(program, t);
 registerServeCommands(program, t);
 registerUpdateCommand(program, t);

@@ -345,4 +345,118 @@ describe("benchmarks api", () => {
 
     expect((await outsider.get(base)).status).toBe(404);
   });
+
+  it("provenance: valid block parsed (snake→camel); missing agent_sha256 dropped; absent omitted", async () => {
+    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "prov-bench");
+    await fs.mkdir(path.join(dir, "CASE-001-task", "statement"), { recursive: true });
+    await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "Prov"\nruns = 1\n`, "utf8");
+    await fs.writeFile(
+      path.join(dir, "scoreboard.yaml"),
+      [
+        "evaluations:",
+        // Round 1: a full, valid provenance block → parsed and camelCased.
+        '  - time: "2026-07-16T10:00:00Z"',
+        "    version: 1",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 4.0",
+        "    cost: null",
+        "    duration_ms: 1000",
+        "    provenance:",
+        "      provenance_version: 1",
+        "      version: 1",
+        '      system_prompt_sha256: "aaaa"',
+        '      agents_md_sha256: "bbbb"',
+        '      tools_sha256: "cccc"',
+        "      skills:",
+        '        - name: "web-design"',
+        "          version: 3",
+        '          sha256: "dddd"',
+        '      skills_sha256: "eeee"',
+        "      model:",
+        '        provider: "deepseek"',
+        '        model_id: "deepseek-v4-pro"',
+        '      thinking_level: "medium"',
+        '      agent_sha256: "ffff"',
+        "    cases:",
+        '      - case: "CASE-001-task"',
+        "        score: 4.0",
+        "        cost: null",
+        "        duration_ms: 1000",
+        "        runs:",
+        "          - score: 4.0",
+        "            cost: null",
+        "            duration_ms: 1000",
+        '            session_id: "s1"',
+        // Round 2: provenance present but missing agent_sha256 → whole block dropped.
+        '  - time: "2026-07-17T10:00:00Z"',
+        "    version: 2",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 4.5",
+        "    cost: null",
+        "    duration_ms: 1000",
+        "    provenance:",
+        "      provenance_version: 1",
+        '      system_prompt_sha256: "zzzz"',
+        "    cases:",
+        '      - case: "CASE-001-task"',
+        "        score: 4.5",
+        "        cost: null",
+        "        duration_ms: 1000",
+        "        runs:",
+        "          - score: 4.5",
+        "            cost: null",
+        "            duration_ms: 1000",
+        '            session_id: "s2"',
+        // Round 3: no provenance field at all → omitted.
+        '  - time: "2026-07-18T10:00:00Z"',
+        "    version: 3",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 5.0",
+        "    cost: null",
+        "    duration_ms: 1000",
+        "    cases:",
+        '      - case: "CASE-001-task"',
+        "        score: 5.0",
+        "        cost: null",
+        "        duration_ms: 1000",
+        "        runs:",
+        "          - score: 5.0",
+        "            cost: null",
+        "            duration_ms: 1000",
+        '            session_id: "s3"',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    const evals = res.benchmarks[0]!.evaluations;
+    expect(evals).toHaveLength(3);
+
+    // Round 1: fully parsed and camelCased.
+    expect(evals[0]!.provenance).toEqual({
+      provenanceVersion: 1,
+      version: 1,
+      systemPromptSha256: "aaaa",
+      agentsMdSha256: "bbbb",
+      toolsSha256: "cccc",
+      skills: [{ name: "web-design", version: 3, sha256: "dddd" }],
+      skillsSha256: "eeee",
+      model: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+      thinkingLevel: "medium",
+      agentSha256: "ffff",
+    });
+
+    // Round 2: invalid provenance dropped, but the evaluation itself survives.
+    expect(evals[1]!.score).toBe(4.5);
+    expect("provenance" in evals[1]!).toBe(false);
+
+    // Round 3: no provenance → field omitted.
+    expect("provenance" in evals[2]!).toBe(false);
+  });
 });
