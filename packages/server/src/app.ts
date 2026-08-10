@@ -33,7 +33,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { AuthService } from "./auth/service.js";
+import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
@@ -249,12 +250,20 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     traceIndex,
   });
+  // Any password update for the built-in admin makes the persisted initial-password
+  // plaintext stale (either the password is no longer initial, or a reset replaced it
+  // with an admin-chosen value that is never persisted): drop the file so later startups
+  // stop re-printing a credential that no longer signs in.
+  const onPasswordChanged = (userId: string): void => {
+    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
+  };
   const authService = new AuthService({
     users: usersRepo,
     authSessions: authSessionsRepo,
     provisionInitialProject: (user, isAdmin) =>
       projectService.provisionInitialProject(user, isAdmin),
     seedAdminPassword: config.seedAdminPassword,
+    onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -264,6 +273,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     authSessions: authSessionsRepo,
     projects: projectsRepo,
     projectService,
+    onPasswordChanged,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const sessionService = new SessionService({

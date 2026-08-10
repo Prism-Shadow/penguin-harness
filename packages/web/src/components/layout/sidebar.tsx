@@ -73,6 +73,13 @@ import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
+import {
+  draftSessionTitle,
+  parkActiveDraft,
+  removeDraftSession,
+  useDraftSessions,
+} from "../../features/chat/draft-sessions";
+import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
@@ -129,6 +136,9 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
  * the composite never collides across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
+
+/** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
+const DRAFTS_GROUP_KEY = "\0drafts";
 
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
@@ -271,6 +281,10 @@ export function Sidebar({
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  /** Parked draft conversation pending delete confirmation (null = none). */
+  const [deletingDraft, setDeletingDraft] = useState<DraftSessionEntry | null>(null);
+  /** Parked draft conversations of this user × Project, newest first (reactive module store). */
+  const draftEntries = useDraftSessions(user?.userId ?? null, currentProjectId);
   /** Session currently being renamed (null = none) and the title being typed. */
   const [renamingSession, setRenamingSession] = useState<SessionInfo | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -467,6 +481,10 @@ export function Sidebar({
    * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
   const newChat = (agentId?: string, workspace?: string) => {
+    // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
+    // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
+    // so this click always lands on an empty composer and never silently shelves content.
+    if (user && currentProjectId) parkActiveDraft(user.userId, currentProjectId);
     if (agentId) setCurrentAgentId(agentId);
     const state = {
       ...(agentId ? { agentId } : {}),
@@ -474,6 +492,16 @@ export function Sidebar({
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
+  };
+
+  /** Confirmed parked-draft deletion: drops the entry; a deleted draft that is open falls back to the plain new-chat page. */
+  const confirmDeleteDraft = () => {
+    if (!deletingDraft) return;
+    if (user && currentProjectId) {
+      removeDraftSession(user.userId, currentProjectId, deletingDraft.id);
+    }
+    if (activeSessionId === deletingDraft.id) navigate(`/chat/${DRAFT_SESSION_ID}`);
+    setDeletingDraft(null);
   };
 
   /** Target of the menu's "New chat": default_agent, falling back to the first Agent (if the list isn't ready yet, resolution is deferred to the draft page). */
@@ -811,6 +839,39 @@ export function Sidebar({
           </span>
           <GroupModeToggle value={groupMode} onChange={setGroupMode} />
         </div>
+
+        {/* Parked draft conversations (unsent new chats, newest first): pinned above both
+            grouping modes — they belong to no Agent or Workspace until sent. Hidden
+            entirely while there are none. */}
+        {draftEntries.length > 0 && (
+          <div className="pt-2.5">
+            <GroupHeader
+              open={!collapsedGroups.has(DRAFTS_GROUP_KEY)}
+              onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
+              icon={
+                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  <Icon d={NEW_CHAT_ICON} size={14} />
+                </span>
+              }
+              label={S.chat.draftGroup}
+              uppercase
+              count={draftEntries.length}
+            />
+            {!collapsedGroups.has(DRAFTS_GROUP_KEY) && (
+              <ul className="space-y-0.5">
+                {draftEntries.map((entry) => (
+                  <DraftRow
+                    key={entry.id}
+                    entry={entry}
+                    active={entry.id === activeSessionId}
+                    onOpen={() => go(`/chat/${entry.id}`)}
+                    onDelete={() => setDeletingDraft(entry)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {groupMode === "agent" ? (
           loading && agents.length === 0 ? (
@@ -1216,7 +1277,78 @@ export function Sidebar({
             : ""}
         </p>
       </ConfirmModal>
+
+      {/* Delete parked-draft confirmation: purely local (localStorage entry), but the typed
+          content is gone for good, which deserves the same explicit stop as a session. */}
+      <ConfirmModal
+        open={deletingDraft !== null}
+        title={S.chat.deleteDraft}
+        confirmLabel={S.common.delete}
+        onClose={() => setDeletingDraft(null)}
+        onConfirm={confirmDeleteDraft}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {deletingDraft
+            ? S.chat.deleteDraftConfirm(draftSessionTitle(deletingDraft) || S.chat.draftUntitled)
+            : ""}
+        </p>
+      </ConfirmModal>
     </div>
+  );
+}
+
+/** Single parked-draft row: first line of the unsent text + hover delete (opening resumes the draft at `/chat/<draft-id>`). */
+function DraftRow({
+  entry,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  entry: DraftSessionEntry;
+  active: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const title = draftSessionTitle(entry) || S.chat.draftUntitled;
+  return (
+    <li>
+      <div
+        className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+          active
+            ? "bg-gray-200/70 dark:bg-gray-800"
+            : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
+        >
+          <Truncated
+            text={title}
+            className={`min-w-0 flex-1 text-sm ${
+              active
+                ? "font-medium text-gray-900 dark:text-gray-100"
+                : "text-gray-700 dark:text-gray-300"
+            }`}
+          />
+        </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            title={S.chat.deleteDraft}
+            aria-label={S.chat.deleteDraft}
+            onClick={onDelete}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
+          >
+            <Icon
+              d="M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6"
+              size={14}
+            />
+          </button>
+        </div>
+      </div>
+    </li>
   );
 }
 

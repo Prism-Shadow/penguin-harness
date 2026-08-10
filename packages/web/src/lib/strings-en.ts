@@ -869,9 +869,18 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
-    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
-    viewTrace: "View trace",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "Trace file",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "Processes",
+    processStop: "Stop",
+    processExited: "exited",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "Total Tokens",
+    statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statInput: "Input tokens",
     statCached: "cached",
@@ -924,6 +933,9 @@ Scenarios:
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
         : "Switched model — continued from the earlier conversation",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint:
+      "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
@@ -950,6 +962,12 @@ Scenarios:
     renameSessionLabel: "Title",
     deleteSessionConfirm: (title: string) =>
       `Delete "${title}"? Its messages and Trace will be removed permanently.`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "Drafts",
+    draftUntitled: "(untitled draft)",
+    deleteDraft: "Delete draft",
+    deleteDraftConfirm: (title: string) =>
+      `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */

@@ -187,6 +187,18 @@ export class CommandSessionManager {
     this.registry.remove(processId);
   }
 
+  /** Snapshot of the registered background command sessions (id + session), registration order. */
+  list(): Array<{ processId: string; session: ManagedSession }> {
+    return this.registry.list().map(({ id, task }) => ({ processId: id, session: task }));
+  }
+
+  /** Kills a background process by id (SIGTERM→SIGKILL on the whole group) and drops it from the registry; false when the id is unknown. */
+  kill(processId: string): boolean {
+    if (this.registry.get(processId) === undefined) return false;
+    this.registry.remove(processId);
+    return true;
+  }
+
   /** Disposes: removes the fallback registration and kills all sessions (the process 'exit' fallback is hooked up by the registry itself). Idempotent. */
   dispose(): void {
     this.registry.dispose();

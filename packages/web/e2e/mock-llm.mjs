@@ -10,6 +10,9 @@
  *  - parent asked to delegate ("run a subagent") -> tool_use(run_subagent)
  *  - a repeat delegation later in the same conversation ("run another subagent", keyed on the
  *    LAST message so history can't shadow it) -> tool_use(run_subagent) again
+ *  - "background server test" -> tool_use(exec_command) whose command outlives its yield
+ *    window (processes.spec: the promoted background process shows in the session's
+ *    process list and can be stopped from there)
  *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
@@ -293,6 +296,19 @@ const server = http.createServer((req, res) => {
         { type: "text_delta", text: "Subagent report: 3 TODOs" },
       ]);
       messageStop(res, "end_turn", 12);
+      return;
+    }
+
+    // Background-process test case (processes.spec): an exec_command that outlives its
+    // yield window — the engine promotes it to a background process with a process_id,
+    // which the session's process list (details popover) must surface and be able to stop.
+    // The tiny yield keeps the turn snappy; `sleep 600` stands in for a dev server.
+    if (flat.includes("background server test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_bg_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "sleep 600",' },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      messageStop(res, "tool_use", 14);
       return;
     }
 

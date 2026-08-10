@@ -62,9 +62,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   // Live header statistics: the elapsed chip ticks once per second while the task runs (the
   // pending approval below keeps it running), so its text must advance with no further server
-  // event. Scoped to the header stats container (div.hidden …): the per-reply footer reuses
-  // the same 用时 ("elapsed") label once the turn's stats line lands.
-  const headerElapsed = page.locator('div.hidden span[title="用时"]');
+  // event. Scoped to the toolbar's details trigger (the chips now double as the "Session 信息"
+  // button at the far right): the per-reply footer reuses the same 用时 ("elapsed") label once
+  // the turn's stats line lands.
+  const headerElapsed = page.locator('button[title="Session 信息"] span[title="用时"]');
   const elapsedBefore = await headerElapsed.textContent();
   await expect(headerElapsed).not.toHaveText(elapsedBefore);
 

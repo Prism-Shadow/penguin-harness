@@ -21,6 +21,10 @@
     "./lock": {
       "types": "./dist/lock.d.ts",
       "import": "./dist/lock.js"
+    },
+    "./initial-password": {
+      "types": "./dist/initial-password.d.ts",
+      "import": "./dist/initial-password.js"
     }
   },
   "main": "./dist/index.js",

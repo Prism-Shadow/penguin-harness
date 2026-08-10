@@ -343,6 +343,21 @@ export interface ToolExecutionRequest {
 }
 
 /**
+ * One background command process owned by the environment (an exec_command promoted past
+ * its yield window): the registry handle plus display metadata for a host UI's process
+ * list. `pid` is the shell leading the process group (null when the spawn itself failed);
+ * `startedAt` is epoch milliseconds.
+ */
+export interface BackgroundCommandInfo {
+  processId: string;
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: number;
+  running: boolean;
+}
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded
@@ -357,6 +372,10 @@ export interface EnvironmentInterface {
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
+  /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

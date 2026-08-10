@@ -68,6 +68,12 @@ import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-task
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
+  DRAFT_FLUSH_EVENT,
+  getDraftSession,
+  removeDraftSession,
+  saveDraftSession,
+} from "./draft-sessions";
+import {
   CHAT_DEFAULTS_CHANGED_EVENT,
   chatDefaultsChangedDetail,
   type ChatDefaultsChangedDetail,
@@ -126,10 +132,13 @@ const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
 export function DraftView({
   projectId,
   models,
+  draftId,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
   models: ModelsResponse | null;
+  /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
+  draftId?: string;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -141,13 +150,26 @@ export function DraftView({
   // key that isn't account-scoped.
   const userId = useAuth().user?.userId ?? null;
 
-  // The cache is read only once, on mount: the component remounts keyed by Project,
-  // so switching Projects automatically switches to the corresponding draft; switching
-  // accounts always goes through logout (clearing the user unmounts the whole route
-  // tree), so logging back in is likewise a fresh mount.
-  const [cached] = useState<DraftCache>(() =>
-    userId ? loadDraft(draftKey(userId, projectId)) : {},
+  // The cache is read only once, on mount: the component remounts keyed by Project (and
+  // by parked-draft id), so switching Projects or parked drafts automatically switches to
+  // the corresponding content; switching accounts always goes through logout (clearing
+  // the user unmounts the whole route tree), so logging back in is likewise a fresh
+  // mount. A parked draft reads its own entry instead of the active slot.
+  const [parkedMissing] = useState(
+    () =>
+      draftId !== undefined && (!userId || getDraftSession(userId, projectId, draftId) === null),
   );
+  const [cached] = useState<DraftCache>(() => {
+    if (!userId) return {};
+    if (draftId !== undefined) return getDraftSession(userId, projectId, draftId)?.draft ?? {};
+    return loadDraft(draftKey(userId, projectId));
+  });
+
+  // A parked id that no longer exists (deleted in the sidebar, stale bookmark): fall
+  // back to the plain new-chat draft instead of editing into a void.
+  useEffect(() => {
+    if (parkedMissing) navigate("/chat/new", { replace: true });
+  }, [parkedMissing, navigate]);
 
   const [agentId, setAgentId] = useState<string | null>(
     cached.agentId ?? currentAgent?.agentId ?? null,
@@ -468,8 +490,10 @@ export function DraftView({
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
-    saveDraft(draftKey(userId, projectId), data);
-  }, [cancelPendingSave, userId, projectId, agentId, workspace, approvalMode, modelRef]);
+    // A parked draft writes back into its own list entry; the active draft into its slot.
+    if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
+    else saveDraft(draftKey(userId, projectId), data);
+  }, [cancelPendingSave, userId, projectId, draftId, agentId, workspace, approvalMode, modelRef]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -508,6 +532,23 @@ export function DraftView({
     [],
   );
 
+  // parkActiveDraft ("New chat" clicked while text is typed here) reads the active cache
+  // synchronously right after firing this event: flush the debounce window so the park
+  // captures the latest keystrokes — and so this instance's unmount flush, which would
+  // otherwise fire AFTER the park, has nothing left to write back into the just-cleared
+  // active slot. A parked instance flushes into its own entry (harmless).
+  useEffect(() => {
+    const onFlush = (): void => {
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        persistRef.current();
+      }
+    };
+    window.addEventListener(DRAFT_FLUSH_EVENT, onFlush);
+    return () => window.removeEventListener(DRAFT_FLUSH_EVENT, onFlush);
+  }, []);
+
   /**
    * Discard the draft after a successful send: first cancels the pending save timer, otherwise
    * it would write the just-cleared draft back. The **model selection carries over** as the
@@ -519,10 +560,20 @@ export function DraftView({
     cancelPendingSave();
     // Clear the preselected skills too: any subsequent write (e.g. the unmount flush) must not resurrect a selection that's already been sent.
     skillsRef.current = [];
+    // The unmount flush routes through persistNow, which would otherwise write the
+    // just-sent content back (into the parked entry, resurrecting a deleted row): with
+    // the text gone the flush becomes an idempotent empty-shell write.
+    textRef.current = "";
     if (!userId) return;
+    if (draftId !== undefined) {
+      // A sent parked draft simply disappears from the list; the ACTIVE slot is not
+      // touched — it may hold a different conversation-in-the-making.
+      removeDraftSession(userId, projectId, draftId);
+      return;
+    }
     if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
     else clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId, modelRef]);
+  }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
     touchedRef.current.agent = true; // an explicit pick outranks a late-arriving project default

@@ -54,6 +54,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { parkActiveDraft } from "../chat/draft-sessions";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { SkillIcon, skillTileColor } from "./skill-icon-view";
 
@@ -232,6 +233,9 @@ export function SkillsPage() {
    */
   const quickInvoke = (name: string) => {
     if (userId && projectId) {
+      // Typed-but-unsent draft text becomes a parked draft conversation instead of being
+      // clobbered by the canned invocation body (draft-sessions.ts).
+      parkActiveDraft(userId, projectId);
       const key = draftKey(userId, projectId);
       saveDraft(key, {
         ...loadDraft(key),

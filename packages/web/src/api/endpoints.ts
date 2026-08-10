@@ -57,6 +57,7 @@ import type {
   SessionCreateResponse,
   SessionPatchRequest,
   SessionResponse,
+  SessionProcessesResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -375,6 +376,17 @@ export const postRetryNow = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/** Background processes the conversation started (details popover list); an evicted/never-loaded runtime reports an empty list. */
+export const getSessionProcesses = (sessionId: string) =>
+  apiFetch<SessionProcessesResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/processes`);
+
+/** Stops one background process (404 process_not_found when it already exited or the runtime is gone — callers just refresh). */
+export const killSessionProcess = (sessionId: string, processId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/processes/${encodeURIComponent(processId)}/kill`,
+    { method: "POST", body: {} },
+  );
 
 /** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
 export const postSteer = (sessionId: string, body: SteerRequest) =>
