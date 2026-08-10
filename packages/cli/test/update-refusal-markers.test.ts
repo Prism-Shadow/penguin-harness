@@ -3,7 +3,7 @@
  *
  * POST /api/version/update (packages/server/src/http/routes/version.ts) tells a refusal
  * ("unsupported") apart from a successful run by matching `penguin update` output against
- * REFUSAL_MARKERS — five English fragments duplicated from this package's i18n catalog.
+ * REFUSAL_MARKERS — English fragments duplicated from this package's i18n catalog.
  * The server cannot import the CLI (the dependency runs the other way), so the fragments
  * are hardcoded here too, on purpose: editing a refusal message without updating
  * REFUSAL_MARKERS would silently misclassify refusals as "updated", and this test turns
@@ -47,6 +47,11 @@ const MARKERS: ReadonlyArray<{ marker: string; name: string; message: string }> 
     marker: "cannot run your package manager for you",
     name: "windowsGlobalInstall",
     message: en.windowsGlobalInstall("npm install -g @prismshadow/penguin-cli@1.2.3"),
+  },
+  {
+    marker: "includes the word-docx offline bundle",
+    name: "wordDocxUpdateUnsupported",
+    message: en.wordDocxUpdateUnsupported(),
   },
 ];
 

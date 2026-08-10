@@ -574,6 +574,13 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     });
   });
 
+  it("refuses to replace the offline word-docx bundle with the standard tarball", () => {
+    expect(planUpdate({ ...base, install: tarball, hasWordDocxBundle: true })).toEqual({
+      action: "refuse",
+      reason: "word-docx-bundle",
+    });
+  });
+
   it("Windows is refused on the tarball path: the installer is a POSIX shell script", () => {
     expect(planUpdate({ ...base, platform: "win32", install: tarball })).toEqual({
       action: "refuse",
@@ -598,6 +605,7 @@ describe("planUpdate (what the command decides before it touches anything)", () 
       planUpdate({ ...base, install: { kind: "npm", globalRoot: "/weird/place" } }),
       planUpdate({ ...base, platform: "win32", install: tarball }),
       planUpdate({ ...base, platform: "win32", install: npmGlobal }),
+      planUpdate({ ...base, install: tarball, hasWordDocxBundle: true }),
     ];
     for (const lang of ["en", "zh"] as const) {
       const t = getMessages(lang);
@@ -606,6 +614,7 @@ describe("planUpdate (what the command decides before it touches anything)", () 
       expect(t.update.unknownInstall("/x")).toContain("/x");
       expect(t.update.npmUnknownManager("/weird/place", "0.1.2")).toContain("/weird/place");
       expect(t.update.windowsUnsupported()).toBeTruthy();
+      expect(t.update.wordDocxUpdateUnsupported()).toContain("word-docx");
       // The Windows global-install message is only useful if it carries the command verbatim.
       expect(t.update.windowsGlobalInstall("pnpm add -g pkg@1")).toContain("pnpm add -g pkg@1");
     }

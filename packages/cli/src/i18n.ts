@@ -113,6 +113,8 @@ export interface Messages {
     npmUnknownManager(globalRoot: string, target: string): string;
     /** Windows, tarball install: the official installer is a POSIX shell script. */
     windowsUnsupported(): string;
+    /** Offline DOCX bundle: the standard installer would silently remove its extra resources. */
+    wordDocxUpdateUnsupported(): string;
     /**
      * Windows, global install: `spawn` cannot run a `.cmd` shim without a shell, so hand the user
      * the exact command instead of failing generically.
@@ -378,6 +380,8 @@ const en: Messages = {
       `This is a global install under ${globalRoot}, but the package manager that owns it could not be identified. Upgrade it yourself with that manager, e.g. \`npm install -g @prismshadow/penguin-cli@${target}\`.`,
     windowsUnsupported: () =>
       "The official installer is a POSIX shell script and does not run on Windows. Re-install from the GitHub Releases page, or use a global npm install instead.",
+    wordDocxUpdateUnsupported: () =>
+      "This install includes the word-docx offline bundle, which the standard automatic update would remove. Nothing was changed. Install the matching penguin-word-docx-linux-x64.tar.gz release manually.",
     windowsGlobalInstall: (command) =>
       [
         "On Windows, penguin cannot run your package manager for you: Node will not execute an npm/pnpm/yarn `.cmd` shim without a shell.",
@@ -605,6 +609,8 @@ const zh: Messages = {
       `这是位于 ${globalRoot} 的全局安装，但无法确定是哪个包管理器安装的。请自行用该包管理器升级，例如 \`npm install -g @prismshadow/penguin-cli@${target}\`。`,
     windowsUnsupported: () =>
       "官方安装脚本是 POSIX shell 脚本，无法在 Windows 上运行。请从 GitHub Releases 页面重新安装，或改用 npm 全局安装。",
+    wordDocxUpdateUnsupported: () =>
+      "当前安装包含 word-docx 离线增强包，标准自动更新会将其删除，因此未做任何修改。请手动安装对应版本的 penguin-word-docx-linux-x64.tar.gz。",
     windowsGlobalInstall: (command) =>
       [
         "在 Windows 上，penguin 无法代你调用包管理器：Node 不会在没有 shell 的情况下执行 npm/pnpm/yarn 的 `.cmd` 包装脚本。",

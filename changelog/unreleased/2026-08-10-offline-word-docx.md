@@ -12,4 +12,6 @@ The enhanced bundle adds the `word-docx` Skill, its fixed helper scripts, and ha
 
 ## Safe basic editing
 
-The first release supports paragraph inspection, appending headings and paragraphs, and replacing ordinary text within a run. Editing always uses distinct input and output paths, refuses to overwrite an existing output, reopens the generated DOCX, verifies the requested content, and confirms that the source file did not change. The release workflow validates the separate artifact and runs its acceptance test in Docker with networking disabled.
+The first release supports paragraph inspection, appending headings and paragraphs, and replacing ordinary text within a run. A document without a requested built-in heading style falls back to a bold ordinary paragraph. Editing always uses distinct input and output paths, refuses to overwrite an existing output, reopens the generated DOCX, verifies the requested content, and confirms that the source file did not change. The release workflow validates the separate artifact and runs its acceptance test in Docker with networking disabled.
+
+Because the standard updater cannot yet select the enhanced artifact, `penguin update` now detects an installed word-docx bundle and refuses the automatic replacement with a clear manual-update instruction instead of silently removing the offline resources.

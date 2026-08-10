@@ -91,6 +91,18 @@ def inspect_document(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def append_heading(document: Document, text: str, level: int) -> None:
+    style_name = f"Heading {level}"
+    if style_name in document.styles:
+        document.add_heading(text, level=level)
+        return
+
+    # Some third-party DOCX files omit Word's built-in heading styles entirely.
+    # Keep the edit usable without mutating the source or inventing a document-wide style.
+    run = document.add_paragraph().add_run(text)
+    run.bold = True
+
+
 def append_content(args: argparse.Namespace) -> dict[str, object]:
     if args.heading is None and not args.paragraph:
         raise ValueError("append requires --heading or at least one --paragraph")
@@ -99,7 +111,7 @@ def append_content(args: argparse.Namespace) -> dict[str, object]:
     document = Document(source)
     expected: list[str] = []
     if args.heading is not None:
-        document.add_heading(args.heading, level=args.heading_level)
+        append_heading(document, args.heading, args.heading_level)
         expected.append(args.heading)
     for text in args.paragraph:
         document.add_paragraph(text)

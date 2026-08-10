@@ -116,6 +116,37 @@ assert "Offline heading" in texts
 assert "Offline paragraph" in texts
 PY
 
+# A DOCX without Word's built-in Heading 1 style must still accept a heading. The helper
+# falls back to a bold ordinary paragraph and must leave the source byte-for-byte unchanged.
+"$environment/bin/python" -I - <<'PY'
+from docx import Document
+
+document = Document()
+heading = document.styles["Heading 1"]
+document.styles.element.remove(heading._element)
+document.add_paragraph("Document without heading styles")
+document.save("/tmp/no-heading.docx")
+assert "Heading 1" not in Document("/tmp/no-heading.docx").styles
+PY
+no_heading_hash="$(sha256sum /tmp/no-heading.docx | awk '{ print $1 }')"
+python3 -I "$skill/scripts/bootstrap.py" append \
+  --input /tmp/no-heading.docx \
+  --output /tmp/no-heading-appended.docx \
+  --heading "Fallback heading" >/tmp/no-heading-append.json
+test "$no_heading_hash" = "$(sha256sum /tmp/no-heading.docx | awk '{ print $1 }')"
+
+"$environment/bin/python" -I - <<'PY'
+import json
+from docx import Document
+
+with open("/tmp/no-heading-append.json", encoding="utf-8") as result:
+    assert json.load(result)["verified"] is True
+document = Document("/tmp/no-heading-appended.docx")
+paragraph = next(item for item in document.paragraphs if item.text == "Fallback heading")
+assert "Heading 1" not in document.styles
+assert any(run.text == "Fallback heading" and run.bold is True for run in paragraph.runs)
+PY
+
 if python3 -I -c 'import docx' >/dev/null 2>&1; then
   echo "error: python-docx leaked into the system Python" >&2
   exit 1

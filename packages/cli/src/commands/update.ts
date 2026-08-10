@@ -459,6 +459,7 @@ export type UpdatePlan =
   | { action: "refuse"; reason: "unknown-manager"; globalRoot: string; target: string }
   | { action: "refuse"; reason: "windows-global"; command: string }
   | { action: "refuse"; reason: "windows-installer" }
+  | { action: "refuse"; reason: "word-docx-bundle" }
   | { action: "npm"; manager: PackageManager; command: string; args: string[] }
   | { action: "tarball"; installDir: string };
 
@@ -483,6 +484,8 @@ export function planUpdate(input: {
   platform: string;
   /** `~/.penguin`, passed in rather than read, so the tarball branch stays pure. */
   defaultInstallDir: string;
+  /** The tarball install contains the separately released offline DOCX resources. */
+  hasWordDocxBundle?: boolean;
 }): UpdatePlan {
   const { current, target, install } = input;
   const comparison = compareVersions(target, current);
@@ -508,6 +511,7 @@ export function planUpdate(input: {
     return { action: "npm", manager, command, args };
   }
 
+  if (input.hasWordDocxBundle) return { action: "refuse", reason: "word-docx-bundle" };
   if (input.platform === "win32") return { action: "refuse", reason: "windows-installer" };
   return { action: "tarball", installDir: install.installDir ?? input.defaultInstallDir };
 }
@@ -525,6 +529,8 @@ function refusalMessage(plan: Extract<UpdatePlan, { action: "refuse" }>, t: Mess
       return t.update.windowsGlobalInstall(plan.command);
     case "windows-installer":
       return t.update.windowsUnsupported();
+    case "word-docx-bundle":
+      return t.update.wordDocxUpdateUnsupported();
   }
 }
 
@@ -543,14 +549,20 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       const target = release.version;
       const modulePath = selfPath();
       const defaultInstallDir = path.join(homedir(), ".penguin");
+      const install = detectInstall(modulePath);
+      const detectedInstallDir =
+        install.kind === "tarball" ? (install.installDir ?? defaultInstallDir) : undefined;
       const plan = planUpdate({
         current,
         target,
         ...(opts.check !== undefined ? { check: opts.check } : {}),
-        install: detectInstall(modulePath),
+        install,
         modulePath,
         platform: process.platform,
         defaultInstallDir,
+        hasWordDocxBundle:
+          detectedInstallDir !== undefined &&
+          existsSync(path.join(detectedInstallDir, "lib", "offline", "word-docx")),
       });
 
       if (plan.action === "report") {
