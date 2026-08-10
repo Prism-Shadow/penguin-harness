@@ -294,6 +294,30 @@ export function MessageStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, follow, older?.prependedCount]);
 
+  // The container and the content can also resize OUTSIDE stream commits: the app shell's
+  // notice banner (initial-password reminder) mounting after /api/me resolves shrinks the
+  // scroll viewport, and a late-loading image grows the transcript. Neither fires a scroll
+  // event nor bumps `version`, so while following, the view silently ended up a banner's
+  // height above the bottom right after opening a conversation. Re-snap on any such resize
+  // under the same guards as the commit snap; lastHeightRef stays in sync so a later
+  // prepend's anchor offset isn't inflated by off-commit growth the anchor already saw.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      lastHeightRef.current = el.scrollHeight;
+      if (follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
+      syncJump();
+    });
+    ro.observe(el);
+    // The content wrapper is the scroll container's only child and stays mounted for this
+    // component's whole lifetime, so observing it once covers all content growth.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+    // syncJump is recreated per render; the observer only needs the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
+
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
     const el = scrollRef.current;

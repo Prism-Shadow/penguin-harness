@@ -847,8 +847,14 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
-    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
-    viewTrace: "查看轨迹",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "轨迹文件",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "会话进程",
+    processStop: "停止",
+    processExited: "已退出",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",
     statElapsed: "用时",
     statInput: "输入 tokens",
@@ -904,6 +910,8 @@ Benchmark：
       prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
@@ -928,6 +936,11 @@ Benchmark：
     renameSessionLabel: "标题",
     deleteSessionConfirm: (title: string) =>
       `确定删除「${title}」？该对话的消息与 Trace 将被移除，且不可恢复。`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "草稿",
+    draftUntitled: "（无标题草稿）",
+    deleteDraft: "删除草稿",
+    deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */

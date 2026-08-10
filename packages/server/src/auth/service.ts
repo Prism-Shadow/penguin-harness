@@ -81,6 +81,12 @@ export interface AuthServiceDeps {
   provisionInitialProject: (user: UserRow, isAdmin: boolean) => Promise<void>;
   /** Fixed initial password for the seeded admin (config.seedAdminPassword); null generates a random one at seed time. */
   seedAdminPassword: string | null;
+  /**
+   * Fired after any successful password update (self change / desktop set). The server
+   * wires it to drop the stored initial-password plaintext once it goes stale (see
+   * initial-password.ts); standalone/test constructions may omit it.
+   */
+  onPasswordChanged?: (userId: string) => void;
   sessionTtlMs: number;
   sessionRenewMs: number;
   now?: () => Date;
@@ -128,6 +134,11 @@ export class AuthService {
       throw err;
     }
     return password;
+  }
+
+  /** Whether the built-in admin still runs on its initial password (drives the startup reminder notice). */
+  adminPasswordIsInitial(): boolean {
+    return this.deps.users.findById(ADMIN_USER_ID)?.passwordIsInitial === true;
   }
 
   /** Consecutive login failures per userId (see the throttling comment on the constants). */
@@ -195,6 +206,7 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.onPasswordChanged?.(userId);
   }
 
   /**
@@ -208,6 +220,7 @@ export class AuthService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.onPasswordChanged?.(userId);
   }
 
   logout(token: string): void {

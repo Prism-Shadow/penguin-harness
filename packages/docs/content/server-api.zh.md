@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 7 天，滑动续期；
 - 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`）并仅在种子当次打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
+- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`），在改掉之前保存在 `<root>/initial-admin-password` 中并于每次启动时打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash

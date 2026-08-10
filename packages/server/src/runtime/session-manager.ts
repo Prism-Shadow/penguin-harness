@@ -40,6 +40,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
+  BackgroundCommandInfo,
   CompactAvailability,
   OmniMessage,
   ProxyEnvPolicy,
@@ -105,6 +106,12 @@ export interface RuntimeSession {
     material?: { userText: string; assistantText: string };
     signal?: AbortSignal;
   }): Promise<SessionTitleResult>;
+  /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
+  /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
+  dispose?(): void;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -865,6 +872,37 @@ export class SessionManager {
   }
 
   /**
+   * Background command processes of a LOADED session (empty when the entry is not in
+   * the active table — a resumed entry starts with a fresh environment and can only
+   * ever report an empty list, so nothing is resurrected just to answer a poll).
+   */
+  listProcesses(sessionId: string): BackgroundCommandInfo[] {
+    return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+  }
+
+  /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
+  killProcess(sessionId: string, processId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    if (killed) entry.lastActivityMs = Date.now();
+    return killed;
+  }
+
+  /**
+   * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
+   * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
+   * Agent / Project is the one intent that must also end the background processes the
+   * conversation started (a dev server surviving its deleted conversation is
+   * unreachable from every UI, running forever).
+   */
+  private disposeRemoved(entry: RuntimeEntry): void {
+    const dispose = (): void => entry.session.dispose?.();
+    if (entry.running) void entry.running.then(dispose, dispose);
+    else dispose();
+  }
+
+  /**
    * Before deleting a Project, converge all its active runs and clear them out of the
    * active table. Returns the in-flight drive Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
@@ -878,6 +916,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -900,6 +939,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -926,6 +966,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
+    this.disposeRemoved(entry);
     return entry.running ? [entry.running] : [];
   }
 
@@ -964,6 +1005,11 @@ export class SessionManager {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
+      // A live background process (e.g. a dev server the conversation started) pins the
+      // entry: eviction would strand the process — a resumed entry starts with a fresh
+      // environment, so the process list and its stop control would go blind while the
+      // OS process kept running. Exited-but-listed processes don't pin anything.
+      if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }

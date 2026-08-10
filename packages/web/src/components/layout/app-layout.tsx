@@ -18,6 +18,7 @@ import { GlyphIcon } from "../ui/glyph-icon";
 import { NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
@@ -40,7 +41,7 @@ const railItemClass = (active: boolean) =>
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { agents, setCurrentAgentId } = useProject();
+  const { agents, currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
   /**
    * Passive (active=false): never triggers a fetch — the rail mirrors whatever the lazy
@@ -64,8 +65,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
+  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first (draft-sessions.ts), then a default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
   const newChat = () => {
+    if (user && currentProject) parkActiveDraft(user.userId, currentProject.projectId);
     const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
     if (agentId) setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);

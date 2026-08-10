@@ -22,6 +22,7 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
   RetryNowResponse,
@@ -774,6 +775,41 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // —— Background processes (the details popover's interactive list) ——
+
+  // Processes the conversation started (exec_commands promoted to background). Served
+  // from the ACTIVE runtime only: an evicted or never-loaded session truthfully reports
+  // none — the environment that owned them is gone, and resurrecting an entry could only
+  // ever produce an empty list anyway.
+  app.get("/:sessionId/processes", (c) => {
+    const row = resolveSession(c);
+    const processes = deps.manager.listProcesses(row.sessionId).map((p) => ({
+      processId: p.processId,
+      pid: p.pid,
+      cmd: p.cmd,
+      cwd: p.cwd,
+      startedAt: new Date(p.startedAt).toISOString(),
+      running: p.running,
+    }));
+    return c.json({ processes } satisfies SessionProcessesResponse);
+  });
+
+  // Stop one background process (SIGTERM to the whole group, SIGKILL after a grace
+  // period). 404 when the id is gone — already exited and reaped, or the runtime was
+  // evicted; the UI just refreshes its list either way.
+  app.post("/:sessionId/processes/:processId/kill", (c) => {
+    const row = resolveSession(c);
+    const killed = deps.manager.killProcess(row.sessionId, pathParam(c, "processId"));
+    if (!killed) {
+      throw new HttpError(
+        404,
+        "process_not_found",
+        "Process does not exist or has already exited.",
+      );
+    }
+    return c.body(null, 204);
   });
 
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the

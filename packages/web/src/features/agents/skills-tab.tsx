@@ -37,6 +37,7 @@ import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { parkActiveDraft } from "../chat/draft-sessions";
 import { buildImportPrompt } from "./skill-import-source";
 
 /** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
@@ -185,6 +186,9 @@ export function SkillsTab({ agentId }: { agentId: string }) {
    */
   const openChat = () => {
     if (userId && projectId && trimmedSource) {
+      // Typed-but-unsent draft text becomes a parked draft conversation instead of being
+      // clobbered by the canned import prompt (draft-sessions.ts).
+      parkActiveDraft(userId, projectId);
       const key = draftKey(userId, projectId);
       saveDraft(key, {
         ...loadDraft(key),

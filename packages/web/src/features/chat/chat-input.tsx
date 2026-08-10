@@ -83,7 +83,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { noAutofill } from "../../components/ui/input";
-import { toastError } from "../../components/ui/toast";
+import { toastError, toastInfo } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ProviderLogo } from "../../components/ui/provider-logo";
@@ -2526,11 +2526,20 @@ export function ChatInput({
                 disabled={busy}
               />
             ) : (
-              <span
+              /* Read-only display in session state: both the logo and the name come from the
+                 Session DTO's paired fields (no prefix parsing). A button rather than a plain
+                 span: the model is locked here, and clicking it explains the one way to switch
+                 (the /model command) instead of doing nothing. */
+              <button
+                type="button"
                 title={modelRef?.modelId ?? ""}
-                className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 px-1 text-gray-400 dark:text-gray-500"
+                // Short accessible name (the toast carries the full hint): the long copy
+                // contains the literal "发送"/"Send", which would collide with the send
+                // button's accessible name for assistive tech and name-based test queries.
+                aria-label={`${S.chat.model} ${modelRef?.modelId ?? ""}`}
+                onClick={() => toastInfo(S.chat.modelLockedHint)}
+                className="flex h-8 min-w-0 max-w-44 shrink cursor-help items-center gap-1.5 rounded-md px-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
               >
-                {/* Read-only display in session state: both the logo and the name come from the Session DTO's paired fields (no prefix parsing). */}
                 <ProviderLogo
                   provider={modelRef?.provider ?? "custom"}
                   className="h-4 w-4 shrink-0"
@@ -2541,7 +2550,7 @@ export function ChatInput({
                     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
                   })()}
                 </span>
-              </span>
+              </button>
             )}
             {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,

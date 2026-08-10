@@ -888,6 +888,25 @@ export interface RetryNowResponse {
   skipped: boolean;
 }
 
+/**
+ * One background command process started by the Session (an exec_command promoted past
+ * its yield window). Served from the ACTIVE runtime only: a session whose runtime entry
+ * is gone truthfully reports an empty list.
+ */
+export interface SessionProcessInfo {
+  processId: string;
+  /** OS pid of the process-group leader; null when the spawn itself failed. */
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: string;
+  running: boolean;
+}
+
+export interface SessionProcessesResponse {
+  processes: SessionProcessInfo[];
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
