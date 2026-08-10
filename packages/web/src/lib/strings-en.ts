@@ -504,17 +504,17 @@ export const en: Strings = {
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
-    import: "Import",
-    importTitle: "Import memory",
-    importWhy:
-      "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent writes the memory files and their MEMORY.md index lines.",
-    importContentLabel: "Content or source to remember",
-    importContentPlaceholder: "Paste the content to remember, or a file path / URL",
-    /** Prefilled draft for the import-via-chat flow; the modal appends the required content after the trailing label. */
-    importPromptLead: (dir: string): string =>
-      `Please turn the following into memories saved under ${dir}`,
-    importPromptTail:
-      "If it is a file path or URL, read the source first and distill it. Write each memory as one markdown file with frontmatter, and add an index line to MEMORY.md in that directory.\nContent: ",
+    add: "Add",
+    addTitle: "Add memory",
+    addWhy:
+      "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
+    addContentLabel: "Content or source to remember",
+    addContentPlaceholder: "Paste the content to remember, or a file path / URL",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "Please turn the following into memories in user memory:",
+      workspace: "Please turn the following into memories in this workspace's memory:",
+    },
     view: "View",
     edit: "Edit",
     editTitle: "Edit memory",
@@ -532,10 +532,8 @@ export const en: Strings = {
       `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
     deleteDone: "Deleted",
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
-    editPromptLead: (title: string, filePath: string): string =>
-      `Please update a memory: ${title}\nFile: ${filePath}`,
-    editPromptTail:
-      "After editing, update the MEMORY.md index line and updated_at in the same directory.\nWhat to change: ",
+    editPromptLead: (title: string): string => `Please update a memory: ${title}`,
+    editPromptTail: "What to change: ",
   },
 
   vault: {

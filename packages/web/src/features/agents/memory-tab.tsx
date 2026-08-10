@@ -4,7 +4,7 @@
  * its `.workspace` path, newest activity first).
  *
  * The tab is read + delete only, matching the API: a memory's content is the model's document,
- * so both "edit" and each scope header's "import" open a bridge modal first — a text field and
+ * so both "edit" and each scope header's "add" open a bridge modal first — a text field and
  * a live preview of the generated prompt, the same shape as the skill import modal — and then
  * jump to a new chat with this Agent and the prompt as the prefilled draft (the same
  * draft-cache route). For a Workspace scope the draft also pins that Workspace, so the Session
@@ -40,7 +40,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { buildMemoryEditPrompt, buildMemoryImportPrompt } from "./memory-chat-prompts";
+import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {
@@ -126,8 +126,8 @@ export function MemoryTab({
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
   const [editRequirement, setEditRequirement] = useState("");
-  const [importing, setImporting] = useState<MemoryScopeInfo | null>(null);
-  const [importContent, setImportContent] = useState("");
+  const [adding, setAdding] = useState<MemoryScopeInfo | null>(null);
+  const [addContent, setAddContent] = useState("");
   const [removing, setRemoving] = useState<Selected | null>(null);
   // ≥1024px the view opens as a right Drawer, below as a bottom Sheet — same live-updating
   // breakpoint as the chat page's panels; the two are mounted mutually exclusively.
@@ -295,13 +295,7 @@ export function MemoryTab({
     setEditing({ scope, file });
   };
 
-  const editPrompt = editing
-    ? buildMemoryEditPrompt(
-        editing.file.title,
-        memoryFilePath(editing.scope, editing.file),
-        editRequirement,
-      )
-    : "";
+  const editPrompt = editing ? buildMemoryEditPrompt(editing.file.title, editRequirement) : "";
 
   const copyEditPrompt = () => {
     void navigator.clipboard
@@ -311,7 +305,7 @@ export function MemoryTab({
   };
 
   /**
-   * The bridge-to-chat jump shared by edit and import: prefill the draft (merging over what is
+   * The bridge-to-chat jump shared by edit and add: prefill the draft (merging over what is
    * already cached, clearing a stale `/agent` handoff chip that would forward the prompt to a
    * different Agent), pin this Agent — and for a Workspace scope pin that Workspace too, so the
    * Session reads the very index it is about to change.
@@ -340,25 +334,23 @@ export function MemoryTab({
     if (editing) openChatWithDraft(editPrompt, editing.scope.workspacePath);
   };
 
-  /** Opens the import modal for one scope: content empty, actions disabled until it is filled. */
-  const openImport = (scope: MemoryScopeInfo) => {
-    setImportContent("");
-    setImporting(scope);
+  /** Opens the add modal for one scope: content empty, actions disabled until it is filled. */
+  const openAdd = (scope: MemoryScopeInfo) => {
+    setAddContent("");
+    setAdding(scope);
   };
 
-  const importPrompt = importing
-    ? buildMemoryImportPrompt(`${memoryDir}/${importing.scopeKey}`, importContent)
-    : "";
+  const addPrompt = adding ? buildMemoryAddPrompt(adding.kind, addContent) : "";
 
-  const copyImportPrompt = () => {
+  const copyAddPrompt = () => {
     void navigator.clipboard
-      .writeText(importPrompt)
+      .writeText(addPrompt)
       .then(() => toastSuccess(S.memory.editCopied))
       .catch(() => toastError(S.common.unknownError));
   };
 
-  const openImportChat = () => {
-    if (importing) openChatWithDraft(importPrompt, importing.workspacePath);
+  const openAddChat = () => {
+    if (adding) openChatWithDraft(addPrompt, adding.workspacePath);
   };
 
   const confirmRemove = async () => {
@@ -469,7 +461,7 @@ export function MemoryTab({
                 className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
               >
                 {/* Group header (same convention as the skill library groups): the row toggles
-                    collapse, with the Import button a sibling — a real <button> cannot nest
+                    collapse, with the Add button a sibling — a real <button> cannot nest
                     another, so the header is a flex pair rather than one full-width button. */}
                 <div className="flex w-full items-center bg-gray-50 pr-2.5 dark:bg-gray-900/60">
                   <button
@@ -492,8 +484,8 @@ export function MemoryTab({
                     </span>
                     <Chevron open={open} className="text-gray-400" />
                   </button>
-                  <Button size="sm" className="ml-2 shrink-0" onClick={() => openImport(scope)}>
-                    {S.memory.import}
+                  <Button size="sm" className="ml-2 shrink-0" onClick={() => openAdd(scope)}>
+                    {S.memory.add}
                   </Button>
                 </div>
                 <div
@@ -660,45 +652,45 @@ export function MemoryTab({
         )}
       </Modal>
 
-      {/* Import bridge modal: the edit modal's shape, but the content field is required — the
+      {/* Add bridge modal: the edit modal's shape, but the content field is required — the
           prompt is meaningless without it, so both actions stay disabled until it is filled. */}
       <Modal
-        open={importing !== null}
-        title={S.memory.importTitle}
-        onClose={() => setImporting(null)}
+        open={adding !== null}
+        title={S.memory.addTitle}
+        onClose={() => setAdding(null)}
         widthClass="sm:max-w-lg"
       >
-        {importing && (
+        {adding && (
           <div className="space-y-2.5">
-            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.addWhy}</p>
             <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
-              {`${memoryDir}/${importing.scopeKey}`}
+              {`${memoryDir}/${adding.scopeKey}`}
             </p>
             <Textarea
-              label={S.memory.importContentLabel}
+              label={S.memory.addContentLabel}
               size="sm"
               rows={4}
-              value={importContent}
-              onChange={(e) => setImportContent(e.target.value)}
-              placeholder={S.memory.importContentPlaceholder}
+              value={addContent}
+              onChange={(e) => setAddContent(e.target.value)}
+              placeholder={S.memory.addContentPlaceholder}
             />
             <Textarea
               label={S.memory.editPromptLabel}
               size="sm"
               rows={6}
               readOnly
-              value={importPrompt}
+              value={addPrompt}
               className="text-gray-600 dark:text-gray-300"
             />
             <div className="flex gap-2">
-              <Button size="sm" disabled={importContent.trim() === ""} onClick={copyImportPrompt}>
+              <Button size="sm" disabled={addContent.trim() === ""} onClick={copyAddPrompt}>
                 {S.memory.editCopyPrompt}
               </Button>
               <Button
                 size="sm"
                 variant="primary"
-                disabled={importContent.trim() === ""}
-                onClick={openImportChat}
+                disabled={addContent.trim() === ""}
+                onClick={openAddChat}
               >
                 {S.memory.editOpenChat}
               </Button>

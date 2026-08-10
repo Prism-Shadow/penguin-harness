@@ -476,16 +476,16 @@ export const zh = {
     itemCount: (n: number): string => `${n} 条`,
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
-    import: "导入",
-    importTitle: "导入记忆",
-    importWhy:
-      "记忆整理由 agent 在对话中完成：填写内容后打开新对话，agent 会写入记忆文件并在 MEMORY.md 登记索引。",
-    importContentLabel: "要记住的内容或来源",
-    importContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
-    /** Prefilled draft for the import-via-chat flow; the modal appends the required content after the trailing label. */
-    importPromptLead: (dir: string): string => `请把下面的内容整理为记忆，保存到 ${dir}`,
-    importPromptTail:
-      "若是文件路径或链接，先读取原文再提炼。每条记忆写成一个带 frontmatter 的 markdown 文件，并在该目录 MEMORY.md 中登记索引行。\n内容：",
+    add: "添加",
+    addTitle: "添加记忆",
+    addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
+    addContentLabel: "要记住的内容或来源",
+    addContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "请把下面的内容整理成记忆，存入用户记忆：",
+      workspace: "请把下面的内容整理成记忆，存入这个工作区的记忆：",
+    },
     view: "查看",
     edit: "编辑",
     editTitle: "编辑记忆",
@@ -503,9 +503,8 @@ export const zh = {
       `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
     deleteDone: "已删除",
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
-    editPromptLead: (title: string, filePath: string): string =>
-      `请帮我更新一条记忆：${title}\n文件：${filePath}`,
-    editPromptTail: "改完后请同步更新同目录 MEMORY.md 的索引行和 updated_at。\n修改要求：",
+    editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
+    editPromptTail: "修改要求：",
   },
 
   vault: {
