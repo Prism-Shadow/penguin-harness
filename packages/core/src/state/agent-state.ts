@@ -269,34 +269,107 @@ function vaultKeysList(keys: string[]): string {
   return keys.map((key) => `- ${key}`).join("\n");
 }
 
+const skillWriteQueues = new Map<string, Promise<void>>();
+
+async function serializeSkillWrite(dir: string, write: () => Promise<void>): Promise<void> {
+  const previous = skillWriteQueues.get(dir) ?? Promise.resolve();
+  const run = previous.catch(() => {}).then(write);
+  const settled = run.then(
+    () => {},
+    () => {},
+  );
+  skillWriteQueues.set(dir, settled);
+  try {
+    await run;
+  } finally {
+    if (skillWriteQueues.get(dir) === settled) skillWriteQueues.delete(dir);
+  }
+}
+
+/** Replaces one installed Skill directory from a validated relative-path file map. */
+async function replaceSkillFiles(
+  root: string,
+  projectId: string,
+  agentId: string,
+  name: string,
+  inputFiles: ReadonlyMap<string, Uint8Array>,
+): Promise<void> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  assertValidId("skill_name", name);
+  const files = new Map(inputFiles);
+  for (const file of files.keys()) {
+    if (
+      file.length === 0 ||
+      file.includes("\\") ||
+      path.posix.isAbsolute(file) ||
+      file.split("/").some((part) => part === "" || part === "." || part === "..")
+    ) {
+      throw new Error(`Invalid Skill resource path: ${file}`);
+    }
+  }
+  if (!files.has("SKILL.md")) throw new Error("Skill resources must include SKILL.md");
+
+  const parent = skillsDir(root, projectId, agentId);
+  const dir = path.join(parent, name);
+  await fs.mkdir(parent, { recursive: true });
+  await serializeSkillWrite(dir, async () => {
+    const workspace = await fs.mkdtemp(path.join(parent, `.${name}.install-`));
+    const next = path.join(workspace, "next");
+    const previous = path.join(workspace, "previous");
+    let movedPrevious = false;
+    try {
+      await Promise.all(
+        [...files].map(async ([file, data]) => {
+          const destination = path.join(next, ...file.split("/"));
+          await fs.mkdir(path.dirname(destination), { recursive: true });
+          await fs.writeFile(destination, data);
+        }),
+      );
+      try {
+        await fs.rename(dir, previous);
+        movedPrevious = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      try {
+        await fs.rename(next, dir);
+      } catch (error) {
+        if (movedPrevious && !(await fileExists(dir))) await fs.rename(previous, dir);
+        throw error;
+      }
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  });
+}
+
 /**
- * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline); if the directory
- * already exists, it's overwritten (reinstalling = updating to the latest content). An optional
- * icon.svg is written alongside SKILL.md; if this install doesn't
- * include an icon, any old icon.svg is removed, preserving "overwrite update" semantics (the
- * directory content matches the Skill being installed).
+ * Installs a Skill into the target Agent. Library Skills may include regular files under nested
+ * paths; reinstalling replaces the whole directory so removed resources cannot linger. SKILL.md
+ * remains the required source of metadata and is normalized to end with a newline.
  * Docs: /docs/skills § "Installation and storage".
  */
 export async function installSkill(
   root: string,
   projectId: string,
   agentId: string,
-  skill: { name: string; content: string; icon?: string },
+  skill: {
+    name: string;
+    content: string;
+    icon?: string;
+    files?: Readonly<Record<string, Uint8Array>>;
+  },
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
   assertValidId("skill_name", skill.name);
-  const dir = path.join(skillsDir(root, projectId, agentId), skill.name);
-  await fs.mkdir(dir, { recursive: true });
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
-  const iconPath = path.join(dir, "icon.svg");
-  await Promise.all([
-    fs.writeFile(path.join(dir, "SKILL.md"), content, "utf8"),
-    skill.icon !== undefined
-      ? fs.writeFile(iconPath, skill.icon, "utf8")
-      : fs.rm(iconPath, { force: true }),
-  ]);
+  const files = new Map(Object.entries(skill.files ?? {}));
+  files.set("SKILL.md", Buffer.from(content));
+  if (skill.icon !== undefined) files.set("icon.svg", Buffer.from(skill.icon));
+  else files.delete("icon.svg");
+  await replaceSkillFiles(root, projectId, agentId, skill.name, files);
 }
 
 /** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */

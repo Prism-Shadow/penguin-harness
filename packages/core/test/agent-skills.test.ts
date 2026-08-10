@@ -72,6 +72,55 @@ describe("installSkill / removeSkill", () => {
     expect(await fs.readFile(skillMd("penguin-sdk"), "utf8")).toContain("New body");
   });
 
+  it("recursively installs bundled resources and removes stale files on reinstall", async () => {
+    const content = "---\nname: bundled\nversion: 1\n---\n\nBody\n";
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "bundled",
+      content,
+      files: {
+        "SKILL.md": Buffer.from(content),
+        "scripts/helper.py": Buffer.from("print('ok')\n"),
+        "requirements.lock": Buffer.from("demo==1\n"),
+      },
+    });
+    expect(await fs.readFile(skillFile("bundled", "scripts/helper.py"), "utf8")).toBe(
+      "print('ok')\n",
+    );
+
+    await install("bundled", content);
+    await expect(fs.access(skillFile("bundled", "scripts/helper.py"))).rejects.toThrow();
+    await expect(fs.access(skillFile("bundled", "requirements.lock"))).rejects.toThrow();
+  });
+
+  it("rejects unsafe bundled resource paths before writing", async () => {
+    await expect(
+      installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+        name: "bundled",
+        content: "---\nname: bundled\n---\n",
+        files: { "../outside": Buffer.from("bad") },
+      }),
+    ).rejects.toThrow(/Invalid Skill resource path/);
+    await expect(fs.access(skillMd("bundled"))).rejects.toThrow();
+  });
+
+  it("serializes concurrent replacements so the installed tree is never mixed", async () => {
+    const content = "---\nname: bundled\nversion: 1\n---\n\nBody\n";
+    const replace = (value: string) =>
+      installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+        name: "bundled",
+        content,
+        files: {
+          "scripts/one.txt": Buffer.from(value),
+          "scripts/two.txt": Buffer.from(value),
+        },
+      });
+    await Promise.all([replace("first"), replace("second")]);
+    const one = await fs.readFile(skillFile("bundled", "scripts/one.txt"), "utf8");
+    const two = await fs.readFile(skillFile("bundled", "scripts/two.txt"), "utf8");
+    expect(["first", "second"]).toContain(one);
+    expect(two).toBe(one);
+  });
+
   it("rejects invalid skill names (path traversal safety)", async () => {
     await expect(install("../evil", "x")).rejects.toThrow(/skill_name/);
     await expect(install("a/b", "x")).rejects.toThrow(/skill_name/);

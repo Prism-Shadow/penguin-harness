@@ -73,6 +73,8 @@ describe("loadLibrarySkills", () => {
     for (const skill of skills) {
       const raw = await fs.readFile(path.join(skillsRoot, skill.name, "SKILL.md"), "utf8");
       expect(skill.content).toBe(raw);
+      expect(Buffer.from(skill.files!["SKILL.md"]!)).toEqual(Buffer.from(raw));
+      expect(Buffer.from(skill.files!["icon.svg"]!)).toEqual(Buffer.from(skill.icon!));
       // The library file's own frontmatter name should match its directory name (content quality constraint).
       expect(skill.content).toContain(`name: ${skill.name}`);
     }

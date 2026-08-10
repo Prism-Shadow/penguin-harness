@@ -390,6 +390,20 @@ describe("harness environment variables never reach a spawned command", () => {
     }
   });
 
+  it("passes the enhanced bundle's offline resource root to Agent commands", async () => {
+    const saved = process.env.PENGUIN_OFFLINE_ROOT;
+    process.env.PENGUIN_OFFLINE_ROOT = "/opt/penguin/lib/offline";
+    try {
+      const res = await runTool(env, "exec_command", {
+        cmd: `node -e "console.log('R=[' + (process.env.PENGUIN_OFFLINE_ROOT ?? '') + ']')"`,
+      });
+      expect(res.output).toContain("R=[/opt/penguin/lib/offline]");
+    } finally {
+      if (saved === undefined) delete process.env.PENGUIN_OFFLINE_ROOT;
+      else process.env.PENGUIN_OFFLINE_ROOT = saved;
+    }
+  });
+
   it("the vault can put PORT back — stripping the host value is not a hard ban", async () => {
     const vaultEnv = new Environment({
       workspaceDir: tmp,

@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-10] Skills and release tooling: a separate Linux x64 `word-docx` bundle adds complete Skill resources, hash-locked offline dependencies in an Agent-owned virtual environment, deterministic basic DOCX editing, and a network-disabled Docker acceptance test while standard packages remain lightweight. ([details](2026-08-10-offline-word-docx.md))
+
 - [2026-08-07] Core: default `max_turns` becomes -1 (unlimited, SDK fallback aligned), request caps and the compaction threshold derive from the model's context window (vLLM-class small windows work; #218), the LLM retry ladder slows to a 2s base with "everything except auth retries" classification, and Trace appends are serialized with best-effort tolerant reads for damaged files (#215). ([details](2026-08-07-core-runtime.md))
 
 - [2026-08-06] Desktop app: penguin brand icons on every platform, task-completion system notifications (renderer-only, desktop sessions), explicit single-user mode (user/member management rejected with `desktop_single_user` and hidden), and a bundled `penguin` CLI on PATH (automatic on deb; menu-driven install elsewhere, no system Node needed). ([details](2026-08-06-desktop-app.md))

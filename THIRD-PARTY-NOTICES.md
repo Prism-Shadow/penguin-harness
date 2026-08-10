@@ -45,3 +45,14 @@ MinGit is published by the Git for Windows project at:
 The bundled binaries are byte-identical to the `MinGit-<version>-64-bit.zip` asset of that tag;
 no patches are applied. If you need the corresponding source and cannot obtain it from the URLs
 above, open an issue on this repository and we will provide it.
+
+## Offline word-docx wheels — `lib/offline/word-docx/wheels/`
+
+Present only in `penguin-word-docx-linux-x64.tar.gz`; standard Release and npm artifacts do not
+include these files. The enhanced bundle carries unmodified Python wheels for `python-docx`
+(MIT), `lxml` (BSD-3-Clause), and `typing_extensions` (PSF-2.0), at the versions and SHA256
+hashes pinned in `packages/skills/offline/word-docx/requirements.lock`. Each wheel retains its
+license text under its `.dist-info/licenses/` directory.
+
+Sources: <https://github.com/python-openxml/python-docx>, <https://github.com/lxml/lxml>, and
+<https://github.com/python/typing_extensions>.

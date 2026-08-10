@@ -70,6 +70,7 @@ penguin-darwin-x64.tar.gz
 penguin-darwin-arm64.tar.gz
 penguin-universal.tar.gz
 penguin-win32-x64.zip
+penguin-word-docx-linux-x64.tar.gz
 "
 # Desktop installers carry version-less names (see packages/desktop/electron-builder.yml)
 # and are verified as a set through SHA256SUMS.desktop instead of per-file .sha256 twins.
@@ -89,6 +90,7 @@ penguin-darwin-x64.tar.gz.sha256
 penguin-darwin-arm64.tar.gz.sha256
 penguin-universal.tar.gz.sha256
 penguin-win32-x64.zip.sha256
+penguin-word-docx-linux-x64.tar.gz.sha256
 SHA256SUMS
 $DESKTOP_INSTALLERS
 SHA256SUMS.desktop

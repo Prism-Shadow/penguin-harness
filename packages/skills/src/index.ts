@@ -30,11 +30,13 @@ export interface SkillMetadata {
   updated: string;
 }
 
-/** A Skill in the library: metadata + full SKILL.md content (including frontmatter, written as-is on install). */
+/** A Skill in the library: metadata + full directory resources, copied as-is on install. */
 export interface LibrarySkill extends SkillMetadata {
   content: string;
   /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
   icon?: string;
+  /** Regular files keyed by their POSIX path relative to the Skill directory. */
+  files?: Readonly<Record<string, Uint8Array>>;
 }
 
 /** Skill group manifest entry: group id, title (optionally with a Chinese title, displayed per UI language), and member Skill names. */
@@ -96,30 +98,45 @@ export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
  * Reads a single library directory to construct a LibrarySkill; returns undefined if SKILL.md
  * doesn't exist. name is taken from the directory name (overriding frontmatter); falls back to
  * empty metadata if frontmatter parsing fails.
- * The optional icon.svg in the directory is read alongside it (as a raw string); the icon field
- * is omitted if missing.
+ * All regular files are collected recursively so bundled scripts and assets are installed with
+ * SKILL.md. Symlinks and other special entries are ignored. The optional icon.svg is also exposed
+ * as a raw string for the existing metadata API.
  */
 function readSkillDir(name: string): LibrarySkill | undefined {
   const dir = path.join(SKILLS_ROOT, name);
-  let content: string;
+  const files: Record<string, Uint8Array> = {};
+  const walk = (absDir: string, relDir: string): void => {
+    for (const entry of fs
+      .readdirSync(absDir, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const absPath = path.join(absDir, entry.name);
+      const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(absPath, relPath);
+      else if (entry.isFile()) files[relPath] = fs.readFileSync(absPath);
+    }
+  };
   try {
-    content = fs.readFileSync(path.join(dir, "SKILL.md"), "utf8");
+    walk(dir, "");
   } catch {
     return undefined;
   }
-  let icon: string | undefined;
-  try {
-    icon = fs.readFileSync(path.join(dir, "icon.svg"), "utf8");
-  } catch {
-    // icon.svg is optional: no custom icon if missing.
-  }
+  const skillMd = files["SKILL.md"];
+  if (skillMd === undefined) return undefined;
+  const content = Buffer.from(skillMd).toString("utf8");
+  const icon = files["icon.svg"];
   const meta = parseSkillFrontmatter(content) ?? {
     name,
     description: "",
     version: 1,
     updated: "",
   };
-  return { ...meta, name, content, ...(icon !== undefined ? { icon } : {}) };
+  return {
+    ...meta,
+    name,
+    content,
+    ...(icon !== undefined ? { icon: Buffer.from(icon).toString("utf8") } : {}),
+    files,
+  };
 }
 
 /** Reads all Skills in the library (one per subdirectory under `skills/`), sorted by name. */

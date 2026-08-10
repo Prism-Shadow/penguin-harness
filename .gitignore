@@ -5,6 +5,7 @@ node_modules/
 
 # build output
 dist/
+/dist-word-docx/
 *.tsbuildinfo
 # web assets copied into the server package at npm publish time
 packages/server/web-dist/

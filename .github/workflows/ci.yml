@@ -46,7 +46,9 @@ jobs:
         run: pnpm test
 
       - name: Installer bundle and POSIX installer tests
-        run: sh scripts/test-installer.sh
+        run: |
+          sh -n scripts/package-word-docx-bundle.sh scripts/test-word-docx-offline.sh
+          sh scripts/test-installer.sh
 
       # The secret is exposed only in this step (step-level env); earlier steps and third-party actions can't see it.
       # The secrets context can't be used in if expressions, so skip inside the shell when it's absent (e.g. forks).

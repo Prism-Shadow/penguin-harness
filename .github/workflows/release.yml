@@ -9,8 +9,9 @@
 #   payload, its checksum and the native installer into the canonical installer bundle -> validate
 #   the real bundles -> upload to the Release.
 #   Artifacts (one shape per target, serving online and offline installs alike):
-#   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
-#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple
+#   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
+#   penguin-word-docx-linux-x64.tar.gz, penguin-win32-x64.zip, their .sha256 files,
+#   SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple
 #   versions coexist. Releases up to v0.1.5 shipped raw program archives under the same names
 #   plus *-offline wrappers; the installers keep accepting that legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
@@ -286,6 +287,11 @@ jobs:
       - name: Package canonical installer bundles
         run: sh scripts/package-release-bundles.sh payloads dist-artifacts
 
+      # The standard bundles above remain lightweight. This separate Linux x64 flavor overlays
+      # only word-docx and its hash-locked CPython 3.9-3.13 wheels onto the same-revision bundle.
+      - name: Package word-docx enhanced bundle
+        run: sh scripts/package-word-docx-bundle.sh dist-artifacts/penguin-linux-x64.tar.gz dist-artifacts
+
       # Validate the real release outputs, not only the small fixtures used by the script tests.
       # Every bundle must pass its outer checksum, stay flat with exactly the documented member
       # set, carry a byte-identical installer and payload, and pass its sealed payload checksum.
@@ -319,6 +325,33 @@ jobs:
             cmp "$PAYLOAD_DIR/$target.tar.gz" "$extracted/payload.tar.gz"
           done
 
+          # Standard Linux x64 stays free of word-docx resources; the separate enhanced bundle
+          # must contain the complete Skill, seven locked wheels, and its launcher environment.
+          if tar -tzf "$PAYLOAD_DIR/linux-x64.tar.gz" | grep -q 'word-docx'; then
+            echo "standard linux-x64 payload unexpectedly contains word-docx" >&2
+            exit 1
+          fi
+          bundle="penguin-word-docx-linux-x64.tar.gz"
+          (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+          extracted="$WORK_DIR/word-docx-linux-x64"
+          mkdir -p "$extracted"
+          tar -xzf "$ARTIFACT_DIR/$bundle" -C "$extracted"
+          expected="$(printf '%s\n' install.sh payload.tar.gz payload.tar.gz.sha256 | LC_ALL=C sort)"
+          validate_layout "$extracted" "$expected"
+          [ -x "$extracted/install.sh" ]
+          (cd "$extracted" && sha256sum -c payload.tar.gz.sha256)
+          cmp "$PWD/install.sh" "$extracted/install.sh"
+          mkdir -p "$extracted/payload"
+          tar -xzf "$extracted/payload.tar.gz" -C "$extracted/payload"
+          skill="$extracted/payload/penguin/lib/node_modules/@prismshadow/penguin-skills/skills/word-docx"
+          [ -f "$skill/SKILL.md" ]
+          [ -f "$skill/requirements.lock" ]
+          [ -f "$skill/scripts/bootstrap.py" ]
+          [ -f "$skill/scripts/docx_helper.py" ]
+          wheels="$extracted/payload/penguin/lib/offline/word-docx/wheels"
+          [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 7 ]
+          grep -Fq 'PENGUIN_OFFLINE_ROOT' "$extracted/payload/penguin/bin/penguin"
+
           bundle="penguin-win32-x64.zip"
           (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
           extracted="$WORK_DIR/win32-x64"
@@ -331,7 +364,14 @@ jobs:
           cmp "$PWD/install.ps1" "$extracted/install.ps1"
           cmp "$PAYLOAD_DIR/win32-x64.zip" "$extracted/payload.zip"
 
-      # Summary covers the six canonical bundles.
+      - name: Test word-docx bundle fully offline
+        run: |
+          docker pull python:3.13-slim
+          sh scripts/test-word-docx-offline.sh \
+            dist-artifacts/penguin-word-docx-linux-x64.tar.gz \
+            python:3.13-slim
+
+      # Summary covers the six standard bundles and the word-docx enhanced bundle.
       - name: Generate SHA256SUMS
         run: |
           cd dist-artifacts
