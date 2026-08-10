@@ -354,6 +354,13 @@ export const en: Strings = {
     mcpLineInvalid: (line: number): string => `Line ${line} is not valid`,
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
+    mcpTest: "Test connection",
+    mcpTesting: "Testing…",
+    mcpTestOk: (tools: string[]): string =>
+      tools.length === 0
+        ? "Connected, but the server exposes no tools"
+        : `Connected — ${tools.length} tool${tools.length === 1 ? "" : "s"}: ${tools.slice(0, 8).join(", ")}${tools.length > 8 ? " …" : ""}`,
+    mcpTestFail: (detail: string): string => `Connection failed: ${detail}`,
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,

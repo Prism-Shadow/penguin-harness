@@ -73,15 +73,20 @@ export function McpServersSection({
   // Server-side rejection (transport validation 400) rendered at the modal's foot.
   const [modalError, setModalError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  // Connectivity probe: runs the current form state through POST /config/mcp-test
+  // (server-side connect + discovery, nothing saved); result renders inside the modal.
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // http leads (the Add modal's default), stdio second, legacy sse last.
   const transportOptions: ReadonlyArray<OptionMenuChoice<McpTransportKind>> = [
+    { value: "http", triggerLabel: "http", label: "http", description: S.agent.mcpTransportHttp },
     {
       value: "stdio",
       triggerLabel: "stdio",
       label: "stdio",
       description: S.agent.mcpTransportStdio,
     },
-    { value: "http", triggerLabel: "http", label: "http", description: S.agent.mcpTransportHttp },
     { value: "sse", triggerLabel: "sse", label: "sse", description: S.agent.mcpTransportSse },
   ];
 
@@ -108,6 +113,7 @@ export function McpServersSection({
     setEditIndex(null);
     setFieldErrors({});
     setModalError(null);
+    setTestResult(null);
   };
 
   const openEdit = (index: number) => {
@@ -117,6 +123,7 @@ export function McpServersSection({
     setEditIndex(index);
     setFieldErrors({});
     setModalError(null);
+    setTestResult(null);
   };
 
   const closeModal = () => {
@@ -128,6 +135,31 @@ export function McpServersSection({
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
     setFieldErrors({});
     setModalError(null);
+    setTestResult(null);
+  };
+
+  /** Probes the current form state (unsaved values on purpose: verify before persisting). */
+  const testConnection = async () => {
+    if (!form || !projectId) return;
+    const built = formToServer(form);
+    if (!built.ok) {
+      setFieldErrors(built.errors);
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.testAgentMcpServer(projectId, agentId, built.server);
+      setTestResult(
+        res.ok
+          ? { ok: true, text: S.agent.mcpTestOk(res.tools ?? []) }
+          : { ok: false, text: S.agent.mcpTestFail(res.error ?? S.common.unknownError) },
+      );
+    } catch (e) {
+      setTestResult({ ok: false, text: S.agent.mcpTestFail(apiErrorText(e)) });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const submitModal = async () => {
@@ -233,6 +265,9 @@ export function McpServersSection({
         onClose={closeModal}
         footer={
           <>
+            <Button disabled={testing || busy} onClick={() => void testConnection()}>
+              {testing ? S.agent.mcpTesting : S.agent.mcpTest}
+            </Button>
             <Button onClick={closeModal}>{S.common.cancel}</Button>
             <Button variant="primary" disabled={busy} onClick={() => void submitModal()}>
               {S.common.save}
@@ -365,6 +400,17 @@ export function McpServersSection({
               />
             </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpBudgetsHint}</p>
+            {testResult && (
+              <p
+                className={
+                  testResult.ok
+                    ? "text-xs text-green-700 dark:text-green-400"
+                    : "text-xs text-red-600 dark:text-red-400"
+                }
+              >
+                {testResult.text}
+              </p>
+            )}
             {modalError && <p className="text-xs text-red-600 dark:text-red-400">{modalError}</p>}
           </div>
         )}

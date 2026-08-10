@@ -332,6 +332,13 @@ export const zh = {
     mcpLineInvalid: (line: number): string => `第 ${line} 行格式无效`,
     mcpNumberInvalid: "必须是 > 0 的整数",
     mcpDuplicateName: "同名 Server 已存在",
+    mcpTest: "测试连接",
+    mcpTesting: "测试中…",
+    mcpTestOk: (tools: string[]): string =>
+      tools.length === 0
+        ? "连接成功，但该 Server 未暴露任何工具"
+        : `连接成功，发现 ${tools.length} 个工具：${tools.slice(0, 8).join("、")}${tools.length > 8 ? " …" : ""}`,
+    mcpTestFail: (detail: string): string => `连接失败：${detail}`,
     mcpDeleteTitle: "删除 MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,

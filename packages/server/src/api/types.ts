@@ -561,6 +561,15 @@ export interface AgentConfigResponse {
   activeSessionCount: number;
 }
 
+/** POST …/config/mcp-test result: reachability of one MCP Server entry. */
+export interface McpServerTestResponse {
+  ok: boolean;
+  /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
+  tools?: string[];
+  /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
+  error?: string;
+}
+
 /** PUT any subset: only provided keys are updated (remaining YAML content and comments preserved); agentsMd overwrites the whole file. */
 export interface AgentConfigUpdateRequest {
   agentsMd?: string;

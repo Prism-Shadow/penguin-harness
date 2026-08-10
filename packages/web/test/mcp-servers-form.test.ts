@@ -56,9 +56,14 @@ describe("formToServer", () => {
     expect(built).toEqual({ ok: true, server });
   });
 
+  it("defaults new entries to http", () => {
+    expect(emptyMcpForm().transport).toBe("http");
+  });
+
   it("merges extras back and lets known fields win", () => {
     const form = {
       ...emptyMcpForm(),
+      transport: "stdio" as const,
       name: "a",
       command: "x",
       extras: { custom: 1, command: "stale" },
@@ -80,6 +85,7 @@ describe("formToServer", () => {
   it("collects name, command and budget errors", () => {
     const built = formToServer({
       ...emptyMcpForm(),
+      transport: "stdio",
       name: "no spaces",
       timeoutMs: "-3",
     });
@@ -96,6 +102,7 @@ describe("formToServer", () => {
   it("reports the offending env line", () => {
     const built = formToServer({
       ...emptyMcpForm(),
+      transport: "stdio",
       name: "a",
       command: "x",
       envText: "GOOD=1\nbroken-line",

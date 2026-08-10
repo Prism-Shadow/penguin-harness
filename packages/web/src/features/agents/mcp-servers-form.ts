@@ -73,7 +73,9 @@ const KNOWN_CONFIG_KEYS = new Set([
 export function emptyMcpForm(): McpServerFormState {
   return {
     name: "",
-    transport: "stdio",
+    // The Add modal opens on http: remote servers are the common case, and a URL field is
+    // the gentler first impression than command/args.
+    transport: "http",
     command: "",
     argsText: "",
     envText: "",

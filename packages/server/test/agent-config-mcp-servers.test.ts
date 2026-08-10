@@ -49,6 +49,44 @@ describe("agent config: mcpServers", () => {
     expect(yaml).toContain("https://example.com/mcp");
   });
 
+  describe("POST /config/mcp-test", () => {
+    // The core package's stdio fixture, reused across packages (monorepo-only path — tests
+    // are not published); its @modelcontextprotocol/server import resolves from core's own
+    // node_modules since resolution starts at the fixture's location.
+    const FIXTURE = new URL("../../core/test/fixtures/mcp-stdio-server.mjs", import.meta.url)
+      .pathname;
+
+    it("connects to a reachable server and lists its prefixed tools", async () => {
+      const res = await owner.post(`${configPath}/mcp-test`, {
+        name: "fx",
+        config: { command: process.execPath, args: [FIXTURE] },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; tools?: string[] };
+      expect(body.ok).toBe(true);
+      expect(body.tools).toContain("mcp__fx__echo");
+    });
+
+    it("reports an unreachable server as ok: false with the warning detail", async () => {
+      const res = await owner.post(`${configPath}/mcp-test`, {
+        name: "broken",
+        config: { command: "definitely-not-a-real-command-xyz" },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; error?: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toMatch(/unavailable/);
+    });
+
+    it("rejects a malformed entry with 400 before attempting to connect", async () => {
+      const res = await owner.post(`${configPath}/mcp-test`, {
+        name: "a",
+        config: { transport: "ws" },
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
   it.each([
     ["unknown transport", [{ name: "a", config: { transport: "ws" } }], /unknown transport/],
     [
