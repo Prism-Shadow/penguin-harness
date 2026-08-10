@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-10] Core: MCP Server support lands on the reserved `tools.mcpServers` seam — official TypeScript SDK v2, three transports (stdio / Streamable HTTP / legacy SSE), tools exposed as `mcp__<server>__<tool>` under the unchanged execution and approval contract, `readOnlyHint` → read-only permission, vault-fed stdio env, unreachable servers skipped with a warning (#242). ([details](2026-08-10-mcp-servers.md))
+
 - [2026-08-07] Core: default `max_turns` becomes -1 (unlimited, SDK fallback aligned), request caps and the compaction threshold derive from the model's context window (vLLM-class small windows work; #218), the LLM retry ladder slows to a 2s base with "everything except auth retries" classification, and Trace appends are serialized with best-effort tolerant reads for damaged files (#215). ([details](2026-08-07-core-runtime.md))
 
 - [2026-08-06] Desktop app: penguin brand icons on every platform, task-completion system notifications (renderer-only, desktop sessions), explicit single-user mode (user/member management rejected with `desktop_single_user` and hidden), and a bundled `penguin` CLI on PATH (automatic on deb; menu-driven install elsewhere, no system Node needed). ([details](2026-08-06-desktop-app.md))
