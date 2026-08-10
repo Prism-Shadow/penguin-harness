@@ -254,6 +254,19 @@ export interface CompactionItem {
   errorMessage?: string;
 }
 
+export interface McpConnectItem {
+  kind: "mcp_connect";
+  id: number;
+  /** Servers being contacted (from mcp_connect_begin). */
+  servers: string[];
+  /** True between mcp_connect_begin and mcp_connect_end (renders a connecting banner). */
+  running: boolean;
+  /** Total connect + discovery wall time (from mcp_connect_end). */
+  durationMs?: number;
+  /** Servers that failed to connect (empty list omitted). */
+  failed?: string[];
+}
+
 export interface TaskStatsItem {
   kind: "task_stats";
   id: number;
@@ -286,6 +299,7 @@ export type ChatItem =
   | AbortItem
   | ReconnectItem
   | CompactionItem
+  | McpConnectItem
   | TaskStatsItem;
 
 // ---------------------------------------------------------------------------
@@ -1311,6 +1325,28 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
     case "token_usage":
       trackMainUsage(model.stats, p);
       return;
+    case "mcp_connect_begin": {
+      model.items.push({
+        kind: "mcp_connect",
+        id: nextId(model),
+        servers: p.servers,
+        running: true,
+      });
+      return;
+    }
+    case "mcp_connect_end": {
+      const item = findLastRunningMcpConnect(model);
+      // Mid-stream join without the begin: the connect status is transient — nothing to show.
+      if (!item) return;
+      item.running = false;
+      item.durationMs = p.duration_ms;
+      const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
+      if (failed.length > 0) item.failed = failed;
+      return;
+    }
+    case "session_tools":
+      // Informational record (the Session's resolved toolset); the chat view doesn't render it.
+      return;
     case "compaction_begin": {
       beginCompaction(model.stats);
       model.items.push({
@@ -1422,6 +1458,14 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
   }
+}
+
+function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
+  for (let i = model.items.length - 1; i >= 0; i -= 1) {
+    const item = model.items[i]!;
+    if (item.kind === "mcp_connect" && item.running) return item;
+  }
+  return null;
 }
 
 function findLastRunningCompaction(model: StreamModel): CompactionItem | null {

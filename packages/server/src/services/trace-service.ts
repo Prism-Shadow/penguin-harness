@@ -558,6 +558,9 @@ export class TraceService {
     const modelSegments: TraceModelSegment[] = [];
     const toolSpans: TraceToolSpan[] = [];
     const openSpansById = new Map<string, TraceToolSpan>();
+    // Open mcp_connect_begin (first-run MCP connect + discovery), closed by its end event
+    // into a synthetic tool span so the timeline shows the wait ahead of the next Task.
+    let openMcpConnect: { beginTs: string } | null = null;
     let prevSerialTs: string | null = null;
     // Task grouping: one user turn contains multiple Request rounds (the Agent
     // loop sends another round each time it calls a tool); the turn ends once the
@@ -780,6 +783,25 @@ export class TraceService {
               ensureTask(openRequest.taskIndex).llmMs += openRequest.activeMs;
             }
             openRequest = null;
+          }
+        } else if (p.type === "mcp_connect_begin") {
+          if (!hasOrigin) openMcpConnect = { beginTs: msg.timestamp };
+        } else if (p.type === "mcp_connect_end") {
+          // The connect pair becomes a synthetic tool span attached to the FOLLOWING Task
+          // (taskIndex + 1: Task 0 at file start; after an in-file resume, the next Task),
+          // so the timeline renders the pre-request connect wait inside that Task's group.
+          if (!hasOrigin && openMcpConnect) {
+            const results = (p as { results?: { status?: string }[] }).results ?? [];
+            const failed = results.filter((r) => r.status === "failed").length;
+            toolSpans.push({
+              toolCallId: `mcp-connect-${openMcpConnect.beginTs}`,
+              name: "mcp connect",
+              callTs: openMcpConnect.beginTs,
+              outputTs: msg.timestamp,
+              stopReason: failed > 0 ? "failed" : "completed",
+              taskIndex: taskIndex + 1,
+            });
+            openMcpConnect = null;
           }
         } else if (p.type === "compaction_begin") {
           compactionCount++;

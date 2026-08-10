@@ -967,6 +967,11 @@ Benchmark：
     modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
+    mcpConnecting: (servers: string[]): string => `正在连接 MCP Server（${servers.join("、")}）…`,
+    mcpConnectDone: (durationMs: number, failed: string[]): string =>
+      failed.length === 0
+        ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>
       mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",

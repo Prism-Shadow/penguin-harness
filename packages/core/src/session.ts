@@ -17,8 +17,14 @@
  * from the streamed OmniMessage on its own.
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
-import { sessionMeta } from "./omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
+import { mcpConnectBegin, mcpConnectEnd, sessionMeta, sessionTools } from "./omnimessage/index.js";
+import type {
+  McpServerConnectResult,
+  OmniMessage,
+  SessionMetaPayload,
+  TokenCounts,
+  ToolDefinition,
+} from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
@@ -40,9 +46,22 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / tools / agent_state / workspace / source). */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's session_tools event. */
   meta: SessionMetaPayload;
-  llm: LLMInterface;
+  /**
+   * Lazy session bootstrap, run once at the start of the first run (or first compaction):
+   * resolves the toolset — the Environment's first listTools connects any configured MCP
+   * Servers — and builds the session LLM from it; `mcp` carries the per-server connect
+   * outcomes for the mcp_connect_end event. Kept out of Session construction so creating
+   * a Session is instant and the connect wait streams as visible events instead.
+   */
+  bootstrap: () => Promise<{
+    tools: ToolDefinition[];
+    llm: LLMInterface;
+    mcp: McpServerConnectResult[];
+  }>;
+  /** Names of the configured MCP Servers (config order): non-empty brackets the bootstrap in mcp_connect_begin/end events; empty emits none. */
+  mcpServers: string[];
   environment: EnvironmentInterface;
   trace?: TraceSink;
   /** Maximum LLM turns per Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
@@ -131,7 +150,12 @@ export class Session {
   /** Session resume: the full historical messages of the current context (for rendering); undefined for a non-resumed Session. */
   readonly resumedHistory?: OmniMessage[];
 
-  private readonly engine: ContextEngine;
+  /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
+  private engine: ContextEngine | null = null;
+  private readonly bootstrap: SessionConfig["bootstrap"];
+  private readonly mcpServers: string[];
+  /** Engine dependencies minus the LLM (which the bootstrap provides); kept whole so ensureReady can construct the engine late. */
+  private readonly engineDeps: Omit<ConstructorParameters<typeof ContextEngine>[0], "llm">;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
   private readonly meta: OmniMessage;
@@ -168,12 +192,16 @@ export class Session {
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
-    this.engine = new ContextEngine({
-      llm: config.llm,
+    this.bootstrap = config.bootstrap;
+    this.mcpServers = config.mcpServers;
+    // The engine itself is built by ensureReady() on the first run, once the bootstrap has
+    // produced the LLM: everything else it needs is captured here.
+    this.engineDeps = {
       environment: config.environment,
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
-      // Context compaction: new LLM factory + resolved settings + writes session_meta at the start of the new Trace file after splitting.
+      // Context compaction: new LLM factory + resolved settings + writes session_meta (and
+      // session_tools) at the start of the new Trace file after splitting.
       ...(config.createLLM ? { createLLM: config.createLLM } : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
@@ -185,7 +213,7 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
-    });
+    };
   }
 
   /**
@@ -225,7 +253,7 @@ export class Session {
   ): AsyncGenerator<OmniMessage> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
-    await this.ensureMetaWritten();
+    yield* this.ensureReady();
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
@@ -241,7 +269,7 @@ export class Session {
         );
       }
     }
-    for await (const msg of this.engine.run(newMessages, opts)) {
+    for await (const msg of this.engine!.run(newMessages, opts)) {
       if (capture) {
         this.titleAssistantText = appendTitleText(
           this.titleAssistantText,
@@ -253,6 +281,42 @@ export class Session {
       yield msg;
     }
     if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+  }
+
+  /**
+   * First-run bootstrap: writes `session_meta`, resolves the toolset and builds the engine
+   * — streaming the phase as it happens. With MCP Servers configured, the connect +
+   * discovery wait is bracketed by `mcp_connect_begin` / `mcp_connect_end` (per-server
+   * outcomes and total wall time; the trace timeline renders the span, frontends show a
+   * connecting status). The resolved toolset then flows as one `session_tools` event —
+   * split out of session_meta precisely so the meta never has to wait for this phase.
+   * All three are streamed live and written to the Trace best-effort (same stance as
+   * session_meta). No-op after the engine exists; a failed bootstrap (unreadable resume
+   * history, LLM construction) throws to the caller and leaves the engine unbuilt, so a
+   * later run can retry.
+   */
+  private async *ensureReady(): AsyncGenerator<OmniMessage> {
+    await this.ensureMetaWritten();
+    if (this.engine) return;
+    const startedAt = performance.now();
+    if (this.mcpServers.length > 0) {
+      const begin = mcpConnectBegin(this.mcpServers);
+      yield begin;
+      await this.writeTrace(begin, "mcp_connect_begin");
+    }
+    const { tools, llm, mcp } = await this.bootstrap();
+    if (this.mcpServers.length > 0) {
+      const end = mcpConnectEnd({
+        durationMs: Math.round(performance.now() - startedAt),
+        results: mcp,
+      });
+      yield end;
+      await this.writeTrace(end, "mcp_connect_end");
+    }
+    const toolsMsg = sessionTools(tools);
+    yield toolsMsg;
+    await this.writeTrace(toolsMsg, "session_tools");
+    this.engine = new ContextEngine({ ...this.engineDeps, llm, sessionTools: toolsMsg });
   }
 
   /**
@@ -336,7 +400,8 @@ export class Session {
    * mode; anything still queued when the run exits (abort included) is discarded.
    */
   steer(input: OmniMessage[]): boolean {
-    return this.engine.steer(input);
+    // No engine yet = no running Task to steer (the first run's bootstrap hasn't finished).
+    return this.engine?.steer(input) ?? false;
   }
 
   /**
@@ -348,7 +413,8 @@ export class Session {
    * the next `request_begin` arriving early).
    */
   skipReconnectWait(): boolean {
-    return this.engine.skipReconnectWait();
+    // No engine yet = no reconnect wait can be in progress.
+    return this.engine?.skipReconnectWait() ?? false;
   }
 
   /**
@@ -360,6 +426,10 @@ export class Session {
    * Docs: /docs/agent-loop § "Compaction".
    */
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+    // Before the first run there is no context to compact: stay a strict no-op, without
+    // bootstrapping — a session that never ran must not leave trace records (meta /
+    // session_tools) behind, or an untouched session would look resumable.
+    if (!this.engine) return;
     yield* this.engine.compact(opts);
   }
 
@@ -369,21 +439,26 @@ export class Session {
    * give feedback based on this rather than triggering a silent, fruitless compaction.
    */
   compactability(): CompactAvailability {
-    return this.engine.compactability();
+    // Before the first run's bootstrap there is no context at all — "empty" is the accurate answer.
+    return this.engine?.compactability() ?? "empty";
   }
 
   /** Writes `session_meta` to the Trace before the first run/compaction; best-effort — failure doesn't interrupt the run. */
   private async ensureMetaWritten(): Promise<void> {
     if (this.metaWritten) return;
-    if (this.trace) {
-      try {
-        await this.trace.write(this.meta);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[trace] session_meta write failed: ${message}\n`);
-      }
-    }
+    await this.writeTrace(this.meta, "session_meta");
     this.metaWritten = true;
+  }
+
+  /** Best-effort Trace write shared by the bootstrap records (session_meta / mcp_connect / session_tools / goal_finished stance): a failure logs and never interrupts the run. */
+  private async writeTrace(msg: OmniMessage, label: string): Promise<void> {
+    if (!this.trace) return;
+    try {
+      await this.trace.write(msg);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[trace] ${label} write failed: ${message}\n`);
+    }
   }
 
   /**

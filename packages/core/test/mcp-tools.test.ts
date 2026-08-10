@@ -11,9 +11,10 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { z } from "zod";
 import { Environment } from "../src/environment/index.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
-import { toolCall } from "../src/omnimessage/index.js";
-import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { MCPServerConfig } from "../src/interfaces.js";
+import { Session } from "../src/session.js";
+import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
+import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
 
@@ -269,6 +270,143 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
     try {
       expect(await provider.listTools()).toEqual([]);
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/MCP server "broken" unavailable/));
+    } finally {
+      await provider.close();
+    }
+  });
+});
+
+describe("Session first-run bootstrap events", () => {
+  let tmp: string;
+
+  beforeAll(async () => {
+    tmp = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-s-")));
+  });
+
+  afterAll(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const fakeLLM: LLMInterface = {
+    async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+      yield assistantText("done");
+      return { status: "completed" };
+    },
+  };
+
+  function makeSession(env: Environment, written: OmniMessage[]): Session {
+    const meta: SessionMetaPayload = {
+      session_id: "s-mcp",
+      provider: "custom",
+      model_id: "m",
+      model_context_window: 1000,
+      system_prompt: "sp",
+      agent_state: tmp,
+      workspace: tmp,
+    };
+    return new Session({
+      meta,
+      bootstrap: async () => ({
+        tools: await env.listTools(),
+        llm: fakeLLM,
+        mcp: env.mcpConnectResults(),
+      }),
+      mcpServers: env.mcpServerNames(),
+      environment: env,
+      trace: {
+        write: async (msg) => {
+          written.push(msg);
+        },
+      },
+      imagesDir: path.join(tmp, "scratch"),
+      modelHasVision: true,
+    });
+  }
+
+  it("streams mcp_connect begin/end and session_tools before the first reply, and traces them", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
+    });
+    const written: OmniMessage[] = [];
+    const session = makeSession(env, written);
+    try {
+      const streamed: OmniMessage[] = [];
+      for await (const msg of session.run([userText("go")])) streamed.push(msg);
+      const types = streamed.map((m) => (m.payload as { type?: string }).type);
+      expect(types.slice(0, 3)).toEqual(["mcp_connect_begin", "mcp_connect_end", "session_tools"]);
+      expect(types).toContain("text");
+      const begin = streamed[0]!.payload as { servers?: string[] };
+      expect(begin.servers).toEqual(["fx"]);
+      const end = streamed[1]!.payload as {
+        duration_ms?: number;
+        results?: { server: string; status: string; tools?: number; duration_ms: number }[];
+      };
+      expect(end.duration_ms).toBeGreaterThan(0);
+      expect(end.results).toHaveLength(1);
+      expect(end.results![0]).toMatchObject({ server: "fx", status: "ok", tools: 6 });
+      const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
+      expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
+      // The bootstrap records land in the Trace too: meta first, then the three events.
+      const writtenTypes = written.map(
+        (m) => (m.payload as { type?: string }).type ?? "session_meta",
+      );
+      expect(writtenTypes.slice(0, 4)).toEqual([
+        "session_meta",
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "session_tools",
+      ]);
+      // Second run: the bootstrap already happened — no repeated events.
+      const second: OmniMessage[] = [];
+      for await (const msg of session.run([userText("again")])) second.push(msg);
+      const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
+      expect(secondTypes).not.toContain("mcp_connect_begin");
+      expect(secondTypes).not.toContain("session_tools");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("emits only session_tools when no MCP servers are configured", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [] },
+    });
+    const written: OmniMessage[] = [];
+    const session = makeSession(env, written);
+    try {
+      const streamed: OmniMessage[] = [];
+      for await (const msg of session.run([userText("go")])) streamed.push(msg);
+      const types = streamed.map((m) => (m.payload as { type?: string }).type);
+      expect(types[0]).toBe("session_tools");
+      expect(types).not.toContain("mcp_connect_begin");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("records per-server connect outcomes, including failures", async () => {
+    const provider = new McpToolProvider(
+      [
+        fixtureEntry(),
+        { name: "broken", config: { command: "definitely-not-a-real-command-xyz" } },
+      ],
+      { warn: () => {} },
+    );
+    try {
+      await provider.listTools();
+      const results = provider.connectResults();
+      expect(results).toHaveLength(2);
+      expect(results[0]).toMatchObject({
+        server: "fx",
+        transport: "stdio",
+        status: "ok",
+        tools: 6,
+      });
+      expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "failed" });
+      expect(results[1]!.error).toBeTruthy();
+      expect(results[1]!.duration_ms).toBeGreaterThanOrEqual(0);
     } finally {
       await provider.close();
     }

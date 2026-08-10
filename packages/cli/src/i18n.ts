@@ -183,6 +183,10 @@ export interface Messages {
     tokens?: { total: string; delta: string },
     errorMessage?: string,
   ): string;
+  /** mcp_connect_begin event: the first run is connecting the configured MCP servers. */
+  mcpConnectStart(servers: string[]): string;
+  /** mcp_connect_end event: total wall time; `failed` lists the servers that could not connect (empty = all ok). */
+  mcpConnectStop(durationMs: number, failed: string[]): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
@@ -429,6 +433,11 @@ const en: Messages = {
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
+  mcpConnectStart: (servers) => `[mcp] connecting MCP servers (${servers.join(", ")})…`,
+  mcpConnectStop: (durationMs, failed) =>
+    failed.length === 0
+      ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
+      : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
@@ -655,6 +664,11 @@ const zh: Messages = {
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
+  mcpConnectStart: (servers) => `[mcp] 正在连接 MCP Server（${servers.join("、")}）……`,
+  mcpConnectStop: (durationMs, failed) =>
+    failed.length === 0
+      ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
+      : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"

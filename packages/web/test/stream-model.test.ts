@@ -79,7 +79,6 @@ function meta(sessionId: string): OmniMessage<SessionMetaPayload> {
     provider: "custom",
     model_context_window: 200000,
     system_prompt: "",
-    tools: [],
     agent_state: "/a",
     workspace: "/w",
   });

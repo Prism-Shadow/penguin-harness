@@ -18,7 +18,7 @@
  */
 import type { Command } from "commander";
 import { UNLIMITED_BUDGET, createAgent, userText, VERSION } from "@prismshadow/penguin-core";
-import { StreamRenderer, sessionMetaTools } from "../render.js";
+import { StreamRenderer } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { parseTokenBudget } from "../goal-command.js";
 import { denyActivePrompt, resolveApprovalMode } from "../approval.js";
@@ -91,8 +91,9 @@ export function registerRunCommand(program: Command, t: Messages): void {
       process.on("SIGINT", onSigint);
 
       const renderer = new StreamRenderer(out, t);
-      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
-      renderer.useToolSchemas(sessionMetaTools(session));
+      // Tool schemas (each tool's call-line preview path) arrive on the stream as the
+      // first run's session_tools event — the toolset isn't known before then (MCP
+      // servers connect lazily); the renderer registers them as they flow by.
       try {
         if (goalBudget !== null) {
           // Goal mode: -m is the objective; the one run loops to a terminal state. Exit

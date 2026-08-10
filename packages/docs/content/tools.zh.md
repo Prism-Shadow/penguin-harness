@@ -275,7 +275,7 @@ tools:
 
 行为口径：
 
-- 首次 `listTools()`（Session 装配期）并行连接全部 Server 并做一次工具发现；发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不影响 Session 创建**。
+- 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态，Trace 时间线记录逐 Server 耗时），完成后以 `session_tools` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）。发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
 - 发现的工具以 `mcp__<server>__<tool>` 进入统一工具命名空间，与内置工具走同一条[执行契约](#执行契约)（超时、截断、打断）与[审批](#审批)流程。
 - 权限映射：Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。
 - 结果映射：text 块拼接为输出文本；image 块作为图片（data URL）随输出附带；audio 与二进制 resource 折叠为占位行；仅有 `structuredContent` 时将其序列化为 JSON；Server 报 `isError` 时落实为 `stop_reason: "failed"`，内容即 Server 给出的错误说明。

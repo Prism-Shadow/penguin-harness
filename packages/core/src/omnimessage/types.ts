@@ -95,8 +95,11 @@ export interface SessionMetaPayload {
   model_context_window: number | string;
   /** The system prompt actually used by this Session (the assembled result with environment placeholders already substituted). */
   system_prompt: string;
-  /** The list of tool definitions this Session exposes to the model (full schema, matching what's sent to the LLM). */
-  tools: ToolDefinition[];
+  // The tool definitions were embedded here (`tools`) before the session_tools split (see
+  // SessionToolsPayload): the toolset is only known after MCP servers connect, and meta
+  // must not wait for that. Pre-split Traces still carry the field on disk; it is
+  // deliberately not read anywhere anymore (explicit incompatibility — their tool record
+  // is simply not displayed).
   /** Absolute path to the Agent State. */
   agent_state: string;
   /** Absolute path to the Workspace. */
@@ -393,6 +396,54 @@ export interface SubagentPayload {
   session_id: string;
 }
 
+/**
+ * The Session's tool definitions (full schema, matching what is sent to the LLM), emitted
+ * once per Session at the start of the first run — after the MCP servers (if any) have
+ * connected and their tools were discovered. Split out of `session_meta` so Session
+ * creation never blocks on MCP connects: the meta streams immediately and this event
+ * follows once the toolset is known. Written to the Trace (and rewritten at the head of
+ * each post-compaction file alongside `session_meta`) but not part of reload history —
+ * live streams re-emit it on the next run, which is when frontends need the schemas.
+ * Docs: /docs/omni-message § "event_msg".
+ */
+export interface SessionToolsPayload {
+  type: "session_tools";
+  tools: ToolDefinition[];
+}
+
+/** One MCP server's outcome inside `mcp_connect_end`; `duration_ms` covers connect + tool discovery. */
+export interface McpServerConnectResult {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: "ok" | "failed";
+  duration_ms: number;
+  /** Number of tools discovered (present on ok). */
+  tools?: number;
+  /** Failure detail (present on failed). */
+  error?: string;
+}
+
+/**
+ * MCP connect boundary events, emitted around the first run's connect + discovery phase
+ * and only when the Session has MCP Servers configured. The begin lists the servers being
+ * contacted (frontends show a connecting status off it); the end carries per-server
+ * outcomes and the total wall time (the Trace timeline renders the pair as a span).
+ * Failures are per-server and non-fatal: an unreachable server is skipped — its tools are
+ * absent — and the run continues. Streamed live and written to Trace; not part of reload
+ * history (a transient status, unlike `session_tools`).
+ * Docs: /docs/omni-message § "event_msg".
+ */
+export interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];
+}
+
+export interface McpConnectEndPayload {
+  type: "mcp_connect_end";
+  duration_ms: number;
+  results: McpServerConnectResult[];
+}
+
 // ---------------------------------------------------------------------------
 // Union types and the message envelope
 // ---------------------------------------------------------------------------
@@ -425,7 +476,10 @@ export type EventPayload =
   | CompactionBeginPayload
   | CompactionEndPayload
   | GoalFinishedPayload
-  | SubagentPayload;
+  | SubagentPayload
+  | SessionToolsPayload
+  | McpConnectBeginPayload
+  | McpConnectEndPayload;
 
 export type OmniPayload = SessionMetaPayload | ModelPayload | EventPayload;
 

@@ -49,6 +49,8 @@ import type {
   ApprovalDecisionPayload,
   CompactionBeginPayload,
   CompactionEndPayload,
+  McpConnectBeginPayload,
+  McpConnectEndPayload,
   MessageOrigin,
   OmniMessage,
   PartialTextPayload,
@@ -56,7 +58,7 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
-  SessionMetaPayload,
+  SessionToolsPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
@@ -184,15 +186,6 @@ function humanizeDuration(ms: number): string {
 
 export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PALETTE): string {
   return dim(t.abortLabel(p.reason ?? undefined), c);
-}
-
-/**
- * The Session's assembled tool schemas, read off its `session_meta` — the definitions
- * actually exposed to the model, so the per-tool `call_description` switch is already
- * applied. Feeds `StreamRenderer.useToolSchemas`.
- */
-export function sessionMetaTools(session: { metaMessage: OmniMessage }): readonly ToolDefinition[] {
-  return (session.metaMessage.payload as SessionMetaPayload).tools ?? [];
 }
 
 /**
@@ -811,20 +804,32 @@ export class StreamRenderer {
           `${dim(this.t.compactionStop(p.mode, p.status, tokens, p.error_message), this.c)}\n`,
         );
         this.lastLineKey = null;
+      } else if (payload.type === "mcp_connect_begin") {
+        // Paired MCP connect events (first run only): begin shows which servers are being
+        // contacted so the pre-first-request wait is never a silent hang.
+        const p = payload as McpConnectBeginPayload;
+        this.finishLine();
+        this.out.write(`${dim(this.t.mcpConnectStart(p.servers), this.c)}\n`);
+        this.lastLineKey = null;
+      } else if (payload.type === "mcp_connect_end") {
+        const p = payload as McpConnectEndPayload;
+        this.finishLine();
+        const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
+        this.out.write(`${dim(this.t.mcpConnectStop(p.duration_ms, failed), this.c)}\n`);
+        this.lastLineKey = null;
+      } else if (payload.type === "session_tools") {
+        // Not rendered; the tool list settles each tool's preview path (description argument).
+        this.useToolSchemas((payload as SessionToolsPayload).tools);
       }
       return;
-    }
-    // session_meta: not rendered, but its tool list settles each tool's preview path.
-    if (msg.type === "session_meta") {
-      this.useToolSchemas((msg.payload as SessionMetaPayload).tools);
     }
   }
 
   /**
-   * Registers the Session's assembled tool schemas (`session_meta.tools`), which decide each
-   * tool's preview path before its arguments stream (see `describedTools`). The host calls
-   * this as soon as the Session exists; a `session_meta` flowing through the stream (resume,
-   * sub-sessions) registers the same way.
+   * Registers the Session's assembled tool schemas, which decide each tool's preview path
+   * before its arguments stream (see `describedTools`). Schemas arrive on the stream as the
+   * first run's `session_tools` event (after MCP discovery) — handled in `renderEvent` —
+   * for the main session and sub-sessions alike.
    */
   useToolSchemas(tools: readonly ToolDefinition[]): void {
     for (const tool of tools) {

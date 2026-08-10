@@ -37,20 +37,15 @@ interface SessionMetaPayload {
   model_id: string;                       // the upstream request id sent to AgentHub
   model_context_window: number | string;
   system_prompt: string;                  // fully assembled, placeholders substituted
-  tools: ToolDefinition[];                // the complete tool schema sent to the model
   agent_state: string;                    // absolute path of the Agent State
   workspace: string;                      // absolute path of the Workspace
   source?: "subagent" | "schedule";       // session origin; absent = user-created
 }
-
-interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters?: Record<string, unknown>;   // JSON Schema
-}
 ```
 
 session_meta holds **per-session invariants only** — the model, system prompt and Workspace are immutable for the Session's lifetime; on resume, the engine takes this Trace line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume — the resumed Session reads the Agent's current config instead.
+
+The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `session_tools` event at the first run (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
 
 ## model_msg: complete payloads
 
@@ -180,9 +175,45 @@ Renderers can therefore paint deltas incrementally and swap in the complete mess
 
 ## event_msg
 
-Eight event payloads, all listed field by field:
+Eleven event payloads, all listed field by field:
 
 ```ts
+interface SessionToolsPayload {
+  type: "session_tools";
+  tools: ToolDefinition[];    // the complete tool schema sent to the model; emitted once
+                              // at the first run (after MCP discovery) and rewritten with
+                              // session_meta at the head of each post-compaction Trace file
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;   // JSON Schema
+}
+
+interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];          // the MCP Servers being contacted; emitted only when
+                              // mcpServers is configured — frontends show a connecting status
+}
+
+interface McpConnectEndPayload {
+  type: "mcp_connect_end";
+  duration_ms: number;        // total connect + discovery wall time; the Trace timeline
+                              // renders the pair as one span
+  results: McpServerConnectResult[];
+}
+
+interface McpServerConnectResult {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: "ok" | "failed";    // per-server and non-fatal: a failed server is skipped and
+                              // the run continues
+  duration_ms: number;
+  tools?: number;             // tools discovered (on ok)
+  error?: string;             // failure detail (on failed)
+}
+
 interface RequestBeginPayload {
   type: "request_begin";
 }

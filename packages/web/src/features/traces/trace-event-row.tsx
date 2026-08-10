@@ -43,6 +43,10 @@ const TYPE_ICON: Record<string, string> = {
   compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
+  // MCP connect pair: a plug shape; session_tools reuses the wrench (a toolset record).
+  mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
+  mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
+  session_tools: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
 };
 const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
@@ -98,6 +102,19 @@ export function summarizeEvent(msg: OmniMessage): string {
     case "compaction_begin":
     case "compaction_end":
       return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}`;
+    case "mcp_connect_begin":
+      return Array.isArray(p["servers"]) ? p["servers"].map(String).join(", ") : "";
+    case "mcp_connect_end": {
+      const results = Array.isArray(p["results"])
+        ? (p["results"] as { server?: string; status?: string; duration_ms?: number }[])
+        : [];
+      const parts = results.map(
+        (r) => `${String(r.server)}:${String(r.status)}(${String(r.duration_ms)}ms)`,
+      );
+      return `${String(p["duration_ms"])}ms · ${parts.join(" ")}`;
+    }
+    case "session_tools":
+      return Array.isArray(p["tools"]) ? `${p["tools"].length} tools` : "";
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
     case "goal_finished":

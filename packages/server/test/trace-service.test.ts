@@ -57,7 +57,6 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
     provider: "custom",
     model_context_window: 1000,
     system_prompt: "sp",
-    tools: [],
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
     ...over,

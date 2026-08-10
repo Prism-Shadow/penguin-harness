@@ -82,6 +82,14 @@ afterEach(async () => {
 // effectiveMaxContextLength moved to llm/context-limits.ts; its derivation (window-derived
 // compaction threshold, issue #218) is covered in test/context-limits.test.ts.
 
+/** Drains the session's lazy first-run bootstrap so the engine (and its LLM) exists for inspection. */
+async function bootstrapped(session: unknown): Promise<void> {
+  const gen = (session as { ensureReady(): AsyncGenerator<unknown> }).ensureReady();
+  for await (const _ of gen) {
+    // drain: the bootstrap's own events aren't under test here
+  }
+}
+
 describe("metaMaxTokens (meta-request budget tightened by the per-model cap)", () => {
   it("keeps the budget unless the per-model cap is smaller; never raises it", () => {
     expect(metaMaxTokens(300, undefined)).toBe(300); // no per-model cap: the budget as-is
@@ -147,6 +155,7 @@ describe("Agent.createSession workspace handling", () => {
     await fs.mkdir(ws, { recursive: true });
 
     const session = await agent.createSession({ workspaceDir: ws });
+    await bootstrapped(session);
     const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
 
     expect((llm as { requestTimeoutMs?: number }).requestTimeoutMs).toBe(3456);
@@ -259,9 +268,11 @@ describe("Agent.createSession session source (session_meta origin marker)", () =
 describe("Agent.createSession thinking level (explicit option wins over the Agent config)", () => {
   // The session's default level lives on the LLM object (per-request overrides fall back to
   // it); session_meta holds per-session invariants only and never records a thinking level.
-  const defaultLevelOf = (session: unknown): unknown =>
-    (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine.deps.llm
-      .defaultThinkingLevel;
+  const defaultLevelOf = async (session: unknown): Promise<unknown> => {
+    await bootstrapped(session);
+    return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
+      .deps.llm.defaultThinkingLevel;
+  };
 
   it("falls back to the Agent config for the llm default; session_meta records no level", async () => {
     const agent = await createAgent();
@@ -275,7 +286,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
       expect(
         "thinking_level" in (session.metaMessage.payload as unknown as Record<string, unknown>),
       ).toBe(false);
-      expect(defaultLevelOf(session)).toBe("medium");
+      expect(await defaultLevelOf(session)).toBe("medium");
       expect(mapThinkingLevel("medium")).toBeDefined(); // the name maps onto the wire enum
     } finally {
       session.dispose();
@@ -288,7 +299,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws, thinkingLevel: "high" });
     try {
-      expect(defaultLevelOf(session)).toBe("high");
+      expect(await defaultLevelOf(session)).toBe("high");
     } finally {
       session.dispose();
     }
@@ -308,7 +319,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     await fs.mkdir(ws, { recursive: true });
     const session = await agent.createSession({ workspaceDir: ws });
     try {
-      expect(defaultLevelOf(session)).toBe("high");
+      expect(await defaultLevelOf(session)).toBe("high");
     } finally {
       session.dispose();
     }
@@ -324,7 +335,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     // The seeded config's explicit "medium" beats the project's "low".
     const explicit = await agent.createSession({ workspaceDir: ws });
     try {
-      expect(defaultLevelOf(explicit)).toBe("medium");
+      expect(await defaultLevelOf(explicit)).toBe("medium");
     } finally {
       explicit.dispose();
     }
@@ -334,7 +345,7 @@ describe("Agent.createSession thinking level (explicit option wins over the Agen
     delete bare.state.systemConfig.model?.thinking_level;
     const builtin = await bare.createSession({ workspaceDir: ws });
     try {
-      expect(defaultLevelOf(builtin)).toBe("medium");
+      expect(await defaultLevelOf(builtin)).toBe("medium");
     } finally {
       builtin.dispose();
     }
@@ -352,10 +363,11 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
 
   /**
    * Spawns through the real runner and reads the child session_meta — the first message
-   * handle.run yields, emitted before any LLM request; the run generator is closed right
-   * after, so nothing is ever sent upstream. The child's effective thinking level is no
-   * longer in session_meta (invariants only): it's read from the captured LLM config the
-   * spawn constructed (the last one pushed).
+   * handle.run yields, emitted before any LLM request. The child's effective thinking
+   * level is no longer in session_meta (invariants only): the stream is advanced up to
+   * the child's session_tools event — the point where the lazy bootstrap has constructed
+   * the LLM — and the captured config (the last one pushed) is read there; the generator
+   * is closed right after, so nothing is ever sent upstream.
    */
   async function spawnedChildMeta(
     runner: SubagentRunner,
@@ -368,7 +380,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     llm: { thinkingLevel?: string };
   }> {
     const handle = await runner.spawn(input);
-    const llm = capturedLLMConfigs.list.at(-1)!;
+    let llm: { thinkingLevel?: string } | undefined;
     try {
       const gen = handle.run({ prompt: "noop" });
       const first = await gen.next();
@@ -377,6 +389,14 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       expect(msg.type).toBe("session_meta");
       // Child messages are stamped with the child Session id as the origin hop.
       expect(msg.origin?.[0]).toBe(handle.sessionId);
+      for (;;) {
+        const next = await gen.next();
+        expect(next.done).toBe(false);
+        if ((next.value!.payload as { type?: string }).type === "session_tools") {
+          llm = capturedLLMConfigs.list.at(-1)!;
+          break;
+        }
+      }
       await gen.return(undefined);
       return {
         ...(msg.payload as {
@@ -385,7 +405,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
           workspace: string;
           source?: string;
         }),
-        llm,
+        llm: llm!,
       };
     } finally {
       handle.dispose();
@@ -458,6 +478,8 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     const ws = path.join(tmpRoot, "ws-inherit-none");
     await fs.mkdir(ws, { recursive: true });
     const parent = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
+    // The parent LLM is only constructed by the lazy bootstrap — drive it before reading.
+    await bootstrapped(parent);
     const parentLLM = capturedLLMConfigs.list.at(-1)!;
     const runner = lastSpawnedRunner();
     try {
@@ -584,6 +606,7 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       provider: "custom",
     });
     try {
+      await bootstrapped(pinned);
       const llm = (pinned as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
       expect(uniConfigOf(llm).max_tokens).toBe(8000);
     } finally {
@@ -593,6 +616,7 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
     // An unannotated entry (the default model) inherits the Agent value, as before.
     const inherited = await agent.createSession({ workspaceDir: ws });
     try {
+      await bootstrapped(inherited);
       const llm = (inherited as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
       expect(uniConfigOf(llm).max_tokens).toBe(32000);
     } finally {

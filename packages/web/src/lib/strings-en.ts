@@ -988,6 +988,11 @@ Scenarios:
       "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
+    mcpConnecting: (servers: string[]): string => `Connecting MCP servers (${servers.join(", ")})…`,
+    mcpConnectDone: (durationMs: number, failed: string[]): string =>
+      failed.length === 0
+        ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
     compactionDone: (mode: string) =>
       mode === "discard"

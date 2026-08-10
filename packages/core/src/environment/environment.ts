@@ -27,7 +27,7 @@
  */
 import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
-import type { OmniMessage, StopReason } from "../omnimessage/index.js";
+import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
   EnvironmentConfig,
@@ -192,6 +192,16 @@ export class Environment implements EnvironmentInterface {
       }));
     if (!this.mcp) return builtin;
     return [...builtin, ...(await this.mcp.listTools())];
+  }
+
+  /** Names of the validly configured MCP servers (config order; empty without MCP). Concrete-class surface for the composition layer's connect events — not part of EnvironmentInterface. */
+  mcpServerNames(): string[] {
+    return this.mcp?.serverNames() ?? [];
+  }
+
+  /** Per-server MCP connect outcomes, populated by the first listTools(); empty before it or without MCP. Feeds the mcp_connect_end event. */
+  mcpConnectResults(): McpServerConnectResult[] {
+    return this.mcp?.connectResults() ?? [];
   }
 
   /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their server's `readOnlyHint` annotation after discovery. */

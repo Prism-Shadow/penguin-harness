@@ -204,6 +204,8 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
+  /** This Session's session_tools event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
+  sessionTools?: OmniMessage;
   /**
    * Input adapter for a session whose model has no vision: folds image messages into text
    * lines appended to the input's user text. Absent = the model takes images directly. `run`'s
@@ -1719,6 +1721,7 @@ export class ContextEngine {
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
         if (this.deps.sessionMeta) await this.deps.trace.write(this.deps.sessionMeta);
+        if (this.deps.sessionTools) await this.deps.trace.write(this.deps.sessionTools);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] rotate failed: ${message}\n`);

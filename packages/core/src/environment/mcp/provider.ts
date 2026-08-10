@@ -34,7 +34,7 @@ import {
 import type { CallToolResult, FetchLike, Tool, Transport } from "@modelcontextprotocol/client";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
-import type { OmniMessage } from "../../omnimessage/index.js";
+import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
 import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
 import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
@@ -151,6 +151,8 @@ export class McpToolProvider {
   private readonly byName = new Map<string, BuiltinTool>();
   /** LLM-facing definitions in stable server-config order. */
   private defs: ToolDefinition[] = [];
+  /** Per-server connect outcomes (config order), populated by the single-flight connect; feeds the mcp_connect_end event. */
+  private results: McpServerConnectResult[] = [];
   private closed = false;
 
   constructor(entries: MCPServerConfig[], options?: McpToolProviderOptions) {
@@ -165,6 +167,16 @@ export class McpToolProvider {
   async listTools(): Promise<ToolDefinition[]> {
     await this.ensure();
     return this.defs;
+  }
+
+  /** Names of the (validly configured) servers this provider will contact, in config order. */
+  serverNames(): string[] {
+    return this.servers.map((s) => s.name);
+  }
+
+  /** Per-server connect outcomes; empty before the first listTools()/resolveTool() completed. */
+  connectResults(): McpServerConnectResult[] {
+    return this.results;
   }
 
   /**
@@ -204,17 +216,43 @@ export class McpToolProvider {
   private async connectAll(): Promise<void> {
     for (const warning of this.configWarnings) this.warn(warning);
     // Connect in parallel, then register in config order so tool listing order is stable.
-    const results = await Promise.all(
-      this.servers.map(async (server) => {
-        try {
-          return await this.connectServer(server);
-        } catch (err) {
-          this.warn(`MCP server "${server.name}" unavailable: ${describeError(err)}`);
-          return null;
-        }
-      }),
+    // Each server's outcome (status + wall time, feeding the mcp_connect_end event) is
+    // recorded either way; a failure also keeps the existing warning behavior.
+    const settled = await Promise.all(
+      this.servers.map(
+        async (server): Promise<{ conn: McpConnection | null; result: McpServerConnectResult }> => {
+          const startedAt = performance.now();
+          const durationMs = (): number => Math.round(performance.now() - startedAt);
+          try {
+            const conn = await this.connectServer(server);
+            return {
+              conn,
+              result: {
+                server: server.name,
+                transport: server.transport.kind,
+                status: "ok",
+                duration_ms: durationMs(),
+                tools: conn.tools.length,
+              },
+            };
+          } catch (err) {
+            this.warn(`MCP server "${server.name}" unavailable: ${describeError(err)}`);
+            return {
+              conn: null,
+              result: {
+                server: server.name,
+                transport: server.transport.kind,
+                status: "failed",
+                duration_ms: durationMs(),
+                error: describeError(err),
+              },
+            };
+          }
+        },
+      ),
     );
-    for (const conn of results) {
+    this.results = settled.map((s) => s.result);
+    for (const { conn } of settled) {
       if (!conn) continue;
       if (this.closed) {
         void conn.client.close().catch(() => {});
