@@ -248,6 +248,7 @@ export const zh = {
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
+      ["{{SHELL}}", "命令执行使用的 Shell"],
       ["{{DATE}}", "当前日期"],
       [
         "{{PROJECT_DIR}}",
@@ -507,7 +508,12 @@ export const zh = {
     target: "目标",
     targetNew: "每次新建会话",
     targetSession: "绑定 Session",
-    sessionId: "Session id",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "选择要绑定的 Session",
+    sessionSearch: "搜索标题或 Session id…",
+    sessionNoMatch: "无匹配的 Session",
+    sessionEmpty: "该 Agent 暂无 Session",
     workspace: "Workspace（可选，留空自动创建临时工作区）",
     model: "Model",
     modelDefault: "Project 默认",
@@ -847,6 +853,9 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "复制 Session id",
     /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
     traceFile: "轨迹文件",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions. */

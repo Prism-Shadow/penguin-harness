@@ -134,6 +134,63 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
   );
 }
 
+/** Copied-state duration for the details card's Session id copy button (ms). */
+const SESSION_ID_COPIED_MS = 1500;
+
+/**
+ * Session id row in the details card: the id itself is the click-to-copy button, styled
+ * like the other sections' mono values, with a transient "copied" swap on the label.
+ */
+function SessionIdRow({ sessionId }: { sessionId: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    // Optimistic flip (same convention as the message copy button): the write is
+    // best-effort — an insecure context or denied permission must not leave the label
+    // stuck, and localhost/https is a secure context where it succeeds anyway.
+    void navigator.clipboard?.writeText(sessionId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), SESSION_ID_COPIED_MS);
+  };
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {copied ? S.common.copied : S.chat.sessionIdLabel}
+      </p>
+      <button
+        type="button"
+        onClick={copy}
+        title={S.chat.copySessionId}
+        aria-label={S.chat.copySessionId}
+        className="flex w-full items-center gap-1.5 break-all text-left font-mono text-xs leading-5 text-gray-600 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+      >
+        <span className="min-w-0 flex-1">{sessionId}</span>
+        {/* Copy glyph (two overlapping sheets), turns to a check briefly after copying. */}
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+          className="shrink-0 text-gray-400 dark:text-gray-500"
+        >
+          {copied ? (
+            <path d="M20 6 9 17l-5-5" />
+          ) : (
+            <>
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </>
+          )}
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 /**
  * Elapsed value for the header statistics: while a Task runs it ticks once per second over the
  * live cumulative (settled cross-Task total + the running Task's wall clock so far, see
@@ -1406,6 +1463,7 @@ export function ChatPage() {
                   </span>
                 </p>
               </div>
+              <SessionIdRow sessionId={selected.sessionId} />
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}

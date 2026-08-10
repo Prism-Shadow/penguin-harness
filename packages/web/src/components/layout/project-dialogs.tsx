@@ -33,7 +33,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
-import { toastError } from "../ui/toast";
+import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
@@ -539,6 +539,10 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
         if (user) clearDraftModelRef(user.userId, projectId);
         changed = { ...(changed ?? { projectId }), defaultModel: res.defaultModel };
       }
+      // Both writes landed (the try didn't throw): confirm it — the dialog stays open, so
+      // without a toast a successful save is silent. `changed` is non-null whenever
+      // anything was actually written (the early-return above guards the no-op case).
+      if (changed) toastSuccess(S.common.saved);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {

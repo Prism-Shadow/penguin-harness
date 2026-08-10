@@ -1,0 +1,93 @@
+/**
+ * Chat/schedule tweaks:
+ * - the schedule create form's model/workspace use the same form-style pickers as the
+ *   Project defaults dialog, and its bind-Session field is a searchable dropdown (not a
+ *   raw id text input);
+ * - the chat details card shows the Session id as a click-to-copy row (label flips to
+ *   "已复制").
+ *
+ * (The Project-defaults "已保存" toast is a one-line success path exercised manually; it is
+ * left out here — dirtying the defaults block through its custom pickers is too sensitive
+ * to first-run config-load timing to assert reliably.)
+ */
+import { test, expect } from "@playwright/test";
+import { provisionAndLogin } from "./auth.mjs";
+
+const BASE = process.env.BASE_URL;
+const MOCK = process.env.MOCK_URL;
+const U = "tweakuser";
+const P = "password123";
+
+test("schedule form pickers and details Session-id copy", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0]
+    .projectId;
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+        },
+        {
+          provider: "custom",
+          modelId: "haiku-x",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 100000,
+        },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+
+  // A session to bind the schedule to (and to open in chat for the details card).
+  const sess = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+    })
+  ).json();
+  const sessionId = sess.session.sessionId;
+  const idTail = sessionId.slice(-6);
+
+  const dlg = () => page.locator(".anim-pop").last();
+
+  // --- Schedule form pickers ---
+  await page.goto(`${BASE}/agents/default_agent?tab=schedules`);
+  await page.getByRole("button", { name: "新建定时任务" }).click();
+  await dlg().getByText("每次新建会话").first().waitFor();
+  // New-session mode: model + workspace are the form-style dropdowns (not native selects),
+  // matching the Project defaults dialog.
+  await expect(dlg().getByRole("button", { name: "选择模型" })).toBeVisible();
+  await expect(dlg().getByRole("button", { name: "Workspace" })).toBeVisible();
+
+  // Switch to bind-Session mode → the searchable session dropdown replaces the id input.
+  // (The option click auto-waits for the Select's portal listbox to mount.)
+  await dlg().getByRole("button").filter({ hasText: "每次新建会话" }).first().click();
+  await page.getByRole("option").filter({ hasText: "绑定 Session" }).click();
+  await page.getByRole("button", { name: "选择要绑定的 Session" }).click();
+  const search = page.getByPlaceholder(/搜索标题/);
+  await search.waitFor();
+  // Filter by the session id tail — deterministic regardless of the generated title.
+  await search.fill(idTail);
+  const row = page.locator("button").filter({ hasText: idTail });
+  await expect(row.first()).toBeVisible();
+  await row.first().click();
+  // The trigger now shows the bound session (its title), not the placeholder.
+  await expect(page.getByRole("button", { name: "选择要绑定的 Session" })).not.toContainText(
+    "选择要绑定的 Session",
+  );
+
+  // --- Details card Session id + copy ---
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.locator('button[title="Session 信息"]').click();
+  const copyBtn = page.getByRole("button", { name: "复制 Session id" });
+  await expect(copyBtn).toContainText(sessionId);
+  await copyBtn.click();
+  await expect(page.getByText("已复制", { exact: true }).first()).toBeVisible();
+});

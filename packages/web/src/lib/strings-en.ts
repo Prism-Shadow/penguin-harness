@@ -257,6 +257,7 @@ export const en: Strings = {
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
+      ["{{SHELL}}", "Shell used to run commands"],
       ["{{DATE}}", "Current date"],
       [
         "{{PROJECT_DIR}}",
@@ -525,7 +526,12 @@ export const en: Strings = {
     target: "Target",
     targetNew: "New session each time",
     targetSession: "Bound Session",
-    sessionId: "Session id",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "Choose a Session to bind",
+    sessionSearch: "Search title or Session id…",
+    sessionNoMatch: "No matching Session",
+    sessionEmpty: "This agent has no Sessions yet",
     workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
@@ -869,6 +875,9 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "Copy Session id",
     /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
     traceFile: "Trace file",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
