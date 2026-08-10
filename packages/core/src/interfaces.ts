@@ -68,6 +68,16 @@ export interface ToolDefinitionConfig {
   call_description?: boolean;
 }
 
+/**
+ * One MCP Server entry from `system_config.yaml` (`tools.mcpServers`). `name` scopes the
+ * server's tools as `mcp__<name>__<tool>`; `config` stays an open object at this seam (the
+ * stored YAML is schema-free) and is typed/validated at Environment assembly time by
+ * `environment/mcp/config.ts`: `transport: "stdio" | "http" | "sse"` (inferable from
+ * `command` / `url`), the per-transport fields (stdio: `command`/`args`/`env`/`cwd`;
+ * http/sse: `url`/`headers`), and the shared optional `connectTimeoutMs` / `timeoutMs` /
+ * `maxOutputLength`.
+ * Docs: /docs/tools § "MCP servers".
+ */
 export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
