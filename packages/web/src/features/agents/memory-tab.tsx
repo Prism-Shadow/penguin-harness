@@ -40,7 +40,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { buildMemoryEditPrompt, buildMemoryImportPrompt } from "./memory-edit-source";
+import { buildMemoryEditPrompt, buildMemoryImportPrompt } from "./memory-chat-prompts";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {

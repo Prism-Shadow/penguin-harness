@@ -9,7 +9,7 @@ import { en } from "../src/lib/strings-en";
 import {
   buildMemoryEditPrompt,
   buildMemoryImportPrompt,
-} from "../src/features/agents/memory-edit-source";
+} from "../src/features/agents/memory-chat-prompts";
 
 afterEach(() => setActiveStrings(zh));
 
