@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { systemConfigPath } from "@prismshadow/penguin-core";
 import type { AgentConfigResponse, ProjectCreateResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
@@ -52,9 +53,11 @@ describe("agent config: mcpServers", () => {
   describe("POST /config/mcp-test", () => {
     // The core package's stdio fixture, reused across packages (monorepo-only path — tests
     // are not published); its @modelcontextprotocol/server import resolves from core's own
-    // node_modules since resolution starts at the fixture's location.
-    const FIXTURE = new URL("../../core/test/fixtures/mcp-stdio-server.mjs", import.meta.url)
-      .pathname;
+    // node_modules since resolution starts at the fixture's location. fileURLToPath, not
+    // URL#pathname: the latter renders Windows paths as /D:/… which spawn cannot use.
+    const FIXTURE = fileURLToPath(
+      new URL("../../core/test/fixtures/mcp-stdio-server.mjs", import.meta.url),
+    );
 
     it("connects to a reachable server and lists its prefixed tools", async () => {
       const res = await owner.post(`${configPath}/mcp-test`, {
