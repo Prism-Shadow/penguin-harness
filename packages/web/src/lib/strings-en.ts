@@ -322,7 +322,10 @@ export const en: Strings = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
-    mcpServers: "MCP Servers (read-only)",
+    mcpServers: "MCP Servers",
+    mcpServersHint:
+      "A JSON array of { name, config } entries: name prefixes the tools (mcp__<name>__<tool>) and config describes the transport (stdio: command/args/env/cwd; http / sse: url/headers) — see the MCP Servers section of the Tools & Approval docs. Full validation happens server-side on save.",
+    mcpServersInvalid: (detail: string): string => `Invalid MCP Server configuration: ${detail}`,
     defaultValue: "(default)",
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",

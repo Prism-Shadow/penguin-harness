@@ -300,7 +300,10 @@ export const zh = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
-    mcpServers: "MCP Server（只读）",
+    mcpServers: "MCP Server",
+    mcpServersHint:
+      "JSON 数组，每项为 { name, config }：name 是工具名前缀（mcp__<name>__<tool>），config 描述 transport（stdio 填 command/args/env/cwd，http / sse 填 url/headers），详见文档「工具与审批」的 MCP Server 一节。保存时服务端做完整校验。",
+    mcpServersInvalid: (detail: string): string => `MCP Server 配置无效：${detail}`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     deleteAgent: "删除 Agent",

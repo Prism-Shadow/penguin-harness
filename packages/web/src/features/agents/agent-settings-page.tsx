@@ -3,7 +3,7 @@
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
+ * tools table + MCP Server JSON editor), Skills (skills-tab.tsx), Vault
  * (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
@@ -36,6 +36,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { SkillsTab } from "./skills-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { formatMcpServersJson, parseMcpServersJson } from "./mcp-servers-json";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
@@ -751,6 +752,10 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   );
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // MCP Servers JSON editor: structural validation happens locally on save; transport
+  // fields are validated server-side (the PUT reuses the core resolver and 400s precisely).
+  const [mcpText, setMcpText] = useState(() => formatMcpServersJson(data.config.mcpServers));
+  const [mcpError, setMcpError] = useState("");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
@@ -796,15 +801,18 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       }
       tools.push(tool);
     }
-    if (Object.keys(errs).length > 0) {
+    const mcpParsed = parseMcpServersJson(mcpText);
+    if (Object.keys(errs).length > 0 || !mcpParsed.ok) {
       setFieldErrors(errs);
+      setMcpError(mcpParsed.ok ? "" : S.agent.mcpServersInvalid(mcpParsed.error));
       return;
     }
     setFieldErrors({});
+    setMcpError("");
     // The table is submitted whole, so compare the editable columns against the loaded
     // config to detect a no-op save (row order is stable — both sides map the same list).
     const orig = data.config.toolsBuiltin;
-    const dirty =
+    const toolsDirty =
       tools.length !== orig.length ||
       tools.some((t, i) => {
         const o = orig[i]!;
@@ -815,11 +823,22 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           t.call_description !== o.call_description
         );
       });
-    if (!dirty) {
+    // The editor round-trips arbitrary config keys, so value equality (not text equality —
+    // whitespace-only edits are not a change) decides whether to send mcpServers.
+    const mcpDirty = JSON.stringify(mcpParsed.servers) !== JSON.stringify(data.config.mcpServers);
+    if (!toolsDirty && !mcpDirty) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
+    requestSave(
+      () =>
+        void onSave({
+          config: {
+            ...(toolsDirty ? { toolsBuiltin: tools } : {}),
+            ...(mcpDirty ? { mcpServers: mcpParsed.servers } : {}),
+          },
+        }),
+    );
   };
 
   /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
@@ -899,9 +918,19 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
 
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <pre className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-800 dark:bg-gray-900">
-          {JSON.stringify(data.config.mcpServers, null, 2)}
-        </pre>
+        <Textarea
+          aria-label={S.agent.mcpServers}
+          mono
+          size="sm"
+          rows={10}
+          value={mcpText}
+          error={mcpError || undefined}
+          onChange={(e) => {
+            setMcpText(e.target.value);
+            setMcpError("");
+          }}
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpServersHint}</p>
       </div>
 
       <Button size="sm" variant="primary" onClick={submit}>

@@ -68,7 +68,7 @@ penguin web
 | Overview | 基本信息、Agent State 快照的导出 / 导入，以及还原为默认配置（覆盖自定义内容，仅保留名称与描述） |
 | Prompt | AGENTS.md 与 system_prompt |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
-| Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 的 JSON 配置 |
+| Tools | 内置工具表格（含条目级 call_description 开关）与可编辑的 MCP Server JSON 配置（保存时服务端按 transport 完整校验） |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 
