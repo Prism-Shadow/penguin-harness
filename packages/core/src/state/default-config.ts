@@ -93,9 +93,9 @@ export interface MemoryConfig {
 
 /**
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
- * template-example form — a fenced frontmatter example, the type glossary, the index contract
- * and the hygiene rules, then the User scope and its marker-fenced index. Stored per-Agent in
- * `system_config.yaml` and editable on the Web App's Memory tab.
+ * template-example form — a fenced frontmatter example, what is worth saving, the index
+ * contract and the hygiene rules, then the User scope and its marker-fenced index. Stored
+ * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
 Your long-term record across sessions: Markdown files you maintain with the file tools, in the two memory directories named below (they already exist). One file per fact, with frontmatter:
@@ -104,14 +104,13 @@ Your long-term record across sessions: Markdown files you maintain with the file
 ---
 name: <kebab-case-slug, matching the file name>
 description: <one line — used to decide relevance during recall>
-type: user | feedback | project | reference
 updated_at: <YYYY-MM-DD>
 ---
 
-<the fact; for feedback/project add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
+<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
 \`\`\`
 
-Types: \`user\` — who the user is (role, expertise, preferences); lives in the user directory. \`feedback\` — how the user wants you to work, with the why. \`project\` — ongoing work, goals, constraints not derivable from the code. \`reference\` — pointers to external resources. The last three live in the workspace directory.
+Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
 
 Each directory's \`MEMORY.md\` is its index, injected below: one line per memory (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
 

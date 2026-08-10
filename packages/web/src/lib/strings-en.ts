@@ -536,12 +536,6 @@ export const en: Strings = {
       `Please update a memory: ${title}\nFile: ${filePath}`,
     editPromptTail:
       "After editing, update the MEMORY.md index line and updated_at in the same directory.\nWhat to change: ",
-    types: {
-      user: "User",
-      feedback: "Feedback",
-      project: "Project",
-      reference: "Reference",
-    },
   },
 
   vault: {

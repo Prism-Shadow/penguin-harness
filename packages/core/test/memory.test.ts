@@ -217,26 +217,23 @@ describe("resolveSessionMemory", () => {
 });
 
 describe("frontmatter", () => {
-  it("reads name / description / type / updated_at", () => {
+  it("reads name / description / updated_at", () => {
     const parsed = parseMemoryFrontmatter(
-      "---\nname: testing-conventions\ndescription: how tests run\ntype: feedback\nupdated_at: 2026-08-07\n---\n\n- body\n",
+      "---\nname: testing-conventions\ndescription: how tests run\nupdated_at: 2026-08-07\n---\n\n- body\n",
       "testing-conventions.md",
     );
     expect(parsed).toEqual({
       name: "testing-conventions",
       description: "how tests run",
-      type: "feedback",
       updatedAt: "2026-08-07",
     });
   });
 
-  it("accepts the user type", () => {
-    const parsed = parseMemoryFrontmatter("---\ntype: user\n---\nbody\n", "notes.md");
-    expect(parsed).toEqual({ name: "notes.md", description: "", type: "user" });
-  });
-
-  it("falls back to the file name and drops an unknown type", () => {
-    const parsed = parseMemoryFrontmatter("---\ntype: diary\n---\nbody\n", "notes.md");
+  it("falls back to the file name and ignores unknown fields, including a legacy type line", () => {
+    const parsed = parseMemoryFrontmatter(
+      "---\ntype: feedback\nmood: blue\n---\nbody\n",
+      "notes.md",
+    );
     expect(parsed).toEqual({ name: "notes.md", description: "" });
   });
 

@@ -31,7 +31,6 @@ import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
-import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";
@@ -78,14 +77,6 @@ function writeCollapsedScopes(key: string | null, collapsed: ReadonlySet<string>
     // Quota / private browsing: the collapse state just won't survive the visit.
   }
 }
-
-/** Badge tone per topic type (unknown/missing types render no badge at all). */
-const TYPE_TONES: Record<NonNullable<MemoryFileInfo["type"]>, BadgeTone> = {
-  user: "brand",
-  feedback: "amber",
-  project: "gray",
-  reference: "green",
-};
 
 /** One scope group as the tab renders it: the overview entry plus its listed files. */
 interface ScopeGroup {
@@ -407,9 +398,6 @@ export function MemoryTab({
 
   const fileRow = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <li key={file.name} className="flex items-center gap-3 px-3.5 py-2.5">
-      {file.type !== undefined && (
-        <Badge tone={TYPE_TONES[file.type]}>{S.memory.types[file.type]}</Badge>
-      )}
       <div className="min-w-0 flex-1">
         <p className="truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
           {file.title}
@@ -428,14 +416,9 @@ export function MemoryTab({
   /** Metadata + rendered body of the memory in view, shared by the Drawer and the Sheet. */
   const viewMeta = viewing && (
     <>
-      <div className="flex items-center gap-2.5">
-        {viewing.file.type !== undefined && (
-          <Badge tone={TYPE_TONES[viewing.file.type]}>{S.memory.types[viewing.file.type]}</Badge>
-        )}
-        <span className="text-xs text-gray-400 dark:text-gray-500">
-          {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
-        </span>
-      </div>
+      <span className="text-xs text-gray-400 dark:text-gray-500">
+        {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
+      </span>
       {viewing.file.description && (
         <p className="text-xs text-gray-500 dark:text-gray-400">{viewing.file.description}</p>
       )}

@@ -41,16 +41,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { agentsDir, memoryScopeDir } from "./paths.js";
 
-/**
- * Topic types a Memory file may declare in its frontmatter. By convention `user` belongs to the
- * User scope (who the user is — role, expertise, preferences) and the other three to Workspace
- * scopes: `feedback` (how the user wants the Agent to work, with the why), `project` (ongoing
- * work, goals, constraints not derivable from the code), `reference` (pointers to external
- * resources). The convention lives in the Memory prompt; parsing stays scope-agnostic.
- */
-export const MEMORY_TOPIC_TYPES = ["user", "feedback", "project", "reference"] as const;
-export type MemoryTopicType = (typeof MEMORY_TOPIC_TYPES)[number];
-
 /** Per-scope index file name, also excluded from a scope's topic listing. */
 export const MEMORY_INDEX_FILENAME = "MEMORY.md";
 
@@ -84,8 +74,6 @@ export interface MemoryTopicMetadata {
   name: string;
   /** One line telling a reader whether the body is worth opening. */
   description: string;
-  /** Topic type; `undefined` when the file declares none or an unknown one. */
-  type?: MemoryTopicType;
   /** Last-updated date as written in the file (`YYYY-MM-DD` by convention, not parsed). */
   updatedAt?: string;
 }
@@ -321,9 +309,9 @@ export async function resolveSessionMemory(args: {
 /**
  * Parses a Memory topic file's frontmatter, in the same line-oriented way as Skill
  * frontmatter (values are plain scalars, not full YAML). Returns `null` when the file has no
- * frontmatter block at all; individual missing fields are simply left out, so a hand-edited
- * file never fails to list. `fallbackName` (normally the file name) stands in for a missing
- * `name`.
+ * frontmatter block at all; individual missing fields are simply left out, and unknown fields
+ * (including the retired `type:` earlier files may carry) are ignored, so a hand-edited file
+ * never fails to list. `fallbackName` (normally the file name) stands in for a missing `name`.
  */
 export function parseMemoryFrontmatter(
   content: string,
@@ -339,17 +327,10 @@ export function parseMemoryFrontmatter(
     const key = line.slice(0, idx).trim();
     if (key) fields[key] = line.slice(idx + 1).trim();
   }
-  const type = fields["type"];
   const updatedAt = fields["updated_at"];
   return {
     name: fields["name"] || fallbackName,
     description: fields["description"] ?? "",
-    ...(isMemoryTopicType(type) ? { type } : {}),
     ...(updatedAt ? { updatedAt } : {}),
   };
-}
-
-/** Whether a string is one of the supported topic types. */
-export function isMemoryTopicType(value: unknown): value is MemoryTopicType {
-  return typeof value === "string" && (MEMORY_TOPIC_TYPES as readonly string[]).includes(value);
 }

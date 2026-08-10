@@ -25,6 +25,7 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const WORKSPACE_KEY = "my-app-a81f32c4";
+// The `type:` line is the retired field earlier files may still carry — listing must ignore it.
 const TOPIC = `---
 name: testing-conventions
 description: how tests are run here
@@ -170,9 +171,10 @@ describe("memory api", () => {
       name: "testing-conventions.md",
       title: "testing-conventions",
       description: "how tests are run here",
-      type: "feedback",
       updatedAt: "2026-08-07",
     });
+    // The retired type field stays out of the DTO even when the file still declares it.
+    expect(list.files[0]).not.toHaveProperty("type");
 
     const read = (await (
       await owner.get(`${filesPath()}/testing-conventions.md`)

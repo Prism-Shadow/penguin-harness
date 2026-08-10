@@ -506,12 +506,6 @@ export const zh = {
     editPromptLead: (title: string, filePath: string): string =>
       `请帮我更新一条记忆：${title}\n文件：${filePath}`,
     editPromptTail: "改完后请同步更新同目录 MEMORY.md 的索引行和 updated_at。\n修改要求：",
-    types: {
-      user: "用户",
-      feedback: "反馈",
-      project: "项目",
-      reference: "参考",
-    },
   },
 
   vault: {

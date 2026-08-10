@@ -588,8 +588,6 @@ export interface MemoryFileInfo {
   title: string;
   /** Frontmatter `description`; empty when the file declares none. */
   description: string;
-  /** Frontmatter `type`; unset when missing or unknown. */
-  type?: "user" | "feedback" | "project" | "reference";
   /** Frontmatter `updated_at`, verbatim. */
   updatedAt?: string;
   /** File size in bytes. */

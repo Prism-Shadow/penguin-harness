@@ -269,7 +269,6 @@ export class MemoryService {
       name,
       title: meta?.name ?? name,
       description: meta?.description ?? "",
-      ...(meta?.type !== undefined ? { type: meta.type } : {}),
       ...(meta?.updatedAt !== undefined ? { updatedAt: meta.updatedAt } : {}),
       size,
       modifiedAt: mtime.toISOString(),
