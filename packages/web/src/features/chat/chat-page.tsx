@@ -936,11 +936,20 @@ export function ChatPage() {
   // server-side and auto-sends it as an ordinary next task once this run finishes (the
   // "N queued" count arrives via task_state). Succeeds either way (queued or started
   // directly in the completion race), so the input area clears the draft on true.
+  // The per-turn thinking level rides along exactly as it does on onSend: the level is the
+  // one picked when the follow-up was composed, and the server keeps it with the queued
+  // input and applies it at auto-start (see TaskCreateRequest.queueIfBusy).
   const onQueueFollowUp = useCallback(
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          queueIfBusy: true,
+          ...(turnThinkingLevel
+            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
+            : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -949,7 +958,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a

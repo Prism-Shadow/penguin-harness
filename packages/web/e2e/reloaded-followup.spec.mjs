@@ -1,4 +1,7 @@
-/** Regression for #89: a Task posted after reloading a completed Session must execute. */
+/**
+ * Regression for #89: a Task posted after reloading a completed Session must execute — and
+ * must carry the whole draft, the per-turn thinking level included.
+ */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
 
@@ -76,6 +79,16 @@ test("a stale steer response after reload queues the follow-up instead of strand
   await expect(page.getByRole("button", { name: "停止" })).toBeVisible();
   await expect(page.getByRole("button", { name: "允许" })).toBeVisible();
 
+  // A per-turn thinking level picked mid-run must ride the queued follow-up, exactly as it
+  // rides an ordinary send: the server keeps it with the queued input and applies it when the
+  // follow-up auto-starts. The picker is only disabled while a send is in flight, so it is
+  // editable here; the pick is per-turn and does not write through to the Agent config.
+  const thinkingBtn = page.getByRole("button", { name: "思考等级" });
+  await expect(thinkingBtn).toContainText("中");
+  await thinkingBtn.click();
+  await page.getByRole("button", { name: "高", exact: true }).click();
+  await expect(thinkingBtn).toContainText("高");
+
   await composer.fill("hello after reload");
   const followUpPost = page.waitForResponse((response) =>
     response.url().endsWith(`/sessions/${sessionId}/tasks`),
@@ -83,7 +96,10 @@ test("a stale steer response after reload queues the follow-up instead of strand
   await page.getByRole("button", { name: "发送给运行中的 Agent" }).click();
   const response = await followUpPost;
   expect(response.status()).toBe(202);
-  expect(response.request().postDataJSON()).toMatchObject({ queueIfBusy: true });
+  expect(response.request().postDataJSON()).toMatchObject({
+    queueIfBusy: true,
+    thinkingLevel: "high",
+  });
   expect(await response.json()).toMatchObject({ queued: true });
   await expect(page.getByText("1 条跟进消息已排队，本轮结束后自动发送")).toBeVisible();
   await expect(composer).toHaveValue("");
