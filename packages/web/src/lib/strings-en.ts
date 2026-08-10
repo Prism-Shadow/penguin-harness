@@ -230,6 +230,7 @@ export const en: Strings = {
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
     scheduleCount: (n: number): string => `${n} scheduled task${n === 1 ? "" : "s"}`,
+    memoryCount: (n: number): string => (n === 1 ? "1 memory" : `${n} memories`),
     updatedAt: "Last modified",
     activity: (days: number): string => `${days}-day session activity`,
     settings: "Agent settings",
@@ -503,6 +504,17 @@ export const en: Strings = {
     emptyScope:
       "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
     emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
+    import: "Import",
+    importTitle: "Import memory",
+    importWhy:
+      "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent writes the memory files and their MEMORY.md index lines.",
+    importContentLabel: "Content or source to remember",
+    importContentPlaceholder: "Paste the content to remember, or a file path / URL",
+    /** Prefilled draft for the import-via-chat flow; the modal appends the required content after the trailing label. */
+    importPromptLead: (dir: string): string =>
+      `Please turn the following into memories saved under ${dir}`,
+    importPromptTail:
+      "If it is a file path or URL, read the source first and distill it. Write each memory as one markdown file with frontmatter, and add an index line to MEMORY.md in that directory.\nContent: ",
     view: "View",
     edit: "Edit",
     editTitle: "Edit memory",

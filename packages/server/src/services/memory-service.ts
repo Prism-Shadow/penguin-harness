@@ -53,9 +53,10 @@ const SCOPE_KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
  * Harness's), carries no path separator, and is not the index under any casing — macOS and
  * Windows resolve `memory.md` to `MEMORY.md`. The model writes these files with the ordinary
  * file tools, so non-ASCII names are as legitimate as kebab-case ones; the same rule guards
- * client-supplied names, with containment re-checked after resolution.
+ * client-supplied names, with containment re-checked after resolution. Exported so the Agent
+ * list's memory count (agent-service) shares this one definition of "a memory".
  */
-function isTopicFileName(name: string): boolean {
+export function isTopicFileName(name: string): boolean {
   return (
     name.length > 0 &&
     !name.startsWith(".") &&

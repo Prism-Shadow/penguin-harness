@@ -1,12 +1,15 @@
 /**
- * The edit-via-chat draft for one memory: names the memory and its file, ends with the
- * index-sync reminder and a trailing "what to change" line for the user to complete — in
- * whichever language is active.
+ * The bridge-to-chat drafts of the Memory tab: edit names the memory and its file and ends with
+ * a trailing "what to change" line; import names the scope directory and carries the required
+ * content — both with the index-sync reminder, in whichever language is active.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { S, setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
-import { buildMemoryEditPrompt } from "../src/features/agents/memory-edit-source";
+import {
+  buildMemoryEditPrompt,
+  buildMemoryImportPrompt,
+} from "../src/features/agents/memory-edit-source";
 
 afterEach(() => setActiveStrings(zh));
 
@@ -37,5 +40,26 @@ describe("buildMemoryEditPrompt", () => {
     expect(buildMemoryEditPrompt("t", "/m/user/t.md")).toContain("Please update a memory");
     setActiveStrings(zh);
     expect(buildMemoryEditPrompt("t", "/m/user/t.md")).toContain("请帮我更新一条记忆");
+  });
+});
+
+describe("buildMemoryImportPrompt", () => {
+  it("names the scope directory, reminds about the index, and ends with the trimmed content", () => {
+    const prompt = buildMemoryImportPrompt(
+      "/data/agents/dev/agent_state/memory/user",
+      "  喜欢用 pnpm，Node 版本固定 24  ",
+    );
+    expect(prompt).toContain("/data/agents/dev/agent_state/memory/user");
+    expect(prompt).toContain("MEMORY.md");
+    expect(prompt.endsWith("喜欢用 pnpm，Node 版本固定 24")).toBe(true);
+  });
+
+  it("follows the active dictionary", () => {
+    setActiveStrings(en);
+    expect(buildMemoryImportPrompt("/m/user", "c")).toContain(
+      "Please turn the following into memories",
+    );
+    setActiveStrings(zh);
+    expect(buildMemoryImportPrompt("/m/user", "c")).toContain("请把下面的内容整理为记忆");
   });
 });

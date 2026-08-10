@@ -219,6 +219,7 @@ export const zh = {
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
     scheduleCount: (n: number): string => `${n} 个定时任务`,
+    memoryCount: (n: number): string => `${n} 条记忆`,
     updatedAt: "最后修改",
     activity: (days: number): string => `近 ${days} 天 Session 活跃度`,
     settings: "Agent 设置",
@@ -475,6 +476,16 @@ export const zh = {
     itemCount: (n: number): string => `${n} 条`,
     emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
     emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
+    import: "导入",
+    importTitle: "导入记忆",
+    importWhy:
+      "记忆整理由 agent 在对话中完成：填写内容后打开新对话，agent 会写入记忆文件并在 MEMORY.md 登记索引。",
+    importContentLabel: "要记住的内容或来源",
+    importContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
+    /** Prefilled draft for the import-via-chat flow; the modal appends the required content after the trailing label. */
+    importPromptLead: (dir: string): string => `请把下面的内容整理为记忆，保存到 ${dir}`,
+    importPromptTail:
+      "若是文件路径或链接，先读取原文再提炼。每条记忆写成一个带 frontmatter 的 markdown 文件，并在该目录 MEMORY.md 中登记索引行。\n内容：",
     view: "查看",
     edit: "编辑",
     editTitle: "编辑记忆",

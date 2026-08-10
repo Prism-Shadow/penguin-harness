@@ -479,6 +479,8 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
+  /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
+  memoryCount: number;
 }
 
 export interface AgentsResponse {

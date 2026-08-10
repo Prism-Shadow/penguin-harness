@@ -4,12 +4,12 @@
  * its `.workspace` path, newest activity first).
  *
  * The tab is read + delete only, matching the API: a memory's content is the model's document,
- * so "edit" opens a modal first — the requirement field and a live preview of the generated
- * prompt, the same shape as the skill import modal — and then jumps to a new chat with this
- * Agent and the prompt as the prefilled draft (the same draft-cache route). For a Workspace
- * memory the draft also pins that Workspace, so the editing Session is injected with the very
- * index it is about to change. Deleting confirms first and also drops the file's MEMORY.md
- * index lines (server-side).
+ * so both "edit" and each scope header's "import" open a bridge modal first — a text field and
+ * a live preview of the generated prompt, the same shape as the skill import modal — and then
+ * jump to a new chat with this Agent and the prompt as the prefilled draft (the same
+ * draft-cache route). For a Workspace scope the draft also pins that Workspace, so the Session
+ * is injected with the very index it is about to change. Deleting confirms first and also
+ * drops the file's MEMORY.md index lines (server-side).
  *
  * The switch writes immediately rather than joining a tab-level Save, so turning Memory off
  * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
@@ -34,17 +34,49 @@ import { Switch } from "../../components/ui/switch";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Chevron } from "../../components/ui/chevron";
 import { Drawer } from "../../components/ui/drawer";
+import { Sheet, type SheetSnap } from "../../components/ui/sheet";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { buildMemoryEditPrompt } from "./memory-edit-source";
+import { buildMemoryEditPrompt, buildMemoryImportPrompt } from "./memory-edit-source";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {
   return content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
+
+/** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
+
+/**
+ * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
+ * the chat draft cache: userId in the key against cross-account leaks, tolerant reads, silent
+ * best-effort writes). Only collapsed keys are stored, so new scopes start expanded.
+ */
+const collapsedStoreKey = (userId: string, projectId: string, agentId: string): string =>
+  `penguin.memoryCollapsed.${userId}.${projectId}.${agentId}`;
+
+function readCollapsedScopes(key: string | null): Set<string> {
+  if (!key) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((s): s is string => typeof s === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsedScopes(key: string | null, collapsed: ReadonlySet<string>): void {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...collapsed]));
+  } catch {
+    // Quota / private browsing: the collapse state just won't survive the visit.
+  }
 }
 
 /** Badge tone per topic type (unknown/missing types render no badge at all). */
@@ -88,7 +120,8 @@ export function MemoryTab({
   // Tab-level error is the initial load failure only; actions report via toast.
   const [error, setError] = useState<string | null>(null);
   const [switchBusy, setSwitchBusy] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const collapseKey = userId && projectId ? collapsedStoreKey(userId, projectId, agentId) : null;
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => readCollapsedScopes(collapseKey));
   const [memoryPrompt, setMemoryPrompt] = useState("");
   const [workspacePrompt, setWorkspacePrompt] = useState("");
   const mainPromptRef = useRef<HTMLTextAreaElement>(null);
@@ -96,10 +129,38 @@ export function MemoryTab({
   // Chip clicks steal focus, so track the last-focused prompt field instead of the current one.
   const [lastPromptField, setLastPromptField] = useState<"main" | "workspace">("main");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
+  // Open flag and content are separate: the Sheet animates out on close, and nulling the
+  // content with it would empty the panel mid-exit. The stale content is simply kept.
+  const [viewOpen, setViewOpen] = useState(false);
   const [viewing, setViewing] = useState<(Selected & { content: string }) | null>(null);
   const [editing, setEditing] = useState<Selected | null>(null);
   const [editRequirement, setEditRequirement] = useState("");
+  const [importing, setImporting] = useState<MemoryScopeInfo | null>(null);
+  const [importContent, setImportContent] = useState("");
   const [removing, setRemoving] = useState<Selected | null>(null);
+  // ≥1024px the view opens as a right Drawer, below as a bottom Sheet — same live-updating
+  // breakpoint as the chat page's panels; the two are mounted mutually exclusively.
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
+  const [sheetSnap, setSheetSnap] = useState<SheetSnap>("half");
+
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  // The collapse state follows its storage slot (login/project switches swap the key in place).
+  useEffect(() => {
+    setCollapsed(readCollapsedScopes(collapseKey));
+  }, [collapseKey]);
+
+  const toggleCollapsed = (scopeKey: string) => {
+    const next = new Set(collapsed);
+    if (!next.delete(scopeKey)) next.add(scopeKey);
+    writeCollapsedScopes(collapseKey, next);
+    setCollapsed(next);
+  };
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -115,6 +176,15 @@ export function MemoryTab({
       setEnabled(overview.enabled);
       setTemplateHasMemory(overview.templateHasMemory);
       setMemoryDir(overview.memoryDir);
+      // Stored collapse keys for scopes that no longer exist are pruned on sight, so the
+      // entry doesn't linger forever in localStorage.
+      const live = new Set(overview.scopes.map((s) => s.scopeKey));
+      setCollapsed((prev) => {
+        const next = new Set([...prev].filter((k) => live.has(k)));
+        if (next.size === prev.size) return prev;
+        writeCollapsedScopes(collapseKey, next);
+        return next;
+      });
       // Files are the source of truth and each scope is one request; fetch them in parallel.
       setGroups(
         await Promise.all(
@@ -135,7 +205,7 @@ export function MemoryTab({
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, collapseKey]);
 
   useEffect(() => {
     void load();
@@ -216,7 +286,9 @@ export function MemoryTab({
     if (!projectId) return;
     try {
       const res = await api.getMemoryFile(projectId, agentId, scope.scopeKey, file.name);
+      setSheetSnap("half"); // Every mobile open starts at the browsing height, like the chat panels.
       setViewing({ scope, file: res.file, content: res.content });
+      setViewOpen(true);
     } catch (e) {
       toastError(apiErrorText(e));
     }
@@ -225,9 +297,9 @@ export function MemoryTab({
   const memoryFilePath = (scope: MemoryScopeInfo, file: MemoryFileInfo) =>
     `${memoryDir}/${scope.scopeKey}/${file.name}`;
 
-  /** Opens the edit modal (closing the view drawer if it is up): requirement field + prompt preview, then the chat jump. */
+  /** Opens the edit modal (closing the view panel if it is up): requirement field + prompt preview, then the chat jump. */
   const openEditor = (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
-    setViewing(null);
+    setViewOpen(false);
     setEditRequirement("");
     setEditing({ scope, file });
   };
@@ -248,20 +320,19 @@ export function MemoryTab({
   };
 
   /**
-   * The edit-via-chat jump: prefill the draft (merging over what is already cached, clearing a
-   * stale `/agent` handoff chip that would forward the prompt to a different Agent), pin this
-   * Agent — and for a Workspace memory pin that Workspace too, so the editing Session reads the
-   * index it is editing.
+   * The bridge-to-chat jump shared by edit and import: prefill the draft (merging over what is
+   * already cached, clearing a stale `/agent` handoff chip that would forward the prompt to a
+   * different Agent), pin this Agent — and for a Workspace scope pin that Workspace too, so the
+   * Session reads the very index it is about to change.
    */
-  const openEditChat = () => {
-    if (!editing || !userId || !projectId) return;
-    const { scope } = editing;
+  const openChatWithDraft = (text: string, workspacePath: string | undefined) => {
+    if (!userId || !projectId) return;
     const key = draftKey(userId, projectId);
     saveDraft(key, {
       ...loadDraft(key),
       agentId,
-      text: editPrompt,
-      ...(scope.workspacePath !== undefined ? { workspace: scope.workspacePath } : {}),
+      text,
+      ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
       skills: [],
       handoffAgentId: undefined,
     });
@@ -269,9 +340,34 @@ export function MemoryTab({
     navigate(`/chat/${DRAFT_SESSION_ID}`, {
       state: {
         agentId,
-        ...(scope.workspacePath !== undefined ? { workspace: scope.workspacePath } : {}),
+        ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
       },
     });
+  };
+
+  const openEditChat = () => {
+    if (editing) openChatWithDraft(editPrompt, editing.scope.workspacePath);
+  };
+
+  /** Opens the import modal for one scope: content empty, actions disabled until it is filled. */
+  const openImport = (scope: MemoryScopeInfo) => {
+    setImportContent("");
+    setImporting(scope);
+  };
+
+  const importPrompt = importing
+    ? buildMemoryImportPrompt(`${memoryDir}/${importing.scopeKey}`, importContent)
+    : "";
+
+  const copyImportPrompt = () => {
+    void navigator.clipboard
+      .writeText(importPrompt)
+      .then(() => toastSuccess(S.memory.editCopied))
+      .catch(() => toastError(S.common.unknownError));
+  };
+
+  const openImportChat = () => {
+    if (importing) openChatWithDraft(importPrompt, importing.workspacePath);
   };
 
   const confirmRemove = async () => {
@@ -281,7 +377,7 @@ export function MemoryTab({
     try {
       await api.deleteMemoryFile(projectId, agentId, target.scope.scopeKey, target.file.name);
       toastSuccess(S.memory.deleteDone);
-      if (viewing && viewing.file.name === target.file.name) setViewing(null);
+      if (viewing && viewing.file.name === target.file.name) setViewOpen(false);
       await load();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -329,6 +425,37 @@ export function MemoryTab({
     </li>
   );
 
+  /** Metadata + rendered body of the memory in view, shared by the Drawer and the Sheet. */
+  const viewMeta = viewing && (
+    <>
+      <div className="flex items-center gap-2.5">
+        {viewing.file.type !== undefined && (
+          <Badge tone={TYPE_TONES[viewing.file.type]}>{S.memory.types[viewing.file.type]}</Badge>
+        )}
+        <span className="text-xs text-gray-400 dark:text-gray-500">
+          {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
+        </span>
+      </div>
+      {viewing.file.description && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">{viewing.file.description}</p>
+      )}
+      <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
+        <Md text={bodyWithoutFrontmatter(viewing.content)} />
+      </div>
+    </>
+  );
+
+  const viewActions = viewing && (
+    <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+      <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
+        {S.memory.edit}
+      </Button>
+      <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
+        {S.memory.delete}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="space-y-5">
       <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{S.memory.desc}</p>
@@ -358,34 +485,34 @@ export function MemoryTab({
                 key={scope.scopeKey}
                 className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
               >
-                {/* Group header (same convention as the skill library groups): the whole row toggles collapse. */}
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() =>
-                    setCollapsed((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(scope.scopeKey)) next.delete(scope.scopeKey);
-                      else next.add(scope.scopeKey);
-                      return next;
-                    })
-                  }
-                  className="flex w-full items-center gap-2.5 bg-gray-50 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
-                >
-                  <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    {scopeTitle(scope)}
-                  </span>
-                  {scope.kind === "workspace" && scope.workspacePath !== undefined && (
-                    <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
-                      {scope.workspacePath}
+                {/* Group header (same convention as the skill library groups): the row toggles
+                    collapse, with the Import button a sibling — a real <button> cannot nest
+                    another, so the header is a flex pair rather than one full-width button. */}
+                <div className="flex w-full items-center bg-gray-50 pr-2.5 dark:bg-gray-900/60">
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    onClick={() => toggleCollapsed(scope.scopeKey)}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800/60"
+                  >
+                    <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      {scopeTitle(scope)}
                     </span>
-                  )}
-                  <span className="min-w-0 flex-1" />
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                    {S.memory.itemCount(files.length)}
-                  </span>
-                  <Chevron open={open} className="text-gray-400" />
-                </button>
+                    {scope.kind === "workspace" && scope.workspacePath !== undefined && (
+                      <span className="min-w-0 truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                        {scope.workspacePath}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1" />
+                    <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                      {S.memory.itemCount(files.length)}
+                    </span>
+                    <Chevron open={open} className="text-gray-400" />
+                  </button>
+                  <Button size="sm" className="ml-2 shrink-0" onClick={() => openImport(scope)}>
+                    {S.memory.import}
+                  </Button>
+                </div>
                 <div
                   className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
                 >
@@ -474,46 +601,41 @@ export function MemoryTab({
 
       {saveConfirm}
 
-      <Drawer
-        open={viewing !== null}
-        side="right"
-        title={viewing?.file.title ?? ""}
-        onClose={() => setViewing(null)}
-        widthClass="max-w-lg"
-      >
-        {viewing && (
-          <div className="flex h-full flex-col">
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                {viewing.file.type !== undefined && (
-                  <Badge tone={TYPE_TONES[viewing.file.type]}>
-                    {S.memory.types[viewing.file.type]}
-                  </Badge>
-                )}
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
-                </span>
-              </div>
-              {viewing.file.description && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {viewing.file.description}
-                </p>
-              )}
-              <div className="md-body border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
-                <Md text={bodyWithoutFrontmatter(viewing.content)} />
-              </div>
+      {/* The view: a right Drawer on desktop, a bottom Sheet below the breakpoint (the same split
+          as the chat page's panels — Sheet brings the grab handle, snap points and swipe-down).
+          Mounted mutually exclusively; the metadata + body block is shared, only the action row's
+          placement differs (pinned footer vs. flowing after the content the Sheet scrolls). */}
+      {isDesktop ? (
+        <Drawer
+          open={viewOpen}
+          side="right"
+          title={viewing?.file.title ?? ""}
+          onClose={() => setViewOpen(false)}
+          widthClass="max-w-lg"
+        >
+          {viewing && (
+            <div className="flex h-full flex-col">
+              <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">{viewMeta}</div>
+              {viewActions}
             </div>
-            <div className="flex shrink-0 justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
-              <Button size="sm" onClick={() => openEditor(viewing.scope, viewing.file)}>
-                {S.memory.edit}
-              </Button>
-              <Button size="sm" variant="danger" onClick={() => setRemoving(viewing)}>
-                {S.memory.delete}
-              </Button>
-            </div>
-          </div>
-        )}
-      </Drawer>
+          )}
+        </Drawer>
+      ) : (
+        <Sheet
+          open={viewOpen}
+          snap={sheetSnap}
+          onSnapChange={setSheetSnap}
+          title={viewing?.file.title ?? ""}
+          onClose={() => setViewOpen(false)}
+        >
+          {viewing && (
+            <>
+              <div className="space-y-3 px-4 py-3">{viewMeta}</div>
+              {viewActions}
+            </>
+          )}
+        </Sheet>
+      )}
 
       <Modal
         open={editing !== null}
@@ -548,6 +670,53 @@ export function MemoryTab({
                 {S.memory.editCopyPrompt}
               </Button>
               <Button size="sm" variant="primary" onClick={openEditChat}>
+                {S.memory.editOpenChat}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Import bridge modal: the edit modal's shape, but the content field is required — the
+          prompt is meaningless without it, so both actions stay disabled until it is filled. */}
+      <Modal
+        open={importing !== null}
+        title={S.memory.importTitle}
+        onClose={() => setImporting(null)}
+        widthClass="sm:max-w-lg"
+      >
+        {importing && (
+          <div className="space-y-2.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
+            <p className="break-all font-mono text-[11px] text-gray-400 dark:text-gray-500">
+              {`${memoryDir}/${importing.scopeKey}`}
+            </p>
+            <Textarea
+              label={S.memory.importContentLabel}
+              size="sm"
+              rows={4}
+              value={importContent}
+              onChange={(e) => setImportContent(e.target.value)}
+              placeholder={S.memory.importContentPlaceholder}
+            />
+            <Textarea
+              label={S.memory.editPromptLabel}
+              size="sm"
+              rows={6}
+              readOnly
+              value={importPrompt}
+              className="text-gray-600 dark:text-gray-300"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" disabled={importContent.trim() === ""} onClick={copyImportPrompt}>
+                {S.memory.editCopyPrompt}
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={importContent.trim() === ""}
+                onClick={openImportChat}
+              >
                 {S.memory.editOpenChat}
               </Button>
             </div>

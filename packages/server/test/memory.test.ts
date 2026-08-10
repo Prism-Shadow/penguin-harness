@@ -273,6 +273,20 @@ describe("memory api", () => {
     expect(after.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
   });
 
+  it("reports the memory count on the Agent list, summed across scopes minus the indexes", async () => {
+    await fs.writeFile(path.join(wsDir, "testing-conventions.md"), TOPIC, "utf8");
+    await fs.writeFile(path.join(wsDir, MEMORY_INDEX_FILENAME), "- [t](t.md) — hook\n", "utf8");
+    const userDir = memoryScopeDir(t.root, projectId, "default_agent", USER_SCOPE_KEY);
+    await fs.mkdir(userDir, { recursive: true });
+    await fs.writeFile(path.join(userDir, "prefers-pnpm.md"), "---\nname: p\n---\nx\n", "utf8");
+
+    const body = (await (await owner.get(`/api/projects/${projectId}/agents`)).json()) as {
+      agents: { agentId: string; memoryCount: number }[];
+    };
+    const agent = body.agents.find((a) => a.agentId === "default_agent");
+    expect(agent?.memoryCount).toBe(2);
+  });
+
   it("404s for a non-member on every Memory route", async () => {
     expect((await outsider.get(memoryPath)).status).toBe(404);
     expect((await outsider.post(`${memoryPath}/template-placeholder`, {})).status).toBe(404);
