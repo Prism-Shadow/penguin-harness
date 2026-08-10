@@ -22,6 +22,27 @@ function fixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
   return { name: "fx", config: { command: process.execPath, args: [FIXTURE], ...extra } };
 }
 
+/**
+ * Removes a test dir, retrying transient Windows locks: the dir is the stdio server child's
+ * cwd, `dispose()` kills that child fire-and-forget, and Windows keeps a directory locked
+ * (EBUSY/EPERM on rmdir) while it is any live process's working directory — the lock lifts
+ * once the child finishes exiting. A genuinely stuck dir still fails, one deadline later.
+ */
+async function rmEventually(dir: string, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      const transient = code === "EBUSY" || code === "ENOTEMPTY" || code === "EPERM";
+      if (!transient || Date.now() > deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+}
+
 async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
   const out: OmniMessage[] = [];
   for await (const msg of gen) out.push(msg);
@@ -105,8 +126,8 @@ describe("MCP over stdio through Environment", () => {
 
   afterAll(async () => {
     env.dispose();
-    await rm(tmp, { recursive: true, force: true });
-  });
+    await rmEventually(tmp);
+  }, 30_000);
 
   it("lists discovered tools under prefixed names with their schemas", async () => {
     const tools = await env.listTools();
@@ -182,8 +203,8 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
   });
 
   afterAll(async () => {
-    await rm(tmp, { recursive: true, force: true });
-  });
+    await rmEventually(tmp);
+  }, 30_000);
 
   function makeEnv(extra: Record<string, unknown>): Environment {
     return new Environment({
@@ -291,7 +312,7 @@ describe("MCP over Streamable HTTP", () => {
       expect(seenHeaders.every((h) => h["x-penguin-test"] === "yes")).toBe(true);
     } finally {
       env.dispose();
-      await rm(tmp, { recursive: true, force: true });
+      await rmEventually(tmp);
     }
   });
 });
