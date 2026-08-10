@@ -63,12 +63,6 @@ const CLIENT_INFO = { name: "penguin-harness", version: "0.2.1" };
 export interface McpToolProviderOptions {
   /** Session Workspace: the default working directory for stdio server processes. */
   workspaceDir?: string;
-  /**
-   * Agent vault variables: injected into stdio server process environments (over the SDK's
-   * safe inherited defaults, under the entry's own `env`) so servers can read their secrets
-   * without the YAML having to carry them.
-   */
-  vault?: Record<string, string>;
   /** Warning sink; defaults to a `[penguin]`-prefixed stderr line. */
   warn?: (message: string) => void;
 }
@@ -148,7 +142,6 @@ export class McpToolProvider {
   private readonly servers: ResolvedMCPServer[];
   private readonly configWarnings: string[];
   private readonly workspaceDir: string | undefined;
-  private readonly vault: Record<string, string> | undefined;
   private readonly warn: (message: string) => void;
   /** Single-flight connect+discovery; resolved results live in the fields below. */
   private ensurePromise: Promise<void> | null = null;
@@ -165,7 +158,6 @@ export class McpToolProvider {
     this.servers = resolved.servers;
     this.configWarnings = resolved.warnings;
     this.workspaceDir = options?.workspaceDir;
-    this.vault = options?.vault;
     this.warn = options?.warn ?? ((message) => process.stderr.write(`[penguin] ${message}\n`));
   }
 
@@ -242,8 +234,10 @@ export class McpToolProvider {
       const stdio = new StdioClientTransport({
         command: t.command,
         args: t.args,
-        // Safe inherited defaults < Agent vault < the entry's own env.
-        env: { ...getDefaultEnvironment(), ...this.vault, ...t.env },
+        // Safe inherited defaults plus the entry's own env — and nothing else: the Agent
+        // vault is deliberately NOT injected into MCP server processes (unlike command
+        // subprocesses); a variable a server needs must be listed in the entry's env.
+        env: { ...getDefaultEnvironment(), ...t.env },
         ...(t.cwd !== undefined || this.workspaceDir !== undefined
           ? { cwd: t.cwd ?? this.workspaceDir }
           : {}),

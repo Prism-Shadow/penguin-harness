@@ -173,10 +173,12 @@ describe("MCP over stdio through Environment", () => {
     expect(final.images![0]).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("injects vault variables into the server process and defaults cwd to the Workspace", async () => {
+  it("keeps the vault out of the server process and defaults cwd to the Workspace", async () => {
     const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
     const [secret, cwd] = (final.output ?? "").split("|");
-    expect(secret).toBe("from-vault");
+    // The Environment was built with a vault, but MCP server processes must not see it —
+    // only the entry's own env reaches them (covered in the budgets block below).
+    expect(secret).toBe("");
     // realpath'd on both sides; case-insensitive to stay stable on Windows drives.
     expect(cwd!.toLowerCase()).toBe(tmp.toLowerCase());
   });
@@ -243,6 +245,16 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
       const final = finalPayload(await runTool(env, "mcp__fx__slow", { ms: 60_000 }, ac.signal));
       expect(final.stop_reason).toBe("aborted");
       expect(final.output).toContain("[interrupted: tool aborted by user]");
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("passes the entry's env variables to the server process", async () => {
+    const env = makeEnv({ env: { FIXTURE_SECRET: "from-entry" } });
+    try {
+      const final = finalPayload(await runTool(env, "mcp__fx__probe", {}));
+      expect(final.output).toMatch(/^from-entry\|/);
     } finally {
       env.dispose();
     }

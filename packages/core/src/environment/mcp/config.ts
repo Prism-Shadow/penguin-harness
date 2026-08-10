@@ -31,7 +31,7 @@ export type ResolvedMCPTransport =
       kind: "stdio";
       command: string;
       args: string[];
-      /** Extra environment variables for the server process (spread over the SDK's safe defaults and the Agent vault). */
+      /** Extra environment variables for the server process (spread over the SDK's safe defaults; the Agent vault is not injected). */
       env?: Record<string, string>;
       /** Server process working directory; defaults to the Session's Workspace. */
       cwd?: string;

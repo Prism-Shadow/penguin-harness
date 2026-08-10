@@ -253,7 +253,7 @@ tools:
 
 `tools.mcpServers` 的每个条目是 `{ name, config }`：`name` 限字母/数字/`_`/`-`（作为工具名前缀），`config` 描述 transport，支持三种：
 
-- `stdio`——本地进程（`command` / `args` / `env` / `cwd`）。进程环境按「SDK 安全继承环境 → Agent vault → 条目 `env`」叠加（后者覆盖前者），因此密钥放 vault 即可、无需写进 YAML；`cwd` 缺省为本次 Session 的 Workspace。
+- `stdio`——本地进程（`command` / `args` / `env` / `cwd`）。进程环境为 SDK 安全继承环境叠加条目 `env`（后者覆盖前者）；Agent vault **不**注入 MCP Server 进程（与命令子进程不同）——Server 需要的变量须在条目 `env` 中显式列出。`cwd` 缺省为本次 Session 的 Workspace。
 - `http`——Streamable HTTP，当前规范的远程 transport（`url` / `headers`）。
 - `sse`——旧版 HTTP+SSE，仅为未迁移的服务保留（`url` / `headers`）。
 

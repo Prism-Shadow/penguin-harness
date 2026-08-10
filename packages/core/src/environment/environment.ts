@@ -135,11 +135,12 @@ export class Environment implements EnvironmentInterface {
     }
     // MCP Servers bridge in lazily: construction only records the config; connecting and
     // tool discovery happen on the first listTools()/executeTool() (see McpToolProvider).
+    // The vault is deliberately not handed over: MCP server processes see only the SDK's
+    // safe env defaults plus the entry's own env.
     this.mcp =
       config.toolConfig.mcpServers.length > 0
         ? new McpToolProvider(config.toolConfig.mcpServers, {
             workspaceDir: config.workspaceDir,
-            ...(config.vault !== undefined ? { vault: config.vault } : {}),
           })
         : null;
   }
