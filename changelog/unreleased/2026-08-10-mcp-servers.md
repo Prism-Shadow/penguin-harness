@@ -18,6 +18,6 @@
 
 ## Web App
 
-The agent settings page's Tools tab turns the MCP Servers block from a read-only JSON dump into an editor: a JSON array of `{ name, config }` entries with local structural validation and value-level dirty detection, saved through the existing config route. The server-side PUT now validates every entry through the core transport resolver plus a duplicate-name check, so a broken entry is rejected with a precise 400 at save time instead of being warned-and-skipped at the next Session start.
+The agent settings page's Tools tab turns the MCP Servers block from a read-only JSON dump into vault-style management: a table of configured servers plus an Add/Edit form whose fields follow the chosen transport (stdio: command / args / env / cwd; http & sse: url / headers; shared budget fields), deletion behind a confirmation, and immediate persistence — unknown config keys of an entry survive editing. The server-side PUT now validates every entry through the core transport resolver plus a duplicate-name check, so a broken entry is rejected with a precise 400 at save time instead of being warned-and-skipped at the next Session start.
 
 Existing configs are unaffected: `mcpServers` defaulted to `[]` and the inner `config` object was never interpreted before, so no stored shape changes and no migration is involved. Docs: the tools, configuration and interfaces pages (zh + en) document the schema and semantics.
