@@ -48,7 +48,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整 Skill 库；
 - 其他 Agent 按需安装：经 Web 界面的 Skill 库页，或经 SDK;
-- 安装即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 一并拷贝。
+- 安装会递归复制库中 Skill 目录内的全部普通文件（包括 `SKILL.md`、`icon.svg`、脚本与其他资源），并保持相对路径。
 
 Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带原始 `skills/` 目录；运行时库内容的事实源同样是包内的 `skills/<name>/SKILL.md` 文件。
 

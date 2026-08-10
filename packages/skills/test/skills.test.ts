@@ -165,7 +165,10 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
-      { id: "office-productivity", skills: ["data-analysis", "firecrawl", "bento-slides"] },
+      {
+        id: "office-productivity",
+        skills: ["data-analysis", "firecrawl", "bento-slides", "word-docx"],
+      },
       { id: "software-development", skills: ["web-design", "software-engineering"] },
       {
         id: "ai-app-development",

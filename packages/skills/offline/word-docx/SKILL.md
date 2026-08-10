@@ -1,10 +1,10 @@
 ---
 name: word-docx
-description: Inspect and edit Microsoft Word .docx files fully offline with the bundled deterministic helper. Use for reading paragraphs, appending headings or paragraphs, and replacing ordinary text while preserving the source file.
+description: Inspect and edit Microsoft Word .docx files fully offline with bundled deterministic tooling. Use for reading paragraphs, appending headings or paragraphs, and replacing ordinary text while preserving the source file. When selected, first read this installed Skill's SKILL.md in full, then use only its bundled scripts/bootstrap.py helper; never write an ad-hoc DOCX editing script or install dependencies online.
 short_description: Inspect and edit DOCX files with the bundled offline helper.
 short_description_zh: 使用内置离线工具检查和编辑 DOCX 文件。
-version: 1
-updated: 2026-08-09T00:00:00Z
+version: 2
+updated: 2026-08-10T07:18:32Z
 ---
 
 # Word DOCX

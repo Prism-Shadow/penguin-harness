@@ -48,7 +48,7 @@ Installed Skills live under `agent_state/skills/<name>/` inside the Agent State.
 
 - The built-in Agent `default_agent` gets the whole library installed at initialization;
 - other Agents install on demand — through the Web UI's Skill library page, or via the SDK;
-- installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` alongside it.
+- installing recursively copies every regular file in the library Skill directory — including `SKILL.md`, `icon.svg`, scripts and other resources — while preserving relative paths.
 
 The library ships as the npm package `@prismshadow/penguin-skills`, carrying the raw `skills/` directory in the tarball; at runtime the package's `skills/<name>/SKILL.md` files are likewise the source of truth for library content.
 
