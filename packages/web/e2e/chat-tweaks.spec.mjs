@@ -66,9 +66,13 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   await expect(dlg().getByRole("button", { name: "Workspace" })).toBeVisible();
 
   // Switch to bind-Session mode → the searchable session dropdown replaces the id input.
-  // (The option click auto-waits for the Select's portal listbox to mount.)
-  await dlg().getByRole("button").filter({ hasText: "每次新建会话" }).first().click();
-  await page.getByRole("option").filter({ hasText: "绑定 Session" }).click();
+  // The Target control is a custom Select (accessible name = its label "目标"); its
+  // open-on-click is momentarily racy under full-page load, so retry the whole
+  // open-then-pick block rather than a single click (Playwright's toPass idiom).
+  await expect(async () => {
+    await dlg().getByRole("button", { name: "目标" }).click();
+    await page.getByRole("option", { name: "绑定 Session" }).click({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
   await page.getByRole("button", { name: "选择要绑定的 Session" }).click();
   const search = page.getByPlaceholder(/搜索标题/);
   await search.waitFor();
@@ -83,11 +87,15 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   );
 
   // --- Details card Session id + copy ---
+  // The id is selectable mono text with the copy button beside it (not inside it); the
+  // "已复制" feedback appears AT the button (text), and the "Session id" label is untouched.
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.locator('button[title="Session 信息"]').click();
+  await expect(page.getByText(sessionId, { exact: true }).first()).toBeVisible();
   const copyBtn = page.getByRole("button", { name: "复制 Session id" });
-  await expect(copyBtn).toContainText(sessionId);
   await copyBtn.click();
-  await expect(page.getByText("已复制", { exact: true }).first()).toBeVisible();
+  await expect(copyBtn).toContainText("已复制");
+  // The section label above the id is not the feedback target — it stays "Session id".
+  await expect(page.getByText("Session id", { exact: true })).toBeVisible();
 });

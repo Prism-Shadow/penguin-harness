@@ -31,10 +31,8 @@ import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { Dropdown } from "../../components/ui/dropdown";
-import { ChevronDown } from "../../components/ui/icons";
-import { controlBase, FieldError, FieldLabel } from "../../components/ui/field";
-import { sizeClass } from "../../components/ui/input";
+import { FormPicker } from "../../components/ui/form-picker";
+import { FieldError, FieldLabel } from "../../components/ui/field";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
@@ -111,7 +109,7 @@ function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
 }
 
 /**
- * Searchable Session picker for the bind-to-Session mode: a form-styled Dropdown (same
+ * Searchable Session picker for the bind-to-Session mode: the shared FormPicker (same
  * trigger look as ModelSelect/WorkspaceSelect) whose panel is the shared PickerList (search
  * box + keyboard nav). The Agent's full Session list is fetched once when the picker first
  * opens — un-paged, mirroring how the form one-shots getModels — so search covers every
@@ -157,25 +155,15 @@ function SessionSelect({
     : value || S.schedule.chooseSession;
 
   return (
-    <Dropdown
+    <FormPicker
       open={open}
       setOpen={setOpen}
+      label={label}
+      muted={!value}
+      title={value ? `${S.schedule.sessionId}：${value}` : S.schedule.chooseSession}
+      ariaLabel={S.schedule.chooseSession}
+      ariaHaspopup="listbox"
       menuClass="w-80 origin-top-left"
-      portal={{ direction: "down", align: "left" }}
-      button={
-        <button
-          type="button"
-          title={value ? `${S.schedule.sessionId}：${value}` : S.schedule.chooseSession}
-          aria-label={S.schedule.chooseSession}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm}`}
-        >
-          <span className={`min-w-0 flex-1 truncate ${value ? "" : "text-gray-400"}`}>{label}</span>
-          <ChevronDown className="text-gray-400" />
-        </button>
-      }
     >
       {sessions === null ? (
         <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>
@@ -206,7 +194,7 @@ function SessionSelect({
           )}
         />
       )}
-    </Dropdown>
+    </FormPicker>
   );
 }
 

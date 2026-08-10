@@ -15,10 +15,9 @@ import type { ModelInfo, ModelRefDto } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
-import { controlBase } from "../../components/ui/field";
+import { FormPicker } from "../../components/ui/form-picker";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown } from "../../components/ui/icons";
-import { noAutofill, sizeClass } from "../../components/ui/input";
+import { noAutofill } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   hasConfiguredKey,
@@ -258,9 +257,8 @@ export function ModelMenuList({
  * Two trigger variants, one menu:
  * - "pill" (default): the composer's compact toolbar button — collapses to the logo alone
  *   under the card's own `@container` query, menu right-aligned;
- * - "form": a full-width trigger styled like the dialog's Input/Select (controlBase + the
- *   sm size tier), label always visible (a container-less host's `@md:` variant would never
- *   match), menu left-aligned under the control.
+ * - "form": the shared FormPicker (full-width Input/Select-styled trigger, menu left-aligned
+ *   under the control), used by every dialog host.
  */
 export function ModelSelect({
   models,
@@ -289,74 +287,75 @@ export function ModelSelect({
       className="h-4 w-4 shrink-0"
     />
   );
+  const menu = (
+    <ModelMenuList
+      models={models}
+      value={value}
+      {...(defaultModel !== undefined ? { defaultModel } : {})}
+      onPick={(m) => {
+        onChange({ provider: m.provider, modelId: m.modelId });
+        setOpen(false);
+      }}
+    />
+  );
+  // Form: the shared full-width trigger (same look as Input/Select), used by every dialog picker.
+  if (variant === "form") {
+    return (
+      <FormPicker
+        open={open}
+        setOpen={setOpen}
+        leading={logo}
+        label={label}
+        title={`${S.chat.chooseModel}：${label}`}
+        ariaLabel={S.chat.chooseModel}
+        ariaHaspopup="listbox"
+        disabled={disabled || models.length === 0}
+        menuClass="w-max min-w-56 origin-top-left"
+      >
+        {menu}
+      </FormPicker>
+    );
+  }
+  // Pill: the composer's compact toolbar button — the panel's right edge docks to it; portal
+  // placement then clamps both edges inside the viewport.
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      // Pill: the panel's right edge docks to the button; portal placement then clamps both
-      // edges inside the viewport, so a w-max panel can no longer run off-screen on phones
-      // (it used to need a hand-tuned width clamp reserving the anchor offset). Form: the
-      // panel hangs under the full-width control's left edge, like the dialog's Select.
-      menuClass={`w-max min-w-56 ${variant === "form" ? "origin-top-left" : "origin-top-right"}`}
-      portal={{ direction: "down", align: variant === "form" ? "left" : "right" }}
+      menuClass="w-max min-w-56 origin-top-right"
+      portal={{ direction: "down", align: "right" }}
       button={
-        variant === "form" ? (
-          // Dialog form control: full width, same border/height/typography as Input/Select (sm tier).
-          <button
-            type="button"
-            title={`${S.chat.chooseModel}：${label}`}
-            aria-label={S.chat.chooseModel}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            disabled={disabled || models.length === 0}
-            onClick={() => setOpen(!open)}
-            className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm} disabled:cursor-not-allowed disabled:opacity-60`}
+        <button
+          type="button"
+          title={`${S.chat.chooseModel}：${label}`}
+          aria-label={S.chat.chooseModel}
+          disabled={disabled || models.length === 0}
+          onClick={() => setOpen(!open)}
+          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          {logo}
+          {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
+          <span className="hidden min-w-0 truncate @md:block">{label}</span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            className="shrink-0"
+            aria-hidden
           >
-            {logo}
-            <span className="min-w-0 flex-1 truncate">{label}</span>
-            <ChevronDown className="text-gray-400" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            title={`${S.chat.chooseModel}：${label}`}
-            aria-label={S.chat.chooseModel}
-            disabled={disabled || models.length === 0}
-            onClick={() => setOpen(!open)}
-            className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-          >
-            {logo}
-            {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
-            <span className="hidden min-w-0 truncate @md:block">{label}</span>
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="currentColor"
-              className="shrink-0"
-              aria-hidden
-            >
-              <path
-                d="M3 4.5l3 3 3-3"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        )
+            <path
+              d="M3 4.5l3 3 3-3"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
       }
     >
-      <ModelMenuList
-        models={models}
-        value={value}
-        {...(defaultModel !== undefined ? { defaultModel } : {})}
-        onPick={(m) => {
-          onChange({ provider: m.provider, modelId: m.modelId });
-          setOpen(false);
-        }}
-      />
+      {menu}
     </Dropdown>
   );
 }
