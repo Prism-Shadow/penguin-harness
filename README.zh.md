@@ -177,6 +177,12 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
+如需在 Linux x64 完全离线编辑 DOCX，请改装增强包（系统需预装带 `venv` 的 CPython 3.9–3.13）：
+
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
+```
+
 ### 🪟 Windows（在线安装，PowerShell）
 
 ```powershell
@@ -194,7 +200,7 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>
 
-每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 每个目标只附带一个安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包——同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 会为各目标附带一个标准安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包。Linux x64 还可选择带 DOCX Skill 和离线 Python wheels 的 `penguin-word-docx-linux-x64.tar.gz` 增强包。同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
 
 **Linux（arm64 机器换用 `penguin-linux-arm64.tar.gz`）：**
 
@@ -203,6 +209,8 @@ mkdir penguin-install
 tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
+
+如需离线编辑 DOCX，同样传输并解压 `penguin-word-docx-linux-x64.tar.gz`。该增强包要求 glibc Linux x64，并预装带 `venv` 的 CPython 3.9–3.13；Python 依赖会从包内 wheels 安装到 Agent 受控环境，不会写入系统 Python。
 
 **macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 

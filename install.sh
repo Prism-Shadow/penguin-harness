@@ -12,10 +12,12 @@
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
+#   --word-docx               install the DOCX-enhanced package (Linux x64 only)
 #
-# Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
-# installer bundle holding this script, the program payload (payload.tar.gz) and the payload's
-# checksum. Online installs download that bundle and verify it against its published .sha256;
+# Each Release attaches a standard penguin-<target>.tar.gz artifact for every target and a
+# separate penguin-word-docx-linux-x64.tar.gz flavor. Each is a shallow installer bundle holding
+# this script, the program payload (payload.tar.gz) and its checksum. Online installs download
+# the selected bundle and verify it against its published .sha256;
 # offline installs transfer the same single file, extract it once and run the bundled
 # ./install.sh, which installs the sibling payload with no network access. Both paths verify
 # the payload checksum sealed inside the bundle before anything is staged. Releases up to
@@ -36,6 +38,7 @@ VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
+WORD_DOCX=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
@@ -80,7 +83,7 @@ download_source_label() {
   esac
 }
 
-# --- Parse args (also passable via curl | sh -s -- --universal) ---
+# --- Parse args (also passable via curl | sh -s -- --universal/--word-docx) ---
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)
@@ -90,6 +93,10 @@ while [ $# -gt 0 ]; do
       ;;
     --universal)
       UNIVERSAL=1
+      shift
+      ;;
+    --word-docx)
+      WORD_DOCX=1
       shift
       ;;
     --archive)
@@ -102,6 +109,13 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+if [ "$WORD_DOCX" -eq 1 ] && [ "$UNIVERSAL" -eq 1 ]; then
+  fail "--word-docx cannot be combined with --universal"
+fi
+if [ "$WORD_DOCX" -eq 1 ] && [ -n "$ARCHIVE" ]; then
+  fail "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE"
+fi
 
 # --- Detect platform: Linux/Darwin x64/arm64; other platforms should use the universal package ---
 TARGET="universal"
@@ -118,7 +132,13 @@ if [ "$UNIVERSAL" -eq 0 ]; then
   esac
   TARGET="$os-$arch"
 fi
-ASSET="penguin-$TARGET.tar.gz"
+if [ "$WORD_DOCX" -eq 1 ]; then
+  [ "$TARGET" = "linux-x64" ] \
+    || fail "--word-docx currently supports Linux x64 only (detected $TARGET)"
+  ASSET="penguin-word-docx-linux-x64.tar.gz"
+else
+  ASSET="penguin-$TARGET.tar.gz"
+fi
 
 if [ -n "$ARCHIVE" ] && [ -n "$VERSION" ]; then
   fail "--archive/PENGUIN_ARCHIVE cannot be combined with --version/PENGUIN_VERSION"

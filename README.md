@@ -177,6 +177,12 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
+For fully offline DOCX editing on Linux x64, install the enhanced bundle instead (requires system CPython 3.9–3.13 with `venv`):
+
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
+```
+
 ### 🪟 Windows (online install, PowerShell)
 
 ```powershell
@@ -194,7 +200,7 @@ penguin web        # start the service and open http://127.0.0.1:7364
 <details>
 <summary><b>📴 Offline install (air-gapped machines)</b></summary>
 
-Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches exactly one package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package — and the same file serves online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches a standard package per target — Linux and macOS in x64 / arm64, Windows in x64, plus a runtime-less universal package. Linux x64 also has an optional `penguin-word-docx-linux-x64.tar.gz` flavor with the DOCX Skill and offline Python wheels. The same files serve online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
 
 **Linux (on arm64, use `penguin-linux-arm64.tar.gz`):**
 
@@ -203,6 +209,8 @@ mkdir penguin-install
 tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
+
+For offline DOCX editing, transfer and extract `penguin-word-docx-linux-x64.tar.gz` the same way. It requires glibc Linux x64 and system CPython 3.9–3.13 with `venv`; Python dependencies are installed from bundled wheels into the Agent-owned environment, not system Python.
 
 **macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64.tar.gz`):**
 

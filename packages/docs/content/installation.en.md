@@ -6,6 +6,7 @@ description: Install PenguinHarness via the install script, npm, or from source.
 ## Requirements
 
 - Linux / macOS (x64 or arm64): the install script ships platform tarballs with an official Node.js runtime bundled — no local Node needed.
+- DOCX-enhanced bundle: glibc Linux x64 and system CPython 3.9–3.13 with `venv`.
 - Windows 10 or later (x64) with PowerShell 5.1+: the Windows installer ships `penguin-win32-x64.zip` with the runtime bundled — no local Node needed.
 - Other platforms, or installing via npm / from source: system Node.js >= 24.
 
@@ -17,7 +18,13 @@ On Linux / macOS:
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz` — the canonical installer bundle, sealing the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer below, not by `--universal`).
+For the Linux x64 DOCX-enhanced bundle:
+
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
+```
+
+By default, the script downloads the matching standard `penguin-{linux,darwin}-{x64,arm64}.tar.gz` bundle, so existing install behavior is unchanged. `--word-docx` selects `penguin-word-docx-linux-x64.tar.gz`; it cannot be combined with `--universal` or `--archive` and is rejected on other platforms. Each bundle seals the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer below, not by `--universal`).
 
 The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`: it prefers an immutable OSS release directory only after that release has been completely uploaded and verified, then falls back to the matching GitHub Release if the metadata or download is unavailable. Set the variable to `oss` or `github` to force either source. Normal installer output names the source without printing the mirror's full URL.
 
@@ -43,7 +50,7 @@ penguin -v
 
 ### Offline install
 
-The same Release artifacts serve offline installation — there is no separate offline package. Download the file matching the target computer on a connected machine (`penguin-<target>.tar.gz`, or `penguin-win32-x64.zip` for Windows), transfer that one file, then extract it once.
+The same Release artifacts serve offline installation. Download the standard file matching the target computer on a connected machine (`penguin-<target>.tar.gz`, or `penguin-win32-x64.zip` for Windows), or choose the separate `penguin-word-docx-linux-x64.tar.gz` flavor for offline DOCX editing. Transfer that one file, then extract it once.
 
 On Windows, double-click `install.cmd`, or run:
 
@@ -67,11 +74,12 @@ The extracted bundle keeps the installer, the program payload (`payload.tar.gz` 
 | Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH) |
 | Version selection | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; the stable entry defaults to the latest Release, while a versioned Release installer defaults to its own tag |
 | Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss`, or `github`; auto prefers OSS and falls back to the same GitHub version |
+| DOCX profile | `--word-docx` selects the enhanced Linux x64 artifact; it cannot be combined with `--universal` or `--archive` |
 | Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`; accepts a Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy program archive with an adjacent `<file>.sha256` (renamed legacy files may use the platform asset's canonical `.sha256`) |
 | Integrity check | Always on: online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
 | Upgrade | Re-run the install script; files are swapped atomically |
 
-Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`.
+Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal` or `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx`.
 
 ### Windows specifics
 

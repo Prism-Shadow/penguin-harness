@@ -64,6 +64,21 @@ case "$(uname -s):$(uname -m)" in
   *) fail_test "unsupported fixture platform" ;;
 esac
 HOST_ASSET="penguin-$HOST_TARGET.tar.gz"
+HOST_UNAME_S="$(uname -s)"
+HOST_UNAME_M="$(uname -m)"
+
+# Installer profile tests need deterministic platform coverage even when this fixture is run on
+# macOS or arm64. Only install.sh sees this stub; payload creation above used the real host.
+cat > "$STUB_BIN/uname" <<'EOF'
+#!/bin/sh
+case "$1" in
+  -s) printf '%s\n' "${TEST_UNAME_S:?}" ;;
+  -m) printf '%s\n' "${TEST_UNAME_M:?}" ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$STUB_BIN/uname"
+export TEST_UNAME_S="$HOST_UNAME_S" TEST_UNAME_M="$HOST_UNAME_M"
 
 # --- Build fixture payloads and package them exactly like the release workflow. ---
 for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
@@ -76,6 +91,13 @@ printf '%s\n' '{"schemaVersion":1,"target":"win32-x64"}' > "$windows_payload/pac
 (cd "$WORK_DIR/windows" && zip -qr "$PAYLOAD_DIR/win32-x64.zip" penguin)
 
 sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
+
+# The DOCX flavor has the same Linux x64 manifest and installer-bundle shape. The dedicated
+# package script supplies its real Skill and wheels; this tiny fixture only exercises installer
+# routing and checksum behavior.
+WORD_DOCX_ASSET="penguin-word-docx-linux-x64.tar.gz"
+cp "$ARTIFACT_DIR/penguin-linux-x64.tar.gz" "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
+write_sha256 "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
 
 # Exercise the exact release-workflow stamping block against new, legacy, and inconsistent tag
 # sources. The workflow must keep this logic inline because it checks out the requested tag, which
@@ -376,17 +398,21 @@ run_online_case() {
   download_fallback_base_url="${7:-}"
   installer_path="${8:-$ROOT_DIR/install.sh}"
   source_mode="${9:-auto}"
+  installer_arg="${10:-}"
+  test_uname_s="${11:-$HOST_UNAME_S}"
+  test_uname_m="${12:-$HOST_UNAME_M}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
   : > "$CASE_LOG"
   set +e
   REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
     PENGUIN_DOWNLOAD_SOURCE="$source_mode" \
-    sh "$installer_path" >"$CASE_OUTPUT" 2>&1
+    sh "$installer_path" ${installer_arg:+"$installer_arg"} >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -405,6 +431,60 @@ grep -q "/latest.json\$" "$WORK_DIR/canonical.log" \
   || fail_test "unstamped installer did not resolve the OSS latest metadata"
 grep -q "/releases/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
   || fail_test "unstamped installer did not lock the resolved OSS release"
+
+run_online_case word-docx canonical "" success 3 "" "" "$ROOT_DIR/install.sh" auto \
+  --word-docx Linux x86_64
+grep -q "/releases/v0.0.0-test/$WORD_DOCX_ASSET\$" "$WORK_DIR/word-docx.log" \
+  || fail_test "--word-docx did not select the enhanced Linux x64 asset"
+
+run_online_case word-docx-fallback primary-network "" success 3 "" "" \
+  "$STAMPED_INSTALLER" auto --word-docx Linux x86_64
+grep -q "github.com/.*/releases/download/v0.0.0-test/$WORD_DOCX_ASSET\$" \
+  "$WORK_DIR/word-docx-fallback.log" \
+  || fail_test "--word-docx did not fall back to the same-version GitHub asset"
+
+run_online_case word-docx-outer-mismatch outer-sha-mismatch "" failure 3 "" "" \
+  "$ROOT_DIR/install.sh" auto --word-docx Linux x86_64
+
+run_profile_rejection() {
+  name="$1"
+  expected_message="$2"
+  test_uname_s="$3"
+  test_uname_m="$4"
+  shift 4
+  output="$WORK_DIR/$name.output"
+  requests="$WORK_DIR/$name.log"
+  : > "$requests"
+  set +e
+  REQUEST_LOG="$requests" MODE=canonical PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
+    HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$WORK_DIR/$name-install" \
+    PENGUIN_ARCHIVE="${TEST_ARCHIVE_ENV:-}" \
+    sh "$ROOT_DIR/install.sh" "$@" >"$output" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail_test "$name unexpectedly succeeded"
+  grep -Fq -- "$expected_message" "$output" \
+    || fail_test "$name did not report the expected refusal"
+  [ ! -s "$requests" ] || fail_test "$name accessed the network before refusing"
+}
+
+run_profile_rejection word-docx-universal \
+  "--word-docx cannot be combined with --universal" Linux x86_64 \
+  --word-docx --universal
+run_profile_rejection word-docx-archive \
+  "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+  --word-docx --archive "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
+TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$WORD_DOCX_ASSET" \
+  run_profile_rejection word-docx-archive-env \
+    "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+    --word-docx
+run_profile_rejection word-docx-darwin \
+  "--word-docx currently supports Linux x64 only" Darwin x86_64 \
+  --word-docx
+run_profile_rejection word-docx-linux-arm64 \
+  "--word-docx currently supports Linux x64 only" Linux aarch64 \
+  --word-docx
 
 run_online_case stamped canonical "" success 2 "" "" "$STAMPED_INSTALLER"
 [ "$(sed -n '1p' "$WORK_DIR/stamped.log")" = \
@@ -457,6 +537,9 @@ run_forwarder_case() {
   source="${4:-auto}"
   version="${5:-}"
   expected="${6:-success}"
+  forwarded_arg="${7:-}"
+  test_uname_s="${8:-$HOST_UNAME_S}"
+  test_uname_m="${9:-$HOST_UNAME_M}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
@@ -468,11 +551,13 @@ run_forwarder_case() {
   fi
   set +e
   REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
     PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" \
-    sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+    sh "$ROOT_DIR/packages/landing/public/install.sh" \
+      ${forwarded_arg:+"$forwarded_arg"} >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -515,5 +600,11 @@ run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
 [ "$(sed -n '2p' "$WORK_DIR/forwarder-pinned.log")" = \
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
   || fail_test "pinned installer did not keep the selected release version"
+
+run_forwarder_case forwarder-word-docx canonical 3 auto v0.0.0-test success \
+  --word-docx Linux x86_64
+[ "$(sed -n '2p' "$WORK_DIR/forwarder-word-docx.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$WORD_DOCX_ASSET" ] \
+  || fail_test "stable forwarder did not pass --word-docx to the release installer"
 
 echo "Installer bundle, offline, rollback and online tests passed."
