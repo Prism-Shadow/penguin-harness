@@ -1,12 +1,12 @@
 #!/bin/sh
-# Run the enhanced Linux x64 bundle in a read-only, network-disabled Docker container.
+# Run the Linux x64 offline-profile bundle in a read-only, network-disabled Docker container.
 # Pull/build the image before disconnecting; this script deliberately never pulls it.
 #
-# Usage: test-word-docx-offline.sh <penguin-word-docx-linux-x64.tar.gz> [python-image]
+# Usage: test-offline-bundle.sh <penguin-offline-linux-x64.tar.gz> [python-image]
 set -eu
 
 ROOT_DIR="$(CDPATH= cd "$(dirname "$0")/.." && pwd)"
-BUNDLE_INPUT="${1:?usage: test-word-docx-offline.sh <bundle.tar.gz> [python-image]}"
+BUNDLE_INPUT="${1:?usage: test-offline-bundle.sh <bundle.tar.gz> [python-image]}"
 IMAGE="${2:-python:3.13-slim}"
 case "$BUNDLE_INPUT" in
   /*) BUNDLE="$BUNDLE_INPUT" ;;
@@ -61,6 +61,18 @@ test -f "$library/scripts/docx_helper.py"
 test -f "$library/requirements.lock"
 test "$(find /tmp/penguin/lib/offline/word-docx/wheels -type f -name '*.whl' | wc -l | tr -d ' ')" = 7
 
+# Prove the installed launcher exports the package's resource root to its Node child. The direct
+# Python Helper checks below then reuse the observed value instead of assuming the path.
+/tmp/penguin/node/bin/node -e '
+  require("node:fs").writeFileSync(
+    "/tmp/offline-profile-probe.cjs",
+    "require(\"node:fs\").writeFileSync(\"/tmp/offline-root.txt\", process.env.PENGUIN_OFFLINE_ROOT || \"\");"
+  )
+'
+NODE_OPTIONS=--require=/tmp/offline-profile-probe.cjs \
+  /tmp/penguin/bin/penguin --version >/tmp/version.log
+test "$(cat /tmp/offline-root.txt)" = /tmp/penguin/lib/offline
+
 # Agent initialization happens before model resolution. A clean test home has no model, so the
 # command is expected to stop afterwards; its installed Skill tree must still be complete.
 PENGUIN_HOME=/tmp/data /tmp/penguin/bin/penguin run --message init >/tmp/init.log 2>&1 || true
@@ -73,7 +85,8 @@ if python3 -I -c 'import docx' >/dev/null 2>&1; then
   exit 1
 fi
 
-export PENGUIN_OFFLINE_ROOT=/tmp/penguin/lib/offline
+PENGUIN_OFFLINE_ROOT="$(cat /tmp/offline-root.txt)"
+export PENGUIN_OFFLINE_ROOT
 export PIP_TARGET=/tmp/escaped-pip-target
 export PIP_USER=1
 export PYTHONHOME=/tmp/invalid-python-home
@@ -151,5 +164,5 @@ if python3 -I -c 'import docx' >/dev/null 2>&1; then
   echo "error: python-docx leaked into the system Python" >&2
   exit 1
 fi
-echo "Offline word-docx acceptance passed (Docker --network none)."
+echo "Offline profile word-docx acceptance passed (Docker --network none)."
 CONTAINER

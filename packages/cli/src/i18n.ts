@@ -97,7 +97,13 @@ export interface Messages {
     /** `--release` naming a release older than the running one: allowed, but said out loud. */
     targetIsOlder(target: string): string;
     /** Pre-confirmation plan for a tarball install (mechanism, target, install dir, data-dir guarantee). */
-    planTarball(current: string, target: string, installDir: string, universal: boolean): string;
+    planTarball(
+      current: string,
+      target: string,
+      installDir: string,
+      universal: boolean,
+      offline: boolean,
+    ): string;
     /** Pre-confirmation plan for a global npm install. */
     planNpm(current: string, target: string, manager: string, command: string): string;
     confirm(): string;
@@ -113,8 +119,6 @@ export interface Messages {
     npmUnknownManager(globalRoot: string, target: string): string;
     /** Windows, tarball install: the official installer is a POSIX shell script. */
     windowsUnsupported(): string;
-    /** Offline DOCX bundle: the standard installer would silently remove its extra resources. */
-    wordDocxUpdateUnsupported(): string;
     /**
      * Windows, global install: `spawn` cannot run a `.cmd` shim without a shell, so hand the user
      * the exact command instead of failing generically.
@@ -351,11 +355,11 @@ const en: Messages = {
     upToDate: (current) => `Already on the latest version (${current}); nothing to do.`,
     targetIsOlder: (target) =>
       `${target} is older than the installed version — this would be a downgrade.`,
-    planTarball: (current, target, installDir, universal) =>
+    planTarball: (current, target, installDir, universal, offline) =>
       [
         `Upgrade ${current} -> ${target}`,
         `  how:         re-run the official installer (this install came from the tarball)`,
-        `  install dir: ${installDir}${universal ? " (universal package, no bundled Node runtime)" : ""}`,
+        `  install dir: ${installDir}${universal ? " (universal package, no bundled Node runtime)" : offline ? " (offline capability profile)" : ""}`,
         `  replaces:    bin, lib, web${universal ? "" : ", node"} — your data dir is NOT touched`,
       ].join("\n"),
     planNpm: (current, target, manager, command) =>
@@ -380,8 +384,6 @@ const en: Messages = {
       `This is a global install under ${globalRoot}, but the package manager that owns it could not be identified. Upgrade it yourself with that manager, e.g. \`npm install -g @prismshadow/penguin-cli@${target}\`.`,
     windowsUnsupported: () =>
       "The official installer is a POSIX shell script and does not run on Windows. Re-install from the GitHub Releases page, or use a global npm install instead.",
-    wordDocxUpdateUnsupported: () =>
-      "This install includes the word-docx offline bundle, which the standard automatic update would remove. Nothing was changed. Install the matching penguin-word-docx-linux-x64.tar.gz release manually.",
     windowsGlobalInstall: (command) =>
       [
         "On Windows, penguin cannot run your package manager for you: Node will not execute an npm/pnpm/yarn `.cmd` shim without a shell.",
@@ -581,11 +583,11 @@ const zh: Messages = {
     upgradeAvailable: (target) => `有可用升级：执行 \`penguin update\` 安装 ${target}。`,
     upToDate: (current) => `已是最新版本（${current}），无需升级。`,
     targetIsOlder: (target) => `${target} 低于当前已安装的版本——这将是一次降级。`,
-    planTarball: (current, target, installDir, universal) =>
+    planTarball: (current, target, installDir, universal, offline) =>
       [
         `升级 ${current} -> ${target}`,
         `  方式：    重新执行官方安装脚本（当前安装来自 tarball）`,
-        `  安装目录：${installDir}${universal ? "（universal 包，不含内置 Node 运行时）" : ""}`,
+        `  安装目录：${installDir}${universal ? "（universal 包，不含内置 Node 运行时）" : offline ? "（离线能力 profile）" : ""}`,
         `  将替换：  bin、lib、web${universal ? "" : "、node"}——数据目录不会被改动`,
       ].join("\n"),
     planNpm: (current, target, manager, command) =>
@@ -609,8 +611,6 @@ const zh: Messages = {
       `这是位于 ${globalRoot} 的全局安装，但无法确定是哪个包管理器安装的。请自行用该包管理器升级，例如 \`npm install -g @prismshadow/penguin-cli@${target}\`。`,
     windowsUnsupported: () =>
       "官方安装脚本是 POSIX shell 脚本，无法在 Windows 上运行。请从 GitHub Releases 页面重新安装，或改用 npm 全局安装。",
-    wordDocxUpdateUnsupported: () =>
-      "当前安装包含 word-docx 离线增强包，标准自动更新会将其删除，因此未做任何修改。请手动安装对应版本的 penguin-word-docx-linux-x64.tar.gz。",
     windowsGlobalInstall: (command) =>
       [
         "在 Windows 上，penguin 无法代你调用包管理器：Node 不会在没有 shell 的情况下执行 npm/pnpm/yarn 的 `.cmd` 包装脚本。",

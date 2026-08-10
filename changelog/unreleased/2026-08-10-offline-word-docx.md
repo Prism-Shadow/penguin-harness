@@ -1,6 +1,6 @@
-# Offline word-docx release bundle
+# Offline capability profile (initial word-docx support)
 
-Penguin now has a separate Linux x64 release bundle for deterministic DOCX inspection and basic editing in fully offline deployments, while the standard release and npm packages remain lightweight.
+Penguin now has a separate offline capability profile for every native release target: Linux and macOS x64/arm64, and Windows x64. The initial profile provides deterministic DOCX inspection and basic editing in fully offline deployments, while standard releases and npm packages remain lightweight. Future PPTX, PDF and other Skills extend this profile rather than creating product-specific Harness variants.
 
 ## Complete Skill resources
 
@@ -8,12 +8,12 @@ Library Skill installation now copies every regular file in the Skill directory 
 
 ## Offline dependencies and controlled environment
 
-The enhanced bundle adds the `word-docx` Skill, its fixed helper scripts, and hash-locked wheels for CPython 3.9–3.13 on Linux x64. On first use, the bootstrap installs those wheels without network access into the Agent-owned `shared_env/word-docx` virtual environment; it does not modify the system Python environment. A compatible system Python with `venv` remains a prerequisite.
+Each platform-specific offline bundle adds the `word-docx` Skill, its fixed helper scripts, and hash-locked wheels for CPython 3.9–3.13 on that target. On first use, the bootstrap installs those wheels without network access into the Agent-owned `shared_env/word-docx` virtual environment; it does not modify the system Python environment. A compatible system Python with `venv` remains a prerequisite; Linux requires glibc 2.17 or newer and does not support musl/Alpine.
 
 ## Safe basic editing
 
 The first release supports paragraph inspection, appending headings and paragraphs, and replacing ordinary text within a run. A document without a requested built-in heading style falls back to a bold ordinary paragraph. Editing always uses distinct input and output paths, refuses to overwrite an existing output, reopens the generated DOCX, verifies the requested content, and confirms that the source file did not change. The release workflow validates the separate artifact and runs its acceptance test in Docker with networking disabled.
 
-Because the standard updater cannot yet select the enhanced artifact, `penguin update` now detects an installed word-docx bundle and refuses the automatic replacement with a clear manual-update instruction instead of silently removing the offline resources.
+`penguin update` detects the installed `lib/offline/profile.json` marker and keeps selecting the same offline profile, so updates do not silently replace it with a standard package.
 
-The POSIX installer accepts `--word-docx` to select the enhanced Linux x64 artifact. The default command still selects the standard package, and incompatible platforms or combinations with `--universal` / `--archive` are rejected before download.
+The POSIX installer accepts `--offline`; Windows accepts `-Offline`. The default commands still select standard packages. The profile flag selects the matching native artifact and is rejected when combined with a universal or explicit local archive.

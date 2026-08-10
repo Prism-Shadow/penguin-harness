@@ -286,9 +286,6 @@ describe("classifyUpdateRun", () => {
     const unknown =
       "Cannot tell how this penguin was installed (running from /opt/penguin/cli.js), so it will not be replaced. Re-install with the official installer, or upgrade with the package manager you used.";
     expect(classifyUpdateRun(0, unknown).status).toBe("unsupported");
-    const wordDocx =
-      "This install includes the word-docx offline bundle, which the standard automatic update would remove. Nothing was changed. Install the matching penguin-word-docx-linux-x64.tar.gz release manually.";
-    expect(classifyUpdateRun(0, wordDocx).status).toBe("unsupported");
   });
 
   it("a clean exit without a refusal is updated and needs a restart (up-to-date included)", () => {

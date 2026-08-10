@@ -6,7 +6,7 @@ description: 通过安装脚本、npm 或源码安装 PenguinHarness。
 ## 系统要求
 
 - Linux / macOS（x64 或 arm64）：安装脚本提供内置官方 Node.js 运行时的平台压缩包，解压即用，无需本机安装 Node。
-- DOCX 增强包：glibc Linux x64，并预装带 `venv` 的 CPython 3.9–3.13。
+- 离线 profile：系统已安装带 `venv` 的 CPython 3.9–3.13；Linux 要求 glibc 2.17 或更高，不支持 musl/Alpine。
 - Windows 10 及以上（x64），PowerShell 5.1+：Windows 安装器提供内置运行时的 `penguin-win32-x64.zip`，同样无需本机安装 Node。
 - 其他平台，或通过 npm / 源码安装：需要系统 Node.js >= 24。
 
@@ -18,13 +18,13 @@ description: 通过安装脚本、npm 或源码安装 PenguinHarness。
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-Linux x64 安装 DOCX 增强包：
+安装与当前原生平台匹配的离线 profile（首期包含 `word-docx`）：
 
 ```bash
-curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
 ```
 
-默认仍按平台下载标准 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`，现有安装行为不变。`--word-docx` 会选择 `penguin-word-docx-linux-x64.tar.gz`；它不能与 `--universal` 或 `--archive` 组合，在其他平台也会被拒绝。每个包都封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用下方专属安装器，而不是 `--universal`）。
+默认仍按平台下载标准 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`，现有安装行为不变。`--offline` 会选择对应的 `penguin-offline-{linux,darwin}-{x64,arm64}.tar.gz`；它不能与 `--universal` 或 `--archive` 组合。每个包都封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用下方专属安装器，而不是 `--universal`）。
 
 稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
 
@@ -34,6 +34,12 @@ curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
 
 ```powershell
 irm https://penguin.ooo/install.ps1 | iex
+```
+
+安装 Windows x64 离线 profile：
+
+```powershell
+& ([scriptblock]::Create((irm https://penguin.ooo/install.ps1))) -Offline
 ```
 
 如需固定版本，先设置环境变量：
@@ -50,7 +56,7 @@ penguin -v
 
 ### 离线安装
 
-离线安装使用与在线安装相同的 Release 制品。先在可联网电脑上下载与目标电脑匹配的标准文件（`penguin-<target>.tar.gz`，Windows 为 `penguin-win32-x64.zip`）；如需离线编辑 DOCX，则选择独立的 `penguin-word-docx-linux-x64.tar.gz` 增强包。传输选中的一个文件后解压一次。
+离线安装使用与在线安装相同的 Release 制品。先在可联网电脑上下载与目标电脑匹配的文件：轻量标准 profile 使用 `penguin-<target>`，可选离线能力使用 `penguin-offline-<target>`；Linux/macOS 后缀为 `.tar.gz`，Windows 为 `.zip`。首期离线 profile 包含 `word-docx`，后续 Office/PDF Skill 继续扩展同一 profile。传输选中的一个文件后解压一次。
 
 Windows 上双击 `install.cmd`，或执行：
 
@@ -74,12 +80,12 @@ Linux / macOS 上执行：
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本选择 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；稳定入口默认安装最新 Release，版本化 Release 安装器默认安装自身 tag |
 | 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式优先 OSS，并按同一版本回退到 GitHub |
-| DOCX profile | `--word-docx` 选择 Linux x64 DOCX 增强包；不能与 `--universal` 或 `--archive` 组合 |
+| 离线 profile | `--offline` 选择匹配 Linux/macOS 平台的离线包；不能与 `--universal` 或 `--archive` 组合 |
 | 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版程序压缩包（重命名的旧版文件可用平台标准名称的 `.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
 
-脚本参数写在 `sh -s --` 之后，例如 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal` 或 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx`。
+脚本参数写在 `sh -s --` 之后，例如 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal` 或 `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline`。
 
 ### Windows 细节
 
@@ -88,6 +94,7 @@ Linux / macOS 上执行：
 | 安装目录 | 默认 `%USERPROFILE%\.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | `bin\penguin.cmd` 启动器（特意不带 `.ps1` 启动器——批处理不受 PowerShell 执行策略限制，默认 Restricted 策略下 `penguin` 也能直接运行）；安装器会把 `%USERPROFILE%\.penguin\bin` 加入**用户** Path 并广播变更——请**新开一个终端窗口**（已开终端的新标签页仍沿用旧 Path） |
 | 版本固定 | 运行安装器前设置 `$env:PENGUIN_VERSION = "vX.Y.Z"` |
+| 离线 profile | 使用 `-Offline` 执行稳定入口脚本块，选择 `penguin-offline-win32-x64.zip`；不能与 `-ArchivePath` 组合 |
 | 本地压缩包 | `$env:PENGUIN_ARCHIVE = "<file>"` 或 `-ArchivePath <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版 zip（重命名的旧版文件可用 `penguin-win32-x64.zip.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新运行安装器；只替换 `bin`/`lib`/`web`/`node`，绝不触碰 `data` |

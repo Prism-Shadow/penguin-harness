@@ -10,7 +10,8 @@
 #   the real bundles -> upload to the Release.
 #   Artifacts (one shape per target, serving online and offline installs alike):
 #   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz,
-#   penguin-word-docx-linux-x64.tar.gz, penguin-win32-x64.zip, their .sha256 files,
+#   penguin-offline-{linux,darwin}-{x64,arm64}.tar.gz, penguin-win32-x64.zip,
+#   penguin-offline-win32-x64.zip, their .sha256 files,
 #   SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple
 #   versions coexist. Releases up to v0.1.5 shipped raw program archives under the same names
 #   plus *-offline wrappers; the installers keep accepting that legacy layout for pinned versions.
@@ -287,10 +288,15 @@ jobs:
       - name: Package canonical installer bundles
         run: sh scripts/package-release-bundles.sh payloads dist-artifacts
 
-      # The standard bundles above remain lightweight. This separate Linux x64 flavor overlays
-      # only word-docx and its hash-locked CPython 3.9-3.13 wheels onto the same-revision bundle.
-      - name: Package word-docx enhanced bundle
-        run: sh scripts/package-word-docx-bundle.sh dist-artifacts/penguin-linux-x64.tar.gz dist-artifacts
+      # Standard bundles remain lightweight. Each native target also gets an offline profile
+      # derived from its same-revision standard bundle. The first profile capability is word-docx;
+      # later offline Skills are added to this overlay without creating another Harness variant.
+      - name: Package offline profile bundles
+        run: |
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            sh scripts/package-offline-bundle.sh "dist-artifacts/penguin-$target.tar.gz" dist-artifacts
+          done
+          sh scripts/package-offline-bundle.sh dist-artifacts/penguin-win32-x64.zip dist-artifacts
 
       # Validate the real release outputs, not only the small fixtures used by the script tests.
       # Every bundle must pass its outer checksum, stay flat with exactly the documented member
@@ -325,33 +331,6 @@ jobs:
             cmp "$PAYLOAD_DIR/$target.tar.gz" "$extracted/payload.tar.gz"
           done
 
-          # Standard Linux x64 stays free of word-docx resources; the separate enhanced bundle
-          # must contain the complete Skill, seven locked wheels, and its launcher environment.
-          if tar -tzf "$PAYLOAD_DIR/linux-x64.tar.gz" | grep -q 'word-docx'; then
-            echo "standard linux-x64 payload unexpectedly contains word-docx" >&2
-            exit 1
-          fi
-          bundle="penguin-word-docx-linux-x64.tar.gz"
-          (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
-          extracted="$WORK_DIR/word-docx-linux-x64"
-          mkdir -p "$extracted"
-          tar -xzf "$ARTIFACT_DIR/$bundle" -C "$extracted"
-          expected="$(printf '%s\n' install.sh payload.tar.gz payload.tar.gz.sha256 | LC_ALL=C sort)"
-          validate_layout "$extracted" "$expected"
-          [ -x "$extracted/install.sh" ]
-          (cd "$extracted" && sha256sum -c payload.tar.gz.sha256)
-          cmp "$PWD/install.sh" "$extracted/install.sh"
-          mkdir -p "$extracted/payload"
-          tar -xzf "$extracted/payload.tar.gz" -C "$extracted/payload"
-          skill="$extracted/payload/penguin/lib/node_modules/@prismshadow/penguin-skills/skills/word-docx"
-          [ -f "$skill/SKILL.md" ]
-          [ -f "$skill/requirements.lock" ]
-          [ -f "$skill/scripts/bootstrap.py" ]
-          [ -f "$skill/scripts/docx_helper.py" ]
-          wheels="$extracted/payload/penguin/lib/offline/word-docx/wheels"
-          [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 7 ]
-          grep -Fq 'PENGUIN_OFFLINE_ROOT' "$extracted/payload/penguin/bin/penguin"
-
           bundle="penguin-win32-x64.zip"
           (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
           extracted="$WORK_DIR/win32-x64"
@@ -364,14 +343,73 @@ jobs:
           cmp "$PWD/install.ps1" "$extracted/install.ps1"
           cmp "$PAYLOAD_DIR/win32-x64.zip" "$extracted/payload.zip"
 
-      - name: Test word-docx bundle fully offline
-        run: |
-          docker pull python:3.13-slim
-          sh scripts/test-word-docx-offline.sh \
-            dist-artifacts/penguin-word-docx-linux-x64.tar.gz \
-            python:3.13-slim
+          # Standard payloads never carry optional offline resources.
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            if tar -tzf "$PAYLOAD_DIR/$target.tar.gz" | grep -q '/offline/\|/word-docx/'; then
+              echo "standard $target payload unexpectedly contains offline resources" >&2
+              exit 1
+            fi
+          done
+          if unzip -Z1 "$PAYLOAD_DIR/win32-x64.zip" | grep -q '/offline/\|/word-docx/'; then
+            echo "standard win32-x64 payload unexpectedly contains offline resources" >&2
+            exit 1
+          fi
 
-      # Summary covers the six standard bundles and the word-docx enhanced bundle.
+          # Every native target has a matching offline profile containing the complete first
+          # capability (word-docx), exactly seven compatible wheels, and launcher configuration.
+          for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
+            extracted="$WORK_DIR/offline-$target"
+            mkdir -p "$extracted"
+            if [ "$target" = "win32-x64" ]; then
+              bundle="penguin-offline-$target.zip"
+              (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+              unzip -q "$ARTIFACT_DIR/$bundle" -d "$extracted"
+              expected="$(printf '%s\n' install.cmd install.ps1 payload.zip payload.zip.sha256 | LC_ALL=C sort)"
+              validate_layout "$extracted" "$expected"
+              (cd "$extracted" && sha256sum -c payload.zip.sha256)
+              mkdir -p "$extracted/payload"
+              unzip -q "$extracted/payload.zip" -d "$extracted/payload"
+              grep -Fq 'PENGUIN_OFFLINE_ROOT' "$extracted/payload/penguin/bin/penguin.cmd"
+            else
+              bundle="penguin-offline-$target.tar.gz"
+              (cd "$ARTIFACT_DIR" && sha256sum -c "$bundle.sha256")
+              tar -xzf "$ARTIFACT_DIR/$bundle" -C "$extracted"
+              expected="$(printf '%s\n' install.sh payload.tar.gz payload.tar.gz.sha256 | LC_ALL=C sort)"
+              validate_layout "$extracted" "$expected"
+              (cd "$extracted" && sha256sum -c payload.tar.gz.sha256)
+              mkdir -p "$extracted/payload"
+              tar -xzf "$extracted/payload.tar.gz" -C "$extracted/payload"
+              grep -Fq 'PENGUIN_OFFLINE_ROOT' "$extracted/payload/penguin/bin/penguin"
+            fi
+            profile="$extracted/payload/penguin/lib/offline/profile.json"
+            node -e 'const p=require(process.argv[1]); if(p.profile!=="offline"||p.target!==process.argv[2]||!p.capabilities.includes("word-docx")) process.exit(1)' "$profile" "$target"
+            skill="$extracted/payload/penguin/lib/node_modules/@prismshadow/penguin-skills/skills/word-docx"
+            [ -f "$skill/SKILL.md" ]
+            [ -f "$skill/requirements.lock" ]
+            [ -f "$skill/scripts/bootstrap.py" ]
+            [ -f "$skill/scripts/docx_helper.py" ]
+            wheels="$extracted/payload/penguin/lib/offline/word-docx/wheels"
+            [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 7 ]
+          done
+
+      - name: Test Linux x64 offline profile fully offline
+        run: |
+          for minor in 9 10 11 12 13; do
+            docker pull "python:3.$minor-slim"
+          done
+          pids=""
+          for minor in 9 10 11 12 13; do
+            sh scripts/test-offline-bundle.sh \
+              dist-artifacts/penguin-offline-linux-x64.tar.gz \
+              "python:3.$minor-slim" >"/tmp/word-docx-python-3.$minor.log" 2>&1 &
+            pids="$pids $!"
+          done
+          status=0
+          for pid in $pids; do wait "$pid" || status=1; done
+          for minor in 9 10 11 12 13; do cat "/tmp/word-docx-python-3.$minor.log"; done
+          exit "$status"
+
+      # Summary covers the six standard bundles and five native offline-profile bundles.
       - name: Generate SHA256SUMS
         run: |
           cd dist-artifacts

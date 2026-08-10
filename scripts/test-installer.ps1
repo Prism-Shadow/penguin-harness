@@ -21,6 +21,7 @@ $Fixture = @{
   Requests = [Collections.Generic.List[string]]::new()
   Mode = "canonical"
   GoodBundle = $null
+  GoodOfflineBundle = $null
   BadInnerBundle = $null
   LegacyArchive = $null
   Installer = $Installer
@@ -31,7 +32,11 @@ function Assert-True([bool]$Condition, [string]$Message) {
   if (-not $Condition) { throw "test failure: $Message" }
 }
 
-function New-FixtureArchive([string]$Name, [bool]$Fails = $false) {
+function New-FixtureArchive(
+  [string]$Name,
+  [bool]$Fails = $false,
+  [bool]$OfflineProfile = $false
+) {
   $SourceDir = Join-Path $WorkDir "$Name-source"
   $PenguinDir = Join-Path $SourceDir "penguin"
   New-Item -ItemType Directory -Path (Join-Path $PenguinDir "bin") -Force | Out-Null
@@ -46,6 +51,13 @@ function New-FixtureArchive([string]$Name, [bool]$Fails = $false) {
   "fixture" | Set-Content -LiteralPath (Join-Path $PenguinDir "lib\fixture.txt") -Encoding ascii
   @{ schemaVersion = 1; target = "win32-x64" } | ConvertTo-Json -Compress |
     Set-Content -LiteralPath (Join-Path $PenguinDir "package-manifest.json") -Encoding ascii
+  if ($OfflineProfile) {
+    $OfflineDir = Join-Path $PenguinDir "lib\offline"
+    New-Item -ItemType Directory -Path $OfflineDir -Force | Out-Null
+    @{ schemaVersion = 1; profile = "offline"; target = "win32-x64"; capabilities = @("word-docx") } |
+      ConvertTo-Json -Compress |
+      Set-Content -LiteralPath (Join-Path $OfflineDir "profile.json") -Encoding ascii
+  }
   $Archive = Join-Path $WorkDir "$Name.zip"
   Compress-Archive -Path $PenguinDir -DestinationPath $Archive -CompressionLevel Fastest
   $Hash = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash
@@ -103,6 +115,12 @@ function global:Invoke-WebRequest {
         default { Copy-Item -LiteralPath "$($f.GoodBundle).sha256" -Destination $OutFile }
       }
     }
+    "*/penguin-offline-win32-x64.zip.sha256" {
+      Copy-Item -LiteralPath "$($f.GoodOfflineBundle).sha256" -Destination $OutFile
+    }
+    "*/penguin-offline-win32-x64.zip" {
+      Copy-Item -LiteralPath $f.GoodOfflineBundle -Destination $OutFile
+    }
     "*/penguin-win32-x64.zip" {
       switch ($f.Mode) {
         "inner-sha-mismatch" { Copy-Item -LiteralPath $f.BadInnerBundle -Destination $OutFile }
@@ -120,13 +138,15 @@ function Invoke-OnlineCase(
   [string]$Version,
   [bool]$ShouldSucceed,
   [int]$ExpectedRequests,
-  [string]$InstallerPath = ""
+  [string]$InstallerPath = "",
+  [bool]$Offline = $false
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
   $InstallDir = Join-Path $WorkDir "$Name-install"
   $Arguments = @{ InstallDir = $InstallDir }
   if ($Version) { $Arguments.Version = $Version }
+  if ($Offline) { $Arguments.Offline = $true }
   if (-not $InstallerPath) { $InstallerPath = $Installer }
   $Succeeded = $true
   $Output = @()
@@ -143,14 +163,15 @@ function Invoke-ForwarderCase(
   [string]$Source,
   [int]$ExpectedRequests,
   [string]$Version = "",
-  [bool]$ShouldSucceed = $true
+  [bool]$ShouldSucceed = $true,
+  [bool]$Offline = $false
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
   $InstallDir = Join-Path $WorkDir "$Name-install"
-  if ($Version) {
+  if ($Version -or $Offline) {
     Remove-Item Env:\PENGUIN_ARCHIVE -ErrorAction SilentlyContinue
-    $env:PENGUIN_VERSION = $Version
+    if ($Version) { $env:PENGUIN_VERSION = $Version } else { Remove-Item Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue }
   } else {
     $env:PENGUIN_ARCHIVE = $Fixture.GoodBundle
     Remove-Item Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
@@ -161,7 +182,9 @@ function Invoke-ForwarderCase(
   $Forwarder = Join-Path $RepoRoot "packages\landing\public\install.ps1"
   $Output = @()
   $Succeeded = $true
-  try { $Output = @(& $Forwarder *>&1) } catch { $Succeeded = $false }
+  $Arguments = @{}
+  if ($Offline) { $Arguments.Offline = $true }
+  try { $Output = @(& $Forwarder @Arguments *>&1) } catch { $Succeeded = $false }
   Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result"
   Assert-True ($Fixture.Requests.Count -eq $ExpectedRequests) `
     "$Name made $($Fixture.Requests.Count) requests, expected $ExpectedRequests"
@@ -218,6 +241,21 @@ try {
   "$BadHash  penguin-win32-x64.zip" |
     Set-Content -LiteralPath "$($Fixture.BadInnerBundle).sha256" -Encoding ascii
 
+  $OfflineArchive = New-FixtureArchive "valid-offline" $false $true
+  $OfflineBundleDir = Join-Path $WorkDir "offline-bundle"
+  New-Item -ItemType Directory -Path $OfflineBundleDir | Out-Null
+  Copy-Item $OfflineArchive (Join-Path $OfflineBundleDir "payload.zip")
+  $OfflinePayloadHash = (Get-FileHash -LiteralPath (Join-Path $OfflineBundleDir "payload.zip") -Algorithm SHA256).Hash
+  "$OfflinePayloadHash  payload.zip" |
+    Set-Content -LiteralPath (Join-Path $OfflineBundleDir "payload.zip.sha256") -Encoding ascii
+  Copy-Item (Join-Path $RepoRoot "install.ps1"), (Join-Path $RepoRoot "install.cmd") $OfflineBundleDir
+  $Fixture.GoodOfflineBundle = Join-Path $WorkDir "penguin-offline-win32-x64.zip"
+  Compress-Archive -Path (Join-Path $OfflineBundleDir "*") `
+    -DestinationPath $Fixture.GoodOfflineBundle -CompressionLevel Fastest
+  $OfflineHash = (Get-FileHash $Fixture.GoodOfflineBundle -Algorithm SHA256).Hash
+  "$OfflineHash  penguin-offline-win32-x64.zip" |
+    Set-Content -LiteralPath "$($Fixture.GoodOfflineBundle).sha256" -Encoding ascii
+
   $Fixture.LegacyArchive = $GoodArchive
 
   # Model the release workflow's installer stamping without changing the source installer.
@@ -253,6 +291,12 @@ try {
     "unstamped installer did not lock the resolved OSS release"
   $Version = & (Join-Path $canonical.InstallDir "bin\penguin.cmd") --version
   Assert-True ($Version -eq "fixture-old") "canonical bundle was not installed"
+
+  $offline = Invoke-OnlineCase "offline-profile" "canonical" "" $true 3 "" $true
+  Assert-True ($offline.Requests[1] -like "*/releases/v0.0.0-test/penguin-offline-win32-x64.zip") `
+    "-Offline did not select the Windows x64 offline asset"
+  Assert-True (Test-Path -LiteralPath (Join-Path $offline.InstallDir "lib\offline\profile.json")) `
+    "offline profile marker was not installed"
 
   $stamped = Invoke-OnlineCase "stamped" "canonical" "" $true 2 $StampedInstaller
   Assert-True ($stamped.Requests[0] -eq "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/penguin-win32-x64.zip") `
@@ -320,7 +364,22 @@ try {
     "pinned forwarder did not request the versioned installer"
   Assert-True ($pinnedForwarder.Requests[1] -like "*/releases/v0.0.0-test/penguin-win32-x64.zip") `
     "pinned installer did not keep the selected release version"
+
+  $offlineForwarder = Invoke-ForwarderCase `
+    "forwarder-offline" "canonical" "auto" 3 "v0.0.0-test" $true $true
+  Assert-True ($offlineForwarder.Requests[1] -like "*/releases/v0.0.0-test/penguin-offline-win32-x64.zip") `
+    "stable forwarder did not pass -Offline to the release installer"
   Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
+
+  $env:PENGUIN_ARCHIVE = $Fixture.GoodBundle
+  $OfflineArchiveConflict = $false
+  try {
+    & $Installer -InstallDir (Join-Path $WorkDir "offline-conflict") -Offline *>&1 | Out-Null
+  } catch {
+    $OfflineArchiveConflict = $_.Exception.Message -match '-Offline cannot be combined'
+  }
+  Assert-True $OfflineArchiveConflict "-Offline unexpectedly accepted PENGUIN_ARCHIVE"
+  Remove-Item Env:\PENGUIN_ARCHIVE -ErrorAction SilentlyContinue
 
   Invoke-OnlineCase "outer-mismatch" "outer-sha-mismatch" "" $false 3 | Out-Null
   Invoke-OnlineCase "inner-mismatch" "inner-sha-mismatch" "" $false 3 | Out-Null

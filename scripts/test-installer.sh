@@ -92,12 +92,24 @@ printf '%s\n' '{"schemaVersion":1,"target":"win32-x64"}' > "$windows_payload/pac
 
 sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
 
-# The DOCX flavor has the same Linux x64 manifest and installer-bundle shape. The dedicated
-# package script supplies its real Skill and wheels; this tiny fixture only exercises installer
-# routing and checksum behavior.
-WORD_DOCX_ASSET="penguin-word-docx-linux-x64.tar.gz"
-cp "$ARTIFACT_DIR/penguin-linux-x64.tar.gz" "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
-write_sha256 "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
+# Tiny offline-profile fixtures exercise installer routing independently of the real release
+# packager, whose Skill and wheel contents have their own acceptance test.
+for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+  fixture_root="$WORK_DIR/offline-$target"
+  mkdir -p "$fixture_root/payload" "$fixture_root/bundle"
+  tar -xzf "$PAYLOAD_DIR/$target.tar.gz" -C "$fixture_root/payload"
+  mkdir -p "$fixture_root/payload/penguin/lib/offline"
+  printf '{"schemaVersion":1,"profile":"offline","target":"%s","capabilities":["word-docx"]}\n' \
+    "$target" > "$fixture_root/payload/penguin/lib/offline/profile.json"
+  tar -czf "$fixture_root/bundle/payload.tar.gz" -C "$fixture_root/payload" penguin
+  write_sha256 "$fixture_root/bundle/payload.tar.gz"
+  cp "$ROOT_DIR/install.sh" "$fixture_root/bundle/install.sh"
+  chmod +x "$fixture_root/bundle/install.sh"
+  asset="$ARTIFACT_DIR/penguin-offline-$target.tar.gz"
+  tar -czf "$asset" -C "$fixture_root/bundle" install.sh payload.tar.gz payload.tar.gz.sha256
+  write_sha256 "$asset"
+done
+OFFLINE_LINUX_X64_ASSET="penguin-offline-linux-x64.tar.gz"
 
 # Exercise the exact release-workflow stamping block against new, legacy, and inconsistent tag
 # sources. The workflow must keep this logic inline because it checks out the requested tag, which
@@ -432,19 +444,26 @@ grep -q "/latest.json\$" "$WORK_DIR/canonical.log" \
 grep -q "/releases/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
   || fail_test "unstamped installer did not lock the resolved OSS release"
 
-run_online_case word-docx canonical "" success 3 "" "" "$ROOT_DIR/install.sh" auto \
-  --word-docx Linux x86_64
-grep -q "/releases/v0.0.0-test/$WORD_DOCX_ASSET\$" "$WORK_DIR/word-docx.log" \
-  || fail_test "--word-docx did not select the enhanced Linux x64 asset"
+for spec in \
+  "offline-linux-x64 Linux x86_64 linux-x64" \
+  "offline-linux-arm64 Linux aarch64 linux-arm64" \
+  "offline-darwin-x64 Darwin x86_64 darwin-x64" \
+  "offline-darwin-arm64 Darwin arm64 darwin-arm64"; do
+  set -- $spec
+  run_online_case "$1" canonical "" success 3 "" "" "$ROOT_DIR/install.sh" auto \
+    --offline "$2" "$3"
+  grep -q "/releases/v0.0.0-test/penguin-offline-$4.tar.gz\$" "$WORK_DIR/$1.log" \
+    || fail_test "--offline did not select the $4 offline asset"
+done
 
-run_online_case word-docx-fallback primary-network "" success 3 "" "" \
-  "$STAMPED_INSTALLER" auto --word-docx Linux x86_64
-grep -q "github.com/.*/releases/download/v0.0.0-test/$WORD_DOCX_ASSET\$" \
-  "$WORK_DIR/word-docx-fallback.log" \
-  || fail_test "--word-docx did not fall back to the same-version GitHub asset"
+run_online_case offline-fallback primary-network "" success 3 "" "" \
+  "$STAMPED_INSTALLER" auto --offline Linux x86_64
+grep -q "github.com/.*/releases/download/v0.0.0-test/$OFFLINE_LINUX_X64_ASSET\$" \
+  "$WORK_DIR/offline-fallback.log" \
+  || fail_test "--offline did not fall back to the same-version GitHub asset"
 
-run_online_case word-docx-outer-mismatch outer-sha-mismatch "" failure 3 "" "" \
-  "$ROOT_DIR/install.sh" auto --word-docx Linux x86_64
+run_online_case offline-outer-mismatch outer-sha-mismatch "" failure 3 "" "" \
+  "$ROOT_DIR/install.sh" auto --offline Linux x86_64
 
 run_profile_rejection() {
   name="$1"
@@ -469,22 +488,19 @@ run_profile_rejection() {
   [ ! -s "$requests" ] || fail_test "$name accessed the network before refusing"
 }
 
-run_profile_rejection word-docx-universal \
-  "--word-docx cannot be combined with --universal" Linux x86_64 \
-  --word-docx --universal
-run_profile_rejection word-docx-archive \
-  "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
-  --word-docx --archive "$ARTIFACT_DIR/$WORD_DOCX_ASSET"
-TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$WORD_DOCX_ASSET" \
-  run_profile_rejection word-docx-archive-env \
-    "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
-    --word-docx
-run_profile_rejection word-docx-darwin \
-  "--word-docx currently supports Linux x64 only" Darwin x86_64 \
-  --word-docx
-run_profile_rejection word-docx-linux-arm64 \
-  "--word-docx currently supports Linux x64 only" Linux aarch64 \
-  --word-docx
+run_profile_rejection offline-universal \
+  "--offline cannot be combined with --universal" Linux x86_64 \
+  --offline --universal
+run_profile_rejection offline-archive \
+  "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+  --offline --archive "$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET"
+TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET" \
+  run_profile_rejection offline-archive-env \
+    "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+    --offline
+run_profile_rejection offline-unsupported-os \
+  "unsupported OS" FreeBSD x86_64 \
+  --offline
 
 run_online_case stamped canonical "" success 2 "" "" "$STAMPED_INSTALLER"
 [ "$(sed -n '1p' "$WORK_DIR/stamped.log")" = \
@@ -601,10 +617,10 @@ run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
   || fail_test "pinned installer did not keep the selected release version"
 
-run_forwarder_case forwarder-word-docx canonical 3 auto v0.0.0-test success \
-  --word-docx Linux x86_64
-[ "$(sed -n '2p' "$WORK_DIR/forwarder-word-docx.log")" = \
-  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$WORD_DOCX_ASSET" ] \
-  || fail_test "stable forwarder did not pass --word-docx to the release installer"
+run_forwarder_case forwarder-offline canonical 3 auto v0.0.0-test success \
+  --offline Linux x86_64
+[ "$(sed -n '2p' "$WORK_DIR/forwarder-offline.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$OFFLINE_LINUX_X64_ASSET" ] \
+  || fail_test "stable forwarder did not pass --offline to the release installer"
 
 echo "Installer bundle, offline, rollback and online tests passed."

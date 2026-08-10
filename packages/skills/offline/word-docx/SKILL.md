@@ -3,8 +3,8 @@ name: word-docx
 description: Inspect and edit Microsoft Word .docx files fully offline with bundled deterministic tooling. Use for reading paragraphs, appending headings or paragraphs, and replacing ordinary text while preserving the source file. When selected, first read this installed Skill's SKILL.md in full, then use only its bundled scripts/bootstrap.py helper; never write an ad-hoc DOCX editing script or install dependencies online.
 short_description: Inspect and edit DOCX files with the bundled offline helper.
 short_description_zh: 使用内置离线工具检查和编辑 DOCX 文件。
-version: 2
-updated: 2026-08-10T07:18:32Z
+version: 3
+updated: 2026-08-10T10:28:55Z
 ---
 
 # Word DOCX
@@ -17,20 +17,21 @@ network, generate another editing script, or edit DOCX XML directly.
 Require an existing `.docx` input, a concrete requested change, and a distinct new
 `.docx` output path. Ask only when one of these is missing.
 
-Set `SKILL_DIR` to the directory containing this `SKILL.md`. The enhanced package
+Set `SKILL_DIR` to the directory containing this `SKILL.md`. The offline profile
 supplies all Python packages but requires system CPython 3.9-3.13 with `venv`;
-report the bootstrap error if that prerequisite is absent. Run one command:
+report the bootstrap error if that prerequisite is absent. Set `PYTHON=python3`
+on Linux/macOS or `PYTHON=python` on Windows, then run one command:
 
 ```bash
-python3 -I "$SKILL_DIR/scripts/bootstrap.py" inspect --input "/absolute/input.docx"
+"$PYTHON" -I "$SKILL_DIR/scripts/bootstrap.py" inspect --input "/absolute/input.docx"
 
-python3 -I "$SKILL_DIR/scripts/bootstrap.py" append \
+"$PYTHON" -I "$SKILL_DIR/scripts/bootstrap.py" append \
   --input "/absolute/input.docx" \
   --output "/absolute/output.docx" \
   --heading "New heading" \
   --paragraph "New paragraph"
 
-python3 -I "$SKILL_DIR/scripts/bootstrap.py" replace \
+"$PYTHON" -I "$SKILL_DIR/scripts/bootstrap.py" replace \
   --input "/absolute/input.docx" \
   --output "/absolute/output.docx" \
   --old "old text" \

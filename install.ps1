@@ -10,10 +10,12 @@
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
 #   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." same-version fallback asset directory
+#   -Offline                            install the Windows x64 offline capability package
 #
-# Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
-# bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
-# checksum. Online installs download that bundle and verify it against its published .sha256;
+# Each Release attaches a standard penguin-win32-x64.zip artifact and a matching
+# penguin-offline-win32-x64.zip profile. Each is a shallow installer bundle holding install.cmd,
+# this script, the program payload (payload.zip) and the payload's checksum. Online installs
+# download the selected bundle and verify it against its published .sha256;
 # offline installs transfer the same single file, extract it once (the outer layer is flat, so
 # no deep paths are created) and double-click install.cmd. Both paths verify the payload
 # checksum sealed inside the bundle, then expand the payload straight into the short staging
@@ -30,7 +32,8 @@
 param(
   [string]$Version = "",
   [string]$InstallDir = "",
-  [string]$ArchivePath = ""
+  [string]$ArchivePath = "",
+  [switch]$Offline
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,7 +44,7 @@ $OssOrigin = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com"
 $OssReleaseRoot = "$OssOrigin/releases"
 $GitHubReleaseRoot = "$Repo/releases/download"
 $GitHubLatestBase = "$Repo/releases/latest/download"
-$Asset = "penguin-win32-x64.zip"
+$Asset = if ($Offline) { "penguin-offline-win32-x64.zip" } else { "penguin-win32-x64.zip" }
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copy sealed inside the Windows bundle.
@@ -165,6 +168,9 @@ if (-not $InstallDir) {
 }
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
+}
+if ($Offline -and $ArchivePath) {
+  Fail "-Offline cannot be combined with -ArchivePath/PENGUIN_ARCHIVE"
 }
 $DownloadBaseUrl = if ($env:PENGUIN_DOWNLOAD_BASE_URL) {
   $env:PENGUIN_DOWNLOAD_BASE_URL.TrimEnd('/')
@@ -367,6 +373,21 @@ try {
             $ArchiveName -ine $Asset -and $ArchiveName -ine $PayloadName) {
     Fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
   }
+  if ($Offline) {
+    $ProfilePath = Join-Path $NewRoot "lib\offline\profile.json"
+    if (-not (Test-Path -LiteralPath $ProfilePath -PathType Leaf)) {
+      Fail "offline package is missing lib\offline\profile.json."
+    }
+    try {
+      $OfflineProfile = Get-Content -LiteralPath $ProfilePath -Raw | ConvertFrom-Json
+    } catch {
+      Fail "offline profile is malformed: $($_.Exception.Message)"
+    }
+    if ([string]$OfflineProfile.profile -ine "offline" -or
+        [string]$OfflineProfile.target -ine "win32-x64") {
+      Fail "offline profile does not match win32-x64."
+    }
+  }
 
   $Dirs = @("bin", "lib", "web", "node", "git")
   $MovedOld = @()
@@ -402,6 +423,7 @@ try {
         'setlocal'
         'set "DIR=%~dp0.."'
         'if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"'
+        'if exist "%DIR%\lib\offline\profile.json" if not defined PENGUIN_OFFLINE_ROOT set "PENGUIN_OFFLINE_ROOT=%DIR%\lib\offline"'
         'if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"'
         'if exist "%DIR%\node\node.exe" ('
         '  "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*'

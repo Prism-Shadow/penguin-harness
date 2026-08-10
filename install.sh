@@ -12,12 +12,12 @@
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
-#   --word-docx               install the DOCX-enhanced package (Linux x64 only)
+#   --offline                 install the platform-specific offline capability package
 #
 # Each Release attaches a standard penguin-<target>.tar.gz artifact for every target and a
-# separate penguin-word-docx-linux-x64.tar.gz flavor. Each is a shallow installer bundle holding
-# this script, the program payload (payload.tar.gz) and its checksum. Online installs download
-# the selected bundle and verify it against its published .sha256;
+# matching penguin-offline-<target>.tar.gz profile for native Linux/macOS targets. Each is a
+# shallow installer bundle holding this script, the program payload (payload.tar.gz) and its
+# checksum. Online installs download the selected bundle and verify it against its published .sha256;
 # offline installs transfer the same single file, extract it once and run the bundled
 # ./install.sh, which installs the sibling payload with no network access. Both paths verify
 # the payload checksum sealed inside the bundle before anything is staged. Releases up to
@@ -38,7 +38,7 @@ VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
-WORD_DOCX=0
+OFFLINE=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
@@ -83,7 +83,7 @@ download_source_label() {
   esac
 }
 
-# --- Parse args (also passable via curl | sh -s -- --universal/--word-docx) ---
+# --- Parse args (also passable via curl | sh -s -- --universal/--offline) ---
 while [ $# -gt 0 ]; do
   case "$1" in
     --version)
@@ -95,8 +95,8 @@ while [ $# -gt 0 ]; do
       UNIVERSAL=1
       shift
       ;;
-    --word-docx)
-      WORD_DOCX=1
+    --offline)
+      OFFLINE=1
       shift
       ;;
     --archive)
@@ -110,11 +110,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ "$WORD_DOCX" -eq 1 ] && [ "$UNIVERSAL" -eq 1 ]; then
-  fail "--word-docx cannot be combined with --universal"
+if [ "$OFFLINE" -eq 1 ] && [ "$UNIVERSAL" -eq 1 ]; then
+  fail "--offline cannot be combined with --universal"
 fi
-if [ "$WORD_DOCX" -eq 1 ] && [ -n "$ARCHIVE" ]; then
-  fail "--word-docx cannot be combined with --archive/PENGUIN_ARCHIVE"
+if [ "$OFFLINE" -eq 1 ] && [ -n "$ARCHIVE" ]; then
+  fail "--offline cannot be combined with --archive/PENGUIN_ARCHIVE"
 fi
 
 # --- Detect platform: Linux/Darwin x64/arm64; other platforms should use the universal package ---
@@ -132,10 +132,8 @@ if [ "$UNIVERSAL" -eq 0 ]; then
   esac
   TARGET="$os-$arch"
 fi
-if [ "$WORD_DOCX" -eq 1 ]; then
-  [ "$TARGET" = "linux-x64" ] \
-    || fail "--word-docx currently supports Linux x64 only (detected $TARGET)"
-  ASSET="penguin-word-docx-linux-x64.tar.gz"
+if [ "$OFFLINE" -eq 1 ]; then
+  ASSET="penguin-offline-$TARGET.tar.gz"
 else
   ASSET="penguin-$TARGET.tar.gz"
 fi
@@ -436,6 +434,14 @@ if [ -f "$MANIFEST_PATH" ]; then
     || fail "package target mismatch: expected $TARGET, found $manifest_target."
 elif [ "$LOCAL_ARCHIVE" -eq 1 ] && [ "$ARCHIVE_SHAPE" = "program" ] && [ "$ARCHIVE_NAME" != "$ASSET" ]; then
   fail "a renamed local archive must contain package-manifest.json; use the original filename for legacy packages."
+fi
+if [ "$OFFLINE" -eq 1 ]; then
+  PROFILE_PATH="$TMP/penguin/lib/offline/profile.json"
+  [ -f "$PROFILE_PATH" ] || fail "offline package is missing lib/offline/profile.json."
+  profile_name="$(sed -n 's/.*"profile"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PROFILE_PATH" | head -n 1)"
+  profile_target="$(sed -n 's/.*"target"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PROFILE_PATH" | head -n 1)"
+  [ "$profile_name" = "offline" ] && [ "$profile_target" = "$TARGET" ] \
+    || fail "offline profile does not match $TARGET."
 fi
 mkdir -p "$INSTALL_DIR"
 STAGING="$INSTALL_DIR/.staging.$$"

@@ -47,8 +47,8 @@ jobs:
 
       - name: Installer bundle and POSIX installer tests
         run: |
-          sh -n scripts/package-word-docx-bundle.sh
-          sh -n scripts/test-word-docx-offline.sh
+          sh -n scripts/package-offline-bundle.sh
+          sh -n scripts/test-offline-bundle.sh
           sh scripts/test-installer.sh
 
       # The secret is exposed only in this step (step-level env); earlier steps and third-party actions can't see it.
@@ -118,3 +118,43 @@ jobs:
       - name: Windows installer tests
         shell: pwsh
         run: ./scripts/test-installer.ps1
+
+  # Native wheel/bootstrap coverage for every offline Release target. Each runner downloads only
+  # its locked Python 3.13 wheels first; the test then creates the Agent-owned venv from that local
+  # directory, races two initializers, edits a DOCX and reopens it. Package shape/checksums stay in
+  # the Release job, while this matrix catches OS/architecture-specific Python behavior on PRs.
+  offline-word-docx-native:
+    name: Offline word-docx (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: darwin-x64
+            os: macos-15-intel
+          - target: darwin-arm64
+            os: macos-15
+          - target: win32-x64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Download locked native wheels
+        run: >-
+          python -m pip download
+          --disable-pip-version-check
+          --only-binary=:all:
+          --require-hashes
+          --requirement packages/skills/offline/word-docx/requirements.lock
+          --dest .offline-wheels
+
+      - name: Test controlled environment and DOCX edit
+        run: python -I scripts/test-word-docx-runtime.py --wheel-dir .offline-wheels

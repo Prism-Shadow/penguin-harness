@@ -373,6 +373,17 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
     ).toEqual({ args: ["/tmp/penguin-install-1.sh", "--universal"], env: {} });
   });
 
+  it("an offline install keeps the offline profile during an update", () => {
+    expect(
+      buildInstallerInvocation({
+        ...base,
+        installDir: "/home/me/.penguin",
+        hasBundledNode: true,
+        offline: true,
+      }),
+    ).toEqual({ args: ["/tmp/penguin-install-1.sh", "--offline"], env: {} });
+  });
+
   it("a non-default install dir is passed through, or the upgrade would relocate the install", () => {
     expect(
       buildInstallerInvocation({
@@ -563,21 +574,24 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     expect(planUpdate({ ...base, install: tarball })).toEqual({
       action: "tarball",
       installDir: "/home/me/.penguin",
+      offline: false,
     });
     expect(
       planUpdate({ ...base, install: { kind: "tarball", installDir: "/opt/penguin" } }),
-    ).toEqual({ action: "tarball", installDir: "/opt/penguin" });
+    ).toEqual({ action: "tarball", installDir: "/opt/penguin", offline: false });
     // No installDir on the info (shouldn't happen, but the fallback is the default install dir).
     expect(planUpdate({ ...base, install: { kind: "tarball" } })).toEqual({
       action: "tarball",
       installDir: "/home/me/.penguin",
+      offline: false,
     });
   });
 
-  it("refuses to replace the offline word-docx bundle with the standard tarball", () => {
-    expect(planUpdate({ ...base, install: tarball, hasWordDocxBundle: true })).toEqual({
-      action: "refuse",
-      reason: "word-docx-bundle",
+  it("preserves the generic offline profile when updating a tarball install", () => {
+    expect(planUpdate({ ...base, install: tarball, hasOfflineProfile: true })).toEqual({
+      action: "tarball",
+      installDir: "/home/me/.penguin",
+      offline: true,
     });
   });
 
@@ -605,7 +619,6 @@ describe("planUpdate (what the command decides before it touches anything)", () 
       planUpdate({ ...base, install: { kind: "npm", globalRoot: "/weird/place" } }),
       planUpdate({ ...base, platform: "win32", install: tarball }),
       planUpdate({ ...base, platform: "win32", install: npmGlobal }),
-      planUpdate({ ...base, install: tarball, hasWordDocxBundle: true }),
     ];
     for (const lang of ["en", "zh"] as const) {
       const t = getMessages(lang);
@@ -614,7 +627,6 @@ describe("planUpdate (what the command decides before it touches anything)", () 
       expect(t.update.unknownInstall("/x")).toContain("/x");
       expect(t.update.npmUnknownManager("/weird/place", "0.1.2")).toContain("/weird/place");
       expect(t.update.windowsUnsupported()).toBeTruthy();
-      expect(t.update.wordDocxUpdateUnsupported()).toContain("word-docx");
       // The Windows global-install message is only useful if it carries the command verbatim.
       expect(t.update.windowsGlobalInstall("pnpm add -g pkg@1")).toContain("pnpm add -g pkg@1");
     }

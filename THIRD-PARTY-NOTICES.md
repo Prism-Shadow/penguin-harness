@@ -20,7 +20,7 @@ as `NODE_RUNTIME_VERSION` in the release workflow.
 
 ## MinGit (Git for Windows) — `git/`
 
-Present in `penguin-win32-x64.zip` only.
+Present in `penguin-win32-x64.zip` and `penguin-offline-win32-x64.zip` only.
 
 The Windows package bundles **MinGit**, the minimal redistributable build of Git for Windows,
 unmodified, as published by the Git for Windows project. It supplies the POSIX shell that the
@@ -46,11 +46,11 @@ The bundled binaries are byte-identical to the `MinGit-<version>-64-bit.zip` ass
 no patches are applied. If you need the corresponding source and cannot obtain it from the URLs
 above, open an issue on this repository and we will provide it.
 
-## Offline word-docx wheels — `lib/offline/word-docx/wheels/`
+## Offline profile word-docx wheels — `lib/offline/word-docx/wheels/`
 
-Present only in `penguin-word-docx-linux-x64.tar.gz`; standard Release and npm artifacts do not
-include these files. The enhanced bundle carries unmodified Python wheels for `python-docx`
-(MIT), `lxml` (BSD-3-Clause), and `typing_extensions` (PSF-2.0), at the versions and SHA256
+Present only in the platform-specific `penguin-offline-*` artifacts; standard Release and npm
+artifacts do not include these files. The offline profile carries unmodified Python wheels for
+`python-docx` (MIT), `lxml` (BSD-3-Clause), and `typing_extensions` (PSF-2.0), at the versions and SHA256
 hashes pinned in `packages/skills/offline/word-docx/requirements.lock`. Each wheel retains its
 license text under its `.dist-info/licenses/` directory.
 

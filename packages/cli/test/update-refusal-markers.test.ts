@@ -48,11 +48,6 @@ const MARKERS: ReadonlyArray<{ marker: string; name: string; message: string }> 
     name: "windowsGlobalInstall",
     message: en.windowsGlobalInstall("npm install -g @prismshadow/penguin-cli@1.2.3"),
   },
-  {
-    marker: "includes the word-docx offline bundle",
-    name: "wordDocxUpdateUnsupported",
-    message: en.wordDocxUpdateUnsupported(),
-  },
 ];
 
 describe("update refusal markers (server classifier contract)", () => {

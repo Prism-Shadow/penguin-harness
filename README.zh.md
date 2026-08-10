@@ -177,10 +177,10 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
-如需在 Linux x64 完全离线编辑 DOCX，请改装增强包（系统需预装带 `venv` 的 CPython 3.9–3.13）：
+如需增加完全断网也可使用的能力，请改装与平台匹配的离线 profile。首期只包含 `word-docx`，系统需预装带 `venv` 的 CPython 3.9–3.13：
 
 ```bash
-curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
 ```
 
 ### 🪟 Windows（在线安装，PowerShell）
@@ -188,6 +188,12 @@ curl -fsSL https://penguin.ooo/install.sh | sh -s -- --word-docx
 ```powershell
 irm https://penguin.ooo/install.ps1 | iex
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
+```
+
+Windows x64 离线 profile 需要显式选择：
+
+```powershell
+& ([scriptblock]::Create((irm https://penguin.ooo/install.ps1))) -Offline
 ```
 
 ### 📦 npm（任意平台，需 Node >= 24）
@@ -200,7 +206,7 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>
 
-每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 会为各目标附带一个标准安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包。Linux x64 还可选择带 DOCX Skill 和离线 Python wheels 的 `penguin-word-docx-linux-x64.tar.gz` 增强包。同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 会为每个原生目标附带标准安装包——Linux 与 macOS 各有 x64 / arm64，Windows 为 x64——另有不带运行时的 universal 包。每个原生目标还有对应的 `penguin-offline-<target>` 离线 profile。首期离线 profile 增加 `word-docx` Skill 和匹配平台的 Python wheels，后续 PPTX、PDF 等 Skill 继续扩展同一 profile。同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
 
 **Linux（arm64 机器换用 `penguin-linux-arm64.tar.gz`）：**
 
@@ -210,7 +216,7 @@ tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
 
-如需离线编辑 DOCX，同样传输并解压 `penguin-word-docx-linux-x64.tar.gz`。该增强包要求 glibc Linux x64，并预装带 `venv` 的 CPython 3.9–3.13；Python 依赖会从包内 wheels 安装到 Agent 受控环境，不会写入系统 Python。
+如需离线编辑 DOCX，同样传输并解压与目标平台匹配的 `penguin-offline-<target>` 包。系统需要预装带 `venv` 的 CPython 3.9–3.13；Linux 要求 glibc 2.17 或更高，不支持 musl/Alpine。Python 依赖会从包内 wheels 安装到 Agent 受控环境，不会写入系统 Python。
 
 **macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 

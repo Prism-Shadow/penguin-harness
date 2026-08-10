@@ -390,7 +390,7 @@ describe("harness environment variables never reach a spawned command", () => {
     }
   });
 
-  it("passes the enhanced bundle's offline resource root to Agent commands", async () => {
+  it("passes the offline profile's resource root to Agent commands", async () => {
     const saved = process.env.PENGUIN_OFFLINE_ROOT;
     process.env.PENGUIN_OFFLINE_ROOT = "/opt/penguin/lib/offline";
     try {

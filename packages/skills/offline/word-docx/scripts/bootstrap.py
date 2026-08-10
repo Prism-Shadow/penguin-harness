@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
-import fcntl
+from contextlib import contextmanager
 import hashlib
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 import venv
 
 
@@ -17,7 +18,46 @@ SUPPORTED_PYTHONS = {(3, minor) for minor in range(9, 14)}
 
 
 def environment_python(environment: Path) -> Path:
+    if os.name == "nt":
+        return environment / "Scripts" / "python.exe"
     return environment / "bin" / "python"
+
+
+@contextmanager
+def exclusive_lock(path: Path):
+    with path.open("a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            deadline = time.monotonic() + 300
+            while True:
+                try:
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            f"timed out waiting for the word-docx environment lock: {path}"
+                        ) from error
+                    time.sleep(0.1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def requirement_marker(requirements: Path) -> str:
@@ -38,7 +78,7 @@ def ensure_environment() -> Path:
     requirements = skill_dir / "requirements.lock"
     offline_root = os.environ.get("PENGUIN_OFFLINE_ROOT")
     if not offline_root:
-        raise RuntimeError("PENGUIN_OFFLINE_ROOT is not set; install the word-docx bundle")
+        raise RuntimeError("PENGUIN_OFFLINE_ROOT is not set; install the offline profile")
     wheels = Path(offline_root) / "word-docx" / "wheels"
     if not wheels.is_dir():
         raise RuntimeError(f"bundled wheel directory is missing: {wheels}")
@@ -51,8 +91,7 @@ def ensure_environment() -> Path:
     shared_dir.mkdir(parents=True, exist_ok=True)
 
     lock_path = shared_dir / ".word-docx.lock"
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file, fcntl.LOCK_EX)
+    with exclusive_lock(lock_path):
         python = environment_python(environment)
         if python.is_file() and marker_path.is_file():
             if marker_path.read_text(encoding="utf-8") == expected_marker:
@@ -127,12 +166,11 @@ def main() -> int:
         if key.startswith("PIP_") or key in {"PYTHONHOME", "PYTHONPATH"}:
             helper_env.pop(key)
     helper_env["PYTHONNOUSERSITE"] = "1"
-    os.execve(
-        str(python),
+    return subprocess.run(
         [str(python), "-I", str(helper), *sys.argv[1:]],
-        helper_env,
-    )
-    return 0
+        env=helper_env,
+        check=False,
+    ).returncode
 
 
 if __name__ == "__main__":
