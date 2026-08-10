@@ -69,7 +69,7 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | Overview | Basic info, export / import of Agent State snapshots, and restoring the default configuration (overwrites customizations, keeping only name/description) |
 | Prompt | AGENTS.md and system_prompt |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
-| Tools | Built-in tool table (incl. per-tool call_description switches) and an editable MCP Server JSON configuration (full transport validation server-side on save) |
+| Tools | Built-in tool table (incl. per-tool call_description switches) and MCP Server management: a table plus an add/edit form whose fields follow the transport (changes save immediately; full transport validation server-side) |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 

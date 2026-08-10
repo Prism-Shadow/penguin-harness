@@ -3,8 +3,8 @@
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table + MCP Server JSON editor), Skills (skills-tab.tsx), Vault
- * (vault-tab.tsx), Schedule (schedules-tab.tsx).
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
+ * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  */
@@ -36,7 +36,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { SkillsTab } from "./skills-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
-import { formatMcpServersJson, parseMcpServersJson } from "./mcp-servers-json";
+import { McpServersSection } from "./mcp-servers-section";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
@@ -234,7 +234,14 @@ export function AgentSettingsPage() {
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
-          {tab === "tools" && <ToolsTab data={data} onSave={save} />}
+          {tab === "tools" && (
+            <div className="space-y-8">
+              <ToolsTab data={data} onSave={save} />
+              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+                  builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
+              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+            </div>
+          )}
           {tab === "skills" && <SkillsTab agentId={agentId} />}
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
@@ -752,10 +759,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
   );
   // Per-cell validation errors, keyed `${rowIndex}-${column}`, shown red under the offending numeric input.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  // MCP Servers JSON editor: structural validation happens locally on save; transport
-  // fields are validated server-side (the PUT reuses the core resolver and 400s precisely).
-  const [mcpText, setMcpText] = useState(() => formatMcpServersJson(data.config.mcpServers));
-  const [mcpError, setMcpError] = useState("");
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const update = (index: number, patch: Partial<ToolRowState>) => {
@@ -801,18 +804,15 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
       }
       tools.push(tool);
     }
-    const mcpParsed = parseMcpServersJson(mcpText);
-    if (Object.keys(errs).length > 0 || !mcpParsed.ok) {
+    if (Object.keys(errs).length > 0) {
       setFieldErrors(errs);
-      setMcpError(mcpParsed.ok ? "" : S.agent.mcpServersInvalid(mcpParsed.error));
       return;
     }
     setFieldErrors({});
-    setMcpError("");
     // The table is submitted whole, so compare the editable columns against the loaded
     // config to detect a no-op save (row order is stable — both sides map the same list).
     const orig = data.config.toolsBuiltin;
-    const toolsDirty =
+    const dirty =
       tools.length !== orig.length ||
       tools.some((t, i) => {
         const o = orig[i]!;
@@ -823,22 +823,11 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
           t.call_description !== o.call_description
         );
       });
-    // The editor round-trips arbitrary config keys, so value equality (not text equality —
-    // whitespace-only edits are not a change) decides whether to send mcpServers.
-    const mcpDirty = JSON.stringify(mcpParsed.servers) !== JSON.stringify(data.config.mcpServers);
-    if (!toolsDirty && !mcpDirty) {
+    if (!dirty) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    requestSave(
-      () =>
-        void onSave({
-          config: {
-            ...(toolsDirty ? { toolsBuiltin: tools } : {}),
-            ...(mcpDirty ? { mcpServers: mcpParsed.servers } : {}),
-          },
-        }),
-    );
+    requestSave(() => void onSave({ config: { toolsBuiltin: tools } }));
   };
 
   /** Whether a tool's config schema declares the optional `description` call argument (only then does the per-row switch make sense). */
@@ -915,23 +904,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         </table>
       </div>
       <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
-
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <Textarea
-          aria-label={S.agent.mcpServers}
-          mono
-          size="sm"
-          rows={10}
-          value={mcpText}
-          error={mcpError || undefined}
-          onChange={(e) => {
-            setMcpText(e.target.value);
-            setMcpError("");
-          }}
-        />
-        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpServersHint}</p>
-      </div>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
