@@ -878,6 +878,9 @@ Scenarios:
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "Total Tokens",
+    statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statInput: "Input tokens",
     statCached: "cached",

@@ -53,7 +53,6 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
-import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -1120,6 +1119,14 @@ export function ChatPage() {
       currency,
     }),
   );
+  // Cache hit rate over the recorded input buckets (cacheRead = hits, cacheWrite =
+  // uncached input) — the details card's tokens-line parenthetical. Null until a usage
+  // row with any input has applied, so a fresh session shows no "0%" out of thin air.
+  const recordedInput = usageBuckets ? usageBuckets.cacheRead + usageBuckets.cacheWrite : 0;
+  const cacheHitRate =
+    usageBuckets && recordedInput > 0
+      ? `${Math.round((100 * usageBuckets.cacheRead) / recordedInput)}%`
+      : null;
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
@@ -1415,31 +1422,27 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.sessionStats}
                 </p>
-                {/* One stat per line. The tokens line carries the recorded three-bucket
-                    breakdown in parentheses (input = cacheRead+cacheWrite, cached = cacheRead —
-                    the per-turn stats row's convention); it comes from the usage fetch, so it
-                    can trail the live total mid-run and reconciles on idle. No-cost sessions
-                    omit the cost line entirely, as the chip does. */}
-                <div className="space-y-0.5 font-mono text-xs">
-                  <p>
-                    {S.chat.statTokens} {hs.tokensText}
-                    {usageBuckets &&
-                      `${S.chat.statParenOpen}${S.chat.statInput} ${humanizeTokens(
-                        usageBuckets.cacheRead + usageBuckets.cacheWrite,
-                      )} · ${S.chat.statCached} ${humanizeTokens(usageBuckets.cacheRead)} · ${
-                        S.chat.statOutput
-                      } ${humanizeTokens(usageBuckets.output)}${S.chat.statParenClose}`}
-                  </p>
+                {/* A bulleted list, one stat per line. The tokens bullet carries the cache
+                    hit rate in parentheses (cacheRead ÷ all recorded input); the rate comes
+                    from the usage fetch, so it can trail the live total mid-run and
+                    reconciles on idle. No-cost sessions omit the cost bullet entirely, as
+                    the chip does. */}
+                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                  <li>
+                    {S.chat.statTotalTokens} {hs.tokensText}
+                    {cacheHitRate !== null &&
+                      `${S.chat.statParenOpen}${S.chat.statCacheHit(cacheHitRate)}${S.chat.statParenClose}`}
+                  </li>
                   {hs.costText != null && (
-                    <p>
+                    <li>
                       {S.common.cost} {hs.costText}
                       {hs.costUncosted ? " *" : ""}
-                    </p>
+                    </li>
                   )}
-                  <p>
+                  <li>
                     {S.chat.statElapsed} {hs.elapsedNode}
-                  </p>
-                </div>
+                  </li>
+                </ul>
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole
@@ -1489,50 +1492,34 @@ export function ChatPage() {
                   </ul>
                 </div>
               )}
-            </div>
-            {/* Trace file row: names the actual file, and clicking it SPA-navigates to the
-                Trace page deep-linked to the owning Agent AND this Session (?agentId=
-                focuses/expands the Agent group, ?sessionId= auto-selects — a Session beyond
-                the first loaded page resolves via the Trace page's full-fetch fallback).
-                Hidden until a trace exists (a brand-new session has no file to open); only
-                reachable for a real Session — this whole header renders behind the `selected`
-                guard, so a draft never shows it. */}
-            {tracePath !== null && (
-              <div className="border-t border-gray-100 py-1 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInfoOpen(false);
-                    navigate(
-                      `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                    );
-                  }}
-                  title={tracePath}
-                  className="flex w-full items-start gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                    className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500"
+              {/* Trace file, same section anatomy as the rows above (label + mono value):
+                  the path itself is the click target and SPA-navigates to the Trace page
+                  deep-linked to the owning Agent AND this Session (?agentId= focuses/expands
+                  the Agent group, ?sessionId= auto-selects — a Session beyond the first
+                  loaded page resolves via the Trace page's full-fetch fallback). Hidden
+                  until a trace exists (a brand-new session has no file to open); only
+                  reachable for a real Session — this whole header renders behind the
+                  `selected` guard, so a draft never shows it. */}
+              {tracePath !== null && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {S.chat.traceFile}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInfoOpen(false);
+                      navigate(
+                        `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                      );
+                    }}
+                    className="break-all text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
                   >
-                    <path d={NAV_ICONS.traces} />
-                  </svg>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {S.chat.traceFile}
-                    </span>
-                    <span className="block break-all font-mono text-xs leading-5">{tracePath}</span>
-                  </span>
-                </button>
-              </div>
-            )}
+                    {tracePath}
+                  </button>
+                </div>
+              )}
+            </div>
           </Dropdown>
         </div>
       )}

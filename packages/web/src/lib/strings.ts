@@ -856,6 +856,9 @@ Benchmark：
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "总 Token",
+    statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
     statInput: "输入 tokens",
     statCached: "已缓存",

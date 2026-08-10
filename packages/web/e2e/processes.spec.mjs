@@ -62,9 +62,10 @@ test("background process appears in the details card and can be stopped", async 
   // this width — the chips are the trigger).
   await detailsBtn.click();
 
-  // New layout: one stat per line, tokens first with the bucketed breakdown in parens.
-  await expect(page.getByText("Token 累计").first()).toBeVisible();
-  await expect(page.getByText(/输入 tokens/).first()).toBeVisible();
+  // New layout: a bulleted list with one stat per line, tokens first with the cache hit
+  // rate in parens (from the recorded usage row).
+  await expect(page.getByText(/总 Token/).first()).toBeVisible();
+  await expect(page.getByText(/缓存命中率 \d+%/).first()).toBeVisible();
   // Trace file row names the actual .jsonl path.
   await expect(page.getByText("轨迹文件")).toBeVisible();
   await expect(page.getByText(/\.jsonl/).first()).toBeVisible();
