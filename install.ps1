@@ -3,9 +3,13 @@
 #   irm https://penguin.ooo/install.ps1 | iex
 #
 # Options:
-#   $env:PENGUIN_VERSION = "vX.Y.Z"     pin a version (same as -Version vX.Y.Z); default is the latest Release
+#   $env:PENGUIN_VERSION = "vX.Y.Z"     choose a version (same as -Version vX.Y.Z); a published Release
+#                                         installer defaults to its own version, an unstamped source copy to latest
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
+#   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
+#   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
+#   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." same-version fallback asset directory
 #
 # Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
 # bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
@@ -33,8 +37,15 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue" # Invoke-WebRequest progress rendering slows downloads massively on PS 5.1
 
 $Repo = "https://github.com/Prism-Shadow/penguin-harness"
+$OssOrigin = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com"
+$OssReleaseRoot = "$OssOrigin/releases"
+$GitHubReleaseRoot = "$Repo/releases/download"
+$GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
 $PayloadName = "payload.zip"
+# The release workflow replaces this token with the immutable tag before publishing both the
+# standalone installer and the copy sealed inside the Windows bundle.
+$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"
 
 function Fail([string]$Message) {
   # `throw` rather than `exit`: the penguin.ooo forwarder runs this installer as an in-memory
@@ -67,6 +78,64 @@ function Assert-Sha256([string]$FilePath, [string]$ShaPath, [string]$Label) {
   Write-Host "$Label checksum OK."
 }
 
+function Assert-HttpsUrl([string]$Name, [string]$Value) {
+  try { $Uri = [Uri]$Value } catch { Fail "$Name is not a valid URL" }
+  if (-not $Uri.IsAbsoluteUri -or $Uri.Scheme -ne "https") {
+    Fail "$Name must be an absolute HTTPS URL"
+  }
+}
+
+function Test-ReleaseTag([string]$Value) {
+  return $Value -match '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
+}
+
+function Get-OssLatestTag([string]$ManifestPath) {
+  Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
+  try {
+    Invoke-WebRequest -Uri "$OssOrigin/latest.json" -OutFile $ManifestPath -UseBasicParsing -TimeoutSec 8 | Out-Null
+  } catch {
+    Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
+    return ""
+  }
+  try {
+    $Manifest = [IO.File]::ReadAllText($ManifestPath, [Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
+    $CandidateTag = [string]$Manifest.tag
+    $CandidateBase = ([string]$Manifest.releaseBaseUrl).TrimEnd('/')
+    if ([int]$Manifest.schemaVersion -eq 1 -and
+        (Test-ReleaseTag $CandidateTag) -and
+        $CandidateBase -eq "$OssReleaseRoot/$CandidateTag") {
+      return $CandidateTag
+    }
+  } catch {
+  }
+  return ""
+}
+
+function Get-DownloadSourceLabel([string]$BaseUrl) {
+  try { $HostName = ([Uri]$BaseUrl).Host } catch { return "configured mirror" }
+  if ($HostName -like "*.aliyuncs.com") { return "OSS mirror" }
+  if ($HostName -eq "github.com") { return "GitHub" }
+  return "configured mirror"
+}
+
+function Get-ReleasePair(
+  [string]$BaseUrl,
+  [string]$ZipPath,
+  [string]$ShaPath
+) {
+  $Label = Get-DownloadSourceLabel $BaseUrl
+  Write-Host "Downloading $Asset from $Label ..."
+  Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
+    return $true
+  } catch {
+    Remove-Item -LiteralPath $ZipPath, $ShaPath -Force -ErrorAction SilentlyContinue
+    return $false
+  }
+}
+
 function Restore-PreviousInstall(
   [string]$InstallDir,
   [string]$OldDir,
@@ -97,6 +166,21 @@ if (-not $InstallDir) {
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
 }
+$DownloadBaseUrl = if ($env:PENGUIN_DOWNLOAD_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
+$DownloadFallbackBaseUrl = if ($env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL) {
+  $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL.TrimEnd('/')
+} else {
+  ""
+}
+$SourceMode = if ($env:PENGUIN_DOWNLOAD_SOURCE) {
+  $env:PENGUIN_DOWNLOAD_SOURCE.ToLowerInvariant()
+} else {
+  "auto"
+}
 # An extracted installer bundle keeps install.cmd, this script, payload.zip and its checksum
 # together. `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs
 # do not accidentally pick up an unrelated archive from the caller's current directory.
@@ -106,6 +190,25 @@ if (-not $ArchivePath -and $PSScriptRoot) {
 }
 if ($ArchivePath -and $Version) {
   Fail "-ArchivePath/PENGUIN_ARCHIVE cannot be combined with -Version/PENGUIN_VERSION"
+}
+if ($Version -and -not (Test-ReleaseTag $Version)) {
+  Fail "invalid release version: $Version"
+}
+if ($SourceMode -notin @("auto", "oss", "github")) {
+  Fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github"
+}
+$ResolvedReleaseVersion = if ($Version) {
+  $Version
+} elseif (Test-ReleaseTag $EmbeddedReleaseVersion) {
+  $EmbeddedReleaseVersion
+} else {
+  ""
+}
+if ($DownloadBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_BASE_URL" $DownloadBaseUrl
+}
+if ($DownloadFallbackBaseUrl) {
+  Assert-HttpsUrl "PENGUIN_DOWNLOAD_FALLBACK_BASE_URL" $DownloadFallbackBaseUrl
 }
 
 # --- Platform preconditions: 64-bit Windows; the only Windows package is x64 (ARM64 runs it emulated) ---
@@ -123,12 +226,10 @@ try {
   # .NET builds where the enum is immutable already default to TLS 1.2+.
 }
 
-# --- Download (latest Release by default; PENGUIN_VERSION pins a version) ---
-if ($Version) {
-  $BaseUrl = "$Repo/releases/download/$Version"
-} else {
-  $BaseUrl = "$Repo/releases/latest/download"
-}
+# --- Download. Explicit forwarder/configured URLs win. Otherwise a stamped Release installer
+#     uses its own immutable version: auto prefers OSS and falls back only to the same GitHub
+#     tag. An unstamped source-tree installer resolves latest.json first so it also locks one
+#     version before downloading assets. ---
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) "penguin-install-$PID"
 if (Test-Path $Tmp) { Remove-Item -Recurse -Force $Tmp }
 New-Item -ItemType Directory -Path $Tmp | Out-Null
@@ -148,20 +249,46 @@ try {
     $ArchiveName = [IO.Path]::GetFileName($ZipPath)
     Write-Host "Using local archive $ZipPath ..."
   } else {
-    # Online: download the canonical bundle; the published checksum is mandatory.
-    Write-Host "Downloading $BaseUrl/$Asset ..."
-    $ZipPath = Join-Path $Tmp $Asset
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset" -OutFile $ZipPath -UseBasicParsing
-    } catch {
-      Fail "download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+    $BaseUrl = ""
+    $FallbackBaseUrl = $DownloadFallbackBaseUrl
+    if ($DownloadBaseUrl) {
+      $BaseUrl = $DownloadBaseUrl
+    } elseif ($SourceMode -eq "github") {
+      $BaseUrl = if ($ResolvedReleaseVersion) {
+        "$GitHubReleaseRoot/$ResolvedReleaseVersion"
+      } else {
+        $GitHubLatestBase
+      }
+    } else {
+      $SelectedTag = $ResolvedReleaseVersion
+      if (-not $SelectedTag) {
+        $SelectedTag = Get-OssLatestTag (Join-Path $Tmp "latest.json")
+      }
+      if ($SelectedTag) {
+        $BaseUrl = "$OssReleaseRoot/$SelectedTag"
+        if ($SourceMode -eq "auto" -and -not $FallbackBaseUrl) {
+          $FallbackBaseUrl = "$GitHubReleaseRoot/$SelectedTag"
+        }
+      } elseif ($SourceMode -eq "oss") {
+        Fail "the OSS mirror is unavailable or its release metadata is invalid."
+      } else {
+        $BaseUrl = $GitHubLatestBase
+      }
     }
+
+    # Online: download the canonical bundle; the published checksum is mandatory.
+    $ZipPath = Join-Path $Tmp $Asset
     $ArchiveName = $Asset
     $ShaPath = Join-Path $Tmp "$Asset.sha256"
-    try {
-      Invoke-WebRequest -Uri "$BaseUrl/$Asset.sha256" -OutFile $ShaPath -UseBasicParsing
-    } catch {
-      Fail "checksum download failed. Check the version tag and your network, then retry. ($($_.Exception.Message))"
+    if (-not (Get-ReleasePair $BaseUrl $ZipPath $ShaPath)) {
+      if ($FallbackBaseUrl -and $FallbackBaseUrl -ne $BaseUrl) {
+        Write-Host "Primary download source unavailable; trying $(Get-DownloadSourceLabel $FallbackBaseUrl) ..."
+        if (-not (Get-ReleasePair $FallbackBaseUrl $ZipPath $ShaPath)) {
+          Fail "download failed from both the primary source and its fallback. Check your network, then retry."
+        }
+      } else {
+        Fail "download failed from $(Get-DownloadSourceLabel $BaseUrl). Check the version tag and your network, then retry."
+      }
     }
     Assert-Sha256 $ZipPath $ShaPath "Bundle"
   }
@@ -388,5 +515,5 @@ if ($PathUpdateMessage) {
 Write-Host ""
 Write-Host "Get started:"
 Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (initial login: admin / penguin-2026)"
+Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
 Write-Host "  penguin server    # headless server (PORT / HOST to override)"

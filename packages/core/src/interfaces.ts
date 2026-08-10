@@ -110,8 +110,19 @@ export interface GenerativeModelConfig {
   tools: ToolDefinition[];
   /** Full system Prompt after placeholder substitution in the system_config.system_prompt template. */
   systemPrompt?: string;
+  /**
+   * Model context window (tokens, from the model entry). Used to clamp each request's
+   * effective output cap so `input + max_tokens` stays inside the window (issue #218).
+   * Unset (or implausibly small, see llm/context-limits.ts resolveContextWindow): the
+   * clamp is disabled — a hard cap is never derived from an assumed window.
+   */
   contextWindow?: number;
-  /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
+  /**
+   * Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the
+   * request). With `contextWindow` set, a positive cap is a ceiling, not a constant: each
+   * request sends `min(maxTokens, contextWindow − estimated input − safety margin)` (see
+   * llm/context-limits.ts) so small-window models never fail provider validation.
+   */
   maxTokens?: number;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
@@ -148,7 +159,7 @@ export interface GenerativeModelParameters {
  *     `context_engine`;
  *   - `aborted`: user-initiated interruption — stop and hand back to the user;
  *   - `failed`: an error the retry classifier did not judge transient (params, etc.) — still
- *     retried by `context_engine` within the same run (`message` provides the display text).
+ *     retried by `context_engine` within the same run (`errorMessage` provides the display text).
  *     The classification stays honest — this is reported as `failed`, not relabelled a
  *     timeout — while the *policy* retries it, because that classifier is an allowlist and a
  *     gateway phrasing a transient fault its own way lands here;
@@ -162,12 +173,13 @@ export interface GenerativeModelParameters {
 export interface LLMOutcome {
   status: StopReason;
   /**
-   * Failure detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
+   * Error detail (`describeError` text): present on `failed` / `auth`, and on `timeout` /
    * `malformed` when a concrete transport/provider error was caught (a plain idle timeout
-   * has none). Carried onto the `request_end` event so observability (the Cost center's
-   * errors panel) can show the real reason behind a retried request.
+   * has none). Carried onto the `request_end` event as `error_message` — one name across
+   * the internal outcome and the wire — so observability (the Cost center's errors panel)
+   * can show the real reason behind a retried request.
    */
-  message?: string;
+  errorMessage?: string;
 }
 
 /**
@@ -291,7 +303,32 @@ export interface EnvironmentConfig {
    * environment; hardened entries cannot be overridden.
    */
   vault?: Record<string, string>;
+  /**
+   * Proxy policy for exec_command / input_command subprocess environments (see
+   * {@link ProxyEnvPolicy}). Threaded by the Web server from its admin-level proxy
+   * settings; re-read at every spawn so a settings change needs no restart. Absent, or a
+   * getter returning null = the host environment passes through unchanged (the default
+   * for SDK/CLI standalone use).
+   */
+  proxyEnv?: () => ProxyEnvPolicy | null;
 }
+
+/**
+ * Proxy policy applied to command subprocess environments (see
+ * {@link EnvironmentConfig.proxyEnv}):
+ * - `{ mode: "strip" }` — the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
+ *   casing) are removed; NO_PROXY is kept (inert without them, and commands that set
+ *   their own proxy still honor it). The hosting server's proxy switch in the off state.
+ * - `{ mode: "inject", url, noProxy }` — the explicit proxy wins over ambient env:
+ *   HTTP_PROXY / HTTPS_PROXY (plus their lowercase twins) are set to `url` and
+ *   NO_PROXY / no_proxy to `noProxy`, overriding inherited values; an inherited
+ *   ALL_PROXY (any casing) is removed for the same reason. The caller supplies `noProxy`
+ *   pre-merged (the hosting server includes the loopback names).
+ * - `null` (or no getter at all) — pass through unchanged.
+ * The Agent vault still overrides whichever of these the policy produced: a per-Agent
+ * explicit variable outranks the host-level policy.
+ */
+export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 /**
  * An approved tool-call execution request.

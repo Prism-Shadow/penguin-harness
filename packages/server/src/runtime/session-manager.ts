@@ -34,6 +34,7 @@ import {
   goalTokenDelta,
   isGoalRoundInput,
   isSessionMeta,
+  parseUserSteeringText,
   stripLeadingMarkerBlocks,
   tracesDir,
 } from "@prismshadow/penguin-core";
@@ -41,12 +42,13 @@ import type {
   ApproveFn,
   CompactAvailability,
   OmniMessage,
+  ProxyEnvPolicy,
   SessionMetaPayload,
   SessionTitleResult,
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type { ServerEvent, SessionStatus } from "../api/types.js";
+import type { PendingSteeringInfo, ServerEvent, SessionStatus } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
@@ -120,14 +122,22 @@ export interface SessionLoader {
  * lets the no-Trace self-heal rebuild re-record a known origin into the fresh session_meta;
  * with no registry entry (e.g. the process restarted and no Trace was ever written) the
  * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
+ * `opts.proxyEnv` threads the admin proxy settings into core (a live getter returning the
+ * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
+ * address, or null = pass the environment through).
  */
-export function createCoreSessionLoader(root: string, sources?: SessionSources): SessionLoader {
+export function createCoreSessionLoader(
+  root: string,
+  sources?: SessionSources,
+  opts: { proxyEnv?: () => ProxyEnvPolicy | null } = {},
+): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
       const agent = await createAgent({
         root,
         projectId: row.projectId,
         agentId: row.agentId,
+        ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -241,6 +251,14 @@ interface RuntimeEntry {
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
+  /**
+   * Steering messages queued on core but not yet delivered to the model — a display mirror
+   * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
+   * its content survive reloads: pushed on `steer`, shifted as each `[user_steering]`
+   * message appears on the drive stream, dropped wholesale when the run exits (core
+   * discards undelivered steering on abort/completion). Broadcast on every `task_state`.
+   */
+  pendingSteering: PendingSteeringInfo[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -265,6 +283,13 @@ function agentKey(projectId: string, agentId: string): string {
 }
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
+/** Whether this main-stream message is a delivered `[user_steering]` user text (one per queued steering entry, see core's steeringMessages). */
+function isDeliveredSteering(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: string };
+  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user") return false;
+  return typeof p.text === "string" && parseUserSteeringText(p.text) !== null;
+}
+
 function runSubagentCall(msg: OmniMessage): { toolCallId: string; prompt: string } | null {
   const p = msg.payload as {
     type?: string;
@@ -372,6 +397,11 @@ export class SessionManager {
     return this.entries.get(sessionId)?.followUps.length ?? 0;
   }
 
+  /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
+  pendingSteeringOf(sessionId: string): PendingSteeringInfo[] {
+    return this.entries.get(sessionId)?.pendingSteering ?? [];
+  }
+
   /**
    * Live tail of a running session: one synthetic `partial_* start` OmniMessage per open
    * streaming fragment, carrying the full accumulated content so far (see live-tail.ts).
@@ -406,6 +436,7 @@ export class SessionManager {
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
+      pendingSteering: [],
       lastActivityMs: Date.now(),
     });
   }
@@ -783,8 +814,13 @@ export class SessionManager {
    * publishes). 409 when the Session isn't running a Task (idle / compacting / not loaded)
    * or the run finished in the race window — the caller falls back to submitting a normal
    * task, which carries the same text and images.
+   *
+   * `info` is the queued message's display summary: mirrored on the entry and broadcast via
+   * `task_state` (and the SSE subscribe snapshot) until the delivered `[user_steering]`
+   * message is observed on the stream — that is what keeps the composer's "steering queued"
+   * hint, content included, alive across reloads.
    */
-  steer(sessionId: string, input: OmniMessage[]): void {
+  steer(sessionId: string, input: OmniMessage[], info: PendingSteeringInfo): void {
     const entry = this.entries.get(sessionId);
     if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
       throw new HttpError(
@@ -793,7 +829,9 @@ export class SessionManager {
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
+    entry.pendingSteering.push(info);
     entry.lastActivityMs = Date.now();
+    this.publishState(entry, entry.status);
   }
 
   /**
@@ -1039,6 +1077,7 @@ export class SessionManager {
       running: null,
       generation,
       followUps: [],
+      pendingSteering: [],
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
@@ -1056,6 +1095,10 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
+    // Every driven run (task, goal round, compaction) writes Trace lines: flip the row's
+    // has_trace cache here, the single choke point, so listing can serve it from the DB
+    // without a directory walk (see SessionService.listSessions).
+    this.deps.sessions.markHasTrace(entry.sessionId);
     let earlyTitleFired = false;
     let mainBodyChars = 0;
     const ctx: UsageContext = {
@@ -1108,6 +1151,13 @@ export class SessionManager {
           if (denied) subagentPrompts.delete(denied);
           const settled = settledToolCallId(msg);
           if (settled) subagentPrompts.delete(settled);
+          // Steering delivery: core emits exactly one `[user_steering]` user text per queued
+          // entry, in queue order — shift the display mirror and re-broadcast so the
+          // composer's "steering queued" hint retires the moment the message is on stream.
+          if (entry.pendingSteering.length > 0 && isDeliveredSteering(msg)) {
+            entry.pendingSteering.shift();
+            this.publishState(entry, entry.status);
+          }
         } else if (isSessionMeta(msg)) {
           // Subagent registration is only a "side effect" — it must never interrupt the
           // main run flow on error: wrap the whole thing in a defensive try/catch.
@@ -1197,6 +1247,10 @@ export class SessionManager {
       entry.status = "idle";
       entry.abort = null;
       entry.running = null;
+      // The run is over, so core has discarded any undelivered steering (see ContextEngine's
+      // steeringQueue) — drop the mirror with it; the idle publish below broadcasts the
+      // now-empty state.
+      entry.pendingSteering = [];
       entry.lastActivityMs = Date.now();
       this.publishState(entry, "idle");
       if (titleSource && titleSource.userExcerpt.trim()) {
@@ -1276,6 +1330,8 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
+      // Spawned by this server's run (client NULL = web); its Trace exists by construction.
+      hasTrace: true,
       createdAt: new Date().toISOString(),
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
@@ -1299,9 +1355,14 @@ export class SessionManager {
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {
-    // Every state flip also reports the queued follow-up count, so subscribers can render
-    // the "N queued" hint without a dedicated event type.
-    this.publishEvent(entry, { type: "task_state", state, queued: entry.followUps.length });
+    // Every state flip also reports the queued follow-up count and the undelivered steering
+    // mirror, so subscribers can render both hints without a dedicated event type.
+    this.publishEvent(entry, {
+      type: "task_state",
+      state,
+      queued: entry.followUps.length,
+      ...(entry.pendingSteering.length > 0 ? { pendingSteering: entry.pendingSteering } : {}),
+    });
   }
 
   private publishEvent(entry: RuntimeEntry, event: ServerEvent): void {

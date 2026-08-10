@@ -17,6 +17,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
 
@@ -38,7 +39,7 @@ When a model entry has no inline `api_key`, AgentHub falls back to the provider'
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M-series Responses client uses `MINIMAX_*`; built-in MiniMax presets already pin the official endpoint. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M3 Responses client uses `MINIMAX_*`; the built-in MiniMax preset already pins the official endpoint. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
 
 ## Project config
 
@@ -68,11 +69,11 @@ Model entry (`[[models]]`) fields:
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 vision = false
 api_key = "sk-..."
@@ -98,11 +99,11 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
-| `max_turns` | `100` | Maximum LLM turns per Task (-1 removes the cap) |
-| `model.max_tokens` | `32000` | Output Token limit per Request (-1 = no cap, provider default) |
+| `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
+| `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
-| `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction |
+| `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction; the effective threshold is capped at the model's `context_window` − 2048 so compaction fires before a small window overflows |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
@@ -122,7 +123,8 @@ version: 3
 system_prompt: |
   …
 
-max_turns: 100
+# -1 (the default) = unlimited; set a positive integer to cap the turns of a single Task.
+max_turns: -1
 
 model:
   max_tokens: 32000

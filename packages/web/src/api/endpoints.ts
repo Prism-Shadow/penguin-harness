@@ -24,6 +24,9 @@ import type {
   BenchmarkCasesResponse,
   BenchmarksResponse,
   CaseMaterial,
+  ChatDefaultsDto,
+  DefaultModelResponse,
+  DefaultModelUpdateRequest,
   DirListResponse,
   FilesStatRequest,
   FilesStatResponse,
@@ -47,6 +50,8 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ServerSettingsResponse,
+  ServerSettingsUpdateRequest,
   SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
@@ -54,6 +59,7 @@ import type {
   SessionResponse,
   SessionsResponse,
   SessionTracesResponse,
+  SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
   RetryNowResponse,
@@ -110,6 +116,13 @@ export const adminResetPassword = (userId: string, body: AdminPasswordResetReque
 export const adminDeleteUser = (userId: string) =>
   apiFetch<void>(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
 
+/** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
+export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
+
+/** Omitted fields keep their current value; applies immediately (no restart). */
+export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
+  apiFetch<ServerSettingsResponse>("/api/admin/settings", { method: "PUT", body });
+
 // Project & members --------------------------------------------------------------
 
 export const listProjects = () => apiFetch<ProjectsResponse>("/api/projects");
@@ -142,6 +155,17 @@ export const removeMember = (projectId: string, username: string) =>
     { method: "DELETE" },
   );
 
+/** New-chat defaults ([default_chat]): member-readable prefill for the draft page. */
+export const getChatDefaults = (projectId: string) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`);
+
+/** Whole-block replace (owner): an omitted key clears it; returns the stored block. */
+export const putChatDefaults = (projectId: string, body: ChatDefaultsDto) =>
+  apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
+    method: "PUT",
+    body,
+  });
+
 // Model configuration -------------------------------------------------------------------
 
 export const getModels = (projectId: string) =>
@@ -149,6 +173,13 @@ export const getModels = (projectId: string) =>
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    method: "PUT",
+    body,
+  });
+
+/** Narrow default-model switch (owner): flips the same default_model the models page maintains, without resending the table. */
+export const putDefaultModel = (projectId: string, body: DefaultModelUpdateRequest) =>
+  apiFetch<DefaultModelResponse>(`/api/projects/${encodeURIComponent(projectId)}/models/default`, {
     method: "PUT",
     body,
   });
@@ -206,9 +237,28 @@ export const resetAgentConfig = (projectId: string, agentId: string) =>
     { method: "POST" },
   );
 
-export const getAgentTraces = (projectId: string, agentId: string) =>
+/**
+ * Optional paging (absent = the legacy full date-grouped response): pages Session groups
+ * newest-first; a paged response answers with `sessions` (titles + category/workspace),
+ * `totalSessions`, and per-category `counts` / `workspaceCounts`. `category` filters to
+ * one sidebar bucket (paging applies within it, mirroring the sessions list); `cli`
+ * includes CLI-origin Sessions (the "show CLI sessions" preference, default off — same
+ * parameter convention as listSessions). The Trace page requests `limit+1` per page to
+ * detect "has more" (splitPage).
+ */
+export const getAgentTraces = (
+  projectId: string,
+  agentId: string,
+  paging?: { offset: number; limit: number; category?: SessionCategory; cli?: boolean },
+) =>
   apiFetch<AgentTracesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces`,
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/traces${
+      paging
+        ? `?limit=${paging.limit}&offset=${paging.offset}` +
+          (paging.category ? `&category=${paging.category}` : "") +
+          (paging.cli ? "&cli=1" : "")
+        : ""
+    }`,
   );
 
 // Session ---------------------------------------------------------------------
@@ -221,12 +271,20 @@ export const getAgentTraces = (projectId: string, agentId: string) =>
 export const listSessions = (
   projectId: string,
   agentId: string,
-  opts?: { offset: number; limit: number; category?: SessionCategory; withCounts?: boolean },
+  opts?: {
+    offset: number;
+    limit: number;
+    category?: SessionCategory;
+    withCounts?: boolean;
+    /** Also list CLI-created Sessions (Trace discovery + adoption); default = web rows straight from the DB. */
+    cli?: boolean;
+  },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
-      (opts.withCounts ? "&counts=1" : "")
+      (opts.withCounts ? "&counts=1" : "") +
+      (opts.cli ? "&cli=1" : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
@@ -257,17 +315,32 @@ export const patchSession = (sessionId: string, body: SessionPatchRequest) =>
 export const deleteSession = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 
+/** Windowed history request: the newest N units (tail), or the N units before a cursor. */
+export type MessagesPageQuery =
+  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+
 /**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
  * alongside the messages: a Task still running has no Trace entry for the event currently in
  * flight, so its elapsed can only be measured by differencing this against the Task's first
  * message timestamp — both server-side values, so no client clock offset enters the result
  * (see pushMessages).
+ *
+ * With `page`, requests a WINDOW instead of the full transcript (tail-first loading /
+ * scroll-up backfill — see stream-controller): the response then carries
+ * `MessagesResponse.page`. Omitted = the legacy full read (the resync fallback path).
  */
-export const getMessages = (sessionId: string) =>
-  apiFetchWithMeta<MessagesResponse>(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
+  const qs =
+    page === undefined
+      ? ""
+      : page.kind === "tail"
+        ? `?tailLimit=${page.limit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+  return apiFetchWithMeta<MessagesResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));
+};
 
 // Task execution, approval, abort, compaction ------------------------------------------------------
 
@@ -518,6 +591,23 @@ export const installAgentSkills = (projectId: string, agentId: string, names: st
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
     { method: "POST", body: { names } satisfies SkillInstallRequest },
   );
+
+/** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentSkillArchive = (
+  projectId: string,
+  agentId: string,
+  body: SkillArchiveInstallRequest,
+) =>
+  apiFetch<AgentSkillsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/skills/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed skill (server sets Content-Disposition attachment); the export round-trips through installAgentSkillArchive. */
+export const agentSkillArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/skills/${encodeURIComponent(name)}/archive`;
 
 export const removeAgentSkill = (projectId: string, agentId: string, name: string) =>
   apiFetch<void>(

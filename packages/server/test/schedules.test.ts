@@ -183,6 +183,37 @@ describe("schedules api", () => {
     expect(stale?.creatorUserId).toBe("owner_a");
   });
 
+  it("a hand-edited file is reconciled past a warm mtime cache (an in-place edit moves only the file's mtime)", async () => {
+    expect(
+      (
+        await owner.post(base, {
+          name: "hand",
+          prompt: "before",
+          enabled: true,
+          startAt: FUTURE,
+          period: "30m",
+        })
+      ).status,
+    ).toBe(201);
+    // Make the tree look quiet (a fresh mtime is never cached as clean), then warm the
+    // scan cache with one GET — the steady state the schedule routes now serve from.
+    const dir = scheduleDir(t.root, projectId, "default_agent");
+    const file = path.join(dir, "hand.toml");
+    const old = new Date("2026-01-01T00:00:00Z");
+    await fs.utimes(dir, old, old);
+    await fs.utimes(file, old, old);
+    let list = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(list.schedules[0]?.prompt).toBe("before");
+    // Hand-edit the file in place (like over SSH): the content and file mtime change,
+    // the directory's mtime does NOT — the per-file stat still catches it.
+    const raw = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, raw.replace('"before"', '"after"'), "utf8");
+    const edited = new Date("2026-01-01T00:01:00Z");
+    await fs.utimes(file, edited, edited);
+    list = (await (await owner.get(base)).json()) as SchedulesResponse;
+    expect(list.schedules[0]?.prompt).toBe("after");
+  });
+
   it("a file holding model_id without provider lands in invalidFiles instead of being scheduled", async () => {
     // What a schedule file persisted before the pairing rule looks like: the provider is
     // never filled in for it, the file is simply reported invalid and skipped.

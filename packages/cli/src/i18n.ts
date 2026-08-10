@@ -9,6 +9,13 @@
 /** UI language. */
 export type Language = "en" | "zh";
 
+/** Installer locations are localized at the message boundary, not embedded in update logic. */
+export type InstallerSource = "configured" | "oss" | "github";
+
+/** Readiness probe failure classes; selects which hint `webProbeFailed` appends. */
+export type WebProbeFailureKind =
+  "timeout" | "refused" | "reset" | "permission" | "dns" | "unknown";
+
 /** Resolve the language from the env var; `zh` matches exactly, everything else falls back to English (see comment #2). */
 export function resolveLanguage(): Language {
   const v = (process.env.PENGUIN_LANG ?? "").trim().toLowerCase();
@@ -115,7 +122,10 @@ export interface Messages {
     rateLimited(): string;
     apiFailed(status: number): string;
     apiMalformed(): string;
-    installerFetchFailed(url: string): string;
+    invalidDownloadSource(): string;
+    downloadBaseMustBeHttps(name: string): string;
+    ossUnavailable(): string;
+    installerFetchFailed(sources: InstallerSource[]): string;
   };
 
   // —— Runtime output ——
@@ -167,7 +177,12 @@ export interface Messages {
    * line: total = Session cumulative, delta = consumed by this compaction, carrying its own
    * sign); when present it is appended at the end of the line, e.g. ` · tokens 14k (+6k)`.
    */
-  compactionStop(mode: string, status: string, tokens?: { total: string; delta: string }): string;
+  compactionStop(
+    mode: string,
+    status: string,
+    tokens?: { total: string; delta: string },
+    errorMessage?: string,
+  ): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
@@ -219,8 +234,12 @@ export interface Messages {
   vaultListEmpty(): string;
   /** URL prompt once the `penguin web` service is ready. */
   webReady(url: string): string;
-  /** Manual-open prompt after the `penguin web` ready-poll times out (15s). */
-  webTimeout(url: string): string;
+  /** Refusal when `penguin server` finds a live server on the same data root. */
+  serverAlreadyRunning(url: string): string;
+  /** Notice when `penguin web` finds a live server on the same data root (it opens that instance instead). */
+  webAlreadyRunning(url: string): string;
+  /** Diagnostic shown after the `penguin web` ready-poll times out (15s). */
+  webProbeFailed(url: string, detail: string, kind: WebProbeFailureKind, port: number): string;
 }
 
 function headerEn(
@@ -371,7 +390,19 @@ const en: Messages = {
     apiFailed: (status) => `The GitHub release lookup failed with HTTP ${status}.`,
     apiMalformed: () =>
       "The GitHub release lookup returned an unexpected response with no usable version tag.",
-    installerFetchFailed: (url) => `Could not download the installer from ${url}.`,
+    invalidDownloadSource: () => "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github.",
+    downloadBaseMustBeHttps: (name) => `${name} must be an absolute HTTPS URL.`,
+    ossUnavailable: () => "The OSS mirror is unavailable or its release metadata is invalid.",
+    installerFetchFailed: (sources) =>
+      `Could not download the installer from ${sources
+        .map((source) =>
+          source === "configured"
+            ? "the configured mirror"
+            : source === "oss"
+              ? "the OSS mirror"
+              : "GitHub",
+        )
+        .join(" or ")}. Check your network and retry.`,
   },
 
   header: headerEn,
@@ -398,12 +429,12 @@ const en: Messages = {
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
-  compactionStop: (mode, status, tokens) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[compaction] done; old context discarded"
         : "[compaction] done; continuing with the summarized context"
-      : `[compaction] ${status}; keeping the current context`) +
+      : `[compaction] ${status}${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
   goalRound: (round) => `[goal] round ${round}`,
@@ -451,7 +482,27 @@ const en: Messages = {
   vaultListTitle: () => "Vault environment variables (values masked):",
   vaultListEmpty: () => "The vault is empty. Add one with `penguin config vault set`.",
   webReady: (url) => `Web UI ready: ${url}`,
-  webTimeout: (url) => `Server is not responding yet; open ${url} manually once it is ready.`,
+  serverAlreadyRunning: (url) =>
+    `A PenguinHarness server is already running on this data root: ${url}\n` +
+    `Stop it first, or point PENGUIN_HOME at a separate data root.`,
+  webAlreadyRunning: (url) =>
+    `Already running on this data root — opening the existing instance: ${url}`,
+  webProbeFailed: (url, detail, kind, port) => {
+    const hint = {
+      timeout:
+        `The connection timed out. Check whether a firewall or security application is blocking it. ` +
+        `Allow PenguinHarness to communicate on local port ${port}.`,
+      refused:
+        "Nothing accepted the connection. Check whether the server exited or HOST/PORT points somewhere else.",
+      reset:
+        "The connection closed before an HTTP response. Check local security software and retry.",
+      permission:
+        "The operating system denied the connection. Check firewall or security policy permissions.",
+      dns: "The host name could not be resolved. Check --host or HOST.",
+      unknown: `Open ${url} manually after the server is ready.`,
+    }[kind];
+    return `Server readiness check failed for ${url}.\nLast probe error: ${detail}\n${hint}`;
+  },
 };
 
 const zh: Messages = {
@@ -565,7 +616,19 @@ const zh: Messages = {
       "GitHub 对版本查询做了限流。请等待几分钟后重试，或用 --release <tag> 跳过查询。",
     apiFailed: (status) => `GitHub 版本查询失败，HTTP ${status}。`,
     apiMalformed: () => "GitHub 版本查询返回了非预期的响应，其中没有可用的版本号。",
-    installerFetchFailed: (url) => `无法从 ${url} 下载安装脚本。`,
+    invalidDownloadSource: () => "PENGUIN_DOWNLOAD_SOURCE 必须是 auto、oss 或 github。",
+    downloadBaseMustBeHttps: (name) => `${name} 必须是绝对 HTTPS URL。`,
+    ossUnavailable: () => "OSS 镜像不可用，或其版本元数据无效。",
+    installerFetchFailed: (sources) => {
+      const sourceText = sources
+        .map((source) =>
+          source === "configured" ? "配置的镜像" : source === "oss" ? "OSS 镜像" : "GitHub",
+        )
+        .join("或 ");
+      const leadingSpace = /^[A-Za-z]/.test(sourceText) ? " " : "";
+      const trailingSpace = /[A-Za-z]$/.test(sourceText) ? " " : "";
+      return `无法从${leadingSpace}${sourceText}${trailingSpace}下载安装脚本。请检查网络后重试。`;
+    },
   },
 
   header: headerZh,
@@ -592,12 +655,12 @@ const zh: Messages = {
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
-  compactionStop: (mode, status, tokens) =>
+  compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
         ? "[压缩] 完成，旧上下文已丢弃"
         : "[压缩] 完成，已切换到摘要后的新上下文"
-      : `[压缩] ${status === "aborted" ? "已中断" : "失败"}，保留当前上下文`) +
+      : `[压缩] ${status === "aborted" ? "已中断" : `失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}`}，保留当前上下文`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
   goalRound: (round) => `[目标] 第 ${round} 轮`,
@@ -645,7 +708,20 @@ const zh: Messages = {
   vaultListTitle: () => "vault 环境变量（值已掩码）：",
   vaultListEmpty: () => "vault 为空。用 `penguin config vault set` 添加。",
   webReady: (url) => `Web 界面已就绪：${url}`,
-  webTimeout: (url) => `服务尚未就绪，请稍后手动打开 ${url}。`,
+  serverAlreadyRunning: (url) =>
+    `该数据根目录已有 PenguinHarness 服务在运行：${url}\n请先停止它，或用 PENGUIN_HOME 指定另一个数据根目录。`,
+  webAlreadyRunning: (url) => `该数据根目录已有服务在运行，打开既有实例：${url}`,
+  webProbeFailed: (url, detail, kind, port) => {
+    const hint = {
+      timeout: `连接超时。请检查防火墙或安全软件是否拦截。请允许 PenguinHarness 在本机端口 ${port} 上通信。`,
+      refused: "没有进程接受连接。请检查服务是否已经退出，或 HOST/PORT 是否指向了其他地址。",
+      reset: "连接在收到 HTTP 响应前已关闭。请检查本机安全软件后重试。",
+      permission: "操作系统拒绝了连接。请检查防火墙或安全策略权限。",
+      dns: "无法解析主机名。请检查 --host 或 HOST。",
+      unknown: `请在服务就绪后手动打开 ${url}。`,
+    }[kind];
+    return `服务探活失败：${url}\n最后一次探测错误：${detail}\n${hint}`;
+  },
 };
 
 /** Get the message set for a language. */

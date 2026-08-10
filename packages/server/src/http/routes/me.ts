@@ -28,15 +28,25 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       user: toUserInfo(c.var.user),
       previewIsolated: target !== null,
+      desktopMode: deps.desktop !== null,
+      sessionVia: c.var.sessionVia,
     } satisfies MeResponse);
   });
 
   // Self-service password change (user settings): validates the old password; on success, the initial-password prompt disappears from GET /api/me.
+  // Desktop sessions may omit oldPassword: the seed password of a desktop-created root is
+  // random and never shown, so its holder has nothing to type — the shell's redeemed
+  // token already proved machine ownership.
   app.put("/password", async (c) => {
     const body = await readJson(c);
-    const oldPassword = requireString(body, "oldPassword", { label: "oldPassword" });
     const newPassword = requireString(body, "newPassword", { label: "newPassword" });
-    await deps.authService.changePassword(c.var.user.userId, oldPassword, newPassword);
+    const desktopSession = deps.desktop !== null && c.var.sessionVia === "desktop";
+    if (desktopSession && body.oldPassword === undefined) {
+      await deps.authService.setPasswordDesktop(c.var.user.userId, newPassword);
+    } else {
+      const oldPassword = requireString(body, "oldPassword", { label: "oldPassword" });
+      await deps.authService.changePassword(c.var.user.userId, oldPassword, newPassword);
+    }
     return c.body(null, 204);
   });
 

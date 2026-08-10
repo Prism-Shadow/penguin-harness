@@ -3,7 +3,8 @@
  * the approval row), headerSubtitle surfaces the model-written `description` argument for
  * the command/subagent tools and the shortened file path for the file tools, and
  * pendingFilePayload decodes the file-tool arguments so a pending approval shows the actual
- * rewrite. All must tolerate incomplete mid-stream JSON.
+ * rewrite. All must tolerate incomplete mid-stream JSON; headerSubtitle additionally holds a
+ * still-streaming field back until its closing quote so the header never jitters (#137).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -87,6 +88,38 @@ describe("headerSubtitle", () => {
   it("folds a multi-line description to one line", () => {
     expect(headerSubtitle("exec_command", '{"cmd":"ls","description":"one\\ntwo"}')).toBe(
       "one two",
+    );
+  });
+
+  it("holds a still-streaming description back until its closing quote (#137)", () => {
+    expect(headerSubtitle("exec_command", '{"description":"Read the con', false)).toBeNull();
+    // Closing quote arrived: renders even though later arguments are still streaming.
+    expect(
+      headerSubtitle("exec_command", '{"description":"Read the config","cmd":"cat co', false),
+    ).toBe("Read the config");
+  });
+
+  it("holds a still-streaming file path back (shortenPath would rewrite non-monotonically)", () => {
+    expect(headerSubtitle("read_file", '{"file_path":"/home/us', false)).toBeNull();
+    expect(headerSubtitle("write_file", '{"file_path":"/a/b/c.txt","content":"xx', false)).toBe(
+      "…/b/c.txt",
+    );
+  });
+
+  it("renders whatever is there once the arguments settled, even unterminated (aborted call)", () => {
+    expect(headerSubtitle("exec_command", '{"description":"half', true)).toBe("half");
+    expect(headerSubtitle("read_file", '{"file_path":"/a/b/c.txt', true)).toBe("…/b/c.txt");
+  });
+
+  it("prefers a complete description over the file path when a file tool carries one (user-enabled schema)", () => {
+    expect(
+      headerSubtitle("read_file", '{"description":"Check the config","file_path":"/a/b/c.ts"}'),
+    ).toBe("Check the config");
+    // Description still streaming: nothing renders yet — no path-then-description swap.
+    expect(headerSubtitle("read_file", '{"description":"Check the co', false)).toBeNull();
+    // Empty description falls back to the path.
+    expect(headerSubtitle("read_file", '{"description":"","file_path":"/a/b/c.ts"}')).toBe(
+      "…/b/c.ts",
     );
   });
 });

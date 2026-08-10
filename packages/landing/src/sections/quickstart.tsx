@@ -5,6 +5,7 @@
  * the string dictionaries.
  */
 import { useState } from "react";
+import { Link } from "react-router";
 import type { ReactNode } from "react";
 import { S } from "../lib/strings";
 import {
@@ -199,6 +200,18 @@ export function Quickstart() {
                 </p>
               </>
             )}
+            {/* Below both install methods: the desktop app is the headline install path
+                (hero + /download); this note tells CLI installers the two share one data
+                root, and still routes anyone terminal-averse back to the download page. */}
+            <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {S.install.desktopNote}{" "}
+              <Link
+                to="/download"
+                className="inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700"
+              >
+                {S.install.desktopPage}
+              </Link>
+            </p>
           </Step>
 
           {mode === "web" ? (

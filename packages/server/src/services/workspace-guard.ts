@@ -8,7 +8,7 @@
  * reachability governed by the file permissions of the OS account running the
  * service.
  * When no Workspace is specified, this module isn't involved (the SDK creates its
- * own temporary directory).
+ * own temporary workspace).
  */
 import fs from "node:fs/promises";
 import { HttpError } from "../http/errors.js";
@@ -26,7 +26,7 @@ export async function assertWorkspaceAllowed(args: { workspace: string }): Promi
     throw new HttpError(
       400,
       "workspace_not_found",
-      `Workspace does not exist or is inaccessible: ${args.workspace}. Specify an existing directory, or leave it empty to use a temporary directory.`,
+      `Workspace does not exist or is inaccessible: ${args.workspace}. Specify an existing directory, or leave it empty to use a temporary workspace.`,
     );
   }
   const stat = await fs.stat(ws);

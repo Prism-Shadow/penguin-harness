@@ -1,8 +1,7 @@
 /**
  * Signed tokens for Workspace HTML preview on a separate origin.
  *
- * The preview origin deliberately differs from the App origin (see
- * design/specs/05-ARCHITECTURE.md § "Workspace 文件预览"), so it never receives the
+ * The preview origin deliberately differs from the App origin, so it never receives the
  * session cookie — cookies are keyed by host and ignore port, which is why the two
  * must differ by hostname and not merely by port. Authorization therefore travels in
  * the URL as a short-lived HMAC token instead.
@@ -189,6 +188,12 @@ export function resolvePreviewTarget(
   const counterpart = loopbackCounterpart(requestHost);
   if (!counterpart) return null;
   if (!loopbackHostRoles(serverBind.host)) return null;
+  // Port 0 means "the listener has not reported its actual port yet" (PORT=0 picks an
+  // ephemeral one; index.ts writes it back once bound). Emitting `:0` would produce a URL
+  // no browser will load — Chromium rejects it outright with ERR_UNSAFE_PORT — so degrade
+  // to "no isolated preview" instead, which the UI already handles by falling back to the
+  // sandboxed same-origin preview.
+  if (serverBind.port === 0) return null;
 
   let protocol: string;
   try {

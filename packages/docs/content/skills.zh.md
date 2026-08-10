@@ -69,6 +69,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `vllm` | 用 vLLM 部署与服务 LLM，提供 OpenAI 兼容端点，并为 Agent 负载启用工具调用 |
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |
 | | `llamafactory` | 用 LlamaFactory 微调 LLM：注册数据集、以 YAML 配置训练、合并 LoRA 适配器并部署产物 |
+| | `skill-porting` | 把外部来源（插件市场、skills.sh、GitHub 仓库或本地目录）的 Skill 经审查与规范化后安装进 Agent |
 | Agent 调优 | `agent-creation` | 根据需求创建或配置 Agent State，编写 AGENTS.md、设置身份信息并安装所需 Skill |
 | | `benchmark-design` | 为指定 Agent 设计并校准多 Case Benchmark，建立可追溯的 Formal Baseline |
 | | `agent-evaluation` | 内部叶子执行器：根据完整评测协议隔离执行并私密评分一个 Case Run |

@@ -10,6 +10,8 @@ export interface AuthSessionRow {
   userId: string;
   createdAt: string;
   expiresAt: string;
+  /** How the session was established ("password" | "desktop"); null on rows formed before the column existed (treated as "password"). */
+  via: string | null;
 }
 
 export class AuthSessionsRepo {
@@ -18,9 +20,9 @@ export class AuthSessionsRepo {
   insert(row: AuthSessionRow): void {
     this.db
       .prepare(
-        "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at, via) VALUES (?, ?, ?, ?, ?)",
       )
-      .run(row.tokenHash, row.userId, row.createdAt, row.expiresAt);
+      .run(row.tokenHash, row.userId, row.createdAt, row.expiresAt, row.via);
   }
 
   findByTokenHash(tokenHash: string): AuthSessionRow | null {
@@ -31,6 +33,7 @@ export class AuthSessionsRepo {
       userId: r.user_id as string,
       createdAt: r.created_at as string,
       expiresAt: r.expires_at as string,
+      via: (r.via as string | null) ?? null,
     };
   }
 

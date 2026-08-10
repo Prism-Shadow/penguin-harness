@@ -1,0 +1,60 @@
+name: Test Alibaba Cloud OSS publishing
+
+on:
+  workflow_dispatch:
+
+jobs:
+  staging:
+    name: Verify GitHub OIDC staging access
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: oss-staging
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate OSS environment configuration
+        env:
+          ALIYUN_OIDC_PROVIDER_ARN: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          ALIYUN_ROLE_ARN: ${{ vars.ALIYUN_ROLE_ARN }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_REGION: ${{ vars.OSS_REGION }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
+        run: |
+          set -eu
+          for name in ALIYUN_OIDC_PROVIDER_ARN ALIYUN_ROLE_ARN OSS_BUCKET OSS_REGION OSS_ENDPOINT OSS_PUBLIC_BASE_URL; do
+            eval "value=\${$name:-}"
+            if [ -z "$value" ]; then
+              echo "error: $name is not configured in the oss-staging environment" >&2
+              exit 1
+            fi
+          done
+
+      - name: Download and verify ossutil
+        run: |
+          sh scripts/install-ossutil.sh "$RUNNER_TEMP/ossutil-bin"
+          echo "$RUNNER_TEMP/ossutil-bin" >> "$GITHUB_PATH"
+
+      - name: Exchange GitHub OIDC token for Alibaba Cloud credentials
+        id: aliyun
+        uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
+        with:
+          oidc-provider-arn: ${{ vars.ALIYUN_OIDC_PROVIDER_ARN }}
+          role-to-assume: ${{ vars.ALIYUN_ROLE_ARN }}
+          role-session-name: penguin-oss-staging-${{ github.run_id }}
+          role-session-expiration: 1800
+          audience: github-actions
+
+      - name: Verify staging access boundaries
+        env:
+          OSS_ACCESS_KEY_ID: ${{ steps.aliyun.outputs['aliyun-access-key-id'] }}
+          OSS_ACCESS_KEY_SECRET: ${{ steps.aliyun.outputs['aliyun-access-key-secret'] }}
+          OSS_SESSION_TOKEN: ${{ steps.aliyun.outputs['aliyun-security-token'] }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET }}
+          OSS_REGION: ${{ vars.OSS_REGION }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT }}
+          OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL }}
+        run: sh scripts/test-oss-staging.sh

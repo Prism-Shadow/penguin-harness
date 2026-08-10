@@ -4,7 +4,7 @@
  *
  * The load-bearing case is "same token, App origin's Host": the preview route answers on
  * the same process as the App, so if it served Agent-written HTML there, it would be a
- * same-origin XSS with the session cookie attached. See design § "Workspace 文件预览".
+ * same-origin XSS with the session cookie attached.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -94,6 +94,15 @@ describe("preview origin derivation", () => {
       origin: "http://127.0.0.1:7364",
       host: "127.0.0.1",
     });
+  });
+
+  it("gives up while the bind port is still 0, rather than emitting an unloadable :0 URL", () => {
+    // PORT=0 (the desktop shell) before index.ts writes the actual port back: a `:0` URL
+    // is rejected by Chromium as ERR_UNSAFE_PORT, so previewIsolated reports false and the
+    // UI falls back to the sandboxed same-origin preview.
+    expect(
+      resolvePreviewTarget("http://localhost:0/x", "localhost:0", null, { ...bind, port: 0 }),
+    ).toBeNull();
   });
 
   it("gives up when the loopback counterpart is not reachable from the bind address", () => {

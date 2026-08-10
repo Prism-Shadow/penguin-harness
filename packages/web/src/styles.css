@@ -262,6 +262,33 @@
 .anim-msg {
   animation: msg-in 180ms ease-out both;
 }
+
+/* Outline jump feedback: a soft brand wash fading out over the landed-on message. Applied by
+   conversation-outline.tsx to the [data-outline-anchor] wrapper via classList — deliberately
+   outside React's managed props, so stream re-renders don't strip it mid-flash. */
+@keyframes outline-flash {
+  from {
+    background-color: var(--color-brand-50);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes outline-flash-dark {
+  from {
+    background-color: var(--color-brand-950);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.outline-flash {
+  border-radius: 0.5rem;
+  animation: outline-flash 900ms ease-out both;
+}
+.dark .outline-flash {
+  animation-name: outline-flash-dark;
+}
 /* Drawer slide-in. */
 .anim-drawer-left {
   animation: drawer-in-left 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;

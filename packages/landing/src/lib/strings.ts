@@ -26,6 +26,7 @@ export const zh = {
     contract: "CONTRACT.md",
     features: "功能",
     blog: "博客",
+    download: "下载",
     docs: "文档",
     github: "GitHub",
     openMenu: "打开菜单",
@@ -58,9 +59,14 @@ export const zh = {
     titleWords: ["桌面", "服务器"],
     titleSuffix: "上",
     subtitle: "一键创建自进化 Agent",
-    ctaPrimary: "快速开始",
+    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    downloadCta: "下载桌面版",
+    downloadCtaFor: (platform: string) => `下载桌面版（${platform}）`,
+    ctaQuickstart: "快速开始",
     ctaGithub: "GitHub",
-    installHint: "一行命令安装（内嵌 Node 运行时，解压即用）",
+    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
+    downloadAll: "全部平台下载（macOS / Windows / Linux）",
+    cliAlt: "命令行与自托管安装 ↓",
     stats: [
       { value: "1000+", label: "支持模型数量" },
       { value: "1×CPU", label: "最低运行配置" },
@@ -69,7 +75,7 @@ export const zh = {
     ],
   },
 
-  /** Install-method switcher (hero + quick start): OS tabs, online/offline methods. */
+  /** Install-method switcher (quick start step 1): OS tabs, online/offline methods. */
   install: {
     linux: "Linux",
     macos: "macOS",
@@ -84,6 +90,53 @@ export const zh = {
       windows: "解压后也可直接双击 install.cmd 完成安装。",
     },
     offlineRelease: "前往 GitHub Releases 下载离线安装包",
+    desktopNote: "已经装了桌面版？CLI 安装与桌面版共用同一份本地数据，两者可以随时并用。",
+    desktopPage: "前往桌面端下载页",
+  },
+
+  download: {
+    eyebrow: "下载",
+    title: "下载桌面端",
+    subtitle:
+      "完整的 Web 体验打包为独立应用：内嵌服务端，打开即已登录——无需终端、无登录页；数据与 CLI 安装共用同一个 ~/.penguin/data 目录。",
+    recommended: "当前系统",
+    platforms: {
+      mac: { name: "macOS", require: "macOS 11 及以上，dmg 安装镜像（按芯片选择）" },
+      windows: { name: "Windows", require: "Windows 10 及以上（x64），NSIS 安装程序" },
+      linux: { name: "Linux", require: "x64，AppImage 免安装运行，或 deb 交给包管理器" },
+    },
+    statusOss: (version: string) => `已连接 OSS 国内镜像（${version}），点击即从镜像高速下载。`,
+    statusGithub: "下载指向 GitHub Releases 的最新版本。",
+    altGithub: "改从 GitHub 下载",
+    altOss: "改用 OSS 镜像下载",
+    checksums: "校验和（SHA256SUMS.desktop）",
+    allReleases: "全部版本",
+    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    faq: {
+      title: "首次启动常见问题",
+      intro: "当前构建暂未签名，系统可能拦截首次启动——按对应系统的步骤解除即可，只需操作一次。",
+      mac: {
+        question: "macOS 提示「PenguinHarness」已损坏，无法打开？",
+        why: "macOS 会给从网络下载的文件加上隔离标记，应用未签名时会因此被误报「已损坏」。删除该标记即可解除：",
+        stepDrag: "打开下载的 dmg，把 PenguinHarness 拖入「应用程序（Applications）」文件夹。",
+        stepTerminal: "打开终端：「启动台 → 其他 → 终端」。",
+        stepPaste:
+          "在终端粘贴这条命令并回车，然后输入开机密码（输入时屏幕不显示字符，输完回车即可）：",
+        stepOpen: "执行完成后，双击即可正常打开应用。",
+      },
+      windows: {
+        question: "Windows SmartScreen 提示「Windows 已保护你的电脑」？",
+        answer:
+          "安装程序暂未签名，SmartScreen 会拦截首次运行：点「更多信息」，再点「仍要运行」即可继续安装，仅首次运行需要。",
+      },
+      linux: {
+        question: "Linux 双击 AppImage 没有反应？",
+        answer:
+          "浏览器下载的 AppImage 默认没有执行权限，赋权一次后即可正常启动（deb 包经包管理器安装，无此问题）：",
+      },
+    },
+    cliHint: "只需要命令行或浏览器里的 Web 界面？",
+    cliHintLink: "参见快速开始",
   },
 
   copy: {
@@ -176,7 +229,7 @@ export const zh = {
     tabCli: "命令行",
     webStep2: "启动 Web 界面",
     webStep2Desc:
-      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin / penguin-2026 登录（登录后请尽快修改密码）。",
+      "penguin web 启动本地服务并打开浏览器，用内置管理员 admin 登录——初始密码在服务端首次启动时打印到终端（形如 penguin-1234），登录后请尽快修改密码。",
     webCmd: "penguin web   # 打开 http://127.0.0.1:7364",
     webStep3: "在界面里配置模型，开始对话",
     webStep3Desc:
@@ -426,7 +479,8 @@ export const zh = {
     title: "让复杂的 AI 开发越来越简单",
     subtitle:
       "通过不断进化，PenguinHarness 为你提供更高效、更可靠、更低幻觉、更低成本的 Agent 生产力引擎。",
-    install: "立即安装",
+    download: "下载桌面版",
+    quickstart: "快速开始",
     docs: "阅读文档",
   },
 

@@ -190,10 +190,18 @@ interface RequestBeginPayload {
 interface RequestEndPayload {
   type: "request_end";
   status: StopReason;         // "completed" is the mechanical commit criterion for replay
-  message?: string;           // failure detail (LLMOutcome.message), non-completed only:
-                              // the real reason behind a retried/failed Request (e.g. a
-                              // provider quota code) — read by the Cost center's errors
-                              // panel; additive, old Traces replay unchanged
+  // The unified RetryDetail block below is stamped in one place by the builders; every
+  // field is additive — old Traces replay unchanged. compaction_end reuses the same
+  // block (attempt = final attempt ordinal, error_message = the last failure's detail).
+  error_message?: string;     // error detail (LLMOutcome.errorMessage internally — one
+                              // name across the stack), non-completed only: the real
+                              // reason behind a retried/failed Request (e.g. a provider
+                              // error code) — read by the Cost center's errors panel
+  attempt?: number;           // 1-based ordinal of this request within its retry run (the
+                              // authoritative retry count): stamped on failures and on a
+                              // completion that needed retries; absent on a clean first try
+  retry_in_ms?: number;       // planned reconnect wait (ms), present only when the engine
+                              // will retry in-run — the Web App renders it as a countdown
 }
 
 interface ApprovalDecisionPayload {
@@ -256,7 +264,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | --- | --- | --- |
 | `completed` | finished normally | continue |
 | `aborted` | user interrupt | stop, hand back to the user |
-| `timeout` | LLM timeout / transport disconnect / transient provider quota error | LLM side only: auto-reconnect within the run |
+| `timeout` | LLM timeout / transport disconnect | LLM side only: auto-reconnect within the run |
 | `malformed` | parse failure / truncated stream | LLM side only: auto-reconnect within the run |
 | `failed` | an error the classifier did not judge transient (LLM); a tool error (Environment) | LLM side: auto-reconnect within the run as well — the status is still reported as `failed`. Environment side: the error is fed back to the model, never retried |
 | `auth` | the provider rejected the credentials | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated (credentials come from the current Project config) |

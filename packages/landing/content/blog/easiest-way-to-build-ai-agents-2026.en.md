@@ -78,7 +78,7 @@ One install gives you all five rows of that first table, sharing one data direct
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # http://127.0.0.1:7364 — first login: admin / penguin-2026
+penguin web        # http://127.0.0.1:7364 — first login: admin, initial password printed on first start
 ```
 
 Multi-session chat, agent and skill management, model configuration, usage and cost statistics, **Trace observability**, and an **evaluation center** — in the box, wired together, nothing to subscribe to and nothing to self-host separately. Every request, tool call and approval decision is already recorded; a session restores completely from its trace. There is no tracing SDK to install because there is no seam to instrument across.

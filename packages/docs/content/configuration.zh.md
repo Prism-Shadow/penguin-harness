@@ -17,6 +17,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_WEB_DB` | 服务端 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | npm 安装的服务端包回退到内置 web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
 
@@ -38,7 +39,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M 系列 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
+openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M3 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
 
 ## Project 配置
 
@@ -68,11 +69,11 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }
+default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-pro"
+model_id = "deepseek-v4-flash"
 context_window = 1000000
 vision = false
 api_key = "sk-..."
@@ -98,11 +99,11 @@ output = 0.857143
 | `description` | — | Agent 描述 |
 | `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
-| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
-| `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
+| `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
+| `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
-| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |
+| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
@@ -122,7 +123,8 @@ version: 3
 system_prompt: |
   …
 
-max_turns: 100
+# -1(缺省)不限制轮数;设为正整数则限制单个 Task 的轮数。
+max_turns: -1
 
 model:
   max_tokens: 32000

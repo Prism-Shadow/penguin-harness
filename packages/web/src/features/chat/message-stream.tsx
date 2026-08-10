@@ -6,7 +6,7 @@
  * cards at any nesting depth.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
 import type { TaskStats } from "../../lib/omni/task-stats";
@@ -129,7 +129,21 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
       seg.type === "single" && (seg.item.kind === "user_text" || seg.item.kind === "user_image");
     if (isUserMsg) {
       flushTurn();
-      nodes.push(renderSeg(seg, i));
+      // Outline jump anchor, top level only (ctx.origin is empty just for the main
+      // conversation): item ids restart per model, so stamping nested renders — subagent
+      // conversations in the panel — would duplicate anchor values; the outline queries
+      // them scoped to the main stream's scroll container. The wrapper stays classless:
+      // margins collapse straight through it, and the outline's transient flash class
+      // lives outside React's managed props (className would wipe it on re-render).
+      nodes.push(
+        ctx.origin.length === 0 ? (
+          <div key={`anchor-${seg.item.id}`} data-outline-anchor={seg.item.id}>
+            {renderSeg(seg, i)}
+          </div>
+        ) : (
+          renderSeg(seg, i)
+        ),
+      );
       continue;
     }
     turn.push({ seg, i });
@@ -141,15 +155,44 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   return <>{nodes}</>;
 }
 
+/** Scroll-up backfill wiring (windowed history): state + trigger for the top-of-stream affordance. */
+export interface OlderHistoryControls {
+  /** Older windows exist beyond the loaded history (scrolling near the top triggers onLoad). */
+  hasMore: boolean;
+  /** A backfill request is in flight (spinner row). */
+  loading: boolean;
+  /** The last backfill failed (retry row); null = fine. */
+  error: string | null;
+  /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
+  prependedCount: number;
+  onLoad: () => void;
+}
+
+/** Distance from the top (px) at which scrolling starts fetching the previous history window. */
+const OLDER_TRIGGER_PX = 300;
+
 export function MessageStream({
   items,
   version,
   ctx,
+  scrollElRef,
+  outline,
+  older,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
   version: number;
   ctx: StreamRenderContext;
+  /** Mirrors the scroll container element out to the owner (the conversation outline's jump/scrollspy target). */
+  scrollElRef?: RefObject<HTMLDivElement | null>;
+  /**
+   * Overlay slot rendered inside the stream's positioning wrapper (the conversation
+   * outline's tick rail): the rail must span exactly the stream area — not the composer —
+   * and anchor its absolute positioning to this wrapper, which only this component owns.
+   */
+  outline?: ReactNode;
+  /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
+  older?: OlderHistoryControls;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -196,6 +239,19 @@ export function MessageStream({
     );
   };
 
+  /** Held refs for prepend scroll anchoring (see the layout effect below). */
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  const lastPrependedRef = useRef(older?.prependedCount ?? 0);
+  const lastHeightRef = useRef(0);
+
+  /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
+  const maybeLoadOlder = (el: HTMLDivElement) => {
+    const o = olderRef.current;
+    if (!o || !o.hasMore || o.loading || o.error !== null) return;
+    if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
+  };
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -210,6 +266,7 @@ export function MessageStream({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
+    maybeLoadOlder(el);
     syncJump();
   };
 
@@ -218,11 +275,24 @@ export function MessageStream({
   // during the animated return — the glide owns the scroll position until it arrives.
   useLayoutEffect(() => {
     const el = scrollRef.current;
+    // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
+    // message the user was reading exactly where it was by offsetting scrollTop by the
+    // content growth (same pre-paint timing as the stick snap, so nothing flashes).
+    // Keyed on the prepend count — ordinary streaming growth at the bottom must not
+    // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
+    // it still holds the pre-prepend height. Skipped while sticking (the snap below
+    // owns the position; a prepend while stuck at the bottom cannot move the tail).
+    const prepended = older?.prependedCount ?? 0;
+    if (el && prepended > lastPrependedRef.current && !follow.stick && !returningRef.current) {
+      el.scrollTop += el.scrollHeight - lastHeightRef.current;
+    }
+    lastPrependedRef.current = prepended;
+    if (el) lastHeightRef.current = el.scrollHeight;
     if (el && follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, follow]);
+  }, [version, follow, older?.prependedCount]);
 
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
@@ -268,7 +338,10 @@ export function MessageStream({
   return (
     <div className="relative h-full min-h-0">
       <div
-        ref={scrollRef}
+        ref={(el) => {
+          scrollRef.current = el;
+          if (scrollElRef) scrollElRef.current = el;
+        }}
         onScroll={onScroll}
         onWheel={(e) => {
           follow.wheel(e.deltaY);
@@ -289,6 +362,32 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
+          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
+              row after a failure, and — once at least one window was backfilled — a quiet
+              beginning-of-conversation marker when there is nothing older. Idle-with-more shows
+              nothing: scrolling near the top triggers the fetch by itself. */}
+          {older && items.length > 0 && (
+            <div className="flex justify-center pb-2">
+              {older.loading ? (
+                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  {S.chat.loadingEarlier}
+                </span>
+              ) : older.error !== null ? (
+                <button
+                  type="button"
+                  onClick={older.onLoad}
+                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  {S.chat.loadEarlierRetry}
+                </button>
+              ) : !older.hasMore && older.prependedCount > 0 ? (
+                <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
+                  {S.chat.historyBeginning}
+                </span>
+              ) : null}
+            </div>
+          )}
           {items.length === 0 ? (
             <EmptyState title={S.chat.emptyStream} />
           ) : (
@@ -296,6 +395,7 @@ export function MessageStream({
           )}
         </div>
       </div>
+      {outline}
       {/* Back-to-bottom (shows once the user scrolls away from content below the fold): floats
           just above the composer; clicking returns to the bottom and re-enters follow, so the
           view keeps tracking the live stream. */}

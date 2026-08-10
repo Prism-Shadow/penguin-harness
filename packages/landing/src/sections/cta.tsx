@@ -1,11 +1,13 @@
-/** Closing call-to-action: the productivity-engine pitch + install / docs buttons. */
+/** Closing call-to-action: the productivity-engine pitch + download / quick start / docs buttons. */
 import { Link } from "react-router";
 import { S } from "../lib/strings";
 import { DOCS_URL } from "../lib/links";
 import { Section } from "../components/section";
-import { ArrowRightIcon } from "../components/icons";
+import { DownloadIcon } from "../components/icons";
 
 export function Cta() {
+  const secondary =
+    "inline-flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800";
   return (
     <Section>
       <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-gray-50/60 px-6 py-12 text-center sm:px-12 dark:border-gray-800 dark:bg-gray-900/40">
@@ -17,16 +19,16 @@ export function Cta() {
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           <Link
-            to="/#quickstart"
+            to="/download"
             className="inline-flex h-11 items-center gap-2 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
           >
-            {S.cta.install}
-            <ArrowRightIcon className="h-4 w-4" />
+            <DownloadIcon className="h-4 w-4" />
+            {S.cta.download}
           </Link>
-          <a
-            href={DOCS_URL}
-            className="inline-flex h-11 items-center rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-          >
+          <Link to="/#quickstart" className={secondary}>
+            {S.cta.quickstart}
+          </Link>
+          <a href={DOCS_URL} className={secondary}>
             {S.cta.docs}
           </a>
         </div>

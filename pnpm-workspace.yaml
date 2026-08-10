@@ -13,3 +13,9 @@ allowBuilds:
   "@google/genai": true
   esbuild: true
   protobufjs: true
+  # electron's postinstall downloads the platform runtime binary; without this allow
+  # entry pnpm skips it and `electron .` has nothing to launch.
+  electron: true
+  # electron-winstaller's script fetches Squirrel.Windows binaries; the desktop package
+  # targets NSIS only, so the script is deliberately not run.
+  electron-winstaller: false

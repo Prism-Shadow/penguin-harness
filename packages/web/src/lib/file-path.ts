@@ -79,6 +79,22 @@ export function isFilePathLike(text: string): boolean {
   return KNOWN_EXTENSIONS.has(ext);
 }
 
+/**
+ * Join a directory base path with a child entry name (Workspace-relative
+ * convention: "" is the Workspace root).
+ *
+ * Navigation targets must be computed from the base of the **listing the entry
+ * row came from**, never from the browser's current path state: stale rows stay
+ * rendered while a navigation fetch is in flight, and joining onto the
+ * already-advanced path turns a double-click into a compounded descent
+ * ("home" → "home/home" → "home/home/home", a path that does not exist).
+ * Keyed to the listing's own base, repeated clicks on the same row recompute
+ * the same target, so navigation is idempotent regardless of fetch timing.
+ */
+export function joinWorkspacePath(base: string, name: string): string {
+  return base === "" ? name : `${base}/${name}`;
+}
+
 /** Max length for a single files/stat path (matches server-side validation). */
 const MAX_PATH_LEN = 512;
 

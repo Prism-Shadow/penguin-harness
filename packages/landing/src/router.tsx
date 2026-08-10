@@ -13,6 +13,7 @@ import { NeonBackground } from "./components/neon-bg";
 import { HomePage } from "./pages/home";
 import { BlogListPage } from "./pages/blog-list";
 import { BlogPostPage } from "./pages/blog-post";
+import { DownloadPage } from "./pages/download";
 
 /**
  * Deep links into the docs SPA that missed a real file (e.g. an unknown slug) land on
@@ -76,6 +77,7 @@ export function AppRouter() {
           <Route index element={<HomePage />} />
           <Route path="/blog" element={<BlogListPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
+          <Route path="/download" element={<DownloadPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
         {/* Outside Layout: a pure redirect, no nav/footer flash. */}

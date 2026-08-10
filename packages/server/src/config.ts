@@ -9,6 +9,7 @@
  * detected to exist.
  * Docs: /docs/configuration § "Environment variables".
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,12 @@ export interface ServerConfig {
   root: string;
   /** HTTP listen address and port (defaults to 127.0.0.1:7364, deliberately avoiding common ports like 3000/8080). */
   host: string;
+  /**
+   * Listen port. `0` asks the OS for an ephemeral port (the desktop shell always does),
+   * in which case the value is only a request: index.ts writes the ACTUAL bound port back
+   * here once listening, because preview URLs are built from the server's own port rather
+   * than the browser's (dev serves the SPA on a different port; see resolvePreviewTarget).
+   */
   port: number;
   /** SQLite database path; ":memory:" for test injection. */
   dbPath: string;
@@ -29,13 +36,35 @@ export interface ServerConfig {
    * `https://preview.example.com`. It must differ from the App origin by **hostname** —
    * cookies ignore ports, so a second port would still share the session cookie. Unset
    * is the norm locally: the loopback counterpart (`127.0.0.1` <-> `localhost`) is
-   * derived per request instead. See design § "Workspace 文件预览".
+   * derived per request instead.
    */
   previewOrigin: string | null;
+  /**
+   * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
+   * used by automated tests and e2e; null (the norm) makes the seed generate a random
+   * `penguin-<4 digits>` password, printed once to the server console. In desktop mode
+   * an unpinned value resolves to a FULLY random password instead (never printed):
+   * sign-in there goes through the shell's one-shot token, so nobody needs to read the
+   * seed.
+   */
+  seedAdminPassword: string | null;
   /** Login session validity period (7 days). */
   authSessionTtlMs: number;
   /** Sliding renewal threshold: if the remaining validity is below this value when validation succeeds, it's renewed to the full TTL (renews under 6 days). */
   authSessionRenewMs: number;
+  /**
+   * Desktop mode (PENGUIN_DESKTOP_TOKEN): the per-launch token minted by the desktop
+   * shell. Non-null enables the one-shot desktop-login and Bearer-token shutdown
+   * endpoints and requires a loopback HOST — desktop mode passes the token through a
+   * URL, which must never leave the machine.
+   */
+  desktopToken: string | null;
+  /**
+   * Port announcement file (PENGUIN_PORT_FILE): after the listener is up, the actual
+   * bound port is written here — the supervising process's way to learn the port when
+   * it starts the server with PORT=0.
+   */
+  portFile: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -73,7 +102,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -83,14 +112,29 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`Invalid port configuration PORT=${env.PORT}`);
   }
+  const host = env.HOST ?? "127.0.0.1";
+  const desktopToken = env.PENGUIN_DESKTOP_TOKEN?.trim() || null;
+  // Desktop mode redeems its token through a URL: never allow it off loopback.
+  if (desktopToken !== null && host !== "127.0.0.1" && host !== "localhost") {
+    throw new Error(`Desktop mode requires a loopback HOST (got HOST=${host})`);
+  }
   return {
     root,
-    host: env.HOST ?? "127.0.0.1",
+    host,
     port,
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
+    // An empty/whitespace value is treated as unset (→ random seed password). Desktop
+    // mode without a pinned value seeds a FULLY random password rather than the
+    // printable penguin-<4 digits>: desktop sign-in goes through the shell's token, so
+    // the seed never needs to be read — and index.ts deliberately does not print it.
+    seedAdminPassword:
+      env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() ||
+      (desktopToken !== null ? randomBytes(24).toString("base64url") : null),
     authSessionTtlMs: 7 * DAY_MS,
     authSessionRenewMs: 6 * DAY_MS,
+    desktopToken,
+    portFile: env.PENGUIN_PORT_FILE?.trim() || null,
   };
 }

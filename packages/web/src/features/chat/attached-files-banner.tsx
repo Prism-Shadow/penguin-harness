@@ -3,8 +3,8 @@
  * server appends aren't shown verbatim, they collapse into a single line reading
  * "Attached files: a.pdf, b.csv" (paperclip icon + static text, no navigation — the files live
  * in the session scratchpad and the model opens them by path); the body text around them is
- * rendered as usual by the caller. Same shape as SkillsBanner, so the two notices a message
- * can carry read as one family.
+ * rendered as usual by the caller. It keeps the same visual language as message-level notices;
+ * the caller owns its user-side alignment and timestamp footer.
  */
 import { S } from "../../lib/strings";
 import { attachmentFileName } from "../../lib/attachments";
@@ -22,7 +22,7 @@ export function AttachedFilesBanner({ files }: { files: string[] }) {
     // into a paragraph-tall block above the message. The full list stays reachable as a title.
     <p
       title={label}
-      className="anim-msg my-2 flex w-fit max-w-full items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
+      className="flex w-fit max-w-full items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400"
     >
       <GlyphIcon d={PAPERCLIP_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
       <span className="min-w-0 truncate">{label}</span>

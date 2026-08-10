@@ -479,7 +479,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(deniedMsg).toBeDefined();
   });
 
-  it("max_turns default is 100", () => {
+  it("engine maxTurns fallback is -1 (unlimited) when the option is omitted (direct SDK construction)", () => {
     const engine = new ContextEngine({
       llm: new FakeLLM(),
       environment: new Environment({
@@ -487,8 +487,10 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         toolConfig: execCommandToolConfig(),
       }),
     });
-    // Reads the default via a private field (white-box, only testing the default).
-    expect((engine as unknown as { maxTurns: number }).maxTurns).toBe(100);
+    // Reads the fallback via a private field (white-box, only testing the fallback). The
+    // SDK-construction fallback for an omitted option now matches the agent-config default
+    // (defaultSystemConfig().max_turns, asserted in state.test.ts): -1 = no turn cap.
+    expect((engine as unknown as { maxTurns: number }).maxTurns).toBe(-1);
   });
 
   it("streams the max-turns stop note before the complete text (no extra leading newline)", async () => {
@@ -684,7 +686,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
           yield partialText("start", "");
           yield partialText("delta", "half a thought");
           // `auth`: the one LLM status that still exits straight to the flatten path.
-          return { status: "auth", message: "boom" };
+          return { status: "auth", errorMessage: "boom" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1646,7 +1648,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
             toolCallId: "tc-broken",
             stopReason: "malformed",
           });
-          return { status: "malformed", message: "incomplete stream" };
+          return { status: "malformed", errorMessage: "incomplete stream" };
         }
         yield assistantText("done");
         yield tokenUsage(emptyTokenCounts(), {
@@ -1799,7 +1801,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       async *streamGenerate(params) {
         calls += 1;
         inputs.push(params.newMessages);
-        return { status: "failed", message: "400 unknown parameter: max_output_tokens" };
+        return { status: "failed", errorMessage: "400 unknown parameter: max_output_tokens" };
       },
     };
     const environment = new Environment({
@@ -1884,7 +1886,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
       // eslint-disable-next-line require-yield
       async *streamGenerate() {
         calls += 1;
-        return { status: "auth", message: "401 invalid x-api-key" };
+        return { status: "auth", errorMessage: "401 invalid x-api-key" };
       },
     };
     const environment = new Environment({
@@ -1898,7 +1900,9 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     // The request's own terminal status is the host signal (streams to the web).
     const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
     expect((end!.payload as { status?: string }).status).toBe("auth");
-    expect((end!.payload as { message?: string }).message).toBe("401 invalid x-api-key");
+    expect((end!.payload as { error_message?: string }).error_message).toBe(
+      "401 invalid x-api-key",
+    );
     // No planned retry is announced for a terminal failure.
     expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
     const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
@@ -1906,14 +1910,15 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
   });
 
-  it("a quota-403 (classified timeout) retries within the default cap and succeeds", async () => {
+  it("a bare 403 (classified failed) retries within the default cap and succeeds", async () => {
     let calls = 0;
     const llm: LLMInterface = {
       async *streamGenerate() {
         calls += 1;
-        // Two quota rejections (GenerativeModel classifies them as timeout), then success —
-        // attempt 3 is within the default cap of 5.
-        if (calls <= 2) return { status: "timeout" };
+        // Two provider 403 rejections (GenerativeModel labels them failed — there is no
+        // quota/message heuristic anymore), then success: every non-auth failure rides
+        // the ladder, and attempt 3 is within the default cap of 5.
+        if (calls <= 2) return { status: "failed", errorMessage: "403 forbidden" };
         yield assistantText("recovered");
         yield tokenUsage(emptyTokenCounts(), {
           cache_read: 0,
@@ -2016,15 +2021,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(engine.skipReconnectWait()).toBe(false);
   });
 
-  it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 250ms base, 30s cap)", () => {
-    // The default cap (5) walks the first five steps — 250+500+1000+2000+4000 ≈ 7.75s of
-    // total patience; the formula keeps climbing to the 30s ceiling for larger caps.
-    const ladder = [1, 2, 3, 4, 5].map((n) => reconnectDelayMs(250, 30_000, n));
-    expect(ladder).toEqual([250, 500, 1000, 2000, 4000]);
-    expect(ladder.reduce((a, b) => a + b, 0)).toBe(7750);
-    expect([6, 7, 8].map((n) => reconnectDelayMs(250, 30_000, n))).toEqual([8000, 16000, 30000]);
+  it("reconnectDelayMs: exponential-with-ceiling ladder (defaults: 2s base, 30s cap)", () => {
+    // The default cap (5) walks 2s/4s/8s/16s and hits the 30s ceiling on the fifth wait —
+    // ≈ 60s of total patience (issue #218: the old 250ms base burned the whole ladder in
+    // ~7.75s, faster than a provider restart or rate-limit window can recover). Every wait
+    // sits at or above the hosts' 2s countdown floor, so each retry is visible.
+    const ladder = [1, 2, 3, 4, 5].map((n) => reconnectDelayMs(2000, 30_000, n));
+    expect(ladder).toEqual([2000, 4000, 8000, 16000, 30000]);
+    expect(ladder.reduce((a, b) => a + b, 0)).toBe(60_000);
     // Past the ceiling the delay stays pinned (no overflow, no further growth).
-    expect(reconnectDelayMs(250, 30_000, 12)).toBe(30_000);
+    expect([6, 7].map((n) => reconnectDelayMs(2000, 30_000, n))).toEqual([30_000, 30_000]);
     // The cap also applies when the base itself exceeds it.
     expect(reconnectDelayMs(50_000, 30_000, 1)).toBe(30_000);
   });
@@ -2037,7 +2043,10 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
         if (calls === 1) {
           // A retryable provider rejection: the detail must reach observability via the
           // event — a retried request never produces an abort to carry it.
-          return { status: "timeout", message: "403 quota exceeded (insufficient_user_quota)" };
+          return {
+            status: "timeout",
+            errorMessage: "403 quota exceeded (insufficient_user_quota)",
+          };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {
@@ -2057,16 +2066,21 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
 
     const all = await collectRun(engine, [userText("go")], allowAll);
     const ends = all.filter((m) => (m.payload as { type?: string }).type === "request_end") as {
-      payload: { status?: string; message?: string; retry_in_ms?: number };
+      payload: { status?: string; error_message?: string; attempt?: number; retry_in_ms?: number };
     }[];
     expect(ends).toHaveLength(2);
     expect(ends[0]!.payload.status).toBe("timeout");
-    expect(ends[0]!.payload.message).toBe("403 quota exceeded (insufficient_user_quota)");
-    // The engine will retry: the planned backoff is announced (base 0 here -> 0ms).
+    expect(ends[0]!.payload.error_message).toBe("403 quota exceeded (insufficient_user_quota)");
+    // The engine will retry: the planned backoff is announced (base 0 here -> 0ms), and the
+    // authoritative attempt ordinal is stamped (this was the run's 1st request).
     expect(ends[0]!.payload.retry_in_ms).toBe(0);
+    expect(ends[0]!.payload.attempt).toBe(1);
     expect(ends[1]!.payload.status).toBe("completed");
-    expect(ends[1]!.payload.message).toBeUndefined();
+    expect(ends[1]!.payload.error_message).toBeUndefined();
     expect(ends[1]!.payload.retry_in_ms).toBeUndefined();
+    // A completion that needed retries still carries its ordinal ("recovered on attempt 2");
+    // only a clean first-try completion stays unstamped.
+    expect(ends[1]!.payload.attempt).toBe(2);
   });
 
   it("request_end announces the planned backoff (retry_in_ms) from the shared ladder; absent once the cap is reached", async () => {
@@ -2178,7 +2192,7 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
           // exhausted-retries test below).
           yield thinkingMessage("half-thought", "failed");
           yield assistantText("half-text", "failed");
-          return { status: "auth", message: "boom" };
+          return { status: "auth", errorMessage: "boom" };
         }
         yield assistantText("ok");
         yield tokenUsage(emptyTokenCounts(), {

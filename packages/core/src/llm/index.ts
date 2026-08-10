@@ -15,10 +15,20 @@ export {
   isMalformedJsonParseError,
   isIncompleteStreamError,
   isRetryableError,
-  isQuotaExhaustedError,
   isAuthenticationError,
   mapThinkingLevel,
   toolDefinitionsToSchemas,
   buildUniConfig,
 } from "./generative-model.js";
 export { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
+export {
+  DEFAULT_CONTEXT_WINDOW,
+  OUTPUT_SAFETY_MARGIN,
+  MIN_OUTPUT_TOKENS,
+  COMPACTION_HEADROOM,
+  resolveContextWindow,
+  approximateTokens,
+  approximateMessagesTokens,
+  effectiveMaxOutputTokens,
+  effectiveMaxContextLength,
+} from "./context-limits.js";

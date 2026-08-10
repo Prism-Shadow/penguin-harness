@@ -25,6 +25,7 @@ export const en: Strings = {
     contract: "CONTRACT.md",
     features: "Features",
     blog: "Blog",
+    download: "Download",
     docs: "Docs",
     github: "GitHub",
     openMenu: "Open menu",
@@ -53,9 +54,14 @@ export const en: Strings = {
     titleWords: ["Desktop", "Server"],
     titleSuffix: "",
     subtitle: "Create Self-Evolving Agents in One Click",
-    ctaPrimary: "Get started",
+    /** Primary CTA: base label, and the platform-aware variant once the OS is detected. */
+    downloadCta: "Download the desktop app",
+    downloadCtaFor: (platform: string) => `Download for ${platform}`,
+    ctaQuickstart: "Get started",
     ctaGithub: "GitHub",
-    installHint: "One-line install (bundled Node runtime — unpack and run)",
+    /** Line under the CTAs: all installers on /download, CLI / self-hosted below the fold. */
+    downloadAll: "All platforms (macOS / Windows / Linux)",
+    cliAlt: "CLI and self-hosted install ↓",
     stats: [
       { value: "1000+", label: "supported models" },
       { value: "1×CPU", label: "minimum footprint" },
@@ -78,6 +84,59 @@ export const en: Strings = {
       windows: "After unzipping you can also just double-click install.cmd.",
     },
     offlineRelease: "Download offline packages from GitHub Releases",
+    desktopNote:
+      "Already on the desktop app? A CLI install shares the same local data with it, and the two can be used side by side.",
+    desktopPage: "Go to the desktop download page",
+  },
+
+  download: {
+    eyebrow: "Download",
+    title: "Download the desktop app",
+    subtitle:
+      "The full Web experience as a standalone application: it embeds the server and opens already signed in — no terminal, no login page; data lives in the same ~/.penguin/data root as a CLI install.",
+    recommended: "Your system",
+    platforms: {
+      mac: { name: "macOS", require: "macOS 11 or later, dmg disk image (pick your chip)" },
+      windows: { name: "Windows", require: "Windows 10 or later (x64), NSIS installer" },
+      linux: {
+        name: "Linux",
+        require: "x64 — AppImage runs in place, deb goes to your package manager",
+      },
+    },
+    statusOss: (version: string) =>
+      `Connected to the OSS mirror (${version}) — downloads are served from the mirror.`,
+    statusGithub: "Downloads point at the latest GitHub Release.",
+    altGithub: "Download from GitHub instead",
+    altOss: "Use the OSS mirror instead",
+    checksums: "Checksums (SHA256SUMS.desktop)",
+    allReleases: "All releases",
+    /** First-launch FAQ: one collapsible item per platform, the visitor's own pre-expanded. */
+    faq: {
+      title: "First-launch FAQ",
+      intro:
+        "Current builds are not signed yet, so the system may block the very first launch — the fix for your platform below is needed only once.",
+      mac: {
+        question: "macOS says “PenguinHarness” is damaged and can’t be opened?",
+        why: "macOS quarantines files downloaded from the internet, and the missing signature makes that flag surface as a false “damaged” alert. Deleting the flag clears it:",
+        stepDrag: "Open the downloaded dmg and drag PenguinHarness into the Applications folder.",
+        stepTerminal: "Open Terminal (Launchpad → Other → Terminal).",
+        stepPaste:
+          "Paste this command into Terminal and press Enter, then type your login password (nothing shows while you type; press Enter when done):",
+        stepOpen: "Once it finishes, double-click the app — it now opens normally.",
+      },
+      windows: {
+        question: "Windows SmartScreen says “Windows protected your PC”?",
+        answer:
+          "The installer is not signed yet, so SmartScreen holds the first run: click “More info”, then “Run anyway” to continue installing — first run only.",
+      },
+      linux: {
+        question: "Nothing happens when double-clicking the AppImage on Linux?",
+        answer:
+          "Browsers download AppImages without the execute permission. Grant it once and the app starts normally from then on (the deb package installs through the package manager and is not affected):",
+      },
+    },
+    cliHint: "Just need the CLI, or the Web UI in a browser?",
+    cliHintLink: "See the quick start",
   },
 
   copy: {
@@ -172,7 +231,7 @@ export const en: Strings = {
     tabCli: "CLI",
     webStep2: "Open the web interface",
     webStep2Desc:
-      "penguin web starts the local service and opens your browser; sign in with the built-in admin account admin / penguin-2026 (change the password right after).",
+      "penguin web starts the local service and opens your browser; sign in as the built-in admin “admin” with the initial password printed in the terminal on first start (looks like penguin-1234; change it right after).",
     webCmd: "penguin web   # opens http://127.0.0.1:7364",
     webStep3: "Configure a model in the UI and start chatting",
     webStep3Desc:
@@ -431,7 +490,8 @@ export const en: Strings = {
     title: "Complex AI development, made ever simpler",
     subtitle:
       "Through continuous evolution, PenguinHarness gives you a more efficient, more reliable, lower-hallucination and lower-cost Agent productivity engine.",
-    install: "Install now",
+    download: "Download the desktop app",
+    quickstart: "Get started",
     docs: "Read the docs",
   },
 

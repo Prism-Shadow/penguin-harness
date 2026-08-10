@@ -135,8 +135,14 @@ export class TitleGenerator implements TitleNotifier {
   }
 }
 
-/** Fallback title: take the material's first non-empty line, sanitize and truncate; if sanitizing empties it out (pure punctuation, etc.) fall back to the truncated original text; returns null if all-whitespace. */
-function fallbackTitle(text: string): string | null {
+/**
+ * Fallback title: take the material's first non-empty line, sanitize and truncate; if
+ * sanitizing empties it out (pure punctuation, etc.) fall back to the truncated original
+ * text; returns null if all-whitespace. Exported for the Trace listing's title fallback
+ * (trace-service derives a title from the first user prompt of Sessions the DB has no
+ * title for) so both fallbacks stay one algorithm.
+ */
+export function fallbackTitle(text: string): string | null {
   // Strip machine markers first: a skill invocation prepends a `[use_skills]` block, so the
   // raw first non-empty line would otherwise be that marker rather than the user's request.
   const firstLine = stripConversationMarkers(text)

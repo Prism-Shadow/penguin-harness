@@ -14,7 +14,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import type {
@@ -33,7 +33,6 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
-  formatMoney,
   humanizeDuration,
   humanizeDurationLive,
   humanizeTokens,
@@ -42,7 +41,7 @@ import { latestConversation } from "../../lib/session-grouping";
 import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
-import type { BucketPricing, TaskStatsTracker } from "../../lib/omni/task-stats";
+import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -52,12 +51,19 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
+import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
+import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
+import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
+import type { CostStatDisplay } from "./header-stats";
+import { buildInputHistory } from "./input-history";
+import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { sameModelRef } from "../models/model-grouping";
@@ -146,9 +152,9 @@ function SessionElapsed({
 /** The header's three statistics — the chip row and the info dropdown render these verbatim. */
 interface HeaderStats {
   tokensText: string;
-  /** Formatted session cost; null = nothing to show (no recorded figure and no live estimate). */
+  /** Formatted session cost; null = nothing to show yet for this session (see header-stats.ts). */
   costText: string | null;
-  /** Server-reported "some usage had no pricing" flag from the last idle refetch (the chip's `*`). */
+  /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
   elapsedNode: ReactNode;
 }
@@ -156,47 +162,19 @@ interface HeaderStats {
 /**
  * Computes the header statistics, live while a Task runs:
  *   - Tokens: session cumulative (main + subagents), already advancing per completed request;
- *   - Cost: the last idle-refetched session cost, plus — while a Task is open and the session
- *     Model has pricing — a live estimate converted from this Task's usage buckets. Subagents
- *     may run on different models, but the estimate applies the main Model's pricing to all
- *     live buckets: the estimate may be slightly off mid-task, and the idle getUsage refetch
- *     reconciles to the server-recorded value (kept deliberately simple). Without pricing the
- *     live addition is skipped (bucketCostUsd returns null, mirroring taskCost's uncosted
- *     signal) and the value stays exactly as when idle. costText stays null until there is an
- *     actual figure — no recorded cost plus a still-zero estimate renders nothing, not $0.00;
+ *   - Cost: advanceCostStat's display value — the fetched session cost plus a client-settled
+ *     live estimate that carries across Task boundaries, sticky once shown (semantics
+ *     documented in header-stats.ts). The live estimate applies the main Model's pricing to
+ *     all of the open Task's buckets (subagents may run on different models), so it can be
+ *     slightly off mid-task; usage fetches reconcile it to the server-recorded value;
  *   - Elapsed: ticking cumulative while running, settled cumulative when idle (SessionElapsed).
  */
-function headerStats(
-  model: StreamModel,
-  sessionCost: number | null,
-  costUncosted: boolean,
-  pricing: BucketPricing | undefined,
-  currency: "USD" | "CNY",
-): HeaderStats {
+function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
   const stats = model.stats;
-  const liveCost = model.taskOpen
-    ? bucketCostUsd(
-        {
-          cacheRead: stats.taskCacheRead,
-          cacheWrite: stats.taskCacheWrite,
-          output: stats.taskOutput,
-        },
-        pricing,
-      )
-    : null;
-  // Only take the live path once it has something to say — a positive estimate, or a recorded
-  // session cost to keep showing from the Task's first instant. On a brand-new session,
-  // sessionCost is still null and liveCost is 0 until the first token_usage lands; blindly
-  // summing would flash a formatted $0.00 the moment the Task starts — exactly the "cost is
-  // zero or something's broken" reading the chip's render conditional exists to avoid.
-  const costUsd =
-    liveCost != null && (liveCost > 0 || sessionCost != null)
-      ? (sessionCost ?? 0) + liveCost
-      : sessionCost;
   return {
     tokensText: humanizeTokens(stats.sessionTotal + stats.subagentTotal),
-    costText: costUsd != null ? formatMoney(costUsd, currency) : null,
-    costUncosted,
+    costText: cost.costText,
+    costUncosted: cost.costUncosted,
     elapsedNode: (
       <SessionElapsed
         stats={stats}
@@ -239,8 +217,14 @@ export function ChatPage() {
     setTitle,
   } = useSessions();
 
-  const [sessionCost, setSessionCost] = useState<number | null>(null);
-  const [costUncosted, setCostUncosted] = useState(false);
+  // Cost chip state lives in a mutable per-session hold (header-stats.ts, pure/unit-tested):
+  // the fetched session cost + a client-settled live base + the last shown value, advanced once
+  // per render by advanceCostStat (which also resets it on session switch). usageAppliedRef
+  // marks the session whose usage fetch has applied ("initial fetch done"); usageStamp only
+  // forces a repaint when a fetch resolves outside the stream's own version bumps.
+  const costHoldRef = useRef(createCostStatHold());
+  const usageAppliedRef = useRef<string | null>(null);
+  const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
@@ -306,6 +290,54 @@ export function ChatPage() {
     discard: discardSessionDraft,
   } = useSessionDraft(selected?.sessionId ?? null);
 
+  // The rendered transcript: backfilled older windows (frozen items, negative ids) ahead
+  // of the live tail model's items. Version keys the memo — a prepend bumps it.
+  const allItems = useMemo(
+    () =>
+      stream.prefixItems.length > 0
+        ? [...stream.prefixItems, ...stream.model.items]
+        : stream.model.items,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // Derivations over the stream items (the model mutates in place, so `version` — its own
+  // repaint signal — keys the memos; the session id covers a switch racing a same-valued
+  // version): the composer's ↑/↓ recall list and the left outline's entries. Both read the
+  // LOADED transcript (prefix included), so backfilling extends recall and the index alike.
+  const inputHistory = useMemo(
+    () => buildInputHistory(allItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  const outline = useMemo(
+    () => buildOutline(allItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // The subagents panel's model view: the live model, with backfilled windows' items and
+  // nested subagent models merged in — a chip clicked on a backfilled turn must still
+  // resolve its historical Task slice and child conversation. Scalar fields snapshot per
+  // version, which is exactly as fresh as everything else the panel renders.
+  const panelModel = useMemo<StreamModel>(
+    () =>
+      stream.prefixItems.length > 0 || stream.prefixSubagents.size > 0
+        ? {
+            ...stream.model,
+            items: [...allItems],
+            subagents: new Map([...stream.prefixSubagents, ...stream.model.subagents]),
+          }
+        : stream.model,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // The message stream's scroll container, exposed by MessageStream for the outline's
+  // jump/scrollspy (anchors are queried inside it, never document-wide).
+  const streamScrollRef = useRef<HTMLDivElement | null>(null);
+  // Which outline shape fits: the gutter tick rail, or (exactly when it can't show —
+  // phones without hover, and any window whose gutter a docked panel ate) the toolbar's
+  // dropdown index button.
+  const railFit = useOutlineRailFit(streamScrollRef, stream.version);
+
   // Current Agent follows the Session in the route (keeps the sidebar and stats aligned on deep
   // links / refresh). Only aligns when **the selected Session changes** — never put agentId in
   // the dependency array: otherwise, when switching from a "running session" to a new chat with
@@ -343,6 +375,10 @@ export function ChatPage() {
   // dot still signal), and never re-triggers an already-open panel (that would yank a pinned
   // historical graph back to the latest Task); the tracker consumes the attempt regardless.
   const panelTaskScopeRef = useRef(createPanelTaskScope());
+  // Deliberately the LIVE model's items only (never the backfilled prefix): the tracker
+  // reads an INCREASE as "the user started a new Task", and a scroll-up backfill growing
+  // the count would spuriously re-arm the auto-open mid-conversation. The latest Task
+  // always lives in the live tail window, so live-only loses nothing.
   const taskCount = taskStartCount(stream.model.items);
   const liveSpawn = stream.taskState !== "idle" && latestTaskHasSubagent(stream.model);
   useEffect(() => {
@@ -463,12 +499,12 @@ export function ChatPage() {
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the cost, the file-card existence cache, and the per-turn thinking
-  // level (it's per-session UI state), avoiding stale data from the previous Session (Files
-  // panel state resets itself keyed on sessionId inside use-files-panel).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, and the
+  // per-turn thinking level (it's per-session UI state), avoiding stale data from the previous
+  // Session (Files panel state resets itself keyed on sessionId inside use-files-panel, and the
+  // cost hold re-keys itself on sessionId inside advanceCostStat).
   useEffect(() => {
-    setSessionCost(null);
-    setCostUncosted(false);
+    usageAppliedRef.current = null;
     setTurnThinkingLevel("");
     statCacheRef.current = new Map();
   }, [routeSessionId]);
@@ -511,17 +547,27 @@ export function ChatPage() {
     [selected?.sessionId],
   );
 
-  // Session's cumulative cost: refreshed on entry and every time it returns to idle (cost is computed by the server in real time based on current pricing).
+  // Session's cumulative cost (priced by the server in real time from its usage rows): fetched
+  // once when the session becomes selected — even mid-run, so a page load during an active run
+  // recovers the already-accrued total instead of waiting for idle — then refreshed on every
+  // return to idle (the authoritative reconcile, as before). usageAppliedRef marks the initial
+  // fetch done only when a response applies, so a cancelled/failed attempt retries on the next
+  // transition rather than polling. The cancelled flag doubles as a staleness guard: any
+  // task-state change re-runs the effect and discards an in-flight response fetched under the
+  // previous run state (whose total would misalign with the live buckets it is snapshotted
+  // against — see applyUsageFetch).
   useEffect(() => {
-    if (!projectId || !selected || stream.taskState !== "idle") return;
+    if (!projectId || !selected) return;
+    if (usageAppliedRef.current === selected.sessionId && stream.taskState !== "idle") return;
     let cancelled = false;
     api
       .getUsage(projectId, { groupBy: "session", agentId: selected.agentId })
       .then((res) => {
         if (cancelled) return;
+        usageAppliedRef.current = selected.sessionId;
         const row = res.groups.find((g) => g.key === selected.sessionId);
-        setSessionCost(row?.cost ?? null);
-        setCostUncosted(row?.hasUncosted ?? false);
+        applyUsageFetch(costHoldRef.current, selected.sessionId, row ?? null);
+        bumpUsageStamp((n) => n + 1);
       })
       .catch(() => undefined);
     return () => {
@@ -557,6 +603,34 @@ export function ChatPage() {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [projectId]);
+
+  // Project new-chat defaults saved in this tab (project-settings dialog) with a CHANGED
+  // default model: refetch the model config so the "project default" marker and a later
+  // draft mount see the fresh default. models goes null first — DraftView's model
+  // fallback holds off while null, so it cannot re-pin the stale default from the old
+  // response in the meantime (the mounted draft's own selection comes straight from the
+  // event payload, see DraftView.onDefaultsChanged); a failed refetch leaves models null,
+  // the same degraded state as a failed mount fetch.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    const onEvent = (e: Event) => {
+      const detail = chatDefaultsChangedDetail(e, projectId);
+      if (!detail || detail.defaultModel === undefined) return;
+      setModels(null);
+      api
+        .getModels(projectId)
+        .then((res) => {
+          if (!cancelled) setModels(res);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
     };
   }, [projectId]);
 
@@ -721,14 +795,27 @@ export function ChatPage() {
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
   // standalone `[user_steering]` user message followed by its images (visible once they
-  // arrive over SSE / from the Trace). "not_running" (409) means no Task is in progress
-  // anymore (race with completion): the input area then falls back to its **full** normal
-  // send path — skills and the whole draft included — rather than a text+images task.
+  // arrive over SSE / from the Trace); file attachments land in the Session scratchpad and
+  // ride the steering text as `[attached file: <path>]` lines, exactly as a task's do. On
+  // "queued" the localStorage draft is discarded, like a successful send — without this a
+  // reload resurrects the already-sent text as a draft, and re-sending it duplicates the
+  // steering message (#136). "not_running" (409) means no Task is in progress anymore (race
+  // with completion): the input area then falls back to its **full** normal send path —
+  // skills and the whole draft included — rather than a text+images task.
   const onSteer = useCallback(
-    async (text: string, images: string[] = []): Promise<"queued" | "not_running" | "failed"> => {
+    async (
+      text: string,
+      images: string[] = [],
+      files: { fileName: string; dataUrl: string }[] = [],
+    ): Promise<"queued" | "not_running" | "failed"> => {
       if (!selected) return "failed";
       try {
-        await api.postSteer(selected.sessionId, { text, ...(images.length > 0 ? { images } : {}) });
+        await api.postSteer(selected.sessionId, {
+          text,
+          ...(images.length > 0 ? { images } : {}),
+          ...(files.length > 0 ? { files } : {}),
+        });
+        discardSessionDraft();
         return "queued";
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) return "not_running";
@@ -736,7 +823,7 @@ export function ChatPage() {
         return "failed";
       }
     },
-    [selected],
+    [selected, discardSessionDraft],
   );
 
   const onApprove = useCallback(
@@ -845,8 +932,30 @@ export function ChatPage() {
   }
 
   // Header statistics (chip row + info dropdown), live while a Task runs; recomputed every
-  // stream version bump, so the in-place-mutated model stats always read fresh.
-  const hs = headerStats(stream.model, sessionCost, costUncosted, modelPricing, currency);
+  // stream version bump, so the in-place-mutated model stats always read fresh. The cost chip
+  // advances its per-session hold with this render's observation (idempotent per observation,
+  // so a replayed render converges — see header-stats.ts).
+  const liveTaskUsd = stream.model.taskOpen
+    ? bucketCostUsd(
+        {
+          cacheRead: stream.model.stats.taskCacheRead,
+          cacheWrite: stream.model.stats.taskCacheWrite,
+          output: stream.model.stats.taskOutput,
+        },
+        modelPricing,
+      )
+    : null;
+  const hs = headerStats(
+    stream.model,
+    advanceCostStat(costHoldRef.current, {
+      sessionId: selected?.sessionId ?? null,
+      taskCount,
+      taskOpen: stream.model.taskOpen,
+      loading: stream.loading,
+      liveUsd: liveTaskUsd,
+      currency,
+    }),
+  );
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
@@ -881,6 +990,7 @@ export function ChatPage() {
       // Count of steering messages already visible in the stream: the input area keeps its
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
+      pendingSteering={stream.pendingSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
       onStop={onStop}
@@ -911,6 +1021,7 @@ export function ChatPage() {
       onHandoff={onHandoff}
       initialText={sessionDraft.text ?? ""}
       onTextChange={onDraftTextChange}
+      history={inputHistory}
       {...(sessionDraft.handoffAgentId
         ? { initialHandoffTargetId: sessionDraft.handoffAgentId }
         : {})}
@@ -970,6 +1081,7 @@ export function ChatPage() {
             aria-expanded={subagentsPanel.open}
             onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
             title={S.chat.openAgents}
+            aria-label={S.chat.openAgents}
             className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
               subagentsPanel.open
                 ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
@@ -991,7 +1103,10 @@ export function ChatPage() {
               <circle cx="19" cy="18.5" r="2.5" />
               <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
             </svg>
-            {S.chat.openAgents}
+            {/* At md widths the pinned sidebar leaves less room than the viewport breakpoint
+                suggests. Keep both panel actions icon-only until lg so the running status and
+                live stats retain their own layout space. */}
+            <span className="hidden lg:inline">{S.chat.openAgents}</span>
             {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
             {anySubagentPending && (
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -1022,10 +1137,23 @@ export function ChatPage() {
             >
               <path d={STAT_ICONS.folder} />
             </svg>
-            {/* Below sm the button is icon-only (title/aria keep the name): the label plus the
-                running indicator squeezed the session title to nothing on phones. */}
-            <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
+            {/* Below lg the button is icon-only (title/aria keep the name): between md and lg
+                the pinned sidebar makes the chat toolbar substantially narrower than the
+                viewport, so the action labels would squeeze the status into the Token stats. */}
+            <span className="hidden lg:inline">{S.chat.openWorkspace}</span>
           </button>
+
+          {/* Conversation index fallback: exactly when the gutter tick rail can't show
+              (phones without a hover pointer; a desktop window whose gutter a docked panel
+              ate) the index moves up here as a dropdown — navigation stays reachable. */}
+          {!railFit.shown && (
+            <OutlineMenuButton
+              entries={outline}
+              turnOffset={stream.outlineOffset}
+              scrollRef={streamScrollRef}
+              running={stream.taskState !== "idle"}
+            />
+          )}
 
           {/* Details popup: Model / Workspace / created time / stats */}
           <Dropdown
@@ -1093,11 +1221,44 @@ export function ChatPage() {
                 </p>
               </div>
             </div>
+            {/* Jump to this Session's Trace: SPA-navigates to the Trace page deep-linked to
+                the owning Agent AND this Session (?agentId= focuses/expands the Agent group,
+                ?sessionId= auto-selects — a Session beyond the first loaded page resolves via
+                the Trace page's full-fetch fallback). Only reachable for a real Session: this
+                whole header renders behind the `selected` guard, so a draft never shows it. */}
+            <div className="border-t border-gray-100 py-1 dark:border-gray-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setInfoOpen(false);
+                  navigate(
+                    `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                  );
+                }}
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="shrink-0 text-gray-400 dark:text-gray-500"
+                >
+                  <path d={NAV_ICONS.traces} />
+                </svg>
+                {S.chat.viewTrace}
+              </button>
+            </div>
           </Dropdown>
         </div>
       )}
 
-      {/* Body: chat column + the docked Files panel on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
+      {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
@@ -1142,9 +1303,33 @@ export function ChatPage() {
                         </div>
                       ) : (
                         <MessageStream
-                          items={stream.model.items}
+                          items={allItems}
                           version={stream.version}
                           ctx={ctx}
+                          scrollElRef={streamScrollRef}
+                          // Scroll-up backfill of older history windows (tail-first
+                          // loading): near-top scrolling prepends the previous window,
+                          // scroll position anchored (see MessageStream).
+                          older={{
+                            hasMore: stream.older.hasMore,
+                            loading: stream.older.loading,
+                            error: stream.older.error,
+                            prependedCount: stream.prefixItems.length,
+                            onLoad: stream.loadOlder,
+                          }}
+                          // Tick-rail minimap over the stream's left gutter (zero layout
+                          // width; hides itself when the gutter is too narrow or the
+                          // pointer can't hover).
+                          outline={
+                            <ConversationOutline
+                              entries={outline}
+                              turnOffset={stream.outlineOffset}
+                              version={stream.version}
+                              scrollRef={streamScrollRef}
+                              running={stream.taskState !== "idle"}
+                              fit={railFit}
+                            />
+                          }
                         />
                       )}
                     </div>
@@ -1178,7 +1363,9 @@ export function ChatPage() {
           <SubagentsPanel
             session={selected}
             panel={subagentsPanel}
-            model={stream.model}
+            // The merged view (backfilled windows included): a chip on an older turn keeps
+            // its historical graph and child conversation reachable after pagination.
+            model={panelModel}
             version={stream.version}
             taskRunning={stream.taskState !== "idle"}
             ctx={ctx}

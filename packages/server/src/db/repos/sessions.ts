@@ -19,8 +19,16 @@ export interface SessionRow {
   title: string | null;
   /** Archive timestamp, ISO; NULL = not archived (omitting on insert defaults to NULL). */
   archivedAt?: string | null;
-  // The Session origin (schedule / subagent) is deliberately NOT a row field: core
-  // session_meta in the Trace is the single source of truth (runtime/session-sources.ts).
+  /**
+   * Creating client: "web" (created via the Web App/server) or "cli" (adopted from a Trace
+   * the CLI left behind); NULL = legacy row from before the column existed, treated as web.
+   * The schedule/subagent SOURCE is deliberately NOT a row field — core session_meta in the
+   * Trace stays the single source of truth for it (runtime/session-sources.ts); `client` is
+   * a separate, DB-only axis that meta never records.
+   */
+  client?: "web" | "cli" | null;
+  /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
+  hasTrace?: boolean;
   createdAt: string;
 }
 
@@ -35,6 +43,8 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     approvalMode: r.approval_mode as ApprovalMode,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
+    client: (r.client as "web" | "cli" | null) ?? null,
+    hasTrace: (r.has_trace as number) === 1,
     createdAt: r.created_at as string,
   };
 }
@@ -45,8 +55,8 @@ export class SessionsRepo {
   insert(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -57,6 +67,8 @@ export class SessionsRepo {
         row.workspace,
         row.approvalMode,
         row.title,
+        row.client ?? null,
+        row.hasTrace ? 1 : 0,
         row.createdAt,
       );
   }
@@ -65,8 +77,8 @@ export class SessionsRepo {
   insertOrIgnore(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -77,8 +89,15 @@ export class SessionsRepo {
         row.workspace,
         row.approvalMode,
         row.title,
+        row.client ?? null,
+        row.hasTrace ? 1 : 0,
         row.createdAt,
       );
+  }
+
+  /** Flip the has_trace cache once a Trace record exists (task start / discovery hydration); idempotent. */
+  markHasTrace(sessionId: string): void {
+    this.db.prepare("UPDATE sessions SET has_trace = 1 WHERE session_id = ?").run(sessionId);
   }
 
   findById(sessionId: string): SessionRow | null {
@@ -86,9 +105,18 @@ export class SessionsRepo {
     return r ? mapRow(r) : null;
   }
 
-  listByAgent(projectId: string, agentId: string): SessionRow[] {
+  /**
+   * An Agent's rows, newest first (the list order the sidebar shows; served by
+   * idx_sessions_agent_created). `webOnly` keeps only web-created rows — NULL counts as
+   * web (legacy rows predate the column and the user chose to grandfather them as visible).
+   */
+  listByAgent(projectId: string, agentId: string, opts: { webOnly?: boolean } = {}): SessionRow[] {
+    const filter = opts.webOnly ? " AND (client IS NULL OR client = 'web')" : "";
     const rows = this.db
-      .prepare("SELECT * FROM sessions WHERE project_id = ? AND agent_id = ?")
+      .prepare(
+        `SELECT * FROM sessions WHERE project_id = ? AND agent_id = ?${filter}
+         ORDER BY created_at DESC, session_id DESC`,
+      )
       .all(projectId, agentId);
     return rows.map(mapRow);
   }

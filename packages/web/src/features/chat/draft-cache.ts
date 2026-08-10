@@ -132,3 +132,53 @@ export function clearDraft(key: string, storage: DraftStorage = localStorage): v
     /* ignore */
   }
 }
+
+/**
+ * Drops the draft-cached model selection for this user × Project, so an open draft follows
+ * a just-changed Project default model instead of pinning the old pick forever. Shared by
+ * the models page and the project-settings default-model control (single implementation —
+ * both surfaces flip the SAME `default_model`, so they must release the draft pin the same
+ * way). Everything else in the draft is preserved; a draft with no cached pick is a no-op.
+ */
+export function clearDraftModelRef(
+  userId: string,
+  projectId: string,
+  storage: DraftStorage = localStorage,
+): void {
+  const key = draftKey(userId, projectId);
+  const draft = loadDraft(key, storage);
+  if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined }, storage);
+}
+
+/**
+ * Drops the draft-cached Agent / Workspace / approval-mode selections for this user ×
+ * Project — the fields the `[default_chat]` block seeds — so the next new-conversation
+ * draft re-seeds from the just-saved Project defaults instead of the values a previous
+ * visit pinned into the cache (the draft page persists all selections on mount, so a
+ * stale cache otherwise shadows a defaults change forever). Called by the
+ * project-settings save when the block actually changed. Deliberately narrower than the
+ * full seeded set: typed text and staged skills are user content; modelRef is the
+ * "switch-becomes-default" carry-over released only by clearDraftModelRef when the
+ * default MODEL itself changes (the model is not part of the `[default_chat]` block);
+ * the handoff/switch chips are explicit user staging, never default-derived. A draft
+ * with none of the three fields is a no-op, never an errant write.
+ */
+export function clearDraftChatDefaults(
+  userId: string,
+  projectId: string,
+  storage: DraftStorage = localStorage,
+): void {
+  const key = draftKey(userId, projectId);
+  const draft = loadDraft(key, storage);
+  if (
+    draft.agentId !== undefined ||
+    draft.workspace !== undefined ||
+    draft.approvalMode !== undefined
+  ) {
+    saveDraft(
+      key,
+      { ...draft, agentId: undefined, workspace: undefined, approvalMode: undefined },
+      storage,
+    );
+  }
+}

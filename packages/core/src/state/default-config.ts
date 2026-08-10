@@ -65,7 +65,11 @@ export interface SystemConfig {
   version?: number;
   /** System-level Prompt (relatively stable; should not be modified frequently). */
   system_prompt: string;
-  /** Max LLM turns per Task (a runtime parameter that belongs to Agent config, not specified when creating a Session). */
+  /**
+   * Max LLM turns per Task (a runtime parameter that belongs to Agent config, not specified
+   * when creating a Session). A positive integer caps the Task; -1 (the default) removes the
+   * cap so long runs are never cut off mid-task. Valid values are > 0 or exactly -1.
+   */
   max_turns?: number;
   model?: {
     max_tokens?: number;
@@ -156,18 +160,20 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - Session ID: {{SESSION_ID}}`;
 
 /**
- * Built-in default compaction Prompt (summarize mode): tells the model that after
- * compaction the raw transcript is no longer visible and the
- * summary is the only record, so it must include everything needed to continue the task,
- * and no tools may be called while writing the summary.
+ * Built-in default compaction Prompt (summarize mode): tells the model the summary will
+ * replace the transcript as its only record (so it must include everything needed to
+ * continue the task) and that no tools may be called. The format is shown as a concrete
+ * example rather than described in prose — some models treat the tags as a "title" and
+ * write the body after the closing tag (issue #170); extraction salvages that shape, but
+ * generating it right beats repairing it. Persisted per-agent in system_config.yaml —
+ * existing agents keep their stored prompt.
  */
 export const DEFAULT_COMPACTION_PROMPT =
-  "You have a partial transcript of the task above. Write a summary of it wrapped in " +
-  "`[summary][/summary]` tags. This summary will replace the transcript: in the next " +
-  "context window the raw transcript above will no longer be visible and this summary " +
-  "will be its only record, so include everything needed to continue the task — the " +
-  "original request, current state, next steps, and any learnings. Do not call any " +
-  "tools while writing the summary; respond with text only.";
+  "Summarize the task transcript above. The summary will replace the transcript as its " +
+  "only record, so include everything needed to continue the task — the original request, " +
+  "current state, next steps, and any learnings. Do not call any tools; reply with text " +
+  "only, in exactly this format and nothing after it:\n\n" +
+  "[summary]put the summary text here...[/summary]";
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
@@ -490,7 +496,9 @@ export function defaultSystemConfig(): SystemConfig {
   return {
     version: 1,
     system_prompt: DEFAULT_SYSTEM_PROMPT,
-    max_turns: 100,
+    // -1 = unlimited (same sentinel as compaction.max_session_turns): an agent run is never
+    // cut off by a turn cap unless the user configures a positive limit themselves.
+    max_turns: -1,
     model: {
       max_tokens: 32000,
       thinking_level: "medium",

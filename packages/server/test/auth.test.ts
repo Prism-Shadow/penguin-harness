@@ -6,7 +6,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
-import { apiClient, createTestApp, loginAdmin, loginUser, provisionUser } from "./helpers.js";
+import { buildAppDeps } from "../src/app.js";
+import { generateInitialAdminPassword } from "../src/auth/service.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  loginUser,
+  makeTempRoot,
+  provisionUser,
+  TEST_ADMIN_PASSWORD,
+  testConfig,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("auth", () => {
@@ -55,8 +66,8 @@ describe("auth", () => {
     await expect(
       fs.access(path.join(t.root, "default_project", "agents", "default_agent", "agent_state")),
     ).resolves.toBeUndefined();
-    // Seeding is idempotent: re-seeding does not create a duplicate account.
-    await t.deps.authService.seedAdmin();
+    // Seeding is idempotent: re-seeding returns null and does not create a duplicate account.
+    expect(await t.deps.authService.seedAdmin()).toBeNull();
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(1);
   });
 
@@ -79,7 +90,7 @@ describe("auth", () => {
     );
     expect(toml).toContain('name = "bob"');
     expect(toml).toContain(
-      'default_model = { provider = "deepseek", model_id = "deepseek-v4-pro" }',
+      'default_model = { provider = "deepseek", model_id = "deepseek-v4-flash" }',
     );
   });
 
@@ -157,6 +168,98 @@ describe("auth", () => {
       prefs: { theme: string };
     };
     expect(got.prefs.theme).toBe("dark");
+  });
+
+  it("seedAdmin without an injected password generates penguin-<4 digits> and returns it", async () => {
+    // Bypass the fixed test password: null matches the production default (random generation).
+    const fresh = await createTestApp({ config: { seedAdminPassword: null } });
+    try {
+      expect(fresh.adminPassword).toMatch(/^penguin-\d{4}$/);
+      // The returned password is the one that actually logs in.
+      await loginUser(fresh.app, "admin", fresh.adminPassword);
+      // Users exist now: re-seeding reports that nothing was seeded.
+      expect(await fresh.deps.authService.seedAdmin()).toBeNull();
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("seedAdmin honors the injected seedAdminPassword", async () => {
+    const fresh = await createTestApp({ config: { seedAdminPassword: "penguin-7777" } });
+    try {
+      expect(fresh.adminPassword).toBe("penguin-7777");
+      await loginUser(fresh.app, "admin", "penguin-7777");
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("seedAdmin rejects an override below the password policy before creating the account", async () => {
+    const root = await makeTempRoot();
+    const deps = buildAppDeps({ ...testConfig(root), seedAdminPassword: "x" }, { log: () => {} });
+    try {
+      await expect(deps.authService.seedAdmin()).rejects.toThrow(/at least 8 characters/);
+      // Rejected before any insert: no half-created privileged account to retry around.
+      expect(deps.db.prepare("SELECT COUNT(*) AS n FROM users").get()?.n).toBe(0);
+    } finally {
+      deps.channels.dispose();
+      deps.db.close();
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("throttles login failures per username with exponential backoff and resets on success", async () => {
+    let clock = Date.parse("2026-08-03T00:00:00Z");
+    const fresh = await createTestApp({ now: () => new Date(clock) });
+    try {
+      const attempt = (password: string) =>
+        fresh.app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: "admin", password }),
+        });
+      // Five free failures, and the sixth still reaches verification (backoff starts after it).
+      for (let i = 0; i < 6; i++) expect((await attempt("wrong-password")).status).toBe(401);
+      // Inside the 1s window: rejected without touching credentials — even the CORRECT password.
+      const throttled = await attempt("wrong-password");
+      expect(throttled.status).toBe(429);
+      const body = (await throttled.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("too_many_attempts");
+      expect((await attempt(TEST_ADMIN_PASSWORD)).status).toBe(429);
+      // Past the window, the correct password signs in and clears the counter…
+      clock += 1100;
+      await loginUser(fresh.app, "admin", TEST_ADMIN_PASSWORD);
+      // …so the next failure is an ordinary 401 again, not a 429.
+      expect((await attempt("wrong-password")).status).toBe(401);
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("throttles unknown usernames identically (no account-existence oracle)", async () => {
+    let clock = Date.parse("2026-08-03T00:00:00Z");
+    const fresh = await createTestApp({ now: () => new Date(clock) });
+    try {
+      const attempt = () =>
+        fresh.app.request("/api/auth/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: "ghost", password: "whatever-123" }),
+        });
+      for (let i = 0; i < 6; i++) expect((await attempt()).status).toBe(401);
+      expect((await attempt()).status).toBe(429);
+      // The window expires on the same schedule as for real accounts.
+      clock += 1100;
+      expect((await attempt()).status).toBe(401);
+    } finally {
+      await fresh.cleanup();
+    }
+  });
+
+  it("generateInitialAdminPassword matches penguin-<4 digits>", () => {
+    for (let i = 0; i < 32; i++) {
+      expect(generateInitialAdminPassword()).toMatch(/^penguin-\d{4}$/);
+    }
   });
 
   it("PUT prefs shallow-merges without clobbering other writers' fields", async () => {

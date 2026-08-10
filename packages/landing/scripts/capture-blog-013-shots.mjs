@@ -45,6 +45,8 @@ const ROOT = path.resolve(HERE, "../../..");
 const OUT_DIR = path.resolve(HERE, "../.blog-assets");
 const MOCK_PORT = 8953; // Distinct from capture-shots (8940/8941) and blog-shots (8944).
 const SRV_PORT = 8952;
+// Pins the otherwise-random seeded admin password (PENGUIN_SEED_ADMIN_PASSWORD below).
+const ADMIN_PASSWORD = "penguin-0000";
 // The App is canonically served on `localhost` (127.0.0.1 is the Workspace-preview host).
 const BASE = `http://localhost:${SRV_PORT}`;
 const MOCK = `http://127.0.0.1:${MOCK_PORT}`;
@@ -932,6 +934,7 @@ const srv = spawn("node", [path.join(ROOT, "packages/server/dist/index.js")], {
     PENGUIN_WEB_DIST: path.join(ROOT, "packages/web/dist"),
     PORT: String(SRV_PORT),
     HOST: "127.0.0.1",
+    PENGUIN_SEED_ADMIN_PASSWORD: ADMIN_PASSWORD,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -950,7 +953,7 @@ try {
   await waitFor(`${BASE}/`);
   console.log(`[blog-013] server ready on ${BASE}`);
 
-  const adminCookie = await login("admin", "penguin-2026");
+  const adminCookie = await login("admin", ADMIN_PASSWORD);
   const browser = await chromium.launch();
 
   // WebP encoder: Chromium re-encodes the PNG screenshot via canvas (capture-shots convention).

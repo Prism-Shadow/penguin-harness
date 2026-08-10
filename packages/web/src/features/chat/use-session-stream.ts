@@ -16,29 +16,53 @@
  *    server re-sends still-pending requests.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GoalServerEvent, SessionStatus } from "@prismshadow/penguin-server/api";
+import type {
+  GoalServerEvent,
+  PendingSteeringInfo,
+  SessionStatus,
+} from "@prismshadow/penguin-server/api";
 import { getGoal, getMe, getMessages } from "../../api/endpoints";
 import { openSessionStream } from "../../api/sse";
 import { createStreamController } from "../../lib/omni/stream-controller";
-import type { PendingApproval, StreamController } from "../../lib/omni/stream-controller";
+import type {
+  OlderHistoryState,
+  PendingApproval,
+  StreamController,
+} from "../../lib/omni/stream-controller";
 import { createStreamModel } from "../../lib/omni/stream-model";
-import type { StreamModel } from "../../lib/omni/stream-model";
+import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
 import type { GoalBannerState } from "./goal-use";
 
-export type { PendingApproval } from "../../lib/omni/stream-controller";
+export type { OlderHistoryState, PendingApproval } from "../../lib/omni/stream-controller";
 
 /** Minimum spacing between version commits: below one frame at 8fps, invisible as staleness, but ~8× fewer full re-parses of the growing message during a fast large-code stream. */
 const BUMP_MIN_INTERVAL_MS = 120;
 
 export interface SessionStreamState {
-  /** View model (updated in place; version bump triggers re-render). */
+  /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
+  /**
+   * Backfilled older-window items, oldest first — the transcript renders
+   * `[...prefixItems, ...model.items]`. Empty until the user scrolls up past the tail
+   * window (see loadOlder); ids are negative and unique, so keys/anchors stay clean.
+   */
+  prefixItems: readonly ChatItem[];
+  /** Nested subagent models owned by backfilled windows (the subagents panel merges them with model.subagents). */
+  prefixSubagents: ReadonlyMap<string, StreamModel>;
+  /** Outline entries existing before the oldest loaded window (global turn-numbering offset). */
+  outlineOffset: number;
+  /** Scroll-up backfill state (top affordance: spinner / retry / beginning-of-history). */
+  older: OlderHistoryState;
+  /** Prepend the previous history window (triggered near the top of the loaded transcript). */
+  loadOlder: () => void;
   version: number;
   /** True until history finishes loading. */
   loading: boolean;
   taskState: SessionStatus;
   /** Queued follow-up count from the stream's task_state events (auto-sent once the session is idle). */
   queuedFollowUps: number;
+  /** Steering messages queued on the server but not yet delivered (from task_state events): keeps the composer's hint and its content across reloads. */
+  pendingSteering: PendingSteeringInfo[];
   /**
    * Timestamp (ms) of the last main-session auth failure (request_end with status "auth"),
    * or null. Derived from the model, so it survives history replay and resets when
@@ -73,6 +97,9 @@ export interface SessionStreamState {
 }
 
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
+const EMPTY_PREFIX: readonly ChatItem[] = [];
+const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
+const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
 
 export function useSessionStream(
   sessionId: string | null,
@@ -86,6 +113,7 @@ export function useSessionStream(
   const [loading, setLoading] = useState(true);
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
+  const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
@@ -163,6 +191,7 @@ export function useSessionStream(
       controllerRef.current = null;
       setTaskState("idle");
       setQueuedFollowUps(0);
+      setPendingSteering([]);
       setLoading(false);
       setError(null);
       setGoal(null);
@@ -178,6 +207,7 @@ export function useSessionStream(
     setTaskState(initialStatus);
     setGoal(null);
     setQueuedFollowUps(0);
+    setPendingSteering([]);
     setPendingTick((t) => t + 1);
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
@@ -199,10 +229,12 @@ export function useSessionStream(
 
     const controller = createStreamController({
       // The whole response rides through: `live` (in-progress stream tail) lets the
-      // controller seed the currently streaming message after a reload (see stream-controller).
-      loadMessages: () => getMessages(sessionId),
+      // controller seed the currently streaming message after a reload, and `page` (the
+      // windowed-history envelope) drives tail-first loading (see stream-controller).
+      loadMessages: (page) => getMessages(sessionId, page),
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
+      onPendingSteering: setPendingSteering,
       onLoading: setLoading,
       onError: setError,
       onModelChange: bump,
@@ -259,6 +291,10 @@ export function useSessionStream(
     void controllerRef.current?.retry();
   }, []);
 
+  const loadOlder = useCallback(() => {
+    void controllerRef.current?.loadOlder();
+  }, []);
+
   const dismissModelAuthDead = useCallback(() => {
     const m = controllerRef.current?.model;
     if (m && m.lastAuthFailureMs !== null) {
@@ -272,10 +308,16 @@ export function useSessionStream(
 
   return {
     model: controllerRef.current?.model ?? placeholderRef.current,
+    prefixItems: controllerRef.current?.prefixItems ?? EMPTY_PREFIX,
+    prefixSubagents: controllerRef.current?.prefixSubagents ?? EMPTY_SUBAGENTS,
+    outlineOffset: controllerRef.current?.outlineOffset ?? 0,
+    older: controllerRef.current?.older ?? IDLE_OLDER,
+    loadOlder,
     version,
     loading,
     taskState,
     queuedFollowUps,
+    pendingSteering,
     lastAuthFailureMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthFailureMs,
     dismissModelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,

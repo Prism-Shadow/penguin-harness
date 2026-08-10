@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 8
-updated: 2026-07-31T04:10:53Z
+version: 9
+updated: 2026-08-04T00:00:00Z
 ---
 
 # Agent Optimization
@@ -13,15 +13,15 @@ Improve one Test Agent through an evidence → hypothesis → Candidate → eval
 
 ## Before you start
 
-If the request does not identify the Test Agent, frozen Benchmark, desired target score, and round limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them.
+If the request does not identify the Test Agent, frozen Benchmark, desired target score, positive Run count, and round limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them.
 
 ## Goal and contract
 
-Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, and a positive round limit. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
+Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, a positive `runs` value, and a positive round limit. `runs` is the number of Runs per Case for every Candidate in this optimization Session. Freeze it for the Session; do not infer it from `benchmark_config.toml` or the Formal Baseline. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
 
 A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark.
 
-Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the same frozen Case × Run matrix and evaluation runtime. Accept it only when the change is admissible, the matrix is complete and valid, and its Evaluation's top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference. Stop early when the Reference reaches the desired target; otherwise run no more than the requested number of complete valid Candidate rounds.
+Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the frozen Case set with the requested `runs` count and the Reference evaluation runtime. The initial Formal Baseline has one Run per Case; do not rerun or backfill it to the requested count. Compare each Candidate's stored top-level average directly with the current Reference score even when their Run counts differ. Accept the Candidate only when the change is admissible, its Evaluation is complete and valid, and its top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference. Stop early when the Reference reaches the desired target; otherwise run no more than the requested number of complete valid Candidate rounds.
 
 ## Access and changes
 
@@ -49,12 +49,12 @@ Modify only the Test Agent State and the versioned snapshot required to protect 
 
 For each round:
 
-1. **Establish the Reference.** Confirm that its complete Evaluation uses the frozen Case × Run matrix and evaluation runtime and that its version matches the current Agent State.
+1. **Establish the Reference.** Confirm that its complete Evaluation covers the frozen Case set, uses the frozen evaluation runtime, and matches the current Agent State version. Do not require its Run count to equal the requested Candidate `runs` count.
 2. **Diagnose capability gaps.** Compare each Case's `runs[].score` on the fixed `0..100` scale; use the Evaluation's top-level average `score` only for whole-version comparison. Use public Statements, score-linked Test Traces, and prior accepted or rejected attempts to identify observable behaviors that general Agent State changes could improve. Use repeated Runs to distinguish stable behavior from variation.
 3. **State a falsifiable hypothesis.** Choose the related gaps to address, connect them to a bounded Candidate, and state which observable decisions or artifacts should change and why. A change that only adds analysis steps without predicting a behavioral change is not a useful hypothesis. If the current diagnosis is exhausted, use the remaining public evidence and prior attempts to construct a different admissible Candidate.
 4. **Create one Candidate from the Reference.** Apply the change and its Candidate version under the construction and rollback rules below. Do not carry rejected Candidate files into the next attempt.
 5. **Check admissibility.** Confirm that the change is general, uses no private evaluation information, and modifies only permitted Test Agent State.
-6. **Evaluate the Candidate.** Delegate the complete frozen Case × Run matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
+6. **Evaluate the Candidate.** Delegate the complete frozen Case set × requested `runs` matrix in parallel under the evaluation rules below and assemble all returned cells. Do not modify the Candidate while any cell is in flight.
 7. **Decide.** Accept the Candidate only when every cell is valid and its Evaluation's top-level average `score` is strictly higher than the Reference Evaluation's `score`. Otherwise restore the Reference. Record separately whether the predicted Case behavior changed; a higher Evaluation score accepts the Candidate even when the stated hypothesis was not supported.
 8. **Persist and continue.** Immediately append and verify every accepted Candidate Evaluation before starting another round. An accepted Candidate becomes the next Reference. Use valid results from rejected Candidates only as evidence for a later hypothesis. Stop when the Reference reaches the desired target. Otherwise complete the requested number of valid Candidate rounds unless infrastructure, contamination, concurrent State changes, or the inability to construct any admissible Candidate creates a concrete blocker. At the round limit, retain the highest-scoring accepted Reference.
 
@@ -74,7 +74,7 @@ If the Candidate is rejected or cannot be evaluated, restore the Reference files
 
 ## Delegate evaluation
 
-For each Case × Run cell, call `run_subagent` with:
+For each frozen Case, dispatch exactly the requested number of Run cells, using one-based Run indices `1..runs`. Call `run_subagent` for each cell with:
 
 ```text
 Use the `agent-evaluation` Skill. Run the specified Test Agent on the specified Case exactly once, then score that single execution.
@@ -129,4 +129,4 @@ After writing, parse the complete `scoreboard.yaml` and verify the appended Eval
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 
-Report the Baseline and every fully evaluated Candidate with its score, version, change, decision, and Test Session ids. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. Include the final retained version, stop reason, and known limitations. Never report a score for an Agent State that was not evaluated.
+Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. Include the final retained version, stop reason, and known limitations. Never report a score for an Agent State that was not evaluated.

@@ -4,9 +4,13 @@
 #   curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
 #
 # Options:
-#   PENGUIN_VERSION=vX.Y.Z    pin a version (same as --version vX.Y.Z); default is the latest Release
+#   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
+#                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
+#   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
+#   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
+#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
@@ -24,16 +28,56 @@
 set -eu
 
 REPO="https://github.com/Prism-Shadow/penguin-harness"
+OSS_ORIGIN="https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com"
+OSS_RELEASE_ROOT="$OSS_ORIGIN/releases"
+GITHUB_RELEASE_ROOT="$REPO/releases/download"
+GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
+SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
+DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
+DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
 PAYLOAD_NAME="payload.tar.gz"
+# The release workflow replaces this token with the immutable tag before publishing both the
+# standalone installer and the copies sealed inside the Linux, macOS and universal bundles.
+EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"
 
 fail() {
   echo "error: $1" >&2
   exit 1
+}
+
+validate_https_url() {
+  case "$2" in
+    https://*) ;;
+    *) fail "$1 must be an absolute HTTPS URL" ;;
+  esac
+}
+
+is_release_tag() {
+  case "$1" in
+    v[0-9A-Za-z]* ) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *[!0-9A-Za-z._-]*) return 1 ;;
+  esac
+  return 0
+}
+
+validate_release_tag() {
+  is_release_tag "$1" || fail "invalid release version: $1"
+}
+
+download_source_label() {
+  case "$1" in
+    https://*.aliyuncs.com/*) printf '%s\n' "OSS mirror" ;;
+    https://github.com/*) printf '%s\n' "GitHub" ;;
+    *) printf '%s\n' "configured mirror" ;;
+  esac
 }
 
 # --- Parse args (also passable via curl | sh -s -- --universal) ---
@@ -78,6 +122,25 @@ ASSET="penguin-$TARGET.tar.gz"
 
 if [ -n "$ARCHIVE" ] && [ -n "$VERSION" ]; then
   fail "--archive/PENGUIN_ARCHIVE cannot be combined with --version/PENGUIN_VERSION"
+fi
+if [ -n "$VERSION" ]; then
+  validate_release_tag "$VERSION"
+fi
+case "$SOURCE_MODE" in
+  auto | oss | github) ;;
+  *) fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github" ;;
+esac
+RESOLVED_RELEASE_VERSION="$VERSION"
+if [ -z "$RESOLVED_RELEASE_VERSION" ] && is_release_tag "$EMBEDDED_RELEASE_VERSION"; then
+  RESOLVED_RELEASE_VERSION="$EMBEDDED_RELEASE_VERSION"
+fi
+if [ -n "$DOWNLOAD_BASE_URL" ]; then
+  DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_BASE_URL "$DOWNLOAD_BASE_URL"
+fi
+if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
+  DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
+  validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
 fi
 
 # --- Universal package precheck: system Node >= 24 (platform packages bundle the runtime, so exempt) ---
@@ -184,6 +247,38 @@ verify_sha256() {
   echo "$3 checksum OK."
 }
 
+# Downloads the bundle and its checksum as a pair. Transport failures may try a same-version
+# fallback; checksum failures are handled afterwards and always abort rather than being hidden
+# by a different source.
+download_release_pair() {
+  drp_base="$1"
+  drp_label="$(download_source_label "$drp_base")"
+  echo "Downloading $ASSET from $drp_label ..."
+  rm -f "$ARCHIVE_PATH" "$TMP/$ASSET.sha256"
+  curl -fSL --progress-bar "$drp_base/$ASSET" -o "$ARCHIVE_PATH" \
+    || return 1
+  curl -fsSL "$drp_base/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
+    || return 1
+  return 0
+}
+
+# Resolves the OSS mirror's latest immutable tag. The advertised base URL must exactly match
+# the expected bucket path so metadata cannot redirect downloads to an arbitrary host.
+get_oss_latest_tag() {
+  gol_manifest="$1"
+  rm -f "$gol_manifest"
+  curl -fsSL --connect-timeout 3 --max-time 8 "$OSS_ORIGIN/latest.json" -o "$gol_manifest" 2>/dev/null \
+    || return 1
+  gol_schema_version="$(sed -n 's/.*"schemaVersion":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$gol_manifest" | head -n 1)"
+  gol_candidate_tag="$(sed -n 's/.*"tag":[[:space:]]*"\([^"]*\)".*/\1/p' "$gol_manifest" | head -n 1)"
+  gol_candidate_base="$(sed -n 's/.*"releaseBaseUrl":[[:space:]]*"\([^"]*\)".*/\1/p' "$gol_manifest" | head -n 1)"
+  [ "$gol_schema_version" = "1" ] \
+    && is_release_tag "$gol_candidate_tag" \
+    && [ "$gol_candidate_base" = "$OSS_RELEASE_ROOT/$gol_candidate_tag" ] \
+    || return 1
+  printf '%s\n' "$gol_candidate_tag"
+}
+
 # --- Resolve the program payload. Three entries converge on PAYLOAD_PATH:
 #     (a) bundled offline: this script sits next to payload.tar.gz in an extracted bundle;
 #     (b) --archive <file>: a local installer bundle, or a payload/legacy program archive;
@@ -230,19 +325,46 @@ elif [ -n "$ARCHIVE" ]; then
   LOCAL_ARCHIVE=1
   echo "Using local archive $ARCHIVE_PATH ..."
 else
-  # (c) Online: download the canonical bundle; the published checksum is mandatory.
-  if [ -n "$VERSION" ]; then
-    BASE_URL="$REPO/releases/download/$VERSION"
+  # (c) Online: explicit forwarder/configured URLs win. Otherwise a stamped Release installer
+  #     uses its own immutable version: auto prefers OSS and falls back only to the same GitHub
+  #     tag. An unstamped source-tree installer resolves latest.json first so it also locks one
+  #     version before downloading assets.
+  FALLBACK_BASE_URL="$DOWNLOAD_FALLBACK_BASE_URL"
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    BASE_URL="$DOWNLOAD_BASE_URL"
+  elif [ "$SOURCE_MODE" = "github" ]; then
+    if [ -n "$RESOLVED_RELEASE_VERSION" ]; then
+      BASE_URL="$GITHUB_RELEASE_ROOT/$RESOLVED_RELEASE_VERSION"
+    else
+      BASE_URL="$GITHUB_LATEST_BASE"
+    fi
   else
-    BASE_URL="$REPO/releases/latest/download"
+    SELECTED_TAG="$RESOLVED_RELEASE_VERSION"
+    if [ -z "$SELECTED_TAG" ]; then
+      SELECTED_TAG="$(get_oss_latest_tag "$TMP/latest.json" || :)"
+    fi
+    if [ -n "$SELECTED_TAG" ]; then
+      BASE_URL="$OSS_RELEASE_ROOT/$SELECTED_TAG"
+      if [ "$SOURCE_MODE" = "auto" ] && [ -z "$FALLBACK_BASE_URL" ]; then
+        FALLBACK_BASE_URL="$GITHUB_RELEASE_ROOT/$SELECTED_TAG"
+      fi
+    elif [ "$SOURCE_MODE" = "oss" ]; then
+      fail "the OSS mirror is unavailable or its release metadata is invalid."
+    else
+      BASE_URL="$GITHUB_LATEST_BASE"
+    fi
   fi
   ARCHIVE_PATH="$TMP/$ASSET"
   ARCHIVE_NAME="$ASSET"
-  echo "Downloading $BASE_URL/$ASSET ..."
-  curl -fSL --progress-bar "$BASE_URL/$ASSET" -o "$ARCHIVE_PATH" \
-    || fail "download failed. Check the version tag and your network, then retry."
-  curl -fsSL "$BASE_URL/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
-    || fail "checksum download failed. Check the version tag and your network, then retry."
+  if ! download_release_pair "$BASE_URL"; then
+    if [ -n "$FALLBACK_BASE_URL" ] && [ "$FALLBACK_BASE_URL" != "$BASE_URL" ]; then
+      echo "Primary download source unavailable; trying $(download_source_label "$FALLBACK_BASE_URL") ..."
+      download_release_pair "$FALLBACK_BASE_URL" \
+        || fail "download failed from both the primary source and its fallback. Check your network, then retry."
+    else
+      fail "download failed from $(download_source_label "$BASE_URL"). Check the version tag and your network, then retry."
+    fi
+  fi
   verify_sha256 "$ARCHIVE_PATH" "$TMP/$ASSET.sha256" "Bundle"
 fi
 
@@ -380,5 +502,5 @@ fi
 echo ""
 echo "Get started:"
 echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (initial login: admin / penguin-2026)"
+echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (login: admin, initial password printed on first start)"
 echo "  penguin server    # headless server (PORT / HOST to override)"

@@ -33,6 +33,7 @@ import { open, realpath, stat } from "node:fs/promises";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces.js";
+import { missingPathHint } from "./path-hint.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -299,9 +300,12 @@ export function createReadFileTool(definition: ToolDefinitionConfig): BuiltinToo
       } catch (err) {
         if (signal?.aborted) return { stopReason: "aborted" };
         const code = (err as NodeJS.ErrnoException).code;
-        if (code === "ENOENT") {
+        // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
+        // so it gets the same diagnosis instead of a raw errno message.
+        if (code === "ENOENT" || code === "ENOTDIR") {
+          const hint = await missingPathHint(resolved);
           yield delta(
-            `File not found: "${filePath}". Check the path — relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).`,
+            `File not found: "${filePath}". Absolute paths are supported; relative paths resolve against the workspace (${modelVisiblePath(ctx.workspaceDir)}).${hint}`,
           );
         } else {
           const message = err instanceof Error ? err.message : String(err);

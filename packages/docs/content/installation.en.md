@@ -19,6 +19,10 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 
 The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz` — the canonical installer bundle, sealing the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer below, not by `--universal`).
 
+The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`: it prefers an immutable OSS release directory only after that release has been completely uploaded and verified, then falls back to the matching GitHub Release if the metadata or download is unavailable. Set the variable to `oss` or `github` to force either source. Normal installer output names the source without printing the mirror's full URL.
+
+The `penguin.ooo` stable entry resolves the current stable version each time it runs. A standalone script downloaded from a versioned GitHub or OSS Release is stamped with that Release tag and defaults to the same version, keeping the installer and package format matched; set `PENGUIN_VERSION` (or `--version` on POSIX) to override it explicitly.
+
 On Windows (PowerShell):
 
 ```powershell
@@ -61,7 +65,8 @@ The extracted bundle keeps the installer, the program payload (`payload.tar.gz` 
 | --- | --- |
 | Install dir | `~/.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
 | Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH) |
-| Version pin | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; defaults to the latest Release |
+| Version selection | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; the stable entry defaults to the latest Release, while a versioned Release installer defaults to its own tag |
+| Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss`, or `github`; auto prefers OSS and falls back to the same GitHub version |
 | Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`; accepts a Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy program archive with an adjacent `<file>.sha256` (renamed legacy files may use the platform asset's canonical `.sha256`) |
 | Integrity check | Always on: online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
 | Upgrade | Re-run the install script; files are swapped atomically |

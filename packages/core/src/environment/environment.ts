@@ -110,10 +110,11 @@ export class Environment implements EnvironmentInterface {
     // The background session registry is created alongside Environment (one per Session) and
     // injected into whichever tools need it; all sessions are finalized together on dispose.
     // The vault environment variables are injected into child processes by the command session
-    // registry at spawn time.
-    this.commandSessions = new CommandSessionManager(
-      config.vault !== undefined ? { vault: config.vault } : {},
-    );
+    // registry at spawn time (which also applies the proxyEnv policy — strip or inject).
+    this.commandSessions = new CommandSessionManager({
+      ...(config.vault !== undefined ? { vault: config.vault } : {}),
+      ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
+    });
     this.subagentSessions = new SubagentSessionManager();
     const services = {
       ...config.services,

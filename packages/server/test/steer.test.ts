@@ -1,13 +1,26 @@
 /**
  * Integration tests for POST /api/sessions/:id/steer (mid-run steering):
  *   - 202 while a Task is running, forwarding the trimmed text and its images to the core session;
- *   - 400 when neither text nor images carry a message, and for malformed image URLs;
+ *   - 400 when neither text nor images nor files carry a message, and for malformed
+ *     image URLs / file parts;
+ *   - file attachments land in the Session scratchpad and ride the steering text as
+ *     `[attached file: <path>]` lines (a 409 cleans them up again);
+ *   - the SSE subscribe snapshot carries the pending-steering mirror (task_state), which is
+ *     what keeps the composer's "steering queued" hint alive across reloads;
  *   - 409 not_running when the Session is idle (the frontend then falls back to a
  *     normal task POST);
  *   - 404 for foreign/unknown sessions (via the shared resolveSession lookup).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
+import { readFile, readdir, realpath } from "node:fs/promises";
+import path from "node:path";
+import {
+  approvalDecision,
+  assistantText,
+  scratchpadDir,
+  toolCall,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
@@ -153,5 +166,105 @@ describe("steer route", () => {
   it("unknown session → 404", async () => {
     const res = await api.post(`/api/sessions/session-ghost/steer`, { text: "x" });
     expect(res.status).toBe(404);
+  });
+
+  it("files ride the steering text as [attached file] lines — and carry the message alone", async () => {
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const data = `data:text/plain;base64,${Buffer.from("hello notes").toString("base64")}`;
+    const captioned = await api.post(`/api/sessions/${SID}/steer`, {
+      text: " read this ",
+      files: [{ fileName: "notes.txt", dataUrl: data }],
+    });
+    expect(captioned.status).toBe(202);
+    // A file with no caption is a complete steering message: the attachment line becomes a
+    // line-only text message (same shared rule as a task's attachments-only input).
+    const bare = await api.post(`/api/sessions/${SID}/steer`, {
+      text: "",
+      files: [{ fileName: "solo.txt", dataUrl: data }],
+    });
+    expect(bare.status).toBe(202);
+
+    expect(steered).toHaveLength(2);
+    const first = shape(steered[0]!);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatch(/^text:read this\n\n\[attached file: .*notes\.txt\]$/);
+    const second = shape(steered[1]!);
+    expect(second).toHaveLength(1);
+    expect(second[0]).toMatch(/^text:\[attached file: .*solo\.txt\]$/);
+    // The bytes really landed in this Session's scratchpad. Directories are compared via
+    // realpath, not string prefixes: on the Windows CI runner the temp root mixes 8.3
+    // short and long name forms, so two spellings of the same directory are expected.
+    const written = /\[attached file: (.*)\]/.exec(first[0]!)![1]!;
+    const expectedDir = path.join(
+      scratchpadDir(t.root, "steerer-default_project", "default_agent"),
+      SID,
+    );
+    expect(await realpath(path.dirname(written))).toBe(await realpath(expectedDir));
+    expect(path.basename(written)).toBe("notes.txt");
+    expect(await readFile(written, "utf8")).toBe("hello notes");
+
+    // Same validation as a task input's file parts, under the steer request's own field name.
+    expect(
+      (await api.post(`/api/sessions/${SID}/steer`, { text: "x", files: "nope" })).status,
+    ).toBe(400);
+    const evil = await api.post(`/api/sessions/${SID}/steer`, {
+      text: "x",
+      files: [{ fileName: "../evil.txt", dataUrl: data }],
+    });
+    expect(evil.status).toBe(400);
+    expect(((await evil.json()) as { error: { message: string } }).error.message).toContain(
+      "files[0]",
+    );
+    expect(
+      (
+        await api.post(`/api/sessions/${SID}/steer`, {
+          text: "x",
+          files: [{ fileName: "a.txt", dataUrl: "nope" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(steered).toHaveLength(2);
+
+    t.deps.manager.decideApproval(SID, "tc-steer", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("a 409 steer leaves no attachment behind (the fallback normal send writes its own copy)", async () => {
+    const data = `data:text/plain;base64,${Buffer.from("orphan?").toString("base64")}`;
+    const res = await api.post(`/api/sessions/${SID}/steer`, {
+      text: "",
+      files: [{ fileName: "orphan.txt", dataUrl: data }],
+    });
+    expect(res.status).toBe(409);
+    const dir = path.join(scratchpadDir(t.root, "steerer-default_project", "default_agent"), SID);
+    expect(await readdir(dir).catch(() => [])).toEqual([]);
+  });
+
+  it("the SSE subscribe snapshot carries the pending-steering mirror (what makes the hint survive reloads)", async () => {
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/steer`, { text: "hold on" });
+    expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([
+      { text: "hold on", images: 0, files: 0 },
+    ]);
+
+    // The first SSE frames are the initial task_state snapshot: it must carry the mirror.
+    const res = await api.get(`/api/sessions/${SID}/stream`);
+    const reader = res.body!.getReader();
+    let seen = "";
+    for (let i = 0; i < 5 && !seen.includes("task_state"); i += 1) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      seen += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+    expect(seen).toContain('"task_state"');
+    expect(seen).toContain('"pendingSteering"');
+    expect(seen).toContain("hold on");
+
+    t.deps.manager.decideApproval(SID, "tc-steer", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
 });

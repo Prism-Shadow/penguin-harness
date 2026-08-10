@@ -27,12 +27,6 @@ const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
   { provider: "moonshot", modelId: "kimi-k2.6", displayName: "Kimi K2.6" },
   { provider: "minimax-token-plan", modelId: "MiniMax-M3", displayName: "MiniMax M3" },
-  { provider: "minimax-token-plan", modelId: "MiniMax-M2.7", displayName: "MiniMax M2.7" },
-  {
-    provider: "minimax-token-plan",
-    modelId: "MiniMax-M2.7-highspeed",
-    displayName: "MiniMax M2.7 Highspeed",
-  },
   { provider: "custom", modelId: "my-proxy-model" },
   { provider: "unknown-vendor", modelId: "weird-model" }, // provider not in the catalog → custom-built group
 ];
@@ -74,11 +68,7 @@ describe("groupModelRows", () => {
     ]);
     expect(groups[0]!.rows.map((r) => r.modelId)).toEqual(["claude-sonnet-4-6", "claude-opus-4-8"]);
     expect(groups[2]!.provider.label).toBe("MiniMax");
-    expect(groups[2]!.rows.map((r) => r.modelId)).toEqual([
-      "MiniMax-M3",
-      "MiniMax-M2.7",
-      "MiniMax-M2.7-highspeed",
-    ]);
+    expect(groups[2]!.rows.map((r) => r.modelId)).toEqual(["MiniMax-M3"]);
     expect(groups[3]!.rows.map((r) => r.modelId)).toEqual(["my-proxy-model"]);
     // Custom-built group: synthesized provider info — label is the group name, OpenAI-protocol semantics (env falls back to OPENAI_*).
     expect(groups[4]!.provider.label).toBe("unknown-vendor");

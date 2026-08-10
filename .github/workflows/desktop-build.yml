@@ -1,0 +1,115 @@
+# Desktop packages: Electron installers for the desktop shell.
+#
+# Reusable three-OS matrix: stage the pnpm-deploy app tree, run electron-builder, and
+# upload the installers as workflow artifacts named desktop-<OS>. release.yml calls this
+# BEFORE creating the Release — assets are immutable once published, so the desktop
+# installers must exist at creation time. workflow_dispatch runs it standalone as a dry
+# run on any branch.
+#
+# M3 ships unsigned artifacts; macOS signing/notarization, Windows code signing and
+# electron-updater are milestone M4.
+name: Desktop packages
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch: {}
+
+env:
+  # Keep in sync with release.yml (its header comment is the source of truth; duplicated
+  # here because reusable workflows do not inherit the caller's env).
+  MINGIT_VERSION: 2.55.0.3
+  MINGIT_TAG: v2.55.0.windows.3
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            args: --linux
+          - os: macos-latest
+            args: --mac
+          - os: windows-latest
+            args: --win
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Stamp the release version the same way release.yml stamps the CLI artifacts —
+      # core's VERSION/BUILD_DATE constants (what the app and server report) plus the
+      # desktop package.json electron-builder reads its installer metadata from;
+      # otherwise every installer carries the in-repo dev version (v0.2.1 shipped
+      # Windows metadata saying 0.2.0 this way). node instead of sed -i: this matrix
+      # includes macOS, whose BSD sed spells in-place editing differently. Dry runs
+      # (no tag) keep the dev versions.
+      - name: Stamp release version
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          V="${TAG#v}"
+          D="$(date -u +%Y-%m-%d)"
+          V="$V" D="$D" node -e '
+            const fs = require("fs");
+            const p = "packages/core/src/index.ts";
+            let s = fs.readFileSync(p, "utf8");
+            if (!/export const VERSION = "/.test(s)) throw new Error("VERSION const not found");
+            s = s.replace(/export const VERSION = "[^"]*"/, `export const VERSION = "${process.env.V}"`);
+            if (!/export const BUILD_DATE: string \| null = /.test(s)) throw new Error("BUILD_DATE const not found");
+            s = s.replace(/export const BUILD_DATE: string \| null = [^;]*/, `export const BUILD_DATE: string | null = "${process.env.D}"`);
+            fs.writeFileSync(p, s);
+          '
+          (cd packages/desktop && npm version --no-git-tag-version --allow-same-version "$V")
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r build
+
+      - name: Stage the app directory
+        run: node packages/desktop/scripts/stage.mjs
+
+      # Windows carries MinGit under resources/git so the packaged agent shell has the
+      # same deterministic POSIX bash as the npm package (release.yml bundles the
+      # identical MinGit into the CLI win-x64 zip; the shell advertises it as
+      # PENGUIN_BUNDLED_SHELL).
+      - name: Bundle MinGit (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
+          curl -fsSL -o "$mingit" \
+            "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit"
+          unzip -q "$mingit" -d packages/desktop/stage/minigit
+
+      - name: Build packages
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            packages/desktop/stage/out/penguin-desktop-*.AppImage
+            packages/desktop/stage/out/penguin-desktop-*.deb
+            packages/desktop/stage/out/penguin-desktop-*.dmg
+            packages/desktop/stage/out/penguin-desktop-*.zip
+            packages/desktop/stage/out/penguin-desktop-*.exe

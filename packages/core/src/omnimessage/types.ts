@@ -280,27 +280,45 @@ export interface RequestBeginPayload {
   type: "request_begin";
 }
 
-export interface RequestEndPayload {
-  type: "request_end";
-  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
-  status: StopReason;
+/**
+ * The unified retry/failure detail block shared by `request_end` and `compaction_end` —
+ * one standard group of fields, stamped by the builders (the way `withOrigin` stamps
+ * `origin`) rather than accreting as scattered ad-hoc parameters. Every field is optional
+ * and additive: old Traces replay unchanged.
+ */
+export interface RetryDetail {
   /**
-   * Failure detail from `LLMOutcome.message`, present only on non-completed statuses: the
-   * real reason behind a retried/failed Request (e.g. `403 … (insufficient_user_quota)`),
-   * for observability — the server's error records / Cost center read it here because a
-   * retried request never produces an abort event. Additive: old Traces without it replay
-   * unchanged.
+   * Error detail, one name across the stack (`LLMOutcome.errorMessage` internally): present
+   * only on non-completed statuses — the real reason behind a retried/failed Request (e.g.
+   * `403 … (insufficient_user_quota)`), for observability — the server's error records /
+   * Cost center read it here because a retried request never produces an abort event. Not
+   * plain `message`: in this protocol "message" means an OmniMessage / model output, and
+   * this field is neither. (Traces written before the rename carry it as `message`; nothing
+   * reads that field semantically after the fact, so no dual-read is kept.)
    */
-  message?: string;
+  error_message?: string;
+  /**
+   * 1-based ordinal of this Request within its retry run — the authoritative retry count
+   * the CLI/Web display verbatim. Stamped on every non-completed request_end and on a
+   * completed one that needed retries; absent on a clean first-try completion (the common
+   * case stays noise-free) and in old Traces.
+   */
+  attempt?: number;
   /**
    * Planned in-run retry wait (ms) — present ONLY when the engine will retry this failure
    * within the same run (status `timeout`/`malformed` with attempts remaining under the
    * applicable cap). Computed by the same formula as the actual backoff sleep
    * (`reconnectDelayMs`), so the announced wait and the real one cannot drift; the Web App
    * renders it as a live countdown to the next attempt. Absent on final failures (an abort
-   * follows instead) and on completed requests. Additive: old Traces replay unchanged.
+   * follows instead) and on completed requests.
    */
   retry_in_ms?: number;
+}
+
+export interface RequestEndPayload extends RetryDetail {
+  type: "request_end";
+  /** Terminal state of this Request (reuses the six StopReason values, sharing its source with this turn's complete message's stop_reason / LLMOutcome; `auth` is the credentials-failure signal hosts key on). */
+  status: StopReason;
 }
 
 /** Compaction trigger reason: context threshold / turn-count threshold / user-initiated request. */
@@ -328,7 +346,14 @@ export interface CompactionBeginPayload {
   turns: number;
 }
 
-export interface CompactionEndPayload {
+/**
+ * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
+ * (failed attempts and retries included — stamped by summarize mode), `error_message` is
+ * the last failure's detail (present only when `status` is `failed`), and `retry_in_ms` is
+ * never stamped here (compaction retries are announced on the compaction request's own
+ * request_end, which is Trace-only).
+ */
+export interface CompactionEndPayload extends RetryDetail {
   type: "compaction_end";
   reason: CompactionReason;
   mode: CompactionMode;
