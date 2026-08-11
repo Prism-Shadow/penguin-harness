@@ -1,4 +1,4 @@
-# Offline document capability profile
+# Offline capability profile
 
 Penguin now has a separate offline capability profile for every native release target: Linux and macOS x64/arm64, and Windows x64. It provides deterministic DOCX inspection/basic editing, PPTX inspection/slide append, and PDF inspection/merge in fully offline deployments, while standard releases and npm packages remain lightweight. Future capabilities extend this profile rather than creating product-specific Harness variants.
 
