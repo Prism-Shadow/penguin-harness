@@ -217,7 +217,7 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{MEMORY_USER_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织，索引是仅有的注入点。两个 Directory 行是同一个字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/<…>`：用户小节以字面 `user` 结尾，Workspace 小节以 `<workspace_memory_key>` 结尾——这一段是逐 Session 的值，走模板 Environment 段的 `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` 一行，与 `CWD` 并列（临时 Workspace 时渲染 `(none — temporary workspace)`，关闭记忆时渲染 `(none — memory is off)`）。
 
-空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。两个上限也写进了默认记忆提示词，模型在撞线之前就知道要把索引保持在限内。主题正文由模型按需读取。
+空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。默认记忆提示词只声明行数上限，并要求每行索引保持在约 150 字符以内，模型在撞线之前就会把索引保持在限内；字符兜底仅存在于代码中。主题正文由模型按需读取。
 
 两半之所以是两个独立配置键：替换引擎没有条件分支，临时 Workspace 绝不能被塞进 Workspace 小节（它的目录行和作用域二选一规则），所以那一半在临时 Workspace 下干脆不追加。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 

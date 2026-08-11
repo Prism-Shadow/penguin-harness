@@ -111,15 +111,17 @@ export const MEMORY_INDEX_MAX_LINES = 200;
 /**
  * Character backstop on an injected index, applied after the line cap: catches the long-line
  * index the line cap alone misses (a file under 200 lines can still be arbitrarily large).
- * ~125 chars per line at the line cap.
+ * Deliberately code-only — the default prompt teaches per-line brevity (~150 characters)
+ * instead of quoting this number; when the backstop does fire, the truncation note says so.
  */
 export const MEMORY_INDEX_MAX_CHARS = 25_000;
 
 /**
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
- * contract (both injection caps included, so the model keeps the index short before ever
- * hitting them) and the hygiene rules, then the User scope section with its index. Stored
+ * contract (the line cap and a per-line length hint, so the model keeps the index short
+ * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
+ * with its index. Stored
  * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. Directories are
  * literal text in the template's angle-bracket convention (resolved from the Environment
  * section by the model, like the Skills paths) — the only injection point is the index itself.
@@ -139,11 +141,13 @@ updated_at: <YYYY-MM-DD>
 
 Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
 
-Each directory's \`MEMORY.md\` is its index, injected below: one line per memory (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines (${MEMORY_INDEX_MAX_CHARS} characters total) of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
+Each directory's \`MEMORY.md\` is its index, injected below: one line per memory, under ~150 characters (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
 
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
+
 Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user
+
 Index:
 {{MEMORY_USER_INDEX}}`;
 
@@ -157,7 +161,9 @@ Index:
  */
 export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `## Workspace memory
 Facts about the workspace you are working in now. What would still hold in a different project goes in user memory; when unsure, write here.
+
 Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>
+
 Index:
 {{MEMORY_INDEX}}`;
 
