@@ -251,6 +251,10 @@ describe("memory api", () => {
     expect(cfg.config.systemPrompt.indexOf("{{MEMORY}}")).toBeLessThan(
       cfg.config.systemPrompt.indexOf("# Environment"),
     );
+    // The Environment line the Workspace half points at is inserted right after the heading.
+    expect(cfg.config.systemPrompt).toContain(
+      "# Environment\n- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}",
+    );
 
     // Idempotent: a second call changes nothing and still succeeds.
     const again = await owner.post(`${memoryPath}/template-placeholder`, {});
@@ -262,8 +266,8 @@ describe("memory api", () => {
   it("round-trips the memory prompts through the config route, reporting defaults until set", async () => {
     const before = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
     // A fresh default agent stores the built-in prompts in its own yaml.
-    expect(before.config.memory.prompt).toContain("[user_memory_index]");
-    expect(before.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
+    expect(before.config.memory.prompt).toContain("{{MEMORY_USER_INDEX}}");
+    expect(before.config.memory.workspacePrompt).toContain("## Workspace memory");
 
     const put = await owner.put(configPath, {
       config: { memory: { prompt: "# Memory\ncustom {{MEMORY_USER_INDEX}}" } },
@@ -272,7 +276,7 @@ describe("memory api", () => {
     const after = (await put.json()) as AgentConfigResponse;
     expect(after.config.memory.prompt).toBe("# Memory\ncustom {{MEMORY_USER_INDEX}}");
     // The untouched half keeps its value.
-    expect(after.config.memory.workspacePrompt).toContain("[workspace_memory_index]");
+    expect(after.config.memory.workspacePrompt).toContain("## Workspace memory");
   });
 
   it("reports the memory count on the Agent list, summed across scopes minus the indexes", async () => {

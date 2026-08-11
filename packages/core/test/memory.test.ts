@@ -1,7 +1,7 @@
 /**
  * Memory: key derivation, temporary-Workspace exclusion, directory preparation, frontmatter
- * parsing, and the `{{MEMORY}}` prompt block (marker-fenced indexes, the cap, and the
- * no-placeholder / no-workspace_prompt degradations).
+ * parsing, and the `{{MEMORY}}` prompt block (heading-led scope sections, the line and char
+ * caps, the Environment dir line, and the no-placeholder / no-workspace_prompt degradations).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -243,9 +243,9 @@ describe("frontmatter", () => {
 });
 
 describe("{{MEMORY}} rendering", () => {
-  /** Marker lines of each half of the block, so a test can assert which scopes were rendered. */
-  const USER_LINE = "User memory directory:";
-  const WORKSPACE_LINE = "Workspace memory directory:";
+  /** Heading lines of each half of the block, so a test can assert which scopes were rendered. */
+  const USER_LINE = "## User memory";
+  const WORKSPACE_LINE = "## Workspace memory";
 
   const bothScopes: SessionMemory = {
     userDir: "/data/memory/user",
@@ -257,19 +257,23 @@ describe("{{MEMORY}} rendering", () => {
     },
   };
 
-  it("renders both scopes, each index fenced by its own marker pair", async () => {
+  it("renders both scopes as heading-led sections, dirs literal, only the indexes injected", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, bothScopes);
-    expect(prompt).toContain("/data/memory/user");
-    expect(prompt).toContain("/data/memory/my-app-12345678");
-    expect(prompt).toContain(
-      "[user_memory_index]\n- [pnpm](prefers-pnpm.md) — package manager\n[/user_memory_index]",
-    );
-    expect(prompt).toContain(
-      "[workspace_memory_index]\n- [testing](testing-conventions.md) — how tests run\n[/workspace_memory_index]",
-    );
+    // The User directory is a literal angle-bracket pattern; the Workspace one is a concrete
+    // per-Session value and rides the template's Environment line instead.
+    expect(prompt).toContain("Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user");
+    expect(prompt).toContain("Directory: <workspace_memory_dir>");
+    expect(prompt).toContain("- Workspace Memory Dir: /data/memory/my-app-12345678");
+    expect(prompt).toContain(`${USER_LINE}\n`);
+    expect(prompt).toContain("Index:\n- [pnpm](prefers-pnpm.md) — package manager");
+    expect(prompt).toContain(`${WORKSPACE_LINE}\n`);
+    expect(prompt).toContain("Index:\n- [testing](testing-conventions.md) — how tests run");
     expect(prompt).not.toContain("{{MEMORY}}");
     expect(prompt).not.toContain(MEMORY_INDEX_EMPTY_NOTE);
+    // The retired marker fences are gone — the headings are the structure.
+    expect(prompt).not.toContain("[user_memory_index]");
+    expect(prompt).not.toContain("[workspace_memory_index]");
   });
 
   it("renders the User half alone when the Session has no Workspace scope", async () => {
@@ -279,9 +283,10 @@ describe("{{MEMORY}} rendering", () => {
       userIndex: "",
     });
     expect(prompt).toContain(USER_LINE);
-    expect(prompt).toContain("/data/memory/user");
     // The Workspace half is a separate config key precisely so it can be left out entirely:
-    // a temporary Workspace must never be told about a directory it does not have.
+    // a temporary Workspace must never be told about a scope it does not have. The Environment
+    // line still renders, saying why there is nothing to point at.
+    expect(prompt).toContain("- Workspace Memory Dir: (none — temporary workspace)");
     expect(prompt).not.toContain(WORKSPACE_LINE);
     // The scope-choice rule lives in the Workspace half, so a one-scope Session never sees it.
     expect(prompt).not.toContain("Facts about the workspace");
@@ -294,8 +299,8 @@ describe("{{MEMORY}} rendering", () => {
       workspace: { ...bothScopes.workspace!, index: "  \n" },
     });
     // Only the blank Workspace index gets the note; the User index keeps its content.
-    expect(prompt).toContain(`[workspace_memory_index]\n${MEMORY_INDEX_EMPTY_NOTE}`);
-    expect(prompt).toContain("- [pnpm](prefers-pnpm.md) — package manager");
+    expect(prompt).toContain(`Index:\n${MEMORY_INDEX_EMPTY_NOTE}`);
+    expect(prompt).toContain("Index:\n- [pnpm](prefers-pnpm.md) — package manager");
   });
 
   it("caps an injected index at 200 lines and notes the truncation", async () => {
@@ -311,6 +316,29 @@ describe("{{MEMORY}} rendering", () => {
     expect(prompt).toContain("showing 200 of 220 lines");
   });
 
+  it("caps an injected index at 25k characters, cutting at a line boundary", async () => {
+    const state = await agentState();
+    // 10 lines of exactly 5,000 chars slip past the line cap; the char backstop keeps the
+    // first 4 whole lines (4 × 5,000 + 3 separators = 20,003; a fifth would need 25,004).
+    const lines = Array.from({ length: 10 }, (_, i) => `- [m${i}](m${i}.md) ${"x".repeat(4986)}`);
+    const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
+      userDir: "/data/memory/user",
+      userIndex: lines.join("\n"),
+    });
+    expect(prompt).toContain("- [m3](m3.md) x");
+    expect(prompt).not.toContain("- [m4](m4.md) x");
+    expect(prompt).toContain("showing 4 of 10 lines");
+  });
+
+  it("cuts mid-line only when a single line alone exceeds the char cap", async () => {
+    const state = await agentState();
+    const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, {
+      userDir: "/data/memory/user",
+      userIndex: `- [huge](huge.md) ${"y".repeat(30_000)}`,
+    });
+    expect(prompt).toContain("showing the first 25000 characters");
+  });
+
   it("injects nothing at all when the Session has no Memory", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state);
@@ -318,6 +346,8 @@ describe("{{MEMORY}} rendering", () => {
     expect(prompt).not.toContain("# Memory");
     expect(prompt).not.toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
+    // The Environment line still renders and says why there is no directory to point at.
+    expect(prompt).toContain("- Workspace Memory Dir: (none — memory is off)");
     // Neighboring sections are untouched.
     expect(prompt).toContain("# Skills");
     expect(prompt).toContain("# Environment");
@@ -347,34 +377,37 @@ describe("{{MEMORY}} rendering", () => {
     expect(prompt).toContain(WORKSPACE_LINE);
   });
 
-  it("resolves workspace placeholders anywhere in the block instead of leaking them", async () => {
+  it("resolves the workspace index placeholder anywhere in the block instead of leaking it", async () => {
     const state = await agentState();
     const custom: AgentState = {
       ...state,
       systemConfig: {
         ...state.systemConfig,
-        memory: { enabled: true, prompt: "P {{MEMORY_DIR}} Q", workspace_prompt: "" },
+        memory: { enabled: true, prompt: "P {{MEMORY_INDEX}} Q", workspace_prompt: "" },
       },
     };
     // In a persistent Workspace a workspace token written into the main prompt gets the value…
     const withWorkspace = assembleSystemPrompt(custom, undefined, undefined, undefined, bothScopes);
-    expect(withWorkspace).toContain("P /data/memory/my-app-12345678 Q");
+    expect(withWorkspace).toContain("P - [testing](testing-conventions.md) — how tests run Q");
     // …and without one it blanks rather than leaking the literal token.
     const without = assembleSystemPrompt(custom, undefined, undefined, undefined, {
       userDir: "/data/memory/user",
       userIndex: "",
     });
-    expect(without).not.toContain("{{MEMORY_DIR}}");
+    expect(without).not.toContain("{{MEMORY_INDEX}}");
   });
 
   it("never re-expands template placeholders smuggled into index content", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, ["SOME_KEY"], undefined, {
       userDir: "/data/memory/user",
-      userIndex: "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}}",
+      userIndex: "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_DIR}}",
     });
-    // {{MEMORY}} expands last, so the tokens the model wrote stay literal text.
-    expect(prompt).toContain("- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}}");
+    // {{MEMORY}} expands last, so the tokens the model wrote stay literal text — the
+    // Environment-line placeholder included, which was consumed before the block landed.
+    expect(prompt).toContain(
+      "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_DIR}}",
+    );
   });
 
   it("drops the Workspace half only for an explicitly emptied workspace_prompt", async () => {
@@ -402,10 +435,15 @@ describe("{{MEMORY}} rendering", () => {
     );
     expect(sessionPrompt(withWorkspace)).toContain(WORKSPACE_LINE);
 
-    // No Workspace given: the SDK allocates a temporary one, which gets the User scope only.
+    // No Workspace given: the SDK allocates a temporary one, which gets the User scope only —
+    // the User directory renders as the literal pattern, and the Environment line says why
+    // there is no Workspace directory to point at.
     const temporary = await agent.createSession();
     expect(sessionPrompt(temporary)).toContain(
-      userMemoryDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      "Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user",
+    );
+    expect(sessionPrompt(temporary)).toContain(
+      "- Workspace Memory Dir: (none — temporary workspace)",
     );
     expect(sessionPrompt(temporary)).not.toContain(WORKSPACE_LINE);
     expect(

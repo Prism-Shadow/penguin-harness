@@ -255,6 +255,10 @@ export const zh = {
       ],
       ["{{AGENT_ID}}", "当前 Agent id"],
       ["{{CWD}}", "Workspace 绝对路径"],
+      [
+        "{{WORKSPACE_MEMORY_DIR}}",
+        "当前工作区记忆目录的绝对路径（临时工作区或关闭记忆时为 (none — …) 说明值）",
+      ],
       ["{{PROVIDER}}", "模型 provider 分组"],
       ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],
@@ -465,12 +469,17 @@ export const zh = {
       "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
     promptLabel: "主提示词",
     workspacePromptLabel: "工作区附加段",
-    /** Memory-prompt placeholder reference; a chip inserts into whichever field was focused last. */
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. Only the two indexes — directories are literal text in the prompts, and the
+     * workspace directory is the template's {{WORKSPACE_MEMORY_DIR}} Environment line.
+     */
     promptPlaceholders: [
-      ["{{MEMORY_USER_DIR}}", "用户记忆目录的绝对路径"],
-      ["{{MEMORY_USER_INDEX}}", "用户记忆索引 MEMORY.md 的内容（超 200 行截断）"],
-      ["{{MEMORY_DIR}}", "当前工作区的记忆目录；仅在工作区附加段生效"],
-      ["{{MEMORY_INDEX}}", "当前工作区记忆索引的内容（超 200 行截断）；仅在工作区附加段生效"],
+      ["{{MEMORY_USER_INDEX}}", "用户记忆索引 MEMORY.md 的内容（超 200 行 / 约 25k 字符截断）"],
+      [
+        "{{MEMORY_INDEX}}",
+        "当前工作区记忆索引的内容（超 200 行 / 约 25k 字符截断）；仅在工作区附加段生效",
+      ],
     ],
     insertToken: "插入到光标处",
     itemCount: (n: number): string => `${n} 条`,

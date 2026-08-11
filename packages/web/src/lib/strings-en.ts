@@ -266,6 +266,10 @@ export const en: Strings = {
       ],
       ["{{AGENT_ID}}", "Current agent id"],
       ["{{CWD}}", "Absolute Workspace path"],
+      [
+        "{{WORKSPACE_MEMORY_DIR}}",
+        "Absolute path of the current workspace's memory directory ((none — …) in a temporary workspace or with memory off)",
+      ],
       ["{{PROVIDER}}", "Model provider group"],
       ["{{MODEL_ID}}", "Upstream model id"],
       ["{{SESSION_ID}}", "Current Session id"],
@@ -486,17 +490,19 @@ export const en: Strings = {
       "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
     promptLabel: "Main prompt",
     workspacePromptLabel: "Workspace addendum",
-    /** Memory-prompt placeholder reference; a chip inserts into whichever field was focused last. */
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. Only the two indexes — directories are literal text in the prompts, and the
+     * workspace directory is the template's {{WORKSPACE_MEMORY_DIR}} Environment line.
+     */
     promptPlaceholders: [
-      ["{{MEMORY_USER_DIR}}", "Absolute path of the user memory directory"],
-      ["{{MEMORY_USER_INDEX}}", "Content of the user MEMORY.md index (truncated past 200 lines)"],
       [
-        "{{MEMORY_DIR}}",
-        "The current workspace's memory directory; effective only in the workspace addendum",
+        "{{MEMORY_USER_INDEX}}",
+        "Content of the user MEMORY.md index (truncated past 200 lines / ~25k characters)",
       ],
       [
         "{{MEMORY_INDEX}}",
-        "Content of the workspace MEMORY.md index (truncated past 200 lines); effective only in the workspace addendum",
+        "Content of the workspace MEMORY.md index (truncated past 200 lines / ~25k characters); effective only in the workspace addendum",
       ],
     ],
     insertToken: "Insert at the cursor",

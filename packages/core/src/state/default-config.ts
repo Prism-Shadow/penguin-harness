@@ -43,13 +43,17 @@ export const DATE_PLACEHOLDER = "{{DATE}}";
  * inserting it as an explicit action, nothing is spliced in automatically.
  */
 export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
-/** Inside `memory.workspace_prompt` only: the current Workspace's Memory directory — a temporary Workspace has none, which is why it is not available in `memory.prompt`. */
-export const MEMORY_DIR_PLACEHOLDER = "{{MEMORY_DIR}}";
-/** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
+/**
+ * Inside the template's Environment section (`- Workspace Memory Dir: …`): the absolute path of
+ * the current Workspace's Memory directory, or a self-describing `(none — …)` value in a
+ * temporary Workspace / with Memory off. The Memory prompts reference it as
+ * `<workspace_memory_dir>` — a concrete per-Session value belongs in Environment, next to CWD,
+ * while directories that are pure patterns are written literally in the prompts.
+ */
+export const WORKSPACE_MEMORY_DIR_PLACEHOLDER = "{{WORKSPACE_MEMORY_DIR}}";
+/** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
 export const MEMORY_INDEX_PLACEHOLDER = "{{MEMORY_INDEX}}";
-/** Inside either Memory prompt: the User scope's Memory directory (`memory/user/`), which every Session has. */
-export const MEMORY_USER_DIR_PLACEHOLDER = "{{MEMORY_USER_DIR}}";
-/** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES). */
+/** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
 export const MEMORY_USER_INDEX_PLACEHOLDER = "{{MEMORY_USER_INDEX}}";
 
 /**
@@ -77,28 +81,48 @@ export interface MemoryConfig {
   enabled?: boolean;
   /**
    * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the save mechanics,
-   * and the User scope with its index — carrying the `{{MEMORY_USER_DIR}}` /
-   * `{{MEMORY_USER_INDEX}}` injection points. Defaults to the built-in value.
+   * and the User scope with its index — carrying the `{{MEMORY_USER_INDEX}}` injection point
+   * (directories are literal text, not placeholders). Defaults to the built-in value.
    */
   prompt?: string;
   /**
    * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
-   * scope, its index and the rule for choosing between the two — carrying `{{MEMORY_DIR}}` /
-   * `{{MEMORY_INDEX}}`. A separate key rather than a conditional inside `prompt` because
-   * substitution has no conditionals — a temporary Workspace would otherwise be told about a
-   * directory it does not have.
+   * scope, its index and the rule for choosing between the two — carrying `{{MEMORY_INDEX}}`,
+   * with the directory read from the Environment section's `Workspace Memory Dir` line. A
+   * separate key rather than a conditional inside `prompt` because substitution has no
+   * conditionals — a temporary Workspace would otherwise be told about a scope it does not have.
    */
   workspace_prompt?: string;
 }
 
+/** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
+export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
+
+/**
+ * Cap on injected index lines per scope (one memory per line by convention), so a runaway
+ * `MEMORY.md` cannot flood the context. Only the injection is capped — the file on disk is
+ * never touched — and a truncation note tells the model to open the full index itself.
+ */
+export const MEMORY_INDEX_MAX_LINES = 200;
+
+/**
+ * Character backstop on an injected index, applied after the line cap: catches the long-line
+ * index the line cap alone misses (a file under 200 lines can still be arbitrarily large).
+ * ~125 chars per line at the line cap.
+ */
+export const MEMORY_INDEX_MAX_CHARS = 25_000;
+
 /**
  * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
  * template-example form — a fenced frontmatter example, what is worth saving, the index
- * contract and the hygiene rules, then the User scope and its marker-fenced index. Stored
- * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab.
+ * contract (both injection caps included, so the model keeps the index short before ever
+ * hitting them) and the hygiene rules, then the User scope section with its index. Stored
+ * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. Directories are
+ * literal text in the template's angle-bracket convention (resolved from the Environment
+ * section by the model, like the Skills paths) — the only injection point is the index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
-Your long-term record across sessions: Markdown files you maintain with the file tools, in the two memory directories named below (they already exist). One file per fact, with frontmatter:
+Your long-term record across sessions: Markdown files you maintain with the file tools, in the memory directories named below (they already exist). One file per fact, with frontmatter:
 
 \`\`\`markdown
 ---
@@ -112,25 +136,27 @@ updated_at: <YYYY-MM-DD>
 
 Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
 
-Each directory's \`MEMORY.md\` is its index, injected below: one line per memory (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
+Each directory's \`MEMORY.md\` is its index, injected below: one line per memory (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines (~${MEMORY_INDEX_MAX_CHARS / 1000}k characters) of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
 
-User memory directory: {{MEMORY_USER_DIR}}
-What holds wherever you work; every one of your sessions reads it. Its index:
-[user_memory_index]
-{{MEMORY_USER_INDEX}}
-[/user_memory_index]`;
+## User memory
+What holds wherever you work; every one of your sessions reads it.
+Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user
+Index:
+{{MEMORY_USER_INDEX}}`;
 
 /**
  * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
  * `memory.prompt` only when the Session runs in a persistent Workspace. The rule for choosing
  * between the two scopes lives here on purpose: a Session in a temporary Workspace has one
- * scope and no choice to make, so it never sees the rule at all.
+ * scope and no choice to make, so it never sees the rule at all. The directory is the
+ * Environment section's `Workspace Memory Dir` value — a concrete per-Session path, unlike the
+ * User directory's fixed pattern, so it lives with the other per-Session values.
  */
-export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `Workspace memory directory: {{MEMORY_DIR}}
-Facts about the workspace you are working in now. What would still hold in a different project goes in the user directory; when unsure, write here. Its index:
-[workspace_memory_index]
-{{MEMORY_INDEX}}
-[/workspace_memory_index]`;
+export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `## Workspace memory
+Facts about the workspace you are working in now. What would still hold in a different project goes in user memory; when unsure, write here.
+Directory: <workspace_memory_dir>
+Index:
+{{MEMORY_INDEX}}`;
 
 /**
  * System-level config for Agent State, serialized as `system_config.yaml`.
@@ -235,39 +261,49 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}
 - CWD: {{CWD}}
+- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}
 - Provider: {{PROVIDER}}
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
 
-/** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
-export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
-
 /**
- * Cap on injected index lines per scope (one memory per line by convention), so a runaway
- * `MEMORY.md` cannot flood the context. Only the injection is capped — the file on disk is
- * never touched — and a truncation note tells the model to open the full index itself.
+ * Whether a template carries both Memory placeholders: `{{MEMORY}}` (the block itself) and
+ * `{{WORKSPACE_MEMORY_DIR}}` (the Environment line the block's Workspace half points at).
+ * Whatever is missing is simply not injected.
  */
-export const MEMORY_INDEX_MAX_LINES = 200;
-
-/** Whether a template carries the `{{MEMORY}}` placeholder — without it no Memory is injected. */
 export function hasMemoryPlaceholder(template: string): boolean {
-  return template.includes(MEMORY_PLACEHOLDER);
+  return (
+    template.includes(MEMORY_PLACEHOLDER) && template.includes(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+  );
 }
 
 /**
- * Inserts the `{{MEMORY}}` placeholder into a template that has none: before the
+ * Inserts the missing Memory placeholders into a template: `{{MEMORY}}` before the
  * `# Environment` heading (the position the default template gives it), else appended at the
- * end. Idempotent — a template that already carries it comes back unchanged. This is the
- * explicit adoption path for Agents created before Memory shipped (the Web App's Memory tab
- * offers it); nothing ever inserts automatically.
+ * end; the `- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}` line right after that heading
+ * (any level), else appended. Idempotent — whatever is already present stays where it is. This
+ * is the explicit adoption path for Agents created before Memory shipped (the Web App's Memory
+ * tab offers it); nothing ever inserts automatically.
  */
 export function insertMemoryPlaceholder(template: string): string {
-  if (hasMemoryPlaceholder(template)) return template;
-  const heading = /^#+ Environment[ \t]*$/m.exec(template);
-  if (heading) {
-    return `${template.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${template.slice(heading.index)}`;
+  let next = template;
+  if (!next.includes(MEMORY_PLACEHOLDER)) {
+    const heading = /^#+ Environment[ \t]*$/m.exec(next);
+    next = heading
+      ? `${next.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${next.slice(heading.index)}`
+      : `${next.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
   }
-  return `${template.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
+  if (!next.includes(WORKSPACE_MEMORY_DIR_PLACEHOLDER)) {
+    const line = `- Workspace Memory Dir: ${WORKSPACE_MEMORY_DIR_PLACEHOLDER}`;
+    const heading = /^#+ Environment[ \t]*$/m.exec(next);
+    if (heading) {
+      const at = heading.index + heading[0].length;
+      next = `${next.slice(0, at)}\n${line}${next.slice(at)}`;
+    } else {
+      next = `${next.trimEnd()}\n${line}\n`;
+    }
+  }
+  return next;
 }
 
 /**

@@ -82,7 +82,7 @@ export interface MemoryTopicMetadata {
 export interface SessionWorkspaceMemory {
   /** Workspace key — the `memory/` subdirectory name and the API's scope key. */
   key: string;
-  /** Absolute path of the Workspace's topic directory (the `{{MEMORY_DIR}}` value). */
+  /** Absolute path of the Workspace's topic directory (the `{{WORKSPACE_MEMORY_DIR}}` value on the template's Environment line). */
   dir: string;
   /** Content of this scope's `MEMORY.md` (the `{{MEMORY_INDEX}}` value; empty string when blank). */
   index: string;
@@ -93,7 +93,7 @@ export interface SessionWorkspaceMemory {
  * and the Workspace scope (only in a persistent Workspace), each with its own index.
  */
 export interface SessionMemory {
-  /** Absolute path of `memory/user/` (the `{{MEMORY_USER_DIR}}` value). */
+  /** Absolute path of `memory/user/` — used by the server and Web App; the prompt names this directory as a literal `<app_data_dir>/…` pattern instead. */
   userDir: string;
   /** Content of `memory/user/MEMORY.md` (the `{{MEMORY_USER_INDEX}}` value; empty string when blank). */
   userIndex: string;

@@ -30,12 +30,12 @@ import {
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
   MEMORY_PLACEHOLDER,
-  MEMORY_DIR_PLACEHOLDER,
+  WORKSPACE_MEMORY_DIR_PLACEHOLDER,
   MEMORY_INDEX_PLACEHOLDER,
-  MEMORY_USER_DIR_PLACEHOLDER,
   MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
   MEMORY_INDEX_MAX_LINES,
+  MEMORY_INDEX_MAX_CHARS,
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
   type MemoryConfig,
@@ -285,18 +285,27 @@ function vaultKeysList(keys: string[]): string {
 /**
  * An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads
  * "nothing saved" instead of a blank line. Injection is capped at `MEMORY_INDEX_MAX_LINES`
- * lines (one memory per line by convention) — past the cap the rest is replaced by a note
- * telling the model to open the full file, and the file itself is never touched.
+ * lines (one memory per line by convention), then at `MEMORY_INDEX_MAX_CHARS` as a backstop
+ * for indexes whose few lines are enormous — past a cap the rest is replaced by a note telling
+ * the model to open the full file, and the file itself is never touched.
  */
 function indexForInjection(index: string): string {
   const trimmed = index.trim();
   if (trimmed.length === 0) return MEMORY_INDEX_EMPTY_NOTE;
-  const lines = trimmed.split("\n");
-  if (lines.length <= MEMORY_INDEX_MAX_LINES) return trimmed;
-  return [
-    ...lines.slice(0, MEMORY_INDEX_MAX_LINES),
-    `(index truncated: showing ${MEMORY_INDEX_MAX_LINES} of ${lines.length} lines — open MEMORY.md for the rest)`,
-  ].join("\n");
+  const totalLines = trimmed.split("\n").length;
+  let kept = trimmed.split("\n").slice(0, MEMORY_INDEX_MAX_LINES).join("\n");
+  if (kept.length > MEMORY_INDEX_MAX_CHARS) {
+    // Cut at a line boundary; only a single line exceeding the cap on its own is cut mid-line.
+    const cut = kept.lastIndexOf("\n", MEMORY_INDEX_MAX_CHARS);
+    kept = kept.slice(0, cut > 0 ? cut : MEMORY_INDEX_MAX_CHARS);
+  }
+  if (kept.length === trimmed.length) return trimmed;
+  const keptLines = kept.split("\n").length;
+  const reason =
+    keptLines < totalLines
+      ? `showing ${keptLines} of ${totalLines} lines`
+      : `showing the first ${MEMORY_INDEX_MAX_CHARS} characters`;
+  return `${kept}\n(index truncated: ${reason} — open MEMORY.md for the rest)`;
 }
 
 /**
@@ -306,13 +315,15 @@ function indexForInjection(index: string): string {
  * config carries no Memory prompt. Both prompts are per-Agent config, editable on the Web
  * App's Memory tab.
  *
- * The two blocks are separate config keys because substitution has no conditionals: each block
- * only ever names placeholders that are defined wherever it appears, so a temporary Workspace
- * is never told about a `{{MEMORY_DIR}}` it does not have.
+ * The two blocks are separate config keys because substitution has no conditionals: a
+ * temporary Workspace must never be handed the Workspace scope's section (its directory line
+ * and the scope-choice rule), so that half is simply not appended there.
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
- * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). Topic
- * bodies are never injected — the indexes say what exists, and the model opens what it needs.
+ * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). The only
+ * injection points are the two indexes — directories are literal text in the prompts, with the
+ * Workspace one read from the Environment section's `Workspace Memory Dir` line. Topic bodies
+ * are never injected — the indexes say what exists, and the model opens what it needs.
  */
 function memorySection(
   config: MemoryConfig | undefined,
@@ -326,11 +337,7 @@ function memorySection(
   if (!promptText) return "";
   const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
   const substituteUser = (text: string): string =>
-    text
-      .split(MEMORY_USER_DIR_PLACEHOLDER)
-      .join(memory.userDir)
-      .split(MEMORY_USER_INDEX_PLACEHOLDER)
-      .join(indexForInjection(memory.userIndex));
+    text.split(MEMORY_USER_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));
 
   const userBlock = substituteUser(promptText).trim();
   const workspace = memory.workspace;
@@ -338,15 +345,26 @@ function memorySection(
     workspace && workspacePromptText ? substituteUser(workspacePromptText).trim() : "";
   const joined =
     userBlock && workspaceBlock ? `${userBlock}\n\n${workspaceBlock}` : userBlock || workspaceBlock;
-  // The Workspace placeholders substitute over the whole joined block, so one written into the
-  // main prompt resolves too (with real values in a persistent Workspace, blank otherwise)
-  // instead of leaking literally. DIR before INDEX: injected index content is never re-scanned.
+  // The Workspace index placeholder substitutes over the whole joined block, so one written
+  // into the main prompt resolves too (with real content in a persistent Workspace, blank
+  // otherwise) instead of leaking literally.
   return joined
-    .split(MEMORY_DIR_PLACEHOLDER)
-    .join(workspace?.dir ?? "")
     .split(MEMORY_INDEX_PLACEHOLDER)
     .join(workspace ? indexForInjection(workspace.index) : "")
     .trim();
+}
+
+/**
+ * The `{{WORKSPACE_MEMORY_DIR}}` value for the template's `- Workspace Memory Dir:` Environment
+ * line: the absolute path of this Session's Workspace Memory directory, or a self-describing
+ * "(none — …)" when there is none to point at. The line renders in every Session —
+ * substitution has no conditionals — and nothing references the value in the none cases (the
+ * Memory block's Workspace half is only appended alongside a real directory), so the
+ * none-values are purely the Environment section telling the truth.
+ */
+function workspaceMemoryDirValue(memory: SessionMemory | null | undefined): string {
+  if (!memory) return "(none — memory is off)";
+  return memory.workspace?.dir ?? "(none — temporary workspace)";
 }
 
 /**
@@ -518,9 +536,11 @@ function withShellLineFallback(
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
  * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block
  * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
- * Memory is disabled — only those blocks' own `{{MEMORY_USER_DIR}}` / `{{MEMORY_USER_INDEX}}` /
- * `{{MEMORY_DIR}}` / `{{MEMORY_INDEX}}` carry Memory content (indexes capped, topic bodies
- * always read on demand). A custom template that removes a placeholder gets no corresponding
+ * Memory is disabled — only those blocks' own `{{MEMORY_USER_INDEX}}` / `{{MEMORY_INDEX}}`
+ * carry Memory content (indexes capped, topic bodies always read on demand), while
+ * `{{WORKSPACE_MEMORY_DIR}}` renders the Workspace Memory directory into the template's
+ * Environment section (a "(none — …)" value when there is none to point at, so the line always
+ * tells the truth). A custom template that removes a placeholder gets no corresponding
  * content injected — a template without `{{MEMORY}}` injects no Memory, and the Web App's
  * Memory tab offers inserting the placeholder explicitly. `{{PROJECT_DIR}}` resolves to the
  * Project directory — the app data root the default prompt labels "App Data Dir".
@@ -561,6 +581,8 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
+    .split(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+    .join(workspaceMemoryDirValue(memory))
     // {{MEMORY}} expands last: everything the Memory block carries (index lines the model wrote
     // included) lands after the other placeholders were consumed, so index content can never
     // smuggle a {{VAULT_KEYS}}-style token into a second expansion.
