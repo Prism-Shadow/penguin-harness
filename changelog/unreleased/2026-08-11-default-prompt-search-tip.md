@@ -1,0 +1,5 @@
+# Default prompt: web search tip
+
+The default system prompt's `# Tool use` section gains a research bullet (#262): DuckDuckGo's HTML endpoint via curl (`curl -sG 'https://html.duckduckgo.com/html/' -A 'Mozilla/5.0' --data-urlencode 'q=…'`) as the most reliable first stop for web searches, with Google News RSS search as the fallback best suited to news. Both commands were live-tested before being worded into the template — which is how the fallback ended up spelled `-sGL`: the bare News endpoint 302-redirects to a locale-parameterized URL with an empty body, so only a redirect-following fetch returns the feed.
+
+This is also the first real exercise of the kernel-version flow shipped in #260: the change revises the same-day `2026-08-11` history entry in place (`KERNEL_VERSION` unchanged), and the pre-toggles reconstruction proof was upgraded rather than retired — the complete pre-#257 default config is frozen as a test fixture and asserted against the pinned hashes, two independent artifacts keeping the guard non-tautological. Existing agents pick the bullet up through **Update kernel** once these PRs ship.
