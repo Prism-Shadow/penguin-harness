@@ -156,7 +156,7 @@ compaction:
 | `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
 | `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
 | `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{WORKSPACE_MEMORY_KEY}}` | 模板 Environment 段的一行：当前 Workspace 记忆目录的目录名（记忆路径模式的最后一段）；临时 Workspace 或关闭记忆时为 `(none — …)` 说明值 |
+| `{{WORKSPACE_MEMORY_KEY}}` | 模板 Environment 段的一行：当前 Workspace 的记忆目录名；临时 Workspace 或关闭记忆时为 `(none — …)` |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |

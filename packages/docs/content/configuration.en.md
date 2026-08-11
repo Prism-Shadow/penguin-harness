@@ -156,7 +156,7 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
 | `{{MEMORY_USER_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
-| `{{WORKSPACE_MEMORY_KEY}}` | On the template's Environment line: directory name of the current Workspace's memory scope — the memory path pattern's final segment; `(none — …)` in a temporary Workspace or with Memory off |
+| `{{WORKSPACE_MEMORY_KEY}}` | On the template's Environment line: directory name of the current Workspace's memory; `(none — …)` in a temporary Workspace or with Memory off |
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |

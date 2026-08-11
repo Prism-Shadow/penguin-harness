@@ -268,7 +268,7 @@ export const en: Strings = {
       ["{{CWD}}", "Absolute Workspace path"],
       [
         "{{WORKSPACE_MEMORY_KEY}}",
-        "Directory name of the current workspace's memory scope — the memory path pattern's final segment ((none — …) in a temporary workspace or with memory off)",
+        "Directory name of the current workspace's memory; (none — …) in a temporary workspace or with memory off",
       ],
       ["{{PROVIDER}}", "Model provider group"],
       ["{{MODEL_ID}}", "Upstream model id"],
