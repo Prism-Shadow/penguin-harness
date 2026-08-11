@@ -27,7 +27,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function VaultTab({ agentId }: { agentId: string }) {
-  const { currentProject } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
 
@@ -70,6 +70,8 @@ export function VaultTab({ agentId }: { agentId: string }) {
       const res = await api.putVault(projectId, agentId, body);
       setEntries(res.entries);
       toastSuccess(S.common.saved);
+      // Add / delete moves the agent card's vault-key count; refresh the list provider too.
+      void reloadAgents();
       return null;
     } catch (e) {
       return apiErrorText(e);

@@ -85,7 +85,9 @@ jobs:
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
     with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      require_macos_signing: true
 
   release:
     needs: [check-release, desktop]

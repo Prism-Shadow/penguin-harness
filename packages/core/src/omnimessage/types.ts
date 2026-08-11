@@ -95,8 +95,11 @@ export interface SessionMetaPayload {
   model_context_window: number | string;
   /** The system prompt actually used by this Session (the assembled result with environment placeholders already substituted). */
   system_prompt: string;
-  /** The list of tool definitions this Session exposes to the model (full schema, matching what's sent to the LLM). */
-  tools: ToolDefinition[];
+  // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
+  // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta
+  // must not wait for that. Pre-split Traces still carry the field on disk; it is
+  // deliberately not read anywhere anymore (explicit incompatibility — their tool record
+  // is simply not displayed).
   /** Absolute path to the Agent State. */
   agent_state: string;
   /** Absolute path to the Workspace. */
@@ -393,6 +396,65 @@ export interface SubagentPayload {
   session_id: string;
 }
 
+/**
+ * The Session's tool definitions (full schema, matching what is sent to the LLM), emitted
+ * once per Session at the start of the first run — after the MCP servers (if any) have
+ * connected and their tools were discovered. Split out of `session_meta` so Session
+ * creation never blocks on MCP connects: the meta streams immediately and this event
+ * follows once the toolset is known. Written to the Trace right after the run's input
+ * (so it belongs to the new turn; also rewritten at the head of each post-compaction
+ * file alongside `session_meta`) but not part of reload history — live streams re-emit
+ * it on the next run, which is when frontends need the schemas.
+ * Docs: /docs/omni-message § "event_msg".
+ */
+export interface ToolListReadyPayload {
+  type: "tool_list_ready";
+  tools: ToolDefinition[];
+}
+
+/** Terminal status of the MCP connect phase (and of each server inside it) — the same style as `compaction_end.status`. */
+export type McpConnectStatus = "completed" | "failed" | "aborted";
+
+/** One MCP server's outcome inside `mcp_connect_end.results`; `duration_ms` covers that server's connect + tool discovery (individual servers have no messages of their own to derive it from). */
+export interface McpServerConnectResult {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: McpConnectStatus;
+  duration_ms: number;
+  /** Number of tools discovered (present on completed). */
+  tools?: number;
+  /** Failure detail (present on failed). */
+  error?: string;
+}
+
+/**
+ * MCP connect boundary events: one pair around the first run's connect + discovery phase,
+ * emitted only when MCP Servers are configured. The begin lists the servers being
+ * contacted (frontends show a connecting status off it); the end carries the overall
+ * `status` (compaction_end-style) plus the per-server results — the phase's total wall
+ * time is the pair's timestamp difference (messages carry timestamps, so the payload
+ * records no duplicate duration). Failures are per-server and non-fatal: an unreachable
+ * server is skipped — its tools are absent — and the run continues. `status: "aborted"`
+ * means the user interrupted mid-connect: the attempt is cancelled and the next run
+ * reconnects from scratch. Streamed live; written to the Trace right after the run's
+ * input so the phase belongs to the new turn (an attempt aborted before the engine
+ * exists is live-only). Not part of reload history (a transient status, unlike
+ * `tool_list_ready`).
+ * Docs: /docs/omni-message § "event_msg".
+ */
+export interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];
+}
+
+export interface McpConnectEndPayload {
+  type: "mcp_connect_end";
+  /** Overall terminal status: completed (every server connected) / failed (some server failed) / aborted (user interrupted). */
+  status: McpConnectStatus;
+  /** Per-server outcomes (empty on an aborted attempt — nothing settled is claimed). */
+  results: McpServerConnectResult[];
+}
+
 // ---------------------------------------------------------------------------
 // Union types and the message envelope
 // ---------------------------------------------------------------------------
@@ -425,7 +487,10 @@ export type EventPayload =
   | CompactionBeginPayload
   | CompactionEndPayload
   | GoalFinishedPayload
-  | SubagentPayload;
+  | SubagentPayload
+  | ToolListReadyPayload
+  | McpConnectBeginPayload
+  | McpConnectEndPayload;
 
 export type OmniPayload = SessionMetaPayload | ModelPayload | EventPayload;
 

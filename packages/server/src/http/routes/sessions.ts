@@ -97,6 +97,19 @@ function pageLimit(raw: string, name: string): number {
  * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
  * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
  */
+/**
+ * Appends the running Task's already-published input messages that the Trace read has not
+ * caught up to yet. Duplication is decided by exact envelope-JSON identity — the engine
+ * writes the very same envelopes, and the client's overlap dedup uses the same rule — and
+ * only the history tail can contain them (inputs are the newest records when this races).
+ */
+function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
+  if (pending.length === 0) return messages;
+  const tail = new Set(messages.slice(-50).map((m) => JSON.stringify(m)));
+  const missing = pending.filter((m) => !tail.has(JSON.stringify(m)));
+  return missing.length > 0 ? [...messages, ...missing] : messages;
+}
+
 function messagesPageQuery(c: Context): MessagesPageRequest | null {
   const rawTail = c.req.query("tailLimit");
   const rawBefore = c.req.query("before");
@@ -560,11 +573,28 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // page is immutable history — attaching in-flight fragments to it would seed them at
     // the wrong position — so it never carries `live`.
     let live: MessagesLiveTail | undefined;
-    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
-      live = {
-        cursor: deps.channels.get(row.sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(row.sessionId),
-      };
+    let pendingInputs: OmniMessage[] = [];
+    if (page?.kind !== "before") {
+      if (deps.manager.statusOf(row.sessionId) !== "idle") {
+        live = {
+          cursor: deps.channels.get(row.sessionId).lastEventId,
+          fragments: deps.manager.liveFragments(row.sessionId),
+        };
+      }
+      // The Task's inputs (published at launch) and its streamed bootstrap records
+      // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
+      // only after the first run's connect, so a client rebuilding during that window
+      // would otherwise see neither its own message nor the connecting status — a
+      // silent blank while a slow MCP server times out. Appended below when the trace
+      // read hasn't caught up; `before` pages are immutable history and never carry
+      // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
+      // wrote nothing to the Trace, and its held input is the only copy a reload can
+      // show until the next run persists it (the holds survive idle for exactly that
+      // case — see the manager's request_begin clear).
+      pendingInputs = [
+        ...deps.manager.pendingInputs(row.sessionId),
+        ...deps.manager.pendingBootstrap(row.sessionId),
+      ];
     }
     if (page !== null) {
       const result = await deps.traceService.readMessagesPage(
@@ -584,7 +614,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         },
       };
       return c.json({
-        messages: result.messages,
+        messages: appendPendingInputs(result.messages, pendingInputs),
         ...(live !== undefined ? { live } : {}),
         page: info,
       } satisfies MessagesResponse);
@@ -594,7 +624,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       row.agentId,
       row.sessionId,
     );
-    return c.json({ messages, ...(live !== undefined ? { live } : {}) } satisfies MessagesResponse);
+    return c.json({
+      messages: appendPendingInputs(messages, pendingInputs),
+      ...(live !== undefined ? { live } : {}),
+    } satisfies MessagesResponse);
   });
 
   app.get("/:sessionId/stream", (c) => {

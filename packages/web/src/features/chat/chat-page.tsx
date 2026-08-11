@@ -23,6 +23,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
   SessionProcessInfo,
+  SessionStatus,
   SkillMetadataItem,
   TaskCreateRequest,
   TaskInputPart,
@@ -583,18 +584,33 @@ export function ChatPage() {
     if (selected) setStatus(selected.sessionId, stream.taskState);
   }, [stream.taskState, selected, setStatus]);
 
-  // Task returns from running/compacting to idle: this turn may have spawned a sub-session or
-  // auto-created a new Agent — reload the session and Agent lists so they appear in the sidebar
-  // immediately (no manual refresh needed).
-  const prevTaskRef = useRef(stream.taskState);
+  // Task returns from running/compacting to idle ON THE SAME SESSION: this turn may have
+  // spawned a sub-session or auto-created a new Agent — reload both lists so they appear in
+  // the sidebar immediately (no manual refresh needed). Guarded by session identity: the
+  // stream resets its state to "idle" whenever it detaches (switching conversations,
+  // entering the draft), and treating that phantom transition as a completion made every
+  // mid-run "new chat" click reload the sessions + agents contexts — an app-wide re-render
+  // arriving right after the click, occasionally visible as an uncontrolled flicker. On a
+  // switch the tracker restarts from "idle": a state observed in the same commit as the id
+  // change still belongs to the previous stream, so it must not seed the new session's
+  // baseline (the new stream's own task_state push advances it).
+  const prevTaskRef = useRef<{ id: string | null; state: SessionStatus }>({
+    id: selectedSessionId,
+    state: "idle",
+  });
   useEffect(() => {
     const prev = prevTaskRef.current;
-    prevTaskRef.current = stream.taskState;
-    if (prev !== "idle" && stream.taskState === "idle") {
+    const sameSession = prev.id === selectedSessionId;
+    prevTaskRef.current = {
+      id: selectedSessionId,
+      state: sameSession ? stream.taskState : "idle",
+    };
+    if (!sameSession || selectedSessionId === null) return;
+    if (prev.state !== "idle" && stream.taskState === "idle") {
       void reloadSessions();
       void reloadAgents();
     }
-  }, [stream.taskState, reloadSessions, reloadAgents]);
+  }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
