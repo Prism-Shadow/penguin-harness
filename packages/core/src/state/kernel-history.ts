@@ -137,9 +137,15 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   legacy # Vault / # Skills sections instead of the `{{VAULT}}` / `{{SKILLS}}` /
  *   `{{SCHEDULES}}` placeholders. The date is a retroactive label (configs of that era carry
  *   no stamp, so the key never has to match anything on disk; matching is purely by hash).
- *   The test suite proves these hashes equal a byte-exact reconstruction of that era's
- *   defaults from the frozen LEGACY_* constants.
- * - `"2026-08-11"` (current) — the toggles generation, pinned by the guard test.
+ *   At seeding time these hashes were proven equal to a byte-exact reconstruction of that
+ *   era's defaults from the frozen LEGACY_* constants; that reconstruction is snapshotted as
+ *   the test fixture `core/test/fixtures/pre-toggles-default-config.json`, which the proof
+ *   test asserts against permanently (the recipe read the *current* defaults, so it stopped
+ *   reproducing this era the first time the template evolved past the toggles generation).
+ * - `"2026-08-11"` (current) — the toggles generation, pinned by the guard test. Revised in
+ *   place the same day when the web-search tip joined the default template — the same-day
+ *   rule in action: no later generation exists, so the entry is not yet frozen and the
+ *   superseded hash simply disappears (nothing in the wild was stamped with it).
  *
  * Generations older than the seeded ones cannot be fully reconstructed; their values match
  * no recorded hash and are conservatively kept by a kernel update (restore-default-config is
@@ -177,7 +183,7 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
       "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
   },
   "2026-08-11": {
-    system_prompt: "de8952daede04db17400c5cd59b279eccf523cf2d8a0ecedfa37a96de7925b44",
+    system_prompt: "c5be0d4b5627ebf23e953923a27df971d3836486494127c8bfba68d368ad45ea",
     max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
     "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
     "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",

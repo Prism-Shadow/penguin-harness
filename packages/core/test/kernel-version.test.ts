@@ -5,9 +5,11 @@
  * defaults advance, customizations and unknown generations are kept, identity fields and
  * user data are never touched, YAML comments survive, the config is re-stamped).
  */
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
@@ -15,11 +17,6 @@ import {
   DEFAULT_PROJECT_ID,
   KERNEL_HASH_HISTORY,
   KERNEL_VERSION,
-  LEGACY_SKILLS_SECTION,
-  LEGACY_VAULT_SECTION,
-  SCHEDULES_PLACEHOLDER,
-  SKILLS_PLACEHOLDER,
-  VAULT_PLACEHOLDER,
   applyKernelUpdate,
   computeKernelHashes,
   defaultSystemConfig,
@@ -31,41 +28,35 @@ import {
   type SystemConfig,
 } from "../src/index.js";
 
-/** The two seeded generations (see KERNEL_HASH_HISTORY's doc comment). */
+/** The oldest seeded generation (see KERNEL_HASH_HISTORY's doc comment). */
 const PRE_TOGGLES_GENERATION = "2026-08-10";
-const TOGGLES_GENERATION = "2026-08-11";
+
+/**
+ * The complete pre-#257 (pre-toggles) default config, frozen at seeding time: the legacy
+ * template (hardcoded # Vault / # Skills sections, no `{{SCHEDULES}}`), no
+ * vault/skills/schedules config sections, no kernel stamp — what a `system_config.yaml` of
+ * that era carries. Originally generated from the then-current defaults via the LEGACY_*
+ * swap recipe and verified leaf-by-leaf against the pinned `PRE_TOGGLES_GENERATION` entry
+ * (see PR #260); snapshotted rather than reconstructed live because the recipe read the
+ * *current* defaults — it stopped reproducing this era the moment the template first evolved
+ * past the toggles generation (the web-search tip). Frozen like the pinned hashes
+ * themselves: never edit the fixture.
+ */
+const PRE_TOGGLES_CONFIG = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("./fixtures/pre-toggles-default-config.json", import.meta.url)),
+    "utf8",
+  ),
+) as SystemConfig;
 
 /** A mutable plain-object clone of a config, for seeding on-disk scenarios. */
 function mutableConfig(config: SystemConfig): Record<string, unknown> {
   return structuredClone(config) as unknown as Record<string, unknown>;
 }
 
-/**
- * Reconstructs the pre-#257 (pre-toggles) default config from the current one: the frozen
- * LEGACY_* sections swapped back into the template in place of the section placeholders, no
- * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections — exactly what a
- * `system_config.yaml` of that era carries (the same recipe prompt-sections.test.ts proves
- * byte-exact for the template).
- */
+/** A fresh copy of the frozen pre-toggles default config (clone: tests mutate their seeds). */
 function preTogglesDefaultConfig(): SystemConfig {
-  const current = defaultSystemConfig();
-  const {
-    vault: _vault,
-    skills: _skills,
-    schedules: _schedules,
-    kernel_version: _stamp,
-    ...rest
-  } = current;
-  return {
-    ...rest,
-    system_prompt: current.system_prompt
-      .split(VAULT_PLACEHOLDER)
-      .join(LEGACY_VAULT_SECTION)
-      .split(SKILLS_PLACEHOLDER)
-      .join(LEGACY_SKILLS_SECTION)
-      .split(`${SCHEDULES_PLACEHOLDER}\n\n`)
-      .join(""),
-  };
+  return structuredClone(PRE_TOGGLES_CONFIG);
 }
 
 describe("kernel hash history (pinned-hash guard)", () => {
@@ -95,18 +86,20 @@ describe("kernel hash history (pinned-hash guard)", () => {
     ).toEqual([]);
   });
 
-  // Anchored to the first shipped generation: the reconstruction recipe reads the *current*
-  // defaults, so it only reproduces the pre-toggles era while the current generation is
-  // still the toggles one. Once the defaults evolve past it this proof self-retires — the
-  // pinned hashes remain the frozen source of truth on their own.
-  it.runIf(KERNEL_VERSION === TOGGLES_GENERATION)(
-    "the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction",
-    () => {
-      expect(computeKernelHashes(preTogglesDefaultConfig())).toEqual(
-        KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION],
-      );
-    },
-  );
+  // The seeding proof, in permanent form: the frozen full-config snapshot and the pinned
+  // hash entry are independent frozen artifacts (the snapshot was generated from the
+  // then-current defaults via the LEGACY_* swap recipe and verified at freeze time, see PR
+  // #260), so asserting they agree keeps the pre-toggles generation's hashes anchored to
+  // real config content — non-tautologically, and regardless of how the current defaults
+  // evolve. Originally this reconstructed from the live defaults under an
+  // `it.runIf(KERNEL_VERSION === "2026-08-11")` anchor; the first same-day template revision
+  // (the web-search tip) invalidated that recipe, per its documented design, and the
+  // snapshot replaced it.
+  it("the pre-toggles generation's pinned hashes equal the frozen config snapshot", () => {
+    expect(computeKernelHashes(preTogglesDefaultConfig())).toEqual(
+      KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION],
+    );
+  });
 
   it("excludes identity fields and mcpServers from the managed leaves", () => {
     const paths = kernelLeafEntries({

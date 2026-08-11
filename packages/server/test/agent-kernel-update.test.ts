@@ -8,16 +8,7 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import {
-  KERNEL_VERSION,
-  LEGACY_SKILLS_SECTION,
-  LEGACY_VAULT_SECTION,
-  SCHEDULES_PLACEHOLDER,
-  SKILLS_PLACEHOLDER,
-  VAULT_PLACEHOLDER,
-  defaultSystemConfig,
-  systemConfigPath,
-} from "@prismshadow/penguin-core";
+import { KERNEL_VERSION, defaultSystemConfig, systemConfigPath } from "@prismshadow/penguin-core";
 import type {
   AgentConfigResponse,
   AgentKernelUpdateResponse,
@@ -47,10 +38,11 @@ describe("POST agent config kernel-update", () => {
   });
 
   /**
-   * Rewrites default_agent's config on disk into a pre-toggles-era shape with one user
-   * customization: no kernel stamp, the legacy default template (LEGACY_* sections instead
-   * of the section placeholders, no {{SCHEDULES}}), no vault/skills/schedules sections, and
-   * a customized memory.prompt.
+   * Rewrites default_agent's config on disk into an aged shape with one user customization:
+   * no kernel stamp, no vault/skills/schedules sections (a config from before those existed),
+   * and a customized memory.prompt. The template stays the current default — the
+   * old-template-advance path itself is core-tested against the frozen pre-toggles snapshot
+   * (core/test/kernel-version.test.ts); here the endpoint semantics are what's under test.
    */
   async function agePersistedConfig(): Promise<void> {
     const configPath = systemConfigPath(t.root, projectId, "default_agent");
@@ -59,13 +51,6 @@ describe("POST agent config kernel-update", () => {
     delete config.vault;
     delete config.skills;
     delete config.schedules;
-    config.system_prompt = defaultSystemConfig()
-      .system_prompt.split(VAULT_PLACEHOLDER)
-      .join(LEGACY_VAULT_SECTION)
-      .split(SKILLS_PLACEHOLDER)
-      .join(LEGACY_SKILLS_SECTION)
-      .split(`${SCHEDULES_PLACEHOLDER}\n\n`)
-      .join("");
     config.memory = { ...(config.memory as object), prompt: "my memory prompt" };
     await fs.writeFile(configPath, stringifyYaml(config), "utf8");
   }
@@ -96,13 +81,17 @@ describe("POST agent config kernel-update", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentKernelUpdateResponse;
     expect(body.kernelVersion).toBe(KERNEL_VERSION);
-    expect(body.advanced).toContain("system_prompt");
+    // The missing sections materialize; the untouched current-default template is not
+    // reported (nothing to advance).
     expect(body.advanced).toContain("vault.prompt");
+    expect(body.advanced).toContain("schedules.enabled");
+    expect(body.advanced).not.toContain("system_prompt");
     expect(body.kept).toEqual(["memory.prompt"]);
 
-    // Persisted: the template advanced, the customization survived, the stamp is current.
+    // Persisted: the sections advanced, the customization survived, the stamp is current.
     const after = (await (await alice.get(configUrl())).json()) as AgentConfigResponse;
     expect(after.config.systemPrompt).toBe(defaultSystemConfig().system_prompt);
+    expect(after.config.vault.enabled).toBe(true);
     expect(after.config.memory.prompt).toBe("my memory prompt");
     expect(after.config.kernelVersion).toBe(KERNEL_VERSION);
     expect(after.config.kernelOutdated).toBe(false);
