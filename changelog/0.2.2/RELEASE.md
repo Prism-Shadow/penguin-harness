@@ -2,7 +2,7 @@ PenguinHarness 0.2.2 — agents that remember and reach further: long-term Memor
 
 ## Install
 
-**Desktop app**: grab your platform's installer from [penguin.ooo/download](https://penguin.ooo/download) — served from the OSS mirror when it is reachable, GitHub otherwise. Current builds are unsigned: on first launch use right-click → Open on macOS, and "More info → Run anyway" past Windows SmartScreen.
+**Desktop app**: grab your platform's installer from [penguin.ooo/download](https://penguin.ooo/download) — served from the OSS mirror when it is reachable, GitHub otherwise. The macOS builds are signed and notarized as of this release, so Gatekeeper opens them directly; Windows builds remain unsigned ("More info → Run anyway" past SmartScreen).
 
 CLI / server (Linux, macOS; bundled Node runtime):
 

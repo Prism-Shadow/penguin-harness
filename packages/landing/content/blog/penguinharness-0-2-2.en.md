@@ -53,7 +53,7 @@ The model catalog adds Thinking Machines Lab's Inkling on OpenRouter and Firewor
 
 ## Install or upgrade
 
-Desktop: grab your platform's installer at [penguin.ooo/download](https://penguin.ooo/download).
+Desktop: grab your platform's installer at [penguin.ooo/download](https://penguin.ooo/download). As of this release the macOS builds are signed and notarized, so Gatekeeper opens them directly; Windows builds remain unsigned ("More info → Run anyway" past SmartScreen).
 
 CLI / server:
 
