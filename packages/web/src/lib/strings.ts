@@ -333,13 +333,21 @@ export const zh = {
     mcpNumberInvalid: "必须是 > 0 的整数",
     mcpDuplicateName: "同名 Server 已存在",
     mcpTest: "测试连接",
-    mcpTestShort: "测试",
     mcpTesting: "测试中…",
-    mcpTestOk: (tools: string[]): string =>
-      tools.length === 0
-        ? "连接成功，但该 Server 未暴露任何工具"
-        : `连接成功，发现 ${tools.length} 个工具：${tools.slice(0, 8).join("、")}${tools.length > 8 ? " …" : ""}`,
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
+      return toolCount === 0
+        ? `连接成功，但该 Server 未暴露任何工具${timing}`
+        : `连接成功，发现 ${toolCount} 个工具${timing}`;
+    },
     mcpTestFail: (detail: string): string => `连接失败：${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `将逐一连接已配置的 ${n} 个 MCP Server 并做工具发现（真实连接，不保存任何改动），结果显示在各行上。`,
+    mcpTestAllStart: "开始测试",
+    mcpTestPending: "测试中…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} 个工具${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "连接失败",
     mcpDeleteTitle: "删除 MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
@@ -968,20 +976,25 @@ Benchmark：
     modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
-    mcpConnecting: (servers: string[]): string => `正在连接 MCP Server（${servers.join("、")}）…`,
-    mcpConnectDone: (durationMs: number, failed: string[]): string =>
-      failed.length === 0
-        ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
-        : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
-    mcpConnectAborted: "[mcp] 连接已中断，下次发送时重新连接",
-    compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP 连接",
+    mcpServerList: (servers: string[]): string => servers.join("、"),
+    /** One-line result detail: tool count when any, per-server failure reasons on the same line. */
+    mcpConnectResult: (toolCount: number, failedDetails: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failedDetails.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      parts.push(...failedDetails);
+      return parts.join("；");
+    },
+    mcpConnectAborted: "已中断，下次发送时重新连接",
+    compactionTitle: "压缩",
     compactionDone: (mode: string): string =>
-      mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
+      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
+      if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
-        ? `[压缩] 失败（${errorMessage}），保留当前上下文`
-        : "[压缩] 失败，保留当前上下文";
+        ? `失败（${errorMessage}），保留当前上下文`
+        : "失败，保留当前上下文";
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",

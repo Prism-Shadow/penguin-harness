@@ -65,9 +65,10 @@ describe("agent config: mcpServers", () => {
         config: { command: process.execPath, args: [FIXTURE] },
       });
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { ok: boolean; tools?: string[] };
+      const body = (await res.json()) as { ok: boolean; tools?: string[]; latencyMs?: number };
       expect(body.ok).toBe(true);
       expect(body.tools).toContain("mcp__fx__echo");
+      expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     });
 
     it("reports an unreachable server as ok: false with the warning detail", async () => {

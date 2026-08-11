@@ -825,22 +825,14 @@ export class StreamRenderer {
           startMs !== null && Number.isFinite(startMs)
             ? Math.max(0, Date.parse(msg.timestamp) - startMs)
             : 0;
-        const failedResults = p.results.filter((r) => r.status === "failed");
+        // One line, reasons included: the failure reason (spawn error, timeout, HTTP
+        // status) otherwise never reaches the terminal — only the server-side stderr warning.
+        const failures = p.results
+          .filter((r) => r.status === "failed")
+          .map((r) => ({ server: r.server, error: r.error ?? "unknown error" }));
         this.out.write(
-          `${dim(
-            this.t.mcpConnectStop(
-              durationMs,
-              failedResults.map((r) => r.server),
-              p.status === "aborted",
-            ),
-            this.c,
-          )}\n`,
+          `${dim(this.t.mcpConnectStop(durationMs, failures, p.status === "aborted"), this.c)}\n`,
         );
-        // Per-server failure details: the reason (spawn error, timeout, HTTP status)
-        // otherwise never reaches the terminal — only the server-side stderr warning.
-        for (const r of failedResults) {
-          this.out.write(`${dim(`[mcp] ${r.server}: ${r.error ?? "unknown error"}`, this.c)}\n`);
-        }
         this.lastLineKey = null;
       } else if (payload.type === "tool_list_ready") {
         // Not rendered; the tool list settles each tool's preview path (description argument).

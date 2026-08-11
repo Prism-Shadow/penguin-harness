@@ -5,10 +5,17 @@
  * operation PUTs the whole `mcpServers` list through the config route; the server
  * re-validates each entry via the core transport resolver, so a rejected save surfaces
  * inside the modal instead of half-applying.
+ *
+ * Connectivity testing mirrors the models page: the modal carries a standalone
+ * "test connection" button in a top action row (result as a toast, tool count +
+ * latency — the models dialog idiom), and the section header offers a bulk test that
+ * probes every configured server sequentially behind a confirm dialog, writing a
+ * tone-colored badge onto each row as its result lands (the group speed-test idiom).
  */
 import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import * as api from "../../api/endpoints";
+import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
@@ -45,63 +52,6 @@ function errorText(err: McpFormError | undefined): string | undefined {
   }
 }
 
-/**
- * The transport's target input (command / url) with the connectivity test riding inside
- * the field — the same in-field idiom as the models dialog's base-URL suffix, but
- * interactive. Padding reserves room so typed text never slides under the button.
- */
-function InFieldTest({
-  label,
-  required,
-  error,
-  value,
-  onChange,
-  placeholder,
-  testing,
-  disabled,
-  onTest,
-}: {
-  label: string;
-  required?: boolean;
-  error?: string | undefined;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-  testing: boolean;
-  disabled: boolean;
-  onTest: () => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
-        {label}
-        {required && <span className="ml-0.5 text-red-500">*</span>}
-      </span>
-      <span className="relative block">
-        <Input
-          size="sm"
-          required={required}
-          invalid={Boolean(error)}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="pr-16 font-mono"
-          placeholder={placeholder}
-          autoComplete="off"
-        />
-        <button
-          type="button"
-          disabled={testing || disabled || value.trim() === ""}
-          onClick={onTest}
-          className="absolute inset-y-0 right-1.5 my-auto h-6 rounded px-1.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          {testing ? S.agent.mcpTesting : S.agent.mcpTestShort}
-        </button>
-      </span>
-      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
-    </label>
-  );
-}
-
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */
 function targetOf(entry: MCPServerConfig): string {
   const c = entry.config;
@@ -109,6 +59,34 @@ function targetOf(entry: MCPServerConfig): string {
   const command = typeof c["command"] === "string" ? c["command"] : "";
   const args = Array.isArray(c["args"]) ? c["args"].map((a) => String(a)).join(" ") : "";
   return args ? `${command} ${args}` : command;
+}
+
+/** One row's bulk-test outcome ("pending" while its turn runs). */
+type RowTestResult = McpServerTestResponse | "pending";
+
+/** Row badge for the bulk test (the model card's speed-badge idiom: small, tone-colored, reason on hover). */
+function TestBadge({ result }: { result: RowTestResult | undefined }) {
+  if (result === undefined) return null;
+  if (result === "pending") {
+    return (
+      <span className="text-[11px] whitespace-nowrap text-gray-400">{S.agent.mcpTestPending}</span>
+    );
+  }
+  if (result.ok) {
+    return (
+      <span className="text-[11px] font-medium whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+        {S.agent.mcpTestBadge(result.tools?.length ?? 0, result.latencyMs)}
+      </span>
+    );
+  }
+  return (
+    <span
+      title={result.error}
+      className="text-[11px] font-medium whitespace-nowrap text-red-600 dark:text-red-400"
+    >
+      {S.agent.mcpTestBadgeFail}
+    </span>
+  );
 }
 
 export function McpServersSection({
@@ -131,9 +109,12 @@ export function McpServersSection({
   const [modalError, setModalError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   // Connectivity probe: runs the current form state through POST /config/mcp-test
-  // (server-side connect + discovery, nothing saved); result renders inside the modal.
+  // (server-side connect + discovery, nothing saved); the result pops as a toast.
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Bulk test: confirm dialog open / run in progress / per-row results keyed by server name.
+  const [testAllOpen, setTestAllOpen] = useState(false);
+  const [testAllRunning, setTestAllRunning] = useState(false);
+  const [rowResults, setRowResults] = useState<Map<string, RowTestResult>>(new Map());
 
   // http leads (the Add modal's default), stdio second, legacy sse last.
   const transportOptions: ReadonlyArray<{ value: McpTransportKind; label: string }> = [
@@ -170,7 +151,6 @@ export function McpServersSection({
     setEditIndex(null);
     setFieldErrors({});
     setModalError(null);
-    setTestResult(null);
   };
 
   const openEdit = (index: number) => {
@@ -180,7 +160,6 @@ export function McpServersSection({
     setEditIndex(index);
     setFieldErrors({});
     setModalError(null);
-    setTestResult(null);
   };
 
   const closeModal = () => {
@@ -192,7 +171,6 @@ export function McpServersSection({
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
     setFieldErrors({});
     setModalError(null);
-    setTestResult(null);
   };
 
   /** Probes the current form state (unsaved values on purpose: verify before persisting). */
@@ -204,18 +182,38 @@ export function McpServersSection({
       return;
     }
     setTesting(true);
-    setTestResult(null);
     try {
       const res = await api.testAgentMcpServer(projectId, agentId, built.server);
-      setTestResult(
-        res.ok
-          ? { ok: true, text: S.agent.mcpTestOk(res.tools ?? []) }
-          : { ok: false, text: S.agent.mcpTestFail(res.error ?? S.common.unknownError) },
-      );
+      if (res.ok) toastSuccess(S.agent.mcpTestOk(res.tools?.length ?? 0, res.latencyMs));
+      else toastError(S.agent.mcpTestFail(res.error ?? S.common.unknownError));
     } catch (e) {
-      setTestResult({ ok: false, text: S.agent.mcpTestFail(apiErrorText(e)) });
+      toastError(S.agent.mcpTestFail(apiErrorText(e)));
     } finally {
       setTesting(false);
+    }
+  };
+
+  /**
+   * Bulk test (section-level): every configured server through the same probe, strictly
+   * sequential — parallel probes would spawn every stdio child at once — with each row's
+   * badge updating as its result lands.
+   */
+  const runTestAll = async () => {
+    if (!projectId) return;
+    setTestAllRunning(true);
+    try {
+      for (const entry of servers) {
+        setRowResults((prev) => new Map(prev).set(entry.name, "pending"));
+        let result: McpServerTestResponse;
+        try {
+          result = await api.testAgentMcpServer(projectId, agentId, entry);
+        } catch (e) {
+          result = { ok: false, error: apiErrorText(e) };
+        }
+        setRowResults((prev) => new Map(prev).set(entry.name, result));
+      }
+    } finally {
+      setTestAllRunning(false);
     }
   };
 
@@ -254,11 +252,32 @@ export function McpServersSection({
 
   if (!projectId) return null;
 
+  // The form's target field (command / url) — the same gate the models dialog uses for its
+  // test button (disabled until the identity is filled in).
+  const targetFilled =
+    form !== null &&
+    (form.transport === "stdio" ? form.command.trim() !== "" : form.url.trim() !== "");
+  const showBadges = rowResults.size > 0;
+
   return (
     <div className="space-y-4">
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
+      {/* Header row: description left, bulk test at the right edge (the models group-header idiom). */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
+        </div>
+        {servers.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="shrink-0"
+            disabled={busy || testAllRunning}
+            onClick={() => setTestAllOpen(true)}
+          >
+            {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+          </Button>
+        )}
       </div>
 
       {servers.length === 0 ? (
@@ -271,6 +290,8 @@ export function McpServersSection({
                 <th className="px-3 py-2.5">{S.agent.mcpName}</th>
                 <th className="px-3 py-2.5">{S.agent.mcpTransport}</th>
                 <th className="px-3 py-2.5">{S.agent.mcpTarget}</th>
+                {/* Bulk-test badge column appears only once results exist (no headline). */}
+                {showBadges && <th className="px-3 py-2.5" />}
                 <th className="px-3 py-2.5" />
               </tr>
             </thead>
@@ -287,6 +308,11 @@ export function McpServersSection({
                   <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
                     {targetOf(entry)}
                   </td>
+                  {showBadges && (
+                    <td className="px-3 py-2 text-right">
+                      <TestBadge result={rowResults.get(entry.name)} />
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <Button
                       size="sm"
@@ -331,7 +357,19 @@ export function McpServersSection({
       >
         {form && (
           <div className="space-y-3">
-            {/* Transport first, as tab-style switches — the choice decides every field below. */}
+            {/* Entry-level actions pinned at the top — the models dialog idiom: a standalone
+                test button, enabled once the target (command / url) is filled in; the result
+                pops as a toast. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={testing || busy || !targetFilled}
+                onClick={() => void testConnection()}
+              >
+                {testing ? S.agent.mcpTesting : S.agent.mcpTest}
+              </Button>
+            </div>
+            {/* Transport next, as tab-style switches — the choice decides every field below. */}
             <div className="space-y-1">
               <Segmented
                 options={transportOptions}
@@ -356,16 +394,16 @@ export function McpServersSection({
             />
             {form.transport === "stdio" ? (
               <>
-                <InFieldTest
+                <Input
+                  size="sm"
                   label={S.agent.mcpCommand}
                   required
                   error={errorText(fieldErrors.command)}
                   value={form.command}
-                  onChange={(v) => patchForm({ command: v })}
+                  onChange={(e) => patchForm({ command: e.target.value })}
+                  className="font-mono"
                   placeholder="npx"
-                  testing={testing}
-                  disabled={busy}
-                  onTest={() => void testConnection()}
+                  autoComplete="off"
                 />
                 <Textarea
                   size="sm"
@@ -400,16 +438,16 @@ export function McpServersSection({
               </>
             ) : (
               <>
-                <InFieldTest
+                <Input
+                  size="sm"
                   label={S.agent.mcpUrl}
                   required
                   error={errorText(fieldErrors.url)}
                   value={form.url}
-                  onChange={(v) => patchForm({ url: v })}
+                  onChange={(e) => patchForm({ url: e.target.value })}
+                  className="font-mono"
                   placeholder="https://example.com/mcp"
-                  testing={testing}
-                  disabled={busy}
-                  onTest={() => void testConnection()}
+                  autoComplete="off"
                 />
                 <Textarea
                   size="sm"
@@ -457,20 +495,34 @@ export function McpServersSection({
               />
             </div>
             <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpBudgetsHint}</p>
-            {testResult && (
-              <p
-                className={
-                  testResult.ok
-                    ? "text-xs text-green-700 dark:text-green-400"
-                    : "text-xs text-red-600 dark:text-red-400"
-                }
-              >
-                {testResult.text}
-              </p>
-            )}
             {modalError && <p className="text-xs text-red-600 dark:text-red-400">{modalError}</p>}
           </div>
         )}
+      </Modal>
+
+      {/* Bulk-test confirm (the group speed-test idiom): explain what will run, then go. */}
+      <Modal
+        open={testAllOpen}
+        title={S.agent.mcpTest}
+        onClose={() => setTestAllOpen(false)}
+        footer={
+          <>
+            <Button onClick={() => setTestAllOpen(false)}>{S.common.cancel}</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setTestAllOpen(false);
+                void runTestAll();
+              }}
+            >
+              {S.agent.mcpTestAllStart}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.agent.mcpTestAllConfirm(servers.length)}
+        </p>
       </Modal>
 
       <ConfirmModal

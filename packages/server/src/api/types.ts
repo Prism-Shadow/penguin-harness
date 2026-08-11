@@ -568,6 +568,8 @@ export interface McpServerTestResponse {
   tools?: string[];
   /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
   error?: string;
+  /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
+  latencyMs?: number;
 }
 
 /** PUT any subset: only provided keys are updated (remaining YAML content and comments preserved); agentsMd overwrites the whole file. */

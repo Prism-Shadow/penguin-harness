@@ -252,6 +252,16 @@ export interface CompactionItem {
   status?: StopReason;
   /** Last failure detail from compaction_end.error_message (its share of the RetryDetail block; present on failed ends from new cores). */
   errorMessage?: string;
+  /** The begin message's timestamp (ms); ticks the running row and anchors durationMs. */
+  beginTsMs?: number;
+  /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
+  durationMs?: number;
+}
+
+/** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
+export interface McpToolSummary {
+  name: string;
+  description?: string;
 }
 
 export interface McpConnectItem {
@@ -265,11 +275,15 @@ export interface McpConnectItem {
   beginTsMs?: number;
   /** Total connect + discovery wall time, derived from the pair's message timestamps. */
   durationMs?: number;
+  /** MCP tools discovered across connected servers (sum of the end results' counts). */
+  toolCount?: number;
+  /** Discovered MCP tools (attached by the tool_list_ready that follows the end). */
+  tools?: McpToolSummary[];
   /** Servers that failed to connect (empty list omitted). */
   failed?: string[];
-  /** Per-server failure details ("server: error"), for the banner's detail lines. */
+  /** Per-server failure details ("server: error"), for the result line. */
   failedDetails?: string[];
-  /** The user aborted the run mid-connect (the connect completes in the background for the next run). */
+  /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
   aborted?: boolean;
 }
 
@@ -1351,6 +1365,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         item.durationMs = Math.max(0, tsMs - item.beginTsMs);
       }
       if (p.status === "aborted") item.aborted = true;
+      // Headline count for the connect row: MCP tools discovered across connected servers.
+      item.toolCount = p.results.reduce((sum, r) => sum + (r.tools ?? 0), 0);
       const failedResults = p.results.filter((r) => r.status === "failed");
       if (failedResults.length > 0) {
         item.failed = failedResults.map((r) => r.server);
@@ -1360,9 +1376,20 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       }
       return;
     }
-    case "tool_list_ready":
-      // Informational record (the Session's resolved toolset); the chat view doesn't render it.
+    case "tool_list_ready": {
+      // The Session's resolved toolset; the connect row keeps the MCP share as its
+      // expandable tool list. Non-MCP entries (built-in tools) aren't news to the user.
+      const item = findLastMcpConnect(model);
+      if (!item) return;
+      const mcpTools = p.tools.filter((t) => t.name.startsWith("mcp__"));
+      if (mcpTools.length > 0) {
+        item.tools = mcpTools.map((t) => ({
+          name: t.name,
+          ...(t.description !== undefined ? { description: t.description } : {}),
+        }));
+      }
       return;
+    }
     case "compaction_begin": {
       beginCompaction(model.stats);
       model.items.push({
@@ -1371,6 +1398,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         reason: p.reason,
         mode: p.mode,
         running: true,
+        ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
       });
       return;
     }
@@ -1382,6 +1410,9 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         item.running = false;
         item.status = p.status;
         if (p.error_message !== undefined) item.errorMessage = p.error_message;
+        if (tsMs !== undefined && item.beginTsMs !== undefined) {
+          item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+        }
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1480,6 +1511,15 @@ function findLastRunningMcpConnect(model: StreamModel): McpConnectItem | null {
   for (let i = model.items.length - 1; i >= 0; i -= 1) {
     const item = model.items[i]!;
     if (item.kind === "mcp_connect" && item.running) return item;
+  }
+  return null;
+}
+
+/** Last connect row regardless of state: tool_list_ready lands right after its end. */
+function findLastMcpConnect(model: StreamModel): McpConnectItem | null {
+  for (let i = model.items.length - 1; i >= 0; i -= 1) {
+    const item = model.items[i]!;
+    if (item.kind === "mcp_connect") return item;
   }
   return null;
 }

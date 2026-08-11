@@ -80,14 +80,21 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const warnings: string[] = [];
     const provider = new McpToolProvider([entry], { warn: (m) => warnings.push(m) });
+    const startedAt = Date.now();
     try {
       const tools = await provider.listTools();
+      const latencyMs = Date.now() - startedAt;
       if (warnings.length > 0) {
-        return c.json({ ok: false, error: warnings.join("; ") } satisfies McpServerTestResponse);
+        return c.json({
+          ok: false,
+          error: warnings.join("; "),
+          latencyMs,
+        } satisfies McpServerTestResponse);
       }
       return c.json({
         ok: true,
         tools: tools.map((t) => t.name),
+        latencyMs,
       } satisfies McpServerTestResponse);
     } finally {
       await provider.close();

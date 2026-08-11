@@ -355,13 +355,21 @@ export const en: Strings = {
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
-    mcpTestShort: "Test",
     mcpTesting: "Testing…",
-    mcpTestOk: (tools: string[]): string =>
-      tools.length === 0
-        ? "Connected, but the server exposes no tools"
-        : `Connected — ${tools.length} tool${tools.length === 1 ? "" : "s"}: ${tools.slice(0, 8).join(", ")}${tools.length > 8 ? " …" : ""}`,
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
+      return toolCount === 0
+        ? `Connected, but the server exposes no tools${timing}`
+        : `Connected — ${toolCount} tool${toolCount === 1 ? "" : "s"}${timing}`;
+    },
     mcpTestFail: (detail: string): string => `Connection failed: ${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `Connects to ${n === 1 ? "the configured MCP server" : `each of the ${n} configured MCP servers`} in turn and runs tool discovery (real connections, nothing is saved); results land on each row.`,
+    mcpTestAllStart: "Start test",
+    mcpTestPending: "Testing…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} tool${toolCount === 1 ? "" : "s"}${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "Connection failed",
     mcpDeleteTitle: "Delete MCP Server",
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
@@ -989,22 +997,27 @@ Scenarios:
       "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
-    mcpConnecting: (servers: string[]): string => `Connecting MCP servers (${servers.join(", ")})…`,
-    mcpConnectDone: (durationMs: number, failed: string[]): string =>
-      failed.length === 0
-        ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
-        : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
-    mcpConnectAborted: "[mcp] connect interrupted — reconnects on the next send",
-    compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP connect",
+    mcpServerList: (servers: string[]): string => servers.join(", "),
+    /** One-line result detail: tool count when any, per-server failure reasons on the same line. */
+    mcpConnectResult: (toolCount: number, failedDetails: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failedDetails.length === 0) {
+        parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
+      }
+      parts.push(...failedDetails);
+      return parts.join("; ");
+    },
+    mcpConnectAborted: "interrupted — reconnects on the next send",
+    compactionTitle: "Compaction",
     compactionDone: (mode: string) =>
-      mode === "discard"
-        ? "[Compaction] done, old context discarded"
-        : "[Compaction] done, switched to the summarized context",
+      mode === "discard" ? "old context discarded" : "switched to the summarized context",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[Compaction] aborted, keeping current context";
+      if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined
-        ? `[Compaction] failed (${errorMessage}), keeping current context`
-        : "[Compaction] failed, keeping current context";
+        ? `failed (${errorMessage}), keeping current context`
+        : "failed, keeping current context";
     },
     unknownTool: "(unknown tool)",
     workRunning: "Running",

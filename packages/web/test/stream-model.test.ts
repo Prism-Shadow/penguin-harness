@@ -11,6 +11,9 @@ import {
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  toolListReady,
   partialText,
   partialThinking,
   partialToolCall,
@@ -48,6 +51,7 @@ import { liveSessionElapsedMs } from "../src/lib/omni/task-stats";
 import type {
   AssistantTextItem,
   CompactionItem,
+  McpConnectItem,
   ReconnectItem,
   StreamModel,
   SubagentItem,
@@ -479,6 +483,84 @@ describe("approvals and events", () => {
     expect(banner.running).toBe(false);
     expect(banner.status).toBe("failed");
     expect(banner.errorMessage).toBe("the response contained no usable summary");
+  });
+
+  it("compaction wall time is derived from the begin/end message timestamps", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      at(
+        compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+        "2026-01-01T00:00:00.000Z",
+      ),
+    );
+    pushMessage(
+      m,
+      at(
+        compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }),
+        "2026-01-01T00:00:04.500Z",
+      ),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    expect(banner.durationMs).toBe(4500);
+  });
+
+  it("mcp connect row: end sums the discovered-tool count, keeps one-line failure details, and derives the wall time", () => {
+    const m = createStreamModel();
+    pushMessage(m, at(mcpConnectBegin(["fx", "bad"]), "2026-01-01T00:00:00.000Z"));
+    const row = items(m)[0] as McpConnectItem;
+    expect(row).toMatchObject({ kind: "mcp_connect", running: true, servers: ["fx", "bad"] });
+    pushMessage(
+      m,
+      at(
+        mcpConnectEnd({
+          status: "failed",
+          results: [
+            { server: "fx", transport: "stdio", status: "completed", duration_ms: 180, tools: 2 },
+            {
+              server: "bad",
+              transport: "stdio",
+              status: "failed",
+              duration_ms: 60,
+              error: "spawn nope ENOENT",
+            },
+          ],
+        }),
+        "2026-01-01T00:00:01.200Z",
+      ),
+    );
+    expect(row.running).toBe(false);
+    expect(row.durationMs).toBe(1200);
+    expect(row.toolCount).toBe(2);
+    expect(row.failed).toEqual(["bad"]);
+    expect(row.failedDetails).toEqual(["bad: spawn nope ENOENT"]);
+  });
+
+  it("tool_list_ready attaches the MCP share of the toolset to the connect row (built-ins filtered out)", () => {
+    const m = createStreamModel();
+    pushMessage(m, mcpConnectBegin(["fx"]));
+    pushMessage(
+      m,
+      mcpConnectEnd({
+        status: "completed",
+        results: [
+          { server: "fx", transport: "stdio", status: "completed", duration_ms: 100, tools: 1 },
+        ],
+      }),
+    );
+    pushMessage(
+      m,
+      toolListReady([
+        { name: "read_file", description: "Read a file", parameters: {} },
+        { name: "mcp__fx__echo", description: "Echo back", parameters: {} },
+      ]),
+    );
+    const row = items(m)[0] as McpConnectItem;
+    expect(row.tools).toEqual([{ name: "mcp__fx__echo", description: "Echo back" }]);
+    // Without a connect row (no MCP servers configured), tool_list_ready renders nothing.
+    const bare = createStreamModel();
+    pushMessage(bare, toolListReady([{ name: "read_file", description: "Read", parameters: {} }]));
+    expect(items(bare)).toHaveLength(0);
   });
 
   it("request_begin/end (normal final state) and main-session session_meta do not render", () => {
