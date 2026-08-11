@@ -11,7 +11,6 @@ import shutil
 import subprocess
 import sys
 import time
-import venv
 
 
 SUPPORTED_PYTHONS = {(3, minor) for minor in range(9, 14)}
@@ -131,7 +130,11 @@ def ensure_environment(skill_dir: Path, skill_name: str, imports: tuple[str, ...
         if environment.exists():
             shutil.rmtree(environment)
         try:
-            venv.EnvBuilder(with_pip=True).create(environment)
+            subprocess.run(
+                [sys.executable, "-I", "-m", "venv", str(environment)],
+                check=True,
+                env=install_env,
+            )
             python = environment_python(environment)
             install_env.update(
                 {
