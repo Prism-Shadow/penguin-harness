@@ -12,7 +12,7 @@ Each platform-specific offline bundle adds the `word-docx`, `powerpoint-pptx`, a
 
 ## Safe document operations
 
-DOCX supports paragraph inspection, appending headings/paragraphs, and replacing ordinary text within a run; a missing heading style falls back to a bold ordinary paragraph. PPTX supports slide-text inspection and appending one title-and-body slide. PDF supports page/text inspection and ordered merging of existing, unencrypted files. Every write uses distinct input/output paths, refuses an existing output, reopens and validates the result, and confirms that all sources remain unchanged. The release workflow validates every target and runs all three helpers in Docker with networking disabled across Python 3.9–3.13.
+DOCX supports paragraph inspection, appending headings/paragraphs, and replacing ordinary text within a run; a missing heading style falls back to a bold ordinary paragraph. PPTX supports slide-text inspection and appending one title-and-body slide. PDF supports page/text inspection and ordered merging of existing, unencrypted files. Every write uses distinct input/output paths, refuses an existing output, reopens and validates the result, and confirms that all sources remain unchanged. CI runs all three helpers natively on Python 3.13 for every release target. The release workflow also validates every final archive and runs the Linux x64 archive in Docker without networking across Python 3.9–3.13.
 
 On POSIX systems, `penguin update` detects the installed `lib/offline/profile.json` marker and keeps selecting the same offline profile, so updates do not silently replace it with a standard package. Windows in-place update remains unsupported and prints the manual command instead.
 

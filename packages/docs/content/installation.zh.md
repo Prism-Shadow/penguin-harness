@@ -58,6 +58,8 @@ penguin -v
 
 离线安装使用与在线安装相同的 Release 制品。先在可联网电脑上下载与目标电脑匹配的文件：轻量标准 profile 使用 `penguin-<target>`，可选离线能力使用 `penguin-offline-<target>`；Linux/macOS 后缀为 `.tar.gz`，Windows 为 `.zip`。离线 profile 包含确定性的 DOCX 检查/编辑、PPTX 检查/追加幻灯片和 PDF 检查/合并 Skill，后续离线 Skill 继续扩展同一 profile。传输选中的一个文件后解压一次。
 
+安装或升级 Penguin 不会改写已有 Agent State。离线 profile 安装后首次初始化的 `default_agent` 会获得当前 Skill 库；对于已有 Agent，请先从 Skill 库安装 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`，再选择使用。
+
 Windows 上双击 `install.cmd`，或执行：
 
 ```powershell
