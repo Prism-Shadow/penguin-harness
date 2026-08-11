@@ -9,6 +9,8 @@
  *   number badge);
  * - the "Manage installation" Modal: an Agent row + Install / Installed (hover flips to
  *   Uninstall) button, with optimistic updates on install/uninstall;
+ * - Quick invoke is gated on default_agent having the skill installed (its button is disabled for a
+ *   preinstall:false skill like remote-claude-code that default_agent lacks);
  * - "Quick invoke" navigates to /chat/new (default_agent), **prefilling** the invoke text in the
  *   UI language (zh: "使用 X 技能") and preselecting that skill — the toolbar's skill dropdown
  *   button shows a count badge of 1, and that item shows as selected in the menu;
@@ -107,6 +109,12 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   }
   // Card metadata is worded semantically: version + usage count (default_agent has all skills preinstalled -> at least 1 in use).
   await expect(page.getByText(/v\d+ · .*Agent 在用/).first()).toBeVisible();
+
+  // Quick invoke opens a draft on default_agent, so it's gated on that Agent having the skill:
+  // default_agent ships every preinstalled skill (agent-creation is enabled), while
+  // remote-claude-code is preinstall:false and absent from it, so its button is disabled.
+  await expect(page.getByRole("button", { name: "快捷调用 agent-creation" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "快捷调用 remote-claude-code" })).toBeDisabled();
 
   // Card icon: the DTO icon (icon.svg in the skill's directory) is sanitized and rendered
   // inline (an aria-hidden wrapper + svg); builtin skills each carry a custom icon, not the book

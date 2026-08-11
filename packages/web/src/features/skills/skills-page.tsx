@@ -26,6 +26,9 @@
  * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
  *   pre-selects the skill, and pre-fills the invocation text per UI language
  *   ("use the X skill" in the active dictionary, overwriting any existing draft body);
+ *   disabled unless default_agent has the skill installed — quick invoke opens the
+ *   draft there, so a preinstall:false skill (e.g. remote-claude-code) must be installed
+ *   on default_agent first (otherwise it would pre-select a skill the agent lacks);
  * - Download "manage installs": a Modal listing every Agent in the current
  *   Project — not-installed shows "Install", installed shows "Installed"
  *   (hover switches to "Uninstall", click to uninstall); any member can
@@ -67,6 +70,9 @@ const SEND_ICON = "M22 2 11 13M22 2 15 22 11 13 2 9 22 2";
 const INSTALL_ICON = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3";
 /** "Update installs" button icon (rotate-cw, 24×24 line path). */
 const UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
+
+/** The Agent quick invoke opens its draft on (the builtin General Agent); quick invoke is only offered once this Agent has the skill installed. */
+const QUICK_INVOKE_AGENT_ID = "default_agent";
 
 /**
  * Agents whose installed copy of `name` is older than the library's version (the update
@@ -239,14 +245,14 @@ export function SkillsPage() {
       const key = draftKey(userId, projectId);
       saveDraft(key, {
         ...loadDraft(key),
-        agentId: "default_agent",
+        agentId: QUICK_INVOKE_AGENT_ID,
         text: S.skills.quickInvokeText(name),
         skills: [name],
         handoffAgentId: undefined,
       });
     }
-    setCurrentAgentId("default_agent");
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: "default_agent" } });
+    setCurrentAgentId(QUICK_INVOKE_AGENT_ID);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: QUICK_INVOKE_AGENT_ID } });
   };
 
   return (
@@ -387,6 +393,10 @@ function SkillCard({
     skill.name,
     skill.version,
   );
+  // Quick invoke opens a draft on default_agent, so it's only offered once that Agent has this
+  // skill installed — preinstall:false skills (e.g. remote-claude-code) aren't there by default
+  // and must be installed on it first, otherwise quick invoke would pre-select a skill it lacks.
+  const canQuickInvoke = installed.get(QUICK_INVOKE_AGENT_ID)?.has(skill.name) ?? false;
 
   // Short description takes priority, falling back to the full description
   // when missing (per UI language); title carries the full description for hover reading.
@@ -451,7 +461,8 @@ function SkillCard({
           size="sm"
           className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.quickInvoke} ${skill.name}`}
-          title={S.skills.quickInvoke}
+          title={canQuickInvoke ? S.skills.quickInvoke : S.skills.quickInvokeNeedsInstall}
+          disabled={!canQuickInvoke}
           onClick={() => onQuickInvoke(skill.name)}
         >
           <GlyphIcon d={SEND_ICON} size={15} />

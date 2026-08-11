@@ -527,6 +527,8 @@ export const zh = {
     quickInvoke: "快捷调用",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
+    /** Title on a disabled quick-invoke button: quick invoke opens a draft on default_agent, so a skill it hasn't installed (preinstall:false skills like remote-claude-code) can't be quick-invoked until it's installed there. */
+    quickInvokeNeedsInstall: "先在默认 Agent 安装该技能后才能快捷调用",
     manageInstall: "管理安装",
     manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
