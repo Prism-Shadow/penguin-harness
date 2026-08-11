@@ -57,10 +57,10 @@ Optimizer 结束时保留的最高分 Reference 只是 **Development-accepted Ca
 
 Promotion Validator 对 held-out Promotion Benchmark 完成一次与其 Formal Baseline 对称的 one-Run-per-Case 矩阵。每个单元仍委托 `agent-evaluation`，并要求 Agent State 版本、`provider`、`model_id` 与 `thinking_level` 全部匹配。错误答案是有效低分；协议、启动、版本、Benchmark 或 Trace 绑定失败不是零分，必须先修复或报告验证失败。
 
-当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于该 Benchmark 在 `production_reference_version` 上的 Formal Baseline 时，Candidate 才通过晋升。无论通过还是未通过，都把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard，并在 `summary_title` 与 `summary` 中记录来源版本、Candidate 版本和晋升决定，不改变现有 Scoreboard schema。
+当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于 Promotion Scoreboard 中 `production_reference_version` 的最新有效 Evaluation 时，Candidate 才通过晋升。首次晋升时该比较对象就是 Formal Baseline；此后当前生产版本的 held-out 记录，来自它自己当年通过晋升时写入的那条 Evaluation。对称的单 Run 矩阵控制成本但保留逐 Run 噪声，这是已知取舍；门槛因此取不低于而非严格更高。无论通过还是未通过，都先把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard 并完成校验，再执行保留或恢复；在 `summary_title` 与 `summary` 中记录来源版本、Candidate 版本和晋升决定，不改变现有 Scoreboard schema。
 
 - **通过**：保留当前 Candidate Agent State，并报告它已从 `production_reference_version` 晋升为 `candidate_version`。
-- **未通过**：保留 Development Benchmark 中已经产生的分数和 Trace 作为实验记录，但使用优化前 Snapshot 恢复并验证 `production_reference_version`；`candidate_version` 视为已消耗，不得在后续优化中复用。
+- **未通过**：先确保 `snapshots/v<candidate_version>.tar.gz` 存在——最终 Candidate 没有被后续轮次编辑过，通常没有现成快照，活动 Agent State 就是它的唯一副本；按 Optimizer 相同的归档规则（原子打包、排除 `.vault.toml`、不覆盖已存在的同版本快照）补建后，再使用优化前 Snapshot 恢复并验证 `production_reference_version`。Development Benchmark 中已经产生的分数和 Trace 保留为实验记录。
 - **验证无法完成**：不把缺失或无效单元当成零分，也不声称晋升成功；在能够安全验证或恢复前报告具体阻塞。
 
 晋升决定在第三阶段终止。不得把 held-out 的 Case 级失分、Trace、Rubric 或晋升结果发送回原 Optimizer 继续生成 Candidate。若团队开始根据这些证据调整 Agent，当前 Promotion Benchmark 就已成为开发证据，应另建并冻结新的 held-out Benchmark 承担下一次独立晋升。
@@ -80,7 +80,7 @@ benchmarks/<id>/
 
 `rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
 
-Development 与 Promotion 在 P0 工作流中仍是同一 Agent 下的两个普通 `benchmark_id`，角色由调用约定决定，不新增配置字段。这个隔离是 **契约级 soft seal**：Optimizer Skill 禁止访问未指定 Benchmark，但当前本地工具并没有把绝对路径访问硬限制在指定目录内。普通产品工作流依靠独立顶层 Session、最小输入和 Trace 审计维持该边界；需要正式泄漏声明时，应额外审计 Optimizer 根 Trace 中的直接与间接文件访问，或把 Promotion Benchmark 放进 Optimizer 技术上不可访问的独立数据边界。
+Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个普通 `benchmark_id`，角色由调用约定决定，不新增配置字段。这个隔离是 **契约级 soft seal**：Optimizer Skill 禁止访问未指定 Benchmark，但当前本地工具并没有把绝对路径访问硬限制在指定目录内。普通产品工作流依靠独立顶层 Session、最小输入和 Trace 审计维持该边界；需要正式泄漏声明时，应额外审计 Optimizer 根 Trace 中的直接与间接文件访问，或把 Promotion Benchmark 放进 Optimizer 技术上不可访问的独立数据边界。
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
@@ -95,7 +95,7 @@ Development 与 Promotion 在 P0 工作流中仍是同一 Agent 下的两个普�
 
 ## Snapshot 与版本
 
-每轮优化前，Agent State 被打包为 `snapshots/v<version>.tar.gz`（Vault 除外——密钥永不进入快照）。`system_config.yaml` 的 `version` 在优化成功后自增。Web UI 支持导出与导入快照，导入版本不高于当前版本时需要显式确认。第三阶段失败时恢复的是整个 Optimization Session 开始前的 `production_reference_version`，而不是最后一轮 Candidate 之前的中间 Reference；恢复后必须重新读取并验证 Agent State 版本与文件内容。
+每轮优化前，Agent State 被打包为 `snapshots/v<version>.tar.gz`（Vault 除外——密钥永不进入快照）。`system_config.yaml` 的 `version` 在优化成功后自增。Web UI 支持导出与导入快照，导入版本不高于当前版本时需要显式确认。第三阶段失败时恢复的是整个 Optimization Session 开始前的 `production_reference_version`，而不是最后一轮 Candidate 之前的中间 Reference；恢复后必须重新读取并验证 Agent State 版本与文件内容。恢复不回收版本号：任何已写入某个 Scoreboard 或 `snapshots/` 的版本号都视为已消耗。失败晋升后的下一个 Optimization Session 必须从所有已记录版本的最大值加一开始编号，即使恢复后的生产版本更低——否则新旧两条支线会在 Scoreboard 中共用同一个版本号，还会错误复用失败支线的同名快照。`agent-optimization` 的候选编号规则据此约定。
 
 ## 全程可审计
 
@@ -114,6 +114,6 @@ Development 与 Promotion 在 P0 工作流中仍是同一 Agent 下的两个普�
 | `agent-evaluation` | 隔离执行并评分一次 Benchmark Case 运行 |
 | `agent-optimization` | 根据 Benchmark 结果改进 Agent |
 
-P0 的 Promotion Validator 暂不对应新的内置 Skill；它按照本页第三阶段约定编排现有 `agent-evaluation`、写入 held-out Scoreboard，并在失败时通过既有 Snapshot 恢复生产 Reference。工作流稳定后再考虑抽取 `agent-promotion`，无需为本阶段增加核心运行时机制。
+当前的 Promotion Validator 暂不对应新的内置 Skill；它按照本页第三阶段约定编排现有 `agent-evaluation`、写入 held-out Scoreboard，并在失败时通过既有 Snapshot 恢复生产 Reference。工作流稳定后再考虑抽取 `agent-promotion`，无需为本阶段增加核心运行时机制。
 
 Skill 的组织与安装方式见[技能系统](/skills)。
