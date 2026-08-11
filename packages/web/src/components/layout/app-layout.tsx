@@ -270,15 +270,17 @@ export function AppLayout() {
               {S.account.changeNow}
             </button>
             {/* Amber-toned twin of the shared CloseButton (same glyph + aria-label) — its hardcoded
-                gray colors would clash here. Absolutely positioned at the right edge: near-full-height
-                hit area without growing the banner and without transform (see the stacking-context
-                note in the file header); the banner's symmetric px-8 keeps the centered text clear. */}
+                gray colors would clash here. Flat: hover feedback is icon-color-only (no background
+                fill), same hover shades as the change-now link. Absolutely positioned at the right
+                edge: near-full-height hit area without growing the banner and without transform (see
+                the stacking-context note in the file header); the banner's symmetric px-8 keeps the
+                centered text clear. */}
             <button
               type="button"
               aria-label={S.common.close}
               title={S.common.close}
               onClick={dismissPasswordBanner}
-              className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:bg-amber-100 hover:text-amber-800 dark:text-amber-400/70 dark:hover:bg-amber-900/40 dark:hover:text-amber-200"
+              className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
             >
               <svg
                 width="12"
