@@ -69,6 +69,21 @@ tmux capture-pane -t <sess> -p | tail -30
 - Continuity is real: within one tmux session, follow-ups remember earlier turns ("what was my first question?" gets the right answer).
 - The user can join from their own terminal at any time: `ssh <ssh-user>@<remote-host>` → `su - <target-user>` → `tmux attach -t <sess>`.
 
+### 3.1 Waiting out a long turn — don't hold SSH open
+
+A Claude Code turn can run for ten-plus minutes. Instead of keeping an SSH connection open to poll, place a **detached watcher** on the remote (`setsid nohup`, so it outlives the launching SSH session): it polls `tmux capture-pane` every 10s, and once the turn has been idle for 3 consecutive checks — the footer no longer shows `esc to interrupt` — it writes the final screen plus a `DONE` marker (or `TIMEOUT` past a cap). A blocking SSH loop then waits for the marker and returns the final screen, so the tool call effectively hangs until the turn is done. The full watcher script and the wait loop are in [`reference/completion-watcher.md`](reference/completion-watcher.md) — read it when you need this.
+
+### 3.2 Input-line text may be a suggestion, not real input
+
+When an idle Claude Code TUI shows text on the input line (after `❯`), that is often a **Claude-generated suggested next message**, not text the user typed and left pending. `tmux send-keys` only ever adds new text — it does not edit or "complete" that suggestion, and Enter submits what _you_ sent, not the suggestion. So don't try to clear or edit the input line: just send your full instruction and submit it. Send arbitrary message text literally with `-l` (so punctuation and words like `Enter` aren't parsed as key names), then send Enter as its own keypress:
+
+```bash
+tmux send-keys -t <sess> -l "Your full message, punctuation and all"
+tmux send-keys -t <sess> Enter
+```
+
+Then `capture-pane` to confirm your text landed on the input line and the turn started.
+
 ## 4. Continuous (multi-turn) conversation
 
 Three verified ways to keep context across calls:
@@ -103,6 +118,8 @@ Returns `system/init` (carrying the `session_id`), `assistant`, and `result` eve
 | expect stuck producing no output                            | a prompt regex never matched → replace it with `sleep` + fixed sends                                 |
 | `Connection timed out during banner exchange`               | busy server / transient → wait a few seconds and retry; keep one persistent session instead of hammering new ones |
 | New SSH connections crawl while old ones work               | connection pressure → route commands through the persistent session                                  |
+| Input line shows text you didn't type                       | it's a Claude Code suggestion, not real input (see §3.2) → don't edit it; `send-keys -l "<message>"` then `Enter` |
+| Want to wait out a long turn without holding SSH open       | run a detached watcher on the remote (see §3.1) that polls `capture-pane` until idle and writes a `DONE`/`TIMEOUT` marker, then block on an SSH loop until it appears |
 
 ## 6. Verification checklist
 
