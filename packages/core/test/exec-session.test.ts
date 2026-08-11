@@ -392,12 +392,14 @@ describe("harness environment variables never reach a spawned command", () => {
 
   it("passes the offline profile's resource root to Agent commands", async () => {
     const saved = process.env.PENGUIN_OFFLINE_ROOT;
-    process.env.PENGUIN_OFFLINE_ROOT = "/opt/penguin/lib/offline";
+    // Git Bash rewrites POSIX-looking environment paths before launching native Windows programs.
+    const offlineRoot = "offline-root-test";
+    process.env.PENGUIN_OFFLINE_ROOT = offlineRoot;
     try {
       const res = await runTool(env, "exec_command", {
         cmd: `node -e "console.log('R=[' + (process.env.PENGUIN_OFFLINE_ROOT ?? '') + ']')"`,
       });
-      expect(res.output).toContain("R=[/opt/penguin/lib/offline]");
+      expect(res.output).toContain(`R=[${offlineRoot}]`);
     } finally {
       if (saved === undefined) delete process.env.PENGUIN_OFFLINE_ROOT;
       else process.env.PENGUIN_OFFLINE_ROOT = saved;
