@@ -101,7 +101,7 @@ export function MemoryTab({
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, setCurrentAgentId } = useProject();
+  const { currentProject, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
   const [enabled, setEnabled] = useState(true);
@@ -362,6 +362,8 @@ export function MemoryTab({
       toastSuccess(S.memory.deleteDone);
       if (viewing && viewing.file.name === target.file.name) setViewOpen(false);
       await load();
+      // The agent card's memory count changed; refresh the list provider too.
+      void reloadAgents();
     } catch (e) {
       toastError(apiErrorText(e));
     }

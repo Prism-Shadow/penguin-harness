@@ -60,7 +60,7 @@ export function SkillsTab({ agentId }: { agentId: string }) {
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, agents, setCurrentAgentId } = useProject();
+  const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
   const [skills, setSkills] = useState<SkillMetadataItem[] | null>(null);
@@ -146,6 +146,8 @@ export function SkillsTab({ agentId }: { agentId: string }) {
       await api.removeAgentSkill(projectId, agentId, removing);
       toastSuccess(S.skills.uninstalledToast(removing, agentName));
       await load();
+      // The agent card's skill count changed; refresh the list provider too.
+      void reloadAgents();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -217,6 +219,8 @@ export function SkillsTab({ agentId }: { agentId: string }) {
       setImportOpen(false);
       toastSuccess(S.skills.importDoneToast);
       await load();
+      // The agent card's skill count changed; refresh the list provider too.
+      void reloadAgents();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409 && e.code === "skill_exists") {
         const name = /:\s*([A-Za-z0-9_-]+)$/.exec(e.message)?.[1] ?? fallbackName;
