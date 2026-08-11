@@ -220,7 +220,6 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
-    activeSessions: "活跃 Session",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -239,6 +238,7 @@ export const zh = {
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
+    copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt 模板",
     placeholdersTitle: "可用占位符（点击插入）",
@@ -364,8 +364,9 @@ export const zh = {
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
+    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferTitle: "导出 / 导入",
     transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
     exportSnapshot: "导出快照",
     importSnapshot: "导入快照",
@@ -378,13 +379,15 @@ export const zh = {
     resetConfigConfirmBody:
       "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
-    /** Kernel card: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
+    /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
     kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
-    kernelVersions: (current: string, latest: string): string => `当前 ${current} · 最新 ${latest}`,
+    /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
+    kernelCurrent: "当前",
+    kernelLatest: "最新",
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
       "将把未自定义的字段更新为当前内置默认值；自定义过的字段保持不变并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",

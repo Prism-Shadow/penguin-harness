@@ -1,8 +1,9 @@
 /**
  * Agent settings page: eight tabs —
- * Overview (name/description/State path/active count/State version + a kernel card grouping
- * the defaults generation with its update / restore-defaults actions + snapshot
- * export-import), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * Overview (name/description form + two ruled sections in the skills import modal's
+ * family: Agent State — State version, snapshot export-import and the copyable State
+ * path — and Kernel — the defaults generation with its update / restore-defaults
+ * actions), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
@@ -34,6 +35,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
+import { CopyButton } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillsTab } from "./skills-tab";
@@ -426,54 +428,85 @@ function OverviewTab({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateDir}</p>
-        <p className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-          {data.stateDir}
-        </p>
-      </div>
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.activeSessions}</p>
-        <p className="text-sm">{data.activeSessionCount}</p>
-      </div>
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateVersion}</p>
-        <p className="font-mono text-sm">v{data.config.version}</p>
-      </div>
-      {/* Kernel card (the injection-toggle cards' visual family): the defaults generation the
-          config is based on, with its two maintenance actions grouped beside it — update
-          (smart merge, enabled only when outdated) and restore defaults (destructive, danger
-          tone). Both keep their confirm-first modals below. */}
-      <section className="rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
+      <Button size="sm" variant="primary" onClick={submit}>
+        {S.common.save}
+      </Button>
+      {saveConfirm}
+
+      {/* Agent State section (ruled, the skills import modal's section family — no card
+          boxes; per user feedback the sections separate with a top rule and the values
+          carry the visual weight): title row with the snapshot transfer actions on the
+          right (export is available to any member; import overwrites the entire Agent
+          State, so it is visible only to owners), labeled value rows below — light
+          text-xs labels over dark font-semibold values. */}
+      <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-              {data.config.kernelOutdated ? (
-                <>
-                  <span>
-                    {S.agent.kernelVersions(
-                      data.config.kernelVersion ?? S.agent.kernelLegacy,
-                      data.config.kernelLatest,
-                    )}
-                  </span>
-                  {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
-                  <span
-                    role="img"
-                    title={S.agent.kernelOutdatedHint}
-                    aria-label={S.agent.kernelOutdatedHint}
-                  >
-                    <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="font-mono">{data.config.kernelVersion}</span>
-                  <span>· {S.agent.kernelUpToDate}</span>
-                </>
-              )}
-            </p>
+          <p className="text-sm font-medium">{S.agent.stateTitle}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            {projectId && (
+              <a
+                href={api.agentExportUrl(projectId, agentId)}
+                download
+                className={TRANSFER_BUTTON_CLASS}
+              >
+                {S.agent.exportSnapshot}
+              </a>
+            )}
+            {isOwner && (
+              <label
+                className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
+              >
+                <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
+                {importing ? S.agent.importing : S.agent.importSnapshot}
+              </label>
+            )}
           </div>
+        </div>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.agent.transferDesc}</p>
+        <div className="mt-3 space-y-2.5">
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {S.agent.stateVersion}
+            </p>
+            <p className="mt-0.5 font-mono text-sm font-semibold">v{data.config.version}</p>
+          </div>
+          {/* State path row (the chat details card's Session id convention): selectable mono
+              text with the shared CopyButton beside it; the title attribute carries the full
+              path for hover. */}
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {S.agent.stateDir}
+            </p>
+            <div className="flex items-start gap-1.5">
+              <span
+                title={data.stateDir}
+                className="min-w-0 flex-1 break-all font-mono text-xs leading-5"
+              >
+                {data.stateDir}
+              </span>
+              <CopyButton
+                text={data.stateDir}
+                label={S.agent.copyStateDir}
+                showCopiedText
+                className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+              />
+            </div>
+          </div>
+        </div>
+        {importError && (
+          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
+        )}
+      </section>
+
+      {/* Kernel section (same ruled family as Agent State — no lone card): the defaults
+          generation the config is based on, with its two maintenance actions in the title
+          row — update (smart merge, enabled only when outdated) and restore defaults
+          (destructive, danger tone). Both keep their confirm-first modals below. The value
+          line renders the generation dates dark and semibold with the connector words kept
+          light, mirroring the State rows' label/value contrast. */}
+      <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
           <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"
@@ -492,6 +525,38 @@ function OverviewTab({
             </Button>
           </div>
         </div>
+        <p className="mt-2.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm">
+          {data.config.kernelOutdated ? (
+            <>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {S.agent.kernelCurrent}
+              </span>
+              <span className="font-mono font-semibold">
+                {data.config.kernelVersion ?? S.agent.kernelLegacy}
+              </span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                · {S.agent.kernelLatest}
+              </span>
+              <span className="font-mono font-semibold">{data.config.kernelLatest}</span>
+              {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
+              <span
+                role="img"
+                title={S.agent.kernelOutdatedHint}
+                aria-label={S.agent.kernelOutdatedHint}
+                className="self-center text-gray-500 dark:text-gray-400"
+              >
+                <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-mono font-semibold">{data.config.kernelVersion}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                · {S.agent.kernelUpToDate}
+              </span>
+            </>
+          )}
+        </p>
         {/* Merge report: which fields the last update kept because customized (lightweight inline note). */}
         {kernelResult !== null && kernelResult.kept.length > 0 && (
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -500,39 +565,6 @@ function OverviewTab({
           </p>
         )}
       </section>
-
-      {/* Snapshot export / import: export is available to any member; import overwrites the entire Agent State, visible only to owners. */}
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.transferTitle}</p>
-        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.transferDesc}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          {projectId && (
-            <a
-              href={api.agentExportUrl(projectId, agentId)}
-              download
-              className={TRANSFER_BUTTON_CLASS}
-            >
-              {S.agent.exportSnapshot}
-            </a>
-          )}
-          {isOwner && (
-            <label
-              className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
-            >
-              <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
-              {importing ? S.agent.importing : S.agent.importSnapshot}
-            </label>
-          )}
-        </div>
-        {importError && (
-          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
-        )}
-      </div>
-
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
 
       {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
       <ConfirmModal

@@ -229,7 +229,6 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
-    activeSessions: "Active Sessions",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
@@ -248,6 +247,7 @@ export const en: Strings = {
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
+    copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt template",
     placeholdersTitle: "Available placeholders (click to insert)",
@@ -394,8 +394,8 @@ export const en: Strings = {
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
+    stateTitle: "Agent State",
     stateVersion: "Agent State version",
-    transferTitle: "Export / import",
     transferDesc:
       "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
     exportSnapshot: "Export snapshot",
@@ -415,8 +415,8 @@ export const en: Strings = {
     kernelOutdatedHint: "Kernel update available",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
-    kernelVersions: (current: string, latest: string): string =>
-      `current ${current} · latest ${latest}`,
+    kernelCurrent: "current",
+    kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
       "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
