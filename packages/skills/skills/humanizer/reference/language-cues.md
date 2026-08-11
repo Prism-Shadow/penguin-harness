@@ -29,7 +29,7 @@ Scrubbed-text markers (over-correction):
 - 冒号、破折号、引语、史料味全部清零，逗号串承担一切（七个分句一逗到底）。
 - 口语点缀按段配给（每段恰好一个"接地气"词），温度像用滴管加的。
 - 段段短句收尾的"留白"节拍器（人写的段落有时就平平地结束）。
-- 判断句系列：连续段落都用「……的是X」承重（把水道连成网的是隋炀帝。真正拉直运河的是元朝。），同一句型当引擎。
+- 判断句系列：连续段落都用「……的是X」承重（把流程定下来的是创始团队。真正把成本压下来的是第二代产线。），同一句型当引擎。
 - 电报体编年：连续分句各带一个年份（1997年……。1998年……；2000年……，2001年……），叙事被压成 changelog；改用相对时间（三年后、世纪末）并让重要事件独占一句。
 - 分号串联叙事事件：中文散文里分号几乎只属于正式的并列列举，拿来串故事就是压缩痕迹。
 - 无主语压缩：「初代销量不错」——谁的初代？首次提及必须带全称，指代不能靠上一段撑着。
@@ -89,14 +89,14 @@ Print norms: no half-width spaces between ASCII and CJK (「1960年代」, not �
 
 Default-AI markers:
 
-- « Il ne s'agit pas de X, mais de Y » and the aphoristic balance « moins… que… » (« Tout se joue moins à Paris que dans les préfectures »).
+- « Il ne s'agit pas de X, mais de Y » and the aphoristic balance « moins… que… » (« Tout se joue moins en vitrine que dans l'atelier »).
 - The sensory triad after a colon (« l'odeur, le geste, la conversation »).
 - Antithesis as the only engine: four paragraphs, four load-bearing reversals.
 - The dramatic verbless reveal (« Derrière la célébration, une inquiétude : … ») and self-certifying hedges (« bien documentée » with no document).
 - « Force est de constater que », « véritable » inflation, « au cœur de », « enjeu majeur ».
 - Analysis verbs as filler: témoigne de, illustre, incarne.
 - « À l'heure où / dans un monde où » openers; « autant de » recaps; the « n'a pas dit son dernier mot » kicker.
-- The panoramic millions-lede (« Chaque matin, des millions de Français… »).
+- The panoramic millions-lede (« Chaque matin, des millions de gens répètent le même geste… »).
 
 Scrubbed-text markers: comma-apposition where French print wants the colon (« quatre ingrédients, farine, eau, sel »); unnamed collective attributions delivering perfectly turned ironies (« Les boulangers, eux, font remarquer que… » with no name and no apron).
 
@@ -127,7 +127,7 @@ Print norms: „deutsche Anführungszeichen" or »Chevrons« per house; the Geda
 
 Default-AI markers:
 
-- "No solo… sino (también)…" scaffolds; identity-elevation closers ("Más que una escritora, fue la voz de un continente").
+- "No solo… sino (también)…" scaffolds; identity-elevation closers ("Más que una escritora, fue la voz de toda una generación").
 - Obituary-speak: legado, huella imborrable, figura fundamental, "un antes y un después".
 - Filler of emphasis: cabe destacar, es importante señalar, sin duda alguna.
 - Abstract triads (talento, esfuerzo y perseverancia); "a lo largo de" as universal time connector.
@@ -138,6 +138,6 @@ Default-AI markers:
 
 Scrubbed-text markers: no raya (—) anywhere across literary-register prose (Spanish expects an occasional inciso entre rayas); evaluative reticence — a profile or review that outsources every aesthetic judgment to quoted sources and never risks one clause of its own.
 
-Native, not a tell: the triadic metonymy of the semblanza tradition ("cuatro décadas de aulas, consulados y cuadernos"); ring composition around a governing epithet; personification of events ("El premio la encontró en Petrópolis").
+Native, not a tell: the triadic metonymy of the semblanza tradition ("cuatro décadas de aulas, consulados y cuadernos"); ring composition around a governing epithet; personification of events ("El premio la encontró de viaje").
 
 Print norms: comillas angulares « » in print; the raya for incisos and dialogue; question and exclamation marks opened (¿ ¡).

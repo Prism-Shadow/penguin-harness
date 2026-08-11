@@ -163,7 +163,7 @@ Protocol: ten pieces (about 400–700 words each) were written honestly to the l
 | 5 | en | news explainer | 80 | 20 | five triads, three negation pivots, anadiplosis lede, identical opener slot, bookend kicker, BrE/AmE mix |
 | 6 | en | opinion essay | 85 / 80 | 40 | eight turned phrases in 450 words, maxim anaphora, canonical-two citations, no first person, dash blackout |
 | 7 | ja | popular science | 60 | 30 | capsule outline, ASCII spacing, compass illustration contradicting its own claim, fused 1966/1972 attribution |
-| 8 | fr | cultural feature | 60 | — | four-for-four antithesis engine, décret conflation, unnamed collective kicker, reportage without reporting |
+| 8 | fr | cultural feature | 60 | — | four-for-four antithesis engine, legal-clause conflation, unnamed collective kicker, reportage without reporting |
 | 9 | de | business explainer | 22 | — | "begleichen" synonym rotation, aphoristic coda; otherwise native |
 | 10 | es | biographical sketch | 35 | — | device-stacked closer, zero rayas, outsourced aesthetic judgment |
 
@@ -178,7 +178,7 @@ Agreement on the double-reviewed pieces was high: 55/70 and 85/80, with the same
 22. **The scrub is visible.** Reviewers independently described dash blackouts with semicolon inflation, comma splices doing dash work, colloquialism rationed one-per-paragraph, endings that "perform plainness", and one summarized a piece as "prose written under an anti-AI blacklist". The zero-target gate of rounds one and two was wrong; the target is the genre's natural distribution. This became the scrub layer and rewrote method step 9.
 23. **Genre needs material, and its absence is legible.** The reportage with no scene and the journalism with no quote were both flagged; one reviewer noted that models under a factual-accuracy instruction produce quoteless journalism precisely because they will not invent a voice. Tell 21.
 24. **Retrieval regresses to the canon.** Single-source greatest hits, exactly the two most-probable citations with no oddball third, default arcs, default title shapes, and the adjacent famous fact swapped in where the precise one belongs — flagged across three languages. Tell 22.
-25. **Fluent wrongness is the deepest tell.** The Japanese piece "demonstrated" an inclination compass with a polarity flip the mechanism should ignore, and fused the 1966 Merkel–Wiltschko result with the couple's later inclination experiments into one date; the French piece welded a neighboring legal definition into the 1993 décret. All three read perfectly. Verification joined the method as its own pass (step 7), because a reader who catches one such error re-reads everything else as synthetic.
+25. **Fluent wrongness is the deepest tell.** The Japanese piece "demonstrated" an inclination compass with a polarity flip the mechanism should ignore, and fused two research milestones a few years apart into one date and attribution; the French-language piece welded two neighboring provisions of a real decree into one smooth clause. All three read perfectly. Verification joined the method as its own pass (step 7), because a reader who catches one such error re-reads everything else as synthetic.
 26. **Typography betrays the pipeline.** ASCII–CJK half-width spacing in Japanese print register and a BrE date beside AmE spelling were flagged as machine conventions independent of prose quality. Tell 24.
 27. **Positive human markers exist.** Reviewers read deliberately broken symmetry (a two-way diagnostic with an asymmetric third cause), an opinionated aside with an edge, a lived detail, and unrepaired grammatical looseness as evidence of a human hand. These entered Do-not-overcorrect as techniques to use sparingly, never mechanically.
 28. **Language-relative budgets.** The Spanish reviewer flagged the total absence of rayas, the German reviewer the absence of Gedankenstriche, in the same batch where English dash removal was the fix. One number cannot govern six languages; the budgets moved into `language-cues.md`.
@@ -187,11 +187,11 @@ Agreement on the double-reviewed pieces was high: 55/70 and 85/80, with the same
 
 ## Round four: user field test, the compression tells
 
-A reader ran the skill against fresh zh material (a game-history retrospective) and returned two passages with three complaints. The passages, as submitted:
+A reader ran the skill against fresh zh material (a product-history retrospective) and returned two passages with three complaints. The passages are reproduced with names and settings genericized; the structure is untouched:
 
-> 爱因斯坦回到过去抹掉希特勒；纳粹从历史中消失，却没有换来和平，斯大林治下的苏联大举西进，盟军被迫应战。
+> 工程师连夜回滚了版本；旧故障从系统中消失，却没有换来安稳，新的报错大量涌入，值班的人被迫应战。
 
-> 初代销量不错，1997年又先后推出《反击》《劫后余生》两个资料片。1998年西木被艺电收购；2000年的《红色警戒2》以尤里的心灵控制为核心设定，2001年资料片《尤里的复仇》让它在网吧里又火了许多年。
+> 初代销量不错，1997年又先后推出两部资料片。1998年工作室被大厂收购；2000年的续作以全新玩法为核心设定，2001年的资料片让它在网吧里又火了许多年。
 
 The complaints: both passages still feel like 排比 although no function word repeats; prose should not carry this many semicolons; and 初代销量不错 has no subject — the first generation of what?
 
