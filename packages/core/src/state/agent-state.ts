@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  loadLibrarySkills,
+  loadPreinstalledSkills,
   parseSkillFrontmatter,
   type SkillMetadata,
 } from "@prismshadow/penguin-skills";
@@ -163,15 +163,15 @@ export async function loadOrInitAgentState(opts?: {
     };
     agentsMd = preset?.agentsMd ?? defaultAgentsMd();
     // Only installs the Skills specified by preset (a plain newly created Agent gets none
-    // pre-installed). A default_agent with no
-    // preset (e.g. created on first CLI run) still gets every Skill in the library pre-installed
-    // — the install policy follows Agent identity, not whether creation came from the server or
+    // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
+    // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
+    // the install policy follows Agent identity, not whether creation came from the server or
     // was done directly via SDK/CLI.
     // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
     // reads SKILL.md with shell and follows it.
     const skills =
       opts?.preset === undefined && agentId === DEFAULT_AGENT_ID
-        ? loadLibrarySkills()
+        ? loadPreinstalledSkills()
         : (opts?.preset?.skills ?? []);
     await Promise.all([
       fs.writeFile(mdPath, agentsMd, "utf8"),
@@ -270,33 +270,65 @@ function vaultKeysList(keys: string[]): string {
 }
 
 /**
+ * Guards a Skill auxiliary-file path (relative to the skill directory) before it's written:
+ * rejects empty, absolute, backslash-bearing, and any `..`-segment path so a file entry can never
+ * escape `skills/<name>/`. Mirrors the archive route's zip-slip check for the library-install path.
+ */
+function assertSafeSkillFile(rel: string): void {
+  if (
+    rel.length === 0 ||
+    path.isAbsolute(rel) ||
+    rel.includes("\\") ||
+    rel.split("/").some((segment) => segment === "..")
+  ) {
+    throw new Error(
+      `Invalid skill file path ${JSON.stringify(rel)}: it must stay within the skill directory.`,
+    );
+  }
+}
+
+/**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline); if the directory
- * already exists, it's overwritten (reinstalling = updating to the latest content). An optional
- * icon.svg is written alongside SKILL.md; if this install doesn't
- * include an icon, any old icon.svg is removed, preserving "overwrite update" semantics (the
- * directory content matches the Skill being installed).
+ * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg and
+ * any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`, subdirectories
+ * preserved) are written alongside it. The directory is replaced wholesale first, so reinstalling
+ * updates to the latest content and drops files the new version no longer ships — the directory
+ * content always matches the Skill being installed. Each file path is checked to stay within the
+ * skill directory before anything is written.
  * Docs: /docs/skills § "Installation and storage".
  */
 export async function installSkill(
   root: string,
   projectId: string,
   agentId: string,
-  skill: { name: string; content: string; icon?: string },
+  skill: { name: string; content: string; icon?: string; files?: Record<string, string> },
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
   assertValidId("skill_name", skill.name);
+  const auxiliary = Object.entries(skill.files ?? {});
+  for (const [rel] of auxiliary) assertSafeSkillFile(rel);
   const dir = path.join(skillsDir(root, projectId, agentId), skill.name);
+  // Clean replace: drop the old directory so no stale file survives a reinstall (same semantics
+  // as the archive route), then write SKILL.md, the optional icon, and every auxiliary file.
+  await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir, { recursive: true });
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
-  const iconPath = path.join(dir, "icon.svg");
-  await Promise.all([
+  const writes: Array<Promise<unknown>> = [
     fs.writeFile(path.join(dir, "SKILL.md"), content, "utf8"),
-    skill.icon !== undefined
-      ? fs.writeFile(iconPath, skill.icon, "utf8")
-      : fs.rm(iconPath, { force: true }),
-  ]);
+  ];
+  if (skill.icon !== undefined) {
+    writes.push(fs.writeFile(path.join(dir, "icon.svg"), skill.icon, "utf8"));
+  }
+  for (const [rel, data] of auxiliary) {
+    const file = path.join(dir, rel);
+    writes.push(
+      fs
+        .mkdir(path.dirname(file), { recursive: true })
+        .then(() => fs.writeFile(file, data, "utf8")),
+    );
+  }
+  await Promise.all(writes);
 }
 
 /** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */
