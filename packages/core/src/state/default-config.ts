@@ -9,20 +9,32 @@
  *
  * The system Prompt is sectioned and trimmed as needed (Role/Personality/Success
  * criteria/Constraints/Stop rules/Tool use/System markers/File system/Suggested workflows); it
- * does not describe specific tools (that comes from the tool schema). AGENTS.md, Vault/Skills,
- * and Environment injection go at the end.
+ * does not describe specific tools (that comes from the tool schema). AGENTS.md and the
+ * Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
- * Skills / Environment); elsewhere the body uses angle-bracket notation such as
- * \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**; the model
- * fills in the actual values from the Environment section itself.
+ * Skills / Memory / Schedules / Environment); elsewhere the body uses angle-bracket notation
+ * such as \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**;
+ * the model fills in the actual values from the Environment section itself.
  */
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
 import type { CompactionMode } from "../omnimessage/types.js";
 
 /** Docs: /docs/configuration § "System prompt placeholders". */
 export const AGENTS_MD_PLACEHOLDER = "{{AGENTS_MD}}";
+/**
+ * Inside `vault.prompt`: the vault key-name list, one `- KEY` per line — names only, never
+ * values. Also still substituted when written directly in the template body, for templates
+ * from before the `{{VAULT}}` section placeholder (see assembleSystemPrompt's legacy inline
+ * compatibility), where it honors `vault.enabled` the same way.
+ */
 export const VAULT_KEYS_PLACEHOLDER = "{{VAULT_KEYS}}";
+/**
+ * Inside `skills.prompt`: the installed Skills' metadata lines. Also still substituted when
+ * written directly in the template body, for templates from before the `{{SKILLS}}` section
+ * placeholder (see assembleSystemPrompt's legacy inline compatibility), where it honors
+ * `skills.enabled` the same way.
+ */
 export const SKILL_METADATA_PLACEHOLDER = "{{SKILL_METADATA}}";
 export const SESSION_ID_PLACEHOLDER = "{{SESSION_ID}}";
 export const CWD_PLACEHOLDER = "{{CWD}}";
@@ -55,6 +67,32 @@ export const WORKSPACE_MEMORY_DIR_PLACEHOLDER = "{{WORKSPACE_MEMORY_DIR}}";
 export const WORKSPACE_MEMORY_INDEX_PLACEHOLDER = "{{WORKSPACE_MEMORY_INDEX}}";
 /** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
 export const USER_MEMORY_INDEX_PLACEHOLDER = "{{USER_MEMORY_INDEX}}";
+/**
+ * Expands to the rendered `vault.prompt` block (the # Vault section statement plus the
+ * `{{VAULT_KEYS}}` key-name list); an empty string when the Vault section is off. A template
+ * without this placeholder injects no Vault section at all — the Web App's Vault tab offers
+ * inserting it (or migrating a legacy hardcoded section) as an explicit action, nothing is
+ * spliced in automatically.
+ */
+export const VAULT_PLACEHOLDER = "{{VAULT}}";
+/**
+ * Expands to the rendered `skills.prompt` block (the # Skills section statement plus the
+ * `{{SKILL_METADATA}}` metadata lines); an empty string when the Skills section is off. A
+ * template without this placeholder injects no Skills section at all — the Web App's Skills
+ * tab offers inserting it (or migrating a legacy hardcoded section) as an explicit action,
+ * nothing is spliced in automatically.
+ */
+export const SKILLS_PLACEHOLDER = "{{SKILLS}}";
+/**
+ * Expands to the rendered `schedules.prompt` block (the # Scheduled Tasks section teaching
+ * file-based task management, plus the `{{SCHEDULE_LIST}}` task roster); an empty string when
+ * the Schedules section is off. A template without this placeholder injects no Schedules
+ * section at all — the Web App's Schedules tab offers inserting it as an explicit action,
+ * nothing is spliced in automatically.
+ */
+export const SCHEDULES_PLACEHOLDER = "{{SCHEDULES}}";
+/** Inside `schedules.prompt` only: the current schedule-file names, one `- name` per line (SCHEDULE_LIST_EMPTY_NOTE when none exist). */
+export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -95,8 +133,55 @@ export interface MemoryConfig {
   workspace_prompt?: string;
 }
 
+/**
+ * Vault prompt-injection config (the `vault` section of `system_config.yaml`). The prompt is
+ * editable on the Web App's Vault tab and rendered into the template's `{{VAULT}}` placeholder.
+ * The toggle governs prompt injection only: with it off, vault values are still injected into
+ * shell subprocess environments — the model is just not shown the key-name roster.
+ * Docs: /docs/configuration § "Vault".
+ */
+export interface VaultConfig {
+  /** Whether the Vault section enters the model context; defaults to true. */
+  enabled?: boolean;
+  /** The `{{VAULT}}` block: the section statement carrying the `{{VAULT_KEYS}}` key-name injection point. Defaults to the built-in value. */
+  prompt?: string;
+}
+
+/**
+ * Skills prompt-injection config (the `skills` section of `system_config.yaml`). The prompt is
+ * editable on the Web App's Skills tab and rendered into the template's `{{SKILLS}}`
+ * placeholder. The toggle governs prompt injection only: with it off, installed Skills stay on
+ * disk and can still be invoked explicitly (e.g. via a [use_skills] block naming them) — the
+ * model is just not shown the roster.
+ * Docs: /docs/skills.
+ */
+export interface SkillsConfig {
+  /** Whether the Skills section enters the model context; defaults to true. */
+  enabled?: boolean;
+  /** The `{{SKILLS}}` block: the section statement carrying the `{{SKILL_METADATA}}` metadata-line injection point. Defaults to the built-in value. */
+  prompt?: string;
+}
+
+/**
+ * Schedules prompt-injection config (the `schedules` section of `system_config.yaml`). The
+ * prompt is editable on the Web App's Schedules tab and rendered into the template's
+ * `{{SCHEDULES}}` placeholder. The toggle governs prompt injection only: with it off, the
+ * server still fires configured tasks on time — the model is just not taught the file-based
+ * task system.
+ * Docs: /docs/configuration § "Schedules".
+ */
+export interface SchedulesConfig {
+  /** Whether the Scheduled Tasks section enters the model context; defaults to true. */
+  enabled?: boolean;
+  /** The `{{SCHEDULES}}` block: the file-based task-management guidance carrying the `{{SCHEDULE_LIST}}` roster injection point. Defaults to the built-in value. */
+  prompt?: string;
+}
+
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
 export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
+
+/** Stands in for `{{SCHEDULE_LIST}}` when no schedule files exist yet — the model is told the roster is empty rather than being handed nothing (mirrors MEMORY_INDEX_EMPTY_NOTE). */
+export const SCHEDULE_LIST_EMPTY_NOTE = "(no scheduled tasks defined yet)";
 
 /**
  * Cap on injected index lines per scope (one memory per line by convention), so a runaway
@@ -166,6 +251,74 @@ Index:
 {{WORKSPACE_MEMORY_INDEX}}`;
 
 /**
+ * The pre-`{{VAULT}}` default template's hardcoded # Vault section, frozen verbatim (its
+ * trailing inline `{{VAULT_KEYS}}` included) so `insertVaultPlaceholder` can migrate a stored
+ * legacy template by exact replacement — `system_config.yaml` is materialized at Agent
+ * creation and never auto-upgraded, so existing templates carry this text until that explicit
+ * action. Never edit this constant: it must keep matching what old yaml files actually
+ * contain, even after `DEFAULT_VAULT_PROMPT` evolves away from it.
+ *
+ * Retirement condition: remove together with `insertVaultPlaceholder`'s migration branch once
+ * pre-`{{VAULT}}` templates (Agents created before the section placeholder shipped) are no
+ * longer expected in the wild.
+ */
+export const LEGACY_VAULT_SECTION = `# Vault
+The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each entry is injected into your shell subprocesses as an environment variable — values never appear in your context. Use the variable names below in commands when a task needs them.
+${VAULT_KEYS_PLACEHOLDER}`;
+
+/**
+ * The pre-`{{SKILLS}}` default template's hardcoded # Skills section, frozen verbatim (its
+ * trailing inline `{{SKILL_METADATA}}` included) for `insertSkillsPlaceholder`'s migration
+ * branch. Same freeze rule and retirement condition as `LEGACY_VAULT_SECTION`.
+ */
+export const LEGACY_SKILLS_SECTION = `# Skills
+Skills are reusable instruction packages at \`<app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md\`. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
+${SKILL_METADATA_PLACEHOLDER}`;
+
+/**
+ * Built-in default Vault Prompt: what `{{VAULT}}` expands to — currently word-for-word the
+ * section the pre-toggle default template hardcoded (the toggle refactor moved the text into
+ * editable config without changing a word), ending in the `{{VAULT_KEYS}}` key-name list.
+ * Stored per-Agent in `system_config.yaml` and editable on the Web App's Vault tab. A future
+ * wording change goes here (as a new literal); the legacy constant stays frozen.
+ */
+export const DEFAULT_VAULT_PROMPT = LEGACY_VAULT_SECTION;
+
+/**
+ * Built-in default Skills Prompt: what `{{SKILLS}}` expands to — currently word-for-word the
+ * legacy hardcoded section (same move-not-reword relationship as `DEFAULT_VAULT_PROMPT`),
+ * ending in the `{{SKILL_METADATA}}` metadata lines. Stored per-Agent in `system_config.yaml`
+ * and editable on the Web App's Skills tab.
+ */
+export const DEFAULT_SKILLS_PROMPT = LEGACY_SKILLS_SECTION;
+
+/**
+ * Built-in default Schedules Prompt: what `{{SCHEDULES}}` expands to — teaches the model to
+ * manage scheduled tasks as TOML files with its ordinary file tools (there is no dedicated
+ * tool), in template-example form like DEFAULT_MEMORY_PROMPT: the directory as a literal
+ * angle-bracket pattern resolvable from the Environment section, a fenced example, the field
+ * rules schedule-file.ts enforces, the hygiene rules, then the current roster via
+ * `{{SCHEDULE_LIST}}`. Stored per-Agent in `system_config.yaml` and editable on the Web App's
+ * Schedules tab.
+ */
+export const DEFAULT_SCHEDULES_PROMPT = `# Scheduled Tasks
+Prompts delivered to this agent on a timer: TOML files you manage with the file tools, in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it does not exist). One task per file; the file name minus \`.toml\` is the task's name (letters, digits, \`_\` and \`-\` only). The server re-reads the directory within about 30 seconds — creating, editing or deleting a file is all it takes, there is nothing to register.
+
+\`\`\`toml
+prompt = "Check yesterday's build results and summarize the failures"
+enabled = true
+start_at = 2026-08-01T09:00:00Z
+period = "12h"
+\`\`\`
+
+Field rules: \`prompt\` (required) is the message sent when the task fires. \`enabled\` defaults to false — set it to true explicitly or the task never runs. \`start_at\` (required) is the first trigger time, an ISO 8601 instant. \`period\` is a fixed interval like \`30m\` / \`12h\` / \`7d\` (5 minutes minimum); omit it for a one-shot task. \`end_at\` (optional) must be later than start_at; a periodic task stops after it. Each trigger starts a new Session by default: \`workspace\` (optional) picks its working directory, and \`provider\` + \`model_id\` pick its model — always both or neither; omit both to use the Project's default model. Setting \`session_id\` instead sends the prompt into an existing Session, and cannot be combined with workspace / provider / model_id.
+
+Check the current tasks below before creating one so you never duplicate an existing task; change a task by editing its file in place; delete the file when a task is obsolete.
+
+Current tasks:
+${SCHEDULE_LIST_PLACEHOLDER}`;
+
+/**
  * System-level config for Agent State, serialized as `system_config.yaml`.
  * Docs: /docs/configuration § "Agent config".
  */
@@ -193,6 +346,12 @@ export interface SystemConfig {
   compaction?: CompactionConfig;
   /** Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
   memory?: MemoryConfig;
+  /** Vault section injection (enabled by default; reaches the prompt through `{{VAULT}}`, or a legacy template's inline `{{VAULT_KEYS}}`). */
+  vault?: VaultConfig;
+  /** Skills section injection (enabled by default; reaches the prompt through `{{SKILLS}}`, or a legacy template's inline `{{SKILL_METADATA}}`). */
+  skills?: SkillsConfig;
+  /** Scheduled-tasks section injection (enabled by default; only reaches the prompt through `{{SCHEDULES}}`). */
+  schedules?: SchedulesConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
@@ -254,15 +413,13 @@ Custom instructions from the developer-editable AGENTS.md.
 {{AGENTS_MD}}
 [/developer_instructions]
 
-# Vault
-The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each entry is injected into your shell subprocesses as an environment variable — values never appear in your context. Use the variable names below in commands when a task needs them.
-{{VAULT_KEYS}}
+{{VAULT}}
 
-# Skills
-Skills are reusable instruction packages at \`<app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md\`. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
-{{SKILL_METADATA}}
+{{SKILLS}}
 
 {{MEMORY}}
+
+{{SCHEDULES}}
 
 # Environment
 - Platform: {{PLATFORM}}
@@ -282,6 +439,19 @@ export function hasMemoryPlaceholder(template: string): boolean {
 }
 
 /**
+ * Shared insertion for the section placeholders: before the `# Environment` heading (the
+ * position the default template gives them), else appended at the end. Idempotent — a
+ * template already carrying the placeholder is returned unchanged.
+ */
+function insertSectionPlaceholder(template: string, placeholder: string): string {
+  if (template.includes(placeholder)) return template;
+  const heading = /^#+ Environment[ \t]*$/m.exec(template);
+  return heading
+    ? `${template.slice(0, heading.index)}${placeholder}\n\n${template.slice(heading.index)}`
+    : `${template.trimEnd()}\n\n${placeholder}\n`;
+}
+
+/**
  * Inserts the `{{MEMORY}}` placeholder into a template: before the `# Environment` heading
  * (the position the default template gives it), else appended at the end. Idempotent — a
  * template already carrying it is returned unchanged. This is the explicit adoption path for
@@ -289,11 +459,63 @@ export function hasMemoryPlaceholder(template: string): boolean {
  * inserts automatically.
  */
 export function insertMemoryPlaceholder(template: string): string {
-  if (template.includes(MEMORY_PLACEHOLDER)) return template;
-  const heading = /^#+ Environment[ \t]*$/m.exec(template);
-  return heading
-    ? `${template.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${template.slice(heading.index)}`
-    : `${template.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
+  return insertSectionPlaceholder(template, MEMORY_PLACEHOLDER);
+}
+
+/** Whether a template carries the `{{VAULT}}` placeholder (a legacy inline `{{VAULT_KEYS}}` still injects the key list, but no section prompt). */
+export function hasVaultPlaceholder(template: string): boolean {
+  return template.includes(VAULT_PLACEHOLDER);
+}
+
+/** Whether a template carries the `{{SKILLS}}` placeholder (a legacy inline `{{SKILL_METADATA}}` still injects the metadata lines, but no section prompt). */
+export function hasSkillsPlaceholder(template: string): boolean {
+  return template.includes(SKILLS_PLACEHOLDER);
+}
+
+/** Whether a template carries the `{{SCHEDULES}}` placeholder — without it no Scheduled Tasks section is injected. */
+export function hasSchedulesPlaceholder(template: string): boolean {
+  return template.includes(SCHEDULES_PLACEHOLDER);
+}
+
+/**
+ * Inserts the `{{VAULT}}` placeholder into a template, migration-first: a template still
+ * carrying the legacy hardcoded # Vault section verbatim gets that text replaced in place by
+ * the placeholder (the section's wording lives on as `vault.prompt`'s default, so the
+ * assembled prompt is unchanged); otherwise the placeholder is inserted before
+ * `# Environment` / appended, like `insertMemoryPlaceholder`. Idempotent, and the explicit
+ * adoption path offered by the Web App's Vault tab — nothing ever migrates automatically.
+ *
+ * Retirement condition: drop the migration branch together with `LEGACY_VAULT_SECTION` once
+ * pre-`{{VAULT}}` templates are no longer expected in the wild.
+ */
+export function insertVaultPlaceholder(template: string): string {
+  if (template.includes(VAULT_PLACEHOLDER)) return template;
+  if (template.includes(LEGACY_VAULT_SECTION)) {
+    return template.split(LEGACY_VAULT_SECTION).join(VAULT_PLACEHOLDER);
+  }
+  return insertSectionPlaceholder(template, VAULT_PLACEHOLDER);
+}
+
+/**
+ * Inserts the `{{SKILLS}}` placeholder into a template, migration-first over
+ * `LEGACY_SKILLS_SECTION` — same semantics and retirement condition as
+ * `insertVaultPlaceholder`.
+ */
+export function insertSkillsPlaceholder(template: string): string {
+  if (template.includes(SKILLS_PLACEHOLDER)) return template;
+  if (template.includes(LEGACY_SKILLS_SECTION)) {
+    return template.split(LEGACY_SKILLS_SECTION).join(SKILLS_PLACEHOLDER);
+  }
+  return insertSectionPlaceholder(template, SKILLS_PLACEHOLDER);
+}
+
+/**
+ * Inserts the `{{SCHEDULES}}` placeholder into a template: before `# Environment`, else
+ * appended (no legacy form exists — Schedules never had a hardcoded template section).
+ * Idempotent; the explicit adoption path offered by the Web App's Schedules tab.
+ */
+export function insertSchedulesPlaceholder(template: string): string {
+  return insertSectionPlaceholder(template, SCHEDULES_PLACEHOLDER);
 }
 
 /**
@@ -651,6 +873,18 @@ export function defaultSystemConfig(): SystemConfig {
       enabled: true,
       prompt: DEFAULT_MEMORY_PROMPT,
       workspace_prompt: DEFAULT_MEMORY_WORKSPACE_PROMPT,
+    },
+    vault: {
+      enabled: true,
+      prompt: DEFAULT_VAULT_PROMPT,
+    },
+    skills: {
+      enabled: true,
+      prompt: DEFAULT_SKILLS_PROMPT,
+    },
+    schedules: {
+      enabled: true,
+      prompt: DEFAULT_SCHEDULES_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),

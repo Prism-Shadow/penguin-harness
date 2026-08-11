@@ -8,6 +8,11 @@
  * submit; the "new Session each run" mode can also pick a Model — always a complete
  * (provider, modelId) pair, since provider is never inferred; omitting it entirely falls
  * back to the Project default. Mutual exclusivity with sessionId is validated server-side.
+ *
+ * Prompt-injection controls (usePromptInjection): the schedules.enabled switch, the
+ * {{SCHEDULES}}-placeholder alert and the editable schedules.prompt section, mirroring the
+ * Memory tab — owner-only, like the table edits. The prompt teaches the model to manage
+ * task files itself; the toggle never stops the server from firing configured tasks.
  */
 import { useCallback, useEffect, useState } from "react";
 import type {
@@ -37,6 +42,7 @@ import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
+import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -198,10 +204,25 @@ function SessionSelect({
   );
 }
 
-export function SchedulesTab({ agentId }: { agentId: string }) {
+export function SchedulesTab({
+  agentId,
+  onConfigChanged,
+}: {
+  agentId: string;
+  /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
+  onConfigChanged?: () => void;
+}) {
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  // Prompt-injection controls follow the tab's existing gate: owner-only edits.
+  const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
+    agentId,
+    feature: "schedules",
+    strings: S.schedule.injection,
+    canEdit: isOwner,
+    onConfigChanged,
+  });
 
   const [data, setData] = useState<SchedulesResponse | null>(null);
   // Tab-level error is only the initial list load failure; row/edit actions report via toast.
@@ -232,11 +253,17 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     setData(null);
     setError(null);
     try {
-      setData(await api.listSchedules(projectId, agentId));
+      // The injection controls' state loads in parallel with the tab's own table.
+      const [schedules, configView] = await Promise.all([
+        api.listSchedules(projectId, agentId),
+        api.getAgentConfig(projectId, agentId),
+      ]);
+      setData(schedules);
+      applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -408,6 +435,9 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
         )}
       </div>
 
+      {toggleCard}
+      {alertStrip}
+
       {data === null ? (
         <SkeletonList rows={4} />
       ) : schedules.length === 0 ? (
@@ -530,6 +560,8 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
           {S.schedule.addTitle}
         </Button>
       )}
+
+      {promptSection}
 
       {/* Shared create/edit modal form. */}
       <Modal

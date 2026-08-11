@@ -548,6 +548,44 @@ export interface AgentMemoryConfigDto {
   workspacePrompt: string;
 }
 
+/**
+ * Vault prompt-injection config, edited on the Vault tab. `enabled` / `prompt` report
+ * effective values (a config with no `vault` section reads as enabled with the built-in
+ * prompt, matching core); the last two are read-only facts computed from the stored template.
+ */
+export interface AgentVaultConfigDto {
+  /** Whether the Vault section enters the model context (values are injected into subprocesses regardless). */
+  enabled: boolean;
+  /** The `{{VAULT}}` block (carries `{{VAULT_KEYS}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{VAULT}}`; POST …/vault/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Vault section verbatim (a pre-`{{VAULT}}` Agent) — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Skills prompt-injection config, edited on the Skills tab; same field semantics as AgentVaultConfigDto, for `{{SKILLS}}` / `{{SKILL_METADATA}}` and the legacy # Skills section. */
+export interface AgentSkillsConfigDto {
+  /** Whether the Skills section enters the model context (installed skills remain explicitly invocable regardless). */
+  enabled: boolean;
+  /** The `{{SKILLS}}` block (carries `{{SKILL_METADATA}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SKILLS}}`; POST …/skills/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Skills section verbatim — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Schedules prompt-injection config, edited on the Schedules tab. No legacy field: Schedules never had a hardcoded template section. */
+export interface AgentSchedulesConfigDto {
+  /** Whether the Scheduled Tasks section enters the model context (the server fires configured tasks regardless). */
+  enabled: boolean;
+  /** The `{{SCHEDULES}}` block (carries `{{SCHEDULE_LIST}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SCHEDULES}}`; POST …/schedules/template-placeholder inserts it explicitly. */
+  templateHasPlaceholder: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -559,6 +597,9 @@ export interface AgentConfigDto {
   model?: AgentModelConfigDto;
   compaction?: AgentCompactionConfigDto;
   memory: AgentMemoryConfigDto;
+  vault: AgentVaultConfigDto;
+  skills: AgentSkillsConfigDto;
+  schedules: AgentSchedulesConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -595,6 +636,10 @@ export interface AgentConfigUpdateRequest {
     model?: AgentModelConfigDto;
     compaction?: AgentCompactionConfigDto;
     memory?: Partial<AgentMemoryConfigDto>;
+    /** Only the writable half of the DTO — the template facts (templateHasPlaceholder / legacySectionPresent) are computed, never written. */
+    vault?: { enabled?: boolean; prompt?: string };
+    skills?: { enabled?: boolean; prompt?: string };
+    schedules?: { enabled?: boolean; prompt?: string };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };

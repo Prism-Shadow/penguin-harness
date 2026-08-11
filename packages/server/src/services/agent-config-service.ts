@@ -12,9 +12,20 @@ import { parseDocument, parse as parseYaml } from "yaml";
 import {
   DEFAULT_MEMORY_PROMPT,
   DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_VAULT_PROMPT,
+  LEGACY_SKILLS_SECTION,
+  LEGACY_VAULT_SECTION,
   agentsMdPath,
   agentStateDir,
   agentStateVersion,
+  hasSchedulesPlaceholder,
+  hasSkillsPlaceholder,
+  hasVaultPlaceholder,
+  insertSchedulesPlaceholder,
+  insertSkillsPlaceholder,
+  insertVaultPlaceholder,
   VAULT_VALUE_MAX_LENGTH,
   isValidVaultKey,
   loadAgentVault,
@@ -34,6 +45,9 @@ import type {
   AgentModelConfigDto,
   AgentCompactionConfigDto,
   AgentMemoryConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
   VaultEntryInfo,
   VaultResponse,
   VaultUpdateRequest,
@@ -117,6 +131,9 @@ export class AgentConfigService {
     const model = asRecord(parsed.model);
     const compaction = asRecord(parsed.compaction);
     const memory = asRecord(parsed.memory);
+    const vault = asRecord(parsed.vault);
+    const skills = asRecord(parsed.skills);
+    const schedules = asRecord(parsed.schedules);
     const tools = asRecord(parsed.tools);
 
     let agentsMd = "";
@@ -158,15 +175,40 @@ export class AgentConfigService {
           ? memory.workspace_prompt
           : DEFAULT_MEMORY_WORKSPACE_PROMPT,
     };
+    // Effective values like memory's, plus template facts computed from the stored template:
+    // whether the section placeholder is present, and — skills/vault only — whether the
+    // template still carries the legacy hardcoded section verbatim (the migration case;
+    // detection retires with core's LEGACY_* constants).
+    const systemPrompt = typeof parsed.system_prompt === "string" ? parsed.system_prompt : "";
+    const vaultDto: AgentVaultConfigDto = {
+      enabled: vault.enabled !== false,
+      prompt: typeof vault.prompt === "string" ? vault.prompt : DEFAULT_VAULT_PROMPT,
+      templateHasPlaceholder: hasVaultPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_VAULT_SECTION),
+    };
+    const skillsDto: AgentSkillsConfigDto = {
+      enabled: skills.enabled !== false,
+      prompt: typeof skills.prompt === "string" ? skills.prompt : DEFAULT_SKILLS_PROMPT,
+      templateHasPlaceholder: hasSkillsPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_SKILLS_SECTION),
+    };
+    const schedulesDto: AgentSchedulesConfigDto = {
+      enabled: schedules.enabled !== false,
+      prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
+      templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
+    };
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
       version: agentStateVersion({ version: parsed.version as number | undefined }),
-      systemPrompt: typeof parsed.system_prompt === "string" ? parsed.system_prompt : "",
+      systemPrompt,
       ...(typeof parsed.max_turns === "number" ? { maxTurns: parsed.max_turns } : {}),
       ...(Object.keys(modelDto).length > 0 ? { model: modelDto } : {}),
       ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
       memory: memoryDto,
+      vault: vaultDto,
+      skills: skillsDto,
+      schedules: schedulesDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
     };
@@ -275,6 +317,24 @@ export class AgentConfigService {
       setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
       setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
     }
+    // The vault / skills / schedules toggles only decide whether the section reaches the
+    // context: vault values still enter subprocess environments, installed skills stay
+    // invocable, and the scheduler keeps firing tasks.
+    if (cfg.vault !== undefined) {
+      const vault = asRecord(cfg.vault);
+      setIfProvided(["vault", "enabled"], optionalBoolean(vault, "enabled"));
+      setIfProvided(["vault", "prompt"], optionalString(vault, "prompt"));
+    }
+    if (cfg.skills !== undefined) {
+      const skills = asRecord(cfg.skills);
+      setIfProvided(["skills", "enabled"], optionalBoolean(skills, "enabled"));
+      setIfProvided(["skills", "prompt"], optionalString(skills, "prompt"));
+    }
+    if (cfg.schedules !== undefined) {
+      const schedules = asRecord(cfg.schedules);
+      setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
+      setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
+    }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
     }
@@ -283,6 +343,31 @@ export class AgentConfigService {
     }
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
+  }
+
+  /**
+   * Inserts a feature's section placeholder into the Agent's prompt template — the explicit
+   * adoption path mirroring the Memory tab's endpoint; nothing ever inserts automatically.
+   * For skills/vault the insert is migration-first (core's helpers): a stored template still
+   * carrying the legacy hardcoded section verbatim gets it replaced in place by the
+   * placeholder, otherwise the placeholder is inserted before `# Environment`. Idempotent;
+   * returns the refreshed config view (the route picks out the feature's DTO).
+   */
+  async insertTemplatePlaceholder(
+    projectId: string,
+    agentId: string,
+    feature: "vault" | "skills" | "schedules",
+  ): Promise<AgentConfigView> {
+    const view = await this.getConfig(projectId, agentId);
+    const insert = {
+      vault: insertVaultPlaceholder,
+      skills: insertSkillsPlaceholder,
+      schedules: insertSchedulesPlaceholder,
+    }[feature];
+    const next = insert(view.config.systemPrompt);
+    if (next === view.config.systemPrompt) return view;
+    await this.updateConfig(projectId, agentId, { config: { systemPrompt: next } });
+    return this.getConfig(projectId, agentId);
   }
 
   /** Read the Agent vault (agent_state/.vault.toml): values are always masked, plaintext is never sent to the client. */

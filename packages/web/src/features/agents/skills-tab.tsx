@@ -11,6 +11,10 @@
  * skill_exists asks before overwriting). Each row can also export the installed directory
  * as a zip that round-trips through that same endpoint. Read and mutate are both
  * member-level, matching the skills routes — no owner gating here.
+ *
+ * Prompt-injection controls (usePromptInjection): the skills.enabled switch, the
+ * {{SKILLS}}-placeholder alert (with legacy-template migration) and the editable
+ * skills.prompt section, mirroring the Memory tab.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
@@ -39,6 +43,7 @@ import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { buildImportPrompt } from "./skill-import-source";
+import { usePromptInjection } from "./prompt-injection-controls";
 
 /** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
 const UPLOAD_LABEL_CLASS =
@@ -57,12 +62,28 @@ interface PendingOverwrite {
   name: string;
 }
 
-export function SkillsTab({ agentId }: { agentId: string }) {
+export function SkillsTab({
+  agentId,
+  onConfigChanged,
+}: {
+  agentId: string;
+  /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
+  onConfigChanged?: () => void;
+}) {
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
   const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
+  // every other mutation on this tab.
+  const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
+    agentId,
+    feature: "skills",
+    strings: S.skills.injection,
+    canEdit: true,
+    onConfigChanged,
+  });
 
   const [skills, setSkills] = useState<SkillMetadataItem[] | null>(null);
   // Tab-level error is only the initial list load failure; row/import actions report via toast or inside the modal.
@@ -83,12 +104,17 @@ export function SkillsTab({ agentId }: { agentId: string }) {
     setSkills(null);
     setError(null);
     try {
-      const res = await api.getAgentSkills(projectId, agentId);
+      // The injection controls' state loads in parallel with the tab's own list.
+      const [res, configView] = await Promise.all([
+        api.getAgentSkills(projectId, agentId),
+        api.getAgentConfig(projectId, agentId),
+      ]);
       setSkills(res.skills);
+      applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -276,6 +302,9 @@ export function SkillsTab({ agentId }: { agentId: string }) {
         </Button>
       </div>
 
+      {toggleCard}
+      {alertStrip}
+
       {skills === null ? (
         <SkeletonList rows={4} />
       ) : skills.length === 0 ? (
@@ -340,6 +369,8 @@ export function SkillsTab({ agentId }: { agentId: string }) {
           ))}
         </div>
       )}
+
+      {promptSection}
 
       {/* Import modal: recommended chat install on top, zip upload below. */}
       <Modal
