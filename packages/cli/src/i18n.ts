@@ -185,8 +185,8 @@ export interface Messages {
   ): string;
   /** mcp_connect_begin event: the first run is connecting the configured MCP servers. */
   mcpConnectStart(servers: string[]): string;
-  /** mcp_connect_end event: total wall time; `failed` lists the servers that could not connect (empty = all ok). */
-  mcpConnectStop(durationMs: number, failed: string[]): string;
+  /** mcp_connect_end event: total wall time; `failed` lists the servers that could not connect (empty = all ok); `aborted` = the user interrupted mid-connect. */
+  mcpConnectStop(durationMs: number, failed: string[], aborted: boolean): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
@@ -434,10 +434,12 @@ const en: Messages = {
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
   mcpConnectStart: (servers) => `[mcp] connecting MCP servers (${servers.join(", ")})…`,
-  mcpConnectStop: (durationMs, failed) =>
-    failed.length === 0
-      ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
-      : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
+  mcpConnectStop: (durationMs, failed, aborted) =>
+    aborted
+      ? "[mcp] connect interrupted (finishing in the background; reused on the next run)"
+      : failed.length === 0
+        ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
@@ -665,10 +667,12 @@ const zh: Messages = {
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
   mcpConnectStart: (servers) => `[mcp] 正在连接 MCP Server（${servers.join("、")}）……`,
-  mcpConnectStop: (durationMs, failed) =>
-    failed.length === 0
-      ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
-      : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
+  mcpConnectStop: (durationMs, failed, aborted) =>
+    aborted
+      ? "[mcp] 连接已中断（后台继续建立，下次运行时复用）"
+      : failed.length === 0
+        ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"

@@ -386,6 +386,88 @@ describe("Session first-run bootstrap events", () => {
     }
   });
 
+  it("aborts mid-connect: closes the pair aborted and the next run reuses the same bootstrap", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [] },
+    });
+    const written: OmniMessage[] = [];
+    const session = new Session({
+      meta: {
+        session_id: "s-mcp-abort",
+        provider: "custom",
+        model_id: "m",
+        model_context_window: 1000,
+        system_prompt: "sp",
+        agent_state: tmp,
+        workspace: tmp,
+      },
+      bootstrap: async () => {
+        calls += 1;
+        await gate;
+        return { tools: [{ name: "t", description: "d" }], llm: fakeLLM, mcp: [] };
+      },
+      mcpServers: ["fx"],
+      environment: env,
+      trace: {
+        write: async (msg) => {
+          written.push(msg);
+        },
+      },
+      imagesDir: path.join(tmp, "scratch"),
+      modelHasVision: true,
+    });
+    try {
+      const ac = new AbortController();
+      const first: OmniMessage[] = [];
+      const run = (async () => {
+        for await (const msg of session.run([userText("go")], { signal: ac.signal })) {
+          first.push(msg);
+        }
+      })();
+      // Wait for the begin event to stream, then interrupt mid-connect.
+      for (let i = 0; i < 100 && first.length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      ac.abort();
+      await run;
+      const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
+      expect(firstTypes).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
+      expect((first[1]!.payload as { aborted?: boolean }).aborted).toBe(true);
+      // The pair and the abort reached the Trace too (after session_meta).
+      const writtenTypes = written.map(
+        (m) => (m.payload as { type?: string }).type ?? "session_meta",
+      );
+      expect(writtenTypes).toEqual([
+        "session_meta",
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "abort",
+      ]);
+
+      release();
+      const second: OmniMessage[] = [];
+      for await (const msg of session.run([userText("again")])) second.push(msg);
+      const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
+      expect(secondTypes.slice(0, 3)).toEqual([
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "session_tools",
+      ]);
+      expect((second[1]!.payload as { aborted?: boolean }).aborted).toBeUndefined();
+      expect(secondTypes).toContain("text");
+      // Single-flight: the aborted attempt's bootstrap was reused, never restarted.
+      expect(calls).toBe(1);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("records per-server connect outcomes, including failures", async () => {
     const provider = new McpToolProvider(
       [

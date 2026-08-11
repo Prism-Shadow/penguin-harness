@@ -365,12 +365,18 @@ export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginP
   return event({ type: "mcp_connect_begin", servers });
 }
 
-/** mcp_connect end event: per-server outcomes plus the total wall time of the connect + discovery phase. */
+/** mcp_connect end event: per-server outcomes plus the total wall time of the connect + discovery phase; `aborted` closes the pair on a user interruption mid-connect. */
 export function mcpConnectEnd(args: {
   durationMs: number;
   results: McpServerConnectResult[];
+  aborted?: boolean;
 }): OmniMessage<McpConnectEndPayload> {
-  return event({ type: "mcp_connect_end", duration_ms: args.durationMs, results: args.results });
+  return event({
+    type: "mcp_connect_end",
+    duration_ms: args.durationMs,
+    results: args.results,
+    ...(args.aborted === true ? { aborted: true } : {}),
+  });
 }
 
 /** Adds two sets of Token counts together, used to maintain cumulative Session usage. */

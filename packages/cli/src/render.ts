@@ -815,7 +815,9 @@ export class StreamRenderer {
         const p = payload as McpConnectEndPayload;
         this.finishLine();
         const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
-        this.out.write(`${dim(this.t.mcpConnectStop(p.duration_ms, failed), this.c)}\n`);
+        this.out.write(
+          `${dim(this.t.mcpConnectStop(p.duration_ms, failed, p.aborted === true), this.c)}\n`,
+        );
         this.lastLineKey = null;
       } else if (payload.type === "session_tools") {
         // Not rendered; the tool list settles each tool's preview path (description argument).

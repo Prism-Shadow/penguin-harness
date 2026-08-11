@@ -199,6 +199,8 @@ interface McpConnectEndPayload {
   type: "mcp_connect_end";
   duration_ms: number;        // 连接 + 工具发现的总耗时;Trace 时间线渲染为一个 span
   results: McpServerConnectResult[];
+  aborted?: boolean;          // 用户在连接中打断:事件对就此闭合(results 通常为空),
+                              // 连接在后台继续完成,下次 run 直接复用而非重连
 }
 
 interface McpServerConnectResult {

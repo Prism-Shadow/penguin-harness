@@ -111,7 +111,8 @@ export function summarizeEvent(msg: OmniMessage): string {
       const parts = results.map(
         (r) => `${String(r.server)}:${String(r.status)}(${String(r.duration_ms)}ms)`,
       );
-      return `${String(p["duration_ms"])}ms · ${parts.join(" ")}`;
+      const head = p["aborted"] === true ? "aborted · " : "";
+      return `${head}${String(p["duration_ms"])}ms · ${parts.join(" ")}`;
     }
     case "session_tools":
       return Array.isArray(p["tools"]) ? `${p["tools"].length} tools` : "";

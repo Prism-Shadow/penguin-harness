@@ -32,6 +32,7 @@ import type {
   TraceFileInfo,
   TraceImportResponse,
   TraceModelSegment,
+  TraceOtherSpan,
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
@@ -557,6 +558,7 @@ export class TraceService {
     // tool_call_output have already come back).
     const modelSegments: TraceModelSegment[] = [];
     const toolSpans: TraceToolSpan[] = [];
+    const otherSpans: TraceOtherSpan[] = [];
     const openSpansById = new Map<string, TraceToolSpan>();
     // Open mcp_connect_begin (first-run MCP connect + discovery), closed by its end event
     // into a synthetic tool span so the timeline shows the wait ahead of the next Task.
@@ -787,19 +789,21 @@ export class TraceService {
         } else if (p.type === "mcp_connect_begin") {
           if (!hasOrigin) openMcpConnect = { beginTs: msg.timestamp };
         } else if (p.type === "mcp_connect_end") {
-          // The connect pair becomes a synthetic tool span attached to the FOLLOWING Task
-          // (taskIndex + 1: Task 0 at file start; after an in-file resume, the next Task),
-          // so the timeline renders the pre-request connect wait inside that Task's group.
+          // The connect pair becomes an "other" span (not a tool span — nothing was
+          // called) attached to the FOLLOWING Task (taskIndex + 1: Task 0 at file start;
+          // after an in-file resume, the next Task), so the timeline renders the
+          // pre-request connect wait inside that Task's group under its own lane.
           if (!hasOrigin && openMcpConnect) {
-            const results = (p as { results?: { status?: string }[] }).results ?? [];
-            const failed = results.filter((r) => r.status === "failed").length;
-            toolSpans.push({
-              toolCallId: `mcp-connect-${openMcpConnect.beginTs}`,
+            const q = p as { results?: { status?: string }[]; aborted?: boolean };
+            const failed =
+              (q.results ?? []).some((r) => r.status === "failed") || q.aborted === true;
+            otherSpans.push({
+              key: `mcp-connect-${openMcpConnect.beginTs}`,
               name: "mcp connect",
-              callTs: openMcpConnect.beginTs,
-              outputTs: msg.timestamp,
-              stopReason: failed > 0 ? "failed" : "completed",
+              startTs: openMcpConnect.beginTs,
+              endTs: msg.timestamp,
               taskIndex: taskIndex + 1,
+              ...(failed ? { failed: true } : {}),
             });
             openMcpConnect = null;
           }
@@ -990,6 +994,7 @@ export class TraceService {
       toolCalls,
       modelSegments,
       toolSpans,
+      otherSpans,
       reconnectCount,
       compactionCount,
       usageTrend,

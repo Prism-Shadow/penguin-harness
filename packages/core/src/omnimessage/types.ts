@@ -442,6 +442,13 @@ export interface McpConnectEndPayload {
   type: "mcp_connect_end";
   duration_ms: number;
   results: McpServerConnectResult[];
+  /**
+   * True when the user aborted the run mid-connect: the pair closes with whatever was
+   * known (usually an empty `results`), the run ends without an engine, and the connect
+   * itself keeps completing in the background — the next run reuses it instead of
+   * reconnecting.
+   */
+  aborted?: boolean;
 }
 
 // ---------------------------------------------------------------------------

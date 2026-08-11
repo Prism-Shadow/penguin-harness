@@ -17,7 +17,13 @@
  * from the streamed OmniMessage on its own.
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
-import { mcpConnectBegin, mcpConnectEnd, sessionMeta, sessionTools } from "./omnimessage/index.js";
+import {
+  abortEvent,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  sessionMeta,
+  sessionTools,
+} from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   OmniMessage,
@@ -115,6 +121,33 @@ export interface GoalRunOptions {
 export type SessionRunOptions = RunOptions & { goal?: GoalRunOptions };
 
 /**
+ * Awaits `work` unless `signal` aborts first — the abort side never cancels `work`
+ * (deliberate: see the bootstrap single-flight). Settles immediately when the signal is
+ * already aborted.
+ */
+function raceAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<{ value: T } | "aborted"> {
+  if (!signal) return work.then((value) => ({ value }));
+  if (signal.aborted) return Promise.resolve("aborted");
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => resolve("aborted");
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve({ value });
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
+/**
  * Caps on captured title material (chars per side); accumulation stops once exceeded. The
  * assistant body is capped tighter: a title only needs the opening of the answer, and hosts
  * may start generating as soon as this much body text has streamed (see the Web server's
@@ -152,6 +185,14 @@ export class Session {
 
   /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
   private engine: ContextEngine | null = null;
+  /**
+   * Single-flight bootstrap: started by the first `ensureReady`, shared by every later
+   * one. An abort mid-connect does NOT cancel it — the connect keeps completing in the
+   * background and the next run awaits the same promise instead of reconnecting. Only a
+   * rejection clears it, so a failed bootstrap (bad resume history, LLM construction)
+   * can be retried by a later run.
+   */
+  private bootstrapPromise: ReturnType<SessionConfig["bootstrap"]> | null = null;
   private readonly bootstrap: SessionConfig["bootstrap"];
   private readonly mcpServers: string[];
   /** Engine dependencies minus the LLM (which the bootstrap provides); kept whole so ensureReady can construct the engine late. */
@@ -253,7 +294,8 @@ export class Session {
   ): AsyncGenerator<OmniMessage> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
-    yield* this.ensureReady();
+    const ready = yield* this.ensureReady(opts?.signal);
+    if (!ready) return; // Aborted mid-bootstrap: the run ends here; the connect finishes in the background for the next run to reuse.
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
@@ -291,20 +333,51 @@ export class Session {
    * connecting status). The resolved toolset then flows as one `session_tools` event —
    * split out of session_meta precisely so the meta never has to wait for this phase.
    * All three are streamed live and written to the Trace best-effort (same stance as
-   * session_meta). No-op after the engine exists; a failed bootstrap (unreadable resume
-   * history, LLM construction) throws to the caller and leaves the engine unbuilt, so a
-   * later run can retry.
+   * session_meta).
+   *
+   * Returns false when `signal` aborts mid-bootstrap: the pair closes with
+   * `aborted: true`, a standard abort event follows (frontends render the usual
+   * interruption line), and the caller ends the run — while the single-flight bootstrap
+   * keeps completing in the background so the next run reuses it instead of
+   * reconnecting. No-op returning true once the engine exists; a rejected bootstrap
+   * (unreadable resume history, LLM construction) throws to the caller and clears the
+   * single-flight, so a later run can retry.
    */
-  private async *ensureReady(): AsyncGenerator<OmniMessage> {
+  private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
     await this.ensureMetaWritten();
-    if (this.engine) return;
+    if (this.engine) return true;
     const startedAt = performance.now();
     if (this.mcpServers.length > 0) {
       const begin = mcpConnectBegin(this.mcpServers);
       yield begin;
       await this.writeTrace(begin, "mcp_connect_begin");
     }
-    const { tools, llm, mcp } = await this.bootstrap();
+    if (this.bootstrapPromise === null) {
+      const started = this.bootstrap();
+      // A rejection clears the single-flight for retry — and this handler also keeps an
+      // aborted-and-abandoned bootstrap from surfacing as an unhandled rejection.
+      started.catch(() => {
+        if (this.bootstrapPromise === started) this.bootstrapPromise = null;
+      });
+      this.bootstrapPromise = started;
+    }
+    const outcome = await raceAbort(this.bootstrapPromise, signal);
+    if (outcome === "aborted") {
+      if (this.mcpServers.length > 0) {
+        const end = mcpConnectEnd({
+          durationMs: Math.round(performance.now() - startedAt),
+          results: [],
+          aborted: true,
+        });
+        yield end;
+        await this.writeTrace(end, "mcp_connect_end");
+      }
+      const aborted = abortEvent("user");
+      yield aborted;
+      await this.writeTrace(aborted, "abort");
+      return false;
+    }
+    const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
       const end = mcpConnectEnd({
         durationMs: Math.round(performance.now() - startedAt),
@@ -317,6 +390,7 @@ export class Session {
     yield toolsMsg;
     await this.writeTrace(toolsMsg, "session_tools");
     this.engine = new ContextEngine({ ...this.engineDeps, llm, sessionTools: toolsMsg });
+    return true;
   }
 
   /**

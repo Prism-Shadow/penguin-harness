@@ -202,6 +202,9 @@ interface McpConnectEndPayload {
   duration_ms: number;        // total connect + discovery wall time; the Trace timeline
                               // renders the pair as one span
   results: McpServerConnectResult[];
+  aborted?: boolean;          // the user interrupted mid-connect: the pair closes here
+                              // (results usually empty) while the connect completes in
+                              // the background — the next run reuses it, no reconnect
 }
 
 interface McpServerConnectResult {

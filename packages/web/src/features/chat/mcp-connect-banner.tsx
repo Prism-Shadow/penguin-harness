@@ -19,7 +19,9 @@ export function McpConnectBanner({ item }: { item: McpConnectItem }) {
   }
   return (
     <p className="my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-      {S.chat.mcpConnectDone(item.durationMs ?? 0, item.failed ?? [])}
+      {item.aborted
+        ? S.chat.mcpConnectAborted
+        : S.chat.mcpConnectDone(item.durationMs ?? 0, item.failed ?? [])}
     </p>
   );
 }

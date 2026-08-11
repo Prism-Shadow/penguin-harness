@@ -265,6 +265,8 @@ export interface McpConnectItem {
   durationMs?: number;
   /** Servers that failed to connect (empty list omitted). */
   failed?: string[];
+  /** The user aborted the run mid-connect (the connect completes in the background for the next run). */
+  aborted?: boolean;
 }
 
 export interface TaskStatsItem {
@@ -1340,6 +1342,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (!item) return;
       item.running = false;
       item.durationMs = p.duration_ms;
+      if (p.aborted === true) item.aborted = true;
       const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
       if (failed.length > 0) item.failed = failed;
       return;

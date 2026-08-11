@@ -993,6 +993,8 @@ Scenarios:
       failed.length === 0
         ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
+    mcpConnectAborted:
+      "[mcp] connect interrupted (finishing in the background; reused on the next send)",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
     compactionDone: (mode: string) =>
       mode === "discard"
@@ -1152,6 +1154,7 @@ Scenarios:
     kindModelReply: "model reply",
     kindToolGen: "tool call gen",
     legendToolExec: "tool exec",
+    legendOther: "Other",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",

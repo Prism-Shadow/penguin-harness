@@ -22,7 +22,11 @@
  */
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import type { TraceModelSegment, TraceToolSpan } from "@prismshadow/penguin-server/api";
+import type {
+  TraceModelSegment,
+  TraceOtherSpan,
+  TraceToolSpan,
+} from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 
@@ -51,6 +55,8 @@ const COLORS = {
   toolgen: "bg-amber-500 dark:bg-amber-400",
   approvalWait: "bg-rose-400 dark:bg-rose-300",
   exec: "bg-emerald-500 dark:bg-emerald-400",
+  // Non-tool auxiliary phases (MCP connect): their own legend category, not tool execution.
+  other: "bg-fuchsia-500 dark:bg-fuchsia-400",
 } as const;
 
 /**
@@ -126,17 +132,35 @@ interface TaskGroup {
   taskIndex: number;
   segs: PlacedSegment[];
   spans: PlacedSpan[];
+  others: PlacedOther[];
   t0: number;
   total: number;
   toolNames: string[];
 }
 
-function buildGroups(segments: TraceModelSegment[], toolSpans: TraceToolSpan[]): TaskGroup[] {
-  const byTask = new Map<number, { segs: PlacedSegment[]; spans: PlacedSpan[] }>();
+/** A placed "other" bar (non-tool auxiliary phase, e.g. MCP connect): one lane per span. */
+interface PlacedOther {
+  key: string;
+  name: string;
+  ts: string;
+  startMs: number;
+  endMs: number;
+  failed: boolean;
+}
+
+function buildGroups(
+  segments: TraceModelSegment[],
+  toolSpans: TraceToolSpan[],
+  otherSpans: TraceOtherSpan[],
+): TaskGroup[] {
+  const byTask = new Map<
+    number,
+    { segs: PlacedSegment[]; spans: PlacedSpan[]; others: PlacedOther[] }
+  >();
   const bucket = (i: number) => {
     let b = byTask.get(i);
     if (!b) {
-      b = { segs: [], spans: [] };
+      b = { segs: [], spans: [], others: [] };
       byTask.set(i, b);
     }
     return b;
@@ -172,20 +196,43 @@ function buildGroups(segments: TraceModelSegment[], toolSpans: TraceToolSpan[]):
     });
   }
 
+  for (const o of otherSpans) {
+    const startMs = msOf(o.startTs);
+    const endMs = msOf(o.endTs);
+    if (startMs === null || endMs === null) continue;
+    bucket(o.taskIndex).others.push({
+      key: o.key,
+      name: o.name,
+      // Event-list linkage anchors on the closing event's timestamp (the mcp_connect_end row).
+      ts: o.endTs,
+      startMs,
+      endMs,
+      failed: o.failed === true,
+    });
+  }
+
   const groups: TaskGroup[] = [];
-  for (const [taskIndex, { segs, spans }] of [...byTask.entries()].sort((a, b) => a[0] - b[0])) {
-    if (segs.length === 0 && spans.length === 0) continue;
-    const starts = [...segs.map((s) => s.startMs), ...spans.map((s) => s.callMs)];
+  for (const [taskIndex, { segs, spans, others }] of [...byTask.entries()].sort(
+    (a, b) => a[0] - b[0],
+  )) {
+    if (segs.length === 0 && spans.length === 0 && others.length === 0) continue;
+    const starts = [
+      ...segs.map((s) => s.startMs),
+      ...spans.map((s) => s.callMs),
+      ...others.map((o) => o.startMs),
+    ];
     const ends = [
       ...segs.map((s) => s.endMs),
       ...spans.map((s) => s.outputMs ?? s.approvalMs ?? s.callMs),
+      ...others.map((o) => o.endMs),
     ];
     const t0 = Math.min(...starts);
     const tEnd = Math.max(...ends, ...starts);
     const total = Math.max(1, tEnd - t0);
     spans.sort((a, b) => a.callMs - b.callMs);
+    others.sort((a, b) => a.startMs - b.startMs);
     const toolNames = [...new Set(spans.map((s) => s.name))];
-    groups.push({ taskIndex, segs, spans, t0, total, toolNames });
+    groups.push({ taskIndex, segs, spans, others, t0, total, toolNames });
   }
   return groups;
 }
@@ -242,6 +289,7 @@ function Ticks({ total }: { total: number }) {
 export function TimelineChart({
   segments,
   toolSpans,
+  otherSpans = [],
   highlight,
   onHighlight,
   onJump,
@@ -249,6 +297,8 @@ export function TimelineChart({
 }: {
   segments: TraceModelSegment[];
   toolSpans: TraceToolSpan[];
+  /** Non-tool auxiliary phases (MCP connect): rendered in their own lanes under the "other" legend. */
+  otherSpans?: TraceOtherSpan[];
   highlight?: TraceHighlight | null;
   onHighlight?: (h: TraceHighlight | null) => void;
   /** Click a bar: jump to and briefly highlight the message at that moment. */
@@ -256,7 +306,10 @@ export function TimelineChart({
   /** Hide the "Round N" label when embedded in the "grouped by Task" view (the group header already shows it). */
   hideTaskLabel?: boolean;
 }) {
-  const groups = useMemo(() => buildGroups(segments, toolSpans), [segments, toolSpans]);
+  const groups = useMemo(
+    () => buildGroups(segments, toolSpans, otherSpans),
+    [segments, toolSpans, otherSpans],
+  );
   /**
    * This chart's bar index: timestamp → the **first** bar's key (in render
    * order), plus the set of every bar's key.
@@ -284,6 +337,7 @@ export function TimelineChart({
         if (s.approvalMs === null && s.outputMs === null) put(s.callTs, `p-${s.toolCallId}`);
         else put(s.outputTsRaw ?? s.callTs, `e-${s.toolCallId}`);
       }
+      for (const o of g.others) put(o.ts, `o-${o.key}`);
     }
     return { firstBarKeyByTs: m, barKeys: keys };
   }, [groups]);
@@ -373,6 +427,7 @@ export function TimelineChart({
     { key: "toolgen", className: COLORS.toolgen, label: S.traces.kindToolGen },
     { key: "approvalWait", className: COLORS.approvalWait, label: S.traces.legendApprovalWait },
     { key: "exec", className: COLORS.exec, label: S.traces.legendToolExec },
+    { key: "other", className: COLORS.other, label: S.traces.legendOther },
   ];
 
   // —— Slider (Premiere-style): drag the body to pan, drag either handle to zoom, double-click to reset ——
@@ -569,6 +624,36 @@ export function TimelineChart({
                                 />
                               );
                             })()}
+                      </Track>
+                    </div>
+                  );
+                })}
+
+                {/* Non-tool auxiliary phases (MCP connect): one lane each, own legend category */}
+                {g.others.map((o) => {
+                  const dim = dimClass(
+                    isActive(`o-${o.key}`),
+                    legendKey === null || legendKey === "other",
+                  );
+                  return (
+                    <div key={o.key} className="flex items-center">
+                      <span
+                        className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
+                        title={o.name}
+                      >
+                        <span className={LABEL_TEXT}>{o.name}</span>
+                      </span>
+                      <Track>
+                        <span
+                          onMouseEnter={() => enter(`o-${o.key}`, o.ts)}
+                          onMouseLeave={leave}
+                          onClick={() => onJump?.(o.ts)}
+                          title={`${o.name} · ${S.traces.legendOther} · ${humanizeDuration(o.endMs - o.startMs)}`}
+                          className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.other} ${
+                            o.failed ? "ring-1 ring-red-500" : ""
+                          } ${dim}`}
+                          style={placeExact(o.startMs, o.endMs, g.t0, g.total)}
+                        />
                       </Track>
                     </div>
                   );
