@@ -296,7 +296,7 @@ export class Session {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
     const ready = yield* this.ensureReady(opts?.signal);
-    if (!ready) return; // Aborted mid-bootstrap: the run ends here; the connect finishes in the background for the next run to reuse.
+    if (!ready) return; // Aborted mid-bootstrap: the attempt is cancelled (cancelBootstrap); the next run reconnects from scratch.
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
@@ -501,7 +501,7 @@ export class Session {
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
     // Before the first run there is no context to compact: stay a strict no-op, without
     // bootstrapping — a session that never ran must not leave trace records (meta /
-    // session_tools) behind, or an untouched session would look resumable.
+    // tool_list_ready) behind, or an untouched session would look resumable.
     if (!this.engine) return;
     yield* this.engine.compact(opts);
   }
@@ -523,7 +523,7 @@ export class Session {
     this.metaWritten = true;
   }
 
-  /** Best-effort Trace write shared by the bootstrap records (session_meta / mcp_connect / session_tools / goal_finished stance): a failure logs and never interrupts the run. */
+  /** Best-effort `session_meta` Trace write (warn-and-continue stance): a failure logs and never interrupts the run. */
   private async writeTrace(msg: OmniMessage, label: string): Promise<void> {
     if (!this.trace) return;
     try {

@@ -365,7 +365,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
    * Spawns through the real runner and reads the child session_meta — the first message
    * handle.run yields, emitted before any LLM request. The child's effective thinking
    * level is no longer in session_meta (invariants only): the stream is advanced up to
-   * the child's session_tools event — the point where the lazy bootstrap has constructed
+   * the child's tool_list_ready event — the point where the lazy bootstrap has constructed
    * the LLM — and the captured config (the last one pushed) is read there; the generator
    * is closed right after, so nothing is ever sent upstream.
    */

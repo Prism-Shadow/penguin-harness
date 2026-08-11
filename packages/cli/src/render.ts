@@ -364,7 +364,7 @@ export class StreamRenderer {
   private mcpConnectStartMs: number | null = null;
   /**
    * Names of the tools whose assembled schema carries the `description` argument (from
-   * `session_meta.tools`, i.e. after the per-tool `call_description` switch has been
+   * the `tool_list_ready` event, i.e. after the per-tool `call_description` switch has been
    * applied). Decides the preview path before a call's arguments stream: awaiting the
    * description, or streaming the plain form right away (see tool-render.ts). An unknown
    * tool falls back to "no description".

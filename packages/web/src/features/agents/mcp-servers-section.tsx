@@ -29,6 +29,7 @@ import {
   emptyMcpForm,
   formToServer,
   serverToForm,
+  transportOf,
   type McpFormError,
   type McpFormField,
   type McpServerFormState,
@@ -49,6 +50,8 @@ function errorText(err: McpFormError | undefined): string | undefined {
       return S.agent.mcpLineInvalid(err.line ?? 1);
     case "number":
       return S.agent.mcpNumberInvalid;
+    case "duplicate":
+      return S.agent.mcpDuplicateName;
   }
 }
 
@@ -224,11 +227,11 @@ export function McpServersSection({
       setFieldErrors(built.errors);
       return;
     }
-    // Same-name collision against the other rows (the edited row may keep its own name).
+    // Same-name collision against the other rows (the edited row may keep its own name);
+    // rendered under the name field itself, like every other validation error.
     const clash = servers.some((s, i) => i !== editIndex && s.name === built.server.name);
     if (clash) {
-      setFieldErrors({ name: { code: "required" } });
-      setModalError(S.agent.mcpDuplicateName);
+      setFieldErrors({ name: { code: "duplicate" } });
       return;
     }
     const next =
@@ -299,7 +302,7 @@ export function McpServersSection({
                 >
                   <td className="px-3 py-2 font-mono text-xs">{entry.name}</td>
                   <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
-                    {serverToForm(entry).transport}
+                    {transportOf(entry)}
                   </td>
                   <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
                     {targetOf(entry)}

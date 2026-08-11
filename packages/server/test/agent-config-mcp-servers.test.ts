@@ -71,7 +71,7 @@ describe("agent config: mcpServers", () => {
       expect(body.latencyMs).toBeGreaterThanOrEqual(0);
     });
 
-    it("reports an unreachable server as ok: false with the warning detail", async () => {
+    it("reports an unreachable server as ok: false with the connect failure detail", async () => {
       const res = await owner.post(`${configPath}/mcp-test`, {
         name: "broken",
         config: { command: "definitely-not-a-real-command-xyz" },
@@ -79,7 +79,9 @@ describe("agent config: mcpServers", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { ok: boolean; error?: string };
       expect(body.ok).toBe(false);
-      expect(body.error).toMatch(/unavailable/);
+      // The verdict and detail come from the per-server connect outcome (the raw spawn /
+      // connect error), not from the warning text — benign warnings must not fail a probe.
+      expect(body.error).toMatch(/definitely-not-a-real-command-xyz/);
     });
 
     it("rejects a malformed entry with 400 before attempting to connect", async () => {

@@ -1311,6 +1311,16 @@ export class SessionManager {
           if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
             entry.pendingBootstrap.push(msg);
           }
+          // First request of the run: the engine writes input → bootstrap records → tool
+          // list to the Trace BEFORE issuing the request, so both holds are persisted by
+          // now — end them here rather than at idle. Holding for the whole run would
+          // outlive the messages endpoint's tail-window dedup: once the Task appends
+          // more records than the window, the input would be judged "not yet in the
+          // Trace" and served a second time at the end of history.
+          if (bt === "request_begin") {
+            entry.pendingInputs = [];
+            entry.pendingBootstrap = [];
+          }
         }
         // Live-tail bookkeeping in the same synchronous tick as the publish below: the
         // messages endpoint captures "channel cursor + open fragments" between two

@@ -510,6 +510,22 @@ describe("Session first-run bootstrap events", () => {
       await provider.close();
     }
   });
+
+  it("skips tools whose prefixed name is unusable for LLM APIs, with a warning (count excludes them)", async () => {
+    const warnings: string[] = [];
+    const provider = new McpToolProvider([fixtureEntry()], { warn: (m) => warnings.push(m) });
+    try {
+      const tools = await provider.listTools();
+      // The fixture's "dot.name" tool is listed by the server but never registered: one
+      // unusable name in the schema list would 400 every request of the Session.
+      expect(tools.map((t) => t.name)).not.toContain("mcp__fx__dot.name");
+      expect(tools).toHaveLength(6);
+      expect(provider.connectResults()[0]).toMatchObject({ status: "completed", tools: 6 });
+      expect(warnings.some((w) => w.includes('"dot.name"') && w.includes("skipped"))).toBe(true);
+    } finally {
+      await provider.close();
+    }
+  });
 });
 
 describe("MCP over Streamable HTTP", () => {

@@ -64,4 +64,12 @@ server.registerTool(
   async () => ({ content: [{ type: "text", text: "x".repeat(500) }] }),
 );
 
+// MCP does not restrict tool names to the LLM APIs' [A-Za-z0-9_-] contract; the bridge
+// must skip this one with a warning (every count assertion staying at 6 proves it).
+server.registerTool(
+  "dot.name",
+  { description: "Unusable as an LLM tool name.", inputSchema: z.object({}) },
+  async () => ({ content: [{ type: "text", text: "never callable" }] }),
+);
+
 await server.connect(new StdioServerTransport());

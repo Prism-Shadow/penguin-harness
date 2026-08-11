@@ -42,7 +42,14 @@ export type McpFormField =
   | "timeoutMs"
   | "maxOutputLength";
 
-export type McpFormErrorCode = "required" | "name_charset" | "url_invalid" | "kv_line" | "number";
+export type McpFormErrorCode =
+  | "required"
+  | "name_charset"
+  | "url_invalid"
+  | "kv_line"
+  | "number"
+  /** Same-name collision against the other configured entries (set by the section, not formToServer). */
+  | "duplicate";
 
 export interface McpFormError {
   code: McpFormErrorCode;
@@ -111,15 +118,20 @@ function mapToLines(value: unknown, sep: string): string {
     .join("\n");
 }
 
+/** Effective transport of a stored entry (same inference as the core resolver: explicit wins, else url → http, command → stdio). */
+export function transportOf(entry: MCPServerConfig): McpTransportKind {
+  const c = entry.config;
+  return c["transport"] === "http" || c["transport"] === "sse" || c["transport"] === "stdio"
+    ? c["transport"]
+    : typeof c["url"] === "string"
+      ? "http"
+      : "stdio";
+}
+
 /** Loads a stored entry into form state (tolerates loosely-shaped configs). */
 export function serverToForm(entry: MCPServerConfig): McpServerFormState {
   const c = entry.config;
-  const transport =
-    c["transport"] === "http" || c["transport"] === "sse" || c["transport"] === "stdio"
-      ? c["transport"]
-      : typeof c["url"] === "string"
-        ? "http"
-        : "stdio";
+  const transport = transportOf(entry);
   const extras: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(c)) {
     if (!KNOWN_CONFIG_KEYS.has(k)) extras[k] = v;

@@ -77,8 +77,8 @@ function readStringMap(value: unknown): Record<string, string> | undefined | nul
   return out;
 }
 
-/** Reads an optional positive-integer millisecond field; null = invalid, undefined = absent. */
-function readMs(value: unknown): number | undefined | null {
+/** Reads an optional positive-integer field (ms budgets, char caps); null = invalid, undefined = absent. */
+function readPositiveInt(value: unknown): number | undefined | null {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
   return Math.floor(value);
@@ -164,13 +164,13 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
     transport = { kind, url, ...(headers !== undefined ? { headers } : {}) };
   }
 
-  const connectTimeoutMs = readMs(config["connectTimeoutMs"]);
+  const connectTimeoutMs = readPositiveInt(config["connectTimeoutMs"]);
   if (connectTimeoutMs === null) {
     throw new Error(`"connectTimeoutMs" must be a positive number of milliseconds`);
   }
-  const timeoutMs = readMs(config["timeoutMs"]);
+  const timeoutMs = readPositiveInt(config["timeoutMs"]);
   if (timeoutMs === null) throw new Error(`"timeoutMs" must be a positive number of milliseconds`);
-  const maxOutputLength = readMs(config["maxOutputLength"]);
+  const maxOutputLength = readPositiveInt(config["maxOutputLength"]);
   if (maxOutputLength === null) throw new Error(`"maxOutputLength" must be a positive number`);
 
   return {

@@ -5,6 +5,9 @@
  * analogue of a skill update) and POST …/config/mcp-test to probe one MCP Server
  * entry's reachability. Members can read and write (unrestricted).
  */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { McpToolProvider, resolveMCPServer } from "@prismshadow/penguin-core";
 import type { MCPServerConfig } from "@prismshadow/penguin-core";
@@ -16,6 +19,9 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalString, readJson, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
+
+/** Ceiling on a single mcp-test probe's connect budget (an entry may configure minutes). */
+const MCP_TEST_TIMEOUT_CAP_MS = 30_000;
 
 export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -73,21 +79,38 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
       throw badRequest("config must be an object.");
     }
     const entry = { name: body.name, config: body.config } as MCPServerConfig;
+    let resolved;
     try {
-      resolveMCPServer(entry);
+      resolved = resolveMCPServer(entry);
     } catch (err) {
       throw badRequest(err instanceof Error ? err.message : String(err));
     }
+    // A probe must not hold a request open arbitrarily long (the bulk test walks every
+    // server sequentially): the entry's own connect budget applies, capped for testing.
+    if (resolved.connectTimeoutMs > MCP_TEST_TIMEOUT_CAP_MS) {
+      entry.config = { ...entry.config, connectTimeoutMs: MCP_TEST_TIMEOUT_CAP_MS };
+    }
     const warnings: string[] = [];
-    const provider = new McpToolProvider([entry], { warn: (m) => warnings.push(m) });
+    // A fresh empty directory stands in for the Session Workspace (a new session's
+    // temporary workspace is exactly that), so a stdio server that resolves relative
+    // paths behaves like it will at runtime — not like the server process's own cwd.
+    const workspaceDir = await mkdtemp(join(tmpdir(), "penguin-mcp-test-"));
+    const provider = new McpToolProvider([entry], {
+      workspaceDir,
+      warn: (m) => warnings.push(m),
+    });
     const startedAt = Date.now();
     try {
       const tools = await provider.listTools();
       const latencyMs = Date.now() - startedAt;
-      if (warnings.length > 0) {
+      // Verdict comes from the connect outcome itself, not from the warning count:
+      // benign warnings (a tool listed twice / an LLM-unusable tool name) must not
+      // report a healthy server as failed.
+      const outcome = provider.connectResults()[0];
+      if (outcome === undefined || outcome.status !== "completed") {
         return c.json({
           ok: false,
-          error: warnings.join("; "),
+          error: outcome?.error ?? (warnings.length > 0 ? warnings.join("; ") : "connect failed"),
           latencyMs,
         } satisfies McpServerTestResponse);
       }
@@ -98,6 +121,7 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
       } satisfies McpServerTestResponse);
     } finally {
       await provider.close();
+      void rm(workspaceDir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 

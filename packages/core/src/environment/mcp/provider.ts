@@ -35,6 +35,7 @@ import type { CallToolResult, FetchLike, Tool, Transport } from "@modelcontextpr
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/client/stdio";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage } from "../../omnimessage/index.js";
+import { VERSION } from "../../index.js";
 import type { MCPServerConfig, ToolDefinition, ToolPermission } from "../../interfaces.js";
 import type { BuiltinTool, ToolResult } from "../tools/types.js";
 import { resolveMCPServers, type ResolvedMCPServer } from "./config.js";
@@ -48,6 +49,15 @@ export function mcpToolName(serverName: string, toolName: string): string {
 }
 
 /**
+ * What LLM APIs accept as a tool name (the strictest common contract: `[a-zA-Z0-9_-]`,
+ * ≤128 chars). MCP itself does not restrict tool names — `slack.postMessage`-style names
+ * exist in the wild — and ONE unusable name in the schema list would 400 every request of
+ * the Session, so tools that don't fit are skipped with a warning (never block, matching
+ * the module's warn-and-skip stance).
+ */
+const LLM_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
+
+/**
  * Largest delay setTimeout can represent (~24.8 days): used as the SDK per-request timeout
  * so it never fires before Environment's own tool timeout, which is the single authority
  * (it aborts the shared signal; a larger value would overflow to an immediate fire).
@@ -57,8 +67,15 @@ const MAX_SDK_TIMEOUT_MS = 2_147_483_647;
 /** Rolling stderr tail kept per stdio server for connect-failure diagnostics (chars). */
 const STDERR_TAIL_LIMIT = 2048;
 
-/** MCP handshake client info; informational only (shows up in server logs). */
-const CLIENT_INFO = { name: "penguin-harness", version: "0.2.1" };
+/**
+ * MCP handshake client info; informational only (shows up in server logs). A function,
+ * not a const: the VERSION import is circular (index → agent → environment → here), so
+ * the live binding must be read at connect time, after every module has evaluated —
+ * a top-level read would hit the temporal dead zone.
+ */
+function clientInfo(): { name: string; version: string } {
+  return { name: "penguin-harness", version: VERSION };
+}
 
 export interface McpToolProviderOptions {
   /** Session Workspace: the default working directory for stdio server processes. */
@@ -290,14 +307,20 @@ export class McpToolProvider {
     }
     this.connectAbort = null;
     this.results = settled.map((s) => s.result);
-    for (const { conn } of settled) {
+    for (const { conn, result } of settled) {
       if (!conn) continue;
       if (this.closed) {
         void conn.client.close().catch(() => {});
         continue;
       }
       this.connections.push(conn);
-      for (const tool of conn.tools) this.register(conn, tool);
+      let registered = 0;
+      for (const tool of conn.tools) {
+        if (this.register(conn, tool)) registered += 1;
+      }
+      // The reported count is what actually joined the toolset (duplicates and
+      // LLM-unusable names are skipped), keeping it consistent with tool_list_ready.
+      result.tools = registered;
     }
   }
 
@@ -305,7 +328,7 @@ export class McpToolProvider {
     server: ResolvedMCPServer,
     signal?: AbortSignal,
   ): Promise<McpConnection> {
-    const client = new Client(CLIENT_INFO);
+    const client = new Client(clientInfo());
     let stderrTail = "";
     let transport: Transport;
     const t = server.transport;
@@ -340,12 +363,17 @@ export class McpToolProvider {
       );
     }
     try {
+      const startedAt = Date.now();
       await client.connect(transport, {
         timeout: server.connectTimeoutMs,
         ...(signal ? { signal } : {}),
       });
+      // One budget covers connect + discovery: the SDK's `timeout` is per-request, so
+      // discovery gets whatever the handshake left over — granting the full value to
+      // both calls would let the worst case run to twice the documented total.
+      const remainingMs = Math.max(1, server.connectTimeoutMs - (Date.now() - startedAt));
       const listed = await client.listTools(undefined, {
-        timeout: server.connectTimeoutMs,
+        timeout: remainingMs,
         ...(signal ? { signal } : {}),
       });
       return { server, client, tools: listed.tools };
@@ -357,13 +385,21 @@ export class McpToolProvider {
     }
   }
 
-  private register(conn: McpConnection, tool: Tool): void {
+  /** Returns whether the tool joined the toolset (skips are warned, never thrown). */
+  private register(conn: McpConnection, tool: Tool): boolean {
     const name = mcpToolName(conn.server.name, tool.name);
+    if (!LLM_TOOL_NAME_PATTERN.test(name)) {
+      this.warn(
+        `MCP server "${conn.server.name}" tool "${tool.name}" skipped: the prefixed name ` +
+          `is not usable as an LLM tool name (allowed: letters, digits, _ and -, ≤128 chars total).`,
+      );
+      return false;
+    }
     if (this.byName.has(name)) {
       this.warn(
         `MCP server "${conn.server.name}" listed tool "${tool.name}" twice; keeping the first.`,
       );
-      return;
+      return false;
     }
     const description =
       tool.description ?? tool.title ?? `MCP tool "${tool.name}" on server "${conn.server.name}".`;
@@ -416,5 +452,6 @@ export class McpToolProvider {
         ? { parameters: wrapper.definition.parameters }
         : {}),
     });
+    return true;
   }
 }
