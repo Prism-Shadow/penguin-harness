@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 9
-updated: 2026-08-04T00:00:00Z
+version: 10
+updated: 2026-08-11T06:58:05Z
 ---
 
 # Agent Optimization
@@ -64,7 +64,7 @@ A round counts only after one Candidate has a complete valid Evaluation. Correct
 
 Create one Candidate per round from the current Reference. Put behavioral guidance in `AGENTS.md`, reusable target-owned capabilities in a focused Skill, and runtime limits in safe `system_config.yaml` fields. Do not edit `system_prompt` unless requested, modify library-provided Skills for target-specific behavior, or change `model.thinking_level`; the Reference Scoreboard fixes the evaluation thinking level.
 
-Candidate version numbers only increase. Start with `Reference version + 1` and never reuse a rejected version. Before changing the Agent State, save the original contents and record any files the Candidate creates.
+Candidate version numbers only increase. Start one above the highest version recorded for this Agent in `snapshots/` or any of its Scoreboards, and never below `Reference version + 1`; never reuse a rejected version. A recorded version higher than the Reference version is not an error — it remains after a production rollback, and its number stays consumed. Before changing the Agent State, save the original contents and record any files the Candidate creates.
 
 Before changing each Reference State, ensure `<target>/snapshots/v<Reference version>.tar.gz` exists. Reuse it when present. Otherwise create it yourself before editing by atomically archiving `agent_state/` while excluding `.vault.toml`; validate the archived version and never overwrite an existing same-version snapshot. If snapshot creation fails, stop before changing Agent State and report the failure.
 
