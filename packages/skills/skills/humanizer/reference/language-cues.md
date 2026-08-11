@@ -1,6 +1,6 @@
 # Language cues
 
-The tells in SKILL.md are structural and hold across languages; what varies is the surface. The files under `languages/` record, one per language, how the universal tells surface locally, which over-correction signs to watch for, which native rhetoric is NOT a tell, and the print norms that betray pipeline typography. The lists were harvested from independent editorial reviews in the round-three field tests (see `case-study.md`) and are ranked roughly by how strongly each marker signals machine writing. For a language not listed, map the structural pattern and ask what its editors would flag.
+The tells in SKILL.md are structural and hold across languages; what varies is the surface. The sibling `<lang>-cues.md` files record, one per language, how the universal tells surface locally, which over-correction signs to watch for, which native rhetoric is NOT a tell, and the print norms that betray pipeline typography. The lists were harvested from independent editorial reviews in the round-three field tests (see `case-study.md`) and are ranked roughly by how strongly each marker signals machine writing. For a language not listed, map the structural pattern and ask what its editors would flag.
 
 Two rules frame every language file:
 
@@ -9,9 +9,9 @@ Two rules frame every language file:
 
 Per-language files:
 
-- [Chinese (zh)](languages/chinese.md)
-- [English (en)](languages/english.md)
-- [Japanese (ja)](languages/japanese.md)
-- [French (fr)](languages/french.md)
-- [German (de)](languages/german.md)
-- [Spanish (es)](languages/spanish.md)
+- [Chinese (zh)](zh-cues.md)
+- [English (en)](en-cues.md)
+- [Japanese (ja)](ja-cues.md)
+- [French (fr)](fr-cues.md)
+- [German (de)](de-cues.md)
+- [Spanish (es)](es-cues.md)
