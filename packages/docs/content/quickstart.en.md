@@ -47,7 +47,7 @@ penguin chat
 ```
 
 - Each input line starts a Task.
-- `/compact` compacts the context; `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
+- `/compact` compacts the context; `/clear` starts a fresh Session (the old one stays resumable); `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
 - On exit it prints a `penguin chat --resume <sessionId>` hint for resuming this Session; `--resume` without an id resumes the Agent's latest Session.
 
 ## SDK hello
