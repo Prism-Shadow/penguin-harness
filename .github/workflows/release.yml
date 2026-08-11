@@ -144,15 +144,18 @@ jobs:
             fi
           fi
           grep -q 'export const VERSION = "' packages/core/src/index.ts
-          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          sed "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
+          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
           SH_MARKER='EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"'
           PS_MARKER='$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"'
           if grep -Fq "$SH_MARKER" install.sh; then SH_HAS_MARKER=1; else SH_HAS_MARKER=0; fi
           if grep -Fq "$PS_MARKER" install.ps1; then PS_HAS_MARKER=1; else PS_HAS_MARKER=0; fi
           case "$SH_HAS_MARKER:$PS_HAS_MARKER" in
             1:1)
-              sed -i "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.sh
-              sed -i "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.ps1
+              sed "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.sh > install.sh.tmp
+              mv install.sh.tmp install.sh
+              sed "s/__PENGUIN_RELEASE_VERSION__/$TAG/g" install.ps1 > install.ps1.tmp
+              mv install.ps1.tmp install.ps1
               grep -Fq "EMBEDDED_RELEASE_VERSION=\"$TAG\"" install.sh
               grep -Fq "\$EmbeddedReleaseVersion = \"$TAG\"" install.ps1
               ;;
@@ -169,7 +172,8 @@ jobs:
           D="$(date -u +%Y-%m-%d)"
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
-          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
+          sed "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
+          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
 
       - name: Build (tsup + vite)
         run: pnpm build
@@ -280,7 +284,10 @@ jobs:
           exit /b %ERRORLEVEL%
           EOF
           # cmd.exe is only fully reliable with CRLF batch files.
-          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
+          while IFS= read -r line; do
+            printf '%s\r\n' "$line"
+          done < out/penguin/bin/penguin.cmd > out/penguin/bin/penguin.cmd.tmp
+          mv out/penguin/bin/penguin.cmd.tmp out/penguin/bin/penguin.cmd
           (cd out && zip -qr ../payloads/win32-x64.zip penguin)
 
       # The canonical artifacts: each payload is sealed with its checksum and the native
@@ -639,11 +646,13 @@ jobs:
             fi
           fi
           grep -q 'export const VERSION = "' packages/core/src/index.ts
-          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
+          sed "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
+          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
           D="$(date -u +%Y-%m-%d)"
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
-          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
+          sed "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
+          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
