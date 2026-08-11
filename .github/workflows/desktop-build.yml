@@ -6,13 +6,47 @@
 # installers must exist at creation time. workflow_dispatch runs it standalone as a dry
 # run on any branch.
 #
-# M3 ships unsigned artifacts; macOS signing/notarization, Windows code signing and
-# electron-updater are milestone M4.
+# macOS release artifacts are Developer ID signed and notarized when release.yml calls
+# this workflow with require_macos_signing=true. Standalone dry-runs can still build
+# unsigned artifacts when signing secrets are absent.
 name: Desktop packages
 
 on:
-  workflow_call: {}
-  workflow_dispatch: {}
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out; release.yml passes the tag being published."
+        required: false
+        type: string
+      require_macos_signing:
+        description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      CSC_LINK:
+        required: false
+      CSC_KEY_PASSWORD:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional Git ref to check out."
+        required: false
+        type: string
+      require_macos_signing:
+        description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
 
 env:
   # Keep in sync with release.yml (its header comment is the source of truth; duplicated
@@ -37,6 +71,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       # pnpm version comes from package.json's packageManager field.
       - uses: pnpm/action-setup@v6
@@ -66,8 +102,70 @@ jobs:
             "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit"
           unzip -q "$mingit" -d packages/desktop/stage/minigit
 
+      - name: Prepare macOS signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          REQUIRE_MACOS_SIGNING: ${{ inputs.require_macos_signing && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ "$REQUIRE_MACOS_SIGNING" != "true" ]]; then
+            echo "macOS signing not required for this dry-run; building unsigned."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          missing=()
+          [[ -z "${CSC_LINK:-}" ]] && missing+=("CSC_LINK")
+          [[ -z "${CSC_KEY_PASSWORD:-}" ]] && missing+=("CSC_KEY_PASSWORD")
+          [[ -z "${APPLE_API_KEY_BASE64:-}" ]] && missing+=("APPLE_API_KEY")
+          [[ -z "${APPLE_API_KEY_ID:-}" ]] && missing+=("APPLE_API_KEY_ID")
+          [[ -z "${APPLE_API_ISSUER:-}" ]] && missing+=("APPLE_API_ISSUER")
+
+          if ((${#missing[@]})); then
+            printf '::error title=Missing macOS signing secrets::%s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          multiline=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            value="${!name:-}"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              multiline+=("$name")
+            fi
+          done
+          if ((${#multiline[@]})); then
+            printf '::error title=Invalid macOS signing secrets::Secrets must be stored as single-line values: %s\n' "${multiline[*]}"
+            exit 1
+          fi
+
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$api_key_path"
+          chmod 600 "$api_key_path"
+
+          if ! grep -q "BEGIN PRIVATE KEY" "$api_key_path"; then
+            echo "::error title=Invalid APPLE_API_KEY::Decoded App Store Connect key is not a .p8 private key."
+            exit 1
+          fi
+
+          {
+            echo "CSC_LINK=$CSC_LINK"
+            echo "CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD"
+            echo "APPLE_API_KEY=$api_key_path"
+            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            fi
+          } >> "$GITHUB_ENV"
+
       - name: Build packages
-        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }}
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -9,8 +9,8 @@
 # files sidestep every asar edge (fork-from-archive, unpacked-tree resolution splits)
 # at the cost of some inodes.
 #
-# M3 ships unsigned artifacts: macOS signing/notarization and Windows code signing are
-# milestone M4, together with electron-updater.
+# macOS release artifacts are Developer ID signed and notarized in CI when the signing
+# secrets are present; unsigned dry-run builds remain possible outside the release path.
 appId: com.prismshadow.penguinharness
 productName: PenguinHarness
 # Declaring the publish target is what makes electron-builder emit the update metadata
@@ -32,8 +32,10 @@ nodeGypRebuild: false
 
 mac:
   category: public.app-category.developer-tools
-  # No Developer ID yet (M4): identity null skips codesign instead of failing.
-  identity: null
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
   target:
     - target: dmg
       arch: [arm64, x64]
