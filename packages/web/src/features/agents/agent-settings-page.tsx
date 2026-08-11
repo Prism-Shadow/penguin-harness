@@ -3,10 +3,10 @@
  * Overview (name/description form + two ruled sections in the skills import modal's
  * family: Agent State — State version, snapshot export-import and the copyable State
  * path — and Kernel — the defaults generation with its update / restore-defaults
- * actions), Prompt (AGENTS.md and system_prompt editors + placeholder
- * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
+ * actions), System Prompt (AGENTS.md and system_prompt editors + placeholder
+ * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
- * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
+ * Memory (memory-tab.tsx), Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  */
@@ -47,7 +47,7 @@ import { McpServersSection } from "./mcp-servers-section";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey =
-  "overview" | "prompt" | "memory" | "runtime" | "tools" | "skills" | "vault" | "schedules";
+  "overview" | "prompt" | "runtime" | "tools" | "skills" | "memory" | "vault" | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -100,10 +100,10 @@ export function AgentSettingsPage() {
   const TABS = [
     { key: "overview", label: S.agent.tabOverview },
     { key: "prompt", label: S.agent.tabPrompt },
-    { key: "memory", label: S.agent.tabMemory },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
     { key: "skills", label: S.agent.tabSkills },
+    { key: "memory", label: S.agent.tabMemory },
     { key: "vault", label: S.agent.tabVault },
     { key: "schedules", label: S.agent.tabSchedules },
   ] as const;

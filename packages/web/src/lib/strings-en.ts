@@ -239,7 +239,7 @@ export const en: Strings = {
     settings: "Agent settings",
     backToList: "Back to Agents",
     tabOverview: "Overview",
-    tabPrompt: "Prompt",
+    tabPrompt: "System Prompt",
     tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",

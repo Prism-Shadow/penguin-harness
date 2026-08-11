@@ -230,7 +230,7 @@ export const zh = {
     settings: "Agent 设置",
     backToList: "返回 Agents",
     tabOverview: "概览",
-    tabPrompt: "Prompt",
+    tabPrompt: "系统提示词",
     tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",

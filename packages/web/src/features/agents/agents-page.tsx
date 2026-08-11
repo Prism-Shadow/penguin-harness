@@ -5,8 +5,8 @@
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * memory / tool / skill / vault-key / schedule counts deep-link to the settings page's matching
- * tab (?tab=memory|tools|skills|vault|schedules) and appear in the settings tabs' order.
+ * tool / skill / memory / vault-key / schedule counts deep-link to the settings page's matching
+ * tab (?tab=tools|skills|memory|vault|schedules) and appear in the settings tabs' order.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" / "Traces" (deep link
  * via ?agentId= to the usage center / trace observability; traces use an eye line icon =
@@ -75,7 +75,7 @@ const CARD_ICONS = {
  * (no button chrome) plus a subtle hover text-color shift and pointer cursor.
  */
 const STAT_LINK_CLASS =
-  "inline-flex min-w-[2.25rem] shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
+  "inline-flex shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
   "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
 
 export function AgentsPage() {
@@ -264,29 +264,20 @@ export function AgentsPage() {
                       {a.description ?? ""}
                     </p>
                     {/* Stats on their own line: same color/font size as the description; each
-                        reserves a minimum width so they align vertically across cards; meaning
-                        folded into the hover title. Memory/tool/skill/vault/schedule counts are
-                        buttons deep-linking to the matching settings tab, listed in the settings
-                        tabs' order (also for built-in Agents — their Settings entry point has no
-                        gating either); session count and last-modified stay plain text */}
+                        item hugs its content, with spacing left to the container's uniform
+                        gap-x-2.5; meaning folded into the hover title. Tool/skill/memory/vault/
+                        schedule counts are buttons deep-linking to the matching settings tab,
+                        listed in the settings tabs' order (also for built-in Agents — their
+                        Settings entry point has no gating either); session count and
+                        last-modified stay plain text */}
                     <div className="mt-1.5 flex items-center gap-x-2.5 text-xs text-gray-500 dark:text-gray-400">
                       <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                        className="inline-flex shrink-0 items-center gap-1 tabular-nums"
                         title={S.agent.sessionCount(a.sessionCount)}
                       >
                         <GlyphIcon d={CARD_ICONS.sessions} size={12} />
                         {a.sessionCount}
                       </span>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        title={S.agent.memoryCount(a.memoryCount)}
-                        aria-label={S.agent.memoryCount(a.memoryCount)}
-                        onClick={() => openSettingsTab(a.agentId, "memory")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.memory} size={12} />
-                        {a.memoryCount}
-                      </button>
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
@@ -306,6 +297,16 @@ export function AgentsPage() {
                       >
                         <GlyphIcon d={CARD_ICONS.skills} size={12} />
                         {a.skillCount}
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
+                        title={S.agent.memoryCount(a.memoryCount)}
+                        aria-label={S.agent.memoryCount(a.memoryCount)}
+                        onClick={() => openSettingsTab(a.agentId, "memory")}
+                      >
+                        <GlyphIcon d={CARD_ICONS.memory} size={12} />
+                        {a.memoryCount}
                       </button>
                       <button
                         type="button"
