@@ -40,6 +40,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@modelcontextprotocol/client':
+        specifier: ^2.0.0
+        version: 2.0.0
       '@prismshadow/agenthub':
         specifier: ^0.4.1
         version: 0.4.1(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -4409,6 +4412,7 @@ snapshots:
 
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
+      '@modelcontextprotocol/client': 2.0.0
       '@prismshadow/agenthub': 0.4.1(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
