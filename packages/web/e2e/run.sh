@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # End-to-end verification (Playwright + mock LLM): build skills/core/server/web -> start mock Anthropic SSE ->
-# start server (temp data root) -> run chat.spec.mjs. SKIP_BUILD=1 skips the build.
+# start server (temp data root) -> run the requested specs, or the full suite when none are given.
+# SKIP_BUILD=1 skips the build.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 DATA="$(mktemp -d)"
+export E2E_DATA_ROOT="$DATA"
 MOCK_PORT="${MOCK_PORT:-8931}"
 SRV_PORT="${SRV_PORT:-8930}"
 # localhost, not 127.0.0.1: since the Workspace-preview split the server canonicalizes the
@@ -48,4 +50,4 @@ done
 
 echo "== run playwright =="
 cd "$ROOT/packages/web"
-npx playwright test -c "$HERE/playwright.config.mjs"
+npx playwright test -c "$HERE/playwright.config.mjs" "$@"
