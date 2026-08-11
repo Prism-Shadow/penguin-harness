@@ -1,14 +1,15 @@
 /**
  * Built-in agent provisioning and skill library install policy: the sole built-in agent
- * default_agent comes pre-installed with every skill in the library, an ordinary newly created
- * agent starts with zero skills, and the default AGENTS.md is an empty file; provisionProjectAgents
- * is idempotent and never overwrites existing config.
+ * default_agent comes pre-installed with the library's preinstalled skill set (skills marked
+ * `preinstall: false` stay manual-install), an ordinary newly created agent starts with zero
+ * skills, and the default AGENTS.md is an empty file; provisionProjectAgents is idempotent and
+ * never overwrites existing config.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { librarySkill, loadLibrarySkills } from "@prismshadow/penguin-skills";
+import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
 import {
   agentsMdPath,
   assembleSystemPrompt,
@@ -58,17 +59,20 @@ describe("Skill installation policy", () => {
     expect(onDisk).toBe("");
   });
 
-  it("a default_agent created directly without a preset (e.g. first CLI run) likewise preinstalls every Skill in the library", async () => {
+  it("a default_agent created directly without a preset (e.g. first CLI run) likewise gets the library's preinstalled set", async () => {
     await loadOrInitAgentState({ agentId: DEFAULT_AGENT_ID });
     const names = (await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID)).map(
       (s) => s.name,
     );
-    expect(names).toEqual(loadLibrarySkills().map((s) => s.name));
+    expect(names).toEqual(loadPreinstalledSkills().map((s) => s.name));
+    // A `preinstall: false` library skill stays out of the preinstalled set (manual install only).
+    expect(librarySkill("remote-claude-code")?.preinstall).toBe(false);
+    expect(names).not.toContain("remote-claude-code");
   });
 });
 
 describe("provisionProjectAgents", () => {
-  it("the only built-in Agent default_agent: installs every Skill in the library, AGENTS.md is empty", async () => {
+  it("the only built-in Agent default_agent: installs the library's preinstalled Skills, AGENTS.md is empty", async () => {
     const ids = await provisionProjectAgents();
     expect(ids).toEqual([DEFAULT_AGENT_ID]);
     expect(BUILTIN_AGENT_IDS).toEqual([DEFAULT_AGENT_ID]);
@@ -80,7 +84,9 @@ describe("provisionProjectAgents", () => {
     expect(state.agentsMd).toBe("");
 
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    expect(installed.map((s) => s.name).sort()).toEqual(loadLibrarySkills().map((s) => s.name));
+    expect(installed.map((s) => s.name).sort()).toEqual(
+      loadPreinstalledSkills().map((s) => s.name),
+    );
     // On-disk content matches the library's SKILL.md verbatim (install copies the full text).
     const sdkMd = await fs.readFile(skillMdPath(DEFAULT_AGENT_ID, "penguin-sdk"), "utf8");
     expect(sdkMd).toBe(librarySkill("penguin-sdk")!.content);
@@ -96,7 +102,9 @@ describe("provisionProjectAgents", () => {
     );
     expect(md).toBe("");
     const installed = await listInstalledSkills(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    expect(installed.map((s) => s.name).sort()).toEqual(loadLibrarySkills().map((s) => s.name));
+    expect(installed.map((s) => s.name).sort()).toEqual(
+      loadPreinstalledSkills().map((s) => s.name),
+    );
   });
 
   it("an existing Agent is not overwritten (the preset only applies at initialization)", async () => {

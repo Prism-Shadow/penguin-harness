@@ -506,6 +506,8 @@ export interface AgentSummary {
   scheduleCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
+  /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
+  memoryCount: number;
 }
 
 export interface AgentsResponse {
@@ -537,6 +539,15 @@ export interface AgentCompactionConfigDto {
   prompt?: string;
 }
 
+/** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
+export interface AgentMemoryConfigDto {
+  enabled: boolean;
+  /** The always-injected half of the `{{MEMORY}}` block (carries `{{USER_MEMORY_INDEX}}`; the User directory is literal text). */
+  prompt: string;
+  /** Appended only in a persistent Workspace (carries `{{WORKSPACE_MEMORY_INDEX}}` and the rendered `{{WORKSPACE_MEMORY_DIR}}` directory). */
+  workspacePrompt: string;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -547,6 +558,7 @@ export interface AgentConfigDto {
   maxTurns?: number;
   model?: AgentModelConfigDto;
   compaction?: AgentCompactionConfigDto;
+  memory: AgentMemoryConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -582,9 +594,68 @@ export interface AgentConfigUpdateRequest {
     maxTurns?: number;
     model?: AgentModelConfigDto;
     compaction?: AgentCompactionConfigDto;
+    memory?: Partial<AgentMemoryConfigDto>;
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
+}
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+/** One Memory scope directory: `agent_state/memory/user/` or `agent_state/memory/<workspaceKey>/`. */
+export interface MemoryScopeInfo {
+  /** Directory name under `memory/`: `user`, or a Workspace's `<safe-basename>-<hash>` key. */
+  scopeKey: string;
+  /** `user` — the scope every Session reads, temporary Workspaces included; `workspace` — one Workspace's scope. */
+  kind: "user" | "workspace";
+  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
+  workspacePath?: string;
+  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
+  fileCount: number;
+  /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
+  updatedAt?: string;
+}
+
+/** One Memory topic file, as listed (frontmatter only — the body is fetched per file). */
+export interface MemoryFileInfo {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
+  name: string;
+  /** Frontmatter `name`; falls back to the file name. */
+  title: string;
+  /** Frontmatter `description`; empty when the file declares none. */
+  description: string;
+  /** Frontmatter `updated_at`, verbatim. */
+  updatedAt?: string;
+  /** File size in bytes. */
+  size: number;
+  /** File mtime (ISO 8601). */
+  modifiedAt: string;
+}
+
+/** GET …/memory — the tab's landing payload: the switch and every scope group, user scope first. */
+export interface MemoryOverviewResponse {
+  /** Whether Memory reaches the model context (the Agent-level switch). */
+  enabled: boolean;
+  /** Whether the prompt template carries the `{{MEMORY}}` placeholder. An Agent created before Memory has none and injects nothing; POST …/memory/template-placeholder inserts it explicitly. */
+  templateHasMemory: boolean;
+  /** Absolute path of `agent_state/memory/`. */
+  memoryDir: string;
+  scopes: MemoryScopeInfo[];
+}
+
+/** GET …/memory/scopes/:key/files */
+export interface MemoryFilesResponse {
+  scopeKey: string;
+  files: MemoryFileInfo[];
+}
+
+/** GET …/memory/scopes/:key/files/:name */
+export interface MemoryFileResponse {
+  scopeKey: string;
+  file: MemoryFileInfo;
+  content: string;
 }
 
 // ---------------------------------------------------------------------------

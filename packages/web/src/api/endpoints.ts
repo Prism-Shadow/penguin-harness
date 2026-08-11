@@ -36,6 +36,9 @@ import type {
   MemberAddRequest,
   MemberAddResponse,
   MembersResponse,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryOverviewResponse,
   MessagesResponse,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -206,6 +209,43 @@ export const putVault = (projectId: string, agentId: string, body: VaultUpdateRe
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault`,
     { method: "PUT", body },
   );
+
+// Memory (Agent-level, agent_state/memory/) -------------------------------------------------
+
+/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
+const memoryBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
+
+const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =>
+  `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}/files`;
+
+export const getMemoryOverview = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId));
+
+/** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
+export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(`${memoryBase(projectId, agentId)}/template-placeholder`, {
+    method: "POST",
+    body: {},
+  });
+
+export const getMemoryFiles = (projectId: string, agentId: string, scopeKey: string) =>
+  apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey));
+
+export const getMemoryFile = (projectId: string, agentId: string, scopeKey: string, name: string) =>
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
+  );
+
+export const deleteMemoryFile = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  name: string,
+) =>
+  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 
 // Agent & its configuration ----------------------------------------------------------------
 

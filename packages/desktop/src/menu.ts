@@ -1,15 +1,16 @@
 /**
  * Application menu. Electron's default menu cannot be extended, only replaced, so the
- * standard structure is rebuilt here — on macOS the Edit roles are what make clipboard
- * shortcuts work inside the window, so they must be present. The one custom entry is
- * "Install 'penguin' Command…" (see cli-install.ts), shown only where installing makes
- * sense (packaged macOS / Windows / AppImage; deb ships /usr/bin/penguin itself).
- * On Windows/Linux the window uses autoHideMenuBar, so the bar appears on Alt.
+ * standard structure is rebuilt here. The custom entries are native-only shell actions:
+ * installing the bundled `penguin` command and checking for desktop updates.
  */
-import { app, Menu } from "electron";
+import { app, Menu, shell } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
+import { checkForUpdatesManually, updatesAvailableInThisForm } from "./updater.js";
 
 export const INSTALL_CLI_MENU_LABEL = "Install 'penguin' Command…";
+
+const CHECK_FOR_UPDATES_MENU_LABEL = "Check for Updates…";
+const REPO_URL = "https://github.com/Prism-Shadow/penguin-harness";
 
 export function installAppMenu(opts: {
   includeCliInstall: boolean;
@@ -19,6 +20,15 @@ export function installAppMenu(opts: {
   const cliItems: MenuItemConstructorOptions[] = opts.includeCliInstall
     ? [{ label: INSTALL_CLI_MENU_LABEL, click: opts.onInstallCli }]
     : [];
+  const checkForUpdates: MenuItemConstructorOptions = {
+    label: CHECK_FOR_UPDATES_MENU_LABEL,
+    enabled: updatesAvailableInThisForm(),
+    click: () => void checkForUpdatesManually(),
+  };
+  const projectOnGitHub: MenuItemConstructorOptions = {
+    label: "Project on GitHub",
+    click: () => void shell.openExternal(REPO_URL),
+  };
 
   const template: MenuItemConstructorOptions[] = [];
   if (isMac) {
@@ -26,9 +36,10 @@ export function installAppMenu(opts: {
       label: app.name,
       submenu: [
         { role: "about" },
-        ...(cliItems.length > 0
-          ? ([{ type: "separator" }, ...cliItems] as MenuItemConstructorOptions[])
-          : []),
+        { type: "separator" },
+        ...cliItems,
+        ...(cliItems.length > 0 ? ([{ type: "separator" }] as MenuItemConstructorOptions[]) : []),
+        checkForUpdates,
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -49,6 +60,17 @@ export function installAppMenu(opts: {
       ],
     });
   }
-  template.push({ role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" });
+  template.push(
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        ...(isMac ? [] : [checkForUpdates, { type: "separator" } as MenuItemConstructorOptions]),
+        projectOnGitHub,
+      ],
+    },
+  );
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

@@ -234,12 +234,14 @@ export const en: Strings = {
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
     scheduleCount: (n: number): string => `${n} scheduled task${n === 1 ? "" : "s"}`,
+    memoryCount: (n: number): string => (n === 1 ? "1 memory" : `${n} memories`),
     updatedAt: "Last modified",
     activity: (days: number): string => `${days}-day session activity`,
     settings: "Agent settings",
     backToList: "Back to Agents",
     tabOverview: "Overview",
     tabPrompt: "Prompt",
+    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
@@ -255,6 +257,10 @@ export const en: Strings = {
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
       ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
+      [
+        "{{MEMORY}}",
+        "Injects the memory block: memory.prompt plus memory.workspace_prompt (persistent workspaces only); empty when memory is off",
+      ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
       ["{{SHELL}}", "Shell used to run commands"],
@@ -520,6 +526,75 @@ export const en: Strings = {
     contextWindowInvalid: "Must be a number",
   },
 
+  memory: {
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): the agent saves what is worth keeping as it works, and you can also just ask it to remember something. User memory applies to all of this agent's sessions; workspace memory is kept per workspace. Memory edits are made by the agent in chat. Turning the switch off only stops memory from being used and deletes nothing.",
+    enable: "Enable memory",
+    userScope: "User memory",
+    templateMissing:
+      "The prompt template has no {{MEMORY}} placeholder, so memory never enters the context.",
+    insertPlaceholder: "Insert the {{MEMORY}} placeholder",
+    insertPlaceholderDone: "Inserted",
+    promptSection: "Memory prompt",
+    promptSectionHint:
+      "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
+    promptLabel: "Main prompt",
+    workspacePromptLabel: "Workspace addendum",
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
+     */
+    promptPlaceholders: [
+      [
+        "{{USER_MEMORY_INDEX}}",
+        "Content of the user MEMORY.md index (at most 200 lines and 25,000 characters total)",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_INDEX}}",
+        "Content of the workspace MEMORY.md index (at most 200 lines and 25,000 characters total); effective only in the workspace addendum",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_DIR}}",
+        "Absolute path of the current workspace's memory directory; effective only in the workspace addendum",
+      ],
+    ],
+    insertToken: "Insert at the cursor",
+    itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
+    emptyScope:
+      "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
+    emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
+    add: "Add",
+    addTitle: "Add memory",
+    addWhy:
+      "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
+    addContentLabel: "Content or source to remember",
+    addContentPlaceholder: "Paste the content to remember, or a file path / URL",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "Please turn the following into memories in user memory:",
+      workspace: "Please turn the following into memories in this workspace's memory:",
+    },
+    view: "View",
+    edit: "Edit",
+    editTitle: "Edit memory",
+    editWhy:
+      "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
+    editRequirementLabel: "What to change",
+    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editPromptLabel: "Prompt preview",
+    editCopyPrompt: "Copy prompt",
+    editCopied: "Copied",
+    editOpenChat: "Open a new chat",
+    delete: "Delete",
+    deleteTitle: "Delete this memory?",
+    deleteConfirm: (name: string): string =>
+      `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteDone: "Deleted",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string): string => `Please update a memory: ${title}`,
+    editPromptTail: "What to change: ",
+  },
+
   vault: {
     desc: "Environment variables owned by this agent (stored in agent_state/.vault.toml), injected into the environment of its shell commands (exec_command); key names are shared with the model, values never enter the model context. Subagents use their own vaults and do not inherit this one. Saved changes take effect from the next task (a task already running is unaffected).",
     key: "Name",
@@ -594,6 +669,8 @@ export const en: Strings = {
     pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
+    /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
+    quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
