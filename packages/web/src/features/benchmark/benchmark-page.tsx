@@ -8,13 +8,14 @@
  * Session link.
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
   BenchmarkEvaluation,
   BenchmarkSummary,
+  PromotionRunInfo,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -22,14 +23,12 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
-import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Truncated } from "../../components/ui/truncated";
 import { EmptyState } from "../../components/ui/empty-state";
-import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { seriesColor } from "../../lib/category-colors";
@@ -45,8 +44,6 @@ import {
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 import { benchmarkPromotionState, evaluationWorkflowStatus } from "./benchmark-promotion";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
 
 interface Selection {
   agentId: string;
@@ -61,7 +58,7 @@ function AgentNode({
   defaultOpen,
   selection,
   onSelect,
-  onBenchmarksLoaded,
+  onDataLoaded,
 }: {
   projectId: string;
   agentId: string;
@@ -70,22 +67,45 @@ function AgentNode({
   defaultOpen: boolean;
   selection: Selection | null;
   onSelect: (sel: Selection) => void;
-  onBenchmarksLoaded: (agentId: string, benchmarks: BenchmarkSummary[]) => void;
+  onDataLoaded: (
+    agentId: string,
+    benchmarks: BenchmarkSummary[],
+    promotionRuns: PromotionRunInfo[],
+  ) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hasActivePromotion, setHasActivePromotion] = useState(false);
+
+  const load = useCallback(async () => {
+    const [benchmarkData, promotionData] = await Promise.all([
+      api.listBenchmarks(projectId, agentId),
+      api.listPromotionRuns(projectId, agentId),
+    ]);
+    setBenchmarks(benchmarkData.benchmarks);
+    setHasActivePromotion(
+      promotionData.runs.some((item) => item.status === "queued" || item.status === "running"),
+    );
+    onDataLoaded(agentId, benchmarkData.benchmarks, promotionData.runs);
+    return promotionData.runs;
+  }, [agentId, onDataLoaded, projectId]);
 
   useEffect(() => {
     if (!open || benchmarks) return;
-    api
-      .listBenchmarks(projectId, agentId)
-      .then((data) => {
-        setBenchmarks(data.benchmarks);
-        onBenchmarksLoaded(agentId, data.benchmarks);
-      })
-      .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId, onBenchmarksLoaded]);
+    void load().catch((e: unknown) => setError(apiErrorText(e)));
+  }, [open, benchmarks, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setInterval(
+      () => {
+        void load().catch(() => undefined);
+      },
+      hasActivePromotion ? 2_000 : 10_000,
+    );
+    return () => window.clearInterval(timer);
+  }, [hasActivePromotion, load, open]);
 
   return (
     <li className="pt-2.5">
@@ -559,9 +579,7 @@ function CasesSection({
 
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
-  const { currentProject, agents, agentsLoading, setCurrentAgentId } = useProject();
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  const { currentProject, agents, agentsLoading, reloadAgents } = useProject();
   const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
@@ -574,14 +592,40 @@ export function BenchmarkPage() {
   const [benchmarksByAgent, setBenchmarksByAgent] = useState<Record<string, BenchmarkSummary[]>>(
     {},
   );
-  const onBenchmarksLoaded = useCallback((agentId: string, benchmarks: BenchmarkSummary[]) => {
-    setBenchmarksByAgent((current) => ({ ...current, [agentId]: benchmarks }));
-  }, []);
+  const [promotionRunsByAgent, setPromotionRunsByAgent] = useState<
+    Record<string, PromotionRunInfo[]>
+  >({});
+  const lastPromotionStatus = useRef<Record<string, string | undefined>>({});
+  const onDataLoaded = useCallback(
+    (agentId: string, benchmarks: BenchmarkSummary[], promotionRuns: PromotionRunInfo[]) => {
+      setBenchmarksByAgent((current) => ({ ...current, [agentId]: benchmarks }));
+      setPromotionRunsByAgent((current) => ({ ...current, [agentId]: promotionRuns }));
+      setSelection((current) => {
+        if (!current || current.agentId !== agentId) return current;
+        const refreshed = benchmarks.find((item) => item.id === current.benchmark.id);
+        return refreshed ? { agentId, benchmark: refreshed } : null;
+      });
+      const latest = promotionRuns[0]?.status;
+      const previous = lastPromotionStatus.current[agentId];
+      lastPromotionStatus.current[agentId] = latest;
+      if (
+        (previous === "queued" || previous === "running") &&
+        latest !== undefined &&
+        latest !== "queued" &&
+        latest !== "running"
+      ) {
+        void reloadAgents();
+      }
+    },
+    [reloadAgents],
+  );
 
   // Clear the selection when the Project changes.
   useEffect(() => {
     setSelection(null);
     setBenchmarksByAgent({});
+    setPromotionRunsByAgent({});
+    lastPromotionStatus.current = {};
   }, [projectId]);
 
   useEffect(() => {
@@ -620,26 +664,24 @@ export function BenchmarkPage() {
           bm,
           benchmarksByAgent[selection!.agentId] ?? [bm],
           selectedAgent.version,
+          promotionRunsByAgent[selection!.agentId] ?? [],
         )
-      : { productionVersion: null, pending: null };
-
-  const startPromotion = () => {
-    if (!projectId || !selection || !promotionState.pending || !user?.userId) return;
-    const prompt = S.benchmark.promotionPrompt({
-      testAgentId: selection.agentId,
-      ...promotionState.pending,
-    });
-    const key = draftKey(user.userId, projectId);
-    saveDraft(key, {
-      ...loadDraft(key),
-      agentId: "default_agent",
-      text: prompt,
-      skills: undefined,
-      handoffAgentId: undefined,
-    });
-    setCurrentAgentId("default_agent");
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: "default_agent" } });
-  };
+      : { productionVersion: null, pending: null, run: null };
+  const promotionStatus = promotionState.run?.status;
+  const promotionStatusLabel =
+    promotionStatus === "running"
+      ? S.benchmark.promotionRunning
+      : promotionStatus === "queued"
+        ? S.benchmark.promotionQueued
+        : promotionStatus === "failed"
+          ? S.benchmark.promotionFailed
+          : promotionStatus === "promoted"
+            ? S.benchmark.statusPromoted
+            : promotionStatus === "restored"
+              ? S.benchmark.statusRestored
+              : promotionState.pending
+                ? S.benchmark.promotionAwaitingRequest
+                : null;
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -661,7 +703,7 @@ export function BenchmarkPage() {
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
                 onSelect={setSelection}
-                onBenchmarksLoaded={onBenchmarksLoaded}
+                onDataLoaded={onDataLoaded}
               />
             ))}
           </ul>
@@ -691,9 +733,19 @@ export function BenchmarkPage() {
                       {S.benchmark.productionVersion(promotionState.productionVersion)}
                     </span>
                   )}
-                  {promotionState.pending && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                      {S.benchmark.promotionPending}
+                  {promotionStatusLabel && (
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                        promotionStatus === "failed"
+                          ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                          : promotionStatus === "promoted"
+                            ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
+                            : promotionStatus === "restored"
+                              ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                      }`}
+                    >
+                      {promotionStatusLabel}
                     </span>
                   )}
                 </div>
@@ -701,10 +753,13 @@ export function BenchmarkPage() {
                   <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
                 )}
               </div>
-              {promotionState.pending && (
-                <Button variant="primary" size="sm" onClick={startPromotion}>
-                  {S.benchmark.startPromotion}
-                </Button>
+              {promotionState.run?.promotionSessionId && (
+                <Link
+                  to={`/chat/${promotionState.run.promotionSessionId}`}
+                  className="rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  {S.benchmark.viewPromotionSession}
+                </Link>
               )}
             </div>
 

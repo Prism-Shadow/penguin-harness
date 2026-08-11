@@ -321,7 +321,13 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       setWorkspaceCountsByAgent((prev) => {
         const cur = prev.get(agentId);
         if (!cur) return prev;
-        const ws = cur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
+        const ws = cur[workspace] ?? {
+          active: 0,
+          subagent: 0,
+          schedule: 0,
+          promotion: 0,
+          archived: 0,
+        };
         const next = new Map(prev);
         next.set(agentId, {
           ...cur,

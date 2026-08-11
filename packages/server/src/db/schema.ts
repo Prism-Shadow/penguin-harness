@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the
   project_id TEXT,                     -- nullable: sign-in/registration and process-level errors have no Project context
   agent_id   TEXT,
   session_id TEXT,
-  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule
+  source     TEXT NOT NULL,            -- http | session | usage | title | subagent | process | llm | environment | compaction | schedule | promotion
   kind       TEXT NOT NULL,            -- expected (HttpError, business 4xx) | unexpected (500/runtime)
   code       TEXT NOT NULL,            -- HttpError.code / internal / session_run_failed / ...
   status     INTEGER,                  -- HTTP status code; NULL for non-HTTP sources
@@ -103,6 +103,27 @@ CREATE TABLE IF NOT EXISTS schedule_state (    -- schedule runtime state (files 
   invalid_reason  TEXT,                        -- invalidation reason (e.g. the bound Session was deleted); NULL=healthy
   PRIMARY KEY (project_id, agent_id, name)
 );
+CREATE TABLE IF NOT EXISTS promotion_runs (    -- immutable request files are intent; this table is the durable orchestration state
+  optimization_session_id       TEXT PRIMARY KEY,
+  project_id                    TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  test_agent_id                 TEXT NOT NULL,
+  development_benchmark_id      TEXT NOT NULL,
+  promotion_benchmark_id        TEXT NOT NULL,
+  production_reference_version INTEGER NOT NULL,
+  candidate_version            INTEGER NOT NULL,
+  provider                     TEXT NOT NULL,
+  model_id                      TEXT NOT NULL,
+  thinking_level               TEXT NOT NULL,
+  request_hash                 TEXT NOT NULL,
+  status                       TEXT NOT NULL, -- queued | running | promoted | restored | failed
+  promotion_session_id         TEXT UNIQUE,
+  error_code                   TEXT,
+  created_at                   TEXT NOT NULL,
+  updated_at                   TEXT NOT NULL,
+  FOREIGN KEY (project_id, test_agent_id) REFERENCES agents(project_id, agent_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_promotion_runs_agent_updated
+  ON promotion_runs(project_id, test_agent_id, updated_at DESC);
 CREATE TABLE IF NOT EXISTS goal_state (        -- goal-mode runtime state (GOAL.yaml on disk is the model-facing protocol; this row is what the UI reads)
   id          INTEGER PRIMARY KEY AUTOINCREMENT,  -- one row per goal run; a Session may run goals repeatedly, latest row wins for display
   session_id  TEXT NOT NULL,
@@ -141,7 +162,7 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   session_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
-  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | NULL = user-created (or head not yet readable)
+  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | 'promotion' | NULL = user-created (or head not yet readable)
   workspace  TEXT NOT NULL DEFAULT '',
   title      TEXT,                           -- first-prompt fallback title (sessions.title always wins when present)
   provider   TEXT,                           -- model reference from session_meta (CLI adoption reads it from here; NULL = meta unreadable / legacy without provider)

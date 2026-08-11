@@ -47,6 +47,7 @@ import type {
   ProjectUpdateRequest,
   ProjectUpdateResponse,
   ProjectsResponse,
+  PromotionRunsResponse,
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
@@ -621,6 +622,11 @@ export const removeAgentSkill = (projectId: string, agentId: string, name: strin
 export const listBenchmarks = (projectId: string, agentId: string) =>
   apiFetch<BenchmarksResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/benchmarks`,
+  );
+
+export const listPromotionRuns = (projectId: string, agentId: string) =>
+  apiFetch<PromotionRunsResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/benchmarks/promotion-runs`,
   );
 
 export const listBenchmarkCases = (projectId: string, agentId: string, benchmarkId: string) =>

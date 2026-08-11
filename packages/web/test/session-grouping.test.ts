@@ -33,7 +33,7 @@ function session(
     sessionId?: string;
     agentId?: string;
     archived?: boolean;
-    source?: "schedule" | "subagent";
+    source?: "schedule" | "subagent" | "promotion";
   } = {},
 ): SessionInfo {
   seq += 1;
@@ -157,6 +157,7 @@ describe("sessionCategory (the bucket a Session renders under = the server's lis
     expect(sessionCategory(session("/srv/a", at))).toBe("active");
     expect(sessionCategory(session("/srv/a", at, { source: "subagent" }))).toBe("subagent");
     expect(sessionCategory(session("/srv/a", at, { source: "schedule" }))).toBe("schedule");
+    expect(sessionCategory(session("/srv/a", at, { source: "promotion" }))).toBe("promotion");
     expect(sessionCategory(session("/srv/a", at, { archived: true }))).toBe("archived");
     expect(sessionCategory(session("/srv/a", at, { source: "subagent", archived: true }))).toBe(
       "archived",
@@ -164,18 +165,22 @@ describe("sessionCategory (the bucket a Session renders under = the server's lis
   });
 });
 
-describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
+describe("partitionSessions (per-group user / automation / archived split)", () => {
   it("splits user rows and one bucket per origin, preserving order within each part", () => {
     const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
     const sched1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
     const sub1 = session("/srv/alpha", "2026-07-04T10:00:00.000Z", { source: "subagent" });
+    const promotion = session("/srv/alpha", "2026-07-03T12:00:00.000Z", {
+      source: "promotion",
+    });
     const user2 = session("/srv/alpha", "2026-07-03T10:00:00.000Z");
     const sub2 = session("/srv/alpha", "2026-07-02T10:00:00.000Z", { source: "subagent" });
     const gone = session("/srv/alpha", "2026-07-01T10:00:00.000Z", { archived: true });
-    const parts = partitionSessions([user1, sched1, sub1, user2, sub2, gone]);
+    const parts = partitionSessions([user1, sched1, sub1, promotion, user2, sub2, gone]);
     expect(parts.active.map((s) => s.sessionId)).toEqual([user1.sessionId, user2.sessionId]);
     expect(parts.subagent.map((s) => s.sessionId)).toEqual([sub1.sessionId, sub2.sessionId]);
     expect(parts.schedule.map((s) => s.sessionId)).toEqual([sched1.sessionId]);
+    expect(parts.promotion.map((s) => s.sessionId)).toEqual([promotion.sessionId]);
     expect(parts.archived.map((s) => s.sessionId)).toEqual([gone.sessionId]);
   });
 
@@ -195,11 +200,12 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
     expect(parts.active).toEqual([]);
   });
 
-  it("empty input yields four empty parts", () => {
+  it("empty input yields every empty part", () => {
     expect(partitionSessions([])).toEqual({
       active: [],
       subagent: [],
       schedule: [],
+      promotion: [],
       archived: [],
     });
   });
@@ -244,7 +250,7 @@ describe("splitPage (limit+1 fetch trick)", () => {
 });
 
 describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
-  const zero = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  const zero = { active: 0, subagent: 0, schedule: 0, promotion: 0, archived: 0 };
 
   it("sums each Workspace path across Agents and records which Agents hold each category", () => {
     const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
@@ -259,17 +265,18 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     ]);
     const groups = aggregateWorkspaceCounts(byAgent);
     expect(groups.get("/srv/alpha")).toEqual({
-      totals: { active: 3, subagent: 1, schedule: 2, archived: 0 },
+      totals: { active: 3, subagent: 1, schedule: 2, promotion: 0, archived: 0 },
       agents: {
         active: ["agent_a", "agent_b"],
         subagent: ["agent_a"],
         schedule: ["agent_b"],
+        promotion: [],
         archived: [],
       },
     });
     expect(groups.get("/srv/beta")).toEqual({
       totals: { ...zero, archived: 3 },
-      agents: { active: [], subagent: [], schedule: [], archived: ["agent_a"] },
+      agents: { active: [], subagent: [], schedule: [], promotion: [], archived: ["agent_a"] },
     });
     // A group only in another Workspace never appears — its content can't surface elsewhere.
     expect(groups.has("/srv/gamma")).toBe(false);
@@ -290,7 +297,13 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(groups.size).toBe(1);
     expect(groups.get(TEMP_WORKSPACE_GROUP_KEY)).toEqual({
       totals: { ...zero, active: 3, archived: 1 },
-      agents: { active: ["agent_a"], subagent: [], schedule: [], archived: ["agent_a"] },
+      agents: {
+        active: ["agent_a"],
+        subagent: [],
+        schedule: [],
+        promotion: [],
+        archived: ["agent_a"],
+      },
     });
   });
 });

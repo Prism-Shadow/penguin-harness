@@ -1037,7 +1037,7 @@ export class TraceService {
     const category: SessionCategory =
       (row?.archivedAt ?? null) !== null
         ? "archived"
-        : source === "subagent" || source === "schedule"
+        : source === "subagent" || source === "schedule" || source === "promotion"
           ? source
           : "active";
     return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
@@ -1073,7 +1073,12 @@ export class TraceService {
      * Sessions stay in their folders regardless of which process ran them.
      */
     const cliOrigin = (sessionId: string, facts: TraceSessionFacts): boolean => {
-      if (facts.category === "subagent" || facts.category === "schedule") return false;
+      if (
+        facts.category === "subagent" ||
+        facts.category === "schedule" ||
+        facts.category === "promotion"
+      )
+        return false;
       const row = rows.get(sessionId);
       return !(
         row !== undefined &&
@@ -1084,7 +1089,13 @@ export class TraceService {
     // Classify every group once; the same result drives the CLI/category filters, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
     // `category` denies. Hidden CLI-origin groups are excluded from counts too.
-    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const counts: SessionCategoryCounts = {
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      promotion: 0,
+      archived: 0,
+    };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
@@ -1098,6 +1109,7 @@ export class TraceService {
         active: 0,
         subagent: 0,
         schedule: 0,
+        promotion: 0,
         archived: 0,
       });
       ws[facts.category] += 1;

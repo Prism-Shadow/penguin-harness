@@ -211,7 +211,13 @@ export class SessionService {
     }
 
     const want = paging ? paging.offset + paging.limit : Infinity;
-    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const counts: SessionCategoryCounts = {
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      promotion: 0,
+      archived: 0,
+    };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const matched: SessionRow[] = [];
     for (const row of sorted) {
@@ -223,6 +229,7 @@ export class SessionService {
           active: 0,
           subagent: 0,
           schedule: 0,
+          promotion: 0,
           archived: 0,
         });
         ws[cat] += 1;
@@ -296,7 +303,7 @@ export class SessionService {
     workspace?: string;
     approvalMode?: ApprovalMode;
     /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
-    source?: "schedule";
+    source?: "schedule" | "promotion";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(

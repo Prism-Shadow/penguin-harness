@@ -80,6 +80,55 @@ export class SnapshotService {
     return { version, file };
   }
 
+  /** Validate that the immutable archive for an exact version exists and identifies itself as that version. */
+  async requireVersionSnapshot(
+    projectId: string,
+    agentId: string,
+    version: number,
+  ): Promise<{ version: number; file: string }> {
+    const file = path.join(snapshotsDir(this.root, projectId, agentId), `v${version}.tar.gz`);
+    const staging = path.join(
+      agentDir(this.root, projectId, agentId),
+      `.snapshot-check-${randomBytes(6).toString("hex")}`,
+    );
+    await fs.mkdir(staging, { recursive: true });
+    try {
+      try {
+        await tar.extract({ file, cwd: staging, filter: (p) => !isVaultEntry(p) });
+      } catch {
+        throw new Error(`Snapshot v${version} is missing or is not a valid tar.gz archive.`);
+      }
+      let parsed: unknown;
+      try {
+        parsed = parseYaml(
+          await fs.readFile(path.join(staging, "agent_state", "system_config.yaml"), "utf8"),
+        );
+      } catch {
+        throw new Error(`Snapshot v${version} has no valid agent_state/system_config.yaml.`);
+      }
+      const raw =
+        parsed !== null && typeof parsed === "object"
+          ? (parsed as { version?: unknown }).version
+          : undefined;
+      const archived = agentStateVersion({ version: typeof raw === "number" ? raw : undefined });
+      if (archived !== version) {
+        throw new Error(`Snapshot v${version} contains Agent State v${archived}.`);
+      }
+      return { version, file };
+    } finally {
+      await fs.rm(staging, { recursive: true, force: true });
+    }
+  }
+
+  /** Deterministically restore one previously validated version archive. */
+  async restoreVersion(projectId: string, agentId: string, version: number): Promise<void> {
+    const { file } = await this.requireVersionSnapshot(projectId, agentId, version);
+    const restored = await this.importArchive(projectId, agentId, await fs.readFile(file), true);
+    if (restored.version !== version) {
+      throw new Error(`Restored Agent State v${restored.version}, expected v${version}.`);
+    }
+  }
+
   /** Export: automatically packs a snapshot first if none exists, returns the info needed for download. */
   async exportArchive(
     projectId: string,

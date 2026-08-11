@@ -3,7 +3,7 @@
  * the shared grouped-list building blocks (components/ui/group-list.tsx): the same two
  * grouping modes behind the same persisted preference (by Workspace — the default — or
  * by Agent), group bodies split into the active list plus the collapsed lazy
- * subagent / scheduled / archived folders, and the same "More" paging rows. Data comes
+ * subagent / scheduled / promotion / archived folders, and the same "More" paging rows. Data comes
  * from the paginated traces endpoint (paged per (Agent, category), see use-trace-tree),
  * honoring the same "show CLI sessions" preference as the sidebar (default off;
  * subagent/schedule Sessions stay in their folders regardless of origin).
@@ -123,7 +123,7 @@ export function TracesPage() {
   const [openAgentGroups, setOpenAgentGroups] = useState<ReadonlySet<string> | null>(null);
   /** Workspace-mode collapsed groups (expanded by default, like the sidebar — their data is already pooled). */
   const [collapsedWsGroups, setCollapsedWsGroups] = useState<ReadonlySet<string>>(new Set());
-  /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  /** Expanded folders (subagent / scheduled / promotion / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` (disable + loading text). */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());

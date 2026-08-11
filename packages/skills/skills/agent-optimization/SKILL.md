@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 12
-updated: 2026-08-11T09:35:10Z
+version: 13
+updated: 2026-08-12T00:00:00Z
 ---
 
 # Agent Optimization
@@ -39,13 +39,15 @@ TRACES = <target>/traces
 BENCHMARK = <target>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 SNAPSHOTS = <target>/snapshots
+PROMOTION_REQUESTS = <app_data_dir>/promotion_requests
+PROMOTION_REQUEST = <promotion_requests>/<optimization_session_id>.yaml
 ```
 
-Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
+Inspect only the requested Test Agent and Development Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates. A paired Promotion Benchmark id may be structurally visible in the Development config; do not follow it, open that Benchmark, or copy it into the Promotion request or report.
 
 Do not inspect Rubrics, Gold answers, private scoring conditions, Evaluator State, Workspace, or Trace, other Agents, or Project secrets. If private evaluation information enters the Optimizer context, restore the active Candidate and stop as contaminated.
 
-Modify only the Test Agent State and the versioned snapshot required to protect it. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`.
+Modify only the Test Agent State and the versioned snapshot required to protect it. Do not change the frozen Benchmark, Test Traces, or Project configuration. The only Benchmark write is appending a complete accepted Candidate Evaluation to `scoreboard.yaml`. After the final Candidate is fixed, the one additional permitted Project-level write is the immutable Promotion request described below.
 
 ## Optimization loop
 
@@ -136,4 +138,17 @@ After writing, parse the complete `scoreboard.yaml` and verify the appended Eval
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 
-Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. The final report must explicitly include `optimization_session_id`, `production_reference_version`, final `candidate_version`, Development Benchmark id, evaluation Runtime, and `snapshots/v<production_reference_version>.tar.gz`; call the result a Development-accepted Candidate, never a production promotion. Include the stop reason and known limitations. Never report a score for an Agent State that was not evaluated.
+If this Batch ends with a Development-accepted Candidate whose version differs from `production_reference_version`, verify again that its accepted Evaluation is the final record for this `optimization_session_id`, the Candidate is still active, and the production Snapshot exists. Then create exactly one immutable request at `PROMOTION_REQUEST` without overwriting any existing file:
+
+```yaml
+protocol_version: 1
+optimization_session_id: <top-level Optimizer Session id>
+test_agent_id: <test_agent_id>
+development_benchmark_id: <Development benchmark_id>
+production_reference_version: <pre-optimization production version>
+candidate_version: <final Development-accepted Candidate version>
+```
+
+Create the directory if needed, use an exclusive/atomic file creation, parse the committed YAML back, and verify every field. The filename must be exactly `<optimization_session_id>.yaml`. Do not include a Promotion Benchmark id, scores, Cases, Runtime, paths, or free-form diagnosis: the server derives the paired held-out Benchmark and frozen Runtime, validates the nomination and both Snapshots, and creates the isolated top-level Promotion Session after this Optimizer Task settles. Never create a second request for the same Batch or rewrite a registered request. If the Batch produced no new accepted Candidate, do not create a request.
+
+Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. The final report must explicitly include `optimization_session_id`, `production_reference_version`, final `candidate_version`, Development Benchmark id, evaluation Runtime, and `snapshots/v<production_reference_version>.tar.gz`; call the result a Development-accepted Candidate, never a production promotion. When a request was committed, say that automatic Promotion validation will be queued by the server after this Task ends; do not ask the user to open or paste a third Prompt. Include the stop reason and known limitations. Never report a score for an Agent State that was not evaluated.

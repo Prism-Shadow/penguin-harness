@@ -97,6 +97,7 @@ export function partitionTraceRows<T extends { category: SessionCategory }>(
     active: [],
     subagent: [],
     schedule: [],
+    promotion: [],
     archived: [],
   };
   for (const r of rows) parts[r.category].push(r);

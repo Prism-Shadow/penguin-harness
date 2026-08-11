@@ -108,6 +108,7 @@ const server = http.createServer((req, res) => {
     // the retry request carries no [turn_retried] block and is byte-for-byte identical to the
     // first request; the mock can only tell them apart by request count (see the malformedTurns counter).
     const wantsMalformed = flat.includes("bad stream test");
+    const isPromotionValidator = flat.includes("isolated Promotion Validator");
 
     // "Auth dead" test case: KEY-BASED — requests carrying the bad key (`sk-auth-bad`,
     // the Anthropic protocol sends it as the x-api-key header) are rejected with a 401 +
@@ -187,6 +188,109 @@ const server = http.createServer((req, res) => {
       connection: "keep-alive",
     });
     messageStart(res, msgCount);
+
+    // Automatic Promotion E2E: the server-created Validator receives a narrowly scoped
+    // held-out prompt. The mock appends one complete matrix through a real tool call, then
+    // ends normally so the server's deterministic promote/restore commit can run.
+    if (isPromotionValidator) {
+      if (hasToolResult) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Promotion Evaluation recorded; server commit pending." },
+        ]);
+        messageStop(res, "end_turn", 12);
+        return;
+      }
+      const field = (name) => new RegExp(`${name}: \`([^\`]+)\``).exec(flat)?.[1];
+      const scoreboardPath = field("promotion_scoreboard_path");
+      const optimizationSessionId = field("optimization_session_id");
+      const candidateVersion = Number(field("candidate_version"));
+      const productionReferenceVersion = Number(field("production_reference_version"));
+      const provider = field("provider");
+      const modelId = field("model_id");
+      const thinkingLevel = field("thinking_level");
+      if (
+        !scoreboardPath ||
+        !optimizationSessionId ||
+        !Number.isInteger(candidateVersion) ||
+        !Number.isInteger(productionReferenceVersion) ||
+        !provider ||
+        !modelId ||
+        !thinkingLevel
+      ) {
+        block(res, 0, { type: "text", text: "" }, [
+          { type: "text_delta", text: "Promotion fixture prompt was incomplete." },
+        ]);
+        messageStop(res, "end_turn", 8);
+        return;
+      }
+      const score = candidateVersion === 3 ? 70 : 85;
+      const evaluation = {
+        time: "2026-08-12T00:00:00Z",
+        version: candidateVersion,
+        provider,
+        model_id: modelId,
+        thinking_level: thinkingLevel,
+        evaluation_kind: "promotion_candidate",
+        optimization_session_id: optimizationSessionId,
+        production_reference_version: productionReferenceVersion,
+        summary_title: "Automatic held-out fixture",
+        summary: "One complete isolated fixture run.",
+        score,
+        cost: null,
+        duration_ms: 10,
+        cases: [
+          {
+            case: "CASE-001-fixture",
+            score,
+            cost: null,
+            duration_ms: 10,
+            runs: [
+              {
+                score,
+                cost: null,
+                duration_ms: 10,
+                session_id: `promotion-fixture-v${candidateVersion}`,
+              },
+            ],
+          },
+        ],
+      };
+      const yamlEntry = [
+        `  - time: ${JSON.stringify(evaluation.time)}`,
+        `    version: ${candidateVersion}`,
+        `    provider: ${JSON.stringify(provider)}`,
+        `    model_id: ${JSON.stringify(modelId)}`,
+        `    thinking_level: ${JSON.stringify(thinkingLevel)}`,
+        `    evaluation_kind: promotion_candidate`,
+        `    optimization_session_id: ${JSON.stringify(optimizationSessionId)}`,
+        `    production_reference_version: ${productionReferenceVersion}`,
+        `    summary_title: ${JSON.stringify(evaluation.summary_title)}`,
+        `    summary: ${JSON.stringify(evaluation.summary)}`,
+        `    score: ${score}`,
+        `    cost: null`,
+        `    duration_ms: 10`,
+        `    cases:`,
+        `      - case: CASE-001-fixture`,
+        `        score: ${score}`,
+        `        cost: null`,
+        `        duration_ms: 10`,
+        `        runs:`,
+        `          - score: ${score}`,
+        `            cost: null`,
+        `            duration_ms: 10`,
+        `            session_id: promotion-fixture-v${candidateVersion}`,
+        "",
+      ].join("\n");
+      const script = `const fs=require("fs");const p=${JSON.stringify(scoreboardPath)};const raw=fs.readFileSync(p,"utf8");if(raw.trimStart().startsWith("{")){const d=JSON.parse(raw);d.evaluations.push(${JSON.stringify(evaluation)});fs.writeFileSync(p,JSON.stringify(d,null,2)+"\\n");}else{fs.appendFileSync(p,${JSON.stringify(yamlEntry)});}`;
+      block(res, 0, { type: "tool_use", id: "toolu_promotion", name: "exec_command", input: {} }, [
+        {
+          type: "input_json_delta",
+          partial_json: JSON.stringify({ cmd: `node -e ${JSON.stringify(script)}` }),
+        },
+      ]);
+      messageStop(res, "tool_use", 20);
+      return;
+    }
 
     if (isTitle) {
       // The child session's title request carries **the child session's own answer** as

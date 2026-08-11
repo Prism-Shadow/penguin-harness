@@ -313,10 +313,22 @@ describe("session-index", () => {
     // counts=1 returns totals over the whole list, not the returned page — with or without a filter.
     const counted = await list("?category=active&counts=1&limit=1");
     expect(counted.sessions).toHaveLength(1);
-    expect(counted.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    expect(counted.counts).toEqual({
+      active: 2,
+      subagent: 1,
+      schedule: 1,
+      promotion: 0,
+      archived: 2,
+    });
     const full = await list("?counts=1");
     expect(full.sessions).toHaveLength(6);
-    expect(full.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    expect(full.counts).toEqual({
+      active: 2,
+      subagent: 1,
+      schedule: 1,
+      promotion: 0,
+      archived: 2,
+    });
     expect((await list("")).counts).toBeUndefined();
     expect((await list("")).workspaceCounts).toBeUndefined();
 
@@ -328,9 +340,10 @@ describe("session-index", () => {
       active: 0,
       subagent: 1,
       schedule: 0,
+      promotion: 0,
       archived: 0,
     });
-    const summed = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const summed = { active: 0, subagent: 0, schedule: 0, promotion: 0, archived: 0 };
     for (const ws of Object.values(byWorkspace)) {
       for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
     }

@@ -96,7 +96,7 @@ Drill down Agent → date → Session → Trace file. Per-turn cards show a cont
 
 ## Benchmark (/benchmark)
 
-View each Agent's Benchmark Score trend, workflow role, and evaluation details; drill into every Case's runs and jump to the linked Session and Trace. A Development Benchmark separates active and production versions. When structured Scoreboard metadata identifies an ungated Candidate, “Start promotion validation” opens a new conversation pre-filled with the independent Promotion Validator inputs; the action itself does not mutate the Agent or Scoreboard. Works together with the [Self-Improvement](/self-improvement) workflow.
+View each Agent's Benchmark Score trend, workflow role, and evaluation details; drill into every Case's runs and jump to the linked Session and Trace. A Development Benchmark separates active and production versions and shows automatic Promotion state: waiting for nomination, queued, running, promoted, restored, or failed. After the Optimizer Task submits a structured nomination, the server validates it and creates an independent top-level Promotion Session; the page only reads state and links to that Session. It does not trigger the workflow or mutate the Agent or Scoreboard. Works together with the [Self-Improvement](/self-improvement) workflow.
 
 ## User Administration (/admin/users)
 

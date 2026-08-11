@@ -16,6 +16,7 @@ import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCasesResponse,
   BenchmarksResponse,
+  PromotionRunsResponse,
   ProjectCreateResponse,
   WorkspaceFilesResponse,
 } from "../src/api/types.js";
@@ -61,6 +62,10 @@ describe("benchmarks api", () => {
     expect((await (await owner.get(base)).json()) as BenchmarksResponse).toEqual({
       benchmarks: [],
     });
+    expect(
+      (await (await member.get(`${base}/promotion-runs`)).json()) as PromotionRunsResponse,
+    ).toEqual({ runs: [] });
+    expect((await outsider.get(`${base}/promotion-runs`)).status).toBe(404);
   });
 
   it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {

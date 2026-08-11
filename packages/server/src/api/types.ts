@@ -35,8 +35,8 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session. */
-export type SessionSource = "schedule" | "subagent";
+/** Session source marker (default = user-created): server automation or a registered subagent session. */
+export type SessionSource = "schedule" | "subagent" | "promotion";
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -588,7 +588,7 @@ export interface SessionInfo {
 }
 
 /**
- * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * Session list category, the sidebar's origin-aware split applied server-side: archived wins
  * regardless of origin (archiving is an explicit user action), then the origin's bucket,
  * and a Session with no (or an unknown) source is `active` — user-created rows.
  */
@@ -1461,6 +1461,28 @@ export type BenchmarkRole = "general" | "development" | "promotion";
 export type BenchmarkEvaluationKind =
   "formal_baseline" | "development_candidate" | "promotion_candidate";
 export type PromotionDecision = "promoted" | "restored";
+
+/** Durable server-side lifecycle of one automatically orchestrated held-out gate. */
+export type PromotionRunStatus = "queued" | "running" | "promoted" | "restored" | "failed";
+
+export interface PromotionRunInfo {
+  optimizationSessionId: string;
+  testAgentId: string;
+  developmentBenchmarkId: string;
+  promotionBenchmarkId: string;
+  productionReferenceVersion: number;
+  candidateVersion: number;
+  status: PromotionRunStatus;
+  promotionSessionId?: string;
+  /** Stable machine-readable failure category; details remain in server errors / the Session Trace. */
+  errorCode?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromotionRunsResponse {
+  runs: PromotionRunInfo[];
+}
 
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */

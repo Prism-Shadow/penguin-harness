@@ -735,7 +735,7 @@ Promotion Benchmark：
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\`
 
-给每条接受记录写入 \`evaluation_kind: development_candidate\`、本顶层 Session 的 \`optimization_session_id\` 和优化开始前的 \`production_reference_version\`。结束时明确报告这三个字段、最终 \`candidate_version\`、Development Benchmark id、评测 Runtime 与生产恢复 Snapshot 路径；然后停止，等待新的独立 Promotion Validator Session。`,
+给每条接受记录写入 \`evaluation_kind: development_candidate\`、本顶层 Session 的 \`optimization_session_id\` 和优化开始前的 \`production_reference_version\`。最终 Candidate 固定后，按 Skill 的最小协议原子创建 \`<app_data_dir>/promotion_requests/<optimization_session_id>.yaml\`；请求中不得写入或推断 Promotion Benchmark id、held-out 内容或 Runtime。结束时明确报告上述批次字段、最终 \`candidate_version\`、Development Benchmark id、评测 Runtime、生产恢复 Snapshot 路径和自动晋升请求状态；然后停止。服务端会在本 Task 结束后验证请求并自动创建隔离的顶层 Promotion Session，不要让用户再复制第三个 Prompt。`,
       },
     },
     sessionList: "Session",
@@ -943,6 +943,7 @@ Promotion Benchmark：
     folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,
       schedule: (n: number) => `定时任务（${n}）`,
+      promotion: (n: number) => `晋升验证（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
@@ -1133,29 +1134,11 @@ Promotion Benchmark：
     statusEvaluation: "普通评测",
     activeVersion: (version: number): string => `活动 v${version}`,
     productionVersion: (version: number): string => `生产 v${version}`,
-    promotionPending: "待晋升验证",
-    startPromotion: "开始晋升验证",
-    promotionPrompt: (input: {
-      testAgentId: string;
-      optimizationSessionId: string;
-      candidateVersion: number;
-      productionReferenceVersion: number;
-      promotionBenchmarkId: string;
-      provider: string;
-      modelId: string;
-      thinkingLevel: string;
-    }): string => `请作为独立的 Promotion Validator 执行一次晋升验证。不要读取或推断 Development Benchmark、原 Optimizer 的诊断或私有 Trace，也不要修改 Candidate。
-
-- test_agent_id：\`${input.testAgentId}\`
-- optimization_session_id：\`${input.optimizationSessionId}\`
-- candidate_version：\`${input.candidateVersion}\`
-- production_reference_version：\`${input.productionReferenceVersion}\`
-- promotion_benchmark_id：\`${input.promotionBenchmarkId}\`
-- provider：\`${input.provider}\`
-- model_id：\`${input.modelId}\`
-- thinking_level：\`${input.thinkingLevel}\`
-
-先验证生产 Reference 的 \`snapshots/v${input.productionReferenceVersion}.tar.gz\`。在第一个 held-out 单元启动前，确保 Candidate 的 \`snapshots/v${input.candidateVersion}.tar.gz\` 存在且归档版本与当前 State 一致；缺失时原子创建，已有时不得覆盖。随后对 Promotion Benchmark 的每个 Case 仅运行一次，并把每个单元委派给使用 \`agent-evaluation\` 的子 Agent；用该 Benchmark 中生产 Reference 的最新有效记录作对照。矩阵完整有效后，先向 Promotion Scoreboard 追加并校验结构化记录：\`evaluation_kind: promotion_candidate\`、上述批次与版本字段，以及 \`promotion_decision: promoted | restored\`，再决定保留 Candidate 或从生产 Snapshot 恢复并验证。\`isolation_violated\` 不得记为零分：立即终止、恢复生产版本并隔离污染 Trace。一个 optimization_session_id 只能完成这一次晋升矩阵；不得改提同批次其他版本，也不得把 held-out 证据送回原 Optimizer。`,
+    promotionAwaitingRequest: "等待自动晋升请求",
+    promotionQueued: "晋升验证排队中",
+    promotionRunning: "晋升验证运行中",
+    promotionFailed: "晋升验证失败，请检查生产版本",
+    viewPromotionSession: "查看晋升 Session",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

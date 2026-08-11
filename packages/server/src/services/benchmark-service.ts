@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { benchmarksDir } from "@prismshadow/penguin-core";
 import type {
   BenchmarkCaseScore,
@@ -317,6 +317,59 @@ export class BenchmarkService {
       material,
     );
     return this.workspaceFiles.read(materialRoot, rel, options);
+  }
+
+  /**
+   * Commit the deterministic gate decision onto the exact model-authored Promotion
+   * Evaluation. Scores and aggregates remain untouched; the server owns only this
+   * orchestration field so a portable Scoreboard carries the same decision as runtime state.
+   */
+  async setPromotionDecision(
+    projectId: string,
+    agentId: string,
+    benchmarkId: string,
+    match: {
+      optimizationSessionId: string;
+      candidateVersion: number;
+      productionReferenceVersion: number;
+    },
+    decision: PromotionDecision,
+  ): Promise<void> {
+    const file = path.join(
+      benchmarksDir(this.root, projectId, agentId),
+      benchmarkId,
+      "scoreboard.yaml",
+    );
+    const raw = asRecord(parseYaml(await fs.readFile(file, "utf8")));
+    if (!Array.isArray(raw.evaluations)) {
+      throw new Error("Promotion Scoreboard has no evaluations array.");
+    }
+    const matches = raw.evaluations.filter((value) => {
+      const item = asRecord(value);
+      return (
+        item.evaluation_kind === "promotion_candidate" &&
+        item.optimization_session_id === match.optimizationSessionId &&
+        item.version === match.candidateVersion &&
+        item.production_reference_version === match.productionReferenceVersion
+      );
+    });
+    if (matches.length !== 1) {
+      throw new Error(`Expected one matching Promotion Evaluation, found ${matches.length}.`);
+    }
+    const item = asRecord(matches[0]);
+    if (item.promotion_decision !== undefined && item.promotion_decision !== decision) {
+      throw new Error("Promotion Evaluation already carries a conflicting decision.");
+    }
+    item.promotion_decision = decision;
+    const stat = await fs.stat(file);
+    const tmp = `${file}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await fs.writeFile(tmp, stringifyYaml(raw), { mode: stat.mode & 0o777 });
+      await fs.rename(tmp, file);
+    } catch (error) {
+      await fs.rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async caseMaterialRoot(

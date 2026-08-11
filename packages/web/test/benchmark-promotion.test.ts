@@ -61,6 +61,7 @@ describe("benchmarkPromotionState", () => {
         modelId: "gpt-test",
         thinkingLevel: "medium",
       },
+      run: null,
     });
   });
 
@@ -93,11 +94,13 @@ describe("benchmarkPromotionState", () => {
     expect(benchmarkPromotionState(development, [development, promoted], 2)).toEqual({
       productionVersion: 2,
       pending: null,
+      run: null,
     });
     promoted.evaluations[1]!.promotionDecision = "restored";
     expect(benchmarkPromotionState(development, [development, promoted], 1)).toEqual({
       productionVersion: 1,
       pending: null,
+      run: null,
     });
   });
 
@@ -106,6 +109,7 @@ describe("benchmarkPromotionState", () => {
     expect(benchmarkPromotionState(general, [general], 1)).toEqual({
       productionVersion: null,
       pending: null,
+      run: null,
     });
   });
 });
@@ -126,21 +130,11 @@ describe("evaluationWorkflowStatus", () => {
   });
 });
 
-describe("promotion draft", () => {
-  it.each([zh, en])("contains only the gate binding, not the Development Benchmark id", (copy) => {
-    const prompt = copy.benchmark.promotionPrompt({
-      testAgentId: "target-agent",
-      optimizationSessionId: "optimizer-1",
-      candidateVersion: 2,
-      productionReferenceVersion: 1,
-      promotionBenchmarkId: "heldout-promotion",
-      provider: "openai",
-      modelId: "gpt-test",
-      thinkingLevel: "medium",
-    });
-    expect(prompt).toContain("optimizer-1");
-    expect(prompt).toContain("heldout-promotion");
-    expect(prompt).not.toContain("contextual-choice-development");
-    expect(prompt).not.toContain("development-benchmark-id");
+describe("optimization example", () => {
+  it.each([zh, en])("commits an automatic request instead of asking for a third prompt", (copy) => {
+    const prompt = copy.chat.exampleTasks.agentOptimization.prompt;
+    expect(prompt).toContain("promotion_requests/<optimization_session_id>.yaml");
+    expect(prompt).toContain("Development Benchmark");
+    expect(prompt).not.toContain("heldout-promotion");
   });
 });

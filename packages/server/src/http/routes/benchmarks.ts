@@ -1,6 +1,7 @@
 /**
  * Benchmark scoring routes:
  *   GET /api/projects/:p/agents/:a/benchmarks (any member, read-only)
+ *   GET /api/projects/:p/agents/:a/benchmarks/promotion-runs
  *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases
  *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/files
  *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/files/content
@@ -12,7 +13,7 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
-import type { CaseMaterial } from "../../api/types.js";
+import type { CaseMaterial, PromotionRunInfo, PromotionRunsResponse } from "../../api/types.js";
 import { requireValidId } from "../validate.js";
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
@@ -79,6 +80,29 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(await deps.benchmarks.list(projectId, agentId));
+  });
+
+  app.get("/promotion-runs", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    await deps.agentConfigService.requireExists(projectId, agentId);
+    const runs: PromotionRunInfo[] = deps.promotionsRepo
+      .listByAgent(projectId, agentId)
+      .map((row) => ({
+        optimizationSessionId: row.optimizationSessionId,
+        testAgentId: row.testAgentId,
+        developmentBenchmarkId: row.developmentBenchmarkId,
+        promotionBenchmarkId: row.promotionBenchmarkId,
+        productionReferenceVersion: row.productionReferenceVersion,
+        candidateVersion: row.candidateVersion,
+        status: row.status,
+        ...(row.promotionSessionId ? { promotionSessionId: row.promotionSessionId } : {}),
+        ...(row.errorCode ? { errorCode: row.errorCode } : {}),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      }));
+    return c.json({ runs } satisfies PromotionRunsResponse);
   });
 
   app.get("/:benchmarkId/cases", async (c) => {

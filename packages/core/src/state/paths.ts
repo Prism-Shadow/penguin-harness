@@ -42,6 +42,20 @@ export function agentsDir(root: string, projectId: string): string {
   return agentsDirFrom(projectDir(root, projectId));
 }
 
+/** `<projectDir>/promotion_requests`, immutable Optimization Batch handoffs awaiting server orchestration. */
+export function promotionRequestsDir(root: string, projectId: string): string {
+  return path.join(projectDir(root, projectId), "promotion_requests");
+}
+
+/** One Optimization Batch's declarative Promotion request. */
+export function promotionRequestPath(
+  root: string,
+  projectId: string,
+  optimizationSessionId: string,
+): string {
+  return path.join(promotionRequestsDir(root, projectId), `${optimizationSessionId}.yaml`);
+}
+
 /** `<projectDir>/agents/<agentId>`. */
 export function agentDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentsDir(root, projectId), agentId);

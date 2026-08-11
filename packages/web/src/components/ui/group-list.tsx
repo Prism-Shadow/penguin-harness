@@ -132,7 +132,7 @@ export function MoreRow({
 }
 
 /**
- * Collapsed-by-default lazy folder (subagent / scheduled / archived): the toggle row
+ * Collapsed-by-default lazy folder (subagent / scheduled / promotion / archived): the toggle row
  * shows the label (typically with the group's exact server share), the body renders only
  * while open, and an optional "More" row pages the folder independently.
  */

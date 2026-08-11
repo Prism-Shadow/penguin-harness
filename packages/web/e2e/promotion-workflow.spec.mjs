@@ -1,9 +1,9 @@
 /**
- * Promotion workflow E2E:
- * - structured Benchmark roles and Scoreboard metadata render without summary/id inference;
- * - active and production versions are distinguished;
- * - an ungated Development Candidate opens a NEW draft with only the Promotion binding;
- * - promoted/restored records advance or preserve production and never reopen the gate.
+ * Automatic Promotion workflow E2E:
+ * - an Optimizer Task settles with one immutable request file;
+ * - the server creates an isolated top-level Promotion Session without a UI button;
+ * - a valid held-out score promotes, while a regression restores the production Snapshot;
+ * - the Benchmark page is a status/read-through surface and links to the automatic Session.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ const AGENT = "promotion_agent";
 const DEVELOPMENT = "promotion-e2e-development";
 const PROMOTION = "promotion-e2e-heldout";
 
-function evaluation({ version, kind, sessionId, productionVersion, decision }) {
+function evaluation({ version, score, kind, sessionId, productionVersion, decision }) {
   return {
     time: new Date(2026, 7, 11, version).toISOString(),
     version,
@@ -32,21 +32,21 @@ function evaluation({ version, kind, sessionId, productionVersion, decision }) {
     ...(decision ? { promotion_decision: decision } : {}),
     summary_title: "Human-readable fixture title only",
     summary: "This text deliberately carries no workflow state.",
-    score: version === 1 ? 60 : 80,
+    score,
     cost: null,
     duration_ms: 10,
     cases: [
       {
         case: "CASE-001-fixture",
-        score: version === 1 ? 60 : 80,
+        score,
         cost: null,
         duration_ms: 10,
         runs: [
           {
-            score: version === 1 ? 60 : 80,
+            score,
             cost: null,
             duration_ms: 10,
-            session_id: `fixture-run-v${version}`,
+            session_id: `fixture-run-v${version}-${kind}`,
           },
         ],
       },
@@ -79,13 +79,58 @@ async function writeBenchmark(projectId, id, role, pair, evaluations) {
   await writeFile(join(root, "scoreboard.yaml"), `${JSON.stringify({ evaluations }, null, 2)}\n`);
 }
 
+async function settleOptimizerBatch(
+  request,
+  projectId,
+  sessionId,
+  candidateVersion,
+  productionVersion,
+) {
+  const requestsDir = join(DATA, projectId, "promotion_requests");
+  await mkdir(requestsDir, { recursive: true });
+  await writeFile(
+    join(requestsDir, `${sessionId}.yaml`),
+    [
+      "protocol_version: 1",
+      `optimization_session_id: ${sessionId}`,
+      `test_agent_id: ${AGENT}`,
+      `development_benchmark_id: ${DEVELOPMENT}`,
+      `production_reference_version: ${productionVersion}`,
+      `candidate_version: ${candidateVersion}`,
+      "",
+    ].join("\n"),
+    { flag: "wx" },
+  );
+  const started = await request.post(`${BASE}/api/sessions/${sessionId}/tasks`, {
+    data: { input: [{ type: "text", text: "Finish this optimization batch." }] },
+  });
+  expect(started.ok(), "start Optimizer Task").toBeTruthy();
+}
+
+async function expectPromotionStatus(request, projectId, optimizationSessionId, status) {
+  await expect
+    .poll(
+      async () => {
+        const body = await (
+          await request.get(
+            `${BASE}/api/projects/${projectId}/agents/${AGENT}/benchmarks/promotion-runs`,
+          )
+        ).json();
+        return body.runs.find((item) => item.optimizationSessionId === optimizationSessionId)
+          ?.status;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(status);
+}
+
 async function openBenchmark(page, title) {
   await page.goto(`${BASE}/benchmark?agentId=${AGENT}`);
   await page.getByRole("button", { name: new RegExp(title) }).click();
   await expect(page.locator("section").getByRole("heading", { name: title })).toBeVisible();
 }
 
-test("pending Candidate opens an isolated promotion draft; promoted/restored states render", async ({
+test("server automatically promotes and restores isolated batches; UI only observes", async ({
   page,
 }) => {
   expect(DATA, "run.sh must expose its disposable data root").toBeTruthy();
@@ -113,79 +158,74 @@ test("pending Candidate opens an isolated promotion draft; promoted/restored sta
   });
   expect(created.ok(), "create target Agent").toBeTruthy();
 
-  const baseline = evaluation({ version: 1, kind: "formal_baseline" });
-  const candidateV2 = evaluation({
-    version: 2,
-    kind: "development_candidate",
-    sessionId: "optimizer-batch-1",
-    productionVersion: 1,
-  });
-  await writeBenchmark(projectId, DEVELOPMENT, "development", PROMOTION, [baseline, candidateV2]);
+  // Establish the recoverable production Snapshot before constructing Candidate v2.
+  const snapshotV1 = await page.request.get(
+    `${BASE}/api/projects/${projectId}/agents/${AGENT}/export`,
+  );
+  expect(snapshotV1.ok(), "snapshot production v1").toBeTruthy();
+  const baseline = evaluation({ version: 1, score: 80, kind: "formal_baseline" });
   await writeBenchmark(projectId, PROMOTION, "promotion", DEVELOPMENT, [baseline]);
   await setAgentVersion(projectId, 2);
+
+  const firstSession = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8" },
+    })
+  ).json();
+  const firstOptimizer = firstSession.session.sessionId;
+  const candidateV2 = evaluation({
+    version: 2,
+    score: 90,
+    kind: "development_candidate",
+    sessionId: firstOptimizer,
+    productionVersion: 1,
+  });
+  await writeBenchmark(projectId, DEVELOPMENT, "development", PROMOTION, [
+    evaluation({ version: 1, score: 60, kind: "formal_baseline" }),
+    candidateV2,
+  ]);
+  await settleOptimizerBatch(page.request, projectId, firstOptimizer, 2, 1);
+  await expectPromotionStatus(page.request, projectId, firstOptimizer, "promoted");
 
   await openBenchmark(page, "Development fixture");
   const details = page.locator("section");
   await expect(details.getByText("活动 v2", { exact: true })).toBeVisible();
-  await expect(details.getByText("生产 v1", { exact: true })).toBeVisible();
-  await expect(details.getByText("待晋升验证", { exact: true })).toBeVisible();
-  await expect(details.getByText("开发已接受", { exact: true })).toBeVisible();
-  await expect(details.getByText("基线", { exact: true })).toBeVisible();
-
-  await page.getByRole("button", { name: "开始晋升验证" }).click();
-  await expect(page).toHaveURL(/\/chat\/new$/);
-  const composer = page.getByPlaceholder(/输入消息/);
-  await expect(composer).toHaveValue(/optimization_session_id.*optimizer-batch-1/s);
-  await expect(composer).toHaveValue(new RegExp(`promotion_benchmark_id.*${PROMOTION}`, "s"));
-  const prompt = await composer.inputValue();
-  expect(prompt).not.toContain(DEVELOPMENT);
-  expect(prompt).toContain("snapshots/v1.tar.gz");
-  expect(prompt).toContain("snapshots/v2.tar.gz");
-
-  const promotedV2 = evaluation({
-    version: 2,
-    kind: "promotion_candidate",
-    sessionId: "optimizer-batch-1",
-    productionVersion: 1,
-    decision: "promoted",
-  });
-  await writeBenchmark(projectId, PROMOTION, "promotion", DEVELOPMENT, [baseline, promotedV2]);
-  await openBenchmark(page, "Development fixture");
-  await expect(details.getByText("活动 v2", { exact: true })).toBeVisible();
   await expect(details.getByText("生产 v2", { exact: true })).toBeVisible();
+  await expect(details.getByText("已晋升", { exact: true })).toBeVisible();
+  await expect(details.getByRole("link", { name: "查看晋升 Session" })).toBeVisible();
   await expect(page.getByRole("button", { name: "开始晋升验证" })).toHaveCount(0);
 
+  // A second independent Batch starts at production v2. The mock held-out score for v3
+  // regresses, so the server must restore v2 without a user action.
+  await setAgentVersion(projectId, 3);
+  const secondSession = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8" },
+    })
+  ).json();
+  const secondOptimizer = secondSession.session.sessionId;
   const candidateV3 = evaluation({
     version: 3,
+    score: 95,
     kind: "development_candidate",
-    sessionId: "optimizer-batch-2",
+    sessionId: secondOptimizer,
     productionVersion: 2,
-  });
-  const restoredV3 = evaluation({
-    version: 3,
-    kind: "promotion_candidate",
-    sessionId: "optimizer-batch-2",
-    productionVersion: 2,
-    decision: "restored",
   });
   await writeBenchmark(projectId, DEVELOPMENT, "development", PROMOTION, [
-    baseline,
+    evaluation({ version: 1, score: 60, kind: "formal_baseline" }),
     candidateV2,
     candidateV3,
   ]);
-  await writeBenchmark(projectId, PROMOTION, "promotion", DEVELOPMENT, [
-    baseline,
-    promotedV2,
-    restoredV3,
-  ]);
-  await setAgentVersion(projectId, 2);
+  // The Promotion Scoreboard remains untouched: its server-authored v2 record is the
+  // frozen production reference for this second gate.
+  await settleOptimizerBatch(page.request, projectId, secondOptimizer, 3, 2);
+  await expectPromotionStatus(page.request, projectId, secondOptimizer, "restored");
 
   await openBenchmark(page, "Development fixture");
   await expect(details.getByText("活动 v2", { exact: true })).toBeVisible();
   await expect(details.getByText("生产 v2", { exact: true })).toBeVisible();
-  await expect(details.getByText("待晋升验证", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "开始晋升验证" })).toHaveCount(0);
-
+  await expect(details.getByText("已回滚", { exact: true })).toBeVisible();
+  await expect(details.getByRole("link", { name: "查看晋升 Session" })).toBeVisible();
   await page.getByRole("button", { name: /Promotion fixture/ }).click();
   await expect(details.getByText("已晋升", { exact: true })).toBeVisible();
   await expect(details.getByText("已回滚", { exact: true })).toBeVisible();

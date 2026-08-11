@@ -48,7 +48,8 @@ function mapSession(r: Record<string, unknown>): TraceSessionRow {
     projectId: r.project_id as string,
     agentId: r.agent_id as string,
     // Narrowed on read as well as write: junk in a hand-edited DB must not leak out as a source.
-    source: source === "subagent" || source === "schedule" ? source : null,
+    source:
+      source === "subagent" || source === "schedule" || source === "promotion" ? source : null,
     workspace: (r.workspace as string | null) ?? "",
     title: (r.title as string | null) ?? null,
     provider: (r.provider as string | null) ?? null,

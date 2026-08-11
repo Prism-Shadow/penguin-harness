@@ -110,7 +110,13 @@ describe("agent-trace-detail", () => {
     const hidden = (await (await owner.get(`${base()}?limit=10`)).json()) as AgentTracesResponse;
     expect(hidden.sessions).toEqual([]);
     expect(hidden.totalSessions).toBe(0);
-    expect(hidden.counts).toEqual({ active: 0, subagent: 0, schedule: 0, archived: 0 });
+    expect(hidden.counts).toEqual({
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      promotion: 0,
+      archived: 0,
+    });
 
     // cli=1: visible, with title derived from the first user prompt and category /
     // workspace from the registration-time facts (the index head-read the earliest
@@ -126,11 +132,18 @@ describe("agent-trace-detail", () => {
     ]);
     expect(paged.sessions![0]!.category).toBe("active");
     expect(paged.sessions![0]!.workspace).toBe("/tmp/w");
-    expect(paged.counts).toEqual({ active: 1, subagent: 0, schedule: 0, archived: 0 });
+    expect(paged.counts).toEqual({
+      active: 1,
+      subagent: 0,
+      schedule: 0,
+      promotion: 0,
+      archived: 0,
+    });
     expect(paged.workspaceCounts!["/tmp/w"]).toEqual({
       active: 1,
       subagent: 0,
       schedule: 0,
+      promotion: 0,
       archived: 0,
     });
 

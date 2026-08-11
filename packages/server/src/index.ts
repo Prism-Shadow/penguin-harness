@@ -68,6 +68,9 @@ if (seededAdminPassword !== null && config.desktopToken === null) {
 
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
 await deps.scheduler.start();
+// Promotion requests are durable file intents. Reconcile crash leftovers before serving
+// new optimization completions; interrupted held-out matrices are never rerun blindly.
+await deps.promotionOrchestrator.start();
 
 // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss) can leave
 // goal_state rows stuck `active` with no runner behind them. Reconcile them to `aborted` now —

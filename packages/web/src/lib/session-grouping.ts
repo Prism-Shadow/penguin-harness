@@ -82,23 +82,31 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
  */
 export function sessionCategory(s: SessionInfo): SessionCategory {
   if (s.archived) return "archived";
-  return s.source === "subagent" || s.source === "schedule" ? s.source : "active";
+  return s.source === "subagent" || s.source === "schedule" || s.source === "promotion"
+    ? s.source
+    : "active";
 }
 
 /** The collapsed-folder categories of a group, in render order (below the active user rows). */
-export const FOLDER_CATEGORIES = ["subagent", "schedule", "archived"] as const;
+export const FOLDER_CATEGORIES = ["subagent", "schedule", "promotion", "archived"] as const;
 export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
 
 /**
- * Four-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * Origin-aware split of one sidebar group's Sessions by sessionCategory (rendered top to
  * bottom in this order): active user rows in the group body, then the collapsed
- * Subagents / Scheduled / Archived folders.
+ * Subagents / Scheduled / Promotion / Archived folders.
  */
 export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
 
 /** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
+  const parts: SessionPartition = {
+    active: [],
+    subagent: [],
+    schedule: [],
+    promotion: [],
+    archived: [],
+  };
   for (const s of sessions) parts[sessionCategory(s)].push(s);
   return parts;
 }
@@ -129,8 +137,8 @@ export function aggregateWorkspaceCounts(
       let group = out.get(key);
       if (!group) {
         group = {
-          totals: { active: 0, subagent: 0, schedule: 0, archived: 0 },
-          agents: { active: [], subagent: [], schedule: [], archived: [] },
+          totals: { active: 0, subagent: 0, schedule: 0, promotion: 0, archived: 0 },
+          agents: { active: [], subagent: [], schedule: [], promotion: [], archived: [] },
         };
         out.set(key, group);
       }

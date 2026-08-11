@@ -347,6 +347,15 @@ describe("librarySkill", () => {
     expect(optimizationRaw).toMatch(
       /production_reference_version: <pre-optimization production version>/,
     );
+    expect(optimization).toContain("`PROMOTION_REQUEST` without overwriting any existing file");
+    expect(optimizationRaw).toMatch(/protocol_version: 1/);
+    expect(optimizationRaw).toMatch(/development_benchmark_id: <Development benchmark_id>/);
+    expect(optimization).toContain(
+      "Do not include a Promotion Benchmark id, scores, Cases, Runtime, paths, or free-form diagnosis",
+    );
+    expect(optimization).toContain(
+      "automatic Promotion validation will be queued by the server after this Task ends",
+    );
     expect(optimization).toContain("a positive `runs` value");
     expect(optimization).toContain(
       "do not infer it from `benchmark_config.toml` or the Formal Baseline",

@@ -748,7 +748,7 @@ Split concrete instances into non-overlapping Development and Promotion Cases. N
       agentOptimization: {
         label: "Improve the general-purpose decision agent's accuracy",
         desc: "Improve only on Development and produce one Candidate for an independent gate",
-        prompt: `Use \`agent-optimization\` to optimize a decision Agent using only its frozen Development Benchmark. Do not find, inspect, or infer any Promotion Benchmark. This Session produces a Development-accepted Candidate only and must not claim production promotion.
+        prompt: `Use \`agent-optimization\` with only the frozen Development Benchmark. Do not inspect or infer its paired Promotion Benchmark. Produce one Development-accepted Candidate; do not claim production promotion.
 
 - test_agent_id: \`finite_choice_agent\`
 - benchmark_id: \`contextual-choice-development\`
@@ -757,7 +757,7 @@ Split concrete instances into non-overlapping Development and Promotion Cases. N
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\`
 
-Write \`evaluation_kind: development_candidate\`, this top-level Session's \`optimization_session_id\`, and the pre-optimization \`production_reference_version\` on every accepted record. At completion explicitly report those fields, final \`candidate_version\`, Development Benchmark id, evaluation Runtime, and production recovery Snapshot path; then stop and wait for a new independent Promotion Validator Session.`,
+Every accepted record must include \`evaluation_kind: development_candidate\`, this top-level Session's \`optimization_session_id\`, and the pre-batch \`production_reference_version\`. After fixing the final Candidate, atomically create \`<app_data_dir>/promotion_requests/<optimization_session_id>.yaml\` exactly as the Skill specifies; include no Promotion id, held-out evidence, or Runtime. Report the Batch fields, final \`candidate_version\`, Development id and Runtime, recovery Snapshot, and request status; then stop. The server validates the request after Task completion and launches the isolated Promotion Session automatically. Do not ask for a third Prompt.`,
       },
     },
     sessionList: "Sessions",
@@ -969,6 +969,7 @@ Write \`evaluation_kind: development_candidate\`, this top-level Session's \`opt
     folderGroups: {
       subagent: (n: number) => `Subagents (${n})`,
       schedule: (n: number) => `Scheduled (${n})`,
+      promotion: (n: number) => `Promotion validation (${n})`,
       archived: (n: number) => `Archived (${n})`,
     },
     skillsBanner: (names: string[]): string =>
@@ -1160,22 +1161,11 @@ Write \`evaluation_kind: development_candidate\`, this top-level Session's \`opt
     statusEvaluation: "Evaluation",
     activeVersion: (version: number): string => `Active v${version}`,
     productionVersion: (version: number): string => `Production v${version}`,
-    promotionPending: "Promotion pending",
-    startPromotion: "Start promotion validation",
-    promotionPrompt: (
-      input,
-    ): string => `Act as an independent Promotion Validator and execute one promotion validation. Do not inspect or infer the Development Benchmark, the original Optimizer's diagnosis, or private Traces, and do not modify the Candidate.
-
-- test_agent_id: \`${input.testAgentId}\`
-- optimization_session_id: \`${input.optimizationSessionId}\`
-- candidate_version: \`${input.candidateVersion}\`
-- production_reference_version: \`${input.productionReferenceVersion}\`
-- promotion_benchmark_id: \`${input.promotionBenchmarkId}\`
-- provider: \`${input.provider}\`
-- model_id: \`${input.modelId}\`
-- thinking_level: \`${input.thinkingLevel}\`
-
-First verify the production Reference at \`snapshots/v${input.productionReferenceVersion}.tar.gz\`. Before the first held-out cell, ensure \`snapshots/v${input.candidateVersion}.tar.gz\` exists and its archived version matches the current State; create it atomically when absent and never overwrite an existing archive. Then run every Promotion Benchmark Case exactly once, delegating each cell to a subagent using \`agent-evaluation\`; compare against that Benchmark's latest valid record for the production Reference. After a complete valid matrix, append and verify a structured Promotion Scoreboard record first: \`evaluation_kind: promotion_candidate\`, the batch and version fields above, and \`promotion_decision: promoted | restored\`; only then retain the Candidate or restore and verify the production Snapshot. Never record \`isolation_violated\` as zero: terminate immediately, restore production, and quarantine the contaminated Trace. One optimization_session_id may complete only this promotion matrix; do not nominate a sibling version from the same batch or return held-out evidence to the original Optimizer.`,
+    promotionAwaitingRequest: "Waiting for automatic promotion request",
+    promotionQueued: "Promotion validation queued",
+    promotionRunning: "Promotion validation running",
+    promotionFailed: "Promotion validation failed; check the production version",
+    viewPromotionSession: "View promotion Session",
   },
 
   errors: {

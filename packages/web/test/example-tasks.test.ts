@@ -81,7 +81,7 @@ describe("draft example tasks", () => {
       ],
     },
   ])(
-    "$locale preserves the Builder and Optimizer sides of the three-session contract",
+    "$locale preserves the two user prompts and automatic gate contract",
     ({
       buildPrompt,
       optimizationPrompt,

@@ -123,7 +123,7 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
 }
 
 /**
- * Open-state key of a collapsed folder (subagent / scheduled / archived) inside a group:
+ * Open-state key of a collapsed folder (subagent / scheduled / promotion / archived) inside a group:
  * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
  * the composite never collides across groups or with plain group keys.
  */
@@ -282,7 +282,7 @@ export function Sidebar({
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   }, [collapseStoreKey, pinStoreKey]);
-  /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  /** Expanded folders (subagent / scheduled / promotion / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
@@ -539,7 +539,7 @@ export function Sidebar({
   );
 
   /**
-   * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
+   * Collapsed-by-default lazy folder (subagent / scheduled / promotion / archived): nothing is
    * fetched until the first expand, and once open the folder pages independently with
    * its own "More" row. Everything is driven by the group's **own** exact server share
    * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
@@ -595,7 +595,7 @@ export function Sidebar({
   /**
    * Expanded group body shared by both modes: active user rows (display-capped; "More"
    * reveals and loads further **active-only** pages — the folders below never feed it) +
-   * the collapsed-by-default subagent / scheduled / archived folders, each loading on
+   * the collapsed-by-default subagent / scheduled / promotion / archived folders, each loading on
    * first expand and paging on its own. `totals` / `agentsFor` carry the group's exact
    * server share and its fetch fan-out set per category.
    */

@@ -18,7 +18,7 @@ import type { SessionSource } from "../api/types.js";
  * parties — is treated as absent rather than cast through.
  */
 export function asSessionSource(v: unknown): SessionSource | undefined {
-  return v === "schedule" || v === "subagent" ? v : undefined;
+  return v === "schedule" || v === "subagent" || v === "promotion" ? v : undefined;
 }
 
 export class SessionSources {

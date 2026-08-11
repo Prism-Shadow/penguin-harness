@@ -303,7 +303,7 @@ export interface NestedSessionMeta {
   provider: string;
   modelId: string;
   /** Session origin as recorded by core (subagent / schedule); absent = user-created. */
-  source?: "subagent" | "schedule";
+  source?: "subagent" | "schedule" | "promotion";
 }
 
 export interface StreamModel {

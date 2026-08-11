@@ -120,7 +120,7 @@ export interface CreateSessionOptions {
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
   /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule". */
-  source?: "subagent" | "schedule";
+  source?: "subagent" | "schedule" | "promotion";
 }
 
 export interface ResumeSessionOptions {
@@ -475,7 +475,7 @@ export class Agent {
         // The origin carries over from the original session_meta (a resumed scheduled/subagent
         // Session stays marked). The on-disk value is untrusted: only the exact known origins
         // pass; junk written by a third party is dropped rather than cast through.
-        ...(meta.source === "subagent" || meta.source === "schedule"
+        ...(meta.source === "subagent" || meta.source === "schedule" || meta.source === "promotion"
           ? { source: meta.source }
           : {}),
       },

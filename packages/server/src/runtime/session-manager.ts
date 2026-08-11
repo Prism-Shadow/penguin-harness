@@ -215,6 +215,12 @@ export interface SessionManagerDeps {
   goals?: GoalsRepo;
 }
 
+export interface TaskSettledContext {
+  projectId: string;
+  agentId: string;
+  sessionId: string;
+}
+
 /** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
 interface QueuedFollowUp {
   input: OmniMessage[];
@@ -354,6 +360,7 @@ function nestedAssistantText(msg: OmniMessage): { sessionId: string; text: strin
 }
 
 export class SessionManager {
+  private taskSettledListener?: (ctx: TaskSettledContext) => Promise<void> | void;
   private readonly entries = new Map<string, RuntimeEntry>();
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
   private readonly locks = new Map<string, Promise<unknown>>();
@@ -374,6 +381,11 @@ export class SessionManager {
     this.log = deps.log ?? ((line) => console.error(line));
     this.sweepTimer = setInterval(() => this.sweepIdle(), ENTRY_SWEEP_INTERVAL_MS);
     this.sweepTimer.unref?.();
+  }
+
+  /** Register the one server workflow listener after dependency assembly resolves its cycle. */
+  setTaskSettledListener(listener: (ctx: TaskSettledContext) => Promise<void> | void): void {
+    this.taskSettledListener = listener;
   }
 
   // —— Query surface (used by Session listing / Agent active-count / SSE subscription replay) ——
@@ -1286,6 +1298,25 @@ export class SessionManager {
             notifyOn: entry.sessionId, // Notify the frontend via the parent Session's SSE channel
           },
         );
+      }
+      if (this.taskSettledListener) {
+        void Promise.resolve(
+          this.taskSettledListener({
+            projectId: entry.projectId,
+            agentId: entry.agentId,
+            sessionId: entry.sessionId,
+          }),
+        ).catch((err) => {
+          this.log(
+            `[session] Task-settled listener failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          this.deps.errors?.record({
+            source: "promotion",
+            err,
+            ctx,
+            code: "promotion_settled_hook_failed",
+          });
+        });
       }
     }
   }

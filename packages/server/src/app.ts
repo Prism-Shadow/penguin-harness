@@ -70,6 +70,8 @@ import { AgentConfigService } from "./services/agent-config-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
+import { PromotionsRepo } from "./db/repos/promotions.js";
+import { PromotionOrchestrator } from "./runtime/promotion-orchestrator.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
@@ -115,6 +117,8 @@ export interface AppDeps {
   previewTokens: PreviewTokenSigner;
   benchmarks: BenchmarkService;
   snapshots: SnapshotService;
+  promotionsRepo: PromotionsRepo;
+  promotionOrchestrator: PromotionOrchestrator;
   schedulesRepo: SchedulesRepo;
   goalsRepo: GoalsRepo;
   errorsRepo: ErrorsRepo;
@@ -164,6 +168,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   // whose runtime the manager adopts for the first Task).
   const stripProxyEnv = () => !serverSettingsRepo.getUseSystemProxy();
   const schedulesRepo = new SchedulesRepo(db);
+  const promotionsRepo = new PromotionsRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
@@ -282,6 +287,19 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     },
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
+  const promotionOrchestrator = new PromotionOrchestrator({
+    root: config.root,
+    projects: projectsRepo,
+    repo: promotionsRepo,
+    sessions: sessionsRepo,
+    benchmarks,
+    snapshots,
+    sessionCreator: sessionService,
+    runner: manager,
+    errors,
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
+  manager.setTaskSettledListener((ctx) => promotionOrchestrator.onTaskSettled(ctx));
 
   return {
     config,
@@ -304,6 +322,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     previewTokens,
     benchmarks,
     snapshots,
+    promotionsRepo,
+    promotionOrchestrator,
     schedulesRepo,
     goalsRepo,
     errorsRepo,

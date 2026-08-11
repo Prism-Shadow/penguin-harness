@@ -1,4 +1,8 @@
-import type { BenchmarkEvaluation, BenchmarkSummary } from "@prismshadow/penguin-server/api";
+import type {
+  BenchmarkEvaluation,
+  BenchmarkSummary,
+  PromotionRunInfo,
+} from "@prismshadow/penguin-server/api";
 
 export interface PendingPromotion {
   optimizationSessionId: string;
@@ -13,6 +17,7 @@ export interface PendingPromotion {
 export interface BenchmarkPromotionState {
   productionVersion: number | null;
   pending: PendingPromotion | null;
+  run: PromotionRunInfo | null;
 }
 
 /** Derive workflow state only from structured fields; titles and summaries are never parsed. */
@@ -20,9 +25,10 @@ export function benchmarkPromotionState(
   development: BenchmarkSummary,
   benchmarks: readonly BenchmarkSummary[],
   activeVersion: number,
+  runs: readonly PromotionRunInfo[] = [],
 ): BenchmarkPromotionState {
   if (development.role !== "development" || !development.pairedBenchmarkId) {
-    return { productionVersion: null, pending: null };
+    return { productionVersion: null, pending: null, run: null };
   }
   const promotion = benchmarks.find(
     (item) =>
@@ -30,7 +36,7 @@ export function benchmarkPromotionState(
       item.role === "promotion" &&
       (!item.pairedBenchmarkId || item.pairedBenchmarkId === development.id),
   );
-  if (!promotion) return { productionVersion: null, pending: null };
+  if (!promotion) return { productionVersion: null, pending: null, run: null };
 
   let productionVersion: number | null =
     promotion.evaluations.find((item) => item.evaluationKind === "formal_baseline")?.version ??
@@ -51,8 +57,15 @@ export function benchmarkPromotionState(
         item.optimizationSessionId &&
         item.productionReferenceVersion !== undefined,
     );
-  if (!candidate || activeVersion !== candidate.version) {
-    return { productionVersion, pending: null };
+  if (!candidate) return { productionVersion, pending: null, run: null };
+  const matchingRun =
+    runs.find(
+      (item) =>
+        item.optimizationSessionId === candidate.optimizationSessionId &&
+        item.candidateVersion === candidate.version,
+    ) ?? null;
+  if (activeVersion !== candidate.version) {
+    return { productionVersion, pending: null, run: matchingRun };
   }
   const alreadyDecided = promotion.evaluations.some(
     (item) =>
@@ -61,7 +74,13 @@ export function benchmarkPromotionState(
       item.version === candidate.version &&
       item.promotionDecision !== undefined,
   );
-  if (alreadyDecided) return { productionVersion, pending: null };
+  if (alreadyDecided) {
+    return {
+      productionVersion,
+      pending: null,
+      run: matchingRun,
+    };
+  }
 
   const referenceRuntime = [...promotion.evaluations]
     .reverse()
@@ -71,7 +90,7 @@ export function benchmarkPromotionState(
         (item.evaluationKind === "formal_baseline" ||
           (item.evaluationKind === "promotion_candidate" && item.promotionDecision === "promoted")),
     );
-  if (!referenceRuntime) return { productionVersion, pending: null };
+  if (!referenceRuntime) return { productionVersion, pending: null, run: null };
 
   return {
     productionVersion,
@@ -84,6 +103,7 @@ export function benchmarkPromotionState(
       modelId: referenceRuntime.modelId,
       thinkingLevel: referenceRuntime.thinkingLevel,
     },
+    run: matchingRun,
   };
 }
 
