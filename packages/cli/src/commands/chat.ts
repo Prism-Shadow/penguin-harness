@@ -29,7 +29,7 @@ import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
 import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
-import { StreamRenderer, dim, renderHistory, sessionMetaTools } from "../render.js";
+import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
@@ -115,8 +115,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
       }
 
       const renderer = new StreamRenderer(out, t);
-      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
-      renderer.useToolSchemas(sessionMetaTools(session));
+      // Tool schemas (each tool's call-line preview path) arrive on the stream as the
+      // first run's tool_list_ready event — the toolset isn't known before then (MCP
+      // servers connect lazily); the renderer registers them as they flow by.
 
       out.write(
         `${t.header("chat", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n` +

@@ -328,7 +328,57 @@ export const en: Strings = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
-    mcpServers: "MCP Servers (read-only)",
+    mcpServers: "MCP Servers",
+    mcpDesc:
+      "Connect external MCP Servers: their tools join this agent's toolset as mcp__<name>__<tool>. Changes in this block save immediately.",
+    mcpEmpty: "No MCP Servers configured yet",
+    mcpAdd: "Add MCP Server",
+    mcpEditTitle: "Edit MCP Server",
+    mcpRemove: "Remove",
+    mcpName: "name",
+    mcpNameHint: "Tool-name prefix: mcp__<name>__<tool>; letters, digits, _ and - only",
+    mcpTransport: "transport",
+    mcpTransportStdio: "Local process: spawns command and talks over stdin/stdout",
+    mcpTransportHttp: "Streamable HTTP: the current spec's remote transport",
+    mcpTransportSse: "Legacy HTTP+SSE: kept for servers that have not migrated",
+    mcpTarget: "command / url",
+    mcpCommand: "command",
+    mcpArgs: "args",
+    mcpArgsHint: "One argument per line",
+    mcpEnv: "env",
+    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpCwd: "cwd",
+    mcpCwdHint: "Leave empty to use the Session's Workspace",
+    mcpUrl: "url",
+    mcpHeaders: "headers",
+    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpConnectTimeout: "connectTimeoutMs",
+    mcpBudgetsHint:
+      "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
+    mcpNameInvalid: "Letters, digits, _ and - only, starting with a letter or digit",
+    mcpUrlInvalid: "Must be a valid http(s) URL",
+    mcpLineInvalid: (line: number): string => `Line ${line} is not valid`,
+    mcpNumberInvalid: "Must be an integer > 0",
+    mcpDuplicateName: "A server with this name already exists",
+    mcpTest: "Test connection",
+    mcpTesting: "Testing…",
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
+      return toolCount === 0
+        ? `Connected, but the server exposes no tools${timing}`
+        : `Connected — ${toolCount} tool${toolCount === 1 ? "" : "s"}${timing}`;
+    },
+    mcpTestFail: (detail: string): string => `Connection failed: ${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `Connects to ${n === 1 ? "the configured MCP server" : `each of the ${n} configured MCP servers`} in turn and runs tool discovery (real connections, nothing is saved); results land on each row.`,
+    mcpTestAllStart: "Start test",
+    mcpTestPending: "Testing…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} tool${toolCount === 1 ? "" : "s"}${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "Connection failed",
+    mcpDeleteTitle: "Delete MCP Server",
+    mcpDeleteConfirm: (name: string): string =>
+      `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
     defaultValue: "(default)",
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
@@ -1024,16 +1074,30 @@ Scenarios:
       "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
-    compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP connect",
+    mcpServerList: (servers: string[]): string => servers.join(", "),
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failed.length === 0) {
+        parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
+      }
+      if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
+      return parts.join("; ");
+    },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
+    mcpServerFailed: "connection failed",
+    mcpConnectAborted: "interrupted — reconnects on the next send",
+    compactionTitle: "Compaction",
     compactionDone: (mode: string) =>
-      mode === "discard"
-        ? "[Compaction] done, old context discarded"
-        : "[Compaction] done, switched to the summarized context",
+      mode === "discard" ? "old context discarded" : "switched to the summarized context",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[Compaction] aborted, keeping current context";
+      if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined
-        ? `[Compaction] failed (${errorMessage}), keeping current context`
-        : "[Compaction] failed, keeping current context";
+        ? `failed (${errorMessage}), keeping current context`
+        : "failed, keeping current context";
     },
     unknownTool: "(unknown tool)",
     workRunning: "Running",
@@ -1183,6 +1247,8 @@ Scenarios:
     kindModelReply: "model reply",
     kindToolGen: "tool call gen",
     legendToolExec: "tool exec",
+    legendOther: "Other",
+    toolParams: "Parameter schema",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",

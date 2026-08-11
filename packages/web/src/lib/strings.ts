@@ -306,7 +306,57 @@ export const zh = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
-    mcpServers: "MCP Server（只读）",
+    mcpServers: "MCP Server",
+    mcpDesc:
+      "连接外部 MCP Server：其工具以 mcp__<name>__<tool> 并入本 Agent 的工具列表。此区块的改动即时保存。",
+    mcpEmpty: "尚未配置 MCP Server",
+    mcpAdd: "添加 MCP Server",
+    mcpEditTitle: "编辑 MCP Server",
+    mcpRemove: "删除",
+    mcpName: "name",
+    mcpNameHint: "工具名前缀：mcp__<name>__<tool>；限字母、数字、_ 和 -",
+    mcpTransport: "transport",
+    mcpTransportStdio: "本地进程：启动 command 后经 stdin/stdout 通信",
+    mcpTransportHttp: "Streamable HTTP：当前规范的远程 transport",
+    mcpTransportSse: "旧版 HTTP+SSE：仅为未迁移的服务保留",
+    mcpTarget: "command / url",
+    mcpCommand: "command",
+    mcpArgs: "args",
+    mcpArgsHint: "每行一个参数",
+    mcpEnv: "env",
+    mcpEnvHint: "每行一条 KEY=value；Agent vault 不注入 MCP Server 进程",
+    mcpCwd: "cwd",
+    mcpCwdHint: "留空则使用本次 Session 的 Workspace",
+    mcpUrl: "url",
+    mcpHeaders: "headers",
+    mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpConnectTimeout: "connectTimeoutMs",
+    mcpBudgetsHint:
+      "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
+    mcpNameInvalid: "限字母、数字、_ 和 -，且以字母或数字开头",
+    mcpUrlInvalid: "必须是合法的 http(s) URL",
+    mcpLineInvalid: (line: number): string => `第 ${line} 行格式无效`,
+    mcpNumberInvalid: "必须是 > 0 的整数",
+    mcpDuplicateName: "同名 Server 已存在",
+    mcpTest: "测试连接",
+    mcpTesting: "测试中…",
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
+      return toolCount === 0
+        ? `连接成功，但该 Server 未暴露任何工具${timing}`
+        : `连接成功，发现 ${toolCount} 个工具${timing}`;
+    },
+    mcpTestFail: (detail: string): string => `连接失败：${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `将逐一连接已配置的 ${n} 个 MCP Server 并做工具发现（真实连接，不保存任何改动），结果显示在各行上。`,
+    mcpTestAllStart: "开始测试",
+    mcpTestPending: "测试中…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} 个工具${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "连接失败",
+    mcpDeleteTitle: "删除 MCP Server",
+    mcpDeleteConfirm: (name: string): string =>
+      `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     deleteAgent: "删除 Agent",
@@ -997,14 +1047,28 @@ Benchmark：
     modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
-    compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP 连接",
+    mcpServerList: (servers: string[]): string => servers.join("、"),
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
+      return parts.join("；");
+    },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} 个工具`,
+    mcpServerFailed: "连接失败",
+    mcpConnectAborted: "已中断，下次发送时重新连接",
+    compactionTitle: "压缩",
     compactionDone: (mode: string): string =>
-      mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
+      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
+      if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
-        ? `[压缩] 失败（${errorMessage}），保留当前上下文`
-        : "[压缩] 失败，保留当前上下文";
+        ? `失败（${errorMessage}），保留当前上下文`
+        : "失败，保留当前上下文";
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",
@@ -1149,6 +1213,8 @@ Benchmark：
     kindModelReply: "模型回复",
     kindToolGen: "工具调用生成",
     legendToolExec: "工具调用执行",
+    legendOther: "其他",
+    toolParams: "参数 Schema",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

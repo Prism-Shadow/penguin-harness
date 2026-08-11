@@ -19,6 +19,7 @@ import {
   isValidVaultKey,
   loadAgentVault,
   resetSystemConfigToDefaults,
+  resolveMCPServer,
   saveAgentVault,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
@@ -377,6 +378,7 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
 
 function validateMcpServers(value: unknown): MCPServerConfig[] {
   if (!Array.isArray(value)) throw badRequest("mcpServers must be an array.");
+  const seen = new Set<string>();
   return value.map((item, i) => {
     const s = asRecord(item);
     if (typeof s.name !== "string" || s.name.length === 0) {
@@ -385,6 +387,18 @@ function validateMcpServers(value: unknown): MCPServerConfig[] {
     if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
       throw badRequest(`mcpServers[${i}].config must be an object.`);
     }
+    // Transport-level validation through the core resolver — the single source of truth
+    // with the runtime: a precise 400 at save time beats a warn-and-skip at the next
+    // Session start.
+    try {
+      resolveMCPServer(s as unknown as MCPServerConfig);
+    } catch (err) {
+      throw badRequest(`mcpServers[${i}]: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (seen.has(s.name)) {
+      throw badRequest(`mcpServers[${i}]: duplicate server name "${s.name}".`);
+    }
+    seen.add(s.name);
     return s as unknown as MCPServerConfig;
   });
 }

@@ -41,7 +41,9 @@ describe("POST agent config reset", () => {
         model: { maxTokens: 1234 },
         compaction: { mode: "discard" },
         toolsBuiltin: [],
-        mcpServers: [{ name: "custom-mcp", config: {} }],
+        // A transport-valid entry: since MCP support landed, PUT validates entries through
+        // the core resolver, so a bare `config: {}` placeholder is a 400 now.
+        mcpServers: [{ name: "custom-mcp", config: { command: "custom-server" } }],
       },
     });
     expect(put.status).toBe(200);

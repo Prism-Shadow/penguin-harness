@@ -3,8 +3,8 @@
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
- * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
- * (vault-tab.tsx), Schedule (schedules-tab.tsx).
+ * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
+ * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
  * server-side).
  */
@@ -37,6 +37,7 @@ import { SkillsTab } from "./skills-tab";
 import { MemoryTab } from "./memory-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
+import { McpServersSection } from "./mcp-servers-section";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
 type TabKey =
@@ -251,7 +252,14 @@ export function AgentSettingsPage() {
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
           {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
-          {tab === "tools" && <ToolsTab data={data} onSave={save} />}
+          {tab === "tools" && (
+            <div className="space-y-8">
+              <ToolsTab data={data} onSave={save} />
+              {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
+                  builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
+              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+            </div>
+          )}
           {tab === "skills" && <SkillsTab agentId={agentId} />}
           {tab === "vault" && <VaultTab agentId={agentId} />}
           {tab === "schedules" && <SchedulesTab agentId={agentId} />}
@@ -914,13 +922,6 @@ function ToolsTab({ data, onSave }: { data: AgentConfigResponse; onSave: SaveFn 
         </table>
       </div>
       <p className="text-xs text-gray-400 dark:text-gray-500">{S.agent.callDescriptionHint}</p>
-
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <pre className="max-h-64 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-800 dark:bg-gray-900">
-          {JSON.stringify(data.config.mcpServers, null, 2)}
-        </pre>
-      </div>
 
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}

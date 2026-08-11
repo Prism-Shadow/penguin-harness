@@ -20,6 +20,7 @@ import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentChip } from "./subagent-chip";
 import { CompactionBanner } from "./compaction-banner";
+import { McpConnectBanner } from "./mcp-connect-banner";
 import { GoalRoundBanner } from "./goal-banner";
 import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
@@ -364,6 +365,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return <ReconnectLine item={item} ctx={ctx} />;
     case "compaction":
       return <CompactionBanner item={item} />;
+    case "mcp_connect":
+      return <McpConnectBanner item={item} />;
     case "task_stats":
       return (
         <>

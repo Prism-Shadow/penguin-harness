@@ -31,6 +31,7 @@ import type {
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
+  McpServerTestResponse,
   MeResponse,
   MemberAddRequest,
   MemberAddResponse,
@@ -85,6 +86,7 @@ import type {
   VersionResponse,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
+import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 
 // Auth & user -----------------------------------------------------------------
@@ -269,6 +271,13 @@ export const putAgentConfig = (
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config`,
     { method: "PUT", body },
+  );
+
+/** Probes one MCP Server entry's reachability (server-side connect + tool discovery; nothing is saved). */
+export const testAgentMcpServer = (projectId: string, agentId: string, body: MCPServerConfig) =>
+  apiFetch<McpServerTestResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/mcp-test`,
+    { method: "POST", body },
   );
 
 /** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */

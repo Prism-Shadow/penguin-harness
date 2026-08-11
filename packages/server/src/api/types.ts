@@ -573,6 +573,17 @@ export interface AgentConfigResponse {
   activeSessionCount: number;
 }
 
+/** POST …/config/mcp-test result: reachability of one MCP Server entry. */
+export interface McpServerTestResponse {
+  ok: boolean;
+  /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
+  tools?: string[];
+  /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
+  error?: string;
+  /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
+  latencyMs?: number;
+}
+
 /** PUT any subset: only provided keys are updated (remaining YAML content and comments preserved); agentsMd overwrites the whole file. */
 export interface AgentConfigUpdateRequest {
   agentsMd?: string;
@@ -1231,6 +1242,24 @@ export interface TraceToolSpan {
   taskIndex: number;
 }
 
+/**
+ * Non-tool auxiliary phase on the timeline: rendered in its own lane under the "other"
+ * legend category — deliberately not a tool span, since nothing was called. Currently the
+ * first run's MCP connect + discovery (from the mcp_connect_begin/end event pair).
+ */
+export interface TraceOtherSpan {
+  /** Unique bar key (e.g. `mcp-connect-<beginTs>`). */
+  key: string;
+  /** Lane label, e.g. "mcp connect". */
+  name: string;
+  startTs: string;
+  endTs: string;
+  /** Attached to the Task that follows the phase (same grouping convention as toolSpans). */
+  taskIndex: number;
+  /** True when the phase ended with failures (some servers unreachable) or was aborted. */
+  failed?: boolean;
+}
+
 export interface UsageTrendPointInTrace {
   ts: string;
   requestTotal: number;
@@ -1253,6 +1282,8 @@ export interface TraceAnalysisResponse {
   modelSegments: TraceModelSegment[];
   /** Execution timeline: each tool's approval/execution phases (independent lane, can overlap with model decoding). */
   toolSpans: TraceToolSpan[];
+  /** Execution timeline: non-tool auxiliary phases (their own "other" lanes — currently the first run's MCP connect + discovery). */
+  otherSpans: TraceOtherSpan[];
   /** Number of request_end events with status ∈ {timeout, malformed}. */
   reconnectCount: number;
   /** Number of compaction_begin events. */
