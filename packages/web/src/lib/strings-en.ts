@@ -1070,8 +1070,7 @@ Scenarios:
         : "Switched model — continued from the earlier conversation",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint:
-      "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
+    modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
