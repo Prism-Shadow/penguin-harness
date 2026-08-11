@@ -60,7 +60,7 @@ interface LLMOutcome {
 | status | 含义 | 引擎的反应 |
 | --- | --- | --- |
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
-| `timeout` | 超时/传输层断连/瞬时的供应商额度错误 | 同一 run 内自动重连 |
+| `timeout` | 超时/传输层断连 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
 | `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed` |
 | `aborted` | 用户中断 | 停止交还用户 |
@@ -127,8 +127,13 @@ interface EnvironmentConfig {
   sessionScratchpadDir?: string;            // 本 Session 的 scratchpad（scratchpad/<sessionId>），提供后启用截断输出恢复
   services?: EnvironmentServices;           // 注入给个别工具的运行时服务
   vault?: Record<string, string>;           // Vault 环境变量,注入 exec_command / input_command 子进程
-  stripProxyEnv?: () => boolean;            // 返回 true 时从命令子进程剥除 HTTP(S)_PROXY/ALL_PROXY（保留 NO_PROXY）；每次 spawn 重读，缺省即允许代理
+  proxyEnv?: () => ProxyEnvPolicy | null;   // 命令子进程代理策略；每次 spawn 重读，缺省或 null 即原样透传
 }
+
+// "strip" 剥除 HTTP(S)_PROXY/ALL_PROXY（保留 NO_PROXY）；"inject" 以显式代理覆盖继承环境：
+// HTTP(S)_PROXY（含小写拼写）= url、NO_PROXY = noProxy（由调用方预先合并），继承的 ALL_PROXY
+// 一并移除。Vault 条目仍然优先。
+type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // run_subagent 所需

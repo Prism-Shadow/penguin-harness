@@ -36,7 +36,7 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   // Self-service password change (user settings): validates the old password; on success, the initial-password prompt disappears from GET /api/me.
   // Desktop sessions may omit oldPassword: the seed password of a desktop-created root is
   // random and never shown, so its holder has nothing to type — the shell's redeemed
-  // token already proved machine ownership (see design § "桌面端原型 · 桌面登录").
+  // token already proved machine ownership.
   app.put("/password", async (c) => {
     const body = await readJson(c);
     const newPassword = requireString(body, "newPassword", { label: "newPassword" });

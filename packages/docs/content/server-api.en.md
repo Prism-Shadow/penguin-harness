@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
 - Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) printed once to the server console — `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
+- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) — kept in `<root>/initial-admin-password` and re-printed to the server console on every start until it is changed; `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
@@ -73,10 +73,16 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/settings | Server-global settings: `{settings: {useSystemProxy}}` |
+| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
 
-`useSystemProxy` is the "use system HTTP proxy" switch (default on): while on, the server and its child processes honor HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings) for outbound traffic; while off, the server always connects directly and the proxy variables are stripped from agent command subprocess environments (NO_PROXY is kept). In either state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied). Toggling takes effect for newly initiated connections immediately — no restart.
+The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
+
+- `proxyForApp` ("application uses the proxy", default on) governs the server's own outbound traffic (LLM requests, the update check, image fetches): on with `proxyUrl` set → that address for both http and https, **taking precedence over the proxy environment variables** — no environment variable needs to be configured; on without an address → the environment variables HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings); off → always direct.
+- `proxyForAgent` ("agent environment uses the proxy", default on) governs agent command subprocess environments: on with `proxyUrl` set → `HTTP_PROXY` / `HTTPS_PROXY` (plus lowercase twins) are injected as that address together with the merged NO_PROXY, overriding inherited values; on without an address → the host environment passes through unchanged; off → the proxy variables are stripped (NO_PROXY is kept).
+- `proxyUrl` (default null = follow the environment variables) is the shared explicit address. Validation on PUT: the value is trimmed; empty or null clears the address; accepted forms are `http://host[:port]`, `https://host[:port]`, and bare `host[:port]` (normalized to `http://host[:port]` — only normalized values are stored, and the response echoes the stored form); anything else is `400` with code `invalid_proxy_url`, and the rejected PUT writes nothing.
+
+In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied).
 
 ### Version and Self-Update
 

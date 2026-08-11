@@ -13,7 +13,9 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
+import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type { ServerConfig } from "./config.js";
+import { mergedNoProxy } from "./net/proxy.js";
 import { openDatabase } from "./db/database.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
@@ -31,7 +33,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { AuthService } from "./auth/service.js";
+import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
@@ -97,7 +100,7 @@ export interface AppDeps {
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
-  /** Admin-level server-global settings (currently the "use system HTTP proxy" switch). */
+  /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
   authService: AuthService;
   adminService: AdminService;
@@ -160,12 +163,20 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
   const serverSettingsRepo = new ServerSettingsRepo(db);
-  // Proxy-off also strips HTTP(S)_PROXY/ALL_PROXY from agent command subprocess
-  // environments (design § "出网与系统代理"). A getter, not a snapshot: it is re-read at
-  // every command spawn, so a toggle reaches already-loaded Sessions. Threaded through
-  // BOTH core entry paths — the loader (resume/self-heal) and SessionService (creation,
-  // whose runtime the manager adopts for the first Task).
-  const stripProxyEnv = () => !serverSettingsRepo.getUseSystemProxy();
+  // Command-subprocess proxy policy for core, keyed on the
+  // "agent environment uses the proxy" switch (the app switch only drives the server's
+  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
+  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
+  // over whatever the environment carries; on without an address → pass the environment
+  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
+  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
+  // the manager adopts for the first Task).
+  const proxyEnv = (): ProxyEnvPolicy | null => {
+    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
+    const url = serverSettingsRepo.getProxyUrl();
+    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+  };
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
@@ -218,8 +229,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader:
-      overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { stripProxyEnv }),
+    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -244,12 +254,20 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     traceIndex,
   });
+  // Any password update for the built-in admin makes the persisted initial-password
+  // plaintext stale (either the password is no longer initial, or a reset replaced it
+  // with an admin-chosen value that is never persisted): drop the file so later startups
+  // stop re-printing a credential that no longer signs in.
+  const onPasswordChanged = (userId: string): void => {
+    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
+  };
   const authService = new AuthService({
     users: usersRepo,
     authSessions: authSessionsRepo,
     provisionInitialProject: (user, isAdmin) =>
       projectService.provisionInitialProject(user, isAdmin),
     seedAdminPassword: config.seedAdminPassword,
+    onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -259,6 +277,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     authSessions: authSessionsRepo,
     projects: projectsRepo,
     projectService,
+    onPasswordChanged,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const sessionService = new SessionService({
@@ -268,7 +287,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projectConfig: projectConfigService,
     sources: sessionSources,
     traceIndex,
-    stripProxyEnv,
+    proxyEnv,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -355,7 +374,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // cookie had ever been set on that host — act as the user. So the preview host serves ONLY
   // /preview/*: /api answers 401 (it never sets or honors a cookie there, closing both the
   // login and the stale-cookie paths), and everything else 302s to the canonical App host.
-  // See design § "Workspace 文件预览". Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
+  // Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
   // use that origin rather than the loopback counterpart, so 127.0.0.1 is an ordinary App
   // access point and must not be locked down — deployments enforce the equivalent at the
   // reverse proxy (route only /preview/* to the App on the preview origin).
@@ -434,7 +453,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the
   // signed token in the path is the only credential. Mounted before static hosting so the
-  // SPA fallback cannot swallow it. See design § "Workspace 文件预览".
+  // SPA fallback cannot swallow it.
   app.route("/preview", previewRoutes(deps));
 
   // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.

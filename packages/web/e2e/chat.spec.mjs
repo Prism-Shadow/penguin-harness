@@ -62,11 +62,33 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   // Live header statistics: the elapsed chip ticks once per second while the task runs (the
   // pending approval below keeps it running), so its text must advance with no further server
-  // event. Scoped to the header stats container (div.hidden …): the per-reply footer reuses
-  // the same 用时 ("elapsed") label once the turn's stats line lands.
-  const headerElapsed = page.locator('div.hidden span[title="用时"]');
+  // event. Scoped to the toolbar's details trigger (the chips now double as the "Session 信息"
+  // button at the far right): the per-reply footer reuses the same 用时 ("elapsed") label once
+  // the turn's stats line lands.
+  const headerElapsed = page.locator('button[title="Session 信息"] span[title="用时"]');
   const elapsedBefore = await headerElapsed.textContent();
   await expect(headerElapsed).not.toHaveText(elapsedBefore);
+
+  // Issue #150: at an approximately 2:1 browser size the pinned sidebar leaves the chat
+  // toolbar much narrower than the viewport breakpoint suggests. The running label used to
+  // stay expanded and the shrinkable stats row then painted its Token chip over that label.
+  // Keep the status dot and the live stats, but their rendered boxes must remain disjoint.
+  await page.setViewportSize({ width: 877, height: 438 });
+  await page.waitForTimeout(200);
+  const runningStatus = page.locator('span[title="运行中"]').filter({ hasText: "运行中" }).first();
+  const tokenTotal = page.locator('span[title="Token 累计（Token）"]');
+  const [runningBox, tokenBox] = await Promise.all([
+    runningStatus.boundingBox(),
+    tokenTotal.boundingBox(),
+  ]);
+  expect(runningBox, "running status is rendered @877").not.toBeNull();
+  expect(tokenBox, "Token total is rendered @877").not.toBeNull();
+  const overlap =
+    Math.min(runningBox.x + runningBox.width, tokenBox.x + tokenBox.width) -
+    Math.max(runningBox.x, tokenBox.x);
+  expect(overlap, "running status and Token total do not overlap @877").toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(200);
   // The user takes control of the running work group (toggle = userToggled), keeps it open, and
   // opens the exec_command card to watch the arguments. Both must survive the end of the turn.
   //

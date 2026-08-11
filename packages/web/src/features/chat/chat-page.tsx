@@ -16,12 +16,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import type {
   AgentSummary,
   ApprovalMode,
   ModelRefDto,
   ModelsResponse,
+  SessionProcessInfo,
   SkillMetadataItem,
   TaskCreateRequest,
   TaskInputPart,
@@ -42,6 +43,7 @@ import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
+import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
@@ -50,8 +52,8 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
+import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { NAV_ICONS } from "../../components/ui/icons";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -59,6 +61,7 @@ import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
+import { parkActiveDraft } from "./draft-sessions";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
@@ -91,7 +94,21 @@ const STAT_ICONS = {
   elapsed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
   // Files (folder)
   folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  // Running services (server rack: two stacked units with an indicator dot each)
+  services:
+    "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm0 11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3zM7 6.5h.01M7 17.5h.01",
 } as const;
+
+/** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
+const PROCESS_POLL_MS = 15_000;
+
+/**
+ * Docked panel swap sequencing: how long the outgoing panel gets to retract before the
+ * incoming one slides in. Matches the panels' own `transition-[width] duration-200`
+ * (files-panel.tsx / subagents-panel.tsx) — shorter would cut the retract off, longer
+ * would leave a dead gap.
+ */
+const PANEL_SWAP_MS = 200;
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
@@ -115,6 +132,30 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
       </svg>
       {value}
     </span>
+  );
+}
+
+/**
+ * Session id row in the details card: the id is selectable mono text (styled like the other
+ * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
+ * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ */
+function SessionIdRow({ sessionId }: { sessionId: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {S.chat.sessionIdLabel}
+      </p>
+      <div className="flex items-start gap-1.5">
+        <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
+        <CopyButton
+          text={sessionId}
+          label={S.chat.copySessionId}
+          showCopiedText
+          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -189,9 +230,14 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
  * Route id for a draft chat (`/chat/new`): the Session hasn't been persisted yet — the user may
  * still want to change the model or configure a key first. The actual Session is only created
  * once **the first message is sent** (once created, the model is locked into its meta).
- * Real session ids always start with `session-`, so there's no collision with this constant.
+ * Real session ids always start with `session-`, so there's no collision with this constant —
+ * nor with parked draft conversations, whose route ids start with `draft-` (draft-sessions.ts).
  */
 export const DRAFT_SESSION_ID = "new";
+
+/** Parked-draft route id (`/chat/draft-…` — a draft conversation row in the sidebar list), or null. */
+export const parkedDraftIdOf = (routeSessionId: string | null): string | null =>
+  routeSessionId !== null && routeSessionId.startsWith("draft-") ? routeSessionId : null;
 
 /**
  * Server-enforced ceiling on paths per files/stat call (STAT_MAX_PATHS in the sessions routes,
@@ -202,7 +248,9 @@ const STAT_PATHS_PER_REQUEST = 100;
 
 export function ChatPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ sessionId?: string }>();
+  const { user } = useAuth();
   const { currency } = useTheme();
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -229,6 +277,21 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
+  // Background processes the conversation started (details popover list + the header's
+  // running-services count), refreshed by the polling effect below; procBusy marks the
+  // row whose stop request is in flight.
+  const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
+  const [procBusy, setProcBusy] = useState<string | null>(null);
+  // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
+  // server-recorded values — they can trail the live chip mid-run and reconcile on idle.
+  const [usageBuckets, setUsageBuckets] = useState<{
+    cacheRead: number;
+    cacheWrite: number;
+    output: number;
+  } | null>(null);
+  // Latest trace file path (single-session GET only — list rows don't carry it), fetched
+  // when the details popover opens; null = none yet (brand-new session) or still loading.
+  const [tracePath, setTracePath] = useState<string | null>(null);
   // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
   // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
   // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
@@ -246,21 +309,58 @@ export function ChatPage() {
   // chips via onOpenSubagent, or a future caller) closes the other as a side effect of
   // setOpen(true). Closing never cascades. The hooks stay uncoordinated on purpose — they don't
   // know about each other; only this page, which owns both, does.
+  //
+  // Docked swaps are SEQUENCED, not simultaneous: with both width transitions running at
+  // once the total width is constant, so the closing panel's left-anchored content never
+  // moves — the incoming panel just wipes over it, which reads as "the old panel never
+  // retracted". Closing the old one fully first (its width animates while the chat column
+  // takes the space back), then sliding the new one in, makes both motions legible. A new
+  // swap/toggle cancels the pending open; mobile Sheets keep the instant switch — they
+  // overlay rather than share width, so the sequencing would only add dead time.
+  const panelSwapTimer = useRef<number | null>(null);
+  const cancelPanelSwap = () => {
+    if (panelSwapTimer.current !== null) {
+      window.clearTimeout(panelSwapTimer.current);
+      panelSwapTimer.current = null;
+    }
+  };
+  useEffect(() => cancelPanelSwap, []);
+  /** Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant otherwise. */
+  const swapPanels = (
+    closeFirst: { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
+    open: (v: boolean) => void,
+  ) => {
+    closeFirst.setOpen(false);
+    if (closeFirst.open && closeFirst.isDocked) {
+      panelSwapTimer.current = window.setTimeout(() => {
+        panelSwapTimer.current = null;
+        open(true);
+      }, PANEL_SWAP_MS);
+    } else {
+      open(true);
+    }
+  };
   const filesPanel: FilesPanelState = {
     ...filesPanelRaw,
     setOpen: (next: boolean) => {
-      if (next) subagentsPanelRaw.setOpen(false);
-      filesPanelRaw.setOpen(next);
+      cancelPanelSwap();
+      if (next) swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen);
+      else filesPanelRaw.setOpen(false);
     },
   };
   const subagentsPanel: SubagentsPanelState = {
     ...subagentsPanelRaw,
     setOpen: (next: boolean) => {
-      if (next) filesPanelRaw.setOpen(false);
-      subagentsPanelRaw.setOpen(next);
+      cancelPanelSwap();
+      if (next) swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen);
+      else subagentsPanelRaw.setOpen(false);
     },
   };
-  const draft = routeSessionId === DRAFT_SESSION_ID;
+  // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
+  // just bound to their own stored entry — every "this is a draft, not a Session" branch
+  // below treats the two alike.
+  const parkedDraftId = parkedDraftIdOf(routeSessionId);
+  const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
   const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -359,6 +459,8 @@ export function ChatPage() {
   // ONLY automatic close of either panel.
   useEffect(() => {
     if (!draft) return;
+    // A swap's pending delayed open must not fire into the fresh draft after this reset.
+    cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -499,14 +601,18 @@ export function ChatPage() {
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the usage-fetch marker, the file-card existence cache, and the
-  // per-turn thinking level (it's per-session UI state), avoiding stale data from the previous
-  // Session (Files panel state resets itself keyed on sessionId inside use-files-panel, and the
-  // cost hold re-keys itself on sessionId inside advanceCostStat).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, the
+  // per-turn thinking level (it's per-session UI state), and the popover's per-session
+  // data (process list / token buckets / trace path), avoiding stale data from the
+  // previous Session (Files panel state resets itself keyed on sessionId inside
+  // use-files-panel, and the cost hold re-keys itself on sessionId inside advanceCostStat).
   useEffect(() => {
     usageAppliedRef.current = null;
     setTurnThinkingLevel("");
     statCacheRef.current = new Map();
+    setProcesses([]);
+    setUsageBuckets(null);
+    setTracePath(null);
   }, [routeSessionId]);
 
   // Batched existence check for file summaries: cache stable positive results and share in-flight
@@ -556,9 +662,13 @@ export function ChatPage() {
   // task-state change re-runs the effect and discards an in-flight response fetched under the
   // previous run state (whose total would misalign with the live buckets it is snapshotted
   // against — see applyUsageFetch).
+  // infoOpen is a refresh trigger on top of the original conditions: opening the details
+  // popover mid-run re-fetches once, so its token breakdown isn't a whole Task stale
+  // (applyUsageFetch is designed for mid-run reconciles — see header-stats.ts).
   useEffect(() => {
     if (!projectId || !selected) return;
-    if (usageAppliedRef.current === selected.sessionId && stream.taskState !== "idle") return;
+    if (usageAppliedRef.current === selected.sessionId && stream.taskState !== "idle" && !infoOpen)
+      return;
     let cancelled = false;
     api
       .getUsage(projectId, { groupBy: "session", agentId: selected.agentId })
@@ -567,13 +677,87 @@ export function ChatPage() {
         usageAppliedRef.current = selected.sessionId;
         const row = res.groups.find((g) => g.key === selected.sessionId);
         applyUsageFetch(costHoldRef.current, selected.sessionId, row ?? null);
+        setUsageBuckets(
+          row ? { cacheRead: row.cacheRead, cacheWrite: row.cacheWrite, output: row.output } : null,
+        );
         bumpUsageStamp((n) => n + 1);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId, selected, stream.taskState]);
+  }, [projectId, selected, stream.taskState, infoOpen]);
+
+  // Background-process list: fetched on session entry, then kept fresh while it can still
+  // change — during a run (a foreground command may promote to background at any moment),
+  // while any listed process is still running (it can exit on its own), and while the
+  // details popover shows the list. Otherwise no timer runs: an idle session with no
+  // processes has nothing to poll for. Fail-soft — a failed poll keeps the last list.
+  const runningProcessCount = processes.filter((p) => p.running).length;
+  const processesCanChange =
+    stream.taskState !== "idle" || runningProcessCount > 0 || (infoOpen && processes.length > 0);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    let cancelled = false;
+    const refresh = () => {
+      api
+        .getSessionProcesses(selectedSessionId)
+        .then((res) => {
+          if (!cancelled) setProcesses(res.processes);
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    if (!processesCanChange) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = window.setInterval(refresh, PROCESS_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selectedSessionId, stream.taskState, processesCanChange]);
+
+  // Stop one background process: the kill also removes it from the server-side registry,
+  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
+  // same outcome, not an error worth surfacing).
+  const onKillProcess = useCallback(
+    async (processId: string) => {
+      if (!selected || procBusy !== null) return;
+      setProcBusy(processId);
+      try {
+        await api.killSessionProcess(selected.sessionId, processId);
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+      } finally {
+        setProcBusy(null);
+        api
+          .getSessionProcesses(selected.sessionId)
+          .then((res) => setProcesses(res.processes))
+          .catch(() => undefined);
+      }
+    },
+    [selected, procBusy],
+  );
+
+  // Trace file path for the popover's trace row: the single-session GET is the only
+  // surface carrying it, so fetch lazily on open (and once per session — the path only
+  // ever moves forward when a new trace file starts, which a reopen picks up).
+  useEffect(() => {
+    if (!infoOpen || !selectedSessionId) return;
+    let cancelled = false;
+    api
+      .getSession(selectedSessionId)
+      .then((res) => {
+        if (!cancelled) setTracePath(res.session.tracePath ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [infoOpen, selectedSessionId]);
 
   // Model config (context window + credential guide): fetched once per Project.
   //
@@ -777,11 +961,20 @@ export function ChatPage() {
   // server-side and auto-sends it as an ordinary next task once this run finishes (the
   // "N queued" count arrives via task_state). Succeeds either way (queued or started
   // directly in the completion race), so the input area clears the draft on true.
+  // The per-turn thinking level rides along exactly as it does on onSend: the level is the
+  // one picked when the follow-up was composed, and the server keeps it with the queued
+  // input and applies it at auto-start (see TaskCreateRequest.queueIfBusy).
   const onQueueFollowUp = useCallback(
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          queueIfBusy: true,
+          ...(turnThinkingLevel
+            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
+            : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -790,7 +983,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
@@ -869,9 +1062,13 @@ export function ChatPage() {
   }, [selected, syncHealedSessionId]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
+  // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
+  // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
+  // cache — the sidebar's own new-chat entries do the same (sidebar.tsx).
   const newChat = useCallback(() => {
+    if (user && projectId) parkActiveDraft(user.userId, projectId);
     navigate(`/chat/${DRAFT_SESSION_ID}`);
-  }, [navigate]);
+  }, [user, projectId, navigate]);
 
   // Auth-dead notice primary CTA: the Models page is where the credential is actually fixed.
   const openModels = useCallback(() => {
@@ -956,6 +1153,14 @@ export function ChatPage() {
       currency,
     }),
   );
+  // Cache hit rate over the recorded input buckets (cacheRead = hits, cacheWrite =
+  // uncached input) — the details card's tokens-line parenthetical. Null until a usage
+  // row with any input has applied, so a fresh session shows no "0%" out of thin air.
+  const recordedInput = usageBuckets ? usageBuckets.cacheRead + usageBuckets.cacheWrite : 0;
+  const cacheHitRate =
+    usageBuckets && recordedInput > 0
+      ? `${Math.round((100 * usageBuckets.cacheRead) / recordedInput)}%`
+      : null;
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
@@ -1055,26 +1260,6 @@ export function ChatPage() {
             )}
           </div>
 
-          {/* Stats: Token / cost / elapsed time (icon + title for the full meaning) */}
-          <div className="hidden items-center gap-3 sm:flex">
-            <StatChip
-              icon={STAT_ICONS.tokens}
-              value={hs.tokensText}
-              label={`${S.chat.statTokens}（Token）`}
-            />
-            {/* When there's no cost (the Model has no pricing configured), don't render this stat
-                at all, rather than showing a "—" — that would take up space while saying
-                nothing, only making people think the cost is zero or something's broken. */}
-            {hs.costText != null && (
-              <StatChip
-                icon={STAT_ICONS.cost}
-                value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
-                label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
-              />
-            )}
-            <StatChip icon={STAT_ICONS.elapsed} value={hs.elapsedNode} label={S.chat.statElapsed} />
-          </div>
-
           {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
           <button
             type="button"
@@ -1103,9 +1288,10 @@ export function ChatPage() {
               <circle cx="19" cy="18.5" r="2.5" />
               <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
             </svg>
-            {/* Below sm the button is icon-only (title/aria keep the name), same rule as the
-                workspace button next to it: the label ate the title's room on phones. */}
-            <span className="hidden sm:inline">{S.chat.openAgents}</span>
+            {/* At md widths the pinned sidebar leaves less room than the viewport breakpoint
+                suggests. Keep both panel actions icon-only until lg so the running status and
+                live stats retain their own layout space. */}
+            <span className="hidden lg:inline">{S.chat.openAgents}</span>
             {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
             {anySubagentPending && (
               <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -1136,9 +1322,10 @@ export function ChatPage() {
             >
               <path d={STAT_ICONS.folder} />
             </svg>
-            {/* Below sm the button is icon-only (title/aria keep the name): the label plus the
-                running indicator squeezed the session title to nothing on phones. */}
-            <span className="hidden sm:inline">{S.chat.openWorkspace}</span>
+            {/* Below lg the button is icon-only (title/aria keep the name): between md and lg
+                the pinned sidebar makes the chat toolbar substantially narrower than the
+                viewport, so the action labels would squeeze the status into the Token stats. */}
+            <span className="hidden lg:inline">{S.chat.openWorkspace}</span>
           </button>
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
@@ -1153,32 +1340,90 @@ export function ChatPage() {
             />
           )}
 
-          {/* Details popup: Model / Workspace / created time / stats */}
+          {/* Details entry, at the toolbar's far right — the stats ARE the trigger: wide
+              viewports show the live chips (Token / cost / elapsed, plus the running-services
+              count while any process is alive) and clicking them opens the details card; narrow
+              viewports collapse the whole thing to the single info icon. There is no separate
+              info icon while the chips are visible. */}
           <Dropdown
             open={infoOpen}
             setOpen={setInfoOpen}
-            menuClass="right-0 top-full mt-1 w-80 max-w-[calc(100vw-1.5rem)] origin-top-right"
+            menuClass="right-0 top-full mt-1 w-96 max-w-[calc(100vw-1.5rem)] origin-top-right"
             button={
               <button
                 type="button"
                 title={S.chat.infoPanel}
+                aria-label={S.chat.infoPanel}
+                aria-expanded={infoOpen}
                 onClick={() => setInfoOpen(!infoOpen)}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                className={`flex h-7 shrink-0 items-center rounded-md transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                  infoOpen ? "bg-gray-100 dark:bg-gray-800" : ""
+                }`}
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 11v5m0-8h.01" />
-                </svg>
+                {/* Wide: the chip row (icon + title per chip carries the full meaning). */}
+                <span className="hidden items-center gap-3 px-2 sm:flex">
+                  <StatChip
+                    icon={STAT_ICONS.tokens}
+                    value={hs.tokensText}
+                    label={`${S.chat.statTokens}（Token）`}
+                  />
+                  {/* When there's no cost (the Model has no pricing configured), don't render
+                      this stat at all, rather than showing a "—" — that would take up space
+                      while saying nothing, only making people think the cost is zero or
+                      something's broken. */}
+                  {hs.costText != null && (
+                    <StatChip
+                      icon={STAT_ICONS.cost}
+                      value={`${hs.costText}${hs.costUncosted ? " *" : ""}`}
+                      label={`${S.common.cost}（${currency}）${hs.costUncosted ? ` · ${S.usage.uncostedNote}` : ""}`}
+                    />
+                  )}
+                  <StatChip
+                    icon={STAT_ICONS.elapsed}
+                    value={hs.elapsedNode}
+                    label={S.chat.statElapsed}
+                  />
+                  {/* Right of the time, only while the conversation has live background
+                      processes: their count, in the live-status green. */}
+                  {runningProcessCount > 0 && (
+                    <span
+                      title={S.chat.runningServices(runningProcessCount)}
+                      className="flex shrink-0 items-center gap-1 font-mono text-xs text-emerald-600 dark:text-emerald-400"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden
+                      >
+                        <path d={STAT_ICONS.services} />
+                      </svg>
+                      {runningProcessCount}
+                    </span>
+                  )}
+                </span>
+                {/* Narrow: the info icon alone (the chips would crowd the title out). */}
+                <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 11v5m0-8h.01" />
+                  </svg>
+                </span>
               </button>
             }
           >
@@ -1195,6 +1440,7 @@ export function ChatPage() {
                   </span>
                 </p>
               </div>
+              <SessionIdRow sessionId={selected.sessionId} />
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}
@@ -1211,46 +1457,103 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.sessionStats}
                 </p>
-                {/* Same as above: if there's no cost, the whole item is omitted, not left as "Cost —". */}
-                <p className="font-mono text-xs">
-                  {S.chat.statTokens} {hs.tokensText}
-                  {hs.costText != null && ` · ${S.common.cost} ${hs.costText}`} ·{" "}
-                  {S.chat.statElapsed} {hs.elapsedNode}
-                </p>
+                {/* A bulleted list, one stat per line. The tokens bullet carries the cache
+                    hit rate in parentheses (cacheRead ÷ all recorded input); the rate comes
+                    from the usage fetch, so it can trail the live total mid-run and
+                    reconciles on idle. No-cost sessions omit the cost bullet entirely, as
+                    the chip does. */}
+                <ul className="list-inside list-disc space-y-0.5 font-mono text-xs">
+                  <li>
+                    {S.chat.statTotalTokens} {hs.tokensText}
+                    {cacheHitRate !== null &&
+                      `${S.chat.statParenOpen}${S.chat.statCacheHit(cacheHitRate)}${S.chat.statParenClose}`}
+                  </li>
+                  {hs.costText != null && (
+                    <li>
+                      {S.common.cost} {hs.costText}
+                      {hs.costUncosted ? " *" : ""}
+                    </li>
+                  )}
+                  <li>
+                    {S.chat.statElapsed} {hs.elapsedNode}
+                  </li>
+                </ul>
               </div>
-            </div>
-            {/* Jump to this Session's Trace: SPA-navigates to the Trace page deep-linked to
-                the owning Agent AND this Session (?agentId= focuses/expands the Agent group,
-                ?sessionId= auto-selects — a Session beyond the first loaded page resolves via
-                the Trace page's full-fetch fallback). Only reachable for a real Session: this
-                whole header renders behind the `selected` guard, so a draft never shows it. */}
-            <div className="border-t border-gray-100 py-1 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setInfoOpen(false);
-                  navigate(
-                    `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                  );
-                }}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                  className="shrink-0 text-gray-400 dark:text-gray-500"
-                >
-                  <path d={NAV_ICONS.traces} />
-                </svg>
-                {S.chat.viewTrace}
-              </button>
+              {/* Background processes the conversation started (e.g. a dev server on
+                  localhost:3000): live rows carry a stop button — the kill signals the whole
+                  process group and the row drops on the follow-up refresh. Hidden entirely
+                  while there are none. */}
+              {processes.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {S.chat.processList}
+                  </p>
+                  <ul className="mt-1 space-y-1.5">
+                    {processes.map((p) => (
+                      <li key={p.processId} className="flex items-center gap-2">
+                        <span
+                          aria-hidden
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            p.running
+                              ? "animate-pulse bg-emerald-500"
+                              : "bg-gray-300 dark:bg-gray-600"
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-mono text-xs" title={p.cmd}>
+                            {p.cmd}
+                          </span>
+                          <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                            {formatDateTime(p.startedAt)}
+                            {p.pid !== null && ` · pid ${p.pid}`}
+                          </span>
+                        </span>
+                        {p.running ? (
+                          <button
+                            type="button"
+                            disabled={procBusy !== null}
+                            onClick={() => void onKillProcess(p.processId)}
+                            className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                          >
+                            {procBusy === p.processId ? S.common.loading : S.chat.processStop}
+                          </button>
+                        ) : (
+                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                            {S.chat.processExited}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {/* Trace file, same section anatomy as the rows above (label + mono value):
+                  the path itself is the click target and SPA-navigates to the Trace page
+                  deep-linked to the owning Agent AND this Session (?agentId= focuses/expands
+                  the Agent group, ?sessionId= auto-selects — a Session beyond the first
+                  loaded page resolves via the Trace page's full-fetch fallback). Hidden
+                  until a trace exists (a brand-new session has no file to open); only
+                  reachable for a real Session — this whole header renders behind the
+                  `selected` guard, so a draft never shows it. */}
+              {tracePath !== null && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {S.chat.traceFile}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInfoOpen(false);
+                      navigate(
+                        `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                      );
+                    }}
+                    className="break-all text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
+                  >
+                    {tracePath}
+                  </button>
+                </div>
+              )}
             </div>
           </Dropdown>
         </div>
@@ -1262,9 +1565,17 @@ export function ChatPage() {
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
             // selection panel; the Session is only created once the first message is sent. Keyed
-            // by Project: switching Project remounts and switches to that Project's draft cache
-            // (Agent selection happens inside the draft itself, so it's no longer part of the key).
-            <DraftView key={`draft:${projectId}`} projectId={projectId} models={models} />
+            // by Project (switching Project remounts onto that Project's draft cache) and by the
+            // parked-draft id — falling back to location.key for `/chat/new`, so clicking "New
+            // chat" while already on the draft page (which just parked the typed text) remounts
+            // onto the freshly cleared cache. (Agent selection happens inside the draft itself,
+            // so it's not part of the key.)
+            <DraftView
+              key={`draft:${projectId}:${parkedDraftId ?? location.key}`}
+              projectId={projectId}
+              models={models}
+              {...(parkedDraftId !== null ? { draftId: parkedDraftId } : {})}
+            />
           ) : (
             // Keyed by Session: the whole block does a light fade-in when switching sessions.
             <div

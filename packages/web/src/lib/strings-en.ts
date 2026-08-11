@@ -33,11 +33,15 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only server-global switch (design § "出网与系统代理"): saved immediately on toggle. */
-    useSystemProxy: "Use system HTTP proxy",
-    /** Row tooltip: scope (server + its child processes, server-wide) and the loopback exemption. */
-    useSystemProxyHint:
-      "Whether the server and its child processes (update checks, LLM requests, agent commands) reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY. Applies server-wide; loopback addresses (localhost, 127.0.0.1, ::1) always connect directly. When off, the server connects directly and the proxy variables are removed from agent command subprocess environments.",
+    /** Admin-only user-menu row opening the proxy options dialog. */
+    proxyMenu: "Proxy options…",
+    proxyDialogTitle: "Proxy options",
+    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    proxyForApp: "Application uses the proxy",
+    proxyForAgent: "Agent environment uses the proxy",
+    /** The shared explicit proxy address (empty = follow the proxy environment variables). */
+    proxyAddress: "Proxy address",
+    proxyAddressPlaceholder: "Empty = follow system proxy",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -259,6 +263,7 @@ export const en: Strings = {
       ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
+      ["{{SHELL}}", "Shell used to run commands"],
       ["{{DATE}}", "Current date"],
       [
         "{{PROJECT_DIR}}",
@@ -357,14 +362,11 @@ export const en: Strings = {
     addTitle: "Add model (OpenAI protocol)",
     addTitleVendor: "Add model",
     addProtocolHint:
-      "New models always use the OpenAI Chat Completions protocol (no auto-routing by model id); set the base URL to a compatible endpoint",
-    addAutoRouteHint:
-      "New models in this group are auto-routed by their upstream id to the vendor's official client: leave the base URL empty for the official endpoint, and an empty API key falls back to the resolved client's environment variable",
-    /** Caution beside the base URL when the entry uses a vendor's official protocol (everything except the OpenAI-protocol path). */
-    baseUrlOfficialNote:
-      "Note: this model uses the vendor's official protocol — a custom base URL must serve an endpoint compatible with it; it never switches the model to the OpenAI protocol",
+      "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
+    vendorProtocolHint: (vendor: string): string =>
+      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     autoRouteNone:
-      "AgentHub cannot auto-route this id: double-check it, or add the model under Custom / a user-defined group with the OpenAI protocol",
+      "This id is not a recognized official model id: double-check it, or add the model under Custom / a user-defined group with an OpenAI-compatible endpoint",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -433,6 +435,7 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
+    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
@@ -598,7 +601,12 @@ export const en: Strings = {
     target: "Target",
     targetNew: "New session each time",
     targetSession: "Bound Session",
-    sessionId: "Session id",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "Choose a Session to bind",
+    sessionSearch: "Search title or Session id…",
+    sessionNoMatch: "No matching Session",
+    sessionEmpty: "This agent has no Sessions yet",
     workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
@@ -611,6 +619,8 @@ export const en: Strings = {
     pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
+    /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
+    quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
@@ -942,9 +952,21 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
-    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
-    viewTrace: "View trace",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "Copy Session id",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "Trace file",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "Processes",
+    processStop: "Stop",
+    processExited: "exited",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "Total Tokens",
+    statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statInput: "Input tokens",
     statCached: "cached",
@@ -997,6 +1019,9 @@ Scenarios:
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
         : "Switched model — continued from the earlier conversation",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint:
+      "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
@@ -1023,6 +1048,12 @@ Scenarios:
     renameSessionLabel: "Title",
     deleteSessionConfirm: (title: string) =>
       `Delete "${title}"? Its messages and Trace will be removed permanently.`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "Drafts",
+    draftUntitled: "(untitled draft)",
+    deleteDraft: "Delete draft",
+    deleteDraftConfirm: (title: string) =>
+      `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
@@ -1250,6 +1281,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_proxy_url:
+        "Invalid proxy address — use http://host[:port], https://host[:port], or host[:port].",
       invalid_trace: "This file is not a valid Trace file.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",

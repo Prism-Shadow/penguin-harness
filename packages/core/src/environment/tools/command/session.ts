@@ -75,6 +75,13 @@ export class ManagedSession {
   /** Timestamp of the last access (used for LRU / idle reaping). */
   lastUsed: number = Date.now();
 
+  /** The command string as handed to the session shell (list display for the host UI). */
+  readonly cmd: string;
+  /** Working directory the command was spawned in. */
+  readonly cwd: string;
+  /** Spawn timestamp (epoch ms). */
+  readonly startedAt: number = Date.now();
+
   private readonly child: ChildProcess;
   private readonly buffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier output");
   private exited = false;
@@ -86,6 +93,8 @@ export class ManagedSession {
   private readonly wakeSignal = new WakeSignal();
 
   constructor(opts: SpawnOptions) {
+    this.cmd = opts.cmd;
+    this.cwd = opts.cwd;
     const shell = sessionShell();
     this.child = spawn(shell.command, [...shell.args, opts.cmd], {
       cwd: opts.cwd,
@@ -177,6 +186,10 @@ export class ManagedSession {
   /** Whether the command is still running (hasn't exited, spawn hasn't failed). */
   get running(): boolean {
     return !this.exited;
+  }
+  /** OS pid of the shell leading the process group; null when the spawn itself failed. */
+  get pid(): number | null {
+    return typeof this.child.pid === "number" ? this.child.pid : null;
   }
   get exit(): ProcessExit | null {
     return this.exitInfo;

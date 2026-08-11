@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Skill's frontmatter metadata (four fields: name / description / version / updated; description itself is English-only, may also carry description_zh and short_description(_zh)). */
+/** Skill's frontmatter metadata (four core fields: name / description / version / updated; may also carry short_description(_zh) and `preinstall`; description itself is English-only). */
 export interface SkillMetadata {
   /** Skill name (matches its containing directory name). */
   name: string;
@@ -24,6 +24,8 @@ export interface SkillMetadata {
   shortDescription?: string;
   /** Chinese short description (frontmatter `short_description_zh`, optional). */
   shortDescriptionZh?: string;
+  /** Preinstall marker (frontmatter `preinstall`, optional): false keeps the Skill out of default_agent's preinstalled set (library install stays manual); omitted means preinstalled. */
+  preinstall?: boolean;
   /** Version number (natural number); falls back to 1 on parse failure. */
   version: number;
   /** Update date (YYYY-MM-DD); defaults to "". */
@@ -35,6 +37,14 @@ export interface LibrarySkill extends SkillMetadata {
   content: string;
   /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
   icon?: string;
+  /**
+   * Optional auxiliary files the SKILL.md references (e.g. `reference/API.md`), keyed by
+   * POSIX-relative path within the skill directory; every entry except the top-level SKILL.md and
+   * icon.svg, which have their own fields. Written alongside SKILL.md on install (subdirectories
+   * preserved). Read as UTF-8 text — library content is committed text (reference docs, templates,
+   * snippets); the field is omitted when a skill has no extra files.
+   */
+  files?: Record<string, string>;
 }
 
 /** Skill group manifest entry: group id, title (optionally with a Chinese title, displayed per UI language), and member Skill names. */
@@ -57,7 +67,8 @@ export interface ResolvedSkillGroup extends Omit<SkillGroupInfo, "skills"> {
  * first `---` block (split on the first colon, value trimmed, values may themselves contain colons);
  * all fields are scalars, no YAML dependency needed.
  * Error tolerance: returns null if the `---` block or name is missing; version falls back to 1 if
- * it isn't a natural number; updated defaults to "".
+ * it isn't a natural number; updated defaults to ""; preinstall is recognized only as the
+ * literal `false` (anything else, or absence, means the default: preinstalled).
  */
 export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   // Strip a possible UTF-8 BOM (may be introduced by editors when manually editing an installed SKILL.md); CRLF is handled by \r?\n.
@@ -81,6 +92,8 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
     // short_description(_zh) is optional: omitted when absent (undefined keys aren't set).
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+    // preinstall is meaningful only as the literal `false` (skip default_agent preinstall).
+    ...(fields["preinstall"] === "false" ? { preinstall: false } : {}),
     version: Number.isInteger(version) && version >= 1 ? version : 1,
     updated: fields["updated"] ?? "",
   };
@@ -93,11 +106,37 @@ const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Recursively collects a skill directory's auxiliary files — every regular file except the
+ * top-level SKILL.md and icon.svg, which are carried by dedicated fields — keyed by POSIX-relative
+ * path. These are resources a SKILL.md may reference (e.g. `reference/API.md`), installed alongside
+ * it. Read as UTF-8 text; symlinks and other non-regular entries are skipped. Returns undefined
+ * when the directory has no such files.
+ */
+function readSkillFiles(dir: string): Record<string, string> | undefined {
+  const files: Record<string, string> = {};
+  const walk = (abs: string, rel: string): void => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(path.join(abs, entry.name), childRel);
+      } else if (entry.isFile()) {
+        // SKILL.md and icon.svg at the root are carried by the content / icon fields.
+        if (rel === "" && (entry.name === "SKILL.md" || entry.name === "icon.svg")) continue;
+        files[childRel] = fs.readFileSync(path.join(abs, entry.name), "utf8");
+      }
+    }
+  };
+  walk(dir, "");
+  return Object.keys(files).length > 0 ? files : undefined;
+}
+
+/**
  * Reads a single library directory to construct a LibrarySkill; returns undefined if SKILL.md
  * doesn't exist. name is taken from the directory name (overriding frontmatter); falls back to
  * empty metadata if frontmatter parsing fails.
  * The optional icon.svg in the directory is read alongside it (as a raw string); the icon field
- * is omitted if missing.
+ * is omitted if missing. Any other files in the directory (e.g. a `reference/` subtree the
+ * SKILL.md links to) are collected into `files`, omitted when there are none.
  */
 function readSkillDir(name: string): LibrarySkill | undefined {
   const dir = path.join(SKILLS_ROOT, name);
@@ -113,13 +152,20 @@ function readSkillDir(name: string): LibrarySkill | undefined {
   } catch {
     // icon.svg is optional: no custom icon if missing.
   }
+  const files = readSkillFiles(dir);
   const meta = parseSkillFrontmatter(content) ?? {
     name,
     description: "",
     version: 1,
     updated: "",
   };
-  return { ...meta, name, content, ...(icon !== undefined ? { icon } : {}) };
+  return {
+    ...meta,
+    name,
+    content,
+    ...(icon !== undefined ? { icon } : {}),
+    ...(files !== undefined ? { files } : {}),
+  };
 }
 
 /** Reads all Skills in the library (one per subdirectory under `skills/`), sorted by name. */
@@ -131,6 +177,15 @@ export function loadLibrarySkills(): LibrarySkill[] {
     if (skill) skills.push(skill);
   }
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Reads the library Skills that default_agent preinstalls at initialization: every library
+ * Skill except those whose frontmatter sets `preinstall: false` (those stay in the library
+ * for manual install only).
+ */
+export function loadPreinstalledSkills(): LibrarySkill[] {
+  return loadLibrarySkills().filter((skill) => skill.preinstall !== false);
 }
 
 /**
@@ -148,7 +203,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "software-development",
     title: "Software Development",
     titleZh: "软件开发",
-    skills: ["web-design", "software-engineering"],
+    skills: ["web-design", "software-engineering", "remote-claude-code"],
   },
   {
     id: "ai-app-development",

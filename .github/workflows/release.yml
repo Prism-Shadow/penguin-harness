@@ -79,7 +79,7 @@ jobs:
 
   # Desktop installers (Electron shell, three-OS matrix). Runs BEFORE the release job:
   # Release assets are immutable once published, so the installers must exist when the
-  # Release is created. See design § "桌面端原型 · 打包与更新" (M3).
+  # Release is created.
   desktop:
     needs: check-release
     if: needs.check-release.outputs.exists != 'true'

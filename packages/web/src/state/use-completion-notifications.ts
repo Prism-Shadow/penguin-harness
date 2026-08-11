@@ -1,6 +1,6 @@
 /**
  * Desktop task-completion notifications, renderer-side only (standard Web Notification
- * API — no preload, no private IPC, per design § "桌面端原型 · 进程模型").
+ * API — no preload, no private IPC: the desktop window stays a plain browser environment).
  *
  * Watches the tracked Session list for active→idle transitions (lib/completion-notify)
  * and, when the window is hidden or unfocused, shows a system notification with the

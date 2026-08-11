@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 7 天，滑动续期；
 - 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`）并仅在种子当次打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
+- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`），在改掉之前保存在 `<root>/initial-admin-password` 中并于每次启动时打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash
@@ -73,10 +73,16 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/settings | 服务端全局设置：`{settings: {useSystemProxy}}` |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
 
-`useSystemProxy` 即「使用系统 HTTP 代理」开关（默认开）：开时服务端及其子进程出网遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY（大小写并存）；关时服务端一律直连，并从 Agent 命令子进程环境中剥除代理变量（NO_PROXY 保留）。任一状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。切换即时生效（对新发起的连接），无需重启。
+代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
+
+- `proxyForApp`（「应用程序使用代理」，默认开）治理服务端自身出网（LLM 请求、更新检查、图片抓取）：开且填写了 `proxyUrl` → http 与 https 流量都走该地址，**优先于代理环境变量**——无需配置任何环境变量；开但未填地址 → 遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（大小写并存）；关 → 一律直连。
+- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
+- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 `http://主机[:端口]`、`https://主机[:端口]` 与裸 `主机[:端口]`（规范化为 `http://主机[:端口]`——只存储规范化后的值，响应回显存储形态）；其余一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
+
+任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
 
 ### 版本与在线更新
 

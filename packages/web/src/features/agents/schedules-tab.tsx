@@ -17,13 +17,13 @@ import type {
   SchedulesResponse,
   ScheduleStatus,
   ScheduleUpsertRequest,
+  SessionInfo,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useProject } from "../../state/project";
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { Badge, type BadgeTone } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
@@ -31,7 +31,12 @@ import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { FormPicker } from "../../components/ui/form-picker";
+import { FieldError, FieldLabel } from "../../components/ui/field";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { ModelSelect, PickerList } from "../chat/model-select";
+import { WorkspaceSelect } from "../chat/workspace-select";
+import { sameModelRef } from "../models/model-grouping";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -51,25 +56,6 @@ function toLocalInput(iso: string | undefined): string {
   const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
-/**
- * Model reference ↔ native select option value: encoded as a JSON array
- * ([provider, modelId]), used only as a transient DOM-value serialization —
- * it never enters storage or requests; the persisted/submitted data still keeps
- * provider and modelId as two separate fields (no concatenation anywhere in the
- * pipeline). "" means the Project default.
- */
-const modelOptionValue = (ref: ModelRefDto): string => JSON.stringify([ref.provider, ref.modelId]);
-
-const parseModelOption = (v: string): ModelRefDto | null => {
-  if (!v) return null;
-  const [provider, modelId] = JSON.parse(v) as [string, string];
-  return { provider, modelId };
-};
-
-/** Display label for a model option: upstream id + provider name (shown side by side, not a composite id). */
-const modelOptionLabel = (ref: ModelRefDto): string =>
-  `${ref.modelId} · ${providerInfo(ref.provider)?.label ?? ref.provider}`;
 
 /**
  * Stored schedule fields → a model reference. A reference is always the complete
@@ -113,6 +99,105 @@ const EMPTY_FORM: FormState = {
   model: null,
 };
 
+/** Case-insensitive match of a Session by its title and its id (mirrors filterAgents in agent-handoff.ts). */
+function filterSessions(sessions: SessionInfo[], query: string): SessionInfo[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return sessions;
+  return sessions.filter(
+    (s) => s.sessionId.toLowerCase().includes(q) || (s.title ?? "").toLowerCase().includes(q),
+  );
+}
+
+/**
+ * Searchable Session picker for the bind-to-Session mode: the shared FormPicker (same
+ * trigger look as ModelSelect/WorkspaceSelect) whose panel is the shared PickerList (search
+ * box + keyboard nav). The Agent's full Session list is fetched once when the picker first
+ * opens — un-paged, mirroring how the form one-shots getModels — so search covers every
+ * Session rather than only the sidebar's loaded active page. The stored value is still the
+ * plain sessionId; the trigger resolves it to the Session's title for display.
+ */
+function SessionSelect({
+  projectId,
+  agentId,
+  value,
+  onChange,
+}: {
+  projectId: string;
+  agentId: string;
+  value: string;
+  onChange: (sessionId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+
+  // Load lazily on first open, then keep the snapshot; a failed fetch degrades to an empty
+  // list (the user can still see the currently-bound id on the trigger and cancel out).
+  useEffect(() => {
+    if (!open || sessions !== null) return;
+    let cancelled = false;
+    api
+      .listSessions(projectId, agentId)
+      .then((res) => {
+        if (!cancelled) setSessions(res.sessions);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, sessions, projectId, agentId]);
+
+  const selected = sessions?.find((s) => s.sessionId === value) ?? null;
+  const label = selected
+    ? (selected.title ?? S.chat.defaultSessionTitle)
+    : value || S.schedule.chooseSession;
+
+  return (
+    <FormPicker
+      open={open}
+      setOpen={setOpen}
+      label={label}
+      muted={!value}
+      title={value ? `${S.schedule.sessionId}：${value}` : S.schedule.chooseSession}
+      ariaLabel={S.schedule.chooseSession}
+      ariaHaspopup="listbox"
+      menuClass="w-80 origin-top-left"
+    >
+      {sessions === null ? (
+        <p className="px-3 py-2 text-xs text-gray-400">{S.common.loading}</p>
+      ) : sessions.length === 0 ? (
+        <p className="px-3 py-2 text-xs text-gray-400">{S.schedule.sessionEmpty}</p>
+      ) : (
+        <PickerList
+          items={filterSessions(sessions, query)}
+          itemKey={(s) => s.sessionId}
+          isCurrent={(s) => s.sessionId === value}
+          query={query}
+          onQueryChange={setQuery}
+          searchPlaceholder={S.schedule.sessionSearch}
+          emptyText={S.schedule.sessionNoMatch}
+          onPick={(s) => {
+            onChange(s.sessionId);
+            setOpen(false);
+          }}
+          renderRow={(s) => (
+            <>
+              <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">
+                {s.title ?? S.chat.defaultSessionTitle}
+              </span>
+              <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                {s.sessionId.slice(-6)}
+              </span>
+            </>
+          )}
+        />
+      )}
+    </FormPicker>
+  );
+}
+
 export function SchedulesTab({ agentId }: { agentId: string }) {
   const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -138,6 +223,9 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   // Model dropdown data (needed only for owners); load failure doesn't block the form — falling back to "Project default" is fine.
   const [models, setModels] = useState<ModelInfo[]>([]);
+  // The Project default model reference, kept so ModelSelect can mark it and so the form can
+  // treat "the default is selected" as "follow the default" (omit the model from the body).
+  const [defaultModel, setDefaultModel] = useState<ModelRefDto | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId || !agentId) return;
@@ -158,8 +246,14 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
     if (!projectId || !isOwner) return;
     api
       .getModels(projectId)
-      .then((res) => setModels(res.models))
-      .catch(() => setModels([]));
+      .then((res) => {
+        setModels(res.models);
+        setDefaultModel(res.defaultModel ?? null);
+      })
+      .catch(() => {
+        setModels([]);
+        setDefaultModel(null);
+      });
   }, [projectId, isOwner]);
 
   const set = (patch: Partial<FormState>) => {
@@ -212,7 +306,10 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       ...(form.target === "new" && form.workspace.trim()
         ? { workspace: form.workspace.trim() }
         : {}),
-      ...(form.target === "new" && form.model
+      // Model is sent only when it differs from the Project default: selecting the default
+      // (or leaving it) means "follow the Project default", stored by omitting the pair —
+      // so a later change to the default keeps flowing through (matches the header note).
+      ...(form.target === "new" && form.model && !sameModelRef(defaultModel, form.model)
         ? { modelId: form.model.modelId, provider: form.model.provider }
         : {}),
     };
@@ -272,7 +369,10 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       target: item.sessionId ? "session" : "new",
       sessionId: item.sessionId ?? "",
       workspace: item.workspace ?? "",
-      model: itemModelRef(item),
+      // A schedule that follows the Project default stores no model; show the current
+      // default in the picker (ModelSelect has no null state), which the submit body then
+      // treats as "follow default" again and omits.
+      model: itemModelRef(item) ?? defaultModel,
     });
   };
 
@@ -421,7 +521,12 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
 
       {/* Create entry point (owner): the form lives in a modal; the inline "Edit" button reuses the same modal. */}
       {isOwner && data !== null && (
-        <Button size="sm" variant="primary" disabled={busy} onClick={() => openForm(EMPTY_FORM)}>
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={busy}
+          onClick={() => openForm({ ...EMPTY_FORM, model: defaultModel })}
+        >
           {S.schedule.addTitle}
         </Button>
       )}
@@ -494,54 +599,50 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
                 <option value="session">{S.schedule.targetSession}</option>
               </Select>
               {form.target === "session" ? (
-                <Input
-                  size="sm"
-                  label={S.schedule.sessionId}
-                  required
-                  error={fieldErrors.sessionId}
-                  value={form.sessionId}
-                  onChange={(e) => set({ sessionId: e.target.value })}
-                  className="font-mono"
-                  autoComplete="off"
-                />
+                // Searchable Session picker (dropdown), replacing the raw id text input: the
+                // schedule binds to an existing conversation, and typing its id by hand was
+                // both error-prone and unsearchable.
+                <div>
+                  <FieldLabel required>{S.schedule.sessionId}</FieldLabel>
+                  {projectId && (
+                    <SessionSelect
+                      projectId={projectId}
+                      agentId={agentId}
+                      value={form.sessionId}
+                      onChange={(sessionId) => set({ sessionId })}
+                    />
+                  )}
+                  {fieldErrors.sessionId && <FieldError>{fieldErrors.sessionId}</FieldError>}
+                </div>
               ) : (
+                // New-Session mode: Model and Workspace use the same form-variant pickers as
+                // the Project default-settings dialog (ModelSelect / WorkspaceSelect), so the
+                // two surfaces read identically.
                 <>
-                  <Select
-                    size="sm"
-                    label={S.schedule.model}
-                    value={form.model ? modelOptionValue(form.model) : ""}
-                    onChange={(e) => set({ model: parseModelOption(e.target.value) })}
-                  >
-                    <option value="">{S.schedule.modelDefault}</option>
-                    {/* When the prefilled pair is no longer in the model config (the entry was
-                        renamed or deleted), add an extra option so it isn't displayed as
-                        "Project default". */}
-                    {form.model &&
-                      !models.some(
-                        (m) =>
-                          m.modelId === form.model!.modelId && m.provider === form.model!.provider,
-                      ) && (
-                        <option value={modelOptionValue(form.model)}>
-                          {modelOptionLabel(form.model)}
-                        </option>
-                      )}
-                    {models.map((m) => (
-                      <option
-                        key={`${m.provider}:${m.modelId}`}
-                        value={modelOptionValue({ provider: m.provider, modelId: m.modelId })}
-                      >
-                        {modelOptionLabel({ provider: m.provider, modelId: m.modelId })}
-                      </option>
-                    ))}
-                  </Select>
-                  <Input
-                    size="sm"
-                    label={S.schedule.workspace}
-                    value={form.workspace}
-                    onChange={(e) => set({ workspace: e.target.value })}
-                    className="font-mono"
-                    autoComplete="off"
-                  />
+                  <div>
+                    <FieldLabel>{S.schedule.model}</FieldLabel>
+                    {models.length > 0 ? (
+                      <ModelSelect
+                        models={models}
+                        value={form.model}
+                        {...(defaultModel ? { defaultModel } : {})}
+                        onChange={(ref) => set({ model: ref })}
+                        disabled={busy}
+                        variant="form"
+                      />
+                    ) : (
+                      <p className="text-xs text-gray-400">{S.schedule.modelDefault}</p>
+                    )}
+                  </div>
+                  <div>
+                    <FieldLabel>{S.schedule.workspace}</FieldLabel>
+                    <WorkspaceSelect
+                      projectId={projectId ?? ""}
+                      workspace={form.workspace}
+                      onChange={(workspace) => set({ workspace })}
+                      variant="form"
+                    />
+                  </div>
                 </>
               )}
             </div>

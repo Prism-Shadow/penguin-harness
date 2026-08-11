@@ -64,8 +64,9 @@ export interface AuthResponse {
 export interface MeResponse {
   user: UserInfo;
   /**
-   * Whether Workspace HTML previews open on a separate origin (see design §
-   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * Whether Workspace HTML previews open on a separate origin (the loopback
+   * counterpart of the App host, or PENGUIN_PREVIEW_ORIGIN when set). False means this
+   * deployment has no usable preview origin —
    * the App is reached on something other than a loopback name and
    * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
    * where `localStorage`, cookies and third-party embeds do not work. Computed per
@@ -76,7 +77,7 @@ export interface MeResponse {
    * Whether this server runs in desktop mode (spawned by the desktop shell with
    * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
    * initial-password banner and the self-update entry, and omits the old-password
-   * field when changing the password. See design § "桌面端原型".
+   * field when changing the password.
    */
   desktopMode: boolean;
   /**
@@ -119,17 +120,35 @@ export interface AdminPasswordResetRequest {
   password: string;
 }
 
-/** Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"). */
+/**
+ * Admin-level server-global settings (SQLite server_settings):
+ * two independent proxy switches sharing one optional explicit address. In every
+ * on-state the effective NO_PROXY always includes localhost/127.0.0.1/::1 (loopback is
+ * never proxied), and changes apply to newly initiated connections/spawns immediately —
+ * no restart.
+ */
 export interface ServerSettings {
   /**
-   * "Use system HTTP proxy" (default on): whether the server process and its child
-   * processes reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY
-   * (both spellings). Off = direct connections, with the proxy variables also stripped
-   * from agent command subprocess environments. Either way the effective NO_PROXY always
-   * includes localhost/127.0.0.1/::1 (loopback is never proxied). Toggling applies to
-   * newly initiated connections immediately — no restart.
+   * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
+   * requests, the update check, image fetches). On with `proxyUrl` set = that address
+   * for both http and https; on without an address = the proxy environment variables
+   * HTTP_PROXY / HTTPS_PROXY (both spellings); off = always direct.
    */
-  useSystemProxy: boolean;
+  proxyForApp: boolean;
+  /**
+   * "Agent environment uses the proxy" (default on): agent command subprocess
+   * environments. On with `proxyUrl` set = HTTP_PROXY / HTTPS_PROXY (plus lowercase
+   * twins) injected as that address with the merged NO_PROXY, overriding inherited
+   * values; on without an address = the host environment passes through unchanged;
+   * off = the proxy variables are stripped (NO_PROXY kept).
+   */
+  proxyForAgent: boolean;
+  /**
+   * The shared explicit proxy address (canonical `http(s)://host[:port]`), or null =
+   * follow the proxy environment variables. When set it takes precedence over
+   * HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
+   */
+  proxyUrl: string | null;
 }
 
 export interface ServerSettingsResponse {
@@ -138,7 +157,15 @@ export interface ServerSettingsResponse {
 
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
-  useSystemProxy?: boolean;
+  proxyForApp?: boolean;
+  proxyForAgent?: boolean;
+  /**
+   * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
+   * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,
+   * and the response echoes the stored form). Empty/whitespace-only or null clears the
+   * address (follow the environment variables); anything else is 400 `invalid_proxy_url`.
+   */
+  proxyUrl?: string | null;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -771,7 +798,7 @@ export interface MessagesPageInfo {
   before?: string;
   /**
    * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
-   * window: the client offsets its global `第 N 轮` numbering by this, so a partial
+   * window: the client offsets its global "round N" numbering by this, so a partial
    * window never mis-numbers. 0 when the window starts at the beginning.
    */
   earlierTurns: number;
@@ -930,6 +957,25 @@ export interface ApprovalDecisionRequest {
  */
 export interface RetryNowResponse {
   skipped: boolean;
+}
+
+/**
+ * One background command process started by the Session (an exec_command promoted past
+ * its yield window). Served from the ACTIVE runtime only: a session whose runtime entry
+ * is gone truthfully reports an empty list.
+ */
+export interface SessionProcessInfo {
+  processId: string;
+  /** OS pid of the process-group leader; null when the spawn itself failed. */
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: string;
+  running: boolean;
+}
+
+export interface SessionProcessesResponse {
+  processes: SessionProcessInfo[];
 }
 
 // ---------------------------------------------------------------------------

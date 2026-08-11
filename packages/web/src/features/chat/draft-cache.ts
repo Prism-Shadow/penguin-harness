@@ -75,34 +75,38 @@ function parseModelRef(value: unknown): { provider: string; modelId: string } | 
 export function parseDraft(raw: string | null): DraftCache {
   if (!raw) return {};
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return {};
-    const o = parsed as Record<string, unknown>;
-    const out: DraftCache = {};
-    if (typeof o.text === "string") out.text = o.text;
-    if (typeof o.agentId === "string") out.agentId = o.agentId;
-    if (typeof o.workspace === "string") out.workspace = o.workspace;
-    const modelRef = parseModelRef(o.modelRef);
-    if (modelRef) out.modelRef = modelRef;
-    if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
-    const switchModelRef = parseModelRef(o.switchModelRef);
-    if (switchModelRef) out.switchModelRef = switchModelRef;
-    if (Array.isArray(o.skills)) {
-      // Elements are validated one by one: non-string items are filtered out; if empty after
-      // filtering, the whole field is omitted.
-      const skills = o.skills.filter((s): s is string => typeof s === "string");
-      if (skills.length > 0) out.skills = skills;
-    }
-    if (
-      typeof o.approvalMode === "string" &&
-      APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
-    ) {
-      out.approvalMode = o.approvalMode as ApprovalMode;
-    }
-    return out;
+    return draftFromUnknown(JSON.parse(raw));
   } catch {
     return {};
   }
+}
+
+/** Field-by-field validation of an already-parsed value (shared with the parked-drafts store, whose entries embed a draft object). */
+export function draftFromUnknown(parsed: unknown): DraftCache {
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const o = parsed as Record<string, unknown>;
+  const out: DraftCache = {};
+  if (typeof o.text === "string") out.text = o.text;
+  if (typeof o.agentId === "string") out.agentId = o.agentId;
+  if (typeof o.workspace === "string") out.workspace = o.workspace;
+  const modelRef = parseModelRef(o.modelRef);
+  if (modelRef) out.modelRef = modelRef;
+  if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
+  const switchModelRef = parseModelRef(o.switchModelRef);
+  if (switchModelRef) out.switchModelRef = switchModelRef;
+  if (Array.isArray(o.skills)) {
+    // Elements are validated one by one: non-string items are filtered out; if empty after
+    // filtering, the whole field is omitted.
+    const skills = o.skills.filter((s): s is string => typeof s === "string");
+    if (skills.length > 0) out.skills = skills;
+  }
+  if (
+    typeof o.approvalMode === "string" &&
+    APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
+  ) {
+    out.approvalMode = o.approvalMode as ApprovalMode;
+  }
+  return out;
 }
 
 export function loadDraft(key: string, storage: DraftStorage = localStorage): DraftCache {

@@ -71,9 +71,11 @@ import {
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
+import { protocolPathForModel } from "./protocol-path";
 import {
-  defaultExpandedProviders,
   isGroupExpanded,
+  loadExpandedProviders,
+  saveExpandedProviders,
   toggleExpandedProvider,
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
@@ -358,11 +360,17 @@ export function ModelsPage() {
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   /**
-   * Expanded vendor groups — only DeepSeek on first paint; every other group (including
-   * user-defined ones, which arrive with the async row load) starts collapsed. Searching
-   * force-opens the rendered groups without touching this set (see model-group-expansion.ts).
+   * Expanded vendor groups — hydrated from this Project's persisted set (DeepSeek-only
+   * on a first visit; every other group, including user-defined ones arriving with the
+   * async row load, starts collapsed), written back on every toggle so the user's
+   * choices survive a refresh. Searching force-opens the rendered groups without
+   * touching this set (see model-group-expansion.ts).
    */
-  const [expanded, setExpanded] = useState<Set<string>>(defaultExpandedProviders);
+  const [expanded, setExpanded] = useState<Set<string>>(() => loadExpandedProviders(projectId));
+  // Project resolved on first load / switched: swap in that Project's persisted expansion set.
+  useEffect(() => {
+    setExpanded(loadExpandedProviders(projectId));
+  }, [projectId]);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): a valid name proceeds to that group's add-model dialog. */
@@ -528,11 +536,15 @@ export function ModelsPage() {
   /**
    * Header toggles are inert while searching: every rendered group is force-opened (see
    * isGroupExpanded), so a flip would change nothing visibly and only silently mutate the
-   * state restored once the query clears.
+   * state restored once the query clears. Computed outside the state updater (sidebar
+   * toggleGroup convention): the persistence write is a side effect, and updaters must
+   * stay pure (double-invoked in StrictMode).
    */
   const toggleGroup = (id: string) => {
     if (searching) return;
-    setExpanded((prev) => toggleExpandedProvider(prev, id));
+    const next = toggleExpandedProvider(expanded, id);
+    setExpanded(next);
+    saveExpandedProviders(projectId, next);
   };
 
   return (
@@ -1156,6 +1168,11 @@ function ModelDialog({
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
   const baseUrlRequired = !preset && openAiLike;
+  // Protocol-path suffix shown inside the base URL field (every model, even while the
+  // field is empty): the path the client appends to the base URL, i.e. the endpoint
+  // shape a custom URL must serve. Recomputed from the live form so switching the
+  // group in add mode updates it.
+  const protocolPath = protocolPathForModel(form.provider, form.clientType);
 
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
@@ -1446,14 +1463,18 @@ function ModelDialog({
           </div>
         )}
 
-        {/* Adding a model: protocol note first (first-party provider group = auto-route
-            by id; custom / self-defined group / gateway = fixed OpenAI protocol), then
-            the identity fields ("get model id / API key" links next to the respective
-            inputs; fill in the id to test connectivity — verify before saving). */}
+        {/* Adding a model: protocol note first (preset direct-vendor group = only the
+            vendor's official protocol, named via the group label — the in-field suffix
+            on the base URL below says which path; custom / self-defined group / gateway
+            = fixed OpenAI protocol), then the identity fields ("get model id / API key"
+            links next to the respective inputs; fill in the id to test connectivity —
+            verify before saving). */}
         {isNew && (
           <>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {vendorGroup ? S.models.addAutoRouteHint : S.models.addProtocolHint}
+              {vendorGroup && dialogProvider
+                ? S.models.vendorProtocolHint(dialogProvider.label)
+                : S.models.addProtocolHint}
             </p>
             {identityFields}
           </>
@@ -1551,20 +1572,37 @@ function ModelDialog({
         )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
-            baseUrlRequired). Official-protocol entries (everything except the OpenAI-protocol path)
-            carry a caution: a custom endpoint must still speak the vendor's official protocol. */}
-        <Input
-          size="sm"
-          label={S.models.baseUrl}
-          required={baseUrlRequired}
-          value={form.baseUrl}
-          disabled={!canEdit}
-          onChange={(e) => set({ baseUrl: e.target.value })}
-          className="font-mono"
-          placeholder={preset ? S.models.baseUrlHint : "https://…"}
-          {...(fieldErrors.baseUrl ? { error: fieldErrors.baseUrl } : {})}
-          {...(!openAiLike ? { hint: S.models.baseUrlOfficialNote } : {})}
-        />
+            baseUrlRequired). The grey in-field suffix shows the protocol path the client appends
+            to the base URL — the endpoint shape a custom URL must serve; it renders for every
+            model and stays while the field is empty (hints the shape before typing). Reuses the
+            unit-adornment idiom of the context window / max tokens fields below; the error text
+            sits outside the relative wrapper (see Input.invalid). */}
+        <label className="block">
+          <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+          <span className="relative block">
+            <Input
+              size="sm"
+              required={baseUrlRequired}
+              value={form.baseUrl}
+              disabled={!canEdit}
+              invalid={Boolean(fieldErrors.baseUrl)}
+              onChange={(e) => set({ baseUrl: e.target.value })}
+              className="font-mono"
+              // Reserve room so the typed URL never slides under the suffix. Input and
+              // suffix share the same monospace size, so the suffix width is exactly its
+              // character count in ch (plus the right offset and a small gap).
+              style={{ paddingRight: `calc(${protocolPath.length}ch + 1.25rem)` }}
+              // The suffix itself is hover-transparent (pointer-events-none), so the
+              // explanation rides on the input's title.
+              title={S.models.baseUrlSuffixTitle}
+              placeholder={preset ? S.models.baseUrlHint : "https://…"}
+            />
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
+              {protocolPath}
+            </span>
+          </span>
+          {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
+        </label>
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
             sits inside each box as a muted right suffix. Placeholders cannot scroll, so at

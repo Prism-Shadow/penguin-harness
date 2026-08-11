@@ -17,6 +17,10 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import {
+  readInitialAdminPassword,
+  renderInitialPasswordNotice,
+} from "@prismshadow/penguin-server/initial-password";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
@@ -276,6 +280,16 @@ export function registerServeCommands(program: Command, t: Messages): void {
       const existing = await existingInstanceUrl();
       if (existing !== null) {
         process.stdout.write(t.webAlreadyRunning(existing) + "\n");
+        // The running server prints the initial-password reminder only into ITS OWN
+        // console; someone attaching from a fresh terminal would never see it. The data
+        // root's stored plaintext exists exactly while the admin password is still the
+        // initial one (the server removes it on change), so its presence alone gates the
+        // reminder here. The fresh-start path below needs nothing: the server module
+        // runs in this same process and prints the notice itself.
+        const initialPassword = readInitialAdminPassword(process.env.PENGUIN_HOME ?? resolveRoot());
+        if (initialPassword !== null) {
+          process.stdout.write(renderInitialPasswordNotice("admin", initialPassword) + "\n");
+        }
         if (opts.open) openBrowser(existing);
         return;
       }

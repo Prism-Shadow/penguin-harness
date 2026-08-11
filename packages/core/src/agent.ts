@@ -31,7 +31,7 @@ import {
   type ModelRef,
   type ProjectConfig,
 } from "./state/index.js";
-import { GenerativeModel, ToolCallIdAllocator } from "./llm/index.js";
+import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,
@@ -58,6 +58,7 @@ import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
 import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
+  ProxyEnvPolicy,
   SubagentRunner,
   ThinkingLevelName,
   ToolDefinition,
@@ -78,15 +79,15 @@ export interface CreateAgentOptions {
   /** Local data root directory; defaults to `resolveRoot()` (PENGUIN_HOME or ~/.penguin/data). */
   root?: string;
   /**
-   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY;
-   * NO_PROXY is kept) are stripped from exec_command subprocess environments of every
-   * Session this Agent creates or resumes — and of its subagents' Sessions, which
-   * inherit the getter. The Web server threads its admin-level "use system HTTP proxy"
-   * switch (off state) through here; the getter is re-read at every command spawn, so a
-   * toggle needs no restart. Absent = proxy allowed (SDK/CLI standalone use follows the
+   * Proxy policy for exec_command subprocess environments of every Session this Agent
+   * creates or resumes — and of its subagents' Sessions, which inherit the getter (see
+   * {@link ProxyEnvPolicy}: strip the proxy variables, inject an explicit proxy over the
+   * inherited env, or null = pass through). The Web server threads its admin-level proxy
+   * settings through here; the getter is re-read at every command spawn, so a settings
+   * change needs no restart. Absent = pass through (SDK/CLI standalone use follows the
    * user's own shell environment).
    */
-  stripProxyEnv?: () => boolean;
+  proxyEnv?: () => ProxyEnvPolicy | null;
 }
 
 export interface CreateSessionOptions {
@@ -132,18 +133,8 @@ export interface ResumeSessionOptions {
   baseUrl?: string;
 }
 
-/**
- * Effective compaction threshold: capped at 75% of the model's `context_window` —
- * the threshold must stay well below the hard window limit, otherwise small-window
- * models get rejected by the provider (a non-retryable 400) before compaction even
- * triggers, and the compaction request itself (old context + prompt + summary output)
- * also needs headroom. Not clamped when `<=0` (disabled) or the window is unknown.
- */
-export function effectiveMaxContextLength(configured: number, contextWindow: unknown): number {
-  if (configured <= 0) return configured;
-  if (typeof contextWindow !== "number") return configured;
-  return Math.min(configured, Math.floor(contextWindow * 0.75));
-}
+// Compaction-threshold derivation (`effectiveMaxContextLength`) lives with the rest of the
+// window arithmetic in llm/context-limits.ts; re-exported by llm/index.js.
 
 /**
  * Output cap for meta requests (title generation / vision describing): these carry their own
@@ -160,15 +151,15 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadOrInitAgentState(opts);
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.stripProxyEnv);
+  return new Agent(state, projectConfig, opts.proxyEnv);
 }
 
 export class Agent {
   constructor(
     readonly state: AgentState,
     readonly projectConfig: ProjectConfig,
-    /** See {@link CreateAgentOptions.stripProxyEnv}; forwarded into every Session's Environment. */
-    private readonly stripProxyEnv?: () => boolean,
+    /** See {@link CreateAgentOptions.proxyEnv}; forwarded into every Session's Environment. */
+    private readonly proxyEnv?: () => ProxyEnvPolicy | null,
   ) {}
 
   /**
@@ -611,10 +602,10 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-strip getter is
-                // host policy, not Agent state: the subagent's commands run in the same
-                // serving process, so they follow the same switch as the parent's.
-                ...(parentAgent.stripProxyEnv ? { stripProxyEnv: parentAgent.stripProxyEnv } : {}),
+                // A child Agent loads its own vault/config, but the proxy-env policy
+                // getter is host policy, not Agent state: the subagent's commands run in
+                // the same serving process, so they follow the same settings as the parent's.
+                ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -731,6 +722,11 @@ export class Agent {
               thinkingLevel: "none",
               // The describing budget, tightened by the vision entry's own pinned cap when smaller.
               maxTokens: metaMaxTokens(2048, visionEntry.max_tokens),
+              // Same window derivation as ordinary requests (a formality here: the meta
+              // budget is far below any real window, so the clamp never binds).
+              ...(visionEntry.context_window !== undefined
+                ? { contextWindow: visionEntry.context_window }
+                : {}),
               requestTimeoutMs: 60_000,
             }),
         };
@@ -757,14 +753,16 @@ export class Agent {
       ),
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
-      ...(this.stripProxyEnv ? { stripProxyEnv: this.stripProxyEnv } : {}),
+      ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
     });
     const tools = await environment.listTools();
 
-    // Effective output cap: the entry's per-model annotation wins over the Agent's
-    // system_config value — the fit is a model trait: the seeded per-Agent default (32000)
-    // cannot fit into e.g. a 32768-token context window together with any prompt, so a
-    // small-window model needs its own pinned cap. Unset inherits the Agent value.
+    // Configured output cap: the entry's per-model annotation wins over the Agent's
+    // system_config value; unset inherits the Agent value. This is a ceiling, not the
+    // literal wire value: GenerativeModel clamps each request's effective cap to what the
+    // entry's context window can still fit (see llm/context-limits.ts, issue #218), so the
+    // seeded per-Agent default (32000) no longer needs a manual per-model override to work
+    // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
     const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
 
     // LLM constructor args are extracted into a constant so they can be reused as-is when
@@ -813,6 +811,11 @@ export class Agent {
         thinkingLevel: "none",
         // The meta budget, tightened by the entry's pinned per-model cap when smaller.
         maxTokens: metaMaxTokens(300, modelEntry.max_tokens),
+        // Same window derivation as ordinary requests (a formality here: the meta budget
+        // is far below any real window, so the clamp never binds).
+        ...(modelEntry.context_window !== undefined
+          ? { contextWindow: modelEntry.context_window }
+          : {}),
         requestTimeoutMs: 30_000,
       });
 

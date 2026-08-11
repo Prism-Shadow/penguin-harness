@@ -119,7 +119,7 @@ Two ways in — both work on the same `~/.penguin/data` root, so a desktop insta
 - **⌨️ CLI** — a one-line installer (or npm / offline package) puts the `penguin` command on the machine; `penguin web` then serves the full Web experience in your browser at `http://127.0.0.1:7364` (multi-session chat, agent / skill / model management, usage stats, Trace observability, evaluation center). The online installers bundle their own Node runtime — unpack and run; upgrades and reinstalls never touch your data.
 
 > [!NOTE]
-> On a CLI install, the first Web login is `admin`, with the initial password printed on the server's first start (of the form `penguin-1234`) — change it right after. Models are configured on the in-app **Models** page.
+> On a CLI install, the first Web login is `admin`, with the initial password (of the form `penguin-1234`) printed as a framed notice on every server start until it is changed — change it right after. Models are configured on the in-app **Models** page.
 
 ### 🖥️ Desktop app
 

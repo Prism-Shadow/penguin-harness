@@ -22,6 +22,7 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
   RetryNowResponse,
@@ -776,6 +777,41 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, aborted ? 202 : 204);
   });
 
+  // —— Background processes (the details popover's interactive list) ——
+
+  // Processes the conversation started (exec_commands promoted to background). Served
+  // from the ACTIVE runtime only: an evicted or never-loaded session truthfully reports
+  // none — the environment that owned them is gone, and resurrecting an entry could only
+  // ever produce an empty list anyway.
+  app.get("/:sessionId/processes", (c) => {
+    const row = resolveSession(c);
+    const processes = deps.manager.listProcesses(row.sessionId).map((p) => ({
+      processId: p.processId,
+      pid: p.pid,
+      cmd: p.cmd,
+      cwd: p.cwd,
+      startedAt: new Date(p.startedAt).toISOString(),
+      running: p.running,
+    }));
+    return c.json({ processes } satisfies SessionProcessesResponse);
+  });
+
+  // Stop one background process (SIGTERM to the whole group, SIGKILL after a grace
+  // period). 404 when the id is gone — already exited and reaped, or the runtime was
+  // evicted; the UI just refreshes its list either way.
+  app.post("/:sessionId/processes/:processId/kill", (c) => {
+    const row = resolveSession(c);
+    const killed = deps.manager.killProcess(row.sessionId, pathParam(c, "processId"));
+    if (!killed) {
+      throw new HttpError(
+        404,
+        "process_not_found",
+        "Process does not exist or has already exited.",
+      );
+    }
+    return c.body(null, 204);
+  });
+
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
   // next retry immediately (attempt counter unchanged). Benign either way — 200 with
   // skipped:false when no reconnect wait is in progress, so a timing race (the wait
@@ -837,7 +873,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
-  // preview origin (see design § "Workspace 文件预览").
+  // preview origin.
   //
   // A redirect rather than a JSON endpoint the UI fetches, because the alternative is
   // worse on two counts: opening the tab after an await trips popup blockers, and a

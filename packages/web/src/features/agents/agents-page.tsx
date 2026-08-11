@@ -22,6 +22,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
@@ -35,6 +36,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
@@ -80,6 +82,7 @@ export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
   const { locale } = useLocale();
+  const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const [createOpen, setCreateOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
@@ -141,6 +144,8 @@ export function AgentsPage() {
    * rather than the previous one from the cache.
    */
   const newChat = (agentId: string) => {
+    // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
+    if (user && projectId) parkActiveDraft(user.userId, projectId);
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };

@@ -98,11 +98,11 @@ output = 0.857143
 | `description` | — | Agent 描述 |
 | `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
-| `max_turns` | `100` | 单个 Task 的最大 LLM 轮数（-1 不限制） |
-| `model.max_tokens` | `32000` | 单次输出 Token 上限（-1 不设上限，用服务商默认） |
+| `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
+| `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
-| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值 |
+| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
@@ -125,7 +125,8 @@ version: 3
 system_prompt: |
   …
 
-max_turns: 100
+# -1(缺省)不限制轮数;设为正整数则限制单个 Task 的轮数。
+max_turns: -1
 
 model:
   max_tokens: 32000

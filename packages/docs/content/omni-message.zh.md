@@ -193,7 +193,7 @@ interface RequestEndPayload {
   // 不受影响;compaction_end 复用同一块——attempt 为最终尝试序号,error_message 为失败详情)
   error_message?: string;     // 错误详情(内部 LLMOutcome.errorMessage,内外同名),仅非
                               // completed 携带:被重试/失败的 Request 背后的真实原因
-                              // (如供应商额度码),供成本中心错误面板读取
+                              // (如供应商错误码),供成本中心错误面板读取
   attempt?: number;           // 本次重试序列内的第几次请求(1 起,权威计数):失败请求
                               // 与经重试后成功的请求携带;首发即成功不携带
   retry_in_ms?: number;       // 计划中的重连等待(毫秒),仅当引擎将在本轮内重试时携带,
@@ -260,7 +260,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | --- | --- | --- |
 | `completed` | 正常完成 | 继续 |
 | `aborted` | 用户中断 | 停止并交还用户 |
-| `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
+| `timeout` | LLM 超时/传输层断连 | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
 | `failed` | 分类器未判定为瞬时的错误（LLM 侧）；工具执行出错（Environment 侧） | LLM 侧：同样在同一 run 内自动重连——该状态本身仍如实上报为 `failed`。Environment 侧：错误回灌给模型，从不重试 |
 | `auth` | 供应商拒绝了凭据 | 停止并交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |
