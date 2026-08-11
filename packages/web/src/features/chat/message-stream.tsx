@@ -14,7 +14,7 @@ import type { PendingApproval } from "./use-session-stream";
 import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
 import { WorkGroup, isWorkItem } from "./work-group";
-import { createStreamFollow } from "./stream-follow";
+import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
@@ -273,6 +273,10 @@ export function MessageStream({
   // Layout effect (not useEffect): the stick-to-bottom snap must land before paint, otherwise
   // fast streams show the bottom edge "catching up" by the growth of each commit. Suppressed
   // during the animated return — the glide owns the scroll position until it arrives.
+  // Every snap goes through stickToBottom, which reports the landed position to the follow
+  // model synchronously — the snap's async scroll event otherwise races late content growth
+  // and could misinitialize follow as "parked above the bottom" right after entering a
+  // conversation (see stream-follow.ts).
   useLayoutEffect(() => {
     const el = scrollRef.current;
     // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
@@ -288,7 +292,7 @@ export function MessageStream({
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
+    if (el && follow.stick && !returningRef.current) stickToBottom(el, follow);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +310,7 @@ export function MessageStream({
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       lastHeightRef.current = el.scrollHeight;
-      if (follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
+      if (follow.stick && !returningRef.current) stickToBottom(el, follow);
       syncJump();
     });
     ro.observe(el);
@@ -324,7 +328,7 @@ export function MessageStream({
     if (!el) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       follow.resume();
-      el.scrollTop = el.scrollHeight;
+      stickToBottom(el, follow);
       syncJump();
       return;
     }
@@ -345,7 +349,7 @@ export function MessageStream({
       if (remaining <= 1) {
         returningRef.current = false;
         follow.resume();
-        live.scrollTop = live.scrollHeight;
+        stickToBottom(live, follow);
         syncJump();
         return;
       }
