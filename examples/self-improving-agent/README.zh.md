@@ -13,13 +13,14 @@
 全程跑在一个**本地开源权重模型**上——由 Ollama 提供的 `qwen3.6:35b`——所以不用任何云端 API、数据也不
 离开本机。Ollama 的 ROCm 后端能原生在 AMD GPU 上运行它。
 
-## 三个脚本（从机制到真正的自我进化）
+## 四个脚本（从机制到带晋升门槛的自我进化）
 
 | 脚本 | 演示什么 | 由谁编辑 `AGENTS.md` |
 | --- | --- | --- |
 | `self-improve.ts` | **评分闭环**的微缩版（最简） | **脚本**（硬编码） |
 | `self-evolve.ts` | **真正的**单轮自我进化 | **Agent** 自己 |
 | `self-evolve-recursive.ts` | **多轮递归**——主线（`pnpm start`） | **Agent**，连续两轮 |
+| `self-evolve-promotion.ts` | **held-out 晋升门槛**——通过路径与回滚负控 | **Agent**；外加一个故意过拟合的负控 |
 
 `self-improve.ts` 是诚实的基线：它展示了 评估 → 编辑 → 重新评估 的机制，但那次编辑是人写好的
 `DISCIPLINE` 字符串、由脚本写到磁盘。它演示的是*循环*，不是自我进化。两个 `self-evolve*` 脚本把
@@ -62,6 +63,7 @@ penguin config model add \
 pnpm install
 pnpm build
 pnpm --dir examples/self-improving-agent start        # 递归主线
+pnpm --dir examples/self-improving-agent promotion:e2e # held-out 通过 + 回滚 E2E
 # 或单轮：  npx tsx examples/self-improving-agent/self-evolve.ts
 # 或评分闭环基线：  npx tsx examples/self-improving-agent/self-improve.ts
 ```
@@ -116,3 +118,9 @@ N+2 (constants locked): 5 runs
 - 使用一个专用 agent id（`self-improve-demo`），运行时即时创建——你自己的 Agent 不会被动到。
 - 脚本从不自己写那套约定；它只提供失败报告、通过范例，以及保留/回滚的信号。
 - 再次运行会把这个 demo agent 的 `AGENTS.md` 重置为空，并重新开始循环。
+- `promotion:e2e` 会创建两个名称唯一的一次性 Agent，使用真实模型分别运行 Development 与
+  Promotion 任务，创建并校验 `v1`/`v2` tar Snapshot，审计优化 Trace 是否接触 held-out/rubric，
+  拒绝任何越出隔离 Workspace 的 Target Run，保留通用 Candidate，并把过拟合负控恢复到生产版本。
+  通过场景的 v1 State 只包含 Workspace 隔离规则；负控的生产 v1 还掌握 batch-analytics 能力切片，
+  Development Candidate 在提高 real-time 切片时故意遗忘该生产能力。每次运行都会重新生成私有约定，
+  旧 demo 产物无法回答当前 Benchmark。

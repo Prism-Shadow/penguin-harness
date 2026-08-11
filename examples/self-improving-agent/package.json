@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx self-evolve-recursive.ts"
+    "start": "tsx self-evolve-recursive.ts",
+    "promotion:e2e": "tsx self-evolve-promotion.ts"
   },
   "dependencies": {
     "@prismshadow/penguin-core": "workspace:*"

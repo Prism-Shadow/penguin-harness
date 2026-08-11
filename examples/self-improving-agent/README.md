@@ -14,13 +14,14 @@ that the improvement is authored by the *agent*, not hardcoded by the script:
 Everything runs on a **local open-weight model** — `qwen3.6:35b` served by Ollama — so no cloud API
 and no data leaving the machine. Ollama's ROCm backend runs this natively on AMD GPUs.
 
-## The three scripts (from mechanism to real self-evolution)
+## The four scripts (from mechanism to promotion-gated self-evolution)
 
 | Script | What it demonstrates | `AGENTS.md` edited by |
 | --- | --- | --- |
 | `self-improve.ts` | The **scoring loop** in miniature (simplest) | the **script** (hardcoded) |
 | `self-evolve.ts` | **Genuine** single-round self-evolution | the **agent** itself |
 | `self-evolve-recursive.ts` | **Multi-round recursion** — the main line (`pnpm start`) | the **agent**, over two rounds |
+| `self-evolve-promotion.ts` | **Held-out promotion gate** — pass plus rollback negative control | the **agent**; one deliberately overfit control |
 
 `self-improve.ts` is the honest baseline: it shows the evaluate → edit → re-evaluate machinery, but
 the edit is a human-written `DISCIPLINE` string the script writes to disk. That demonstrates the
@@ -68,6 +69,7 @@ penguin config model add \
 pnpm install
 pnpm build
 pnpm --dir examples/self-improving-agent start        # the recursive main line
+pnpm --dir examples/self-improving-agent promotion:e2e # held-out pass + rollback E2E
 # or a single round:  npx tsx examples/self-improving-agent/self-evolve.ts
 # or the scoring-loop baseline:  npx tsx examples/self-improving-agent/self-improve.ts
 ```
@@ -128,3 +130,11 @@ new_evidence)`. Exact numbers vary run to run; the monotonic direction is the po
 - The script never writes the convention itself; it only supplies the failing report, the accepted
   example(s), and the keep/roll-back signal.
 - Re-running resets the demo agent's `AGENTS.md` to blank and starts the loop over.
+- `promotion:e2e` creates two uniquely named disposable Agents. It runs real-model Development and
+  Promotion tasks, creates and verifies `v1`/`v2` tar Snapshots, audits the optimization Trace for
+  held-out/rubric access, rejects any Target run that reaches outside its isolated Workspace,
+  retains the general Candidate, and restores the overfit negative control. The pass scenario's v1
+  State contains only this Workspace-isolation rule. The negative control's production v1 also
+  knows the format for the batch-analytics capability slice; its Development Candidate improves
+  the real-time slice while deliberately forgetting that production behavior. Every run generates
+  a fresh private convention, so old demo artifacts cannot answer the current Benchmark.
