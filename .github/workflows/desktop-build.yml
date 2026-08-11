@@ -171,7 +171,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build packages
-        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
