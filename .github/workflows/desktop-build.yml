@@ -29,19 +29,13 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      CSC_LINK:
-        required: false
-      CSC_KEY_PASSWORD:
-        required: false
-      APPLE_API_KEY:
-        required: false
-      APPLE_API_KEY_ID:
-        required: false
-      APPLE_API_ISSUER:
-        required: false
-      APPLE_TEAM_ID:
-        required: false
+    # No `secrets:` declarations here, deliberately. The signing secrets live in the
+    # `apple-signing` GitHub environment referenced by the macOS matrix job, and
+    # environment secrets resolve inside the job itself — in reusable-workflow calls
+    # included. Declaring them as workflow_call secrets rebinds those names to the
+    # caller-passed values, which are empty when the caller passes none, shadowing the
+    # environment's real values: exactly the v0.2.2 release failure ("Missing macOS
+    # signing secrets" with all six configured).
   workflow_dispatch:
     inputs:
       ref:
@@ -82,9 +76,11 @@ jobs:
             args: --win
             environment: desktop-build
     runs-on: ${{ matrix.os }}
+    # Plain `environment:` reference (no extra keys): the job must genuinely enter the
+    # environment for its secrets to attach; the nonstandard `deployment: false` that sat
+    # here is not part of the jobs.<id>.environment schema and risked exactly that.
     environment:
       name: ${{ matrix.environment }}
-      deployment: false
     permissions:
       contents: read
     steps:
