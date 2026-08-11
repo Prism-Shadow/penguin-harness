@@ -544,8 +544,8 @@ export const en: Strings = {
     pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
-    /** Title on a disabled quick-start button: quick start opens a draft on the default agent, so a skill it hasn't installed (a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed there. */
-    quickInvokeNeedsInstall: "Install this skill on the default agent first to quick-start",
+    /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
+    quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
