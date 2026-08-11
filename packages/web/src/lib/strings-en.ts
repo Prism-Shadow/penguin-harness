@@ -406,19 +406,15 @@ export const en: Strings = {
     importConflictBody:
       "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
     resetConfigTitle: "Restore default configuration",
-    resetConfigDesc:
-      "Restores system_config.yaml to the current built-in defaults (same semantics as a skill update): the custom system prompt, tool list, model/compaction settings and MCP servers are overwritten; only name, description and the State version are kept.",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
       "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
     resetConfigDone: "Configuration restored to the current defaults",
-    kernelVersionLabel: "Config kernel version",
+    kernelTitle: "Kernel",
     kernelLegacy: "predates kernel versioning",
     kernelOutdatedHint: "Kernel update available",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
-    kernelUpdateDesc:
-      "The kernel version records which generation of the built-in defaults this config is based on (by date), unrelated to the Agent State version that increments on optimization. Updating merges losslessly: untouched fields follow the new defaults, customized fields are kept and listed in the result; unrecognized old values are conservatively kept — use Restore default configuration next to it for a full refresh.",
     kernelVersions: (current: string, latest: string): string =>
       `current ${current} · latest ${latest}`,
     kernelUpdateAction: "Update kernel",

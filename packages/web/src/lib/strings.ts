@@ -374,20 +374,16 @@ export const zh = {
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
     resetConfigTitle: "还原为默认配置",
-    resetConfigDesc:
-      "把 system_config.yaml 还原为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
       "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
-    /** Kernel version: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion). */
-    kernelVersionLabel: "配置内核版本",
+    /** Kernel card: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
+    kernelTitle: "内核",
     kernelLegacy: "早于内核版本机制",
     kernelOutdatedHint: "内核有更新",
     kernelUpToDate: "已是最新",
     kernelUpdateTitle: "更新内核",
-    kernelUpdateDesc:
-      "内核版本记录该配置基于哪一代内置默认（按日期），与随优化自增的 Agent State 版本无关。更新为无损合并：未改过的字段跟进新默认，自定义字段保留并在结果中列出；无法识别的旧值一律保守保留，需要全量刷新时用旁边的还原为默认配置。",
     kernelVersions: (current: string, latest: string): string => `当前 ${current} · 最新 ${latest}`,
     kernelUpdateAction: "更新内核",
     kernelUpdateConfirmBody:
