@@ -1,8 +1,8 @@
 /**
- * Agent settings page: seven tabs —
+ * Agent settings page: eight tabs —
  * Overview (name/description/State path/active count/State version + snapshot
  * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
- * reference), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
+ * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table, MCP Server read-only JSON), Skills (skills-tab.tsx), Vault
  * (vault-tab.tsx), Schedule (schedules-tab.tsx).
  * Save = PUT config (sends only the changed keys; YAML comments are preserved
@@ -34,11 +34,13 @@ import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { SkillsTab } from "./skills-tab";
+import { MemoryTab } from "./memory-tab";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { thinkingLevelOptionsFor } from "../chat/thinking-level";
 
-type TabKey = "overview" | "prompt" | "runtime" | "tools" | "skills" | "vault" | "schedules";
+type TabKey =
+  "overview" | "prompt" | "memory" | "runtime" | "tools" | "skills" | "vault" | "schedules";
 
 /**
  * Dropdown rows from a dictionary's [value, description] pairs (exported for unit tests).
@@ -91,6 +93,7 @@ export function AgentSettingsPage() {
   const TABS = [
     { key: "overview", label: S.agent.tabOverview },
     { key: "prompt", label: S.agent.tabPrompt },
+    { key: "memory", label: S.agent.tabMemory },
     { key: "runtime", label: S.agent.tabRuntime },
     { key: "tools", label: S.agent.tabTools },
     { key: "skills", label: S.agent.tabSkills },
@@ -129,19 +132,28 @@ export function AgentSettingsPage() {
   // Only the initial config load failure renders inline (the page can't show without it); saves/imports report via toast.
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    if (!projectId || !agentId) return;
-    setData(null);
-    setError(null);
-    api
-      .getAgentConfig(projectId, agentId)
-      .then(setData)
-      .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [projectId, agentId]);
+  const load = useCallback(
+    (opts?: { keepStale?: boolean }) => {
+      if (!projectId || !agentId) return;
+      // keepStale refreshes in place: dropping data would skeleton the page, unmount the tab
+      // tree and lose unsaved editor state. Identity changes and whole-state replacements
+      // (import / config reset) still clear, so no stale agent's config ever shows.
+      if (!opts?.keepStale) setData(null);
+      setError(null);
+      api
+        .getAgentConfig(projectId, agentId)
+        .then(setData)
+        .catch((e: unknown) => setError(apiErrorText(e)));
+    },
+    [projectId, agentId],
+  );
 
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Memory-tab config writes (switch, placeholder insert, prompt save): refresh the page's config copy without unmounting the tabs. */
+  const refreshConfig = useCallback(() => load({ keepStale: true }), [load]);
 
   /** Snapshot import succeeded: show the new version and reload the whole config (import overwrites the entire Agent State, so every tab's data needs a refresh). */
   const onImported = useCallback(
@@ -167,8 +179,13 @@ export function AgentSettingsPage() {
         const res = await api.putAgentConfig(projectId, agentId, update);
         setData(res);
         toastSuccess(S.common.saved);
-        // Name/description changes affect the breadcrumb and list display.
-        if (update.config?.name !== undefined || update.config?.description !== undefined) {
+        // Name/description changes affect the breadcrumb and list display; a builtin-tools
+        // change moves the card's tool count.
+        if (
+          update.config?.name !== undefined ||
+          update.config?.description !== undefined ||
+          update.config?.toolsBuiltin !== undefined
+        ) {
           void reloadAgents();
         }
       } catch (e) {
@@ -232,6 +249,7 @@ export function AgentSettingsPage() {
             />
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
+          {tab === "memory" && <MemoryTab agentId={agentId} onConfigChanged={refreshConfig} />}
           {tab === "runtime" && <RuntimeTab data={data} onSave={save} />}
           {tab === "tools" && <ToolsTab data={data} onSave={save} />}
           {tab === "skills" && <SkillsTab agentId={agentId} />}

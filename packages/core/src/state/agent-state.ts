@@ -29,6 +29,16 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
+  MEMORY_PLACEHOLDER,
+  WORKSPACE_MEMORY_DIR_PLACEHOLDER,
+  WORKSPACE_MEMORY_INDEX_PLACEHOLDER,
+  USER_MEMORY_INDEX_PLACEHOLDER,
+  MEMORY_INDEX_EMPTY_NOTE,
+  MEMORY_INDEX_MAX_LINES,
+  MEMORY_INDEX_MAX_CHARS,
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  type MemoryConfig,
   agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -40,6 +50,7 @@ import {
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
+import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
@@ -151,7 +162,9 @@ export async function loadOrInitAgentState(opts?: {
     await Promise.all([
       fs.mkdir(stateDir, { recursive: true }),
       fs.mkdir(toolsDir(root, projectId, agentId), { recursive: true }),
-      fs.mkdir(memoryDir(root, projectId, agentId), { recursive: true }),
+      // Creates memory/user/ (and memory/ above it) with an empty MEMORY.md, so the User scope
+      // exists from the Agent's first day; Workspace scopes appear at Session creation.
+      ensureUserMemoryDir(root, projectId, agentId),
       fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
       fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
     ]);
@@ -267,6 +280,81 @@ export async function resetSystemConfigToDefaults(
  */
 function vaultKeysList(keys: string[]): string {
   return keys.map((key) => `- ${key}`).join("\n");
+}
+
+/**
+ * An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads
+ * "nothing saved" instead of a blank line. Injection is capped at `MEMORY_INDEX_MAX_LINES`
+ * lines (one memory per line by convention), then at `MEMORY_INDEX_MAX_CHARS` as a backstop
+ * for indexes whose few lines are enormous — past a cap the rest is replaced by a note telling
+ * the model to open the full file, and the file itself is never touched.
+ */
+function indexForInjection(index: string): string {
+  const trimmed = index.trim();
+  if (trimmed.length === 0) return MEMORY_INDEX_EMPTY_NOTE;
+  const totalLines = trimmed.split("\n").length;
+  let kept = trimmed.split("\n").slice(0, MEMORY_INDEX_MAX_LINES).join("\n");
+  if (kept.length > MEMORY_INDEX_MAX_CHARS) {
+    // Cut at a line boundary; only a single line exceeding the cap on its own is cut mid-line.
+    const cut = kept.lastIndexOf("\n", MEMORY_INDEX_MAX_CHARS);
+    kept = kept.slice(0, cut > 0 ? cut : MEMORY_INDEX_MAX_CHARS);
+  }
+  if (kept.length === trimmed.length) return trimmed;
+  const keptLines = kept.split("\n").length;
+  const reason =
+    keptLines < totalLines
+      ? `showing ${keptLines} of ${totalLines} lines`
+      : `showing the first ${MEMORY_INDEX_MAX_CHARS} characters`;
+  return `${kept}\n(index truncated: ${reason} — open MEMORY.md for the rest)`;
+}
+
+/**
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
+ * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
+ * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or
+ * when every half that would render is emptied. Both prompts are per-Agent config, editable
+ * on the Web App's Memory tab.
+ *
+ * The two blocks are separate config keys because substitution has no conditionals: a
+ * temporary Workspace must never be handed the Workspace scope's section (its directory line
+ * and the scope-choice rule), so that half is simply not appended there.
+ *
+ * Every word of the block comes from `system_config.yaml`; the only text this function can add
+ * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). The only
+ * injection points are the two indexes and the Workspace directory
+ * (`{{WORKSPACE_MEMORY_DIR}}`, whose key segment is a hash the model could not compose
+ * itself) — the User directory stays a literal pattern in the prompt. Topic bodies are never
+ * injected — the indexes say what exists, and the model opens what it needs.
+ */
+function memorySection(
+  config: MemoryConfig | undefined,
+  memory: SessionMemory | null | undefined,
+): string {
+  if (!memory) return "";
+  // Missing keys fall back to the built-in defaults — matching compaction and the config DTO —
+  // so an Agent whose yaml predates Memory injects the very prompts the Memory tab shows it.
+  // An explicitly emptied half drops that half alone (`??`, not `||`): the two are edited
+  // independently on the Memory tab, so clearing one must never silence the other.
+  const promptText = config?.prompt ?? DEFAULT_MEMORY_PROMPT;
+  const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
+  const substituteUser = (text: string): string =>
+    text.split(USER_MEMORY_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));
+
+  const userBlock = substituteUser(promptText).trim();
+  const workspace = memory.workspace;
+  const workspaceBlock =
+    workspace && workspacePromptText ? substituteUser(workspacePromptText).trim() : "";
+  const joined =
+    userBlock && workspaceBlock ? `${userBlock}\n\n${workspaceBlock}` : userBlock || workspaceBlock;
+  // The Workspace placeholders substitute over the whole joined block, so one written into
+  // the main prompt resolves too (with a real value in a persistent Workspace, blank
+  // otherwise) instead of leaking literally.
+  return joined
+    .split(WORKSPACE_MEMORY_INDEX_PLACEHOLDER)
+    .join(workspace ? indexForInjection(workspace.index) : "")
+    .split(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+    .join(workspace?.dir ?? "")
+    .trim();
 }
 
 /**
@@ -462,15 +550,21 @@ function withShellLineFallback(
  * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
  * written directly into the system Prompt template itself (the Prompt is fully
  * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
- * never auto-injected. Sole exception: on win32 a template without `{{SHELL}}` gets a `- Shell:`
- * line injected at render time (see `withShellLineFallback`).
+ * never auto-injected. Sole exception: on win32 a template without `{{SHELL}}` gets a
+ * `- Shell:` line injected at render time (see `withShellLineFallback`).
  *
  * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
  * provided): this lets the model know which APIs requiring a key it can call; values are never
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
- * string if empty/not provided). A custom template that removes a placeholder gets no
- * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory —
- * the app data root the default prompt labels "App Data Dir".
+ * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block
+ * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
+ * Memory is disabled — only those blocks' own `{{USER_MEMORY_INDEX}}` /
+ * `{{WORKSPACE_MEMORY_INDEX}}` carry Memory content (indexes capped, topic bodies always read
+ * on demand), and `{{WORKSPACE_MEMORY_DIR}}` renders the Workspace Memory directory right in
+ * the workspace half. A custom template that removes a placeholder gets no corresponding
+ * content injected — a template without `{{MEMORY}}` injects no Memory, and the Web App's
+ * Memory tab offers inserting the placeholder explicitly. `{{PROJECT_DIR}}` resolves to the
+ * Project directory — the app data root the default prompt labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -478,6 +572,7 @@ export function assembleSystemPrompt(
   sessionEnvironment?: SessionEnvironmentValues,
   vaultKeys?: string[],
   skillMetadata?: SkillMetadata[],
+  memory?: SessionMemory | null,
 ): string {
   const template = state.systemConfig.system_prompt;
   const assembled = template
@@ -507,6 +602,11 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
+    // {{MEMORY}} expands last: everything the Memory block carries (index lines the model wrote
+    // included) lands after the other placeholders were consumed, so index content can never
+    // smuggle a {{VAULT_KEYS}}-style token into a second expansion.
+    .split(MEMORY_PLACEHOLDER)
+    .join(memorySection(state.systemConfig.memory, memory))
     .trim();
   return withShellLineFallback(assembled, template, sessionEnvironment);
 }

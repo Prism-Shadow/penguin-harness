@@ -225,12 +225,14 @@ export const zh = {
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
     scheduleCount: (n: number): string => `${n} 个定时任务`,
+    memoryCount: (n: number): string => `${n} 条记忆`,
     updatedAt: "最后修改",
     activity: (days: number): string => `近 ${days} 天 Session 活跃度`,
     settings: "Agent 设置",
     backToList: "返回 Agents",
     tabOverview: "概览",
     tabPrompt: "Prompt",
+    tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
@@ -246,6 +248,10 @@ export const zh = {
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      [
+        "{{MEMORY}}",
+        "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
+      ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{SHELL}}", "命令执行使用的 Shell"],
@@ -452,6 +458,69 @@ export const zh = {
     pricingAllOrNone: "三项价格需一并填写",
     pricingInvalid: "必须为数字",
     contextWindowInvalid: "必须为数字",
+  },
+
+  memory: {
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：agent 会在对话中自行记下值得保留的信息，你也可以直接让它记住某件事。用户记忆对本 Agent 的所有会话生效，工作区记忆按工作区隔离；记忆修改在对话中由 agent 完成。关闭开关只停止使用记忆，不删除任何文件。",
+    enable: "启用记忆",
+    userScope: "用户记忆",
+    templateMissing: "提示词模板中没有 {{MEMORY}} 占位符，记忆不会进入上下文。",
+    insertPlaceholder: "插入 {{MEMORY}} 占位符",
+    insertPlaceholderDone: "已插入",
+    promptSection: "记忆提示词",
+    promptSectionHint:
+      "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
+    promptLabel: "主提示词",
+    workspacePromptLabel: "工作区附加段",
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
+     */
+    promptPlaceholders: [
+      [
+        "{{USER_MEMORY_INDEX}}",
+        "用户记忆索引 MEMORY.md 的内容（最多注入 200 行、总计 25000 字符）",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_INDEX}}",
+        "当前工作区记忆索引的内容（最多注入 200 行、总计 25000 字符）；仅在工作区附加段生效",
+      ],
+      ["{{WORKSPACE_MEMORY_DIR}}", "当前工作区记忆目录的绝对路径；仅在工作区附加段生效"],
+    ],
+    insertToken: "插入到光标处",
+    itemCount: (n: number): string => `${n} 条`,
+    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
+    emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
+    add: "添加",
+    addTitle: "添加记忆",
+    addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
+    addContentLabel: "要记住的内容或来源",
+    addContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "请把下面的内容整理成记忆，存入用户记忆：",
+      workspace: "请把下面的内容整理成记忆，存入这个工作区的记忆：",
+    },
+    view: "查看",
+    edit: "编辑",
+    editTitle: "编辑记忆",
+    editWhy:
+      "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
+    editRequirementLabel: "修改要求",
+    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editPromptLabel: "引导语预览",
+    editCopyPrompt: "复制 Prompt",
+    editCopied: "已复制",
+    editOpenChat: "打开新对话",
+    delete: "删除",
+    deleteTitle: "删除这条记忆？",
+    deleteConfirm: (name: string): string =>
+      `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteDone: "已删除",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
+    editPromptTail: "修改要求：",
   },
 
   vault: {
