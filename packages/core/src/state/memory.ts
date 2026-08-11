@@ -80,11 +80,11 @@ export interface MemoryTopicMetadata {
 
 /** The Workspace scope of one Session: absent when the Session runs in a temporary Workspace. */
 export interface SessionWorkspaceMemory {
-  /** Workspace memory key — the `memory/` subdirectory name, the API's scope key, and the `{{WORKSPACE_MEMORY_KEY}}` value on the template's Environment line. */
+  /** Workspace memory key — the `memory/` subdirectory name and the API's scope key. */
   key: string;
-  /** Absolute path of the Workspace's topic directory — used by the server and Web App; the prompt composes it from the pattern and the key. */
+  /** Absolute path of the Workspace's topic directory — used by the server and Web App, and the `{{WORKSPACE_MEMORY_DIR}}` value in the workspace Memory prompt. */
   dir: string;
-  /** Content of this scope's `MEMORY.md` (the `{{MEMORY_INDEX}}` value; empty string when blank). */
+  /** Content of this scope's `MEMORY.md` (the `{{WORKSPACE_MEMORY_INDEX}}` value; empty string when blank). */
   index: string;
 }
 
@@ -95,7 +95,7 @@ export interface SessionWorkspaceMemory {
 export interface SessionMemory {
   /** Absolute path of `memory/user/` — used by the server and Web App; the prompt names this directory as a literal `<app_data_dir>/…` pattern instead. */
   userDir: string;
-  /** Content of `memory/user/MEMORY.md` (the `{{MEMORY_USER_INDEX}}` value; empty string when blank). */
+  /** Content of `memory/user/MEMORY.md` (the `{{USER_MEMORY_INDEX}}` value; empty string when blank). */
   userIndex: string;
   /** The Workspace scope; `undefined` in a temporary Workspace, where the User scope is the only place to write. */
   workspace?: SessionWorkspaceMemory;

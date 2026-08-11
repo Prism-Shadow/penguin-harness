@@ -30,9 +30,9 @@ import {
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
   MEMORY_PLACEHOLDER,
-  WORKSPACE_MEMORY_KEY_PLACEHOLDER,
-  MEMORY_INDEX_PLACEHOLDER,
-  MEMORY_USER_INDEX_PLACEHOLDER,
+  WORKSPACE_MEMORY_DIR_PLACEHOLDER,
+  WORKSPACE_MEMORY_INDEX_PLACEHOLDER,
+  USER_MEMORY_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
   MEMORY_INDEX_MAX_LINES,
   MEMORY_INDEX_MAX_CHARS,
@@ -321,10 +321,10 @@ function indexForInjection(index: string): string {
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
  * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). The only
- * injection points are the two indexes — directories are literal patterns in the prompts, with
- * the Workspace pattern's per-Session segment read from the Environment section's
- * `Workspace Memory Key` line. Topic bodies are never injected — the indexes say what exists,
- * and the model opens what it needs.
+ * injection points are the two indexes and the Workspace directory
+ * (`{{WORKSPACE_MEMORY_DIR}}`, whose key segment is a hash the model could not compose
+ * itself) — the User directory stays a literal pattern in the prompt. Topic bodies are never
+ * injected — the indexes say what exists, and the model opens what it needs.
  */
 function memorySection(
   config: MemoryConfig | undefined,
@@ -338,7 +338,7 @@ function memorySection(
   const promptText = config?.prompt ?? DEFAULT_MEMORY_PROMPT;
   const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
   const substituteUser = (text: string): string =>
-    text.split(MEMORY_USER_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));
+    text.split(USER_MEMORY_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));
 
   const userBlock = substituteUser(promptText).trim();
   const workspace = memory.workspace;
@@ -346,27 +346,15 @@ function memorySection(
     workspace && workspacePromptText ? substituteUser(workspacePromptText).trim() : "";
   const joined =
     userBlock && workspaceBlock ? `${userBlock}\n\n${workspaceBlock}` : userBlock || workspaceBlock;
-  // The Workspace index placeholder substitutes over the whole joined block, so one written
-  // into the main prompt resolves too (with real content in a persistent Workspace, blank
+  // The Workspace placeholders substitute over the whole joined block, so one written into
+  // the main prompt resolves too (with a real value in a persistent Workspace, blank
   // otherwise) instead of leaking literally.
   return joined
-    .split(MEMORY_INDEX_PLACEHOLDER)
+    .split(WORKSPACE_MEMORY_INDEX_PLACEHOLDER)
     .join(workspace ? indexForInjection(workspace.index) : "")
+    .split(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+    .join(workspace?.dir ?? "")
     .trim();
-}
-
-/**
- * The `{{WORKSPACE_MEMORY_KEY}}` value for the template's `- Workspace Memory Key:` Environment
- * line: the directory name of this Session's Workspace Memory scope — the final segment of the
- * Memory prompt's `…/memory/<workspace_memory_key>` pattern — or a self-describing "(none — …)"
- * when there is none to point at. The line renders in every Session — substitution has no
- * conditionals — and nothing references the value in the none cases (the Memory block's
- * Workspace half is only appended alongside a real directory), so the none-values are purely
- * the Environment section telling the truth.
- */
-function workspaceMemoryKeyValue(memory: SessionMemory | null | undefined): string {
-  if (!memory) return "(none — memory is off)";
-  return memory.workspace?.key ?? "(none — temporary workspace)";
 }
 
 /**
@@ -538,11 +526,10 @@ function withShellLineFallback(
  * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
  * string if empty/not provided). `{{MEMORY}}` expands to the rendered `memory.prompt` block
  * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
- * Memory is disabled — only those blocks' own `{{MEMORY_USER_INDEX}}` / `{{MEMORY_INDEX}}`
- * carry Memory content (indexes capped, topic bodies always read on demand), while
- * `{{WORKSPACE_MEMORY_KEY}}` renders the Workspace Memory directory name into the template's
- * Environment section (a "(none — …)" value when there is none to point at, so the line always
- * tells the truth). A custom template that removes a placeholder gets no corresponding
+ * Memory is disabled — only those blocks' own `{{USER_MEMORY_INDEX}}` /
+ * `{{WORKSPACE_MEMORY_INDEX}}` carry Memory content (indexes capped, topic bodies always read
+ * on demand), and `{{WORKSPACE_MEMORY_DIR}}` renders the Workspace Memory directory right in
+ * the workspace half. A custom template that removes a placeholder gets no corresponding
  * content injected — a template without `{{MEMORY}}` injects no Memory, and the Web App's
  * Memory tab offers inserting the placeholder explicitly. `{{PROJECT_DIR}}` resolves to the
  * Project directory — the app data root the default prompt labels "App Data Dir".
@@ -583,8 +570,6 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
-    .split(WORKSPACE_MEMORY_KEY_PLACEHOLDER)
-    .join(workspaceMemoryKeyValue(memory))
     // {{MEMORY}} expands last: everything the Memory block carries (index lines the model wrote
     // included) lands after the other placeholders were consumed, so index content can never
     // smuggle a {{VAULT_KEYS}}-style token into a second expansion.

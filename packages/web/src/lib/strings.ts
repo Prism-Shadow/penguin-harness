@@ -255,7 +255,6 @@ export const zh = {
       ],
       ["{{AGENT_ID}}", "当前 Agent id"],
       ["{{CWD}}", "Workspace 绝对路径"],
-      ["{{WORKSPACE_MEMORY_KEY}}", "当前工作区的记忆目录名；临时工作区或关闭记忆时为 none"],
       ["{{PROVIDER}}", "模型 provider 分组"],
       ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],
@@ -468,19 +467,19 @@ export const zh = {
     workspacePromptLabel: "工作区附加段",
     /**
      * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
-     * last. Only the two indexes — directories are literal patterns in the prompts, and the
-     * workspace pattern's final segment is the template's {{WORKSPACE_MEMORY_KEY}}
-     * Environment line.
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
      */
     promptPlaceholders: [
       [
-        "{{MEMORY_USER_INDEX}}",
+        "{{USER_MEMORY_INDEX}}",
         "用户记忆索引 MEMORY.md 的内容（最多注入 200 行、总计 25000 字符）",
       ],
       [
-        "{{MEMORY_INDEX}}",
+        "{{WORKSPACE_MEMORY_INDEX}}",
         "当前工作区记忆索引的内容（最多注入 200 行、总计 25000 字符）；仅在工作区附加段生效",
       ],
+      ["{{WORKSPACE_MEMORY_DIR}}", "当前工作区记忆目录的绝对路径；仅在工作区附加段生效"],
     ],
     insertToken: "插入到光标处",
     itemCount: (n: number): string => `${n} 条`,

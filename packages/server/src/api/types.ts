@@ -515,9 +515,9 @@ export interface AgentCompactionConfigDto {
 /** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
 export interface AgentMemoryConfigDto {
   enabled: boolean;
-  /** The always-injected half of the `{{MEMORY}}` block (carries `{{MEMORY_USER_INDEX}}`; directories are literal text). */
+  /** The always-injected half of the `{{MEMORY}}` block (carries `{{USER_MEMORY_INDEX}}`; the User directory is literal text). */
   prompt: string;
-  /** Appended only in a persistent Workspace (carries `{{MEMORY_INDEX}}`; the directory pattern's final segment is the template's `{{WORKSPACE_MEMORY_KEY}}` Environment line). */
+  /** Appended only in a persistent Workspace (carries `{{WORKSPACE_MEMORY_INDEX}}` and the rendered `{{WORKSPACE_MEMORY_DIR}}` directory). */
   workspacePrompt: string;
 }
 

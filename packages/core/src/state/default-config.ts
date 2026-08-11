@@ -44,19 +44,17 @@ export const DATE_PLACEHOLDER = "{{DATE}}";
  */
 export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
 /**
- * Inside the template's Environment section (`- Workspace Memory Key: …`): the current
- * Workspace's Memory directory name — the workspace memory key, `memory/`'s subdirectory — or
- * a self-describing `(none — …)` value in a temporary Workspace / with Memory off. The Memory
- * prompts reference it as the final segment of the composed pattern
- * `<app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>`, mirroring the
- * User section's literal `…/memory/user` line — only the per-Session segment is a value, and
- * values live in Environment, next to CWD.
+ * Inside `memory.workspace_prompt` only: the absolute path of the current Workspace's Memory
+ * directory (`…/memory/<workspace_memory_key>`). The key half is a hash the model could never
+ * derive itself, so the resolved directory is rendered right where the prompt names it —
+ * the User section's directory stays a literal `<app_data_dir>/…` pattern, resolvable from
+ * the Environment section.
  */
-export const WORKSPACE_MEMORY_KEY_PLACEHOLDER = "{{WORKSPACE_MEMORY_KEY}}";
+export const WORKSPACE_MEMORY_DIR_PLACEHOLDER = "{{WORKSPACE_MEMORY_DIR}}";
 /** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
-export const MEMORY_INDEX_PLACEHOLDER = "{{MEMORY_INDEX}}";
+export const WORKSPACE_MEMORY_INDEX_PLACEHOLDER = "{{WORKSPACE_MEMORY_INDEX}}";
 /** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
-export const MEMORY_USER_INDEX_PLACEHOLDER = "{{MEMORY_USER_INDEX}}";
+export const USER_MEMORY_INDEX_PLACEHOLDER = "{{USER_MEMORY_INDEX}}";
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -83,17 +81,16 @@ export interface MemoryConfig {
   enabled?: boolean;
   /**
    * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the save mechanics,
-   * and the User scope with its index — carrying the `{{MEMORY_USER_INDEX}}` injection point
-   * (directories are literal text, not placeholders). Defaults to the built-in value.
+   * and the User scope with its index — carrying the `{{USER_MEMORY_INDEX}}` injection point
+   * (the User directory is literal text, not a placeholder). Defaults to the built-in value.
    */
   prompt?: string;
   /**
    * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
-   * scope, its index and the rule for choosing between the two — carrying `{{MEMORY_INDEX}}`,
-   * with the directory pattern's per-Session segment read from the Environment section's
-   * `Workspace Memory Key` line. A separate key rather than a conditional inside `prompt`
-   * because substitution has no conditionals — a temporary Workspace would otherwise be told
-   * about a scope it does not have.
+   * scope, its index and the rule for choosing between the two — carrying
+   * `{{WORKSPACE_MEMORY_INDEX}}` and the `{{WORKSPACE_MEMORY_DIR}}` directory. A separate key
+   * rather than a conditional inside `prompt` because substitution has no conditionals — a
+   * temporary Workspace would otherwise be told about a scope it does not have.
    */
   workspace_prompt?: string;
 }
@@ -122,9 +119,10 @@ export const MEMORY_INDEX_MAX_CHARS = 25_000;
  * contract (the line cap and a per-line length hint, so the model keeps the index short
  * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
  * with its index. Stored
- * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. Directories are
- * literal text in the template's angle-bracket convention (resolved from the Environment
- * section by the model, like the Skills paths) — the only injection point is the index itself.
+ * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
+ * directory is literal text in the template's angle-bracket convention (resolved from the
+ * Environment section by the model, like the Skills paths) — the only injection point is the
+ * index itself.
  */
 export const DEFAULT_MEMORY_PROMPT = `# Memory
 Your long-term record across sessions: Markdown files you maintain with the file tools, in the memory directories named below (they already exist). One file per fact, with frontmatter:
@@ -146,26 +144,26 @@ Each directory's \`MEMORY.md\` is its index, injected below: one line per memory
 ## User memory
 What holds wherever you work; every one of your sessions reads it.
 
-Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user
+User Memory Dir: \`<app_data_dir>/agents/<agent_id>/agent_state/memory/user\`
 
 Index:
-{{MEMORY_USER_INDEX}}`;
+{{USER_MEMORY_INDEX}}`;
 
 /**
  * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
  * `memory.prompt` only when the Session runs in a persistent Workspace. The rule for choosing
  * between the two scopes lives here on purpose: a Session in a temporary Workspace has one
- * scope and no choice to make, so it never sees the rule at all. The Directory line mirrors
- * the User section's pattern; its one per-Session segment, `<workspace_memory_key>`, is the
- * Environment section's `Workspace Memory Key` value.
+ * scope and no choice to make, so it never sees the rule at all. The directory is rendered in
+ * place via `{{WORKSPACE_MEMORY_DIR}}` — its final segment is a path hash the model could not
+ * compose from Environment values the way it can the User directory.
  */
 export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `## Workspace memory
 Facts about the workspace you are working in now. What would still hold in a different project goes in user memory; when unsure, write here.
 
-Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>
+Workspace Memory Dir: \`{{WORKSPACE_MEMORY_DIR}}\`
 
 Index:
-{{MEMORY_INDEX}}`;
+{{WORKSPACE_MEMORY_INDEX}}`;
 
 /**
  * System-level config for Agent State, serialized as `system_config.yaml`.
@@ -270,49 +268,28 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}
 - CWD: {{CWD}}
-- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}
 - Provider: {{PROVIDER}}
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
 
-/**
- * Whether a template carries both Memory placeholders: `{{MEMORY}}` (the block itself) and
- * `{{WORKSPACE_MEMORY_KEY}}` (the Environment line the block's Workspace half points at).
- * Whatever is missing is simply not injected.
- */
+/** Whether a template carries the `{{MEMORY}}` placeholder — without it no Memory is injected. */
 export function hasMemoryPlaceholder(template: string): boolean {
-  return (
-    template.includes(MEMORY_PLACEHOLDER) && template.includes(WORKSPACE_MEMORY_KEY_PLACEHOLDER)
-  );
+  return template.includes(MEMORY_PLACEHOLDER);
 }
 
 /**
- * Inserts the missing Memory placeholders into a template: `{{MEMORY}}` before the
- * `# Environment` heading (the position the default template gives it), else appended at the
- * end; the `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` line right after that heading
- * (any level), else appended. Idempotent — whatever is already present stays where it is. This
- * is the explicit adoption path for Agents created before Memory shipped (the Web App's Memory
- * tab offers it); nothing ever inserts automatically.
+ * Inserts the `{{MEMORY}}` placeholder into a template: before the `# Environment` heading
+ * (the position the default template gives it), else appended at the end. Idempotent — a
+ * template already carrying it is returned unchanged. This is the explicit adoption path for
+ * Agents created before Memory shipped (the Web App's Memory tab offers it); nothing ever
+ * inserts automatically.
  */
 export function insertMemoryPlaceholder(template: string): string {
-  let next = template;
-  if (!next.includes(MEMORY_PLACEHOLDER)) {
-    const heading = /^#+ Environment[ \t]*$/m.exec(next);
-    next = heading
-      ? `${next.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${next.slice(heading.index)}`
-      : `${next.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
-  }
-  if (!next.includes(WORKSPACE_MEMORY_KEY_PLACEHOLDER)) {
-    const line = `- Workspace Memory Key: ${WORKSPACE_MEMORY_KEY_PLACEHOLDER}`;
-    const heading = /^#+ Environment[ \t]*$/m.exec(next);
-    if (heading) {
-      const at = heading.index + heading[0].length;
-      next = `${next.slice(0, at)}\n${line}${next.slice(at)}`;
-    } else {
-      next = `${next.trimEnd()}\n${line}\n`;
-    }
-  }
-  return next;
+  if (template.includes(MEMORY_PLACEHOLDER)) return template;
+  const heading = /^#+ Environment[ \t]*$/m.exec(template);
+  return heading
+    ? `${template.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${template.slice(heading.index)}`
+    : `${template.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
 }
 
 /**

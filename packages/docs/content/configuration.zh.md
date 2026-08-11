@@ -107,8 +107,8 @@ output = 0.857143
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
 | `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
-| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{MEMORY_USER_INDEX}}` |
-| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{MEMORY_INDEX}}` |
+| `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{USER_MEMORY_INDEX}}` |
+| `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{WORKSPACE_MEMORY_INDEX}}` 与 `{{WORKSPACE_MEMORY_DIR}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`），预留给 MCP 适配层 |
 
@@ -154,9 +154,9 @@ compaction:
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
 | `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
-| `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{WORKSPACE_MEMORY_KEY}}` | 模板 Environment 段的一行：当前 Workspace 的记忆目录名；临时 Workspace 时为 `(none — temporary workspace)`，关闭记忆时为 `(none — memory is off)` |
+| `{{USER_MEMORY_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
+| `{{WORKSPACE_MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
+| `{{WORKSPACE_MEMORY_DIR}}` | 仅 `memory.workspace_prompt` 内：当前 Workspace 记忆目录的绝对路径 |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -215,13 +215,13 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
 
-进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{MEMORY_USER_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织，索引是仅有的注入点。两个 Directory 行是同一个字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/<…>`：用户小节以字面 `user` 结尾，Workspace 小节以 `<workspace_memory_key>` 结尾——这一段是逐 Session 的值，走模板 Environment 段的 `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` 一行，与 `CWD` 并列（临时 Workspace 时渲染 `(none — temporary workspace)`，关闭记忆时渲染 `(none — memory is off)`）。
+进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{USER_MEMORY_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{WORKSPACE_MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织。`User Memory Dir` 行是字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`，模型可据 Environment 段自行拼出；`Workspace Memory Dir` 行经 `{{WORKSPACE_MEMORY_DIR}}` 直接渲染为解析后的路径——它的末段（工作区记忆键）是路径哈希，模型无从自行推得。
 
 空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。默认记忆提示词只声明行数上限，并要求每行索引保持在约 150 字符以内，模型在撞线之前就会把索引保持在限内；字符兜底仅存在于代码中。主题正文由模型按需读取。
 
 两半之所以是两个独立配置键：替换引擎没有条件分支，临时 Workspace 绝不能被塞进 Workspace 小节（它的目录行和作用域二选一规则），所以那一半在临时 Workspace 下干脆不追加。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 
-模板中没有 `{{MEMORY}}` 的 Agent（例如创建于记忆功能之前）不会注入任何内容；记忆标签页会给出提示并提供一键插入占位符（`{{MEMORY}}` 插到 `# Environment` 之前，`Workspace Memory Key` 行插到该标题之后）——不存在任何自动拼接。组装后的完整提示词记录在 `session_meta`。
+模板中没有 `{{MEMORY}}` 的 Agent（例如创建于记忆功能之前）不会注入任何内容；记忆标签页会给出提示并提供一键插入占位符（插到 `# Environment` 之前，即默认模板中的位置）——不存在任何自动拼接。组装后的完整提示词记录在 `session_meta`。
 
 查看、删除或让 Agent 修改已保存的记忆，见设置页的[记忆标签](/web-app#agent-设置agents)。
 

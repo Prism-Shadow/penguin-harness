@@ -28,6 +28,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -49,6 +50,15 @@ function bodyWithoutFrontmatter(content: string): string {
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";
+
+/** Row-action glyphs (icon-only buttons, the skills tab's affordance): view = the agents page's eye, edit = the shared pencil-line, delete = the shared trash can. */
+const EYE_ICON =
+  "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z";
+const PENCIL_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
+/** "Add" plus glyph on the group headers, matching the models page's per-group add entry. */
+const PLUS_ICON = "M12 5v14M5 12h14";
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
@@ -376,16 +386,34 @@ export function MemoryTab({
       ? S.memory.userScope
       : (scope.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? scope.scopeKey);
 
+  // Icon-only row actions (the skills tab's affordance: neutral bordered icons, danger
+  // variant with red text/hover for delete); the tooltip + aria-label carry the wording.
   const rowActions = (scope: MemoryScopeInfo, file: MemoryFileInfo) => (
     <div className="flex shrink-0 items-center gap-1.5">
-      <Button size="sm" onClick={() => void openView(scope, file)}>
-        {S.memory.view}
+      <Button
+        size="icon"
+        title={S.memory.view}
+        aria-label={`${S.memory.view} ${file.title}`}
+        onClick={() => void openView(scope, file)}
+      >
+        <GlyphIcon d={EYE_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
       </Button>
-      <Button size="sm" onClick={() => openEditor(scope, file)}>
-        {S.memory.edit}
+      <Button
+        size="icon"
+        title={S.memory.edit}
+        aria-label={`${S.memory.edit} ${file.title}`}
+        onClick={() => openEditor(scope, file)}
+      >
+        <GlyphIcon d={PENCIL_ICON} size={14} className="text-gray-600 dark:text-gray-300" />
       </Button>
-      <Button size="sm" variant="danger" onClick={() => setRemoving({ scope, file })}>
-        {S.memory.delete}
+      <Button
+        size="icon"
+        variant="danger"
+        title={S.memory.delete}
+        aria-label={`${S.memory.delete} ${file.title}`}
+        onClick={() => setRemoving({ scope, file })}
+      >
+        <GlyphIcon d={TRASH_ICON} size={14} />
       </Button>
     </div>
   );
@@ -462,15 +490,16 @@ export function MemoryTab({
                 key={scope.scopeKey}
                 className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
               >
-                {/* Group header (same convention as the skill library groups): the row toggles
-                    collapse, with the Add button a sibling — a real <button> cannot nest
-                    another, so the header is a flex pair rather than one full-width button. */}
-                <div className="flex w-full items-center bg-gray-50 pr-2.5 dark:bg-gray-900/60">
+                {/* Group header (the models page's group convention): the collapse button fills
+                    the row, the Add entry is a ghost text button to the chevron's left — a real
+                    <button> cannot nest another, so the actions are siblings, with the hover
+                    highlight on the whole header so it reads as a single unit. */}
+                <div className="flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
                   <button
                     type="button"
                     aria-expanded={open}
                     onClick={() => toggleCollapsed(scope.scopeKey)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800/60"
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5 text-left"
                   >
                     <span className="shrink-0 text-sm font-semibold text-gray-800 dark:text-gray-200">
                       {scopeTitle(scope)}
@@ -484,11 +513,23 @@ export function MemoryTab({
                     <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                       {S.memory.itemCount(files.length)}
                     </span>
+                  </button>
+                  <span className="shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => openAdd(scope)}>
+                      <GlyphIcon d={PLUS_ICON} size={13} />
+                      {S.memory.add}
+                    </Button>
+                  </span>
+                  {/* Collapse arrow sits at the far right of the header (after the add entry); it too can be clicked to collapse. */}
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-label={scopeTitle(scope)}
+                    onClick={() => toggleCollapsed(scope.scopeKey)}
+                    className="shrink-0 p-1.5"
+                  >
                     <Chevron open={open} className="text-gray-400" />
                   </button>
-                  <Button size="sm" className="ml-2 shrink-0" onClick={() => openAdd(scope)}>
-                    {S.memory.add}
-                  </Button>
                 </div>
                 <div
                   className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}

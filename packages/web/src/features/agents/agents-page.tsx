@@ -63,8 +63,9 @@ const CARD_ICONS = {
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   /** Traces (eye line icon: observability; follows text color, no fill) */
   traces: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
-  /** Memory (archive box), opens the settings tab */
-  memory: "M3 7h18v3.5H3zM5 10.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8.5M10 14h4",
+  /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
+  memory:
+    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
 } as const;
 
 /**
