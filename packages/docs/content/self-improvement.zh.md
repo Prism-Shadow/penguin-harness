@@ -19,6 +19,8 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。P
 
 ## 三个独立阶段
 
+PenguinHarness 当前没有线上流量、真实用户反馈或其他持续生产信号充当适应度函数，Benchmark 是自我进化的完整测量边界。因此生产版本只能按批次晋升：Optimizer 可以在一个批次内连续提出和评测 Candidate，但只有批次最终提名的一个版本可以进入独立晋升门槛。所谓“持续在线爬坡”在这个前提下只是把批次缩小到一次改动并删除晋升门槛，不能提供另一种更连续的能力证据。
+
 只使用前两个阶段时，Optimizer 一边读取开发 Benchmark 的分数和 Trace 提出 Candidate，一边又用同一个 Benchmark 决定是否保留 Candidate。Freeze 可以阻止题目和评分标准在优化期间漂移，却不能证明多轮适应后的提升会迁移到未参与诊断的任务；开发分数严格提高只表示“对这个开发 Benchmark 更好”，不等于可以晋升为生产版本。
 
 第三阶段把这两个决定分开：开发 Benchmark 决定 Candidate 是否值得继续保留，held-out Promotion Benchmark 决定优化结束后的最终 Candidate 是否可以替代优化前的生产 Reference。Promotion Benchmark 的 Case、Rubric、分数和 Trace 永远不进入原 Optimizer Session；一次晋升失败后也不得把 held-out 失分反馈给同一个 Optimizer 继续调参，否则 held-out 会退化成另一个开发集。
@@ -49,21 +51,25 @@ Builder 先使用 `agent-creation`，再使用 `benchmark-design` 构建多 Case
 
 每个 Accepted Candidate 立即写入并校验 Scoreboard。Evaluation 分数严格提高决定是否接受；第一次比较允许直接用 Candidate 的多 Run 平均分比较 Formal Baseline 的单 Run 分数，不为 Baseline 补跑。假设是否在预期 Case 上得到支持单独报告，避免把单次运行中的无关波动解释为改动因果。Agent 优化要求 Scoreboard 中已有完整 Formal Baseline——没有基线，就没有可比较的提升。
 
-Optimizer 结束时保留的最高分 Reference 只是 **Development-accepted Candidate**。它已经是当前活动 Agent State，但在通过第三阶段前仍不能被报告为已完成生产晋升。Optimizer 的最终报告必须给出优化前生产版本 `production_reference_version`、最终 `candidate_version`、Development Benchmark id、评测 Runtime，以及用于失败恢复的 `snapshots/v<production_reference_version>.tar.gz`；缺少可验证的生产 Reference Snapshot 时，不得开始晋升验证。
+一个 **Optimization Batch** 恰好对应一个独立的顶层 Optimizer Session：它从一个已晋升的 `production_reference_version` 出发，只使用 Development 证据，执行设定的 Candidate rounds，并在结束时提名一个最终版本。换一个 Candidate、另开 Promotion Session，或在同一 Session 保存的中间 Reference 之间切换，都不会形成新批次。用顶层 Optimizer Session id 作为 `optimization_session_id`，供第三阶段绑定和审计。
+
+Optimizer 结束时保留的最高分 Reference 只是 **Development-accepted Candidate**。它已经是当前活动 Agent State，但在通过第三阶段前仍不能被报告为已完成生产晋升。Optimizer 的最终报告必须给出 `optimization_session_id`、优化前生产版本 `production_reference_version`、最终 `candidate_version`、Development Benchmark id、评测 Runtime，以及用于失败恢复的 `snapshots/v<production_reference_version>.tar.gz`；缺少可验证的生产 Reference Snapshot 时，不得开始晋升验证。
 
 ### 第三阶段：使用 held-out Benchmark 决定晋升
 
-在新的顶层 Session 中启动 Promotion Validator，只向它提供 Target Agent、最终 `candidate_version`、优化前 `production_reference_version`、Promotion Benchmark id 和该 Benchmark Formal Baseline 的评测 Runtime。它不得读取 Development Benchmark、原 Optimizer 的诊断或私有 Trace，也不得修改 Candidate。
+在新的顶层 Session 中启动 Promotion Validator，只向它提供 Target Agent、`optimization_session_id`、最终 `candidate_version`、优化前 `production_reference_version`、Promotion Benchmark id 和该 Benchmark Formal Baseline 的评测 Runtime。它不得读取 Development Benchmark、原 Optimizer 的诊断或私有 Trace，也不得修改 Candidate。
+
+首次派发 held-out 单元前，Promotion Validator 必须确保 `snapshots/v<candidate_version>.tar.gz` 存在、归档版本与当前 Candidate 一致且没有覆盖已有同版本 Snapshot。这个 Snapshot 只用于保留失败 Candidate 的精确状态，供后续批次诊断和重建；它不能让旧 Candidate 绕过新批次的 Development 评测而被直接重新提名。Snapshot 创建或验证失败时，停止在任何 held-out 评测之前。
 
 Promotion Validator 对 held-out Promotion Benchmark 完成一次与其 Formal Baseline 对称的 one-Run-per-Case 矩阵。每个单元仍委托 `agent-evaluation`，并要求 Agent State 版本、`provider`、`model_id` 与 `thinking_level` 全部匹配。错误答案是有效低分；协议、启动、版本、Benchmark 或 Trace 绑定失败不是零分，必须先修复或报告验证失败。
 
-当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于 Promotion Scoreboard 中 `production_reference_version` 的最新有效 Evaluation 时，Candidate 才通过晋升。首次晋升时该比较对象就是 Formal Baseline；此后当前生产版本的 held-out 记录，来自它自己当年通过晋升时写入的那条 Evaluation。对称的单 Run 矩阵控制成本但保留逐 Run 噪声，这是已知取舍；门槛因此取不低于而非严格更高。无论通过还是未通过，都先把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard 并完成校验，再执行保留或恢复；在 `summary_title` 与 `summary` 中记录来源版本、Candidate 版本和晋升决定，不改变现有 Scoreboard schema。
+当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于 Promotion Scoreboard 中 `production_reference_version` 的最新有效 Evaluation 时，Candidate 才通过晋升。首次晋升时该比较对象就是 Formal Baseline；此后当前生产版本的 held-out 记录，来自它自己当年通过晋升时写入的那条 Evaluation。对称的单 Run 矩阵控制成本但保留逐 Run 噪声，这是已知取舍；门槛因此取不低于而非严格更高。无论通过还是未通过，都先把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard 并完成校验，再执行保留或恢复；在 `summary_title` 与 `summary` 中记录 `optimization_session_id`、来源版本、Candidate 版本和晋升决定，不改变现有 Scoreboard schema。
 
 - **通过**：保留当前 Candidate Agent State，并报告它已从 `production_reference_version` 晋升为 `candidate_version`。
-- **未通过**：先确保 `snapshots/v<candidate_version>.tar.gz` 存在——最终 Candidate 没有被后续轮次编辑过，通常没有现成快照，活动 Agent State 就是它的唯一副本；按 Optimizer 相同的归档规则（原子打包、排除 `.vault.toml`、不覆盖已存在的同版本快照）补建后，再使用优化前 Snapshot 恢复并验证 `production_reference_version`。Development Benchmark 中已经产生的分数和 Trace 保留为实验记录。
+- **未通过**：使用优化前 Snapshot 恢复并验证 `production_reference_version`。Development Benchmark 中已经产生的分数和 Trace，以及 gate 前保存的 Candidate Snapshot，都保留为实验记录和后续批次的诊断证据。
 - **验证无法完成**：不把缺失或无效单元当成零分，也不声称晋升成功；在能够安全验证或恢复前报告具体阻塞。
 
-晋升决定在第三阶段终止。每个优化批次只提名一个版本做一次晋升验证；失败后不得改提同批次的其他 Candidate 重新验证——连续改提等于让 held-out 在多个版本之间做选择，最终通过者的分数会系统性偏高。下一次晋升必须来自新的优化批次。不得把 held-out 的 Case 级失分、Trace、Rubric 或晋升结果发送回原 Optimizer 继续生成 Candidate。若团队开始根据这些证据调整 Agent，当前 Promotion Benchmark 就已成为开发证据，应另建并冻结新的 held-out Benchmark 承担下一次独立晋升。
+晋升决定在第三阶段终止。每个 `optimization_session_id` 最多只能绑定一个 `candidate_version` 和一次晋升矩阵；对同一 Candidate 的协议更正、未启动单元修复和未完成矩阵续跑仍属于同一次晋升。完整有效矩阵一旦作出通过或未通过决定，就不得改提同批次的其他 Candidate 重新验证——连续改提等于让 held-out 在多个版本之间做选择，最终通过者的分数会系统性偏高。下一次晋升必须来自新的顶层 Optimizer Session。不得把 held-out 的 Case 级失分、Trace、Rubric 或晋升结果发送回原 Optimizer 继续生成 Candidate。若团队开始根据这些证据调整 Agent，当前 Promotion Benchmark 就已成为开发证据，应另建并冻结新的 held-out Benchmark 承担下一次独立晋升。固定 held-out 的长期轮换属于后续 successor Benchmark 外循环，不在当前工作流中规定具体使用次数。
 
 ## Benchmark 存储
 
