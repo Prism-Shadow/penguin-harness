@@ -265,12 +265,12 @@ export function AgentsPage() {
                     </p>
                     {/* Stats on their own line: same color/font size as the description; each
                         item hugs its content, with spacing left to the container's uniform
-                        gap-x-2.5; meaning folded into the hover title. Tool/skill/memory/vault/
+                        gap-x-4; meaning folded into the hover title. Tool/skill/memory/vault/
                         schedule counts are buttons deep-linking to the matching settings tab,
                         listed in the settings tabs' order (also for built-in Agents — their
                         Settings entry point has no gating either); session count and
                         last-modified stay plain text */}
-                    <div className="mt-1.5 flex items-center gap-x-2.5 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-1.5 flex items-center gap-x-4 text-xs text-gray-500 dark:text-gray-400">
                       <span
                         className="inline-flex shrink-0 items-center gap-1 tabular-nums"
                         title={S.agent.sessionCount(a.sessionCount)}
