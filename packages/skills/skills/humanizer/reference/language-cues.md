@@ -34,6 +34,8 @@ Scrubbed-text markers (over-correction):
 - 分号串联叙事事件：中文散文里分号几乎只属于正式的并列列举，拿来串故事就是压缩痕迹。
 - 无主语压缩：「初代销量不错」——谁的初代？首次提及必须带全称，指代不能靠上一段撑着。
 - 等重短句链：四个同构主谓短句一口气连排，虽无重复虚词，读感仍是排比；把其中一件事降为从句，节拍就破了。
+- 紧缩四字支点：「接口一变」「需求一改」式的四字条件枢纽，后面挂「就得/都得跟着……」的尾巴；展开成「一旦……」或直接拆句。
+- 「就」字链：就/就得/都得/一……就…… 承担全篇的因果衔接，单个地道、高频机械；每段数一数「就」，用拆句、从句或自带结果的动词分担。
 
 Native, not a tell: 四字格 in titles and set phrases at natural density; topic-comment comma chains of moderate length; 顿号 enumerations of real items.
 

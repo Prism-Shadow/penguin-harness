@@ -1,16 +1,16 @@
 ---
 name: humanizer
-description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, six-language cues and a four-round measured case study shipped as reference files for the diagnostic census.
+description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, six-language cues and a five-round measured case study shipped as reference files for the diagnostic census.
 short_description: Strip AI-writing tells from prose in any language.
 short_description_zh: 去除文本的 AI 味，把行文改成书籍、报纸、百科式的风格，任何语言通用。
 preinstall: false
-version: 5
+version: 6
 updated: 2026-08-11T00:00:00Z
 ---
 
 # Humanizer
 
-Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across four rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
+Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across five rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
 
 ## Before you start
 
@@ -18,7 +18,7 @@ If the invocation carries no text and no assignment, ask for one: the draft to e
 
 ## Core principles
 
-1. **No pattern twice.** Whatever the figure — a contrast frame, a triad, a cleft, an opener shape, a paragraph arc, a metaphor — its second consecutive use is a rhythm and its third is a stencil. Vary sentence length, clause weight, paragraph attack and closer; if every paragraph advances by the same move, swap engines somewhere.
+1. **No pattern twice.** Whatever the figure — a contrast frame, a triad, a cleft, an opener shape, a paragraph arc, a metaphor, even a favorite connective particle — its second consecutive use is a rhythm and its third is a stencil. Vary sentence length, clause weight, paragraph attack and closer; if every paragraph advances by the same move, swap engines somewhere.
 2. **Density is anchored facts in whole grammar.** Names, dates, numbers, mechanisms and worked examples carry the argument; hype, era openers, phantom crowds ("faster than most expected" — who?) and concepts pushing concepts carry nothing. Compress by dropping padding, not grammar: subjects stay, first mentions get their full noun, and the event that matters gets a sentence of its own.
 3. **Cap the quotables.** One or two turned phrases can carry a piece, counting every shape: chiasmus, mirrored re-description, balanced antithesis, aphoristic kickers. State the thesis once and develop it with new material or cut the echo. Most paragraphs end flat, and an argument survives a dud.
 4. **A real writer, with the material.** Opinion owns its anecdotes and risks a judgment of its own; reportage has stood somewhere; reference registers keep the writer invisible without chaperoning the reader. Claims sized to the evidence, honest hedges kept, references anchored (who, where, when), and one non-obvious source beats a second canonical one.
@@ -33,7 +33,7 @@ Over all seven: **aim for the natural distribution of edited prose, not a perfec
 1. **Read whole, list the keeps.** Facts, quotations, required terminology, genre constraints, any hard length target. Everything on the list survives the rewrite.
 2. **Draft, or restructure, by the principles.** For an existing draft: merge fragment paragraphs by idea, delete scaffolding, then rewrite sentence by sentence. Do not draft against the catalog — that produces compliance-shaped text.
 3. **Census.** Now open [`reference/tells.md`](reference/tells.md) and count. The drafting mind cannot see its own tics: in a field test, an author who felt two aphorisms was carrying eight, and five triads survived a no-triads rule. Mechanical counting over impression, catalog over memory; a flagged pattern kept for its quality is still flagged.
-4. **Revise and gate.** Fix what the census found; verify facts and mechanisms (principle 7); read aloud for rhythm. Then the excerpt test: any paragraph alone should sit unnoticed in a book, a broadsheet or an encyclopedia. Finish with one skeptical-editor read asking where a reader would still mutter "AI wrote this" — and when several pieces come from one session, compare them side by side, because shared architecture across pieces is a fingerprint too.
+4. **Revise and gate.** Fix what the census found; verify facts and mechanisms (principle 7); read aloud for rhythm. Then the excerpt test: any paragraph alone should sit unnoticed in a book, a broadsheet or an encyclopedia. Finish with one skeptical-editor read asking where a reader would still mutter "AI wrote this" — and when several pieces come from one session, compare them side by side, because shared architecture across pieces is a fingerprint too. One more stop rule: a spot flagged again after repair is overloaded, not misworded — restructure the thought (split it, reorder it) instead of trying a third wording.
 
 ## Worked example (English)
 
