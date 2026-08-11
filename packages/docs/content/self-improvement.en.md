@@ -84,9 +84,9 @@ benchmarks/<id>/
 └── scoreboard.yaml             # evaluation records (current format)
 ```
 
-The separation of `rubric/` from `statement/` is deliberate: the Target Agent sees only the task statement and never touches the scoring rubric.
+The separation of `rubric/` from `statement/` is deliberate: the evaluation protocol gives the Target Agent only the task statement, and the Evaluator must reject a run whose root or directly referenced child Traces show direct or indirect access to Benchmark or Rubric data. Directory separation alone is not proof that the Target never touched the scoring rubric.
 
-In the current workflow, Development and Promotion remain two ordinary `benchmark_id` values under the same Agent; their roles are a calling convention and add no configuration field. This separation is a **contract-level soft seal**. The Optimizer Skill forbids access to an unspecified Benchmark, but local tools do not technically confine absolute-path access to that directory. Ordinary product workflows maintain the boundary through independent top-level Sessions, minimal inputs, and Trace auditing. A formal non-leakage claim additionally requires auditing direct and indirect file access in the Optimizer root Trace or placing the Promotion Benchmark behind a data boundary that the Optimizer cannot technically access.
+In the current workflow, Development and Promotion remain two ordinary `benchmark_id` values under the same Agent; their roles are a calling convention and add no configuration field. This separation is a **contract-level soft seal**. Skills forbid the Target Agent and Optimizer from reading private or unspecified Benchmark surfaces, but local tools do not technically confine absolute-path access to the intended directory. Ordinary product workflows maintain the boundary through independent top-level Sessions, minimal inputs, and Target/Evaluator/Optimizer Trace auditing. A formal non-leakage claim additionally requires auditing direct and indirect file access in these root and referenced child Traces or placing private and Promotion data behind a boundary those Sessions cannot technically access.
 
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 

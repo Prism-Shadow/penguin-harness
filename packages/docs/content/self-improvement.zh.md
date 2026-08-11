@@ -84,9 +84,9 @@ benchmarks/<id>/
 └── scoreboard.yaml             # 当前格式的评测记录
 ```
 
-`rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
+`rubric/` 与 `statement/` 的隔离是刻意设计：评测协议只把题面交给 Target Agent；若 Target 根 Trace 或其直接引用的子 Trace 显示直接或间接访问了 Benchmark 或 Rubric 数据，Evaluator 必须把该 Run 判为无效。仅有目录分离不能证明 Target 从未接触评分标准。
 
-Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个普通 `benchmark_id`，角色由调用约定决定，不新增配置字段。这个隔离是 **契约级 soft seal**：Optimizer Skill 禁止访问未指定 Benchmark，但当前本地工具并没有把绝对路径访问硬限制在指定目录内。普通产品工作流依靠独立顶层 Session、最小输入和 Trace 审计维持该边界；需要正式泄漏声明时，应额外审计 Optimizer 根 Trace 中的直接与间接文件访问，或把 Promotion Benchmark 放进 Optimizer 技术上不可访问的独立数据边界。
+Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个普通 `benchmark_id`，角色由调用约定决定，不新增配置字段。这个隔离是 **契约级 soft seal**：Skill 禁止 Target Agent 和 Optimizer 读取私有或未指定的 Benchmark 表面，但当前本地工具并没有把绝对路径访问硬限制在预期目录内。普通产品工作流依靠独立顶层 Session、最小输入，以及对 Target、Evaluator、Optimizer Trace 的审计维持该边界；需要正式泄漏声明时，应额外审计这些根 Trace 与所引用子 Trace 中的直接和间接文件访问，或把私有数据和 Promotion 数据放进这些 Session 技术上不可访问的独立边界。
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 

@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 5
-updated: 2026-07-29T17:20:58Z
+version: 6
+updated: 2026-08-11T08:20:09Z
 ---
 
 # Agent Evaluation
@@ -79,6 +79,8 @@ Use the exact requested Agent, Project, absolute Workspace path, and model pair.
 Verify after the run that the State version, configured `model.thinking_level`, and both directory snapshots are unchanged. Return `version_changed` when the State version or configured thinking level differs and `benchmark_invalid` when the Statement or Rubric differs.
 
 Inspect only new or changed Traces. Bind exactly one root Test Trace whose Workspace, Agent State path, provider, and model match this request. Ignore unrelated parallel Traces and exclude the root Trace's directly referenced child Sessions. Return `evaluation_failed` if there is no unique match. Read the actual non-empty `provider` and `model_id` from the bound root Trace's `session_meta`; return `evaluation_failed` if either is unavailable. Use the unchanged Target Agent configuration snapshot—not Trace metadata—for `thinking_level`.
+
+Before scoring, audit file and command tool calls in the bound root Trace and every directly referenced child Trace. The Test Agent may access only its isolated Workspace and its own Agent State, including installed Skills. If any direct or indirect access reads, lists, searches, copies, or otherwise reveals a path under the Test Agent's `benchmarks/` directory, any `rubric/`, another Agent, Evaluator State or Trace, a Project secret, or a broad parent directory used to discover those surfaces, return `evaluation_failed` and do not score the run. This includes shell commands whose literal arguments look harmless but whose output contains Benchmark or Rubric data. Merely copying `statement/` into the Workspace is not an isolation proof; the bound Test Trace is the audit evidence.
 
 ## Score
 
