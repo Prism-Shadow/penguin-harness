@@ -287,6 +287,12 @@ describe("librarySkill", () => {
     expect(evaluation).toContain("Perform these as separate shell statements in this order");
     expect(evaluation).toContain("Never compress the assignments onto one command line");
     expect(evaluation).toContain("Do not impose a numeric retry limit");
+    expect(evaluation).toContain("Use five failure codes");
+    expect(evaluation).toContain("`isolation_violated`");
+    expect(evaluation).toContain("This run is terminal and must not be scored or retried");
+    expect(evaluation).toContain(
+      "the failure code is the only information about the violation that may leave this Evaluator",
+    );
     expect(evaluation).toContain("Never browse, query a pricing service");
     expect(evaluation).toContain("resend only the clean protocol YAML");
     expect(evaluation).toContain('--workspace "<absolute_unique_workspace_path>"');
@@ -323,6 +329,8 @@ describe("librarySkill", () => {
       "Before reading `status`, `score`, or any other protocol field",
     );
     expect(benchmarkDesign).toContain("Ask the same Evaluator to resend only the clean YAML");
+    expect(benchmarkDesign).toContain("For `isolation_violated`");
+    expect(benchmarkDesign).toContain("Terminate this Builder Session");
     expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
     expect(optimization).toContain("a positive `runs` value");
     expect(optimization).toContain(
@@ -349,6 +357,9 @@ describe("librarySkill", () => {
     expect(optimization).toContain(
       "Do not inspect private Evaluator State or abandon the Candidate",
     );
+    expect(optimization).toContain("For `isolation_violated`");
+    expect(optimization).toContain("terminate this top-level Optimization Session");
+    expect(optimization).toContain("must not reuse the contaminated Trace");
     expect(optimization).toContain(
       "Immediately append and verify every accepted Candidate Evaluation",
     );

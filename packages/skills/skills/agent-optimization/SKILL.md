@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 10
-updated: 2026-08-11T06:58:05Z
+version: 11
+updated: 2026-08-11T09:11:32Z
 ---
 
 # Agent Optimization
@@ -95,6 +95,8 @@ For every scored result, require its actual `provider`, `model_id`, and `thinkin
 Correct and resend an `invalid_request`. Stop on `version_changed` or `benchmark_invalid`.
 
 For `evaluation_failed`, keep the same Candidate and incomplete matrix. Ask the same Evaluator to diagnose and repair the failed cell, then rerun only that cell when evidence proves the Test Agent did not start. Every retry must apply a new, specific repair; never repeat an unchanged request or launch, and do not impose a numeric retry limit while distinct safe repairs remain. Do not inspect private Evaluator State or abandon the Candidate to design the next version. Stop when no new safe repair remains, external configuration is required, or it is unclear whether the Test Agent started.
+
+For `isolation_violated`, restore and verify the Reference immediately, quarantine the failed cell and its Traces from optimization evidence, and terminate this top-level Optimization Session. Do not score or retry the cell, complete the matrix, continue with another Candidate, or inspect any detail behind the failure code. A later independent Optimization Session may use only this non-content signal to propose general Workspace-boundary hardening; it must not reuse the contaminated Trace.
 
 ## Record and report
 

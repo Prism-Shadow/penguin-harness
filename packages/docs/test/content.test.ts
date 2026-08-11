@@ -38,4 +38,19 @@ describe("docs navigation / content integrity", () => {
       expect(DOC_SLUGS, `orphan content file ${file}`).toContain(slug!);
     }
   });
+
+  it("documents terminal isolation violations and fresh held-out recovery in both languages", () => {
+    const zh = readFileSync(join(contentDir, "self-improvement.zh.md"), "utf8");
+    const en = readFileSync(join(contentDir, "self-improvement.en.md"), "utf8");
+
+    for (const page of [zh, en]) {
+      expect(page).toContain("`isolation_violated`");
+      expect(page).toContain("production_reference_version");
+      expect(page).toContain("held-out");
+    }
+    expect(zh).toContain("不得给该单元记分或重跑，也不得继续补齐矩阵");
+    expect(zh).toContain("不得修复后用原 held-out 重考");
+    expect(en).toContain("score or retry the cell, or continue filling the matrix");
+    expect(en).toContain("instead of fixing the Agent and retesting it on the old held-out suite");
+  });
 });

@@ -3,8 +3,8 @@ name: agent-evaluation
 description: Run one specified Test Agent on one specified Benchmark Case exactly once, privately score that execution, and return one protocol result.
 short_description: Run and score one isolated Benchmark Case.
 short_description_zh: 隔离执行并评分一个 Benchmark Case。
-version: 6
-updated: 2026-08-11T08:20:09Z
+version: 7
+updated: 2026-08-11T09:11:32Z
 ---
 
 # Agent Evaluation
@@ -80,7 +80,7 @@ Verify after the run that the State version, configured `model.thinking_level`, 
 
 Inspect only new or changed Traces. Bind exactly one root Test Trace whose Workspace, Agent State path, provider, and model match this request. Ignore unrelated parallel Traces and exclude the root Trace's directly referenced child Sessions. Return `evaluation_failed` if there is no unique match. Read the actual non-empty `provider` and `model_id` from the bound root Trace's `session_meta`; return `evaluation_failed` if either is unavailable. Use the unchanged Target Agent configuration snapshot—not Trace metadata—for `thinking_level`.
 
-Before scoring, audit file and command tool calls in the bound root Trace and every directly referenced child Trace. The Test Agent may access only its isolated Workspace and its own Agent State, including installed Skills. If any direct or indirect access reads, lists, searches, copies, or otherwise reveals a path under the Test Agent's `benchmarks/` directory, any `rubric/`, another Agent, Evaluator State or Trace, a Project secret, or a broad parent directory used to discover those surfaces, return `evaluation_failed` and do not score the run. This includes shell commands whose literal arguments look harmless but whose output contains Benchmark or Rubric data. Merely copying `statement/` into the Workspace is not an isolation proof; the bound Test Trace is the audit evidence.
+Before scoring, audit file and command tool calls in the bound root Trace and every directly referenced child Trace. The Test Agent may access only its isolated Workspace and its own Agent State, including installed Skills. If any direct or indirect access reads, lists, searches, copies, or otherwise reveals a path under the Test Agent's `benchmarks/` directory, any `rubric/`, another Agent, Evaluator State or Trace, a Project secret, or a broad parent directory used to discover those surfaces, return `isolation_violated`; do not score or relaunch the run. This includes shell commands whose literal arguments look harmless but whose output contains Benchmark or Rubric data. Merely copying `statement/` into the Workspace is not an isolation proof; the bound Test Trace is the audit evidence.
 
 ## Score
 
@@ -129,11 +129,12 @@ thinking_level: <thinking_level_or_null>
 failure_code: <stable_failure_code>
 ```
 
-Use four failure codes:
+Use five failure codes:
 
 - `invalid_request`: the request is incomplete or inconsistent.
 - `benchmark_invalid`: the Statement, Rubric, or scoring contract is invalid.
 - `version_changed`: the Test Agent version does not match the request or changed during evaluation.
 - `evaluation_failed`: launch could not be safely repaired, or Trace binding or scoring failed.
+- `isolation_violated`: the bound Test Trace or a directly referenced child Trace crossed the permitted Workspace and Agent State boundary. This run is terminal and must not be scored or retried.
 
-Never include score, cost, duration, Session id, private data, or optimization advice on failure.
+Never include score, cost, duration, Session id, an accessed path or value, private data, or optimization advice on failure. For `isolation_violated`, the failure code is the only information about the violation that may leave this Evaluator.

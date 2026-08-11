@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 7
-updated: 2026-08-04T00:00:00Z
+version: 8
+updated: 2026-08-11T09:11:32Z
 ---
 
 # Benchmark Design
@@ -126,6 +126,8 @@ For every scored result, require non-empty `provider`, `model_id`, and `thinking
 Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot. For `version_changed`, discard the current Pilot result and restart after the Agent version is stable.
 
 For `evaluation_failed`, keep the same Benchmark revision and cell. Diagnose the failure and retry only when evidence proves the Test Agent did not start and the retry applies a new, specific repair. Do not set a numeric retry limit or repeat an unchanged launch. Stop when no new safe repair remains, external configuration is required, or it is unclear whether the Test Agent started. Never treat an evaluation failure as score zero.
+
+For `isolation_violated`, do not score or retry the cell, inspect the failed Trace, or continue the Pilot. Terminate this Builder Session and report only that the Test Agent's Workspace boundary must be repaired outside benchmark design before any fresh evaluation. Never use the violation or its Trace to refine a Case or Rubric.
 
 ## Refine the Benchmark
 
