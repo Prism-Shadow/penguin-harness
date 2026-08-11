@@ -1,7 +1,8 @@
 /**
  * Agent settings page: eight tabs —
- * Overview (name/description/State path/active count/State version/kernel version + snapshot
- * export-import + kernel update + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * Overview (name/description/State path/active count/State version + a kernel card grouping
+ * the defaults generation with its update / restore-defaults actions + snapshot
+ * export-import), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
@@ -439,27 +440,66 @@ function OverviewTab({
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateVersion}</p>
         <p className="font-mono text-sm">v{data.config.version}</p>
       </div>
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.kernelVersionLabel}</p>
-        <p className="flex items-center gap-1.5 text-sm">
-          {data.config.kernelVersion !== null ? (
-            <span className="font-mono">{data.config.kernelVersion}</span>
-          ) : (
-            <span className="text-gray-500 dark:text-gray-400">{S.agent.kernelLegacy}</span>
-          )}
-          {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
-          {data.config.kernelOutdated && (
-            <span
-              role="img"
-              title={S.agent.kernelOutdatedHint}
-              aria-label={S.agent.kernelOutdatedHint}
-              className="text-gray-400 dark:text-gray-500"
+      {/* Kernel card (the injection-toggle cards' visual family): the defaults generation the
+          config is based on, with its two maintenance actions grouped beside it — update
+          (smart merge, enabled only when outdated) and restore defaults (destructive, danger
+          tone). Both keep their confirm-first modals below. */}
+      <section className="rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{S.agent.kernelTitle}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+              {data.config.kernelOutdated ? (
+                <>
+                  <span>
+                    {S.agent.kernelVersions(
+                      data.config.kernelVersion ?? S.agent.kernelLegacy,
+                      data.config.kernelLatest,
+                    )}
+                  </span>
+                  {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
+                  <span
+                    role="img"
+                    title={S.agent.kernelOutdatedHint}
+                    aria-label={S.agent.kernelOutdatedHint}
+                  >
+                    <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-mono">{data.config.kernelVersion}</span>
+                  <span>· {S.agent.kernelUpToDate}</span>
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              disabled={kernelUpdating || !data.config.kernelOutdated}
+              onClick={() => setKernelOpen(true)}
             >
-              <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
-            </span>
-          )}
-        </p>
-      </div>
+              {S.agent.kernelUpdateAction}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={resetting}
+              onClick={() => setResetOpen(true)}
+            >
+              {S.agent.resetConfigAction}
+            </Button>
+          </div>
+        </div>
+        {/* Merge report: which fields the last update kept because customized (lightweight inline note). */}
+        {kernelResult !== null && kernelResult.kept.length > 0 && (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {S.agent.kernelUpdateKeptIntro}
+            {kernelResult.kept.map(kernelFieldLabel).join(S.agent.kernelListSeparator)}
+          </p>
+        )}
+      </section>
 
       {/* Snapshot export / import: export is available to any member; import overwrites the entire Agent State, visible only to owners. */}
       <div>
@@ -489,45 +529,6 @@ function OverviewTab({
         )}
       </div>
 
-      {/* Kernel update: smart-merge onto the current defaults generation (customizations kept
-          and listed) — the non-destructive sibling of the restore action right below. */}
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.kernelUpdateTitle}</p>
-        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.kernelUpdateDesc}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            disabled={kernelUpdating || !data.config.kernelOutdated}
-            onClick={() => setKernelOpen(true)}
-          >
-            {S.agent.kernelUpdateAction}
-          </Button>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {S.agent.kernelVersions(
-              data.config.kernelVersion ?? S.agent.kernelLegacy,
-              data.config.kernelLatest,
-            )}
-            {!data.config.kernelOutdated && ` · ${S.agent.kernelUpToDate}`}
-          </span>
-        </div>
-        {/* Merge report: which fields were kept because customized (lightweight inline note, same tone as the import error line above). */}
-        {kernelResult !== null && kernelResult.kept.length > 0 && (
-          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-            {S.agent.kernelUpdateKeptIntro}
-            {kernelResult.kept.map(kernelFieldLabel).join(S.agent.kernelListSeparator)}
-          </p>
-        )}
-      </div>
-
-      {/* Restore default configuration: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.resetConfigTitle}</p>
-        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.resetConfigDesc}</p>
-        <Button size="sm" disabled={resetting} onClick={() => setResetOpen(true)}>
-          {S.agent.resetConfigAction}
-        </Button>
-      </div>
-
       <Button size="sm" variant="primary" onClick={submit}>
         {S.common.save}
       </Button>
@@ -546,11 +547,14 @@ function OverviewTab({
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
       </ConfirmModal>
 
-      {/* Kernel update confirmation: lossless by design, but it still rewrites config fields — confirm-first like the sibling reset. */}
+      {/* Kernel update confirmation: lossless by design, but it still rewrites config fields —
+          confirm-first like the sibling reset, with the primary (overwrite) tone rather than
+          the reset's danger tone. */}
       <ConfirmModal
         open={kernelOpen}
         title={S.agent.kernelUpdateTitle}
         busy={kernelUpdating}
+        tone="primary"
         onClose={() => setKernelOpen(false)}
         onConfirm={() => void runKernelUpdate()}
         confirmLabel={S.agent.kernelUpdateAction}
