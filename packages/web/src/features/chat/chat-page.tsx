@@ -52,6 +52,7 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
+import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
@@ -131,6 +132,30 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
       </svg>
       {value}
     </span>
+  );
+}
+
+/**
+ * Session id row in the details card: the id is selectable mono text (styled like the other
+ * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
+ * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ */
+function SessionIdRow({ sessionId }: { sessionId: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {S.chat.sessionIdLabel}
+      </p>
+      <div className="flex items-start gap-1.5">
+        <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
+        <CopyButton
+          text={sessionId}
+          label={S.chat.copySessionId}
+          showCopiedText
+          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1406,6 +1431,7 @@ export function ChatPage() {
                   </span>
                 </p>
               </div>
+              <SessionIdRow sessionId={selected.sessionId} />
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}

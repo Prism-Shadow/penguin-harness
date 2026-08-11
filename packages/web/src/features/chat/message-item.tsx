@@ -13,6 +13,7 @@ import { splitAttachments } from "../../lib/attachments";
 import type { ChatItem, ReconnectItem } from "../../lib/omni/stream-model";
 import { Md } from "./md";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
 import { ThinkingBlock } from "./thinking-block";
@@ -33,9 +34,6 @@ import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
-
-/** Duration the "Copied" tooltip stays visible (milliseconds). */
-const COPIED_MS = 1200;
 
 /** User glyph (24×24 line path) for the mid-run steering chip. */
 const USER_STEERING_ICON =
@@ -64,13 +62,6 @@ function MessageMeta({
   align?: "left" | "right";
 }) {
   const { locale } = useLocale();
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    if (text === undefined) return;
-    void navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPIED_MS);
-  };
   return (
     <div
       className={`flex h-5 items-center gap-2 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 ${
@@ -80,17 +71,8 @@ function MessageMeta({
       {atMs !== undefined && (
         <span className="text-[11px] text-gray-400">{formatMessageTime(atMs, locale)}</span>
       )}
-      {text !== undefined && (
-        <button
-          type="button"
-          title={copied ? S.common.copied : S.chat.copyMessage}
-          aria-label={S.chat.copyMessage}
-          onClick={copy}
-          className="rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        >
-          <GlyphIcon d={copied ? STAT_ICONS.check : STAT_ICONS.copy} />
-        </button>
-      )}
+      {/* No copy button for image-only messages: copying an image message has no clear meaning. */}
+      {text !== undefined && <CopyButton text={text} label={S.chat.copyMessage} />}
     </div>
   );
 }
