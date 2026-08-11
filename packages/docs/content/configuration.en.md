@@ -97,6 +97,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `name` | — | Agent display name (falls back to the id) |
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
+| `kernel_version` | current kernel version | Config kernel version (a date string): which generation of the built-in defaults this config is based on, stamped at creation, restore-defaults and kernel update; unrelated to `version`, never changed by user edits; missing = predates the mechanism (i.e. outdated) |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
@@ -149,7 +150,12 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
-An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. To adopt the current defaults (for example an updated built-in system prompt), use the settings page's **Restore default configuration** action: like a skill update it overwrites the existing configuration — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`.
+An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel and the settings page and agents list show an update hint. Two paths adopt the current defaults (side by side on the settings overview):
+
+- **Update kernel**: a lossless merge. Field by field: a missing field, or one still equal to a *recorded* generation's built-in default, follows the current default; a user-edited field stays unchanged and is listed in the result. `tools.builtin` merges per tool name — only the edited tool is kept, the rest follow, and user-added entries are untouched; `name`, `description`, `version` and `tools.mcpServers` are never touched. The config is then stamped with the current `kernel_version`. Matching is **conservative**: only values whose hash hits a recorded generation count as old defaults — generations too old to reconstruct are kept as if customized.
+- **Restore default configuration**: like a skill update, overwrites the existing configuration with the current defaults — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`. The full-refresh fallback when the kernel update's conservative matching leaves fields behind.
+
+For developers: `kernel_version` advances manually, and only on a substantive change to the built-in defaults (using that day's date). The pinned-hash test in CI (`core/test/kernel-version.test.ts`) recomputes every default leaf hash against the latest `kernel-history.ts` entry and fails on drift, telling you to bump `KERNEL_VERSION` and append a new entry; several changes on the same day may revise that day's entry, while older entries are frozen forever — they are what identifies "still the old default".
 
 ### System prompt placeholders
 

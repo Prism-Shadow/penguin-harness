@@ -42,6 +42,8 @@ export interface AgentListItem {
   toolCount: number;
   /** Agent State version number (missing field treated as 1). */
   version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (missing stamp = outdated) — the list card's update hint. */
+  kernelOutdated: boolean;
   /** Number of vault keys. */
   vaultKeyCount: number;
   /** Number of scheduled tasks (count of .toml files under schedule/, including invalid ones). */
@@ -278,6 +280,7 @@ export class AgentService {
       updatedAt: createdAt,
       toolCount: meta.toolCount,
       version: meta.version,
+      kernelOutdated: meta.kernelOutdated,
       vaultKeyCount: 0,
       scheduleCount: 0,
       // Read the real count: coreCreateAgent seeds the default skill set for default_agent.

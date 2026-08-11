@@ -19,6 +19,7 @@
  */
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
 import type { CompactionMode } from "../omnimessage/types.js";
+import { KERNEL_VERSION } from "./kernel-history.js";
 
 /** Docs: /docs/configuration § "System prompt placeholders". */
 export const AGENTS_MD_PLACEHOLDER = "{{AGENTS_MD}}";
@@ -329,6 +330,15 @@ export interface SystemConfig {
   description?: string;
   /** Agent State version number: a natural number, 1 on creation, incremented on successful optimization; a missing field is treated as 1. */
   version?: number;
+  /**
+   * Kernel version: which generation of the built-in defaults this config is based on, as a
+   * date string (`KERNEL_VERSION` at materialization time — creation, restore-defaults, or a
+   * kernel update). Unrelated to `version` (the optimization counter): user edits change
+   * neither the defaults generation nor this stamp — only the three materialization paths
+   * write it. A missing field means the config predates the kernel-version mechanism and is
+   * treated as outdated. See kernel-history.ts / kernel-update.ts.
+   */
+  kernel_version?: string;
   /** System-level Prompt (relatively stable; should not be modified frequently). */
   system_prompt: string;
   /**
@@ -854,6 +864,10 @@ export function agentStateVersion(config: Pick<SystemConfig, "version">): number
 export function defaultSystemConfig(): SystemConfig {
   return {
     version: 1,
+    // Newly materialized configs are stamped with the current defaults generation; the stamp
+    // rides along in resetSystemConfigToDefaults too (it spreads this object), so a restore
+    // also re-stamps.
+    kernel_version: KERNEL_VERSION,
     system_prompt: DEFAULT_SYSTEM_PROMPT,
     // -1 = unlimited (same sentinel as compaction.max_session_turns): an agent run is never
     // cut off by a turn cap unless the user configures a positive limit themselves.
