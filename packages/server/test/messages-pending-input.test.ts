@@ -7,7 +7,7 @@
  * Trace read has not caught up to (exact-envelope dedup), and clears them at idle.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText } from "@prismshadow/penguin-core";
+import { assistantText, mcpConnectBegin } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -18,8 +18,9 @@ import type { TestApp } from "./helpers.js";
 const SID = "session-2026-08-10-10-00-00-eeff0002";
 
 /**
- * Fake Session that parks before yielding anything (the bootstrap window: nothing has
- * reached the Trace yet — this fake writes no Trace at all) until the test releases it.
+ * Fake Session that yields the MCP connect begin (the real Session streams it live before
+ * the engine exists), then parks until released — the bootstrap window: nothing has
+ * reached the Trace yet (this fake writes no Trace at all).
  */
 function parkedBootstrapSession(sessionId: string, gate: Promise<void>): RuntimeSession {
   return {
@@ -30,6 +31,7 @@ function parkedBootstrapSession(sessionId: string, gate: Promise<void>): Runtime
     steer: () => false,
     skipReconnectWait: () => false,
     async *run() {
+      yield mcpConnectBegin(["fx"]);
       await gate;
       yield assistantText("done");
     },
@@ -75,12 +77,19 @@ describe("GET /messages serves the running task's pending inputs", () => {
     });
     expect(res.status).toBe(202);
 
-    // Mid-bootstrap: no Trace exists yet, but the endpoint serves the published input.
+    // Give the drive loop a beat to pump the fake's begin event into the hold.
+    await waitFor(() => t.deps.manager.pendingBootstrap(SID).length === 1);
+
+    // Mid-bootstrap: no Trace exists yet, but the endpoint serves the published input AND
+    // the streamed connect status — without the latter, a rebuilding page shows a silent
+    // blank while a slow MCP server times out.
     const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
       messages: OmniMessage[];
     };
     const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
     expect(texts).toContain("hello mcp");
+    const duringTypes = during.messages.map((m) => (m.payload as { type?: string }).type);
+    expect(duringTypes).toContain("mcp_connect_begin");
 
     // Windowed tail reads carry it the same way.
     const tail = (await (
@@ -100,6 +109,9 @@ describe("GET /messages serves the running task's pending inputs", () => {
     };
     expect(after.messages.map((m) => (m.payload as { text?: string }).text)).not.toContain(
       "hello mcp",
+    );
+    expect(after.messages.map((m) => (m.payload as { type?: string }).type)).not.toContain(
+      "mcp_connect_begin",
     );
   });
 });

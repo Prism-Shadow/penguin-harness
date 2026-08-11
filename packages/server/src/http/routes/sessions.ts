@@ -579,12 +579,17 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         cursor: deps.channels.get(row.sessionId).lastEventId,
         fragments: deps.manager.liveFragments(row.sessionId),
       };
-      // The running Task's inputs, published at launch but written to the Trace by the
-      // engine only after the first run's bootstrap (MCP connect + discovery): appended
-      // below when the trace read hasn't caught up, so a client rebuilding during the
-      // connect still sees the user's own message. `before` pages are immutable history
-      // and never carry them (same rule as `live`).
-      pendingInputs = deps.manager.pendingInputs(row.sessionId);
+      // The running Task's inputs (published at launch) and its streamed bootstrap
+      // records (mcp_connect pair / tool_list_ready): the engine's Trace writes for both
+      // land only after the first run's connect, so a client rebuilding during that
+      // window would otherwise see neither its own message nor the connecting status — a
+      // silent blank while a slow MCP server times out. Appended below when the trace
+      // read hasn't caught up; `before` pages are immutable history and never carry them
+      // (same rule as `live`).
+      pendingInputs = [
+        ...deps.manager.pendingInputs(row.sessionId),
+        ...deps.manager.pendingBootstrap(row.sessionId),
+      ];
     }
     if (page !== null) {
       const result = await deps.traceService.readMessagesPage(

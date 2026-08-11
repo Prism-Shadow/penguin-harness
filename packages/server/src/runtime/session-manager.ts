@@ -268,6 +268,15 @@ interface RuntimeEntry {
    */
   pendingInputs: OmniMessage[];
   /**
+   * The running Task's streamed bootstrap records (mcp_connect begin/end,
+   * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
+   * engine until after the input lands (turn attribution), and the draft flow subscribes
+   * only after they were published — so a history rebuild during the MCP connect would
+   * otherwise show nothing at all (a silent blank while a slow server times out).
+   * GET /messages appends whichever of them the Trace has not caught up to.
+   */
+  pendingBootstrap: OmniMessage[];
+  /**
    * Steering messages queued on core but not yet delivered to the model — a display mirror
    * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
    * its content survive reloads: pushed on `steer`, shifted as each `[user_steering]`
@@ -439,6 +448,11 @@ export class SessionManager {
     return this.entries.get(sessionId)?.pendingInputs ?? [];
   }
 
+  /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
+  pendingBootstrap(sessionId: string): OmniMessage[] {
+    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+  }
+
   /** Number of Sessions for this Agent that are currently running / compacting. */
   activeCountForAgent(projectId: string, agentId: string): number {
     let n = 0;
@@ -464,6 +478,7 @@ export class SessionManager {
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
       pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     });
@@ -1151,6 +1166,7 @@ export class SessionManager {
       generation,
       followUps: [],
       pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     };
@@ -1288,6 +1304,14 @@ export class SessionManager {
             }
           }
         }
+        // Bootstrap records (first-run MCP connect + toolset): held for GET /messages
+        // until the engine's deferred Trace write catches up (see pendingBootstrap).
+        if (!msg.origin || msg.origin.length === 0) {
+          const bt = (msg.payload as { type?: string }).type;
+          if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
+            entry.pendingBootstrap.push(msg);
+          }
+        }
         // Live-tail bookkeeping in the same synchronous tick as the publish below: the
         // messages endpoint captures "channel cursor + open fragments" between two
         // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
@@ -1318,8 +1342,9 @@ export class SessionManager {
       // idle flip (GET /messages stops attaching `live` the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
       // The engine has long since written the inputs to the Trace (at run start, abort
-      // included) — history now serves them, so the pending hold ends with the run.
+      // included) — history now serves them, so the pending holds end with the run.
       entry.pendingInputs = [];
+      entry.pendingBootstrap = [];
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;
