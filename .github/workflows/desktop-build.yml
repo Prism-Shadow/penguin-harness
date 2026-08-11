@@ -173,6 +173,147 @@ jobs:
       - name: Build packages
         run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
 
+      - name: Notarize and staple macOS DMGs
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          dmgs=(packages/desktop/stage/out/*.dmg)
+          if ((${#dmgs[@]} == 0)); then
+            echo "::error title=Missing macOS DMG::No DMG files were produced."
+            exit 1
+          fi
+
+          for dmg in "${dmgs[@]}"; do
+            echo "::group::notarize and staple $dmg"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            xcrun notarytool submit "$dmg" \
+              --key "$APPLE_API_KEY" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" \
+              --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+            rm -f "$dmg.blockmap"
+            echo "Removed stale $dmg.blockmap because stapling changes the DMG bytes."
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
+
+      - name: Clean macOS update metadata
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          metadata="packages/desktop/stage/out/latest-mac.yml"
+          if [[ ! -f "$metadata" ]]; then
+            echo "::error title=Missing macOS update metadata::$metadata was not produced."
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const metadata = "packages/desktop/stage/out/latest-mac.yml";
+          const text = fs.readFileSync(metadata, "utf8");
+          const lines = text.split(/\r?\n/);
+          const output = [];
+          let removed = 0;
+          let inFiles = false;
+
+          for (let index = 0; index < lines.length; ) {
+            const line = lines[index];
+
+            if (/^files:\s*$/.test(line)) {
+              inFiles = true;
+              output.push(line);
+              index += 1;
+              continue;
+            }
+
+            if (inFiles && /^\S/.test(line)) {
+              inFiles = false;
+            }
+
+            if (inFiles && /^  - /.test(line)) {
+              const block = [line];
+              index += 1;
+              while (index < lines.length && (/^    /.test(lines[index]) || lines[index] === "")) {
+                block.push(lines[index]);
+                index += 1;
+              }
+
+              if (block.join("\n").includes(".dmg")) {
+                removed += 1;
+                continue;
+              }
+
+              output.push(...block);
+              continue;
+            }
+
+            output.push(line);
+            index += 1;
+          }
+
+          const next = output.join("\n");
+          if (next.includes(".dmg")) {
+            console.error("latest-mac.yml still references .dmg after cleanup.");
+            process.exit(1);
+          }
+          if (!/\.zip\b/.test(next)) {
+            console.error("latest-mac.yml no longer references a zip update artifact.");
+            process.exit(1);
+          }
+
+          fs.writeFileSync(metadata, next, "utf8");
+          console.log(`Removed ${removed} DMG update metadata entr${removed === 1 ? "y" : "ies"} from ${metadata}.`);
+          NODE
+
+      - name: Verify macOS signing and notarization
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apps=(
+            packages/desktop/stage/out/mac-arm64/PenguinHarness.app
+            packages/desktop/stage/out/mac/PenguinHarness.app
+          )
+          for app in "${apps[@]}"; do
+            if [[ ! -d "$app" ]]; then
+              echo "::error title=Missing macOS app::$app was not produced."
+              exit 1
+            fi
+
+            echo "::group::verify app $app"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            codesign --verify --deep --strict --verbose=4 "$app"
+            codesign -dv --verbose=4 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=4 "$app"
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
+
+          shopt -s nullglob
+          dmgs=(packages/desktop/stage/out/*.dmg)
+          if ((${#dmgs[@]} == 0)); then
+            echo "::error title=Missing macOS DMG::No DMG files were produced."
+            exit 1
+          fi
+
+          for dmg in "${dmgs[@]}"; do
+            echo "::group::verify dmg $dmg"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            xcrun stapler validate "$dmg"
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
