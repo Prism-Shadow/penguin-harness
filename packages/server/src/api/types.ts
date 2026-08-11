@@ -180,6 +180,8 @@ export interface UiPrefs {
    * scanning (#139).
    */
   showCliSessions?: boolean;
+  /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
+  initialPasswordBannerDismissed?: boolean;
   [key: string]: unknown;
 }
 
