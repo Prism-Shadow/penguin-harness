@@ -18,10 +18,19 @@ export function McpConnectBanner({ item }: { item: McpConnectItem }) {
     );
   }
   return (
-    <p className="my-1 font-mono text-xs text-gray-500 dark:text-gray-400">
-      {item.aborted
-        ? S.chat.mcpConnectAborted
-        : S.chat.mcpConnectDone(item.durationMs ?? 0, item.failed ?? [])}
-    </p>
+    <div className="my-1 space-y-0.5">
+      <p className="font-mono text-xs text-gray-500 dark:text-gray-400">
+        {item.aborted
+          ? S.chat.mcpConnectAborted
+          : S.chat.mcpConnectDone(item.durationMs ?? 0, item.failed ?? [])}
+      </p>
+      {/* Per-server failure details: without these the banner only names the server, and
+          the real reason (spawn error, timeout, HTTP status) never reaches the user. */}
+      {(item.failedDetails ?? []).map((line) => (
+        <p key={line} className="font-mono text-xs break-all text-gray-400 dark:text-gray-500">
+          {line}
+        </p>
+      ))}
+    </div>
   );
 }

@@ -267,6 +267,8 @@ export interface McpConnectItem {
   durationMs?: number;
   /** Servers that failed to connect (empty list omitted). */
   failed?: string[];
+  /** Per-server failure details ("server: error"), for the banner's detail lines. */
+  failedDetails?: string[];
   /** The user aborted the run mid-connect (the connect completes in the background for the next run). */
   aborted?: boolean;
 }
@@ -1349,8 +1351,13 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         item.durationMs = Math.max(0, tsMs - item.beginTsMs);
       }
       if (p.status === "aborted") item.aborted = true;
-      const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
-      if (failed.length > 0) item.failed = failed;
+      const failedResults = p.results.filter((r) => r.status === "failed");
+      if (failedResults.length > 0) {
+        item.failed = failedResults.map((r) => r.server);
+        item.failedDetails = failedResults.map(
+          (r) => `${r.server}: ${(r.error ?? "").slice(0, 200) || "unknown error"}`,
+        );
+      }
       return;
     }
     case "tool_list_ready":
