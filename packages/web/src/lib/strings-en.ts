@@ -415,8 +415,8 @@ export const en: Strings = {
     kernelOutdatedHint: "Kernel update available",
     kernelUpToDate: "Up to date",
     kernelUpdateTitle: "Update kernel",
-    kernelVersions: (current: string, latest: string): string =>
-      `current ${current} · latest ${latest}`,
+    kernelCurrent: "current",
+    kernelLatest: "latest",
     kernelUpdateAction: "Update kernel",
     kernelUpdateConfirmBody:
       "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
