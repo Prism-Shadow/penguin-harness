@@ -48,15 +48,16 @@ export interface TraceHighlight {
   rowKey?: string;
 }
 
-/** Fixed color for each of the five bar kinds (solid fill, clear contrast; no gray/black/white/indigo). */
+/** Fixed color for each of the five bar kinds (solid fill, clear contrast; no gray/black/white/indigo — the muted-on-purpose `other` is exempt). */
 const COLORS = {
   thinking: "bg-violet-500 dark:bg-violet-400",
   text: "bg-sky-500 dark:bg-sky-400",
   toolgen: "bg-amber-500 dark:bg-amber-400",
   approvalWait: "bg-rose-400 dark:bg-rose-300",
   exec: "bg-emerald-500 dark:bg-emerald-400",
-  // Non-tool auxiliary phases (MCP connect): their own legend category, not tool execution.
-  other: "bg-fuchsia-500 dark:bg-fuchsia-400",
+  // Non-tool auxiliary phases (MCP connect): their own legend category, not tool
+  // execution — deliberately muted, background bookkeeping shouldn't outshine the work.
+  other: "bg-gray-400 dark:bg-gray-500",
 } as const;
 
 /**
