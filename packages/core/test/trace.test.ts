@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   assistantText,
@@ -15,7 +15,7 @@ import {
   withOrigin,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import { Writer, readTrace } from "../src/trace/index.js";
+import { Writer, parseTraceLines, readTrace } from "../src/trace/index.js";
 
 const SESSION_ID = "sess_abc";
 
@@ -219,6 +219,41 @@ describe("Writer", () => {
       expect(secondLines).toEqual(shardTwo.map((msg) => JSON.stringify(msg)));
     });
 
+    it("appends a multi-MB record with a single underlying write (no 512 KiB chunk tear window)", async () => {
+      // fs.appendFile would split this into three writes (Node chunks at 512 KiB = 524288
+      // bytes); a crash between chunks used to leave exactly the first 524288 bytes of the
+      // record, and the next session's appends then glued onto that torn line. The Writer
+      // issues one write(2) per record instead, so no crash can split a record mid-file.
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      const head = meta();
+      const big = imageUrlMessage(`data:image/png;base64,${"C".repeat(1200 * 1024)}`);
+      const bigRecordBytes = Buffer.byteLength(`${JSON.stringify(big)}\n`);
+
+      // Spy on FileHandle.write via a probe handle's prototype (the class is not exported).
+      const probe = await import("node:fs/promises").then((fs) =>
+        fs.open(join(tracesDir, "probe.tmp"), "w"),
+      );
+      const fileHandleProto = Object.getPrototypeOf(probe) as {
+        write: (...args: unknown[]) => unknown;
+      };
+      await probe.close();
+      const writeSpy = vi.spyOn(fileHandleProto, "write");
+      try {
+        await writer.writeAll([head, big]);
+        // One write() per record — the big one lands whole, never in 524288-byte chunks.
+        const lengths = writeSpy.mock.calls.map((call) => call[2]);
+        expect(lengths).toContain(bigRecordBytes);
+        expect(lengths.filter((len) => (len as number) > 512 * 1024)).toEqual([bigRecordBytes]);
+      } finally {
+        writeSpy.mockRestore();
+      }
+      expect(await readTrace(writer.currentPath())).toEqual([head, big]);
+    });
+
     it("a failed write rejects its own caller without wedging subsequent writes", async () => {
       const writer = new Writer({
         tracesDir,
@@ -241,6 +276,78 @@ describe("Writer", () => {
       await writer.write(recovered);
       const rows = await readTrace(writer.currentPath());
       expect(rows).toEqual([recovered]);
+    });
+  });
+
+  // A process death mid-append can only truncate the LAST record (single-write appends), but
+  // resumption keeps writing to the same file — without healing, the first post-resume record
+  // would glue onto the torn line and be swallowed with it.
+  describe("crash-torn tail healing on resume", () => {
+    const DATE_DIR = "2026-01-09";
+
+    /** A Writer resuming the session's existing 001 shard (dateDir pins the original file). */
+    function resumingWriter(): Writer {
+      return new Writer({ tracesDir, sessionId: SESSION_ID, dateDir: DATE_DIR, startIndex: 1 });
+    }
+
+    async function seedShard(content: string): Promise<string> {
+      await mkdir(join(tracesDir, DATE_DIR), { recursive: true });
+      const path = join(tracesDir, DATE_DIR, `${SESSION_ID}_001.jsonl`);
+      await writeFile(path, content, "utf8");
+      return path;
+    }
+
+    it("starts the next record on a fresh line after a torn tail", async () => {
+      const head = meta();
+      const intact = `${JSON.stringify(head)}\n`;
+      const torn = JSON.stringify(assistantText("giant record")).slice(0, 40); // no trailing \n
+      const path = await seedShard(intact + torn);
+
+      const afterCrash = assistantText("after crash");
+      await resumingWriter().write(afterCrash);
+
+      const raw = await readFile(path, "utf8");
+      expect(raw).toBe(`${intact + torn}\n${JSON.stringify(afterCrash)}\n`);
+      // The torn line is skipped as malformed; both intact records survive.
+      expect(parseTraceLines(raw)).toEqual([head, afterCrash]);
+    });
+
+    it("appends without a heal prefix when the resumed file ends cleanly", async () => {
+      const intact = `${JSON.stringify(meta())}\n`;
+      const path = await seedShard(intact);
+
+      const next = assistantText("resumed");
+      await resumingWriter().write(next);
+
+      expect(await readFile(path, "utf8")).toBe(`${intact}${JSON.stringify(next)}\n`);
+    });
+
+    it("treats an empty pre-existing file as clean", async () => {
+      const path = await seedShard("");
+
+      const next = assistantText("first record");
+      await resumingWriter().write(next);
+
+      expect(await readFile(path, "utf8")).toBe(`${JSON.stringify(next)}\n`);
+    });
+
+    it("probes once per shard: a healed file gets no second prefix, and rotation resets the state", async () => {
+      const torn = `{"timestamp":"x","type":"model_msg","payload":{"type":"text","role":"assist`;
+      const path = await seedShard(torn);
+
+      const writer = resumingWriter();
+      const first = assistantText("heals");
+      const second = assistantText("plain append");
+      await writer.writeAll([first, second]);
+      expect(await readFile(path, "utf8")).toBe(
+        `${torn}\n${JSON.stringify(first)}\n${JSON.stringify(second)}\n`,
+      );
+
+      // The next shard is a brand-new file: no heal prefix may leak into it.
+      await writer.rotate();
+      const fresh = assistantText("next shard");
+      await writer.write(fresh);
+      expect(await readFile(writer.currentPath(), "utf8")).toBe(`${JSON.stringify(fresh)}\n`);
     });
   });
 });
