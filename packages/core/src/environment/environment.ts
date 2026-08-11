@@ -204,6 +204,11 @@ export class Environment implements EnvironmentInterface {
     return this.mcp?.connectResults() ?? [];
   }
 
+  /** Cancels an in-flight MCP connect attempt (user abort mid-connect): the next listTools() reconnects from scratch. No-op without MCP or when nothing is in flight. */
+  cancelMcpConnect(): void {
+    this.mcp?.cancelConnect();
+  }
+
   /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their server's `readOnlyHint` annotation after discovery. */
   toolPermission(name: string): ToolPermission | undefined {
     return (

@@ -34,7 +34,7 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
-  SessionToolsReadyPayload,
+  McpConnectStatus,
   StopReason,
   StreamEventType,
   SubagentPayload,
@@ -43,6 +43,7 @@ import type {
   TokenCounts,
   TokenUsagePayload,
   ToolCallOutputPayload,
+  ToolListReadyPayload,
   ToolCallPayload,
   ToolDefinition,
 } from "./types.js";
@@ -355,9 +356,9 @@ export function tokenUsage(
   return event({ type: "token_usage", session, request });
 }
 
-/** session_tools_ready event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
-export function sessionToolsReady(tools: ToolDefinition[]): OmniMessage<SessionToolsReadyPayload> {
-  return event({ type: "session_tools_ready", tools });
+/** tool_list_ready event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
+export function toolListReady(tools: ToolDefinition[]): OmniMessage<ToolListReadyPayload> {
+  return event({ type: "tool_list_ready", tools });
 }
 
 /** mcp_connect begin event: brackets open on the first run's MCP connect + discovery phase (emitted only when servers are configured). */
@@ -365,16 +366,12 @@ export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginP
   return event({ type: "mcp_connect_begin", servers });
 }
 
-/** mcp_connect end event: per-server outcomes (total wall time = end timestamp − begin timestamp); `aborted` closes the pair on a user interruption mid-connect. */
+/** mcp_connect end event: overall status (compaction_end-style) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
 export function mcpConnectEnd(args: {
+  status: McpConnectStatus;
   results: McpServerConnectResult[];
-  aborted?: boolean;
 }): OmniMessage<McpConnectEndPayload> {
-  return event({
-    type: "mcp_connect_end",
-    results: args.results,
-    ...(args.aborted === true ? { aborted: true } : {}),
-  });
+  return event({ type: "mcp_connect_end", status: args.status, results: args.results });
 }
 
 /** Adds two sets of Token counts together, used to maintain cumulative Session usage. */

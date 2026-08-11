@@ -45,7 +45,7 @@ interface SessionMetaPayload {
 
 session_meta holds **per-session invariants only** — the model, system prompt and Workspace are immutable for the Session's lifetime; on resume, the engine takes this Trace line as the runtime config. See [Sessions & Traces](/sessions-and-traces). The thinking level is a per-turn parameter (sent with each Task) and is not recorded here; a `thinking_level` field still present in a legacy Trace's meta is ignored on resume — the resumed Session reads the Agent's current config instead.
 
-The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `session_tools_ready` event at the first run (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
+The tool schema is **not in the meta**: the toolset is only known after MCP Servers connect, and the meta must not wait for that — the full tool definitions arrive as a standalone `tool_list_ready` event at the first run (see event_msg). Pre-split Traces embedded a `tools` field here; that field is explicitly no longer read (their tool record is not displayed).
 
 ## model_msg: complete payloads
 
@@ -178,11 +178,13 @@ Renderers can therefore paint deltas incrementally and swap in the complete mess
 Eleven event payloads, all listed field by field:
 
 ```ts
-interface SessionToolsReadyPayload {
-  type: "session_tools_ready";
+interface ToolListReadyPayload {
+  type: "tool_list_ready";
   tools: ToolDefinition[];    // the complete tool schema sent to the model; emitted once
-                              // at the first run (after MCP discovery) and rewritten with
-                              // session_meta at the head of each post-compaction Trace file
+                              // at the first run (after MCP discovery), written to the
+                              // Trace right after the run's input (it belongs to the new
+                              // turn), and rewritten with session_meta at the head of
+                              // each post-compaction Trace file
 }
 
 interface ToolDefinition {
@@ -197,24 +199,28 @@ interface McpConnectBeginPayload {
                               // mcpServers is configured — frontends show a connecting status
 }
 
+type McpConnectStatus = "completed" | "failed" | "aborted";
+
 interface McpConnectEndPayload {
   type: "mcp_connect_end";
+  status: McpConnectStatus;   // overall terminal status (compaction_end-style): completed
+                              // (all connected) / failed (some server failed) / aborted
+                              // (user interrupted — the attempt is cancelled and the next
+                              // run reconnects from scratch)
   results: McpServerConnectResult[];
                               // the phase's total wall time is the end/begin messages'
                               // timestamp difference (messages carry their own timestamps;
-                              // the payload holds no duplicate duration)
-  aborted?: boolean;          // the user interrupted mid-connect: the pair closes here
-                              // (results usually empty) while the connect completes in
-                              // the background — the next run reuses it, no reconnect
+                              // the payload holds no duplicate duration); empty on aborted
 }
 
 interface McpServerConnectResult {
   server: string;
   transport: "stdio" | "http" | "sse";
-  status: "ok" | "failed";    // per-server and non-fatal: a failed server is skipped and
+  status: McpConnectStatus;   // per-server and non-fatal: a failed server is skipped and
                               // the run continues
-  duration_ms: number;
-  tools?: number;             // tools discovered (on ok)
+  duration_ms: number;        // this server's own connect + discovery time (no per-server
+                              // messages exist to derive it from)
+  tools?: number;             // tools discovered (on completed)
   error?: string;             // failure detail (on failed)
 }
 

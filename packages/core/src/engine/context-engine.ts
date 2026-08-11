@@ -204,8 +204,16 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
-  /** This Session's session_tools_ready event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
-  sessionTools?: OmniMessage;
+  /** This Session's tool_list_ready event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
+  toolList?: OmniMessage;
+  /**
+   * The first run's bootstrap records (mcp_connect pair + tool_list_ready), written once
+   * right AFTER that run's input messages — so the connect phase lands inside the new
+   * turn in the Trace, after the user's message (their timestamps precede the write; the
+   * file stays chronologically consistent because the input message was created before
+   * the connect began). Streaming already yielded them live before the engine existed.
+   */
+  bootstrapRecords?: OmniMessage[];
   /**
    * Input adapter for a session whose model has no vision: folds image messages into text
    * lines appended to the input's user text. Absent = the model takes images directly. `run`'s
@@ -393,6 +401,8 @@ export class ContextEngine {
   private lastSessionTokens: TokenCounts = emptyTokenCounts();
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: OmniMessage | null = null;
+  /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
+  private pendingBootstrapRecords: OmniMessage[] | null = null;
   /**
    * Set to true once compaction completes: Trace rotation is deferred until the next
    * message that needs writing (see `write`) — so that if no further messages follow the
@@ -416,6 +426,7 @@ export class ContextEngine {
   private taskRunning = false;
 
   constructor(private readonly deps: ContextEngineDeps) {
+    this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
     this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
@@ -561,6 +572,12 @@ export class ContextEngine {
     // context's first input record, is written as usual.
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
+    if (this.pendingBootstrapRecords) {
+      // First run only: the bootstrap records follow the input into the Trace (see
+      // ContextEngineDeps.bootstrapRecords for the ordering rationale).
+      for (const msg of this.pendingBootstrapRecords) await this.write(msg);
+      this.pendingBootstrapRecords = null;
+    }
 
     if (signal?.aborted) {
       // Aborted before the Request was issued: the input is held **as-is** as carry-over
@@ -1721,7 +1738,7 @@ export class ContextEngine {
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
         if (this.deps.sessionMeta) await this.deps.trace.write(this.deps.sessionMeta);
-        if (this.deps.sessionTools) await this.deps.trace.write(this.deps.sessionTools);
+        if (this.deps.toolList) await this.deps.trace.write(this.deps.toolList);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] rotate failed: ${message}\n`);

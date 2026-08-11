@@ -392,7 +392,7 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       for (;;) {
         const next = await gen.next();
         expect(next.done).toBe(false);
-        if ((next.value!.payload as { type?: string }).type === "session_tools_ready") {
+        if ((next.value!.payload as { type?: string }).type === "tool_list_ready") {
           llm = capturedLLMConfigs.list.at(-1)!;
           break;
         }

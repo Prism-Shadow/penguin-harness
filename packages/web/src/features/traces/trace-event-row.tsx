@@ -43,11 +43,10 @@ const TYPE_ICON: Record<string, string> = {
   compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
-  // MCP connect pair: a plug shape; session_tools_ready reuses the wrench (a toolset record).
+  // MCP connect pair: a plug shape; tool_list_ready reuses the wrench (a toolset record).
   mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
   mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  session_tools_ready:
-    "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  tool_list_ready: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
 };
 const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
@@ -107,17 +106,16 @@ export function summarizeEvent(msg: OmniMessage): string {
       return Array.isArray(p["servers"]) ? p["servers"].map(String).join(", ") : "";
     case "mcp_connect_end": {
       // The phase's total wall time is the pair's timestamp difference (shown by the
-      // timeline span); the row summarizes the per-server outcomes.
+      // timeline span); the row summarizes the overall status and per-server outcomes.
       const results = Array.isArray(p["results"])
         ? (p["results"] as { server?: string; status?: string; duration_ms?: number }[])
         : [];
       const parts = results.map(
         (r) => `${String(r.server)}:${String(r.status)}(${String(r.duration_ms)}ms)`,
       );
-      const head = p["aborted"] === true ? "aborted" : "";
-      return [head, parts.join(" ")].filter(Boolean).join(" · ");
+      return [String(p["status"] ?? ""), parts.join(" ")].filter(Boolean).join(" · ");
     }
-    case "session_tools_ready":
+    case "tool_list_ready":
       return Array.isArray(p["tools"]) ? S.traces.toolDefs(p["tools"].length) : "";
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
@@ -196,7 +194,7 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
   ];
   const prompt = String(p.system_prompt ?? "");
   // Pre-split traces embedded `tools` here; per the explicit-incompatibility decision the
-  // legacy field is not rendered — the toolset view is the session_tools_ready event.
+  // legacy field is not rendered — the toolset view is the tool_list_ready event.
   return (
     <div className="space-y-2.5">
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
@@ -223,11 +221,62 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
 }
 
 /**
- * session_tools_ready: the Session's resolved toolset as a structured list — name +
- * description per tool, with the parameter schema behind a per-tool disclosure (raw JSON
- * dumps read terribly for tool schemas of this size).
+ * A JSON-Schema object rendered as a property table (name / type / required / description)
+ * — the form a tool schema is actually read in; non-object schemas fall back to JSON.
  */
-function SessionToolsReadyBody({ p }: { p: Record<string, unknown> }) {
+function ParamsTable({ schema }: { schema: Record<string, unknown> }) {
+  const props =
+    schema["properties"] !== null && typeof schema["properties"] === "object"
+      ? (schema["properties"] as Record<string, Record<string, unknown>>)
+      : null;
+  if (!props || Object.keys(props).length === 0) {
+    return <pre className={`${codeBlock} mt-1`}>{JSON.stringify(schema, null, 2)}</pre>;
+  }
+  const required = new Set(
+    Array.isArray(schema["required"]) ? (schema["required"] as unknown[]).map(String) : [],
+  );
+  /** Compact type label: plain `type`, enum value lists, and array item types; anything else reads "object". */
+  const typeOf = (s: Record<string, unknown>): string => {
+    if (Array.isArray(s["enum"])) return (s["enum"] as unknown[]).map(String).join(" | ");
+    const t = typeof s["type"] === "string" ? s["type"] : "object";
+    if (t === "array") {
+      const items = s["items"];
+      const inner =
+        items !== null && typeof items === "object"
+          ? typeOf(items as Record<string, unknown>)
+          : "unknown";
+      return `${inner}[]`;
+    }
+    return t;
+  };
+  return (
+    <table className="mt-1 w-full text-xs">
+      <tbody>
+        {Object.entries(props).map(([name, s]) => (
+          <tr key={name} className="align-top">
+            <td className="whitespace-nowrap pr-3 font-mono text-gray-700 dark:text-gray-300">
+              {name}
+              {required.has(name) && <span className="ml-0.5 text-red-500">*</span>}
+            </td>
+            <td className="whitespace-nowrap pr-3 font-mono text-gray-400 dark:text-gray-500">
+              {typeOf(s)}
+            </td>
+            <td className="text-gray-500 dark:text-gray-400">
+              {typeof s["description"] === "string" ? s["description"] : ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * tool_list_ready: the Session's resolved toolset as a structured list — name +
+ * description per tool, with the parameter schema as a property table behind a per-tool
+ * disclosure (raw JSON dumps read terribly for tool schemas of this size).
+ */
+function ToolListReadyBody({ p }: { p: Record<string, unknown> }) {
   const tools = Array.isArray(p.tools)
     ? (p.tools as Array<{ name?: string; description?: string; parameters?: unknown }>)
     : [];
@@ -242,10 +291,10 @@ function SessionToolsReadyBody({ p }: { p: Record<string, unknown> }) {
           {t.description && (
             <p className="mt-0.5 text-gray-500 dark:text-gray-400">{t.description}</p>
           )}
-          {t.parameters !== undefined && (
+          {t.parameters !== null && typeof t.parameters === "object" && (
             <details className="mt-1">
               <summary className={summaryClass}>{S.traces.toolParams}</summary>
-              <pre className={`${codeBlock} mt-1`}>{JSON.stringify(t.parameters, null, 2)}</pre>
+              <ParamsTable schema={t.parameters as Record<string, unknown>} />
             </details>
           )}
         </li>
@@ -258,7 +307,7 @@ function SessionToolsReadyBody({ p }: { p: Record<string, unknown> }) {
 function EventBody({ msg }: { msg: OmniMessage }) {
   const p = msg.payload as Record<string, unknown> & { type?: string };
   if (msg.type === "session_meta") return <SessionMetaBody p={p} />;
-  if (p.type === "session_tools_ready") return <SessionToolsReadyBody p={p} />;
+  if (p.type === "tool_list_ready") return <ToolListReadyBody p={p} />;
   switch (p.type) {
     case "text":
     case "thinking": {

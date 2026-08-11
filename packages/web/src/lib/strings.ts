@@ -972,7 +972,7 @@ Benchmark：
       failed.length === 0
         ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,
-    mcpConnectAborted: "[mcp] 连接已中断（后台继续建立，下次发送时复用）",
+    mcpConnectAborted: "[mcp] 连接已中断，下次发送时重新连接",
     compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
     compactionDone: (mode: string): string =>
       mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",

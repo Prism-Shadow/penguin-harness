@@ -323,7 +323,7 @@ describe("Session first-run bootstrap events", () => {
     });
   }
 
-  it("streams mcp_connect begin/end and session_tools before the first reply, and traces them", async () => {
+  it("streams the connect pair and tool_list_ready before the first reply; the Trace puts them after the input", async () => {
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
@@ -337,40 +337,44 @@ describe("Session first-run bootstrap events", () => {
       expect(types.slice(0, 3)).toEqual([
         "mcp_connect_begin",
         "mcp_connect_end",
-        "session_tools_ready",
+        "tool_list_ready",
       ]);
       expect(types).toContain("text");
       const begin = streamed[0]!.payload as { servers?: string[] };
       expect(begin.servers).toEqual(["fx"]);
       const end = streamed[1]!.payload as {
+        status?: string;
         results?: { server: string; status: string; tools?: number; duration_ms: number }[];
       };
+      expect(end.status).toBe("completed");
       expect(end.results).toHaveLength(1);
-      expect(end.results![0]).toMatchObject({ server: "fx", status: "ok", tools: 6 });
+      expect(end.results![0]).toMatchObject({ server: "fx", status: "completed", tools: 6 });
       const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
       expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
-      // The bootstrap records land in the Trace too: meta first, then the three events.
+      // Trace ordering: the engine writes the bootstrap records AFTER the run's input, so
+      // the connect phase belongs to the new turn — meta, the user text, then the pair.
       const writtenTypes = written.map(
         (m) => (m.payload as { type?: string }).type ?? "session_meta",
       );
-      expect(writtenTypes.slice(0, 4)).toEqual([
+      expect(writtenTypes.slice(0, 5)).toEqual([
         "session_meta",
+        "text",
         "mcp_connect_begin",
         "mcp_connect_end",
-        "session_tools_ready",
+        "tool_list_ready",
       ]);
       // Second run: the bootstrap already happened — no repeated events.
       const second: OmniMessage[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes).not.toContain("mcp_connect_begin");
-      expect(secondTypes).not.toContain("session_tools_ready");
+      expect(secondTypes).not.toContain("tool_list_ready");
     } finally {
       session.dispose();
     }
   });
 
-  it("emits only session_tools when no MCP servers are configured", async () => {
+  it("emits only tool_list_ready when no MCP servers are configured", async () => {
     const env = new Environment({
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [] },
@@ -381,14 +385,14 @@ describe("Session first-run bootstrap events", () => {
       const streamed: OmniMessage[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
       const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types[0]).toBe("session_tools_ready");
+      expect(types[0]).toBe("tool_list_ready");
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
     }
   });
 
-  it("aborts mid-connect: closes the pair aborted and the next run reuses the same bootstrap", async () => {
+  it("aborts mid-connect: cancels the attempt (live-only events) and the next run reconnects", async () => {
     let calls = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -440,17 +444,13 @@ describe("Session first-run bootstrap events", () => {
       await run;
       const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
       expect(firstTypes).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
-      expect((first[1]!.payload as { aborted?: boolean }).aborted).toBe(true);
-      // The pair and the abort reached the Trace too (after session_meta).
+      expect((first[1]!.payload as { status?: string }).status).toBe("aborted");
+      // An attempt aborted before the engine exists is live-only: nothing but the meta
+      // reached the Trace (the bootstrap records are engine-written, and there is none).
       const writtenTypes = written.map(
         (m) => (m.payload as { type?: string }).type ?? "session_meta",
       );
-      expect(writtenTypes).toEqual([
-        "session_meta",
-        "mcp_connect_begin",
-        "mcp_connect_end",
-        "abort",
-      ]);
+      expect(writtenTypes).toEqual(["session_meta"]);
 
       release();
       const second: OmniMessage[] = [];
@@ -459,14 +459,29 @@ describe("Session first-run bootstrap events", () => {
       expect(secondTypes.slice(0, 3)).toEqual([
         "mcp_connect_begin",
         "mcp_connect_end",
-        "session_tools_ready",
+        "tool_list_ready",
       ]);
-      expect((second[1]!.payload as { aborted?: boolean }).aborted).toBeUndefined();
+      expect((second[1]!.payload as { status?: string }).status).toBe("completed");
       expect(secondTypes).toContain("text");
-      // Single-flight: the aborted attempt's bootstrap was reused, never restarted.
-      expect(calls).toBe(1);
+      // Abort cancels the attempt: the next run started a FRESH bootstrap (reconnect).
+      expect(calls).toBe(2);
     } finally {
       session.dispose();
+    }
+  });
+
+  it("cancelConnect aborts the in-flight attempt and the next listTools reconnects", async () => {
+    const provider = new McpToolProvider([fixtureEntry()], { warn: () => {} });
+    try {
+      const first = provider.listTools();
+      provider.cancelConnect();
+      await expect(first).rejects.toThrow(/cancelled/);
+      // Fresh attempt after the cancel: a full reconnect succeeds.
+      const tools = await provider.listTools();
+      expect(tools).toHaveLength(6);
+      expect(provider.connectResults()[0]).toMatchObject({ server: "fx", status: "completed" });
+    } finally {
+      await provider.close();
     }
   });
 
@@ -485,7 +500,7 @@ describe("Session first-run bootstrap events", () => {
       expect(results[0]).toMatchObject({
         server: "fx",
         transport: "stdio",
-        status: "ok",
+        status: "completed",
         tools: 6,
       });
       expect(results[1]).toMatchObject({ server: "broken", transport: "stdio", status: "failed" });

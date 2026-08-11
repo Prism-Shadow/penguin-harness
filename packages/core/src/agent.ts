@@ -299,7 +299,7 @@ export class Agent {
     return new Session({
       // session_meta holds per-session invariants only: the thinking level is a per-turn
       // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
-      // the toolset travels as the first run's session_tools_ready event (it is only known
+      // the toolset travels as the first run's tool_list_ready event (it is only known
       // after the MCP connect the bootstrap performs).
       meta: {
         session_id: sessionId,
@@ -312,6 +312,7 @@ export class Agent {
         ...(opts.source !== undefined ? { source: opts.source } : {}),
       },
       bootstrap: rt.bootstrap,
+      cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,
@@ -479,6 +480,7 @@ export class Agent {
           : {}),
       },
       bootstrap,
+      cancelBootstrap: () => rt.environment.cancelMcpConnect(),
       mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,

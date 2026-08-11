@@ -58,7 +58,7 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
-  SessionToolsReadyPayload,
+  ToolListReadyPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
@@ -827,12 +827,12 @@ export class StreamRenderer {
             : 0;
         const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
         this.out.write(
-          `${dim(this.t.mcpConnectStop(durationMs, failed, p.aborted === true), this.c)}\n`,
+          `${dim(this.t.mcpConnectStop(durationMs, failed, p.status === "aborted"), this.c)}\n`,
         );
         this.lastLineKey = null;
-      } else if (payload.type === "session_tools_ready") {
+      } else if (payload.type === "tool_list_ready") {
         // Not rendered; the tool list settles each tool's preview path (description argument).
-        this.useToolSchemas((payload as SessionToolsReadyPayload).tools);
+        this.useToolSchemas((payload as ToolListReadyPayload).tools);
       }
       return;
     }
@@ -841,7 +841,7 @@ export class StreamRenderer {
   /**
    * Registers the Session's assembled tool schemas, which decide each tool's preview path
    * before its arguments stream (see `describedTools`). Schemas arrive on the stream as the
-   * first run's `session_tools_ready` event (after MCP discovery) — handled in `renderEvent` —
+   * first run's `tool_list_ready` event (after MCP discovery) — handled in `renderEvent` —
    * for the main session and sub-sessions alike.
    */
   useToolSchemas(tools: readonly ToolDefinition[]): void {

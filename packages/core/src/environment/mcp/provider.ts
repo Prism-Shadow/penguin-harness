@@ -145,6 +145,9 @@ export class McpToolProvider {
   private readonly warn: (message: string) => void;
   /** Single-flight connect+discovery; resolved results live in the fields below. */
   private ensurePromise: Promise<void> | null = null;
+  /** Attempt token + abort handle of the in-flight connect; cancelConnect() invalidates the token so a cancelled attempt registers nothing. */
+  private attempt = 0;
+  private connectAbort: AbortController | null = null;
   /** Successfully connected servers, kept for close(). */
   private readonly connections: McpConnection[] = [];
   /** Full tool name (`mcp__server__tool`) → executable wrapper. */
@@ -213,8 +216,31 @@ export class McpToolProvider {
     return this.ensurePromise;
   }
 
+  /**
+   * Cancels the in-flight connect attempt (a user abort mid-connect): pending SDK
+   * connects are aborted, connections the attempt already established are closed, and
+   * the provider resets to the unconnected state — the next listTools() reconnects from
+   * scratch. A no-op when no attempt is in flight (an already-connected provider keeps
+   * its toolset).
+   */
+  cancelConnect(): void {
+    if (this.ensurePromise === null || this.connectAbort === null) return;
+    this.attempt += 1;
+    this.connectAbort.abort();
+    this.connectAbort = null;
+    this.ensurePromise = null;
+    this.results = [];
+    this.byName.clear();
+    this.defs = [];
+    const open = this.connections.splice(0);
+    for (const conn of open) void conn.client.close().catch(() => {});
+  }
+
   private async connectAll(): Promise<void> {
     for (const warning of this.configWarnings) this.warn(warning);
+    const attempt = ++this.attempt;
+    const ac = new AbortController();
+    this.connectAbort = ac;
     // Connect in parallel, then register in config order so tool listing order is stable.
     // Each server's outcome (status + wall time, feeding the mcp_connect_end event) is
     // recorded either way; a failure also keeps the existing warning behavior.
@@ -224,33 +250,45 @@ export class McpToolProvider {
           const startedAt = performance.now();
           const durationMs = (): number => Math.round(performance.now() - startedAt);
           try {
-            const conn = await this.connectServer(server);
+            const conn = await this.connectServer(server, ac.signal);
             return {
               conn,
               result: {
                 server: server.name,
                 transport: server.transport.kind,
-                status: "ok",
+                status: "completed",
                 duration_ms: durationMs(),
                 tools: conn.tools.length,
               },
             };
           } catch (err) {
-            this.warn(`MCP server "${server.name}" unavailable: ${describeError(err)}`);
+            const aborted = ac.signal.aborted;
+            if (!aborted) {
+              this.warn(`MCP server "${server.name}" unavailable: ${describeError(err)}`);
+            }
             return {
               conn: null,
               result: {
                 server: server.name,
                 transport: server.transport.kind,
-                status: "failed",
+                status: aborted ? "aborted" : "failed",
                 duration_ms: durationMs(),
-                error: describeError(err),
+                ...(aborted ? {} : { error: describeError(err) }),
               },
             };
           }
         },
       ),
     );
+    if (attempt !== this.attempt) {
+      // Cancelled while settling: close whatever connected and register nothing — the
+      // next attempt starts from scratch.
+      for (const { conn } of settled) {
+        if (conn) void conn.client.close().catch(() => {});
+      }
+      throw new Error("MCP connect cancelled");
+    }
+    this.connectAbort = null;
     this.results = settled.map((s) => s.result);
     for (const { conn } of settled) {
       if (!conn) continue;
@@ -263,7 +301,10 @@ export class McpToolProvider {
     }
   }
 
-  private async connectServer(server: ResolvedMCPServer): Promise<McpConnection> {
+  private async connectServer(
+    server: ResolvedMCPServer,
+    signal?: AbortSignal,
+  ): Promise<McpConnection> {
     const client = new Client(CLIENT_INFO);
     let stderrTail = "";
     let transport: Transport;
@@ -299,8 +340,14 @@ export class McpToolProvider {
       );
     }
     try {
-      await client.connect(transport, { timeout: server.connectTimeoutMs });
-      const listed = await client.listTools(undefined, { timeout: server.connectTimeoutMs });
+      await client.connect(transport, {
+        timeout: server.connectTimeoutMs,
+        ...(signal ? { signal } : {}),
+      });
+      const listed = await client.listTools(undefined, {
+        timeout: server.connectTimeoutMs,
+        ...(signal ? { signal } : {}),
+      });
       return { server, client, tools: listed.tools };
     } catch (err) {
       await client.close().catch(() => {});

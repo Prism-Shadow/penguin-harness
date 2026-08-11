@@ -794,9 +794,8 @@ export class TraceService {
           // after an in-file resume, the next Task), so the timeline renders the
           // pre-request connect wait inside that Task's group under its own lane.
           if (!hasOrigin && openMcpConnect) {
-            const q = p as { results?: { status?: string }[]; aborted?: boolean };
-            const failed =
-              (q.results ?? []).some((r) => r.status === "failed") || q.aborted === true;
+            const q = p as { status?: string };
+            const failed = q.status !== "completed";
             otherSpans.push({
               key: `mcp-connect-${openMcpConnect.beginTs}`,
               name: "mcp connect",

@@ -1348,12 +1348,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (tsMs !== undefined && item.beginTsMs !== undefined) {
         item.durationMs = Math.max(0, tsMs - item.beginTsMs);
       }
-      if (p.aborted === true) item.aborted = true;
+      if (p.status === "aborted") item.aborted = true;
       const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
       if (failed.length > 0) item.failed = failed;
       return;
     }
-    case "session_tools_ready":
+    case "tool_list_ready":
       // Informational record (the Session's resolved toolset); the chat view doesn't render it.
       return;
     case "compaction_begin": {

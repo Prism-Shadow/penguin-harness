@@ -831,8 +831,9 @@ describe("trace-service", () => {
       at(
         T("01.200"),
         mcpConnectEnd({
+          status: "completed",
           results: [
-            { server: "fx", transport: "stdio", status: "ok", duration_ms: 1150, tools: 3 },
+            { server: "fx", transport: "stdio", status: "completed", duration_ms: 1150, tools: 3 },
           ],
         }),
       ),

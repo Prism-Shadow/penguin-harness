@@ -436,7 +436,7 @@ const en: Messages = {
   mcpConnectStart: (servers) => `[mcp] connecting MCP servers (${servers.join(", ")})…`,
   mcpConnectStop: (durationMs, failed, aborted) =>
     aborted
-      ? "[mcp] connect interrupted (finishing in the background; reused on the next run)"
+      ? "[mcp] connect interrupted — reconnects on the next run"
       : failed.length === 0
         ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
@@ -669,7 +669,7 @@ const zh: Messages = {
   mcpConnectStart: (servers) => `[mcp] 正在连接 MCP Server（${servers.join("、")}）……`,
   mcpConnectStop: (durationMs, failed, aborted) =>
     aborted
-      ? "[mcp] 连接已中断（后台继续建立，下次运行时复用）"
+      ? "[mcp] 连接已中断，下次运行时重新连接"
       : failed.length === 0
         ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failed.join("、")}`,

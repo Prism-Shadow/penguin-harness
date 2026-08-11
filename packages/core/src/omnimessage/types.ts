@@ -95,8 +95,8 @@ export interface SessionMetaPayload {
   model_context_window: number | string;
   /** The system prompt actually used by this Session (the assembled result with environment placeholders already substituted). */
   system_prompt: string;
-  // The tool definitions were embedded here (`tools`) before the session_tools_ready split (see
-  // SessionToolsReadyPayload): the toolset is only known after MCP servers connect, and meta
+  // The tool definitions were embedded here (`tools`) before the tool_list_ready split (see
+  // ToolListReadyPayload): the toolset is only known after MCP servers connect, and meta
   // must not wait for that. Pre-split Traces still carry the field on disk; it is
   // deliberately not read anywhere anymore (explicit incompatibility — their tool record
   // is simply not displayed).
@@ -401,36 +401,45 @@ export interface SubagentPayload {
  * once per Session at the start of the first run — after the MCP servers (if any) have
  * connected and their tools were discovered. Split out of `session_meta` so Session
  * creation never blocks on MCP connects: the meta streams immediately and this event
- * follows once the toolset is known. Written to the Trace (and rewritten at the head of
- * each post-compaction file alongside `session_meta`) but not part of reload history —
- * live streams re-emit it on the next run, which is when frontends need the schemas.
+ * follows once the toolset is known. Written to the Trace right after the run's input
+ * (so it belongs to the new turn; also rewritten at the head of each post-compaction
+ * file alongside `session_meta`) but not part of reload history — live streams re-emit
+ * it on the next run, which is when frontends need the schemas.
  * Docs: /docs/omni-message § "event_msg".
  */
-export interface SessionToolsReadyPayload {
-  type: "session_tools_ready";
+export interface ToolListReadyPayload {
+  type: "tool_list_ready";
   tools: ToolDefinition[];
 }
 
-/** One MCP server's outcome inside `mcp_connect_end`; `duration_ms` covers connect + tool discovery. */
+/** Terminal status of the MCP connect phase (and of each server inside it) — the same style as `compaction_end.status`. */
+export type McpConnectStatus = "completed" | "failed" | "aborted";
+
+/** One MCP server's outcome inside `mcp_connect_end.results`; `duration_ms` covers that server's connect + tool discovery (individual servers have no messages of their own to derive it from). */
 export interface McpServerConnectResult {
   server: string;
   transport: "stdio" | "http" | "sse";
-  status: "ok" | "failed";
+  status: McpConnectStatus;
   duration_ms: number;
-  /** Number of tools discovered (present on ok). */
+  /** Number of tools discovered (present on completed). */
   tools?: number;
   /** Failure detail (present on failed). */
   error?: string;
 }
 
 /**
- * MCP connect boundary events, emitted around the first run's connect + discovery phase
- * and only when the Session has MCP Servers configured. The begin lists the servers being
- * contacted (frontends show a connecting status off it); the end carries per-server
- * outcomes and the total wall time (the Trace timeline renders the pair as a span).
- * Failures are per-server and non-fatal: an unreachable server is skipped — its tools are
- * absent — and the run continues. Streamed live and written to Trace; not part of reload
- * history (a transient status, unlike `session_tools_ready`).
+ * MCP connect boundary events: one pair around the first run's connect + discovery phase,
+ * emitted only when MCP Servers are configured. The begin lists the servers being
+ * contacted (frontends show a connecting status off it); the end carries the overall
+ * `status` (compaction_end-style) plus the per-server results — the phase's total wall
+ * time is the pair's timestamp difference (messages carry timestamps, so the payload
+ * records no duplicate duration). Failures are per-server and non-fatal: an unreachable
+ * server is skipped — its tools are absent — and the run continues. `status: "aborted"`
+ * means the user interrupted mid-connect: the attempt is cancelled and the next run
+ * reconnects from scratch. Streamed live; written to the Trace right after the run's
+ * input so the phase belongs to the new turn (an attempt aborted before the engine
+ * exists is live-only). Not part of reload history (a transient status, unlike
+ * `tool_list_ready`).
  * Docs: /docs/omni-message § "event_msg".
  */
 export interface McpConnectBeginPayload {
@@ -440,15 +449,10 @@ export interface McpConnectBeginPayload {
 
 export interface McpConnectEndPayload {
   type: "mcp_connect_end";
-  /** Per-server outcomes; the phase's total wall time is this message's timestamp minus the begin's (messages carry their own timestamps — no duplicate duration field). */
+  /** Overall terminal status: completed (every server connected) / failed (some server failed) / aborted (user interrupted). */
+  status: McpConnectStatus;
+  /** Per-server outcomes (empty on an aborted attempt — nothing settled is claimed). */
   results: McpServerConnectResult[];
-  /**
-   * True when the user aborted the run mid-connect: the pair closes with whatever was
-   * known (usually an empty `results`), the run ends without an engine, and the connect
-   * itself keeps completing in the background — the next run reuses it instead of
-   * reconnecting.
-   */
-  aborted?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,7 +488,7 @@ export type EventPayload =
   | CompactionEndPayload
   | GoalFinishedPayload
   | SubagentPayload
-  | SessionToolsReadyPayload
+  | ToolListReadyPayload
   | McpConnectBeginPayload
   | McpConnectEndPayload;
 

@@ -22,7 +22,7 @@ import {
   mcpConnectBegin,
   mcpConnectEnd,
   sessionMeta,
-  sessionToolsReady,
+  toolListReady,
 } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
@@ -52,20 +52,24 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's session_tools_ready event. */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
   /**
-   * Lazy session bootstrap, run once at the start of the first run (or first compaction):
-   * resolves the toolset — the Environment's first listTools connects any configured MCP
-   * Servers — and builds the session LLM from it; `mcp` carries the per-server connect
-   * outcomes for the mcp_connect_end event. Kept out of Session construction so creating
-   * a Session is instant and the connect wait streams as visible events instead.
+   * Lazy session bootstrap, run at the start of the first run: resolves the toolset —
+   * the Environment's first listTools connects any configured MCP Servers — and builds
+   * the session LLM from it; `mcp` carries the per-server connect outcomes for the
+   * mcp_connect_end event. Kept out of Session construction so creating a Session is
+   * instant and the connect wait streams as visible events instead. An aborted attempt
+   * is cancelled via `cancelBootstrap` — the next run calls this again and reconnects
+   * from scratch.
    */
   bootstrap: () => Promise<{
     tools: ToolDefinition[];
     llm: LLMInterface;
     mcp: McpServerConnectResult[];
   }>;
+  /** Cancels an in-flight bootstrap on user abort (the composition layer wires Environment.cancelMcpConnect). */
+  cancelBootstrap?: () => void;
   /** Names of the configured MCP Servers (config order): non-empty brackets the bootstrap in mcp_connect_begin/end events; empty emits none. */
   mcpServers: string[];
   environment: EnvironmentInterface;
@@ -185,18 +189,14 @@ export class Session {
 
   /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
   private engine: ContextEngine | null = null;
-  /**
-   * Single-flight bootstrap: started by the first `ensureReady`, shared by every later
-   * one. An abort mid-connect does NOT cancel it — the connect keeps completing in the
-   * background and the next run awaits the same promise instead of reconnecting. Only a
-   * rejection clears it, so a failed bootstrap (bad resume history, LLM construction)
-   * can be retried by a later run.
-   */
-  private bootstrapPromise: ReturnType<SessionConfig["bootstrap"]> | null = null;
   private readonly bootstrap: SessionConfig["bootstrap"];
+  private readonly cancelBootstrap: (() => void) | undefined;
   private readonly mcpServers: string[];
   /** Engine dependencies minus the LLM (which the bootstrap provides); kept whole so ensureReady can construct the engine late. */
-  private readonly engineDeps: Omit<ConstructorParameters<typeof ContextEngine>[0], "llm">;
+  private readonly engineDeps: Omit<
+    ConstructorParameters<typeof ContextEngine>[0],
+    "llm" | "toolList" | "bootstrapRecords"
+  >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
   private readonly meta: OmniMessage;
@@ -234,6 +234,7 @@ export class Session {
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
     this.bootstrap = config.bootstrap;
+    this.cancelBootstrap = config.cancelBootstrap;
     this.mcpServers = config.mcpServers;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
     // produced the LLM: everything else it needs is captured here.
@@ -242,7 +243,7 @@ export class Session {
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
       // Context compaction: new LLM factory + resolved settings + writes session_meta (and
-      // session_tools_ready) at the start of the new Trace file after splitting.
+      // tool_list_ready) at the start of the new Trace file after splitting.
       ...(config.createLLM ? { createLLM: config.createLLM } : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
@@ -326,64 +327,67 @@ export class Session {
   }
 
   /**
-   * First-run bootstrap: writes `session_meta`, resolves the toolset and builds the engine
-   * — streaming the phase as it happens. With MCP Servers configured, the connect +
-   * discovery wait is bracketed by `mcp_connect_begin` / `mcp_connect_end` (per-server
-   * outcomes and total wall time; the trace timeline renders the span, frontends show a
-   * connecting status). The resolved toolset then flows as one `session_tools_ready` event —
-   * split out of session_meta precisely so the meta never has to wait for this phase.
-   * All three are streamed live and written to the Trace best-effort (same stance as
-   * session_meta).
+   * First-run bootstrap: writes `session_meta`, resolves the toolset and builds the
+   * engine — streaming the phase as it happens. With MCP Servers configured, the connect
+   * + discovery wait is bracketed by one `mcp_connect_begin` / `mcp_connect_end` pair
+   * (overall status + per-server outcomes; the wall time is the pair's timestamp
+   * difference). The resolved toolset then flows as one `tool_list_ready` event — split
+   * out of session_meta precisely so the meta never has to wait for this phase.
    *
-   * Returns false when `signal` aborts mid-bootstrap: the pair closes with
-   * `aborted: true`, a standard abort event follows (frontends render the usual
-   * interruption line), and the caller ends the run — while the single-flight bootstrap
-   * keeps completing in the background so the next run reuses it instead of
-   * reconnecting. No-op returning true once the engine exists; a rejected bootstrap
-   * (unreadable resume history, LLM construction) throws to the caller and clears the
-   * single-flight, so a later run can retry.
+   * The three messages are yielded live here, but their Trace writes are DEFERRED to the
+   * engine (ContextEngineDeps.bootstrapRecords): the engine writes them right after this
+   * run's input, so the connect phase belongs to the new turn in the Trace — after the
+   * user's message — instead of dangling before it (their earlier timestamps keep the
+   * file chronological, since the input message was created before the connect began).
+   *
+   * Returns false when `signal` aborts mid-bootstrap: the attempt is CANCELLED
+   * (`cancelBootstrap` → the provider aborts pending connects and resets — the next run
+   * reconnects from scratch), the pair closes with `status: "aborted"`, and a standard
+   * abort event follows; nothing reaches the Trace (no engine exists — the aborted
+   * phase is live-only). No-op returning true once the engine exists; a rejected
+   * bootstrap (unreadable resume history, LLM construction) throws to the caller, and a
+   * later run retries with a fresh attempt.
    */
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
     await this.ensureMetaWritten();
     if (this.engine) return true;
+    const records: OmniMessage[] = [];
     if (this.mcpServers.length > 0) {
       const begin = mcpConnectBegin(this.mcpServers);
       yield begin;
-      await this.writeTrace(begin, "mcp_connect_begin");
+      records.push(begin);
     }
-    if (this.bootstrapPromise === null) {
-      const started = this.bootstrap();
-      // A rejection clears the single-flight for retry — and this handler also keeps an
-      // aborted-and-abandoned bootstrap from surfacing as an unhandled rejection.
-      started.catch(() => {
-        if (this.bootstrapPromise === started) this.bootstrapPromise = null;
-      });
-      this.bootstrapPromise = started;
-    }
-    const outcome = await raceAbort(this.bootstrapPromise, signal);
+    const work = this.bootstrap();
+    const outcome = await raceAbort(work, signal);
     if (outcome === "aborted") {
+      this.cancelBootstrap?.();
+      // The cancelled attempt settles on its own (rejection expected); keep it from
+      // surfacing as an unhandled rejection.
+      work.catch(() => {});
       if (this.mcpServers.length > 0) {
-        // The phase's wall time is the end message's timestamp minus the begin's — no
-        // duplicate duration field on the payload.
-        const end = mcpConnectEnd({ results: [], aborted: true });
-        yield end;
-        await this.writeTrace(end, "mcp_connect_end");
+        yield mcpConnectEnd({ status: "aborted", results: [] });
       }
-      const aborted = abortEvent("user");
-      yield aborted;
-      await this.writeTrace(aborted, "abort");
+      yield abortEvent("user");
       return false;
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
-      const end = mcpConnectEnd({ results: mcp });
+      const end = mcpConnectEnd({
+        status: mcp.some((r) => r.status !== "completed") ? "failed" : "completed",
+        results: mcp,
+      });
       yield end;
-      await this.writeTrace(end, "mcp_connect_end");
+      records.push(end);
     }
-    const toolsMsg = sessionToolsReady(tools);
+    const toolsMsg = toolListReady(tools);
     yield toolsMsg;
-    await this.writeTrace(toolsMsg, "session_tools_ready");
-    this.engine = new ContextEngine({ ...this.engineDeps, llm, sessionTools: toolsMsg });
+    records.push(toolsMsg);
+    this.engine = new ContextEngine({
+      ...this.engineDeps,
+      llm,
+      toolList: toolsMsg,
+      bootstrapRecords: records,
+    });
     return true;
   }
 

@@ -410,7 +410,7 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
       if (t === "compaction_begin") inCompaction = true;
       else if (t === "compaction_end") inCompaction = false;
       else if (t === "abort" && (msg.origin?.length ?? 0) === 0) renderMessages.push(msg);
-      // Other events (token_usage / approval_decision / session_tools_ready / mcp_connect_*,
+      // Other events (token_usage / approval_decision / tool_list_ready / mcp_connect_*,
       // etc.) don't participate in turn determination and stay out of the render view —
       // the bootstrap records are re-emitted live by the next run when they matter.
     }

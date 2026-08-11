@@ -92,7 +92,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
 
       const renderer = new StreamRenderer(out, t);
       // Tool schemas (each tool's call-line preview path) arrive on the stream as the
-      // first run's session_tools_ready event — the toolset isn't known before then (MCP
+      // first run's tool_list_ready event — the toolset isn't known before then (MCP
       // servers connect lazily); the renderer registers them as they flow by.
       try {
         if (goalBudget !== null) {

@@ -993,8 +993,7 @@ Scenarios:
       failed.length === 0
         ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
         : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failed.join(", ")}`,
-    mcpConnectAborted:
-      "[mcp] connect interrupted (finishing in the background; reused on the next send)",
+    mcpConnectAborted: "[mcp] connect interrupted — reconnects on the next send",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
     compactionDone: (mode: string) =>
       mode === "discard"
