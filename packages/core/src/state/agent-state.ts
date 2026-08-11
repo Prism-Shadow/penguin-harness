@@ -311,9 +311,9 @@ function indexForInjection(index: string): string {
 /**
  * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
  * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
- * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or the
- * config carries no Memory prompt. Both prompts are per-Agent config, editable on the Web
- * App's Memory tab.
+ * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or
+ * when every half that would render is emptied. Both prompts are per-Agent config, editable
+ * on the Web App's Memory tab.
  *
  * The two blocks are separate config keys because substitution has no conditionals: a
  * temporary Workspace must never be handed the Workspace scope's section (its directory line
@@ -332,9 +332,9 @@ function memorySection(
   if (!memory) return "";
   // Missing keys fall back to the built-in defaults — matching compaction and the config DTO —
   // so an Agent whose yaml predates Memory injects the very prompts the Memory tab shows it.
-  // An explicitly emptied prompt still disables the block (`??`, not `||`).
+  // An explicitly emptied half drops that half alone (`??`, not `||`): the two are edited
+  // independently on the Memory tab, so clearing one must never silence the other.
   const promptText = config?.prompt ?? DEFAULT_MEMORY_PROMPT;
-  if (!promptText) return "";
   const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
   const substituteUser = (text: string): string =>
     text.split(MEMORY_USER_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));

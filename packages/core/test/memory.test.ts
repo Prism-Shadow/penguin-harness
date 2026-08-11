@@ -410,6 +410,23 @@ describe("{{MEMORY}} rendering", () => {
     );
   });
 
+  it("keeps the Workspace half when the main prompt is explicitly emptied", async () => {
+    const state = await agentState();
+    const emptied: AgentState = {
+      ...state,
+      systemConfig: {
+        ...state.systemConfig,
+        memory: { ...state.systemConfig.memory, prompt: "" },
+      },
+    };
+    // The halves are edited independently on the Memory tab: clearing one never silences the
+    // other — the Workspace section still renders on its own with its index.
+    const prompt = assembleSystemPrompt(emptied, undefined, undefined, undefined, bothScopes);
+    expect(prompt).not.toContain(USER_LINE);
+    expect(prompt).toContain(WORKSPACE_LINE);
+    expect(prompt).toContain("Index:\n- [testing](testing-conventions.md) — how tests run");
+  });
+
   it("drops the Workspace half only for an explicitly emptied workspace_prompt", async () => {
     const state = await agentState();
     const emptied: AgentState = {
