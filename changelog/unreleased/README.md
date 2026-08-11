@@ -1,6 +1,6 @@
 # Unreleased
 
-- [2026-08-11] Core: the default system prompt's Tool-use section gains a web-search tip — DuckDuckGo's HTML endpoint via curl as the first stop, Google News RSS search as the news fallback (`-sGL`, a redirect quirk found by live-testing both commands); shipped as the first same-day revision through the kernel-version flow, so existing agents pick it up via Update kernel (#262, stacked on #260). ([details](2026-08-11-default-prompt-search-tip.md))
+- [2026-08-11] Core: the default system prompt's Tool-use section gains a web-search tip — DuckDuckGo's HTML endpoint via curl as the first stop, Google News RSS search as the news fallback (`-sGL`, a redirect quirk found by live-testing both commands), and a Playwright-browser escape hatch for DuckDuckGo's occasional CAPTCHA page; shipped as same-day revisions through the kernel-version flow, so existing agents pick it up via Update kernel (#262, stacked on #260). ([details](2026-08-11-default-prompt-search-tip.md))
 
 - [2026-08-11] Skills: new manual-install library skill `humanizer` — rewrites prose in any language into book/newspaper/encyclopedia register; a seven-principle drafting core backed by a 25-tell three-layer diagnostic catalog, six-language cues and a five-round measured case study as reference files; Office Productivity group, `preinstall: false` (#256). ([details](2026-08-11-humanizer-skill.md))
 
