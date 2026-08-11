@@ -593,9 +593,7 @@ export const zh = {
     valueRequired: "值不能为空",
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "注入保险柜小节",
-      enableHint:
-        "仅控制系统提示词注入：关闭后各键的值仍会注入 shell 子进程环境变量，只是模型看不到键名清单。",
+      enable: "启用密钥保险柜",
       templateMissing: "提示词模板中没有 {{VAULT}} 占位符，保险柜小节不会进入上下文。",
       legacyTemplate:
         "模板仍是旧版硬编码的 # Vault 段落：一键迁移会将该段落原位替换为 {{VAULT}} 占位符，措辞不变，此后可在下方编辑。",
@@ -658,9 +656,7 @@ export const zh = {
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "注入定时任务小节",
-      enableHint:
-        "仅控制系统提示词注入：关闭后 server 照常按计划触发任务，只是模型不了解定时任务体系、无法自行管理任务文件。",
+      enable: "启用定时任务",
       templateMissing: "提示词模板中没有 {{SCHEDULES}} 占位符，定时任务小节不会进入上下文。",
       insertPlaceholder: "插入 {{SCHEDULES}} 占位符",
       promptSection: "定时任务提示词",
@@ -747,9 +743,7 @@ export const zh = {
     importOverwriteAction: "覆盖安装",
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "注入技能小节",
-      enableHint:
-        "仅控制系统提示词注入：关闭后已安装技能仍可被 [use_skills] 显式调用，只是模型看不到技能清单。",
+      enable: "启用技能",
       templateMissing: "提示词模板中没有 {{SKILLS}} 占位符，技能小节不会进入上下文。",
       legacyTemplate:
         "模板仍是旧版硬编码的 # Skills 段落：一键迁移会将该段落原位替换为 {{SKILLS}} 占位符，措辞不变，此后可在下方编辑。",

@@ -2,6 +2,10 @@
  * Agent settings page "Schedule" tab: a table view over
  * agent_state/schedule/*.toml (status badge derived from run state; "next / last
  * fired" shown as two stacked rows) plus a shared create/edit modal form.
+ * Wrapping is controlled per column: compact cells (status, period, fire times,
+ * queue, actions) are nowrap, long text cells (name, target) truncate with the
+ * full value on hover, and the existing overflow-x-auto container takes over
+ * below the table's min width.
  * Readable by any member; toggle/edit/delete are owner-only — PUT has whole-file
  * replace semantics, so toggling also resends every field and only flips `enabled`.
  * startAt/endAt use datetime-local inputs (local timezone), converted to ISO 8601 on
@@ -445,15 +449,15 @@ export function SchedulesTab({
         <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.schedule.empty}</p>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
-                <th className="px-3 py-2.5">{S.common.name}</th>
-                <th className="px-3 py-2.5">{S.schedule.colStatus}</th>
-                <th className="px-3 py-2.5">{S.schedule.colPeriod}</th>
-                <th className="px-3 py-2.5">{S.schedule.colTarget}</th>
-                <th className="px-3 py-2.5">{S.schedule.colFireTimes}</th>
-                <th className="px-3 py-2.5">{S.schedule.colQueued}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.common.name}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colStatus}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colPeriod}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colTarget}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colFireTimes}</th>
+                <th className="whitespace-nowrap px-3 py-2.5">{S.schedule.colQueued}</th>
                 {isOwner && <th className="px-3 py-2.5" />}
               </tr>
             </thead>
@@ -463,8 +467,11 @@ export function SchedulesTab({
                   key={item.name}
                   className="border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
                 >
-                  <td className="px-3 py-2 font-mono text-xs">{item.name}</td>
-                  <td className="px-3 py-2">
+                  {/* Long text columns truncate with the full value on hover instead of wrapping. */}
+                  <td className="max-w-40 truncate px-3 py-2 font-mono text-xs" title={item.name}>
+                    {item.name}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
                     {/* invalid reason is folded into the hover title. */}
                     <span title={item.invalidReason}>
                       <Badge tone={STATUS_TONE[item.status]}>
@@ -472,7 +479,7 @@ export function SchedulesTab({
                       </Badge>
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                     {item.period !== undefined ? (
                       <span className="font-mono">{item.period}</span>
                     ) : (
@@ -489,8 +496,9 @@ export function SchedulesTab({
                       S.schedule.newSession
                     )}
                   </td>
-                  {/* Top row: next fire time; bottom row: last fired time (both show — when absent). */}
-                  <td className="px-3 py-2 text-xs">
+                  {/* Deliberate two-line stack — top: next fire time; bottom: last fired time
+                      (both show — when absent); nowrap keeps each line whole. */}
+                  <td className="whitespace-nowrap px-3 py-2 text-xs">
                     <span className="block text-gray-600 dark:text-gray-300">
                       {item.nextFireAt ? formatDateTime(item.nextFireAt) : "—"}
                     </span>
@@ -498,7 +506,7 @@ export function SchedulesTab({
                       {item.lastFiredAt ? formatDateTime(item.lastFiredAt) : "—"}
                     </span>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2">
                     {item.queued && <Badge tone="brand">{S.schedule.queued}</Badge>}
                   </td>
                   {isOwner && (

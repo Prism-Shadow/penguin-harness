@@ -626,9 +626,7 @@ export const en: Strings = {
     valueRequired: "Value must not be empty",
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "Inject vault section",
-      enableHint:
-        "Controls prompt injection only: with it off, values are still injected into shell subprocess environments — the model just doesn't see the key-name list.",
+      enable: "Enable vault",
       templateMissing:
         "The prompt template has no {{VAULT}} placeholder, so the vault section never enters the context.",
       legacyTemplate:
@@ -696,9 +694,7 @@ export const en: Strings = {
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "Inject schedules section",
-      enableHint:
-        "Controls prompt injection only: with it off, the server still fires tasks on schedule — the model just isn't taught the task system and cannot manage task files itself.",
+      enable: "Enable schedules",
       templateMissing:
         "The prompt template has no {{SCHEDULES}} placeholder, so the scheduled-tasks section never enters the context.",
       insertPlaceholder: "Insert the {{SCHEDULES}} placeholder",
@@ -791,9 +787,7 @@ export const en: Strings = {
     importOverwriteAction: "Overwrite",
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
-      enable: "Inject skills section",
-      enableHint:
-        "Controls prompt injection only: with it off, installed skills can still be invoked explicitly via [use_skills] — the model just doesn't see the skill roster.",
+      enable: "Enable skills",
       templateMissing:
         "The prompt template has no {{SKILLS}} placeholder, so the skills section never enters the context.",
       legacyTemplate:

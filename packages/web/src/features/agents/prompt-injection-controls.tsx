@@ -1,11 +1,13 @@
 /**
  * Shared prompt-injection controls for the Skills / Vault / Schedules tabs, mirroring the
- * Memory tab's layout: an enable-switch card that writes immediately (so toggling never drags
- * an unfinished prompt edit along), an amber alert when the template lacks the feature's
- * section placeholder — with one-click insert, or one-click migration when the template still
- * carries the legacy hardcoded section — and an editable prompt section (mono textarea +
- * placeholder-chip reference + confirm-first save). The toggle and prompt govern prompt
- * injection only; each feature's `enableHint` states what still works with it off.
+ * Memory tab's layout: an enable-switch card (label + switch, the memory tab's exact card
+ * shape) that writes immediately (so toggling never drags an unfinished prompt edit along),
+ * an amber alert when the template lacks the feature's section placeholder — with one-click
+ * insert, or one-click migration when the template still carries the legacy hardcoded
+ * section — and an editable prompt section (mono textarea + placeholder-chip reference +
+ * confirm-first save). The toggle and prompt govern prompt injection only — the feature
+ * itself keeps working with the switch off (vault values still reach subprocesses, tasks
+ * still fire, skills stay invocable).
  *
  * Exposed as a hook returning render slots (the useSaveConfirm convention) because the pieces
  * straddle the host tab's own content: the switch and alert sit above it, the prompt editor
@@ -36,7 +38,6 @@ export type PromptInjectionFeature = "skills" | "vault" | "schedules";
 /** The strings each feature section supplies (S.skills / S.vault / S.schedule); migrate/legacyTemplate exist only where a legacy hardcoded section does. */
 interface PromptInjectionStrings {
   enable: string;
-  enableHint: string;
   templateMissing: string;
   legacyTemplate?: string;
   insertPlaceholder: string;
@@ -179,10 +180,7 @@ export function usePromptInjection({
 
   const toggleCard = state !== null && (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
-      <div>
-        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{strings.enable}</p>
-        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{strings.enableHint}</p>
-      </div>
+      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{strings.enable}</p>
       <Switch
         checked={state.enabled}
         onChange={(v) => void toggleEnabled(v)}
