@@ -1000,15 +1000,18 @@ Scenarios:
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP connect",
     mcpServerList: (servers: string[]): string => servers.join(", "),
-    /** One-line result detail: tool count when any, per-server failure reasons on the same line. */
-    mcpConnectResult: (toolCount: number, failedDetails: string[]): string => {
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failedDetails.length === 0) {
+      if (toolCount > 0 || failed.length === 0) {
         parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
       }
-      parts.push(...failedDetails);
+      if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
       return parts.join("; ");
     },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
+    mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: "Compaction",
     compactionDone: (mode: string) =>

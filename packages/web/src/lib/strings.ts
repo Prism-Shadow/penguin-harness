@@ -979,13 +979,16 @@ Benchmark：
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",
     mcpServerList: (servers: string[]): string => servers.join("、"),
-    /** One-line result detail: tool count when any, per-server failure reasons on the same line. */
-    mcpConnectResult: (toolCount: number, failedDetails: string[]): string => {
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
       const parts: string[] = [];
-      if (toolCount > 0 || failedDetails.length === 0) parts.push(`发现 ${toolCount} 个工具`);
-      parts.push(...failedDetails);
+      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
       return parts.join("；");
     },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} 个工具`,
+    mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
     compactionTitle: "压缩",
     compactionDone: (mode: string): string =>

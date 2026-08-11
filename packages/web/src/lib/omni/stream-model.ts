@@ -58,6 +58,7 @@ import type {
   CompactionReason,
   CompleteModelPayload,
   EventPayload,
+  McpConnectStatus,
   OmniMessage,
   PartialModelPayload,
   SessionMetaPayload,
@@ -264,6 +265,18 @@ export interface McpToolSummary {
   description?: string;
 }
 
+/** One server's connect outcome (from the end payload), backing the row's per-server groups. */
+export interface McpServerOutcome {
+  server: string;
+  status: McpConnectStatus;
+  /** That server's own connect + discovery time (the payload's duration_ms). */
+  durationMs: number;
+  /** Discovered tool count (present on a completed connect). */
+  tools?: number;
+  /** Failure detail (present on a failed connect). */
+  error?: string;
+}
+
 export interface McpConnectItem {
   kind: "mcp_connect";
   id: number;
@@ -277,12 +290,12 @@ export interface McpConnectItem {
   durationMs?: number;
   /** MCP tools discovered across connected servers (sum of the end results' counts). */
   toolCount?: number;
+  /** Per-server outcomes (the end payload's results), one expandable group each. */
+  results?: McpServerOutcome[];
   /** Discovered MCP tools (attached by the tool_list_ready that follows the end). */
   tools?: McpToolSummary[];
-  /** Servers that failed to connect (empty list omitted). */
+  /** Servers that failed to connect (empty list omitted); reasons live in `results`. */
   failed?: string[];
-  /** Per-server failure details ("server: error"), for the result line. */
-  failedDetails?: string[];
   /** The user aborted the run mid-connect (a fresh connect starts on the next send). */
   aborted?: boolean;
 }
@@ -1367,13 +1380,17 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (p.status === "aborted") item.aborted = true;
       // Headline count for the connect row: MCP tools discovered across connected servers.
       item.toolCount = p.results.reduce((sum, r) => sum + (r.tools ?? 0), 0);
+      // Per-server outcomes back the row's server groups (error details live there, not
+      // on the header line).
+      item.results = p.results.map((r) => ({
+        server: r.server,
+        status: r.status,
+        durationMs: r.duration_ms,
+        ...(r.tools !== undefined ? { tools: r.tools } : {}),
+        ...(r.error !== undefined ? { error: r.error.slice(0, 500) } : {}),
+      }));
       const failedResults = p.results.filter((r) => r.status === "failed");
-      if (failedResults.length > 0) {
-        item.failed = failedResults.map((r) => r.server);
-        item.failedDetails = failedResults.map(
-          (r) => `${r.server}: ${(r.error ?? "").slice(0, 200) || "unknown error"}`,
-        );
-      }
+      if (failedResults.length > 0) item.failed = failedResults.map((r) => r.server);
       return;
     }
     case "tool_list_ready": {

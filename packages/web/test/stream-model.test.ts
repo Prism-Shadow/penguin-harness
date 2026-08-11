@@ -505,7 +505,7 @@ describe("approvals and events", () => {
     expect(banner.durationMs).toBe(4500);
   });
 
-  it("mcp connect row: end sums the discovered-tool count, keeps one-line failure details, and derives the wall time", () => {
+  it("mcp connect row: end sums the discovered-tool count, keeps per-server outcomes, and derives the wall time", () => {
     const m = createStreamModel();
     pushMessage(m, at(mcpConnectBegin(["fx", "bad"]), "2026-01-01T00:00:00.000Z"));
     const row = items(m)[0] as McpConnectItem;
@@ -533,7 +533,11 @@ describe("approvals and events", () => {
     expect(row.durationMs).toBe(1200);
     expect(row.toolCount).toBe(2);
     expect(row.failed).toEqual(["bad"]);
-    expect(row.failedDetails).toEqual(["bad: spawn nope ENOENT"]);
+    // Per-server outcomes back the expanded server groups (failure reasons live there).
+    expect(row.results).toEqual([
+      { server: "fx", status: "completed", durationMs: 180, tools: 2 },
+      { server: "bad", status: "failed", durationMs: 60, error: "spawn nope ENOENT" },
+    ]);
   });
 
   it("tool_list_ready attaches the MCP share of the toolset to the connect row (built-ins filtered out)", () => {

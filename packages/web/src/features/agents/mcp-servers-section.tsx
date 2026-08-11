@@ -261,23 +261,9 @@ export function McpServersSection({
 
   return (
     <div className="space-y-4">
-      {/* Header row: description left, bulk test at the right edge (the models group-header idiom). */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
-        </div>
-        {servers.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="shrink-0"
-            disabled={busy || testAllRunning}
-            onClick={() => setTestAllOpen(true)}
-          >
-            {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
-          </Button>
-        )}
+      <div>
+        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
       </div>
 
       {servers.length === 0 ? (
@@ -292,7 +278,17 @@ export function McpServersSection({
                 <th className="px-3 py-2.5">{S.agent.mcpTarget}</th>
                 {/* Bulk-test badge column appears only once results exist (no headline). */}
                 {showBadges && <th className="px-3 py-2.5" />}
-                <th className="px-3 py-2.5" />
+                {/* Bulk test lives in the table's own header bar, over the actions column. */}
+                <th className="px-3 py-1 text-right font-normal whitespace-nowrap">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || testAllRunning}
+                    onClick={() => setTestAllOpen(true)}
+                  >
+                    {testAllRunning ? S.agent.mcpTestPending : S.agent.mcpTest}
+                  </Button>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -357,7 +353,18 @@ export function McpServersSection({
       >
         {form && (
           <div className="space-y-3">
-            {/* Entry-level actions pinned at the top — the models dialog idiom: a standalone
+            {/* Transport first, as tab-style switches — the choice decides every field below. */}
+            <div className="space-y-1">
+              <Segmented
+                options={transportOptions}
+                value={form.transport}
+                onChange={(v) => patchForm({ transport: v })}
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {transportHints[form.transport]}
+              </p>
+            </div>
+            {/* Entry-level action right under the tabs — the models dialog idiom: a standalone
                 test button, enabled once the target (command / url) is filled in; the result
                 pops as a toast. */}
             <div className="flex flex-wrap items-center gap-2">
@@ -368,17 +375,6 @@ export function McpServersSection({
               >
                 {testing ? S.agent.mcpTesting : S.agent.mcpTest}
               </Button>
-            </div>
-            {/* Transport next, as tab-style switches — the choice decides every field below. */}
-            <div className="space-y-1">
-              <Segmented
-                options={transportOptions}
-                value={form.transport}
-                onChange={(v) => patchForm({ transport: v })}
-              />
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                {transportHints[form.transport]}
-              </p>
             </div>
             <Input
               size="sm"
