@@ -381,7 +381,8 @@ export class Session {
     }
     const toolsMsg = toolListReady(tools);
     yield toolsMsg;
-    records.push(toolsMsg);
+    // toolsMsg rides as `toolList` alone (first-run write + rotation rewrite); the
+    // records array carries only the connect pair — one message, one carrier.
     this.engine = new ContextEngine({
       ...this.engineDeps,
       llm,

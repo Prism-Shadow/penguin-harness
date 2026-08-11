@@ -204,14 +204,21 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
-  /** This Session's tool_list_ready event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
+  /**
+   * This Session's tool_list_ready event (the resolved toolset). Written once right after
+   * the first run's input (following `bootstrapRecords`), and rewritten right after
+   * sessionMeta on each post-compaction Trace file — every file's tool record stays
+   * self-contained. Held here alone; deliberately NOT part of `bootstrapRecords`, so the
+   * one message isn't carried twice.
+   */
   toolList?: OmniMessage;
   /**
-   * The first run's bootstrap records (mcp_connect pair + tool_list_ready), written once
-   * right AFTER that run's input messages — so the connect phase lands inside the new
-   * turn in the Trace, after the user's message (their timestamps precede the write; the
-   * file stays chronologically consistent because the input message was created before
-   * the connect began). Streaming already yielded them live before the engine existed.
+   * The first run's mcp_connect begin/end pair (empty without MCP), written once right
+   * AFTER that run's input messages — followed by `toolList` — so the connect phase lands
+   * inside the new turn in the Trace, after the user's message (their timestamps precede
+   * the write; the file stays chronologically consistent because the input message was
+   * created before the connect began). Streaming already yielded them live before the
+   * engine existed. Present (possibly empty) marks "first-run records still owed".
    */
   bootstrapRecords?: OmniMessage[];
   /**
@@ -573,10 +580,11 @@ export class ContextEngine {
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
     if (this.pendingBootstrapRecords) {
-      // First run only: the bootstrap records follow the input into the Trace (see
-      // ContextEngineDeps.bootstrapRecords for the ordering rationale).
+      // First run only: the connect pair, then the toolset record, follow the input into
+      // the Trace (see ContextEngineDeps.bootstrapRecords for the ordering rationale).
       for (const msg of this.pendingBootstrapRecords) await this.write(msg);
       this.pendingBootstrapRecords = null;
+      if (this.deps.toolList) await this.write(this.deps.toolList);
     }
 
     if (signal?.aborted) {
