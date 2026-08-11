@@ -79,6 +79,7 @@ describe("example benchmark provisioning", () => {
     expect(config.title).toBe("Example Benchmark");
     expect(String(config.description)).toContain("built-in example");
     expect(String(config.description)).toContain("Replace it with your own");
+    expect(config.role).toBe("general");
     expect(Number(config.runs)).toBe(2);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");

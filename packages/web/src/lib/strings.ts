@@ -692,37 +692,50 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "确认两者都检索到了正确的英文文档、流式回答正常，并告诉我访问方式。",
       },
       agentBenchmarkBuild: {
-        label: "构建通用决策智能体和评测基准",
-        desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
+        label: "构建通用决策智能体和双评测集",
+        desc: "创建通用决策 Agent，并建立相互隔离的开发集与晋升集",
+        prompt: `请在这个 Builder Session 中先使用 \`agent-creation\` 创建决策 Agent，再分别使用 \`benchmark-design\` 建立并冻结一对 Benchmark；两个 Benchmark 都要有自己的 Formal Baseline，并绑定同一个初始 Agent State 版本和同一评测 Runtime。
 
 Agent：
 - id：\`finite_choice_agent\`
 - 能力：面对有限选项，在公开信息不足或冲突时仍能给出稳定、可解释的选择
 - installed_skills：\`[]\`
 
-Benchmark：
-- id：\`contextual-choice-adaptation\`
+Development Benchmark：
+- id：\`contextual-choice-development\`
+- role：\`development\`
+- paired_benchmark_id：\`contextual-choice-promotion\`
+
+Promotion Benchmark：
+- id：\`contextual-choice-promotion\`
+- role：\`promotion\`
+- paired_benchmark_id：\`contextual-choice-development\`
+
+两者共同设置：
 - capability：从公开规则、历史案例和当前事实中形成并迁移稳定的有限选择决策过程
 - desired_baseline_score：\`<75\`
 - pilot_iteration_limit：\`5\`
 
-场景：
+能力场景池：
 1. 根据历史比赛与当前信息进行足球投注决策。
 2. 根据售后政策与工单事实选择处置动作。
-3. 根据投资策略、历史市场与当前指标选择投资动作。`,
+3. 根据投资策略、历史市场与当前指标选择投资动作。
+
+请把具体实例拆成不重叠的 Development 与 Promotion Cases；不得让 Promotion 的 Case、Rubric、分数或 Trace 进入后续 Optimizer 上下文。Formal Baseline 记录写入 \`evaluation_kind: formal_baseline\`。完成后只报告两个 Benchmark 的 id、角色、配对关系、共同版本与 Runtime，不泄露私有 Rubric。`,
       },
       agentOptimization: {
         label: "优化通用决策智能体的准确率",
-        desc: "根据已有评测结果改进 Agent，并验证新版本是否真正提升",
-        prompt: `请使用 \`agent-optimization\`，根据 Frozen Benchmark 优化决策 Agent。
+        desc: "只用开发集改进 Agent，产出一个待独立晋升验证的候选版本",
+        prompt: `请使用 \`agent-optimization\`，只根据 Frozen Development Benchmark 优化决策 Agent。不要查找、读取或推断任何 Promotion Benchmark；本 Session 只负责产出 Development-accepted Candidate，不得声称已经生产晋升。
 
 - test_agent_id：\`finite_choice_agent\`
-- benchmark_id：\`contextual-choice-adaptation\`
+- benchmark_id：\`contextual-choice-development\`
 - capability_direction：提高信息不完整、规则冲突和有限选项决策中的稳定性
 - runs：\`3\`
 - desired_score：\`>=95\`
-- candidate_round_limit：\`5\``,
+- candidate_round_limit：\`5\`
+
+给每条接受记录写入 \`evaluation_kind: development_candidate\`、本顶层 Session 的 \`optimization_session_id\` 和优化开始前的 \`production_reference_version\`。结束时明确报告这三个字段、最终 \`candidate_version\`、Development Benchmark id、评测 Runtime 与生产恢复 Snapshot 路径；然后停止，等待新的独立 Promotion Validator Session。`,
       },
     },
     sessionList: "Session",
@@ -1109,6 +1122,40 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    colStatus: "状态",
+    roleGeneral: "通用",
+    roleDevelopment: "开发集",
+    rolePromotion: "晋升集",
+    statusBaseline: "基线",
+    statusDevelopment: "开发已接受",
+    statusPromoted: "已晋升",
+    statusRestored: "已回滚",
+    statusEvaluation: "普通评测",
+    activeVersion: (version: number): string => `活动 v${version}`,
+    productionVersion: (version: number): string => `生产 v${version}`,
+    promotionPending: "待晋升验证",
+    startPromotion: "开始晋升验证",
+    promotionPrompt: (input: {
+      testAgentId: string;
+      optimizationSessionId: string;
+      candidateVersion: number;
+      productionReferenceVersion: number;
+      promotionBenchmarkId: string;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+    }): string => `请作为独立的 Promotion Validator 执行一次晋升验证。不要读取或推断 Development Benchmark、原 Optimizer 的诊断或私有 Trace，也不要修改 Candidate。
+
+- test_agent_id：\`${input.testAgentId}\`
+- optimization_session_id：\`${input.optimizationSessionId}\`
+- candidate_version：\`${input.candidateVersion}\`
+- production_reference_version：\`${input.productionReferenceVersion}\`
+- promotion_benchmark_id：\`${input.promotionBenchmarkId}\`
+- provider：\`${input.provider}\`
+- model_id：\`${input.modelId}\`
+- thinking_level：\`${input.thinkingLevel}\`
+
+先验证生产 Reference 的 \`snapshots/v${input.productionReferenceVersion}.tar.gz\`。在第一个 held-out 单元启动前，确保 Candidate 的 \`snapshots/v${input.candidateVersion}.tar.gz\` 存在且归档版本与当前 State 一致；缺失时原子创建，已有时不得覆盖。随后对 Promotion Benchmark 的每个 Case 仅运行一次，并把每个单元委派给使用 \`agent-evaluation\` 的子 Agent；用该 Benchmark 中生产 Reference 的最新有效记录作对照。矩阵完整有效后，先向 Promotion Scoreboard 追加并校验结构化记录：\`evaluation_kind: promotion_candidate\`、上述批次与版本字段，以及 \`promotion_decision: promoted | restored\`，再决定保留 Candidate 或从生产 Snapshot 恢复并验证。\`isolation_violated\` 不得记为零分：立即终止、恢复生产版本并隔离污染 Trace。一个 optimization_session_id 只能完成这一次晋升矩阵；不得改提同批次其他版本，也不得把 held-out 证据送回原 Optimizer。`,
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

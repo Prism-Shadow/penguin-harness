@@ -23,10 +23,13 @@ describe("draft example tasks", () => {
       buildPrompt: zh.chat.exampleTasks.agentBenchmarkBuild.prompt,
       optimizationPrompt: zh.chat.exampleTasks.agentOptimization.prompt,
       buildMarkers: [
-        "依次使用 `agent-creation` 和 `benchmark-design`",
+        "先使用 `agent-creation`",
         "id：`finite_choice_agent`",
         "installed_skills：`[]`",
-        "id：`contextual-choice-adaptation`",
+        "id：`contextual-choice-development`",
+        "id：`contextual-choice-promotion`",
+        "role：`development`",
+        "role：`promotion`",
         "desired_baseline_score：`<75`",
         "pilot_iteration_limit：`5`",
         "足球投注决策",
@@ -37,11 +40,13 @@ describe("draft example tasks", () => {
       optimizationMarkers: [
         "使用 `agent-optimization`",
         "test_agent_id：`finite_choice_agent`",
-        "benchmark_id：`contextual-choice-adaptation`",
+        "benchmark_id：`contextual-choice-development`",
         "提高信息不完整、规则冲突和有限选项决策中的稳定性",
         "runs：`3`",
         "desired_score：`>=95`",
         "candidate_round_limit：`5`",
+        "optimization_session_id",
+        "production_reference_version",
       ],
     },
     {
@@ -49,10 +54,13 @@ describe("draft example tasks", () => {
       buildPrompt: en.chat.exampleTasks.agentBenchmarkBuild.prompt,
       optimizationPrompt: en.chat.exampleTasks.agentOptimization.prompt,
       buildMarkers: [
-        "Use `agent-creation` followed by `benchmark-design`",
+        "first use `agent-creation`",
         "id: `finite_choice_agent`",
         "installed_skills: `[]`",
-        "id: `contextual-choice-adaptation`",
+        "id: `contextual-choice-development`",
+        "id: `contextual-choice-promotion`",
+        "role: `development`",
+        "role: `promotion`",
         "desired_baseline_score: `<75`",
         "pilot_iteration_limit: `5`",
         "football betting decisions",
@@ -63,15 +71,17 @@ describe("draft example tasks", () => {
       optimizationMarkers: [
         "Use `agent-optimization`",
         "test_agent_id: `finite_choice_agent`",
-        "benchmark_id: `contextual-choice-adaptation`",
+        "benchmark_id: `contextual-choice-development`",
         "improve stability under incomplete information, conflicting rules, and finite choices",
         "runs: `3`",
         "desired_score: `>=95`",
         "candidate_round_limit: `5`",
+        "optimization_session_id",
+        "production_reference_version",
       ],
     },
   ])(
-    "$locale preserves the two-session agent evolution contract",
+    "$locale preserves the Builder and Optimizer sides of the three-session contract",
     ({
       buildPrompt,
       optimizationPrompt,
@@ -98,8 +108,9 @@ describe("draft example tasks", () => {
       expect(normalizedOptimization).not.toContain("run_subagent");
       expect(normalizedBuild).not.toContain("Scoreboard");
       expect(normalizedOptimization).not.toContain("Scoreboard");
-      expect(normalizedBuild.length).toBeLessThan(1600);
-      expect(normalizedOptimization.length).toBeLessThan(600);
+      expect(normalizedOptimization).not.toContain("contextual-choice-promotion");
+      expect(normalizedBuild.length).toBeLessThan(2200);
+      expect(normalizedOptimization.length).toBeLessThan(1200);
       expect(normalizedBuild).not.toContain("Phase 1");
       expect(normalizedOptimization).not.toContain("Phase 3");
     },

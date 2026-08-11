@@ -118,7 +118,7 @@ describe("benchmarks api", () => {
     );
     await fs.writeFile(
       path.join(dir, "benchmark_config.toml"),
-      `title = "SWE Bench v2"\ndescription = "Example"\nruns = 2\n`,
+      `title = "SWE Bench v2"\ndescription = "Example"\nrole = "development"\npaired_benchmark_id = "swe-bench-promotion"\nruns = 2\n`,
       "utf8",
     );
     await fs.writeFile(
@@ -130,6 +130,9 @@ describe("benchmarks api", () => {
         '    provider: "deepseek"',
         '    model_id: "deepseek-v4-pro"',
         '    thinking_level: "medium"',
+        '    evaluation_kind: "development_candidate"',
+        '    optimization_session_id: "session-optimizer-1"',
+        "    production_reference_version: 1",
         '    summary_title: "Added planning steps to the system Prompt"',
         '    summary: "Each case run twice and averaged; added planning steps."',
         "    score: 72.35",
@@ -174,6 +177,8 @@ describe("benchmarks api", () => {
       id: "swe-bench-v2",
       title: "SWE Bench v2",
       description: "Example",
+      role: "development",
+      pairedBenchmarkId: "swe-bench-promotion",
       runs: 2,
       caseCount: 2,
     });
@@ -185,6 +190,9 @@ describe("benchmarks api", () => {
     expect(evaluation.provider).toBe("deepseek");
     expect(evaluation.modelId).toBe("deepseek-v4-pro");
     expect(evaluation.thinkingLevel).toBe("medium");
+    expect(evaluation.evaluationKind).toBe("development_candidate");
+    expect(evaluation.optimizationSessionId).toBe("session-optimizer-1");
+    expect(evaluation.productionReferenceVersion).toBe(1);
     expect(evaluation.summaryTitle).toBe("Added planning steps to the system Prompt");
     expect(evaluation.summary).toBe("Each case run twice and averaged; added planning steps.");
     expect(evaluation.score).toBe(72.35);
@@ -298,6 +306,51 @@ describe("benchmarks api", () => {
     ).toBe(400);
     expect((await outsider.get(`${base}/swe-bench-v2/cases`)).status).toBe(404);
     expect((await outsider.get(filesBase)).status).toBe(404);
+  });
+
+  it("defaults old configs to general and drops invalid optional workflow metadata", async () => {
+    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "legacy-general");
+    await fs.mkdir(path.join(dir, "CASE-001", "statement"), { recursive: true });
+    await fs.mkdir(path.join(dir, "CASE-001", "rubric"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "benchmark_config.toml"),
+      'title = "Legacy"\nrole = "wrong"\n',
+    );
+    await fs.writeFile(
+      path.join(dir, "scoreboard.yaml"),
+      [
+        "evaluations:",
+        '  - time: "2026-07-16T10:00:00Z"',
+        "    version: 1",
+        '    provider: "openai"',
+        '    model_id: "test"',
+        '    thinking_level: "medium"',
+        '    evaluation_kind: "unknown"',
+        "    production_reference_version: 0",
+        '    promotion_decision: "maybe"',
+        "    score: 50",
+        "    cost: null",
+        "    duration_ms: 1",
+        "    cases:",
+        '      - case: "CASE-001"',
+        "        score: 50",
+        "        cost: null",
+        "        duration_ms: 1",
+        "        runs:",
+        "          - score: 50",
+        "            cost: null",
+        "            duration_ms: 1",
+        '            session_id: "session-1"',
+      ].join("\n"),
+    );
+
+    const res = (await (await owner.get(base)).json()) as BenchmarksResponse;
+    const bench = res.benchmarks.find((item) => item.id === "legacy-general")!;
+    expect(bench.role).toBe("general");
+    expect(bench.evaluations).toHaveLength(1);
+    expect(bench.evaluations[0]).not.toHaveProperty("evaluationKind");
+    expect(bench.evaluations[0]).not.toHaveProperty("productionReferenceVersion");
+    expect(bench.evaluations[0]).not.toHaveProperty("promotionDecision");
   });
 
   it("does not migrate or backfill legacy Scoreboard entries", async () => {

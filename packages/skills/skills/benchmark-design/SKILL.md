@@ -3,8 +3,8 @@ name: benchmark-design
 description: Design and calibrate a multi-Case capability Benchmark and establish a traceable Formal Baseline.
 short_description: Design and calibrate an Agent capability Benchmark.
 short_description_zh: 设计并校准 Agent 能力评测 Benchmark。
-version: 8
-updated: 2026-08-11T09:11:32Z
+version: 9
+updated: 2026-08-11T09:35:10Z
 ---
 
 # Benchmark Design
@@ -15,7 +15,9 @@ This Skill changes the Benchmark, never the Test Agent. It does not run or score
 
 ## Before you start
 
-If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. When they are already supplied, proceed without asking the user to restate them. Treat the current Agent as the **Builder**. A user-specified evaluation `(provider, model_id)` takes priority; otherwise inherit the current Builder Session's complete `Provider` and `Model ID` from the Environment. Never use a Project default as an implicit evaluation runtime.
+If the request does not identify a Test Agent, target capability, desired baseline score, and Pilot iteration limit, ask for the missing inputs. Accept an optional Benchmark `role` (`general`, `development`, or `promotion`) and optional `paired_benchmark_id`; default the role to `general` when omitted. When required inputs are already supplied, proceed without asking the user to restate them. Treat the current Agent as the **Builder**. A user-specified evaluation `(provider, model_id)` takes priority; otherwise inherit the current Builder Session's complete `Provider` and `Model ID` from the Environment. Never use a Project default as an implicit evaluation runtime.
+
+When one request explicitly asks this Builder to establish a paired Development and Promotion set, run this complete workflow once per Benchmark in sequence, with separate Cases, calibration state, Freeze, and Formal Baseline. Bind both to the same initial Test Agent version and evaluation Runtime, then stop after both Baselines. Do not mix their Cases or results and do not begin optimization.
 
 ## Workflow
 
@@ -72,7 +74,7 @@ Each Case contains:
 
 Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
 
-Create `benchmark_config.toml` with `title`, `description`, and `runs = 1`. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. Initialize `scoreboard.yaml` with `evaluations: []`.
+Create `benchmark_config.toml` with `title`, `description`, `role`, and `runs = 1`. Add `paired_benchmark_id` when supplied. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. Initialize `scoreboard.yaml` with `evaluations: []`. These fields identify workflow intent only: a `promotion` role does not reveal or authorize access to its Cases from another Session.
 
 Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
 
@@ -177,6 +179,7 @@ evaluations:
     provider: <provider>
     model_id: <model_id>
     thinking_level: <thinking_level>
+    evaluation_kind: formal_baseline
     summary_title: >-
       <public title>
     summary: >-

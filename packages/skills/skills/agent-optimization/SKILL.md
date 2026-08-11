@@ -3,8 +3,8 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 11
-updated: 2026-08-11T09:11:32Z
+version: 12
+updated: 2026-08-11T09:35:10Z
 ---
 
 # Agent Optimization
@@ -20,6 +20,8 @@ If the request does not identify the Test Agent, frozen Benchmark, desired targe
 Require an explicit Test Agent, a frozen Benchmark with a complete valid Formal Baseline, a desired target score, a positive `runs` value, and a positive round limit. `runs` is the number of Runs per Case for every Candidate in this optimization Session. Freeze it for the Session; do not infer it from `benchmark_config.toml` or the Formal Baseline. Read the evaluation `(provider, model_id, thinking_level)` from the complete Evaluation that matches the current Agent State; do not require the user to repeat it. An Evaluation without any part of this runtime is incomplete and cannot be used as a Reference. The top-level Session must provide `run_subagent`, and the current Agent must have the `agent-evaluation` Skill. If a prerequisite is missing, stop and explain what is needed. Do not create the missing Agent, Benchmark, or Baseline, and do not evaluate the Test Agent directly.
 
 A **Reference** is the Agent State currently kept as best, together with its complete Evaluation on the frozen Benchmark.
+
+This top-level Optimizer Session is one **Optimization Batch**. Before the first Candidate, read its Session id from the Environment as `optimization_session_id` and record the active Agent State version as `production_reference_version`. Freeze both values for the complete Session. If the Session id is unavailable, stop instead of inventing an id. These fields bind every accepted Candidate to the one later promotion attempt; they do not authorize this Session to inspect a paired Promotion Benchmark.
 
 Each round starts from the Reference and tests a bounded, general **Candidate**. Evaluate every Candidate on the frozen Case set with the requested `runs` count and the Reference evaluation runtime. The initial Formal Baseline has one Run per Case; do not rerun or backfill it to the requested count. Compare each Candidate's stored top-level average directly with the current Reference score even when their Run counts differ. Accept the Candidate only when the change is admissible, its Evaluation is complete and valid, and its top-level `score` is strictly higher than the Reference Evaluation's `score`. An accepted Candidate and its Evaluation become the next Reference; otherwise restore the previous Reference. Stop early when the Reference reaches the desired target; otherwise run no more than the requested number of complete valid Candidate rounds.
 
@@ -108,6 +110,9 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
   provider: <provider>
   model_id: <model_id>
   thinking_level: <thinking_level>
+  evaluation_kind: development_candidate
+  optimization_session_id: <top-level Optimizer Session id>
+  production_reference_version: <pre-optimization production version>
   summary_title: >-
     <public title>
   summary: >-
@@ -131,4 +136,4 @@ After writing, parse the complete `scoreboard.yaml` and verify the appended Eval
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 
-Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. Include the final retained version, stop reason, and known limitations. Never report a score for an Agent State that was not evaluated.
+Report the Baseline and every fully evaluated Candidate with its score, Run count, version, change, decision, and Test Session ids. Make the one-Run Formal Baseline and requested Candidate `runs` count explicit. For each Candidate, distinguish the acceptance decision from whether its stated hypothesis was supported by the predicted Case behavior. The final report must explicitly include `optimization_session_id`, `production_reference_version`, final `candidate_version`, Development Benchmark id, evaluation Runtime, and `snapshots/v<production_reference_version>.tar.gz`; call the result a Development-accepted Candidate, never a production promotion. Include the stop reason and known limitations. Never report a score for an Agent State that was not evaluated.

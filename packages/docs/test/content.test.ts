@@ -46,6 +46,9 @@ describe("docs navigation / content integrity", () => {
     for (const page of [zh, en]) {
       expect(page).toContain("`isolation_violated`");
       expect(page).toContain("production_reference_version");
+      expect(page).toContain("evaluation_kind");
+      expect(page).toContain("paired_benchmark_id");
+      expect(page).toContain("promotion_decision");
       expect(page).toContain("held-out");
     }
     expect(zh).toContain("不得给该单元记分或重跑，也不得继续补齐矩阵");

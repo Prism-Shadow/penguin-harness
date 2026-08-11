@@ -262,6 +262,13 @@ describe("librarySkill", () => {
     expect(normalizedContent).toContain(
       "Record the Formal Baseline even when its score does not meet the desired baseline score",
     );
+    expect(normalizedContent).toContain(
+      "optional Benchmark `role` (`general`, `development`, or `promotion`)",
+    );
+    expect(normalizedContent).toContain(
+      "run this complete workflow once per Benchmark in sequence",
+    );
+    expect(content).toMatch(/evaluation_kind: formal_baseline/);
   });
 
   it("evaluation is the only subagent leaf and optimization has a bounded valid-round loop", () => {
@@ -332,6 +339,14 @@ describe("librarySkill", () => {
     expect(benchmarkDesign).toContain("For `isolation_violated`");
     expect(benchmarkDesign).toContain("Terminate this Builder Session");
     expect(optimization).toContain("Delegate every evaluation to an `agent-evaluation` subagent");
+    expect(optimization).toContain(
+      "This top-level Optimizer Session is one **Optimization Batch**",
+    );
+    expect(optimizationRaw).toMatch(/evaluation_kind: development_candidate/);
+    expect(optimizationRaw).toMatch(/optimization_session_id: <top-level Optimizer Session id>/);
+    expect(optimizationRaw).toMatch(
+      /production_reference_version: <pre-optimization production version>/,
+    );
     expect(optimization).toContain("a positive `runs` value");
     expect(optimization).toContain(
       "do not infer it from `benchmark_config.toml` or the Formal Baseline",

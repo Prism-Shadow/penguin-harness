@@ -96,7 +96,7 @@ Drill down Agent → date → Session → Trace file. Per-turn cards show a cont
 
 ## Benchmark (/benchmark)
 
-Read-only scoreboards per Benchmark: switch the metric (score / cost / duration), drill into each Case's runs, and jump to the linked Session and Trace. Works together with the [Self-Improvement](/self-improvement) workflow.
+View each Agent's Benchmark Score trend, workflow role, and evaluation details; drill into every Case's runs and jump to the linked Session and Trace. A Development Benchmark separates active and production versions. When structured Scoreboard metadata identifies an ungated Candidate, “Start promotion validation” opens a new conversation pre-filled with the independent Promotion Validator inputs; the action itself does not mutate the Agent or Scoreboard. Works together with the [Self-Improvement](/self-improvement) workflow.
 
 ## User Administration (/admin/users)
 

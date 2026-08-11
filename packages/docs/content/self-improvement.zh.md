@@ -63,7 +63,7 @@ Optimizer 结束时保留的最高分 Reference 只是 **Development-accepted Ca
 
 Promotion Validator 对 held-out Promotion Benchmark 完成一次与其 Formal Baseline 对称的 one-Run-per-Case 矩阵。每个单元仍委托 `agent-evaluation`，并要求 Agent State 版本、`provider`、`model_id` 与 `thinking_level` 全部匹配。错误答案是有效低分；协议、启动、版本、Benchmark 或 Trace 绑定失败不是零分，必须先修复或报告验证失败。若任一单元返回 `isolation_violated`，只接收这个不含内容的失败类别；不得读取违规路径、内容或污染 Trace，不得给该单元记分或重跑，也不得继续补齐矩阵。
 
-当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于 Promotion Scoreboard 中 `production_reference_version` 的最新有效 Evaluation 时，Candidate 才通过晋升。首次晋升时该比较对象就是 Formal Baseline；此后当前生产版本的 held-out 记录，来自它自己当年通过晋升时写入的那条 Evaluation。对称的单 Run 矩阵控制成本但保留逐 Run 噪声，这是已知取舍；门槛因此取不低于而非严格更高。无论通过还是未通过，都先把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard 并完成校验，再执行保留或恢复；在 `summary_title` 与 `summary` 中记录 `optimization_session_id`、来源版本、Candidate 版本和晋升决定，不改变现有 Scoreboard schema。
+当且仅当矩阵完整有效、Candidate 在评测期间未变化，并且 held-out 顶层平均分不低于 Promotion Scoreboard 中 `production_reference_version` 的最新有效 Evaluation 时，Candidate 才通过晋升。首次晋升时该比较对象就是 Formal Baseline；此后当前生产版本的 held-out 记录，来自它自己当年通过晋升时写入的那条 Evaluation。对称的单 Run 矩阵控制成本但保留逐 Run 噪声，这是已知取舍；门槛因此取不低于而非严格更高。无论通过还是未通过，都先把这次完整 held-out Evaluation 和 Session ids 追加到 Promotion Benchmark 自己的 Scoreboard 并完成校验，再执行保留或恢复；该记录写入 `evaluation_kind: promotion_candidate`、`optimization_session_id`、`production_reference_version` 与 `promotion_decision`（`promoted` 或 `restored`），`summary_title` 与 `summary` 只保留给人阅读的结论。
 
 - **通过**：保留当前 Candidate Agent State，并报告它已从 `production_reference_version` 晋升为 `candidate_version`。
 - **未通过**：使用优化前 Snapshot 恢复并验证 `production_reference_version`。Development Benchmark 中已经产生的分数和 Trace，以及 gate 前保存的 Candidate Snapshot，都保留为实验记录和后续批次的诊断证据。
@@ -87,11 +87,12 @@ benchmarks/<id>/
 
 `rubric/` 与 `statement/` 的隔离是刻意设计：评测协议只把题面交给 Target Agent；若 Target 根 Trace 或其直接引用的子 Trace 显示直接或间接访问了 Benchmark 或 Rubric 数据，Evaluator 必须把该 Run 判为无效。仅有目录分离不能证明 Target 从未接触评分标准。
 
-Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个普通 `benchmark_id`，角色由调用约定决定，不新增配置字段。这个隔离是 **契约级 soft seal**：Skill 禁止 Target Agent 和 Optimizer 读取私有或未指定的 Benchmark 表面，但当前本地工具并没有把绝对路径访问硬限制在预期目录内。普通产品工作流依靠独立顶层 Session、最小输入，以及对 Target、Evaluator、Optimizer Trace 的审计维持该边界；需要正式泄漏声明时，应额外审计这些根 Trace 与所引用子 Trace 中的直接和间接文件访问，或把私有数据和 Promotion 数据放进这些 Session 技术上不可访问的独立边界。
+Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个普通 `benchmark_id`。`benchmark_config.toml` 用可选的 `role = "development" | "promotion"` 与 `paired_benchmark_id` 显式标出工作流关系；未设置时按 `general` 兼容旧 Benchmark。这些字段只用于 API、UI 与工作流编排，不形成访问控制。这个隔离仍是 **契约级 soft seal**：Skill 禁止 Target Agent 和 Optimizer 读取私有或未指定的 Benchmark 表面，但当前本地工具并没有把绝对路径访问硬限制在预期目录内。普通产品工作流依靠独立顶层 Session、最小输入，以及对 Target、Evaluator、Optimizer Trace 的审计维持该边界；需要正式泄漏声明时，应额外审计这些根 Trace 与所引用子 Trace 中的直接和间接文件访问，或把私有数据和 Promotion 数据放进这些 Session 技术上不可访问的独立边界。
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
 - 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
+- 可选工作流元数据：`evaluation_kind`（Formal Baseline、Development Candidate 或 Promotion Candidate）、`optimization_session_id`、`production_reference_version`，以及 Promotion 记录上的 `promotion_decision`；旧记录可不含这些字段；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
 - 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；单次 Run 成本保留记录中的原始精度，成本平均值忽略 `null`，全部未知时才为 `null`；Score 保留两位小数，成本平均值保留六位小数，`duration_ms` 取整；
 - 每个 Case 的逐次运行明细，每次运行含 `score`、`cost`、`duration_ms` 与 `session_id`。
@@ -108,7 +109,7 @@ Development 与 Promotion 在当前工作流中仍是同一 Agent 下的两个�
 
 - 每次 Evaluator 运行都是一个普通的 Session，留有完整 Trace；
 - scoreboard 记录通过 `session_id` 链接回这些 Session，见 [Session 与 Trace](/sessions-and-traces)；
-- Web 的评测页面是这些文件的只读视图；折线图只展示 Score，明细表将模型 ID 与推理强度分列显示。见 [Web App 指南](/web-app)。
+- Web 评测页面直接读取这些文件；折线图只展示 Score，明细表将工作流状态、模型 ID 与推理强度分列显示。Development 页头会区分活动版本与生产版本；结构化元数据显示待晋升时，“开始晋升验证”只会预填并打开一个新的顶层 Session，不会由前端直接改写 Agent State 或 Scoreboard。见 [Web App 指南](/web-app)。
 
 分数不是黑盒输出：任何一个数字都可以回溯到产生它的那次运行。
 

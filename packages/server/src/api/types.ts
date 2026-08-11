@@ -1457,6 +1457,11 @@ export interface BenchmarkCaseScore {
   runs: BenchmarkRunScore[];
 }
 
+export type BenchmarkRole = "general" | "development" | "promotion";
+export type BenchmarkEvaluationKind =
+  "formal_baseline" | "development_candidate" | "promotion_candidate";
+export type PromotionDecision = "promoted" | "restored";
+
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
@@ -1472,6 +1477,14 @@ export interface BenchmarkEvaluation {
   thinkingLevel: string;
   /** Agent State version number under test. */
   version: number;
+  /** Optional workflow meaning. Missing on general and pre-contract records. */
+  evaluationKind?: BenchmarkEvaluationKind;
+  /** Top-level Optimizer Session that produced this Candidate. */
+  optimizationSessionId?: string;
+  /** Production Agent State version in force before this Optimization Batch. */
+  productionReferenceVersion?: number;
+  /** Promotion gate result. Only meaningful on a promotion_candidate record. */
+  promotionDecision?: PromotionDecision;
   /** Model-written average of Case scores, on the fixed 0..100 scale. */
   score: number;
   /** Model-written average of known Case costs; null when every Case cost is unknown. */
@@ -1487,6 +1500,10 @@ export interface BenchmarkSummary {
   /** Title from benchmark_config.toml; falls back to the directory name if unset. */
   title: string;
   description?: string;
+  /** Workflow role; missing and invalid config values are exposed as general. */
+  role: BenchmarkRole;
+  /** Explicit counterpart used by Development/Promotion workflows. */
+  pairedBenchmarkId?: string;
   /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
   runs?: number;
   /** Case count (number of case subfolders). */

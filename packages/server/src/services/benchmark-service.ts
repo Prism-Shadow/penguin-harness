@@ -1,8 +1,8 @@
 /**
  * Benchmark score reading (read-only display): walks `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title, description, per-case run count `runs`) and
- * `scoreboard.yaml` (evaluations[], each case carries its model-written averages
- * and a runs array).
+ * `benchmark_config.toml` (title, description, role/pair, per-case run count `runs`) and
+ * `scoreboard.yaml` (evaluations[], optional workflow metadata, each case carries its
+ * model-written averages and a runs array).
  * Content is created and refined by benchmark_builder; the server only reads it.
  * Missing or corrupt files always degrade gracefully (title falls back to the
  * directory name, scores come back empty) rather than throwing.
@@ -22,10 +22,13 @@ import type {
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
   BenchmarkEvaluation,
+  BenchmarkEvaluationKind,
+  BenchmarkRole,
   BenchmarkRunScore,
   BenchmarkSummary,
   BenchmarksResponse,
   CaseMaterial,
+  PromotionDecision,
   WorkspaceFilesResponse,
 } from "../api/types.js";
 import type {
@@ -36,6 +39,17 @@ import type {
 import { HttpError } from "../http/errors.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
+const BENCHMARK_ROLES = new Set<BenchmarkRole>(["general", "development", "promotion"]);
+const EVALUATION_KINDS = new Set<BenchmarkEvaluationKind>([
+  "formal_baseline",
+  "development_candidate",
+  "promotion_candidate",
+]);
+const PROMOTION_DECISIONS = new Set<PromotionDecision>(["promoted", "restored"]);
+
+function enumOr<T extends string>(value: unknown, allowed: ReadonlySet<T>): T | undefined {
+  return typeof value === "string" && allowed.has(value as T) ? (value as T) : undefined;
+}
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -153,6 +167,10 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const provider = stringOr(r.provider);
   const thinkingLevel = stringOr(r.thinking_level);
   const version = nonNegativeIntegerOr(r.version);
+  const evaluationKind = enumOr(r.evaluation_kind, EVALUATION_KINDS);
+  const optimizationSessionId = stringOr(r.optimization_session_id);
+  const productionReferenceVersion = nonNegativeIntegerOr(r.production_reference_version);
+  const promotionDecision = enumOr(r.promotion_decision, PROMOTION_DECISIONS);
   if (
     typeof time !== "string" ||
     time === "" ||
@@ -181,6 +199,14 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
     thinkingLevel,
     score,
     version,
+    ...(evaluationKind !== undefined ? { evaluationKind } : {}),
+    ...(optimizationSessionId !== undefined && optimizationSessionId !== ""
+      ? { optimizationSessionId }
+      : {}),
+    ...(productionReferenceVersion !== undefined && productionReferenceVersion >= 1
+      ? { productionReferenceVersion }
+      : {}),
+    ...(promotionDecision !== undefined ? { promotionDecision } : {}),
     cost,
     durationMs,
     cases,
@@ -323,12 +349,14 @@ export class BenchmarkService {
   }
 
   private async readBenchmark(benchDir: string, id: string): Promise<BenchmarkSummary> {
-    // benchmark_config.toml: title, description, and per-case run count (falls back
-    // to defaults if corrupt). The model isn't part of the config — each evaluation
-    // carries the Model actually used for that run.
+    // benchmark_config.toml: title, description, workflow role/pair, and per-case run count
+    // (falls back to defaults if corrupt). The model isn't part of the config — each
+    // evaluation carries the Model actually used for that run.
     let title = id;
     let description: string | undefined;
     let runs: number | undefined;
+    let role: BenchmarkRole = "general";
+    let pairedBenchmarkId: string | undefined;
     try {
       const config = asRecord(
         parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
@@ -336,6 +364,10 @@ export class BenchmarkService {
       if (typeof config.title === "string" && config.title !== "") title = config.title;
       if (typeof config.description === "string" && config.description !== "") {
         description = config.description;
+      }
+      role = enumOr(config.role, BENCHMARK_ROLES) ?? "general";
+      if (typeof config.paired_benchmark_id === "string" && config.paired_benchmark_id !== "") {
+        pairedBenchmarkId = config.paired_benchmark_id;
       }
       const configRuns = numberOr(config.runs);
       if (configRuns !== undefined && Number.isInteger(configRuns) && configRuns >= 1) {
@@ -373,6 +405,8 @@ export class BenchmarkService {
       id,
       title,
       ...(description !== undefined ? { description } : {}),
+      role,
+      ...(pairedBenchmarkId !== undefined ? { pairedBenchmarkId } : {}),
       ...(runs !== undefined ? { runs } : {}),
       caseCount,
       evaluations,

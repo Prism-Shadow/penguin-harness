@@ -8,8 +8,8 @@
  * Session link.
  * With a ?agentId= deep link, only the target Agent is expanded by default.
  */
-import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import type {
   BenchmarkCaseScore,
   BenchmarkCaseSummary,
@@ -22,12 +22,14 @@ import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
 import { agentDisplayName, useProject } from "../../state/project";
+import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Truncated } from "../../components/ui/truncated";
 import { EmptyState } from "../../components/ui/empty-state";
+import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { seriesColor } from "../../lib/category-colors";
@@ -42,6 +44,9 @@ import {
 } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import { benchmarkPromotionState, evaluationWorkflowStatus } from "./benchmark-promotion";
+import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { DRAFT_SESSION_ID } from "../chat/chat-page";
 
 interface Selection {
   agentId: string;
@@ -56,6 +61,7 @@ function AgentNode({
   defaultOpen,
   selection,
   onSelect,
+  onBenchmarksLoaded,
 }: {
   projectId: string;
   agentId: string;
@@ -64,6 +70,7 @@ function AgentNode({
   defaultOpen: boolean;
   selection: Selection | null;
   onSelect: (sel: Selection) => void;
+  onBenchmarksLoaded: (agentId: string, benchmarks: BenchmarkSummary[]) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
@@ -73,9 +80,12 @@ function AgentNode({
     if (!open || benchmarks) return;
     api
       .listBenchmarks(projectId, agentId)
-      .then((data) => setBenchmarks(data.benchmarks))
+      .then((data) => {
+        setBenchmarks(data.benchmarks);
+        onBenchmarksLoaded(agentId, data.benchmarks);
+      })
       .catch((e: unknown) => setError(apiErrorText(e)));
-  }, [open, benchmarks, projectId, agentId]);
+  }, [open, benchmarks, projectId, agentId, onBenchmarksLoaded]);
 
   return (
     <li className="pt-2.5">
@@ -127,6 +137,7 @@ function AgentNode({
                           : "text-gray-700 dark:text-gray-300"
                       }`}
                     />
+                    <BenchmarkRoleBadge role={b.role} />
                     <span className="shrink-0 font-mono text-[11px] text-gray-400">
                       {b.caseCount}
                     </span>
@@ -138,6 +149,20 @@ function AgentNode({
         </div>
       )}
     </li>
+  );
+}
+
+function BenchmarkRoleBadge({ role }: { role: BenchmarkSummary["role"] }) {
+  const label =
+    role === "development"
+      ? S.benchmark.roleDevelopment
+      : role === "promotion"
+        ? S.benchmark.rolePromotion
+        : S.benchmark.roleGeneral;
+  return (
+    <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+      {label}
+    </span>
   );
 }
 
@@ -287,6 +312,17 @@ function EvaluationRow({
   currency: Currency;
 }) {
   const [open, setOpen] = useState(false);
+  const workflowStatus = evaluationWorkflowStatus(evaluation);
+  const workflowLabel =
+    workflowStatus === "baseline"
+      ? S.benchmark.statusBaseline
+      : workflowStatus === "development"
+        ? S.benchmark.statusDevelopment
+        : workflowStatus === "promoted"
+          ? S.benchmark.statusPromoted
+          : workflowStatus === "restored"
+            ? S.benchmark.statusRestored
+            : S.benchmark.statusEvaluation;
   return (
     <>
       <tr
@@ -301,6 +337,11 @@ function EvaluationRow({
         </td>
         <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
           {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
+        </td>
+        <td className={CELL}>
+          <span className="whitespace-nowrap rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+            {workflowLabel}
+          </span>
         </td>
         <td
           className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
@@ -323,7 +364,7 @@ function EvaluationRow({
       </tr>
       {open && (
         <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={7} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
+          <td colSpan={8} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
             {/* Evaluation summary title and body are displayed separately when present. */}
             {(evaluation.summaryTitle || evaluation.summary) && (
               <div className="mb-2">
@@ -518,7 +559,9 @@ function CasesSection({
 
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
-  const { currentProject, agents, agentsLoading } = useProject();
+  const { currentProject, agents, agentsLoading, setCurrentAgentId } = useProject();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const { currency } = useTheme();
   const projectId = currentProject?.projectId ?? null;
   // ?agentId= deep link (entered from the "Benchmark" tab on the Agent settings page): only the target Agent is expanded by default.
@@ -528,10 +571,17 @@ export function BenchmarkPage() {
   const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  const [benchmarksByAgent, setBenchmarksByAgent] = useState<Record<string, BenchmarkSummary[]>>(
+    {},
+  );
+  const onBenchmarksLoaded = useCallback((agentId: string, benchmarks: BenchmarkSummary[]) => {
+    setBenchmarksByAgent((current) => ({ ...current, [agentId]: benchmarks }));
+  }, []);
 
   // Clear the selection when the Project changes.
   useEffect(() => {
     setSelection(null);
+    setBenchmarksByAgent({});
   }, [projectId]);
 
   useEffect(() => {
@@ -561,6 +611,35 @@ export function BenchmarkPage() {
   const evaluations = bm ? [...bm.evaluations] : [];
   const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
   const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
+  const selectedAgent = selection
+    ? agents.find((item) => item.agentId === selection.agentId)
+    : undefined;
+  const promotionState =
+    bm && selectedAgent
+      ? benchmarkPromotionState(
+          bm,
+          benchmarksByAgent[selection!.agentId] ?? [bm],
+          selectedAgent.version,
+        )
+      : { productionVersion: null, pending: null };
+
+  const startPromotion = () => {
+    if (!projectId || !selection || !promotionState.pending || !user?.userId) return;
+    const prompt = S.benchmark.promotionPrompt({
+      testAgentId: selection.agentId,
+      ...promotionState.pending,
+    });
+    const key = draftKey(user.userId, projectId);
+    saveDraft(key, {
+      ...loadDraft(key),
+      agentId: "default_agent",
+      text: prompt,
+      skills: undefined,
+      handoffAgentId: undefined,
+    });
+    setCurrentAgentId("default_agent");
+    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: "default_agent" } });
+  };
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -582,6 +661,7 @@ export function BenchmarkPage() {
                 defaultOpen={focusAgentId === null || focusAgentId === a.agentId}
                 selection={selection}
                 onSelect={setSelection}
+                onBenchmarksLoaded={onBenchmarksLoaded}
               />
             ))}
           </ul>
@@ -593,13 +673,38 @@ export function BenchmarkPage() {
           // Changing the key on Benchmark switch resets expand state (a detail row's open doesn't linger across Benchmarks).
           <div key={`${selection.agentId}/${bm.id}`} className="mx-auto max-w-4xl space-y-4">
             {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
-            <div>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
-                <span className="text-xs text-gray-500">{S.benchmark.caseCount(bm.caseCount)}</span>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
+                  <BenchmarkRoleBadge role={bm.role} />
+                  <span className="text-xs text-gray-500">
+                    {S.benchmark.caseCount(bm.caseCount)}
+                  </span>
+                  {selectedAgent && (
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                      {S.benchmark.activeVersion(selectedAgent.version)}
+                    </span>
+                  )}
+                  {promotionState.productionVersion !== null && (
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                      {S.benchmark.productionVersion(promotionState.productionVersion)}
+                    </span>
+                  )}
+                  {promotionState.pending && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      {S.benchmark.promotionPending}
+                    </span>
+                  )}
+                </div>
+                {bm.description && (
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
+                )}
               </div>
-              {bm.description && (
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
+              {promotionState.pending && (
+                <Button variant="primary" size="sm" onClick={startPromotion}>
+                  {S.benchmark.startPromotion}
+                </Button>
               )}
             </div>
 
@@ -616,11 +721,12 @@ export function BenchmarkPage() {
                     {S.benchmark.evaluations}
                   </p>
                   <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                    <table className="w-full min-w-[720px] text-left text-sm">
+                    <table className="w-full min-w-[820px] text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
                           <th className="px-3 py-2.5">{S.common.time}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
+                          <th className="px-3 py-2.5">{S.benchmark.colStatus}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
                           <th className="px-3 py-2.5">{S.benchmark.colScore}</th>

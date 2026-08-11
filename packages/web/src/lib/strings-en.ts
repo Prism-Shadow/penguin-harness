@@ -714,37 +714,50 @@ When done, open index.html in a browser and self-test once.`,
           "the right English documents and stream their answers, then tell me how to access it.",
       },
       agentBenchmarkBuild: {
-        label: "Build a general-purpose decision agent and its benchmark",
-        desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
+        label: "Build a decision Agent and paired Benchmarks",
+        desc: "Create a general decision Agent with isolated Development and Promotion suites",
+        prompt: `In this Builder Session, first use \`agent-creation\` to create a decision Agent, then use \`benchmark-design\` separately to establish and freeze a paired Benchmark set. Each Benchmark needs its own Formal Baseline, bound to the same initial Agent State version and evaluation Runtime.
 
 Agent:
 - id: \`finite_choice_agent\`
 - capability: make stable, explainable finite choices when public information is incomplete or conflicting
 - installed_skills: \`[]\`
 
-Benchmark:
-- id: \`contextual-choice-adaptation\`
+Development Benchmark:
+- id: \`contextual-choice-development\`
+- role: \`development\`
+- paired_benchmark_id: \`contextual-choice-promotion\`
+
+Promotion Benchmark:
+- id: \`contextual-choice-promotion\`
+- role: \`promotion\`
+- paired_benchmark_id: \`contextual-choice-development\`
+
+Shared settings:
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
 
-Scenarios:
+Capability scenario pool:
 1. Make football betting decisions from historical matches and current information.
 2. Choose after-sales actions from policy and ticket facts.
-3. Choose investment actions from a strategy, historical markets, and current indicators.`,
+3. Choose investment actions from a strategy, historical markets, and current indicators.
+
+Split concrete instances into non-overlapping Development and Promotion Cases. Never place Promotion Cases, Rubrics, scores, or Traces in a later Optimizer context. Write Formal Baselines with \`evaluation_kind: formal_baseline\`. At completion report only the two Benchmark ids, roles, pairing, shared version, and Runtime; do not reveal private Rubrics.`,
       },
       agentOptimization: {
         label: "Improve the general-purpose decision agent's accuracy",
-        desc: "Improve an Agent from existing evaluation results and verify that the new version is better",
-        prompt: `Use \`agent-optimization\` to optimize a decision Agent against its frozen Benchmark.
+        desc: "Improve only on Development and produce one Candidate for an independent gate",
+        prompt: `Use \`agent-optimization\` to optimize a decision Agent using only its frozen Development Benchmark. Do not find, inspect, or infer any Promotion Benchmark. This Session produces a Development-accepted Candidate only and must not claim production promotion.
 
 - test_agent_id: \`finite_choice_agent\`
-- benchmark_id: \`contextual-choice-adaptation\`
+- benchmark_id: \`contextual-choice-development\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
 - runs: \`3\`
 - desired_score: \`>=95\`
-- candidate_round_limit: \`5\``,
+- candidate_round_limit: \`5\`
+
+Write \`evaluation_kind: development_candidate\`, this top-level Session's \`optimization_session_id\`, and the pre-optimization \`production_reference_version\` on every accepted record. At completion explicitly report those fields, final \`candidate_version\`, Development Benchmark id, evaluation Runtime, and production recovery Snapshot path; then stop and wait for a new independent Promotion Validator Session.`,
       },
     },
     sessionList: "Sessions",
@@ -1136,6 +1149,33 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    colStatus: "Status",
+    roleGeneral: "General",
+    roleDevelopment: "Development",
+    rolePromotion: "Promotion",
+    statusBaseline: "Baseline",
+    statusDevelopment: "Development accepted",
+    statusPromoted: "Promoted",
+    statusRestored: "Restored",
+    statusEvaluation: "Evaluation",
+    activeVersion: (version: number): string => `Active v${version}`,
+    productionVersion: (version: number): string => `Production v${version}`,
+    promotionPending: "Promotion pending",
+    startPromotion: "Start promotion validation",
+    promotionPrompt: (
+      input,
+    ): string => `Act as an independent Promotion Validator and execute one promotion validation. Do not inspect or infer the Development Benchmark, the original Optimizer's diagnosis, or private Traces, and do not modify the Candidate.
+
+- test_agent_id: \`${input.testAgentId}\`
+- optimization_session_id: \`${input.optimizationSessionId}\`
+- candidate_version: \`${input.candidateVersion}\`
+- production_reference_version: \`${input.productionReferenceVersion}\`
+- promotion_benchmark_id: \`${input.promotionBenchmarkId}\`
+- provider: \`${input.provider}\`
+- model_id: \`${input.modelId}\`
+- thinking_level: \`${input.thinkingLevel}\`
+
+First verify the production Reference at \`snapshots/v${input.productionReferenceVersion}.tar.gz\`. Before the first held-out cell, ensure \`snapshots/v${input.candidateVersion}.tar.gz\` exists and its archived version matches the current State; create it atomically when absent and never overwrite an existing archive. Then run every Promotion Benchmark Case exactly once, delegating each cell to a subagent using \`agent-evaluation\`; compare against that Benchmark's latest valid record for the production Reference. After a complete valid matrix, append and verify a structured Promotion Scoreboard record first: \`evaluation_kind: promotion_candidate\`, the batch and version fields above, and \`promotion_decision: promoted | restored\`; only then retain the Candidate or restore and verify the production Snapshot. Never record \`isolation_violated\` as zero: terminate immediately, restore production, and quarantine the contaminated Trace. One optimization_session_id may complete only this promotion matrix; do not nominate a sibling version from the same batch or return held-out evidence to the original Optimizer.`,
   },
 
   errors: {

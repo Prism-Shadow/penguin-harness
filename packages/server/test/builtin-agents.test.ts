@@ -84,6 +84,7 @@ describe("built-in Agent provisioning", () => {
     expect(bench.title).toBe("Example Benchmark");
     // description explicitly states it's a built-in sample (the whole directory can be deleted or replaced).
     expect(bench.description).toContain("example");
+    expect(bench.role).toBe("general");
     expect(bench.runs).toBe(2);
     expect(bench.caseCount).toBe(2);
     expect(bench.evaluations).toHaveLength(3);

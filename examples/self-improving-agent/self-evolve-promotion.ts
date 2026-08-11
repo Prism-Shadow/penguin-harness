@@ -58,6 +58,13 @@ interface Evaluation {
   thinkingLevel: string;
 }
 
+interface EvaluationMetadata {
+  evaluationKind: "formal_baseline" | "development_candidate" | "promotion_candidate";
+  optimizationSessionId?: string;
+  productionReferenceVersion?: number;
+  promotionDecision?: "promoted" | "restored";
+}
+
 interface ScenarioOutcome {
   agentId: string;
   optimizationSessionId: string;
@@ -427,7 +434,7 @@ async function initializeBenchmark(
   await fs.mkdir(path.join(caseRoot, "rubric"), { recursive: true });
   await fs.writeFile(
     path.join(benchmark, "benchmark_config.toml"),
-    `title = "Promotion E2E ${benchmarkId}"\ndescription = "Disposable report-format transfer Benchmark"\nruns = 1\n`,
+    `title = "Promotion E2E ${benchmarkId}"\ndescription = "Disposable report-format transfer Benchmark"\nrole = "${benchmarkId}"\npaired_benchmark_id = "${benchmarkId === "development" ? "promotion" : "development"}"\nruns = 1\n`,
   );
   await fs.writeFile(
     path.join(caseRoot, "statement", "README.md"),
@@ -445,6 +452,7 @@ async function appendEvaluation(
   benchmarkId: "development" | "promotion",
   evaluation: Evaluation,
   summary: string,
+  metadata: EvaluationMetadata,
 ): Promise<void> {
   const scoreboardPath = path.join(agentDir(agentId), "benchmarks", benchmarkId, "scoreboard.yaml");
   const parsed = JSON.parse(await fs.readFile(scoreboardPath, "utf8")) as {
@@ -457,6 +465,14 @@ async function appendEvaluation(
     provider: evaluation.provider,
     model_id: evaluation.modelId,
     thinking_level: evaluation.thinkingLevel,
+    evaluation_kind: metadata.evaluationKind,
+    ...(metadata.optimizationSessionId
+      ? { optimization_session_id: metadata.optimizationSessionId }
+      : {}),
+    ...(metadata.productionReferenceVersion
+      ? { production_reference_version: metadata.productionReferenceVersion }
+      : {}),
+    ...(metadata.promotionDecision ? { promotion_decision: metadata.promotionDecision } : {}),
     summary_title: `promotion-e2e ${evaluation.caseId}`,
     summary,
     score: evaluation.score,
@@ -481,12 +497,24 @@ async function appendEvaluation(
   });
   await fs.writeFile(scoreboardPath, `${JSON.stringify({ evaluations }, null, 2)}\n`, "utf8");
   const verified = JSON.parse(await fs.readFile(scoreboardPath, "utf8")) as {
-    evaluations?: Array<{ version?: number; score?: number; cases?: Array<{ runs?: unknown[] }> }>;
+    evaluations?: Array<{
+      version?: number;
+      score?: number;
+      evaluation_kind?: string;
+      optimization_session_id?: string;
+      production_reference_version?: number;
+      promotion_decision?: string;
+      cases?: Array<{ runs?: unknown[] }>;
+    }>;
   };
   const stored = verified.evaluations?.at(-1);
   if (
     stored?.version !== evaluation.version ||
     stored.score !== evaluation.score ||
+    stored.evaluation_kind !== metadata.evaluationKind ||
+    stored.optimization_session_id !== metadata.optimizationSessionId ||
+    stored.production_reference_version !== metadata.productionReferenceVersion ||
+    stored.promotion_decision !== metadata.promotionDecision ||
     stored.cases?.[0]?.runs?.length !== 1
   ) {
     throw new Error(`Scoreboard verification failed: ${scoreboardPath}`);
@@ -523,8 +551,12 @@ async function runPassScenario(): Promise<ScenarioOutcome> {
   await initialize(agentId);
   const baselineDevelopment = await evaluate(agentId, "development", DEVELOPMENT);
   const baselinePromotion = await evaluate(agentId, "promotion", PROMOTION);
-  await appendEvaluation(agentId, "development", baselineDevelopment, "Formal Baseline");
-  await appendEvaluation(agentId, "promotion", baselinePromotion, "Formal Baseline");
+  await appendEvaluation(agentId, "development", baselineDevelopment, "Formal Baseline", {
+    evaluationKind: "formal_baseline",
+  });
+  await appendEvaluation(agentId, "promotion", baselinePromotion, "Formal Baseline", {
+    evaluationKind: "formal_baseline",
+  });
   const productionSnapshot = await snapshot(agentId, 1);
   await writeVersion(agentId, 2);
 
@@ -565,16 +597,27 @@ inspect any Benchmark, rubric, or Trace.`,
     "development",
     candidateDevelopment,
     `optimization_session_id=${optimizationSessionId}; accepted Candidate`,
+    {
+      evaluationKind: "development_candidate",
+      optimizationSessionId,
+      productionReferenceVersion: 1,
+    },
   );
   const candidateSnapshot = await snapshot(agentId, 2);
   const candidatePromotion = await evaluate(agentId, "promotion", PROMOTION);
+  const decision = candidatePromotion.score >= baselinePromotion.score ? "promote" : "restore";
   await appendEvaluation(
     agentId,
     "promotion",
     candidatePromotion,
     `optimization_session_id=${optimizationSessionId}; promotion Candidate`,
+    {
+      evaluationKind: "promotion_candidate",
+      optimizationSessionId,
+      productionReferenceVersion: 1,
+      promotionDecision: decision === "promote" ? "promoted" : "restored",
+    },
   );
-  const decision = candidatePromotion.score >= baselinePromotion.score ? "promote" : "restore";
   if (decision === "restore") await restore(agentId, productionSnapshot, 1);
   const finalVersion = await readVersion(agentId);
   const outcome: ScenarioOutcome = {
@@ -604,8 +647,12 @@ async function runFailScenario(): Promise<ScenarioOutcome> {
   );
   const baselineDevelopment = await evaluate(agentId, "development", DEVELOPMENT);
   const baselinePromotion = await evaluate(agentId, "promotion", PROMOTION);
-  await appendEvaluation(agentId, "development", baselineDevelopment, "Formal Baseline");
-  await appendEvaluation(agentId, "promotion", baselinePromotion, "Formal Baseline");
+  await appendEvaluation(agentId, "development", baselineDevelopment, "Formal Baseline", {
+    evaluationKind: "formal_baseline",
+  });
+  await appendEvaluation(agentId, "promotion", baselinePromotion, "Formal Baseline", {
+    evaluationKind: "formal_baseline",
+  });
   const productionSnapshot = await snapshot(agentId, 1);
   await writeVersion(agentId, 2);
 
@@ -657,16 +704,27 @@ Workspace. Do not inspect any Benchmark, rubric, Trace, or other Agent.`,
     "development",
     candidateDevelopment,
     `optimization_session_id=${optimizationSessionId}; accepted Candidate`,
+    {
+      evaluationKind: "development_candidate",
+      optimizationSessionId,
+      productionReferenceVersion: 1,
+    },
   );
   const candidateSnapshot = await snapshot(agentId, 2);
   const candidatePromotion = await evaluate(agentId, "promotion", PROMOTION);
+  const decision = candidatePromotion.score >= baselinePromotion.score ? "promote" : "restore";
   await appendEvaluation(
     agentId,
     "promotion",
     candidatePromotion,
     `optimization_session_id=${optimizationSessionId}; promotion Candidate`,
+    {
+      evaluationKind: "promotion_candidate",
+      optimizationSessionId,
+      productionReferenceVersion: 1,
+      promotionDecision: decision === "promote" ? "promoted" : "restored",
+    },
   );
-  const decision = candidatePromotion.score >= baselinePromotion.score ? "promote" : "restore";
   if (decision === "restore") await restore(agentId, productionSnapshot, 1);
   const finalVersion = await readVersion(agentId);
   const outcome: ScenarioOutcome = {

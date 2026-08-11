@@ -95,7 +95,7 @@ penguin web
 
 ## Benchmark（/benchmark）
 
-只读展示各 Benchmark 的评分板，可切换指标（得分 / 费用 / 耗时），下钻查看每个 Case 的多次运行结果，并跳转到关联的 Session 与 Trace。配合[自我进化](/self-improvement)工作流使用。
+按 Agent 展示各 Benchmark 的 Score 趋势、工作流角色与评测明细，可下钻查看每个 Case 的多次运行结果，并跳转到关联的 Session 与 Trace。Development Benchmark 会分开显示活动版本与生产版本；当结构化 Scoreboard 元数据表明某个 Candidate 尚未 gate 时，可点击“开始晋升验证”，在新对话中预填独立 Promotion Validator 的输入。该动作本身不改写 Agent 或评分板。配合[自我进化](/self-improvement)工作流使用。
 
 ## 用户管理（/admin/users）
 

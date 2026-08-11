@@ -29,6 +29,7 @@ const EXAMPLE_BENCHMARK_CONFIG = {
   description:
     "A built-in example benchmark so the evaluation charts have data out of the box. " +
     "Replace it with your own.",
+  role: "general",
   runs: 2,
 };
 
