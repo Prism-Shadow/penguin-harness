@@ -63,7 +63,7 @@ Promotion Validator 对 held-out Promotion Benchmark 完成一次与其 Formal B
 - **未通过**：先确保 `snapshots/v<candidate_version>.tar.gz` 存在——最终 Candidate 没有被后续轮次编辑过，通常没有现成快照，活动 Agent State 就是它的唯一副本；按 Optimizer 相同的归档规则（原子打包、排除 `.vault.toml`、不覆盖已存在的同版本快照）补建后，再使用优化前 Snapshot 恢复并验证 `production_reference_version`。Development Benchmark 中已经产生的分数和 Trace 保留为实验记录。
 - **验证无法完成**：不把缺失或无效单元当成零分，也不声称晋升成功；在能够安全验证或恢复前报告具体阻塞。
 
-晋升决定在第三阶段终止。不得把 held-out 的 Case 级失分、Trace、Rubric 或晋升结果发送回原 Optimizer 继续生成 Candidate。若团队开始根据这些证据调整 Agent，当前 Promotion Benchmark 就已成为开发证据，应另建并冻结新的 held-out Benchmark 承担下一次独立晋升。
+晋升决定在第三阶段终止。每个优化批次只提名一个版本做一次晋升验证；失败后不得改提同批次的其他 Candidate 重新验证——连续改提等于让 held-out 在多个版本之间做选择，最终通过者的分数会系统性偏高。下一次晋升必须来自新的优化批次。不得把 held-out 的 Case 级失分、Trace、Rubric 或晋升结果发送回原 Optimizer 继续生成 Candidate。若团队开始根据这些证据调整 Agent，当前 Promotion Benchmark 就已成为开发证据，应另建并冻结新的 held-out Benchmark 承担下一次独立晋升。
 
 ## Benchmark 存储
 
