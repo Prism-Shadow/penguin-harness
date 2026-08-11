@@ -1,6 +1,6 @@
 # Agent config kernel version: dated generations with a smart update
 
-`system_config.yaml` is baked at agent creation and never auto-upgraded, so until now the only way to newer built-in defaults was a full restore that discarded every customization. Agent configs now carry a **kernel version** (#260): a date, `kernel_version: 2026-08-11`, recording which generation of built-in defaults the config was created from or last updated to. Creation and "restore defaults" both stamp it; ordinary config edits never touch it (it is unrelated to `version`, the optimization counter).
+`system_config.yaml` is baked at agent creation and never auto-upgraded, so until now the only way to newer built-in defaults was a full restore that discarded every customization. Agent configs now carry a **kernel version** (#263): a date, `kernel_version: 2026-08-11`, recording which generation of built-in defaults the config was created from or last updated to. Creation and "restore defaults" both stamp it; ordinary config edits never touch it (it is unrelated to `version`, the optimization counter).
 
 ## Development-side bumps, mechanically enforced
 

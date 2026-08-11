@@ -10,7 +10,7 @@
 
 **When it can be removed.** The legacy inline-substitution path and the frozen section constants carry retirement comments (the `withShellLineFallback` convention): remove once pre-`{{SKILLS}}`-era agent configs are no longer expected in the wild — realistically after a migration nudge has shipped in a release or two and telemetry/user reports show no legacy templates remaining.
 
-## Kernel version (#260)
+## Kernel version (#263)
 
 `system_config.yaml` predating the change carries no `kernel_version` stamp and is therefore reported **outdated** — that is the feature working, not breakage; nothing changes until the user clicks Update (or Restore). The smart merge recognizes the current and the pre-#257 generations by hash; a value matching neither — older generations, or user edits — is conservatively kept, so an update can never destroy a customization it cannot prove is stock. No user action is required.
 
