@@ -56,8 +56,24 @@ describe("formToServer", () => {
     expect(built).toEqual({ ok: true, server });
   });
 
-  it("defaults new entries to http", () => {
-    expect(emptyMcpForm().transport).toBe("http");
+  it("defaults new entries to http, with budget defaults prefilled", () => {
+    const form = emptyMcpForm();
+    expect(form.transport).toBe("http");
+    expect(form.connectTimeoutMs).toBe("10000");
+    expect(form.timeoutMs).toBe("120000");
+    expect(form.maxOutputLength).toBe("16000");
+  });
+
+  it("normalizes budgets equal to the defaults away on save (the entry keeps following default changes)", () => {
+    const built = formToServer({
+      ...emptyMcpForm(),
+      name: "a",
+      url: "https://x/mcp",
+    });
+    expect(built).toEqual({
+      ok: true,
+      server: { name: "a", config: { transport: "http", url: "https://x/mcp" } },
+    });
   });
 
   it("merges extras back and lets known fields win", () => {

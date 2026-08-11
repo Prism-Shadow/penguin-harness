@@ -333,6 +333,7 @@ export const zh = {
     mcpNumberInvalid: "必须是 > 0 的整数",
     mcpDuplicateName: "同名 Server 已存在",
     mcpTest: "测试连接",
+    mcpTestShort: "测试",
     mcpTesting: "测试中…",
     mcpTestOk: (tools: string[]): string =>
       tools.length === 0

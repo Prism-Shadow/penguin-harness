@@ -16,7 +16,7 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
+import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   emptyMcpForm,
@@ -43,6 +43,63 @@ function errorText(err: McpFormError | undefined): string | undefined {
     case "number":
       return S.agent.mcpNumberInvalid;
   }
+}
+
+/**
+ * The transport's target input (command / url) with the connectivity test riding inside
+ * the field — the same in-field idiom as the models dialog's base-URL suffix, but
+ * interactive. Padding reserves room so typed text never slides under the button.
+ */
+function InFieldTest({
+  label,
+  required,
+  error,
+  value,
+  onChange,
+  placeholder,
+  testing,
+  disabled,
+  onTest,
+}: {
+  label: string;
+  required?: boolean;
+  error?: string | undefined;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  testing: boolean;
+  disabled: boolean;
+  onTest: () => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+        {label}
+        {required && <span className="ml-0.5 text-red-500">*</span>}
+      </span>
+      <span className="relative block">
+        <Input
+          size="sm"
+          required={required}
+          invalid={Boolean(error)}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="pr-16 font-mono"
+          placeholder={placeholder}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          disabled={testing || disabled || value.trim() === ""}
+          onClick={onTest}
+          className="absolute inset-y-0 right-1.5 my-auto h-6 rounded px-1.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          {testing ? S.agent.mcpTesting : S.agent.mcpTestShort}
+        </button>
+      </span>
+      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+    </label>
+  );
 }
 
 /** Table cell summary: the spawn line for stdio, the URL for http/sse. */
@@ -79,16 +136,16 @@ export function McpServersSection({
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   // http leads (the Add modal's default), stdio second, legacy sse last.
-  const transportOptions: ReadonlyArray<OptionMenuChoice<McpTransportKind>> = [
-    { value: "http", triggerLabel: "http", label: "http", description: S.agent.mcpTransportHttp },
-    {
-      value: "stdio",
-      triggerLabel: "stdio",
-      label: "stdio",
-      description: S.agent.mcpTransportStdio,
-    },
-    { value: "sse", triggerLabel: "sse", label: "sse", description: S.agent.mcpTransportSse },
+  const transportOptions: ReadonlyArray<{ value: McpTransportKind; label: string }> = [
+    { value: "http", label: "http" },
+    { value: "stdio", label: "stdio" },
+    { value: "sse", label: "sse" },
   ];
+  const transportHints: Record<McpTransportKind, string> = {
+    http: S.agent.mcpTransportHttp,
+    stdio: S.agent.mcpTransportStdio,
+    sse: S.agent.mcpTransportSse,
+  };
 
   /** Persist the full list (immediate, vault-style); returns null on success or an error message. */
   const persist = async (next: MCPServerConfig[]): Promise<string | null> => {
@@ -265,9 +322,6 @@ export function McpServersSection({
         onClose={closeModal}
         footer={
           <>
-            <Button disabled={testing || busy} onClick={() => void testConnection()}>
-              {testing ? S.agent.mcpTesting : S.agent.mcpTest}
-            </Button>
             <Button onClick={closeModal}>{S.common.cancel}</Button>
             <Button variant="primary" disabled={busy} onClick={() => void submitModal()}>
               {S.common.save}
@@ -277,6 +331,17 @@ export function McpServersSection({
       >
         {form && (
           <div className="space-y-3">
+            {/* Transport first, as tab-style switches — the choice decides every field below. */}
+            <div className="space-y-1">
+              <Segmented
+                options={transportOptions}
+                value={form.transport}
+                onChange={(v) => patchForm({ transport: v })}
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {transportHints[form.transport]}
+              </p>
+            </div>
             <Input
               size="sm"
               label={S.agent.mcpName}
@@ -289,26 +354,18 @@ export function McpServersSection({
               placeholder="filesystem"
               autoComplete="off"
             />
-            <OptionMenu
-              mono
-              size="sm"
-              aria-label={S.agent.mcpTransport}
-              options={transportOptions}
-              value={form.transport}
-              onChange={(v) => patchForm({ transport: v })}
-            />
             {form.transport === "stdio" ? (
               <>
-                <Input
-                  size="sm"
+                <InFieldTest
                   label={S.agent.mcpCommand}
                   required
                   error={errorText(fieldErrors.command)}
                   value={form.command}
-                  onChange={(e) => patchForm({ command: e.target.value })}
-                  className="font-mono"
+                  onChange={(v) => patchForm({ command: v })}
                   placeholder="npx"
-                  autoComplete="off"
+                  testing={testing}
+                  disabled={busy}
+                  onTest={() => void testConnection()}
                 />
                 <Textarea
                   size="sm"
@@ -343,16 +400,16 @@ export function McpServersSection({
               </>
             ) : (
               <>
-                <Input
-                  size="sm"
+                <InFieldTest
                   label={S.agent.mcpUrl}
                   required
                   error={errorText(fieldErrors.url)}
                   value={form.url}
-                  onChange={(e) => patchForm({ url: e.target.value })}
-                  className="font-mono"
+                  onChange={(v) => patchForm({ url: v })}
                   placeholder="https://example.com/mcp"
-                  autoComplete="off"
+                  testing={testing}
+                  disabled={busy}
+                  onTest={() => void testConnection()}
                 />
                 <Textarea
                   size="sm"

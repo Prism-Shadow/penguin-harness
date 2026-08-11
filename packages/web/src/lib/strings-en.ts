@@ -355,6 +355,7 @@ export const en: Strings = {
     mcpNumberInvalid: "Must be an integer > 0",
     mcpDuplicateName: "A server with this name already exists",
     mcpTest: "Test connection",
+    mcpTestShort: "Test",
     mcpTesting: "Testing…",
     mcpTestOk: (tools: string[]): string =>
       tools.length === 0

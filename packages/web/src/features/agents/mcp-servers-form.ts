@@ -57,6 +57,21 @@ export type McpFormResult =
 /** Same server-name alphabet the core resolver enforces (`mcp__<name>__<tool>` prefix). */
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
+/**
+ * Effective defaults for the budget fields, shown prefilled in the form instead of empty
+ * boxes. Pinned to core's values: DEFAULT_MCP_CONNECT_TIMEOUT_MS
+ * (core environment/mcp/config.ts), DEFAULT_TOOL_TIMEOUT_MS and
+ * DEFAULT_MAX_OUTPUT_LENGTH (core environment/environment.ts) — re-declared here because
+ * importing core's runtime into the browser bundle is off the table. A saved value equal
+ * to its default is NOT written to the entry (the stored config keeps following future
+ * default changes).
+ */
+export const MCP_BUDGET_DEFAULTS = {
+  connectTimeoutMs: 10_000,
+  timeoutMs: 120_000,
+  maxOutputLength: 16_000,
+} as const;
+
 const KNOWN_CONFIG_KEYS = new Set([
   "transport",
   "command",
@@ -82,9 +97,9 @@ export function emptyMcpForm(): McpServerFormState {
     cwd: "",
     url: "",
     headersText: "",
-    connectTimeoutMs: "",
-    timeoutMs: "",
-    maxOutputLength: "",
+    connectTimeoutMs: String(MCP_BUDGET_DEFAULTS.connectTimeoutMs),
+    timeoutMs: String(MCP_BUDGET_DEFAULTS.timeoutMs),
+    maxOutputLength: String(MCP_BUDGET_DEFAULTS.maxOutputLength),
     extras: {},
   };
 }
@@ -118,10 +133,21 @@ export function serverToForm(entry: MCPServerConfig): McpServerFormState {
     cwd: typeof c["cwd"] === "string" ? c["cwd"] : "",
     url: typeof c["url"] === "string" ? c["url"] : "",
     headersText: mapToLines(c["headers"], ": "),
-    connectTimeoutMs:
-      typeof c["connectTimeoutMs"] === "number" ? String(c["connectTimeoutMs"]) : "",
-    timeoutMs: typeof c["timeoutMs"] === "number" ? String(c["timeoutMs"]) : "",
-    maxOutputLength: typeof c["maxOutputLength"] === "number" ? String(c["maxOutputLength"]) : "",
+    // Unset budgets show their effective default (a real number beats an empty box);
+    // saving that number back is normalized away (see formToServer).
+    connectTimeoutMs: String(
+      typeof c["connectTimeoutMs"] === "number"
+        ? c["connectTimeoutMs"]
+        : MCP_BUDGET_DEFAULTS.connectTimeoutMs,
+    ),
+    timeoutMs: String(
+      typeof c["timeoutMs"] === "number" ? c["timeoutMs"] : MCP_BUDGET_DEFAULTS.timeoutMs,
+    ),
+    maxOutputLength: String(
+      typeof c["maxOutputLength"] === "number"
+        ? c["maxOutputLength"]
+        : MCP_BUDGET_DEFAULTS.maxOutputLength,
+    ),
     extras,
   };
 }
@@ -199,7 +225,11 @@ export function formToServer(form: McpServerFormState): McpFormResult {
   for (const field of ["connectTimeoutMs", "timeoutMs", "maxOutputLength"] as const) {
     const parsed = parseBudget(form[field]);
     if (!parsed.ok) errors[field] = parsed.error;
-    else if (parsed.value !== undefined) config[field] = parsed.value;
+    // A value equal to the effective default is not written: the entry keeps following
+    // future default changes instead of pinning today's number.
+    else if (parsed.value !== undefined && parsed.value !== MCP_BUDGET_DEFAULTS[field]) {
+      config[field] = parsed.value;
+    }
   }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
