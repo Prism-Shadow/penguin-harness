@@ -182,9 +182,15 @@ function Invoke-ForwarderCase(
   $Forwarder = Join-Path $RepoRoot "packages\landing\public\install.ps1"
   $Output = @()
   $Succeeded = $true
-  $Arguments = @{}
-  if ($Offline) { $Arguments.Offline = $true }
-  try { $Output = @(& $Forwarder @Arguments *>&1) } catch { $Succeeded = $false }
+  try {
+    if ($Offline) {
+      $Output = @(& $Forwarder -Offline *>&1)
+    } else {
+      $Output = @(& $Forwarder *>&1)
+    }
+  } catch {
+    $Succeeded = $false
+  }
   Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result"
   Assert-True ($Fixture.Requests.Count -eq $ExpectedRequests) `
     "$Name made $($Fixture.Requests.Count) requests, expected $ExpectedRequests"
