@@ -357,18 +357,6 @@ export function AgentsPage() {
                     </Button>
                     <Button
                       size="icon"
-                      title={S.agent.tabMemory}
-                      aria-label={S.agent.tabMemory}
-                      onClick={() => openSettingsTab(a.agentId, "memory")}
-                    >
-                      <GlyphIcon
-                        d={CARD_ICONS.memory}
-                        size={15}
-                        className="text-gray-600 dark:text-gray-300"
-                      />
-                    </Button>
-                    <Button
-                      size="icon"
                       title={S.nav.traces}
                       aria-label={S.nav.traces}
                       onClick={() => navigate(`/traces?agentId=${encodeURIComponent(a.agentId)}`)}
