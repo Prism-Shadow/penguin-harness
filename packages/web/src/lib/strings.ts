@@ -1044,7 +1044,7 @@ Benchmark：
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
+    modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
