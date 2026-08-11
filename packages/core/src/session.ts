@@ -191,10 +191,19 @@ export class Session {
   private engine: ContextEngine | null = null;
   /**
    * Inputs of a run aborted mid-bootstrap, carried into the next run: the engine did not
-   * exist yet, so nothing reached the Trace — dropping them would silently lose the
-   * user's message. Prepended (and re-persisted by the engine) on the next run.
+   * exist yet to deliver them — dropping them would silently lose the user's message.
+   * Prepended on the next run so the model finally sees them.
    */
   private carryOverInput: OmniMessage[] = [];
+  /**
+   * Serialized envelopes of carried inputs the ABORT path already wrote to the Trace
+   * (the aborted turn is recorded: input + connect pair + abort). The next run's engine
+   * re-delivers those inputs but must not re-write them — consumed one-shot by the
+   * skip-wrapper handed to the engine at construction.
+   */
+  private carryOverPersisted: string[] = [];
+  /** The aborted attempt's yielded records (connect pair + abort event), stashed by ensureReady for the caller's Trace write. */
+  private abortedBootstrapRecords: OmniMessage[] = [];
   private readonly bootstrap: SessionConfig["bootstrap"];
   private readonly cancelBootstrap: (() => void) | undefined;
   private readonly mcpServers: string[];
@@ -311,8 +320,24 @@ export class Session {
     const ready = yield* this.ensureReady(opts?.signal);
     if (!ready) {
       // Aborted mid-bootstrap: the attempt is cancelled (cancelBootstrap) and the next
-      // run reconnects from scratch — carrying this input (merged, so repeated aborts
-      // keep accumulating exactly once each).
+      // run reconnects from scratch. The aborted turn still leaves a Trace — the input,
+      // the aborted connect pair and the abort event — so the analysis page shows the
+      // interruption and a reload (or restart) does not lose the message. The engine
+      // doesn't exist, so the Session writes them itself; inputs already persisted by a
+      // previous aborted attempt are skipped (repeat aborts record each exactly once),
+      // and the next successful run's engine skips re-writing them (carryOverPersisted).
+      for (const m of newMessages) {
+        const serialized = JSON.stringify(m);
+        if (this.carryOverPersisted.includes(serialized)) continue;
+        if (await this.writeTrace(m, "aborted-run input")) {
+          this.carryOverPersisted.push(serialized);
+        }
+      }
+      for (const m of this.abortedBootstrapRecords) {
+        await this.writeTrace(m, "aborted bootstrap record");
+      }
+      this.abortedBootstrapRecords = [];
+      // Carry the merged list, so repeated aborts keep accumulating exactly once each.
       this.carryOverInput = newMessages;
       return;
     }
@@ -362,9 +387,11 @@ export class Session {
    * Returns false when `signal` aborts mid-bootstrap: the attempt is CANCELLED
    * (`cancelBootstrap` → the provider aborts pending connects and resets — the next run
    * reconnects from scratch), the pair closes with `status: "aborted"`, and a standard
-   * abort event follows; nothing reaches the Trace (no engine exists — the aborted
-   * phase is live-only, and the caller stashes the run's input as carryOverInput so the
-   * next run delivers and persists it). No-op returning true once the engine exists; a rejected
+   * abort event follows. The aborted records are stashed (abortedBootstrapRecords) for
+   * the caller, which writes the turn to the Trace itself — input first, then the pair
+   * and the abort — since no engine exists to do it; the input is also carried
+   * (carryOverInput) so the next run delivers it to the model without re-writing it.
+   * No-op returning true once the engine exists; a rejected
    * bootstrap (unreadable resume history, LLM construction) throws to the caller, and a
    * later run retries with a fresh attempt.
    */
@@ -384,10 +411,17 @@ export class Session {
       // The cancelled attempt settles on its own (rejection expected); keep it from
       // surfacing as an unhandled rejection.
       work.catch(() => {});
+      // Stashed (not written here) so the caller can put the run's INPUT first — the
+      // Trace stays chronological: input, pair, abort.
+      this.abortedBootstrapRecords = records.length > 0 ? [...records] : [];
       if (this.mcpServers.length > 0) {
-        yield mcpConnectEnd({ status: "aborted", results: [] });
+        const end = mcpConnectEnd({ status: "aborted", results: [] });
+        yield end;
+        this.abortedBootstrapRecords.push(end);
       }
-      yield abortEvent("user");
+      const aborted = abortEvent("user");
+      yield aborted;
+      this.abortedBootstrapRecords.push(aborted);
       return false;
     }
     const { tools, llm, mcp } = outcome.value;
@@ -401,10 +435,31 @@ export class Session {
     }
     const toolsMsg = toolListReady(tools);
     yield toolsMsg;
+    // One-shot skip list: inputs carried from an aborted bootstrap were already written
+    // to the Trace by the abort path — the engine re-delivers them (model context) but
+    // must not re-write them. Exact-envelope match, each consumed once.
+    const persisted = this.carryOverPersisted;
+    this.carryOverPersisted = [];
+    const baseTrace = this.engineDeps.trace;
+    const trace: TraceSink | undefined =
+      baseTrace && persisted.length > 0
+        ? {
+            write: async (msg) => {
+              const at = persisted.indexOf(JSON.stringify(msg));
+              if (at >= 0) {
+                persisted.splice(at, 1);
+                return;
+              }
+              await baseTrace.write(msg);
+            },
+            ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
+          }
+        : baseTrace;
     // toolsMsg rides as `toolList` alone (first-run write + rotation rewrite); the
     // records array carries only the connect pair — one message, one carrier.
     this.engine = new ContextEngine({
       ...this.engineDeps,
+      ...(trace !== undefined ? { trace } : {}),
       llm,
       toolList: toolsMsg,
       bootstrapRecords: records,
@@ -544,13 +599,15 @@ export class Session {
   }
 
   /** Best-effort `session_meta` Trace write (warn-and-continue stance): a failure logs and never interrupts the run. */
-  private async writeTrace(msg: OmniMessage, label: string): Promise<void> {
-    if (!this.trace) return;
+  private async writeTrace(msg: OmniMessage, label: string): Promise<boolean> {
+    if (!this.trace) return false;
     try {
       await this.trace.write(msg);
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       process.stderr.write(`[trace] ${label} write failed: ${message}\n`);
+      return false;
     }
   }
 

@@ -454,12 +454,20 @@ describe("Session first-run bootstrap events", () => {
       const firstTypes = first.map((m) => (m.payload as { type?: string }).type);
       expect(firstTypes).toEqual(["mcp_connect_begin", "mcp_connect_end", "abort"]);
       expect((first[1]!.payload as { status?: string }).status).toBe("aborted");
-      // An attempt aborted before the engine exists is live-only: nothing but the meta
-      // reached the Trace (the bootstrap records are engine-written, and there is none).
+      // The aborted turn is RECORDED: the Session itself writes the input, the aborted
+      // connect pair and the abort event (no engine exists to do it) — the analysis page
+      // shows the interruption and a reload/restart keeps the message.
       const writtenTypes = written.map(
         (m) => (m.payload as { type?: string }).type ?? "session_meta",
       );
-      expect(writtenTypes).toEqual(["session_meta"]);
+      expect(writtenTypes).toEqual([
+        "session_meta",
+        "text",
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "abort",
+      ]);
+      expect((written.at(-2)!.payload as { status?: string }).status).toBe("aborted");
 
       release();
       const second: OmniMessage[] = [];
