@@ -203,7 +203,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "software-development",
     title: "Software Development",
     titleZh: "软件开发",
-    skills: ["web-design", "software-engineering"],
+    skills: ["web-design", "software-engineering", "remote-claude-code"],
   },
   {
     id: "ai-app-development",
@@ -217,7 +217,6 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
       "ollama",
       "llamafactory",
       "skill-porting",
-      "remote-claude-code",
     ],
   },
   {

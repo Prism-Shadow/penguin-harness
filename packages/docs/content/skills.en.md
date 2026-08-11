@@ -64,6 +64,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | Software Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
 | | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
+| | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
 | AI App Development | `penguin-sdk` | Build AI and RAG apps on the SDK: the createSession/run streaming loop plus a complete retrieval recipe with chunk-revealing citations |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
@@ -71,7 +72,6 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
 | | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
-| | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
 | Agent Tuning | `agent-creation` | Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata and installing needed Skills |
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |

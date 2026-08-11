@@ -82,6 +82,7 @@ describe("skills api", () => {
     expect(body.groups[1]!.skills.map((s) => s.name)).toEqual([
       "web-design",
       "software-engineering",
+      "remote-claude-code",
     ]);
     expect(body.groups[2]!.skills.map((s) => s.name)).toEqual([
       "penguin-sdk",
@@ -91,7 +92,6 @@ describe("skills api", () => {
       "ollama",
       "llamafactory",
       "skill-porting",
-      "remote-claude-code",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
       "agent-creation",

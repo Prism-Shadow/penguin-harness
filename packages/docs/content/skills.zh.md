@@ -64,6 +64,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `bento-slides` | 制作与编辑 Bento 演示文稿：单文件 `.bento.html`、文档即 JSON，把素材映射到图表、morph 转场与状态页 |
 | 软件开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
 | | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
+| | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |
 | AI 应用开发 | `penguin-sdk` | 基于 SDK 构建 AI 与 RAG 应用：createSession/run 流式循环，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
@@ -71,7 +72,6 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |
 | | `llamafactory` | 用 LlamaFactory 微调 LLM：注册数据集、以 YAML 配置训练、合并 LoRA 适配器并部署产物 |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh、GitHub 仓库或本地目录）的 Skill 经审查与规范化后安装进 Agent |
-| | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |
 | Agent 调优 | `agent-creation` | 根据需求创建或配置 Agent State，编写 AGENTS.md、设置身份信息并安装所需 Skill |
 | | `benchmark-design` | 为指定 Agent 设计并校准多 Case Benchmark，建立可追溯的 Formal Baseline |
 | | `agent-evaluation` | 内部叶子执行器：根据完整评测协议隔离执行并私密评分一个 Case Run |

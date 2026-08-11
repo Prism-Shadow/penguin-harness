@@ -136,7 +136,11 @@ describe("loadSkillGroups / groupSkills", () => {
     ]);
     expect(groups[0]!.title).toBe("Office Productivity");
     expect(groups[0]!.titleZh).toBe("办公效率");
-    expect(groups[1]!.skills.map((s) => s.name)).toEqual(["web-design", "software-engineering"]);
+    expect(groups[1]!.skills.map((s) => s.name)).toEqual([
+      "web-design",
+      "software-engineering",
+      "remote-claude-code",
+    ]);
     expect(groups[1]!.title).toBe("Software Development");
     expect(groups[1]!.titleZh).toBe("软件开发");
     expect(groups[2]!.skills.map((s) => s.name)).toEqual([
@@ -147,7 +151,6 @@ describe("loadSkillGroups / groupSkills", () => {
       "ollama",
       "llamafactory",
       "skill-porting",
-      "remote-claude-code",
     ]);
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
@@ -200,7 +203,10 @@ describe("loadSkillGroups / groupSkills", () => {
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
       { id: "office-productivity", skills: ["data-analysis", "firecrawl", "bento-slides"] },
-      { id: "software-development", skills: ["web-design", "software-engineering"] },
+      {
+        id: "software-development",
+        skills: ["web-design", "software-engineering", "remote-claude-code"],
+      },
       {
         id: "ai-app-development",
         skills: [
@@ -211,7 +217,6 @@ describe("loadSkillGroups / groupSkills", () => {
           "ollama",
           "llamafactory",
           "skill-porting",
-          "remote-claude-code",
         ],
       },
       {
