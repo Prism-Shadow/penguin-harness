@@ -89,8 +89,8 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
 /** Root directory of library files: the package's `skills/` (both dist/ and src/ sit one level below the package root, so one level up reaches it). */
 const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills");
 
-/** Character rule for Skill names (directory names): prevents path traversal. */
-const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+/** Character rule for Skill names (directory names): prevents path traversal (exported for the server's archive-install validation). */
+export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Reads a single library directory to construct a LibrarySkill; returns undefined if SKILL.md
@@ -154,7 +154,15 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "ai-app-development",
     title: "AI App Development",
     titleZh: "AI 应用开发",
-    skills: ["penguin-sdk", "penguin-cli", "agenthub-models", "vllm", "ollama", "llamafactory"],
+    skills: [
+      "penguin-sdk",
+      "penguin-cli",
+      "agenthub-models",
+      "vllm",
+      "ollama",
+      "llamafactory",
+      "skill-porting",
+    ],
   },
   {
     id: "agent-tuning",

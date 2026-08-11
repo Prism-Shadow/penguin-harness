@@ -11,6 +11,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
+import { osProxyEnv } from "./os-proxy.js";
+import { choosePort, readPreferredPort, rememberPreferredPort } from "./port-memory.js";
 import { appOriginFor, parsePortFile } from "./util.js";
 
 export interface EmbeddedServer {
@@ -103,26 +105,34 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
 }
 
 /**
- * Starts the embedded server on the given data root with an ephemeral port (PORT=0) and
- * a fresh one-shot token. Resolves once HTTP answers. The caller attaches its own
+ * Starts the embedded server on the given data root — preferring last launch's port so
+ * the app origin (and the renderer's origin-scoped localStorage: theme, language, …)
+ * stays stable across launches, with PORT=0 as the fallback allocator — and a fresh
+ * one-shot token. Resolves once HTTP answers. The caller attaches its own
  * `child.on("exit", …)` restart policy after this resolves.
  */
 export async function startEmbeddedServer(opts: {
   dataRoot: string;
   portFile: string;
+  preferredPortFile: string;
   log: (chunk: string) => void;
 }): Promise<EmbeddedServer> {
   const token = randomBytes(32).toString("base64url");
   fs.rmSync(opts.portFile, { force: true });
+  const requestedPort = await choosePort(readPreferredPort(opts.preferredPortFile));
   const child = utilityProcess.fork(serverEntryPath(), [], {
     serviceName: "penguin-server",
     stdio: "pipe",
     env: {
       ...process.env,
       ...bundledShellEnv(),
+      // OS proxy settings resolved at fork time (Electron resolveProxy) — only for the
+      // proxy variables the environment leaves unset, never overriding existing values.
+      // The server's "use system HTTP proxy" switch then governs whether they are used.
+      ...(await osProxyEnv()),
       PENGUIN_HOME: opts.dataRoot,
       HOST: "127.0.0.1",
-      PORT: "0",
+      PORT: String(requestedPort),
       PENGUIN_DESKTOP_TOKEN: token,
       PENGUIN_PORT_FILE: opts.portFile,
     },
@@ -135,6 +145,7 @@ export async function startEmbeddedServer(opts: {
   });
 
   const port = await waitForPortFile(opts.portFile, () => exited);
+  rememberPreferredPort(opts.preferredPortFile, port);
   const origin = appOriginFor(port);
   await waitForHttp(origin, () => exited);
   return { child, origin, token };

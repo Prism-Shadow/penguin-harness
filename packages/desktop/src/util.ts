@@ -13,8 +13,7 @@ export function parsePortFile(content: string): number | null {
 
 /**
  * The App origin for a port. Always `localhost`: on loopback the App is canonicalized
- * onto localhost and `127.0.0.1` is reserved as the preview host, which rejects /api
- * (see design § "桌面端原型 · 进程模型").
+ * onto localhost and `127.0.0.1` is reserved as the preview host, which rejects /api.
  */
 export function appOriginFor(port: number): string {
   return `http://localhost:${port}`;
@@ -41,9 +40,9 @@ export function isAppUrl(url: string, origin: string | null): boolean {
 
 /**
  * Whether a URL belongs to this instance's local surface: the app origin itself or its
- * loopback counterpart on the same port, which is where Workspace previews are served
- * (see design § "Workspace 文件预览"). Preview windows navigate freely within it; anything
- * else is external and belongs in the system browser.
+ * loopback counterpart on the same port, which is where Workspace previews are served.
+ * Preview windows navigate freely within it; anything else is external and belongs in
+ * the system browser.
  */
 export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
   if (origin === null) return false;

@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "PenguinHarness core SDK: context_engine, OmniMessage protocol, LLM/Environment interfaces.",
   "license": "Apache-2.0",

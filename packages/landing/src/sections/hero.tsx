@@ -1,65 +1,19 @@
 /**
  * Hero: enlarged logo + product name, the one-line headline whose rotating word
  * crossfades through a gaussian blur (Desktop <-> Server, localized per dictionary),
- * the one-sentence subtitle, the install one-liner behind an OS switcher, and stats.
+ * the desktop-first CTAs — a platform-aware download button pointing at /download
+ * (artifact resolution stays on that page), an all-platforms line and a link down to
+ * the quick start for CLI / self-hosted installs — and stats.
  * The rotating word is a stacked inline-grid so line width never jumps.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { S } from "../lib/strings";
-import { INSTALL_CMD, INSTALL_CMD_WINDOWS, REPO_URL } from "../lib/links";
-import { CopyButton } from "../components/copy-button";
-import { ArrowRightIcon, GitHubIcon } from "../components/icons";
+import { REPO_URL } from "../lib/links";
+import { detectPlatform } from "../lib/platform";
+import { ArrowRightIcon, DownloadIcon, GitHubIcon } from "../components/icons";
 
 const ROTATE_MS = 2600;
-
-type InstallOs = "linux" | "macos" | "windows";
-
-/**
- * Install one-liner behind an OS tab row: one command visible at a time (Linux and
- * macOS share the POSIX one-liner; the tabs still name them apart so nobody has to
- * know that). Prompt char follows the shell: $ for POSIX, > for PowerShell.
- */
-function InstallBox() {
-  const [os, setOs] = useState<InstallOs>("linux");
-  const cmd = os === "windows" ? INSTALL_CMD_WINDOWS : INSTALL_CMD;
-  const osBtn = (active: boolean) =>
-    `rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-      active
-        ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-gray-100"
-        : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-    }`;
-  return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 text-left dark:border-gray-800 dark:bg-gray-900">
-      <div
-        className="flex items-center gap-1 border-b border-gray-200 bg-gray-100/70 px-2 py-1.5 dark:border-gray-800 dark:bg-gray-800/40"
-        role="tablist"
-      >
-        {(["linux", "macos", "windows"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={os === key}
-            className={osBtn(os === key)}
-            onClick={() => setOs(key)}
-          >
-            {S.install[key]}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-3 py-2.5 pr-2.5 pl-4">
-        <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-gray-800 dark:text-gray-200">
-          <span className="mr-2 text-gray-400 select-none dark:text-gray-500">
-            {os === "windows" ? ">" : "$"}
-          </span>
-          {cmd}
-        </code>
-        <CopyButton text={cmd} className="shrink-0" />
-      </div>
-    </div>
-  );
-}
 
 function RotatingWord({ words }: { words: string[] }) {
   const [active, setActive] = useState(0);
@@ -86,6 +40,15 @@ function RotatingWord({ words }: { words: string[] }) {
 }
 
 export function Hero() {
+  // Platform-aware label only; every link goes to /download, where the platform
+  // cards and the GitHub/OSS artifact resolution live.
+  const detected = detectPlatform();
+  const downloadLabel = detected
+    ? S.hero.downloadCtaFor(S.download.platforms[detected].name)
+    : S.hero.downloadCta;
+  const textLink =
+    "inline-flex items-center gap-1 text-brand-700 underline decoration-brand-300 underline-offset-2 transition-colors hover:text-brand-600 dark:text-brand-300 dark:decoration-brand-700";
+
   return (
     <section className="relative overflow-hidden">
       <div className="hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
@@ -125,10 +88,17 @@ export function Hero() {
           style={{ animationDelay: "200ms" }}
         >
           <Link
-            to="/#quickstart"
+            to="/download"
             className="inline-flex h-11 items-center gap-2 rounded-lg bg-gray-900 px-5 text-sm font-medium text-white transition-colors hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
           >
-            {S.hero.ctaPrimary}
+            <DownloadIcon className="h-4 w-4" />
+            {downloadLabel}
+          </Link>
+          <Link
+            to="/#quickstart"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-white px-5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            {S.hero.ctaQuickstart}
             <ArrowRightIcon className="h-4 w-4" />
           </Link>
           <a
@@ -142,13 +112,18 @@ export function Hero() {
           </a>
         </div>
 
-        <div
-          className="anim-rise mx-auto mt-10 w-fit max-w-full"
+        <p
+          className="anim-rise mt-5 text-sm text-gray-600 dark:text-gray-400"
           style={{ animationDelay: "240ms" }}
         >
-          <InstallBox />
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.hero.installHint}</p>
-        </div>
+          <Link to="/download" className={textLink}>
+            {S.hero.downloadAll}
+          </Link>
+          <span className="mx-2 text-gray-300 dark:text-gray-700">·</span>
+          <Link to="/#quickstart" className={textLink}>
+            {S.hero.cliAlt}
+          </Link>
+        </p>
 
         <dl
           className="anim-rise mx-auto mt-12 grid max-w-3xl grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4"

@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 import {
   clearDraft,
+  clearDraftChatDefaults,
+  clearDraftModelRef,
   draftKey,
   loadDraft,
   parseDraft,
@@ -181,6 +183,90 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     clearDraft(draftKey("user-a1", "project-a"), s);
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({});
     expect(s.map.size).toBe(0);
+  });
+
+  it("clearDraftModelRef drops only the model pin, keeping everything else (default-model change follow-through)", () => {
+    // Shared by the models page and the project-settings default-model control: after the
+    // Project default changes, the draft must follow it instead of pinning the old pick.
+    const s = memStorage();
+    saveDraft(
+      draftKey("user-a1", "project-a"),
+      {
+        text: "keep me",
+        agentId: "default_agent",
+        modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+        skills: ["agent-creation"],
+      },
+      s,
+    );
+    clearDraftModelRef("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({
+      text: "keep me",
+      agentId: "default_agent",
+      skills: ["agent-creation"],
+    });
+    // No cached pick (or no draft at all): a no-op, never an errant write.
+    clearDraftModelRef("user-a1", "project-a", s);
+    clearDraftModelRef("user-b2", "project-a", s);
+    expect(s.map.has(draftKey("user-b2", "project-a"))).toBe(false);
+    // Scoped by user × Project: another user's pin survives.
+    saveDraft(
+      draftKey("user-b2", "project-a"),
+      { modelRef: { provider: "openai", modelId: "gpt-5" } },
+      s,
+    );
+    clearDraftModelRef("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-b2", "project-a"), s).modelRef).toEqual({
+      provider: "openai",
+      modelId: "gpt-5",
+    });
+  });
+
+  it("clearDraftChatDefaults strips only the [default_chat]-seeded selections, preserving user content and the model pin", () => {
+    // Called by the project-settings save when the block changed: the next /chat/new must
+    // reseed Agent / Workspace / approval mode from the fresh defaults, while typed text,
+    // staged skills, the handoff/switch chips and the switch-becomes-default model
+    // carry-over (released only by clearDraftModelRef) all survive.
+    const s = memStorage();
+    saveDraft(
+      draftKey("user-a1", "project-a"),
+      {
+        text: "typed but unsent",
+        agentId: "old_default_agent",
+        workspace: "/srv/old-default",
+        approvalMode: "read-only",
+        modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+        handoffAgentId: "agent_helper",
+        switchModelRef: { provider: "openai", modelId: "gpt-5" },
+        skills: ["agent-creation"],
+      },
+      s,
+    );
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({
+      text: "typed but unsent",
+      modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+      handoffAgentId: "agent_helper",
+      switchModelRef: { provider: "openai", modelId: "gpt-5" },
+      skills: ["agent-creation"],
+    });
+  });
+
+  it('clearDraftChatDefaults strips any subset of the three fields (a cached "" workspace counts) and is otherwise a no-op', () => {
+    const s = memStorage();
+    // A single seeded field is enough to rewrite; "" workspace is an explicit "auto temp"
+    // pin and must be stripped like any other value (undefined-check, not truthiness).
+    saveDraft(draftKey("user-a1", "project-a"), { text: "t", workspace: "" }, s);
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({ text: "t" });
+    // Nothing seeded left (or no draft at all): a no-op, never an errant write.
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    clearDraftChatDefaults("user-b2", "project-a", s);
+    expect(s.map.has(draftKey("user-b2", "project-a"))).toBe(false);
+    // Scoped by user × Project: another user's pins survive.
+    saveDraft(draftKey("user-b2", "project-a"), { agentId: "default_agent" }, s);
+    clearDraftChatDefaults("user-a1", "project-a", s);
+    expect(loadDraft(draftKey("user-b2", "project-a"), s)).toEqual({ agentId: "default_agent" });
   });
 
   it("storage throwing (quota/private mode): save does not throw, load yields an empty draft", () => {

@@ -33,7 +33,7 @@ export interface ScheduleDefinition {
   endAtMs?: number;
   /** The target Session to bind to; defaults to creating a new Session each time. */
   sessionId?: string;
-  /** Workspace for new-Session mode (same semantics as manually starting a session; auto-creates a temp directory if unspecified). */
+  /** Workspace for new-Session mode (same semantics as manually starting a session; a temporary workspace is auto-created if unspecified). */
   workspace?: string;
   /** Model for new-Session mode (upstream id, always paired with provider; omit both for the Project's default reference). */
   modelId?: string;

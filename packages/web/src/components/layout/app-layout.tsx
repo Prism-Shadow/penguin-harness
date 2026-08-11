@@ -8,13 +8,17 @@ import { useMemo, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import { S } from "../../lib/strings";
 import { latestConversation } from "../../lib/session-grouping";
+import { useVersionInfo } from "../../lib/use-version-info";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
+import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
-import { NAV_ICONS, NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { NAV_ICONS } from "../ui/icons";
+import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
@@ -37,8 +41,16 @@ const railItemClass = (active: boolean) =>
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { agents, setCurrentAgentId } = useProject();
+  const { agents, currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
+  /**
+   * Passive (active=false): never triggers a fetch — the rail mirrors whatever the lazy
+   * check has already learned (the pinned sidebar's dropdown or the draft page started it),
+   * matching the pinned sidebar's avatar dot. Cache pushes keep it live while mounted.
+   */
+  const { update } = useVersionInfo(false);
+  /** Same "named release only" gate as the pinned sidebar's update row (see sidebar.tsx). */
+  const newVersion = update?.updateAvailable === true ? (update.latestVersion ?? null) : null;
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
@@ -53,8 +65,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
+  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first (draft-sessions.ts), then a default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
   const newChat = () => {
+    if (user && currentProject) parkActiveDraft(user.userId, currentProject.projectId);
     const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
     if (agentId) setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
@@ -129,12 +142,27 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       </nav>
       <button
         type="button"
-        title={`${user?.userId ?? ""} · ${S.nav.expandSidebar}`}
-        aria-label={user?.userId ?? S.auth.admin}
+        title={[user?.userId ?? "", S.nav.expandSidebar]
+          .concat(newVersion !== null ? [S.update.newVersion(newVersion)] : [])
+          .join(" · ")}
+        aria-label={
+          newVersion !== null
+            ? `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`
+            : (user?.userId ?? S.auth.admin)
+        }
         onClick={onExpand}
-        className="mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+        className="relative mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
       >
         {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+        {/* Update reminder dot, mirroring the pinned sidebar's avatar (same look, same
+            border trick against the rail background); the title/aria-label above name the
+            release, since the rail has no update row of its own. */}
+        {newVersion !== null && (
+          <span
+            aria-hidden
+            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-gray-50 bg-[var(--accent-bg)] dark:border-gray-900"
+          />
+        )}
       </button>
     </div>
   );
@@ -142,6 +170,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  // Desktop shell only (gated inside): system notification when a task finishes while
+  // the window is unfocused.
+  useCompletionNotifications();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.

@@ -13,7 +13,9 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
+import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type { ServerConfig } from "./config.js";
+import { mergedNoProxy } from "./net/proxy.js";
 import { openDatabase } from "./db/database.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
@@ -22,22 +24,27 @@ import { MembersRepo } from "./db/repos/members.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
 import { GoalsRepo } from "./db/repos/goals.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
+import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
+import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { AuthService } from "./auth/service.js";
+import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { adminUsersRoutes } from "./http/routes/admin.js";
+import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
 import { authRoutes } from "./http/routes/auth.js";
 import { meRoutes } from "./http/routes/me.js";
 import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
+import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { vaultRoutes } from "./http/routes/vault.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
@@ -69,6 +76,7 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
+import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
@@ -90,6 +98,8 @@ export interface AppDeps {
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
   prefsRepo: UiPrefsRepo;
+  /** Admin-level server-global settings (currently the proxy switches and address). */
+  serverSettingsRepo: ServerSettingsRepo;
   authService: AuthService;
   adminService: AdminService;
   projectService: ProjectService;
@@ -98,6 +108,8 @@ export interface AppDeps {
   agentConfigService: AgentConfigService;
   sessionService: SessionService;
   traceService: TraceService;
+  /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
+  traceIndex: TraceIndexService;
   usageService: UsageService;
   /** GitHub latest-release lookup for the web UI's update reminder (cached, fail-soft). */
   updateCheck: UpdateCheckService;
@@ -147,13 +159,41 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const usageRepo = new UsageRepo(db);
   const errorsRepo = new ErrorsRepo(db);
   const prefsRepo = new UiPrefsRepo(db);
+  const serverSettingsRepo = new ServerSettingsRepo(db);
+  // Command-subprocess proxy policy for core, keyed on the
+  // "agent environment uses the proxy" switch (the app switch only drives the server's
+  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
+  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
+  // over whatever the environment carries; on without an address → pass the environment
+  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
+  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
+  // the manager adopts for the first Task).
+  const proxyEnv = (): ProxyEnvPolicy | null => {
+    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
+    const url = serverSettingsRepo.getProxyUrl();
+    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+  };
   const schedulesRepo = new SchedulesRepo(db);
   const goalsRepo = new GoalsRepo(db);
 
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
-  const traceService = new TraceService(config.root);
+  // Session-origin registry: session_meta is the single source of truth (no DB column);
+  // shared by the manager (subagent registration), the loader (self-heal rebuild),
+  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
+  // listing classification.
+  const sessionSources = new SessionSources();
+  // Trace-file index: the derived cache every trace listing/locating path serves from
+  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
+  const traceIndexRepo = new TraceIndexRepo(db);
+  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
+  const traceService = new TraceService(config.root, {
+    index: traceIndex,
+    sessions: sessionsRepo,
+    sources: sessionSources,
+  });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
   // harmless and there is nothing to persist or rotate.
@@ -182,14 +222,10 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const titles =
     overrides.titles ??
     new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
-  // Session-origin registry: session_meta is the single source of truth (no DB column);
-  // shared by the manager (subagent registration), the loader (self-heal rebuild) and
-  // SessionService (creation / adoption / lazy list resolution).
-  const sessionSources = new SessionSources();
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources),
+    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
     sources: sessionSources,
     recorder,
     errors,
@@ -212,13 +248,22 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     goals: goalsRepo,
     projectConfig: projectConfigService,
     manager,
+    traceIndex,
   });
+  // Any password update for the built-in admin makes the persisted initial-password
+  // plaintext stale (either the password is no longer initial, or a reset replaced it
+  // with an admin-chosen value that is never persisted): drop the file so later startups
+  // stop re-printing a credential that no longer signs in.
+  const onPasswordChanged = (userId: string): void => {
+    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
+  };
   const authService = new AuthService({
     users: usersRepo,
     authSessions: authSessionsRepo,
     provisionInitialProject: (user, isAdmin) =>
       projectService.provisionInitialProject(user, isAdmin),
     seedAdminPassword: config.seedAdminPassword,
+    onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -228,6 +273,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     authSessions: authSessionsRepo,
     projects: projectsRepo,
     projectService,
+    onPasswordChanged,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const sessionService = new SessionService({
@@ -236,6 +282,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     projectConfig: projectConfigService,
     sources: sessionSources,
+    traceIndex,
+    proxyEnv,
   });
   // Schedule scheduler: active only while the server is running. Only
   // assembled here; start() is called in index.ts (tests drive it via tickOnce, no real timer).
@@ -246,6 +294,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessions: sessionsRepo,
     runner: manager,
     sessionCreator: sessionService,
+    projectConfig: projectConfigService,
     errors,
     notify: (userId, event) => {
       channels.get(userChannelKey(userId)).publish(event, "server_event");
@@ -258,6 +307,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     db,
     sessionsRepo,
     prefsRepo,
+    serverSettingsRepo,
     authService,
     adminService,
     projectService,
@@ -266,6 +316,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     agentConfigService,
     sessionService,
     traceService,
+    traceIndex,
     usageService,
     updateCheck,
     workspaceFiles,
@@ -318,7 +369,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // cookie had ever been set on that host — act as the user. So the preview host serves ONLY
   // /preview/*: /api answers 401 (it never sets or honors a cookie there, closing both the
   // login and the stale-cookie paths), and everything else 302s to the canonical App host.
-  // See design § "Workspace 文件预览". Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
+  // Off when PENGUIN_PREVIEW_ORIGIN is set: previews then
   // use that origin rather than the loopback counterpart, so 127.0.0.1 is an ordinary App
   // access point and must not be locked down — deployments enforce the equivalent at the
   // reverse proxy (route only /preview/* to the App on the preview origin).
@@ -372,12 +423,14 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/me", meRoutes(deps));
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
+  app.route("/api/admin/settings", adminSettingsRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
+  app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
@@ -394,7 +447,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the
   // signed token in the path is the only credential. Mounted before static hosting so the
-  // SPA fallback cannot swallow it. See design § "Workspace 文件预览".
+  // SPA fallback cannot swallow it.
   app.route("/preview", previewRoutes(deps));
 
   // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.

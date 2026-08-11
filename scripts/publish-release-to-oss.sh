@@ -71,6 +71,17 @@ penguin-darwin-arm64.tar.gz
 penguin-universal.tar.gz
 penguin-win32-x64.zip
 "
+# Desktop installers carry version-less names (see packages/desktop/electron-builder.yml)
+# and are verified as a set through SHA256SUMS.desktop instead of per-file .sha256 twins.
+DESKTOP_INSTALLERS="
+penguin-desktop-darwin-arm64.dmg
+penguin-desktop-darwin-arm64.zip
+penguin-desktop-darwin-x64.dmg
+penguin-desktop-darwin-x64.zip
+penguin-desktop-linux-x86_64.AppImage
+penguin-desktop-linux-amd64.deb
+penguin-desktop-win32-x64.exe
+"
 FILES="$BUNDLES
 penguin-linux-x64.tar.gz.sha256
 penguin-linux-arm64.tar.gz.sha256
@@ -79,6 +90,8 @@ penguin-darwin-arm64.tar.gz.sha256
 penguin-universal.tar.gz.sha256
 penguin-win32-x64.zip.sha256
 SHA256SUMS
+$DESKTOP_INSTALLERS
+SHA256SUMS.desktop
 install.sh
 install.ps1
 "
@@ -94,6 +107,7 @@ for bundle in $BUNDLES; do
   (cd "$RELEASE_DIR" && sha256sum -c "$bundle.sha256")
 done
 (cd "$RELEASE_DIR" && sha256sum -c SHA256SUMS)
+(cd "$RELEASE_DIR" && sha256sum -c SHA256SUMS.desktop)
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT

@@ -30,7 +30,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) on first start; change it right away. `penguin server` starts the same process headless.
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) in a framed notice on every start until it is changed; change it right away. `penguin server` starts the same process headless.
 
 ## One-shot run
 

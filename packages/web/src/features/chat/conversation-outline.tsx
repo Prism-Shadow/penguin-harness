@@ -10,15 +10,22 @@
  *   hit-transparent (pointer events only on the ticks), so wheel scrolling anywhere in
  *   the gutter keeps scrolling the stream. Rendered into MessageStream's relative wrapper
  *   via its `outline` slot, so the rail spans exactly the stream area — never the composer.
+ *   Long conversations don't stack every turn: the rail renders a sliding window of ticks
+ *   around the reading position (`windowOutline`, its width sized to the measured rail
+ *   height so the stack can never spill over the toolbar or composer), tiny edge dots
+ *   standing in for the turns hidden past it, and labels keep their global turn numbers.
  *
  * - `OutlineMenuButton` — the fallback for when the rail cannot show: a toolbar icon
  *   button (top right) opening a dropdown index of the same entries, tap to jump. Phones
  *   are the primary case (no hover pointer, no gutter), but it also covers a desktop
  *   window whose gutter a docked panel has eaten — navigation stays reachable either way.
+ *   The dropdown list scrolls, so it stays complete — no windowing here.
  *
  * Which shape shows is the owner's call via `useOutlineRailFit`: the rail needs a
  * hover-capable pointer and a live-measured gutter (ResizeObserver — window resizes and
  * panel drags both count), and the menu button renders exactly when the rail cannot.
+ * Below OUTLINE_MIN_TURNS turns neither shape renders at all — that short a conversation
+ * needs no index.
  *
  * Jump targets are the [data-outline-anchor] wrappers MessageItems stamps at the top
  * level only, queried scoped to the stream's scroll container (item ids repeat across
@@ -33,7 +40,14 @@ import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import type { OutlineEntry } from "./outline-model";
-import { previewText } from "./outline-model";
+import {
+  globalTurnNumber,
+  outlineVisible,
+  previewText,
+  railTickPitch,
+  railWindowHalf,
+  windowOutline,
+} from "./outline-model";
 
 /** Panel-with-list glyph (24×24 line path) for the toolbar menu button. */
 const OUTLINE_ICON =
@@ -52,15 +66,11 @@ const FLASH_MS = 1000;
  */
 const GUTTER_MIN_PX = 56;
 
-/** The stream column cap the gutter derives from (Tailwind max-w-3xl). */
-const COLUMN_MAX_PX = 768;
+/** The stream column cap the gutter derives from (Tailwind max-w-3xl = 48rem). */
+const COLUMN_MAX_REM = 48;
 
 /** The rail's hover-preview interaction needs a pointer that can hover. */
 const HOVER_QUERY = "(hover: hover) and (pointer: fine)";
-
-/** Tick pitch bounds (px): compress toward MIN as turns outgrow the rail, never past hoverability. */
-const TICK_PITCH_MAX = 12;
-const TICK_PITCH_MIN = 5;
 
 export interface OutlineRailFit {
   /** Whether the rail can show: hover-capable pointer AND a wide-enough measured gutter. */
@@ -96,7 +106,11 @@ export function useOutlineRailFit(
     const el = scrollRef.current;
     if (!el) return;
     const measure = () => {
-      const gutter = (el.clientWidth - COLUMN_MAX_PX) / 2;
+      // The column cap is rem-based: resolve it against the live root font size, so
+      // browser font scaling (which widens the real column without touching the
+      // container) can't leave the rail sitting on top of the prose.
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const gutter = (el.clientWidth - COLUMN_MAX_REM * rem) / 2;
       setFit({ gutterOk: gutter >= GUTTER_MIN_PX, height: el.clientHeight });
     };
     measure();
@@ -156,6 +170,26 @@ function jumpToAnchor(container: HTMLElement | null, id: number): void {
   flashTimer = window.setTimeout(() => anchor.classList.remove("outline-flash"), FLASH_MS);
 }
 
+/**
+ * Edge hint for the rail's sliding window: a tiny vertical ellipsis of dots where turns
+ * are hidden past the window. Purely decorative and non-interactive — it never re-enables
+ * pointer events inside the hit-transparent overlay, and it hides from assistive tech
+ * (the ticks' global turn numbers already tell that story).
+ */
+function RailOverflowMark({ edge }: { edge: "above" | "below" }) {
+  return (
+    <div
+      data-outline-overflow={edge}
+      aria-hidden
+      className={`flex w-10 flex-col items-start gap-[3px] pl-4 ${edge === "above" ? "pb-1.5" : "pt-1.5"}`}
+    >
+      {[0, 1, 2].map((i) => (
+        <span key={i} className="h-[2px] w-[2px] rounded-full bg-gray-300 dark:bg-gray-700" />
+      ))}
+    </div>
+  );
+}
+
 /** The turn's reply preview for a card/menu row: text, an "answering" pulse for the newest running turn, or "". */
 function answerPreview(
   entry: OutlineEntry,
@@ -169,12 +203,20 @@ function answerPreview(
 
 export function ConversationOutline({
   entries,
+  turnOffset = 0,
   version,
   scrollRef,
   running,
   fit,
 }: {
   entries: OutlineEntry[];
+  /**
+   * Turns that exist BEFORE the loaded history window (windowed loading): added to every
+   * tick's global turn number, counted toward the visibility gate, and >0 keeps the
+   * "more above" edge dots on — numbering never lies about unloaded turns, and the rail
+   * signals that scrolling up will reveal them.
+   */
+  turnOffset?: number;
   /** Stream repaint signal: re-runs the scrollspy as content grows or the stream remounts. */
   version: number;
   /** MessageStream's scroll container (null while the stream isn't mounted, e.g. the empty greeting). */
@@ -194,7 +236,7 @@ export function ConversationOutline({
   // cheap, and keying on version also re-binds after the stream remounts on a session switch.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!fit.shown || !el || entries.length === 0) return;
+    if (!fit.shown || !el || !outlineVisible(turnOffset, entries.length)) return;
     const ids = new Set(entries.map((entry) => entry.anchorId));
     let raf: number | null = null;
     const compute = () => {
@@ -213,9 +255,11 @@ export function ConversationOutline({
     };
     // `entries` is rebuilt per version; length + version cover it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fit.shown, scrollRef, entries.length, version]);
+  }, [fit.shown, scrollRef, entries.length, turnOffset, version]);
 
-  if (!fit.shown || entries.length === 0) return null;
+  // The gate counts the WHOLE conversation (loaded + unloaded turns): a long session
+  // whose tail window happens to hold few entries still deserves its index.
+  if (!fit.shown || !outlineVisible(turnOffset, entries.length)) return null;
 
   /** Tick center Y relative to the rail overlay (the preview card anchors to it, clamped in render). */
   const tickTop = (e: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
@@ -223,14 +267,26 @@ export function ConversationOutline({
     return rect.top + rect.height / 2 - (navRef.current?.getBoundingClientRect().top ?? 0);
   };
 
-  // Compress the pitch as turns outgrow the rail (~32px breathing room); past ~140 turns
-  // at minimum pitch the stack simply clips — a conversation that long stopped being
-  // scannable by any other means well before the map does.
-  const pitch = Math.max(
-    TICK_PITCH_MIN,
-    Math.min(TICK_PITCH_MAX, Math.floor((fit.height - 32) / entries.length)),
+  // The rail renders a sliding window around the reading position, not every turn: an
+  // unbounded stack would outgrow the rail (and creep over the toolbar and composer) no
+  // matter how hard the pitch compresses. The half-width adapts to the measured rail
+  // height so the stack always fits; `start` is the windowed ticks' global offset —
+  // labels and active tracking stay in global turn numbers.
+  const half = railWindowHalf(fit.height);
+  const { start, end } = windowOutline(
+    entries.length,
+    entries.findIndex((en) => en.anchorId === activeId),
+    half,
+    half,
   );
-  const hovered = hover === null ? null : (entries.find((en) => en.anchorId === hover.id) ?? null);
+  const visible = entries.slice(start, end);
+
+  // Pitch compresses toward MIN as the window outgrows the rail; railWindowHalf already
+  // sized the window so the stack (plus edge dots) fits fit.height at minimum pitch.
+  const pitch = railTickPitch(fit.height, visible.length);
+  // Looked up in the windowed slice: a tick the window slid away from mid-hover unmounts
+  // without a mouseleave, and its card must not linger.
+  const hovered = hover === null ? null : (visible.find((en) => en.anchorId === hover.id) ?? null);
   const cardAnswer = hovered === null ? "" : answerPreview(hovered, entries, running, 160);
 
   return (
@@ -242,8 +298,14 @@ export function ConversationOutline({
       aria-label={S.chat.outlineTitle}
       className="pointer-events-none absolute inset-y-0 left-0 z-10 flex flex-col items-start justify-center"
     >
-      <div>
-        {entries.map((entry, i) => {
+      {/* max-h + clip is a safety net only: the height-adaptive window keeps the stack
+          inside the rail by construction, and this guarantees a mismeasure still can't
+          push ticks (which take pointer events) out over the toolbar or composer. */}
+      <div className="max-h-full overflow-hidden">
+        {/* "More above" also covers turns not yet LOADED (turnOffset > 0): the dots tell
+            the same story either way — earlier turns exist beyond the rendered ticks. */}
+        {(start > 0 || turnOffset > 0) && <RailOverflowMark edge="above" />}
+        {visible.map((entry, i) => {
           const active = entry.anchorId === activeId;
           return (
             <button
@@ -251,7 +313,12 @@ export function ConversationOutline({
               type="button"
               data-outline-tick={entry.anchorId}
               aria-current={active || undefined}
-              aria-label={S.chat.outlineTickLabel(i + 1, entry.question || S.chat.outlineNoText)}
+              // Global turn number (turnOffset + start + i): neither the sliding window
+              // nor a partially-loaded history changes how a turn is numbered.
+              aria-label={S.chat.outlineTickLabel(
+                globalTurnNumber(turnOffset, start + i),
+                entry.question || S.chat.outlineNoText,
+              )}
               style={{ height: pitch }}
               onMouseEnter={(e) => setHover({ id: entry.anchorId, top: tickTop(e) })}
               onMouseLeave={() => setHover(null)}
@@ -275,6 +342,7 @@ export function ConversationOutline({
             </button>
           );
         })}
+        {end < entries.length && <RailOverflowMark edge="below" />}
       </div>
       {/* Preview card for the hovered/focused tick only — never mounted at rest. Purely a
           tooltip: hit-transparent (moving the mouse toward it can't trap hover) and hidden
@@ -318,16 +386,20 @@ export function ConversationOutline({
  */
 export function OutlineMenuButton({
   entries,
+  turnOffset = 0,
   scrollRef,
   running,
 }: {
   entries: OutlineEntry[];
+  /** Turns before the loaded window (windowed loading): gates visibility on the WHOLE conversation; the list itself shows loaded turns only. */
+  turnOffset?: number;
   scrollRef: RefObject<HTMLDivElement | null>;
   running: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
-  if (entries.length === 0) return null;
+  // Same gate as the rail: with this few turns neither shape earns its place.
+  if (!outlineVisible(turnOffset, entries.length)) return null;
 
   const setOpenComputing = (next: boolean) => {
     if (next && scrollRef.current) {

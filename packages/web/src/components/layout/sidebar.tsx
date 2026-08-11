@@ -4,7 +4,7 @@
  * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
- * Workspace path, auto temp directories merged into one trailing group, header "+" starts a
+ * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
  * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
@@ -49,8 +49,19 @@ import type { FolderCategory, SessionPartition } from "../../lib/session-groupin
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { Chevron } from "../ui/chevron";
-import { ChevronDown } from "../ui/icons";
+import { ChevronDown, NAV_ICONS } from "../ui/icons";
+import {
+  FOLDER_ICON,
+  FOLDER_OPEN_ICON,
+  FolderSection,
+  GroupHeader,
+  GroupModeToggle,
+  Icon,
+  MoreRow,
+  initialGroupMode,
+  storeGroupMode,
+} from "../ui/group-list";
+import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
@@ -62,41 +73,18 @@ import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
+import {
+  draftSessionTitle,
+  parkActiveDraft,
+  removeDraftSession,
+  useDraftSessions,
+} from "../../features/chat/draft-sessions";
+import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
-
-function Icon({ d, size = 16 }: { d: string; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d={d} />
-    </svg>
-  );
-}
-
-/** Page-nav glyphs (shared with the collapsed rail in app-layout.tsx). */
-export const NAV_ICONS = {
-  agents: "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01",
-  /** Skill library (an open book: two pages + spine). */
-  skills: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z",
-  models: "M7 7h10v10H7zM4 10h3m10 0h3M4 14h3m10 0h3M10 4v3m4-3v3m-4 10v3m4-3v3",
-  usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  traces: "M4 6h16M4 12h10M4 18h13",
-  /** Benchmark center (a trophy: cup + two handles + base). */
-  benchmark:
-    "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
-} as const;
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -105,26 +93,12 @@ export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L
 const GEAR_ICON =
   "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
 
-/** Folder outline, closed (same glyph as the draft page's Workspace pill); collapsed workspace groups and the grouping toggle use it. */
-const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z";
-
-/** Folder outline, open (lucide folder-open: back panel + tilted front flap); expanded workspace groups use it. */
-const FOLDER_OPEN_ICON =
-  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
-
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 const PIN_ICON =
   "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
 
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-
-/** Grouping mode of the Session list (persisted; Workspace is the default). */
-type GroupMode = "workspace" | "agent";
-const GROUP_MODE_KEY = "penguin.sidebarGroupMode";
-function initialGroupMode(): GroupMode {
-  return localStorage.getItem(GROUP_MODE_KEY) === "agent" ? "agent" : "workspace";
-}
 
 /**
  * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
@@ -162,6 +136,9 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
  * the composite never collides across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
+
+/** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
+const DRAFTS_GROUP_KEY = "\0drafts";
 
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
@@ -268,6 +245,12 @@ export function Sidebar({
       setUpdateChecking(false);
     }
   };
+  /**
+   * Admin-only server-global proxy settings dialog: the menu carries only the opener
+   * row; the controls, their form semantics, and the open-time hydration all live in
+   * ProxySettingsDialog.
+   */
+  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -298,6 +281,10 @@ export function Sidebar({
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  /** Parked draft conversation pending delete confirmation (null = none). */
+  const [deletingDraft, setDeletingDraft] = useState<DraftSessionEntry | null>(null);
+  /** Parked draft conversations of this user × Project, newest first (reactive module store). */
+  const draftEntries = useDraftSessions(user?.userId ?? null, currentProjectId);
   /** Session currently being renamed (null = none) and the title being typed. */
   const [renamingSession, setRenamingSession] = useState<SessionInfo | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -305,7 +292,7 @@ export function Sidebar({
   const [renameError, setRenameError] = useState<string | null>(null);
 
   const setGroupMode = (mode: GroupMode) => {
-    localStorage.setItem(GROUP_MODE_KEY, mode);
+    storeGroupMode(mode);
     setGroupModeState(mode);
     // The two modes have unrelated group lists: restart the reveal window.
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
@@ -491,9 +478,13 @@ export function Sidebar({
    * chat" uses default_agent; this explicit intent overrides the previously selected Agent in
    * the draft cache (the rest of the draft content, such as the message body, is preserved).
    * The workspace-mode group header's "+" additionally carries that group's Workspace path
-   * ("" = the auto temp directory), pre-filling the draft's Workspace selection the same way.
+   * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
   const newChat = (agentId?: string, workspace?: string) => {
+    // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
+    // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
+    // so this click always lands on an empty composer and never silently shelves content.
+    if (user && currentProjectId) parkActiveDraft(user.userId, currentProjectId);
     if (agentId) setCurrentAgentId(agentId);
     const state = {
       ...(agentId ? { agentId } : {}),
@@ -501,6 +492,16 @@ export function Sidebar({
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
+  };
+
+  /** Confirmed parked-draft deletion: drops the entry; a deleted draft that is open falls back to the plain new-chat page. */
+  const confirmDeleteDraft = () => {
+    if (!deletingDraft) return;
+    if (user && currentProjectId) {
+      removeDraftSession(user.userId, currentProjectId, deletingDraft.id);
+    }
+    if (activeSessionId === deletingDraft.id) navigate(`/chat/${DRAFT_SESSION_ID}`);
+    setDeletingDraft(null);
   };
 
   /** Target of the menu's "New chat": default_agent, falling back to the first Agent (if the list isn't ready yet, resolution is deferred to the draft page). */
@@ -543,9 +544,6 @@ export function Sidebar({
     </ul>
   );
 
-  const folderClass =
-    "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 dark:text-gray-500 dark:hover:bg-gray-800/50";
-
   /**
    * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
    * fetched until the first expand, and once open the folder pages independently with
@@ -553,7 +551,11 @@ export function Sidebar({
    * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
    * mode): the folder exists only while its share is non-zero, the label shows that
    * share, and "More" shows only while loaded rows fall short of it — an Agent's
-   * content in *other* Workspaces can never surface a folder here.
+   * content in *other* Workspaces can never surface a folder here. The folder's "More"
+   * pages independently of the active list's; in workspace mode a fetched page can land
+   * rows in other groups' folders too, so one click may grow this folder by fewer than
+   * a full page — the row shows a loading state while the fetch runs and stays until
+   * this group's share is fully loaded.
    */
   const renderFolder = (
     groupKey: string,
@@ -568,39 +570,21 @@ export function Sidebar({
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
     const total = Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
-    const open = openFolders.has(folderKey(groupKey, category));
     // More while the group's share isn't fully loaded AND somewhere is left to fetch from
     // (counts drifting above reality would otherwise leave a dead button until reload).
     const more = rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
-    const pending = pendingLoads.has(loadKey(groupKey, category));
     return (
-      <div key={category} className="mt-1">
-        <button
-          type="button"
-          onClick={() => toggleFolder(groupKey, category, agentIds)}
-          className={folderClass}
-        >
-          <Chevron open={open} size={12} />
-          {S.chat.folderGroups[category](total)}
-        </button>
-        {open && renderRows(rows, withAgentHint)}
-        {/* The folder's own paging, independent of the active list's "More". In workspace
-            mode a fetched page can land rows in other groups' folders too, so one click may
-            grow this folder by fewer than a full page — the row shows a loading state while
-            the fetch runs and stays until this group's share is fully loaded. */}
-        {open && more && (
-          <button
-            type="button"
-            aria-label={S.chat.loadMore}
-            disabled={pending}
-            onClick={() => trackedLoadMore(groupKey, category, agentIds)}
-            className={`${folderClass} disabled:opacity-60`}
-          >
-            <span className="w-3" aria-hidden />
-            {pending ? S.common.loading : S.chat.loadMore}
-          </button>
-        )}
-      </div>
+      <FolderSection
+        key={category}
+        label={S.chat.folderGroups[category](total)}
+        open={openFolders.has(folderKey(groupKey, category))}
+        onToggle={() => toggleFolder(groupKey, category, agentIds)}
+        more={more}
+        pending={pendingLoads.has(loadKey(groupKey, category))}
+        onMore={() => trackedLoadMore(groupKey, category, agentIds)}
+      >
+        {renderRows(rows, withAgentHint)}
+      </FolderSection>
     );
   };
 
@@ -654,16 +638,12 @@ export function Sidebar({
 
         {/* Load/reveal more (kept adjacent to the active list it extends, above the folders) */}
         {hasMore && (
-          <button
-            type="button"
-            aria-label={S.chat.loadMore}
-            disabled={activePending}
+          <MoreRow
+            label={S.chat.loadMore}
+            pending={activePending}
             onClick={() => showMore(groupKey, activeAgents)}
-            className={`${folderClass} mt-0.5 disabled:opacity-60`}
-          >
-            <span className="w-3" aria-hidden />
-            {activePending ? S.common.loading : S.chat.loadMore}
-          </button>
+            className="mt-0.5"
+          />
         )}
 
         {/* Folders (collapsed by default): subagent first — spawned from the conversations
@@ -676,14 +656,11 @@ export function Sidebar({
 
   /** Reveal-next-page-of-groups row (render cap only — data loading is untouched). */
   const moreGroupsRow = (total: number) => (
-    <button
-      type="button"
+    <MoreRow
+      label={S.chat.moreGroups(total - groupCap)}
       onClick={() => setGroupCap((c) => c + SIDEBAR_GROUP_PAGE_SIZE)}
-      className={`${folderClass} mt-1`}
-    >
-      <span className="w-3" aria-hidden />
-      {S.chat.moreGroups(total - groupCap)}
-    </button>
+      className="mt-1"
+    />
   );
 
   const navItems: Array<{ to: string; label: string; icon: string }> = [
@@ -860,31 +837,41 @@ export function Sidebar({
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             {S.chat.sessionList}
           </span>
-          <div className="flex items-center gap-0.5">
-            {(
-              [
-                { value: "workspace", icon: FOLDER_ICON, label: S.chat.groupByWorkspace },
-                { value: "agent", icon: NAV_ICONS.agents, label: S.chat.groupByAgent },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                title={opt.label}
-                aria-label={opt.label}
-                aria-pressed={groupMode === opt.value}
-                onClick={() => setGroupMode(opt.value)}
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
-                  groupMode === opt.value
-                    ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-                    : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
-                }`}
-              >
-                <Icon d={opt.icon} size={14} />
-              </button>
-            ))}
-          </div>
+          <GroupModeToggle value={groupMode} onChange={setGroupMode} />
         </div>
+
+        {/* Parked draft conversations (unsent new chats, newest first): pinned above both
+            grouping modes — they belong to no Agent or Workspace until sent. Hidden
+            entirely while there are none. */}
+        {draftEntries.length > 0 && (
+          <div className="pt-2.5">
+            <GroupHeader
+              open={!collapsedGroups.has(DRAFTS_GROUP_KEY)}
+              onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
+              icon={
+                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  <Icon d={NEW_CHAT_ICON} size={14} />
+                </span>
+              }
+              label={S.chat.draftGroup}
+              uppercase
+              count={draftEntries.length}
+            />
+            {!collapsedGroups.has(DRAFTS_GROUP_KEY) && (
+              <ul className="space-y-0.5">
+                {draftEntries.map((entry) => (
+                  <DraftRow
+                    key={entry.id}
+                    entry={entry}
+                    active={entry.id === activeSessionId}
+                    onOpen={() => go(`/chat/${entry.id}`)}
+                    onDelete={() => setDeletingDraft(entry)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {groupMode === "agent" ? (
           loading && agents.length === 0 ? (
@@ -896,50 +883,44 @@ export function Sidebar({
               const pinned = pinnedGroups.has(agent.agentId);
               return (
                 <div key={agent.agentId} className="pt-2.5">
-                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings.
-                      self-stretch makes the collapse toggle's hover pill span the full row height
-                      set by the h-7 action buttons (one consistent hover geometry). */}
-                  <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(agent.agentId)}
-                      aria-expanded={!collapsed}
-                      aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-                      className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
-                    >
+                  {/* Group header: collapse toggle (Agent name) + pin + new chat + Agent settings. */}
+                  <GroupHeader
+                    open={!collapsed}
+                    onToggle={() => toggleGroup(agent.agentId)}
+                    icon={
                       <AgentAvatar
                         id={agent.agentId}
                         name={agentDisplayName(agent)}
                         size={18}
                         className="shrink-0 rounded"
                       />
-                      <span className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        {agentDisplayName(agent)}
-                      </span>
-                      {/* Expand/collapse indicator sits right after the Agent name */}
-                      <Chevron open={!collapsed} size={12} className="text-gray-400" />
-                      <span className="min-w-0 flex-1" />
-                    </button>
-                    <GroupPinButton pinned={pinned} onToggle={() => togglePin(agent.agentId)} />
-                    {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
-                    <button
-                      type="button"
-                      title={S.chat.newSessionMenu}
-                      aria-label={S.chat.newSessionMenu}
-                      onClick={() => newChat(agent.agentId)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                    >
-                      <Icon d="M12 5v14M5 12h14" size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      title={S.agent.settings}
-                      onClick={() => go(`/agents/${agent.agentId}`)}
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                    >
-                      <Icon d={GEAR_ICON} size={16} />
-                    </button>
-                  </div>
+                    }
+                    label={agentDisplayName(agent)}
+                    uppercase
+                    actions={
+                      <>
+                        <GroupPinButton pinned={pinned} onToggle={() => togglePin(agent.agentId)} />
+                        {/* New chat: enters draft state directly with this group's Agent (all options live on the draft input card) */}
+                        <button
+                          type="button"
+                          title={S.chat.newSessionMenu}
+                          aria-label={S.chat.newSessionMenu}
+                          onClick={() => newChat(agent.agentId)}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                        >
+                          <Icon d="M12 5v14M5 12h14" size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          title={S.agent.settings}
+                          onClick={() => go(`/agents/${agent.agentId}`)}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                        >
+                          <Icon d={GEAR_ICON} size={16} />
+                        </button>
+                      </>
+                    }
+                  />
 
                   {collapsed
                     ? null
@@ -977,46 +958,38 @@ export function Sidebar({
             ];
             return (
               <div key={group.key} className="pt-2.5">
-                {/* Group header: collapse toggle (folder icon + directory basename + count, full path in the tooltip) + pin + new chat in this Workspace.
-                    self-stretch: without it the collapse toggle's hover pill is content-sized
-                    (~20px) and sits visibly shorter than the h-7 action buttons beside it. */}
-                <div className="group/header flex items-center gap-0.5 px-1 pb-0.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group.key)}
-                    aria-expanded={!collapsed}
-                    aria-label={collapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-                    {...(group.fullPath !== null ? { title: group.fullPath } : {})}
-                    className="flex min-w-0 flex-1 items-center gap-1 self-stretch rounded px-1 py-0.5 text-left transition-colors duration-150 hover:bg-gray-200/50 dark:hover:bg-gray-800/50"
-                  >
-                    {/* Folder opens and closes with the group */}
+                {/* Group header: collapse toggle (folder icon + directory basename + count, full
+                    path in the tooltip; the count = the group's active conversations only, exact
+                    server share, loaded rows win a disagreement — the folders never feed it) +
+                    pin + new chat in this Workspace. */}
+                <GroupHeader
+                  open={!collapsed}
+                  onToggle={() => toggleGroup(group.key)}
+                  icon={
+                    /* Folder opens and closes with the group */
                     <span className="shrink-0 text-gray-400 dark:text-gray-500">
                       <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
                     </span>
-                    {/* No uppercase transform: a directory basename's casing is meaningful */}
-                    <span className="min-w-0 truncate text-xs font-semibold text-gray-500 dark:text-gray-400">
-                      {group.temp ? S.chat.tempWorkspaces : group.label}
-                    </span>
-                    {/* Header count = the group's active conversations only (exact server share;
-                        loaded rows win a disagreement) — the folders never feed it. */}
-                    <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                      {Math.max(counts?.totals.active ?? 0, parts.active.length)}
-                    </span>
-                    <Chevron open={!collapsed} size={12} className="text-gray-400" />
-                    <span className="min-w-0 flex-1" />
-                  </button>
-                  <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                  {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = auto temp directory); the Agent is the current one, falling back to default_agent */}
-                  <button
-                    type="button"
-                    title={S.chat.newSessionInWorkspace}
-                    aria-label={S.chat.newSessionInWorkspace}
-                    onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  >
-                    <Icon d="M12 5v14M5 12h14" size={18} />
-                  </button>
-                </div>
+                  }
+                  label={group.temp ? S.chat.tempWorkspaces : group.label}
+                  count={Math.max(counts?.totals.active ?? 0, parts.active.length)}
+                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                  actions={
+                    <>
+                      <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
+                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
+                      <button
+                        type="button"
+                        title={S.chat.newSessionInWorkspace}
+                        aria-label={S.chat.newSessionInWorkspace}
+                        onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                      >
+                        <Icon d="M12 5v14M5 12h14" size={18} />
+                      </button>
+                    </>
+                  }
+                />
 
                 {/* A workspace group can span Agents: the group body fans folder loads and "More"
                     out per category to the Agents whose share of THIS group is non-zero (plus the
@@ -1044,13 +1017,22 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => setUserOpen(!userOpen)}
+              {...(newVersion !== null
+                ? {
+                    // The dot alone is mysterious: name the release on the trigger (hover
+                    // tooltip + accessible name), in the update row's exact wording.
+                    title: S.update.newVersion(newVersion),
+                    "aria-label": `${user?.userId ?? ""} · ${S.update.newVersion(newVersion)}`,
+                  }
+                : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
                 {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
                 {/* Update reminder dot: only once the lazy check has actually run and found a
-                    newer release. The border (sidebar background color) separates it from the
-                    avatar for every accent — the neutral accent matches the avatar fill. */}
+                    newer release (the trigger button's tooltip/label above explains it). The
+                    border (sidebar background color) separates it from the avatar for every
+                    accent — the neutral accent matches the avatar fill. */}
                 {updateAvailable && (
                   <span
                     aria-hidden
@@ -1103,6 +1085,21 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
+            {/* Admin-only, server-global proxy settings: one menu row opening the
+                dialog (same idiom as Change password above) — the switch, address
+                input and their live-save semantics live in ProxySettingsDialog. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setProxySettingsOpen(true);
+                }}
+              >
+                {S.settings.proxyMenu}
+              </button>
+            )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
                 layout: the menu used to stack a release-notes link, an admin "Update now" row
                 and this check row on top of each other). It reads "Check for updates" and runs
@@ -1163,8 +1160,10 @@ export function Sidebar({
                 )}
               </button>
             )}
-            {/* User management is visible only to admins (the page route also has its own guard as a fallback). */}
-            {user?.isAdmin && (
+            {/* User management is visible only to admins (the page route also has its own
+                guard as a fallback), and never in desktop mode: the desktop app is
+                single-user and the server rejects the routes (desktop_single_user). */}
+            {user?.isAdmin && !desktopMode && (
               <button
                 type="button"
                 className={menuItemClass}
@@ -1198,6 +1197,7 @@ export function Sidebar({
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
@@ -1277,7 +1277,78 @@ export function Sidebar({
             : ""}
         </p>
       </ConfirmModal>
+
+      {/* Delete parked-draft confirmation: purely local (localStorage entry), but the typed
+          content is gone for good, which deserves the same explicit stop as a session. */}
+      <ConfirmModal
+        open={deletingDraft !== null}
+        title={S.chat.deleteDraft}
+        confirmLabel={S.common.delete}
+        onClose={() => setDeletingDraft(null)}
+        onConfirm={confirmDeleteDraft}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {deletingDraft
+            ? S.chat.deleteDraftConfirm(draftSessionTitle(deletingDraft) || S.chat.draftUntitled)
+            : ""}
+        </p>
+      </ConfirmModal>
     </div>
+  );
+}
+
+/** Single parked-draft row: first line of the unsent text + hover delete (opening resumes the draft at `/chat/<draft-id>`). */
+function DraftRow({
+  entry,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  entry: DraftSessionEntry;
+  active: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const title = draftSessionTitle(entry) || S.chat.draftUntitled;
+  return (
+    <li>
+      <div
+        className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+          active
+            ? "bg-gray-200/70 dark:bg-gray-800"
+            : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
+        >
+          <Truncated
+            text={title}
+            className={`min-w-0 flex-1 text-sm ${
+              active
+                ? "font-medium text-gray-900 dark:text-gray-100"
+                : "text-gray-700 dark:text-gray-300"
+            }`}
+          />
+        </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            title={S.chat.deleteDraft}
+            aria-label={S.chat.deleteDraft}
+            onClick={onDelete}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
+          >
+            <Icon
+              d="M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6"
+              size={14}
+            />
+          </button>
+        </div>
+      </div>
+    </li>
   );
 }
 

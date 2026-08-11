@@ -21,17 +21,26 @@
  * The sidebar group header "+" / menu "New conversation" explicitly specify an
  * Agent via route state (overriding the cached selection); the workspace-mode
  * group header "+" additionally carries a Workspace path pre-filling the
- * Workspace selection ("" = auto temp directory). A direct visit or refresh
- * falls back to the cache.
+ * Workspace selection ("" = temporary workspace). A direct visit or refresh
+ * falls back to the cache. When neither route state nor the mount-time cache claims a
+ * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
+ * approval mode (precedence: route state > draft cache > project default > built-in
+ * fallback); the model default already flows through models.defaultModel.
+ *
+ * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
+ * the change up: the project-settings dialog strips the cached pins (next visits reseed
+ * from the fresh defaults) and dispatches a same-tab chat-defaults-changed event that a
+ * MOUNTED draft answers by resetting Agent / Workspace / approval mode / Model in
+ * component state (see onDefaultsChanged) — typed-but-unsent text and staged skills
+ * always survive.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
   AgentModelConfigDto,
   AgentSummary,
   ApprovalMode,
-  DirListResponse,
+  ChatDefaultsDto,
   ModelRefDto,
   ModelsResponse,
   SessionCreateRequest,
@@ -49,7 +58,6 @@ import { useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
-import { noAutofill } from "../../components/ui/input";
 import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
@@ -59,6 +67,19 @@ import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
+import {
+  DRAFT_FLUSH_EVENT,
+  getDraftSession,
+  removeDraftSession,
+  saveDraftSession,
+} from "./draft-sessions";
+import {
+  CHAT_DEFAULTS_CHANGED_EVENT,
+  chatDefaultsChangedDetail,
+  type ChatDefaultsChangedDetail,
+} from "./chat-defaults-event";
+import { effectiveThinkingLevel } from "./thinking-level";
+import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
@@ -111,10 +132,13 @@ const FOLDER_GLYPHS: Record<ExampleFolderId, string> = {
 export function DraftView({
   projectId,
   models,
+  draftId,
 }: {
   projectId: string;
   /** Project model config (already fetched by ChatPage): candidate list and default model. */
   models: ModelsResponse | null;
+  /** Parked draft conversation id (`/chat/draft-…` — see draft-sessions.ts); absent = the ordinary active draft (`/chat/new`). */
+  draftId?: string;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -126,13 +150,26 @@ export function DraftView({
   // key that isn't account-scoped.
   const userId = useAuth().user?.userId ?? null;
 
-  // The cache is read only once, on mount: the component remounts keyed by Project,
-  // so switching Projects automatically switches to the corresponding draft; switching
-  // accounts always goes through logout (clearing the user unmounts the whole route
-  // tree), so logging back in is likewise a fresh mount.
-  const [cached] = useState<DraftCache>(() =>
-    userId ? loadDraft(draftKey(userId, projectId)) : {},
+  // The cache is read only once, on mount: the component remounts keyed by Project (and
+  // by parked-draft id), so switching Projects or parked drafts automatically switches to
+  // the corresponding content; switching accounts always goes through logout (clearing
+  // the user unmounts the whole route tree), so logging back in is likewise a fresh
+  // mount. A parked draft reads its own entry instead of the active slot.
+  const [parkedMissing] = useState(
+    () =>
+      draftId !== undefined && (!userId || getDraftSession(userId, projectId, draftId) === null),
   );
+  const [cached] = useState<DraftCache>(() => {
+    if (!userId) return {};
+    if (draftId !== undefined) return getDraftSession(userId, projectId, draftId)?.draft ?? {};
+    return loadDraft(draftKey(userId, projectId));
+  });
+
+  // A parked id that no longer exists (deleted in the sidebar, stale bookmark): fall
+  // back to the plain new-chat draft instead of editing into a void.
+  useEffect(() => {
+    if (parkedMissing) navigate("/chat/new", { replace: true });
+  }, [parkedMissing, navigate]);
 
   const [agentId, setAgentId] = useState<string | null>(
     cached.agentId ?? currentAgent?.agentId ?? null,
@@ -152,6 +189,41 @@ export function DraftView({
    */
   const skillsRef = useRef<string[]>(cached.skills ?? []);
 
+  // —— Project new-chat defaults ([default_chat]) ——
+  // Fetched once per Project mount (fail-soft: an error reads as "no defaults", so the
+  // draft keeps working). They prefill the seams below with the precedence
+  // route location.state > mount-time draft cache > project default > built-in fallback;
+  // null = still loading (the thinking picker below stays disabled until resolved).
+  const [chatDefaults, setChatDefaults] = useState<ChatDefaultsDto | null>(null);
+  /**
+   * Set once the chat-defaults-changed event delivered a fresh block (see the reseed
+   * handler below): from then on the mount-time fetch must not apply — it was started
+   * earlier and would overwrite the fresher event payload when it resolves.
+   */
+  const defaultsFromEventRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getChatDefaults(projectId)
+      .then((res) => {
+        if (!cancelled && !defaultsFromEventRef.current) setChatDefaults(res);
+      })
+      .catch(() => {
+        if (!cancelled && !defaultsFromEventRef.current) setChatDefaults({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  /**
+   * Fields the user already touched this mount: the project defaults arrive async (after
+   * mount), and an explicit pick made in the meantime must never be clobbered by them.
+   * The mount-time cache (`cached`) covers everything picked in PREVIOUS visits; these
+   * refs cover the window between mount and the defaults resolving.
+   */
+  const touchedRef = useRef({ agent: false, workspace: false, approval: false });
+
   // Unified resolution of the Agent selection (a single effect, single writer):
   // explicit route state > current valid value (from cache / panel selection) >
   // default_agent > the first one. Explicit intent (sidebar group header "+" / menu
@@ -165,6 +237,8 @@ export function DraftView({
   const routeState = location.state as { agentId?: string; workspace?: string } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
+  /** One-shot marker for the project-default Agent (seeding precedence, see below). */
+  const appliedDefaultAgent = useRef(false);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
@@ -181,13 +255,30 @@ export function DraftView({
         return;
       }
     }
+    // Project default ([default_chat].agent_id), inserted ahead of the fallback chain:
+    // applied at most once per mount, and only when nothing above it claims the field —
+    // no route override consumed this mount, no mount-time cached selection, no panel pick
+    // since mount (precedence: route state > draft cache > project default > the
+    // currentAgent/default_agent/first fallback the initial state and the line below give).
+    if (chatDefaults?.agentId !== undefined && !appliedDefaultAgent.current) {
+      appliedDefaultAgent.current = true;
+      if (
+        appliedStateKey.current === null &&
+        cached.agentId === undefined &&
+        !touchedRef.current.agent &&
+        valid(chatDefaults.agentId)
+      ) {
+        setAgentId(chatDefaults.agentId);
+        return;
+      }
+    }
     if (valid(agentId)) return;
     setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
-  }, [agents, agentId, location.key, stateAgentId]);
+  }, [agents, agentId, location.key, stateAgentId, chatDefaults, cached.agentId]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
-  // the auto temp directory). Unlike the Agent there's no list to validate against, so this is a
+  // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
   const stateWorkspace = routeState?.workspace;
   const appliedWorkspaceKey = useRef<string | null>(null);
@@ -204,6 +295,33 @@ export function DraftView({
     setWorkspace(stateWorkspace);
   }, [location.key, stateWorkspace]);
 
+  // Project defaults for Workspace / approval mode: the same apply-once discipline as the
+  // route-state effects above, deferred until the defaults resolve. A field is only seeded
+  // when nothing with higher precedence claims it — no route override (workspace only), no
+  // mount-time cached value (a cached "" workspace counts: it is an explicit temporary workspace),
+  // and no user edit since mount. Model is deliberately not here (models.defaultModel
+  // already flows through its own fallback effect below — the single-sourced default).
+  const appliedProjectDefaults = useRef(false);
+  useEffect(() => {
+    if (chatDefaults === null || appliedProjectDefaults.current) return;
+    appliedProjectDefaults.current = true;
+    if (
+      chatDefaults.workspace !== undefined &&
+      stateWorkspace === undefined &&
+      cached.workspace === undefined &&
+      !touchedRef.current.workspace
+    ) {
+      setWorkspace(chatDefaults.workspace);
+    }
+    if (
+      chatDefaults.approvalMode !== undefined &&
+      cached.approvalMode === undefined &&
+      !touchedRef.current.approval
+    ) {
+      setApprovalMode(chatDefaults.approvalMode);
+    }
+  }, [chatDefaults, stateWorkspace, cached.workspace, cached.approvalMode]);
+
   // Model fallback: once config is ready, if nothing is selected or the selection is no longer valid, fall back to the project default → the first model (always as a paired reference).
   useEffect(() => {
     if (!models) return;
@@ -214,43 +332,110 @@ export function DraftView({
     );
   }, [models, modelRef]);
 
-  // —— Conversation-time thinking level (backed by the Agent settings) ——
-  // Shows the selected Agent's current `model.thinking_level` ("" = no override); picking a
-  // level immediately persists it via the agent-config API (the PUT carries only that key —
-  // the server merges per-key into the YAML, so nothing else is clobbered). The session created
-  // on first send reads systemConfig fresh, so it runs with the picked level, which also
-  // becomes the Agent's new default. Refetched whenever the draft's Agent changes; while
-  // loading (or after a failed fetch) the picker stays disabled (null).
-  const [thinkingLevel, setThinkingLevel] = useState<string | null>(null);
+  /**
+   * Live reseed: the project-settings dialog saved new defaults in THIS tab while the
+   * draft is mounted. The dialog already stripped the cached pins, but this component's
+   * state still holds the old selections and persistNow would silently write them right
+   * back over the stripped cache — so the seeded fields are reset here to exactly what a
+   * fresh /chat/new mount would now produce (with the cache stripped, the seeding
+   * precedence collapses to: fresh project default > built-in fallback); the persist
+   * effect then pins the NEW values. Typed text and staged skills are user content and
+   * stay untouched; route-state overrides and in-mount picks are superseded — the save is
+   * the later explicit intent, and the next fresh mount would drop them anyway. Values
+   * come from the event payload (server-confirmed by the dialog's PUTs), not a refetch.
+   * The mount-time seeding effects re-run when chatDefaults changes but cannot fight
+   * this: their apply-once refs are already consumed, and where they are not, they
+   * re-apply the same fresh values.
+   */
+  const onDefaultsChanged = useCallback(
+    (detail: ChatDefaultsChangedDetail) => {
+      if (detail.defaults) {
+        const d = detail.defaults;
+        defaultsFromEventRef.current = true;
+        setChatDefaults(d);
+        touchedRef.current = { agent: false, workspace: false, approval: false };
+        setWorkspace(d.workspace ?? "");
+        setApprovalMode(d.approvalMode ?? "allow-all");
+        const valid = (id: string | undefined): id is string =>
+          id !== undefined && agents.some((a) => a.agentId === id);
+        if (valid(d.agentId)) {
+          setAgentId(d.agentId);
+        } else if (agents.length > 0) {
+          // No (valid) default Agent in the new block: the same fallback chain a fresh
+          // mount runs — the global current Agent, then default_agent, then the first.
+          // Skipped while the list is empty (nothing to validate against; keep the pick).
+          setAgentId(
+            currentAgent?.agentId ??
+              (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ??
+              null,
+          );
+        }
+      }
+      // New default model: adopt it directly (the event carries the authoritative pair).
+      // Setting null and leaning on the fallback effect would race ChatPage's models
+      // refetch and re-pin the STALE default from the old models prop.
+      if (detail.defaultModel !== undefined) setModelRef(detail.defaultModel);
+    },
+    [agents, currentAgent],
+  );
+  /** Latest-closure mirror for the window listener (same convention as persistRef). */
+  const onDefaultsChangedRef = useRef(onDefaultsChanged);
+  onDefaultsChangedRef.current = onDefaultsChanged;
   useEffect(() => {
-    setThinkingLevel(null);
+    const onEvent = (e: Event) => {
+      const detail = chatDefaultsChangedDetail(e, projectId);
+      if (detail) onDefaultsChangedRef.current(detail);
+    };
+    window.addEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+    return () => window.removeEventListener(CHAT_DEFAULTS_CHANGED_EVENT, onEvent);
+  }, [projectId]);
+
+  // —— Conversation-time thinking level (backed by the Agent settings) ——
+  // The picker DISPLAYS the effective level, resolved by the same chain core applies when
+  // the Session is created (core agent.ts `configuredThinkingLevel`): the Agent's explicit
+  // `model.thinking_level` > the Project's `default_chat.thinking_level` > the built-in
+  // "medium" (see effectiveThinkingLevel). `agentThinkingLevel` keeps the raw agent value
+  // ("" = no explicit override); the derived value below waits for BOTH fetches. Picking a
+  // level immediately persists it via the agent-config API (the PUT carries only that key —
+  // the server merges per-key into the YAML, so nothing else is clobbered): the session
+  // created on first send reads systemConfig fresh, so it runs with the picked level, which
+  // also becomes the Agent's new default — the project default is only a fallback and is
+  // never written from here. Refetched whenever the draft's Agent changes; while loading
+  // (or after a failed fetch) the picker stays disabled (null).
+  const [agentThinkingLevel, setAgentThinkingLevel] = useState<string | null>(null);
+  useEffect(() => {
+    setAgentThinkingLevel(null);
     if (!agentId) return;
     let cancelled = false;
     api
       .getAgentConfig(projectId, agentId)
       .then((res) => {
-        if (!cancelled) setThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [projectId, agentId]);
+  const thinkingLevel =
+    agentThinkingLevel === null || chatDefaults === null
+      ? null
+      : effectiveThinkingLevel(agentThinkingLevel, chatDefaults.thinkingLevel);
   /** Live mirror for the rollback value (a stale closure would roll back to an outdated level). */
   const thinkingRef = useRef<string | null>(null);
-  thinkingRef.current = thinkingLevel;
+  thinkingRef.current = agentThinkingLevel;
   const onChangeThinkingLevel = useCallback(
     (level: string) => {
       // "" (no override) is not persistable through the config API — the picker disables that row.
       if (!agentId || !level) return;
       const rollback = thinkingRef.current;
-      setThinkingLevel(level); // Optimistic: the picker reflects the choice immediately.
+      setAgentThinkingLevel(level); // Optimistic: the derived display follows immediately.
       api
         .putAgentConfig(projectId, agentId, {
           config: { model: { thinkingLevel: level as AgentModelConfigDto["thinkingLevel"] } },
         })
         .catch((e: unknown) => {
-          setThinkingLevel(rollback);
+          setAgentThinkingLevel(rollback);
           toastError(apiErrorText(e));
         });
     },
@@ -305,8 +490,10 @@ export function DraftView({
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
-    saveDraft(draftKey(userId, projectId), data);
-  }, [cancelPendingSave, userId, projectId, agentId, workspace, approvalMode, modelRef]);
+    // A parked draft writes back into its own list entry; the active draft into its slot.
+    if (draftId !== undefined) saveDraftSession(userId, projectId, draftId, data);
+    else saveDraft(draftKey(userId, projectId), data);
+  }, [cancelPendingSave, userId, projectId, draftId, agentId, workspace, approvalMode, modelRef]);
 
   // The timer and unmount cleanup read persistNow via a ref to always get the **latest version**: a stale closure would write back outdated options.
   const persistRef = useRef(persistNow);
@@ -345,6 +532,23 @@ export function DraftView({
     [],
   );
 
+  // parkActiveDraft ("New chat" clicked while text is typed here) reads the active cache
+  // synchronously right after firing this event: flush the debounce window so the park
+  // captures the latest keystrokes — and so this instance's unmount flush, which would
+  // otherwise fire AFTER the park, has nothing left to write back into the just-cleared
+  // active slot. A parked instance flushes into its own entry (harmless).
+  useEffect(() => {
+    const onFlush = (): void => {
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        persistRef.current();
+      }
+    };
+    window.addEventListener(DRAFT_FLUSH_EVENT, onFlush);
+    return () => window.removeEventListener(DRAFT_FLUSH_EVENT, onFlush);
+  }, []);
+
   /**
    * Discard the draft after a successful send: first cancels the pending save timer, otherwise
    * it would write the just-cleared draft back. The **model selection carries over** as the
@@ -356,16 +560,37 @@ export function DraftView({
     cancelPendingSave();
     // Clear the preselected skills too: any subsequent write (e.g. the unmount flush) must not resurrect a selection that's already been sent.
     skillsRef.current = [];
+    // The unmount flush routes through persistNow, which would otherwise write the
+    // just-sent content back (into the parked entry, resurrecting a deleted row): with
+    // the text gone the flush becomes an idempotent empty-shell write.
+    textRef.current = "";
     if (!userId) return;
+    if (draftId !== undefined) {
+      // A sent parked draft simply disappears from the list; the ACTIVE slot is not
+      // touched — it may hold a different conversation-in-the-making.
+      removeDraftSession(userId, projectId, draftId);
+      return;
+    }
     if (modelRef) saveDraft(draftKey(userId, projectId), { modelRef });
     else clearDraft(draftKey(userId, projectId));
-  }, [cancelPendingSave, userId, projectId, modelRef]);
+  }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
+    touchedRef.current.agent = true; // an explicit pick outranks a late-arriving project default
     setAgentId(a.agentId);
     // Follow through to the global current Agent: keeps the sidebar memory and stats convention consistent.
     setCurrentAgentId(a.agentId);
   };
+
+  /** User edits routed through these two so a late-arriving project default cannot clobber them. */
+  const changeWorkspace = useCallback((path: string) => {
+    touchedRef.current.workspace = true;
+    setWorkspace(path);
+  }, []);
+  const changeApprovalMode = useCallback((mode: ApprovalMode) => {
+    touchedRef.current.approval = true;
+    setApprovalMode(mode);
+  }, []);
 
   // One in-flight guard shared by both send entry points (composer send / example task): a
   // second submission while one is running would create a second Session with
@@ -500,7 +725,7 @@ export function DraftView({
           contextNow={0}
           vision={vision}
           approvalMode={approvalMode}
-          onChangeApprovalMode={setApprovalMode}
+          onChangeApprovalMode={changeApprovalMode}
           modeSaving={false}
           autoFocus
           agents={agents}
@@ -515,7 +740,7 @@ export function DraftView({
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
-          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={setWorkspace} />
+          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
         </div>
 
         {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
@@ -613,12 +838,15 @@ export function DraftView({
 }
 
 /**
- * Superscript "new version" pill on the version line (accent-colored, raised via
- * align-super). The only remaining copy: the sidebar's version row dropped its badge when
- * the three update rows collapsed into one whose label already names the new version.
+ * Superscript "new version" hint on the version line: plain small text raised via
+ * align-super, in the version line's own muted color and weight. Deliberately not a pill —
+ * user feedback was that the earlier accent-colored pill read as a button; the link case
+ * only adds a hover underline. The only remaining copy: the sidebar's version row dropped
+ * its badge when the three update rows collapsed into one whose label already names the
+ * new version.
  */
 const versionBadgeClass =
-  "ml-1.5 inline-block rounded-full bg-[var(--accent-bg)] px-1.5 align-super text-[10px] font-medium leading-4 text-[var(--accent-fg)] transition-opacity duration-150 hover:opacity-80";
+  "ml-1.5 inline-block align-super text-[10px] leading-4 text-gray-400 dark:text-gray-500";
 
 /**
  * Quiet version line under the brand subtitle: `vX.Y.Z · Last updated Jul 26`
@@ -654,7 +882,7 @@ function VersionLine() {
             rel="noopener noreferrer"
             title={S.update.newVersion(update.latestVersion)}
             aria-label={S.update.newVersion(update.latestVersion)}
-            className={versionBadgeClass}
+            className={`${versionBadgeClass} hover:underline`}
           >
             {S.update.newVersionBadge}
           </a>
@@ -664,12 +892,6 @@ function VersionLine() {
     </p>
   );
 }
-
-/** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
-const pillClass =
-  "flex max-w-64 items-center gap-1.5 rounded-full border border-gray-300 bg-white py-1 pl-1.5 pr-2 " +
-  "text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-50 hover:text-gray-900 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
 
 /** Agent selection (pill dropdown): avatar + name, menu opens downward with an internal scroll cap. */
 function AgentSelect({
@@ -755,261 +977,6 @@ function AgentSelect({
             </button>
           );
         })}
-      </div>
-    </Dropdown>
-  );
-}
-
-/**
- * Workspace selection (pill dropdown): the button shows the selected directory name (empty =
- * auto temporary directory). The menu browses server-side directories: **the current path can be
- * edited directly** at the top (Enter/blur commits it, an invalid directory toasts and reverts
- * to the previous path), the list omits hidden directories, and the hint text sits at the bottom
- * of the menu; only loads on first expand. On narrow screens the menu docks to whichever side
- * of the pill keeps it inside the viewport (measured on open — see menuDock).
- */
-function WorkspaceSelect({
-  projectId,
-  workspace,
-  onChange,
-}: {
-  projectId: string;
-  workspace: string;
-  onChange: (path: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  /**
-   * Menu docking, measured on each open: the pill follows the agent pill in a wrapping row, so
-   * its left offset varies with the agent's name — a statically left-anchored 20rem panel can
-   * cross the viewport's right edge on phones (measured ~143px past a 390px viewport). Keep the
-   * desktop left anchoring whenever the panel fits; otherwise dock to whichever side of the
-   * pill has more room, capping the width to that room via menuStyle. On desktop the panel
-   * always fits, so nothing changes there.
-   */
-  const [menuDock, setMenuDock] = useState<{ right: boolean; maxWidth?: number }>({
-    right: false,
-  });
-  const browsedRef = useRef(false);
-
-  const [dir, setDir] = useState<DirListResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** Edit draft for the path row: synced with the browsing position, reverts on a failed commit. */
-  const [pathDraft, setPathDraft] = useState("");
-
-  useEffect(() => {
-    setPathDraft(dir?.path ?? "");
-  }, [dir]);
-
-  /** Browses level by level (clicking a directory/parent); an empty string means the server's home directory (the default starting point). */
-  const loadDir = useCallback(
-    (abs: string) => {
-      setLoading(true);
-      setError(null);
-      api
-        .listDirs(projectId, abs)
-        .then(setDir)
-        .catch((e: unknown) => setError(apiErrorText(e)))
-        .finally(() => setLoading(false));
-    },
-    [projectId],
-  );
-
-  const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
-    const next = !open;
-    if (next) {
-      const r = e.currentTarget.getBoundingClientRect();
-      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-      const margin = 12; // breathing room against the viewport edge
-      // The panel's effective width: w-80 capped by its max-w-[calc(100vw-2rem)] class
-      // (rem-derived — the root font size is not 16px here).
-      const width = Math.min(20 * rem, window.innerWidth - 2 * rem);
-      const roomRight = window.innerWidth - margin - r.left; // room for a left-anchored panel
-      const roomLeft = r.right - margin; // room for a right-anchored panel
-      if (roomRight >= width) setMenuDock({ right: false });
-      else if (roomLeft > roomRight)
-        setMenuDock({ right: true, ...(roomLeft < width ? { maxWidth: roomLeft } : {}) });
-      else setMenuDock({ right: false, maxWidth: roomRight });
-    }
-    setOpen(next);
-    // Only loads on first expand: an already-filled absolute path is used as the starting point, otherwise the server falls back to the home directory.
-    if (next && !browsedRef.current) {
-      browsedRef.current = true;
-      const ws = workspace.trim();
-      loadDir(ws.startsWith("/") ? ws : "");
-    }
-  };
-
-  /** Commits the edited path: navigates to it if it exists, otherwise toasts and reverts to the current browsing position. */
-  const commitPathEdit = async () => {
-    const p = pathDraft.trim();
-    if (!p || p === dir?.path) {
-      setPathDraft(dir?.path ?? "");
-      return;
-    }
-    try {
-      setDir(await api.listDirs(projectId, p));
-    } catch {
-      toastError(S.chat.workspaceDirInvalid);
-      setPathDraft(dir?.path ?? "");
-    }
-  };
-
-  const trimmed = workspace.trim();
-  // Pill short name: the last segment of the directory name (root gives "/"); shows "auto temp directory" when empty.
-  const label = trimmed ? (trimmed.split("/").filter(Boolean).pop() ?? "/") : S.chat.workspaceAuto;
-  const parentPath = dir?.parent ?? null;
-  // Hidden directories (starting with .) are excluded from the list.
-  const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      menuClass={`top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
-        menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
-      }`}
-      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
-      button={
-        <button
-          type="button"
-          title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
-          aria-label={S.chat.workspace}
-          onClick={toggle}
-          className={pillClass}
-        >
-          {/* Folder icon */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            className="ml-0.5 shrink-0 text-gray-400"
-            aria-hidden
-          >
-            <path
-              d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-              strokeWidth="1.6"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
-          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
-        </button>
-      }
-    >
-      <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
-        <div className="rounded-md border border-gray-200 dark:border-gray-800">
-          {/* Current path (editable: Enter/blur commits, Escape discards) + "Use this directory" (closes the menu once selected) */}
-          <div className="flex items-center gap-1.5 border-b border-gray-100 px-1.5 py-1 dark:border-gray-800">
-            <input
-              value={pathDraft}
-              placeholder="…"
-              aria-label={S.chat.workspace}
-              {...noAutofill}
-              onChange={(e) => setPathDraft(e.target.value)}
-              onBlur={() => void commitPathEdit()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void commitPathEdit();
-                } else if (e.key === "Escape") {
-                  // Discard the edit: only reverts the draft; Escape bubbles up to Dropdown, which closes the menu.
-                  setPathDraft(dir?.path ?? "");
-                }
-              }}
-              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-xs text-gray-600 focus:border-gray-300 focus:outline-none dark:text-gray-300 dark:focus:border-gray-600"
-            />
-            <button
-              type="button"
-              disabled={!dir}
-              onClick={() => {
-                if (!dir) return;
-                onChange(dir.path);
-                setOpen(false);
-              }}
-              className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {S.chat.workspaceUseThis}
-            </button>
-          </div>
-          {/* Directory list (excludes hidden directories) */}
-          <ul className="max-h-40 overflow-y-auto py-1">
-            {parentPath !== null && (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => loadDir(parentPath)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-                >
-                  ↰ {S.chat.workspaceUp}
-                </button>
-              </li>
-            )}
-            {entries.map((entry) => (
-              <li key={entry.path}>
-                <button
-                  type="button"
-                  onClick={() => loadDir(entry.path)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-gray-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                </button>
-              </li>
-            ))}
-            {dir && entries.length === 0 && (
-              <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.chat.workspaceNoSubdirs}</li>
-            )}
-            {loading && <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.common.loading}</li>}
-            {/* Load failure (e.g. the cached starting directory was deleted): provide "retry" to fall back to the home directory, avoiding getting stuck in an error state. */}
-            {error && (
-              <li className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-red-500">
-                <span className="min-w-0 flex-1 truncate" title={error}>
-                  {error}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => loadDir("")}
-                  className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  {S.common.retry}
-                </button>
-              </li>
-            )}
-          </ul>
-        </div>
-        {/* When a directory has been specified, offer a one-click way back to the auto temp directory */}
-        {trimmed && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange("");
-              setOpen(false);
-            }}
-            className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            {S.chat.workspaceClear}
-          </button>
-        )}
-        {/* Hint text (bottom of the menu) */}
-        <p className="px-0.5 text-xs leading-5 text-gray-400 dark:text-gray-500">
-          {S.chat.workspaceHint}
-        </p>
       </div>
     </Dropdown>
   );

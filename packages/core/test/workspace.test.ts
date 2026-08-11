@@ -5,7 +5,7 @@
  *   `<agent>/workspaces/`.
  * - The id is checked for collisions within `workspaces/`: on conflict with an existing
  *   directory (EEXIST), it regenerates rather than reusing the existing directory; once
- *   retries are exhausted, it throws instead of silently falling back to an old temp Workspace.
+ *   retries are exhausted, it throws instead of silently falling back to an old temporary workspace.
  */
 import fs from "node:fs/promises";
 import os from "node:os";

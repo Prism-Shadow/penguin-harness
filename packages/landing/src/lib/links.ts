@@ -80,3 +80,53 @@ export const blogAssetUrl = (name: string): string => `${COMMUNITY_RAW}/blog-ass
 /** API key consoles (same URLs the in-app Models page links to). */
 export const DEEPSEEK_KEYS_URL = "https://platform.deepseek.com/api_keys";
 export const OPENROUTER_KEYS_URL = "https://openrouter.ai/workspaces/default/keys";
+
+/**
+ * Desktop app downloads. The installers carry version-less names (see
+ * packages/desktop/electron-builder.yml), which is what makes static links possible on a
+ * Pages-hosted site: GitHub's `releases/latest/download/<name>` always serves the newest
+ * release, no client-side resolution needed. The OSS mirror stores immutable per-tag
+ * directories instead, so mirror links DO need the current tag — the download page reads
+ * it from the bucket's `latest.json` pointer (the same file install.sh resolves) and
+ * falls back to the GitHub links when that fetch fails (e.g. CORS not configured, or the
+ * mirror unreachable).
+ */
+export const OSS_ORIGIN = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com";
+export const OSS_LATEST_JSON_URL = `${OSS_ORIGIN}/latest.json`;
+export const GITHUB_LATEST_DOWNLOAD = `${REPO_URL}/releases/latest/download`;
+
+export interface DesktopInstaller {
+  /** Stable asset file name, identical on GitHub Releases and the OSS mirror. */
+  file: string;
+  /** Language-neutral variant tag rendered on the button (arch / package format). */
+  variant: string;
+}
+
+/** Named separately: the first-launch FAQ's chmod command quotes this exact file name. */
+const LINUX_APPIMAGE: DesktopInstaller = {
+  file: "penguin-desktop-linux-x86_64.AppImage",
+  variant: "AppImage",
+};
+
+/** Installers per platform card, in display order. */
+export const DESKTOP_INSTALLERS: Record<"mac" | "windows" | "linux", DesktopInstaller[]> = {
+  mac: [
+    { file: "penguin-desktop-darwin-arm64.dmg", variant: "Apple Silicon" },
+    { file: "penguin-desktop-darwin-x64.dmg", variant: "Intel" },
+  ],
+  windows: [{ file: "penguin-desktop-win32-x64.exe", variant: "x64" }],
+  linux: [LINUX_APPIMAGE, { file: "penguin-desktop-linux-amd64.deb", variant: "deb" }],
+};
+
+/** Checksum list covering every desktop installer of a release. */
+export const DESKTOP_SHA256SUMS = "SHA256SUMS.desktop";
+
+/**
+ * First-launch fixes for the unsigned desktop builds (the download page FAQ).
+ * Language-neutral, like the install commands above. The macOS one deletes the
+ * quarantine flag that makes Gatekeeper report the app as "damaged"; the Linux
+ * one restores the execute bit browsers strip from a downloaded AppImage.
+ */
+export const MAC_UNQUARANTINE_CMD =
+  "sudo xattr -rd com.apple.quarantine /Applications/PenguinHarness.app";
+export const LINUX_APPIMAGE_CHMOD_CMD = `chmod +x ${LINUX_APPIMAGE.file}`;

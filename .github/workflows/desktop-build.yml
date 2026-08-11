@@ -1,4 +1,4 @@
-# Desktop packages (design § "桌面端原型 · 打包与更新", milestone M3).
+# Desktop packages: Electron installers for the desktop shell.
 #
 # Reusable three-OS matrix: stage the pnpm-deploy app tree, run electron-builder, and
 # upload the installers as workflow artifacts named desktop-<OS>. release.yml calls this
@@ -18,6 +18,12 @@ on:
         description: "Git ref to check out; release.yml passes the tag being published."
         required: false
         type: string
+        default: ""
+      tag:
+        description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
+        required: false
+        type: string
+        default: ""
       require_macos_signing:
         description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
         required: false
@@ -42,6 +48,12 @@ on:
         description: "Optional Git ref to check out."
         required: false
         type: string
+        default: ""
+      tag:
+        description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
+        required: false
+        type: string
+        default: ""
       require_macos_signing:
         description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
         required: false
@@ -87,6 +99,33 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      # Stamp the release version the same way release.yml stamps the CLI artifacts —
+      # core's VERSION/BUILD_DATE constants (what the app and server report) plus the
+      # desktop package.json electron-builder reads its installer metadata from;
+      # otherwise every installer carries the in-repo dev version (v0.2.1 shipped
+      # Windows metadata saying 0.2.0 this way). node instead of sed -i: this matrix
+      # includes macOS, whose BSD sed spells in-place editing differently. Dry runs
+      # (no tag) keep the dev versions.
+      - name: Stamp release version
+        if: inputs.tag != ''
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          V="${TAG#v}"
+          D="$(date -u +%Y-%m-%d)"
+          V="$V" D="$D" node -e '
+            const fs = require("fs");
+            const p = "packages/core/src/index.ts";
+            let s = fs.readFileSync(p, "utf8");
+            if (!/export const VERSION = "/.test(s)) throw new Error("VERSION const not found");
+            s = s.replace(/export const VERSION = "[^"]*"/, `export const VERSION = "${process.env.V}"`);
+            if (!/export const BUILD_DATE: string \| null = /.test(s)) throw new Error("BUILD_DATE const not found");
+            s = s.replace(/export const BUILD_DATE: string \| null = [^;]*/, `export const BUILD_DATE: string | null = "${process.env.D}"`);
+            fs.writeFileSync(p, s);
+          '
+          (cd packages/desktop && npm version --no-git-tag-version --allow-same-version "$V")
 
       - run: pnpm install --frozen-lockfile
 
@@ -320,11 +359,11 @@ jobs:
           name: desktop-${{ runner.os }}
           if-no-files-found: error
           path: |
-            packages/desktop/stage/out/*.AppImage
-            packages/desktop/stage/out/*.deb
-            packages/desktop/stage/out/*.dmg
-            packages/desktop/stage/out/*-mac.zip
-            packages/desktop/stage/out/*.exe
+            packages/desktop/stage/out/penguin-desktop-*.AppImage
+            packages/desktop/stage/out/penguin-desktop-*.deb
+            packages/desktop/stage/out/penguin-desktop-*.dmg
+            packages/desktop/stage/out/penguin-desktop-*.zip
+            packages/desktop/stage/out/penguin-desktop-*.exe
             # Update metadata: electron-updater reads latest*.yml from the Release, and
             # the blockmaps are what make differential downloads possible. Without these
             # the installers ship but nothing can auto-update.

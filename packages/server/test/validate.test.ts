@@ -1,10 +1,12 @@
 /**
- * Request-validation helper unit tests: positiveIntParam rejects trailing garbage, and
- * optionalDateParam rejects impossible calendar dates (shape-only checks let these through).
+ * Request-validation helper unit tests: positiveIntParam rejects trailing garbage,
+ * optionalDateParam rejects impossible calendar dates (shape-only checks let these through),
+ * and optionalNumber enforces the agent runtime-parameter rule (integer, > 0 or exactly -1)
+ * used for max_turns and friends.
  */
 import { describe, expect, it } from "vitest";
 import type { Context } from "hono";
-import { optionalDateParam, positiveIntParam } from "../src/http/validate.js";
+import { optionalDateParam, optionalNumber, positiveIntParam } from "../src/http/validate.js";
 import { HttpError } from "../src/http/errors.js";
 
 /** Minimal Context stub exposing a single path parameter. */
@@ -62,6 +64,34 @@ describe("optionalDateParam", () => {
   it("rejects impossible dates that pass the shape check", () => {
     for (const bad of ["2026-13-40", "2026-02-30", "2026-00-10", "2026-01-00", "2025-02-29"]) {
       expect(() => optionalDateParam(bad, "from")).toThrow(HttpError);
+    }
+  });
+});
+
+describe("optionalNumber with the agent runtime-parameter rule (integer, > 0 or -1)", () => {
+  // The exact rule agent-config PUT applies to maxTurns (and the other runtime numbers):
+  // -1 is the documented "unlimited" sentinel; every other non-positive value is rejected.
+  const rule = { integer: true, positiveOrMinusOne: true } as const;
+
+  it("accepts positive integers and the -1 unlimited sentinel", () => {
+    expect(optionalNumber({ maxTurns: 1 }, "maxTurns", rule)).toBe(1);
+    expect(optionalNumber({ maxTurns: 100 }, "maxTurns", rule)).toBe(100);
+    expect(optionalNumber({ maxTurns: -1 }, "maxTurns", rule)).toBe(-1);
+  });
+
+  it("returns undefined when the key is absent (PUT subsets leave it untouched)", () => {
+    expect(optionalNumber({}, "maxTurns", rule)).toBeUndefined();
+  });
+
+  it("rejects zero and negatives other than -1", () => {
+    for (const bad of [0, -2, -100]) {
+      expect(() => optionalNumber({ maxTurns: bad }, "maxTurns", rule)).toThrow(HttpError);
+    }
+  });
+
+  it("rejects non-integers and non-finite or non-number values", () => {
+    for (const bad of [1.5, -1.5, Number.NaN, Number.POSITIVE_INFINITY, "100", true, null]) {
+      expect(() => optionalNumber({ maxTurns: bad }, "maxTurns", rule)).toThrow(HttpError);
     }
   });
 });

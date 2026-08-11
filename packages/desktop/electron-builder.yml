@@ -1,4 +1,4 @@
-# electron-builder config (design § "桌面端原型 · 打包与更新", milestone M3).
+# electron-builder config for the desktop shell installers.
 #
 # The app directory is the pnpm-deploy staging tree assembled by scripts/stage.mjs —
 # a portable, self-contained node_modules (workspace packages materialized) plus the
@@ -32,10 +32,19 @@ nodeGypRebuild: false
 
 mac:
   category: public.app-category.developer-tools
+  # Brand icon (rendered from packages/web/public/penguin-logo.svg by
+  # scripts/render-icon.mjs, committed): electron-builder converts the 1024px PNG to
+  # icns itself (app-builder-lib iconConverter; >=512px required).
+  icon: build/icon.png
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
   notarize: true
+  # Version-less artifact names, following the CLI bundles (penguin-darwin-arm64.tar.gz):
+  # the version lives in the Release tag and SHA256SUMS.desktop, so the download page and
+  # the OSS mirror manifest can address every installer by a stable name — and GitHub's
+  # `releases/latest/download/<name>` stays a working static link across releases.
+  artifactName: penguin-desktop-darwin-${arch}.${ext}
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -43,6 +52,10 @@ mac:
       arch: [arm64, x64]
 
 win:
+  # Same source PNG; electron-builder converts it to the multi-size ico embedded in the
+  # exe (>=256px required).
+  icon: build/icon.png
+  artifactName: penguin-desktop-win32-${arch}.${ext}
   target:
     - target: nsis
       arch: [x64]
@@ -58,8 +71,16 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 linux:
+  # Pre-rendered freedesktop icon set (scripts/render-icon.mjs): a directory of NxN.png
+  # files is used as-is for AppImage/deb, no conversion step.
+  icon: build/icons
   # The scoped package name is not a valid executable file name.
   executableName: penguin-harness
+  # ${arch} expands to each Linux target's own convention — x86_64 for AppImage, amd64
+  # for deb — so the published names are penguin-desktop-linux-x86_64.AppImage and
+  # penguin-desktop-linux-amd64.deb; the OSS mirror manifest and the landing download
+  # page name them accordingly.
+  artifactName: penguin-desktop-linux-${arch}.${ext}
   category: Development
   maintainer: Prism Shadow <zheng@prismshadow.com>
   target:
@@ -67,3 +88,11 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
+
+deb:
+  # Extended copies of electron-builder's default scripts (overriding REPLACES them):
+  # they additionally create/remove the /usr/bin/penguin symlink to the staged CLI
+  # launcher (resources/app/bin/penguin), so a deb install gets the `penguin` command
+  # on PATH without the in-app install flow the other formats use.
+  afterInstall: build/linux/after-install.tpl
+  afterRemove: build/linux/after-remove.tpl

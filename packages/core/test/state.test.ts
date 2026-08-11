@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ID_PLACEHOLDER,
@@ -37,8 +38,10 @@ import {
   scratchpadDir,
   projectConfigPath,
   removeVaultEntry,
+  renderProjectConfigToml,
   resolveModelRef,
   resolveRoot,
+  saveProjectConfig,
   setDefaultModel,
   setVaultEntry,
   skillsDir,
@@ -127,6 +130,10 @@ describe("loadOrInitAgentState", () => {
       expect(state.systemConfig.system_prompt).toContain("Caller agent");
       // The default AGENTS.md is empty: it carries no preset guidance.
       expect(state.agentsMd).toBe("");
+      // The default turn cap is the -1 sentinel: a new agent has no per-Task turn limit, so
+      // long runs are never cut off unless the user configures a positive cap. Existing
+      // agents keep their stored max_turns verbatim (config is never auto-merged).
+      expect(state.systemConfig.max_turns).toBe(-1);
       expect(state.systemConfig.system_prompt).toContain(AGENTS_MD_PLACEHOLDER);
       expect(state.systemConfig.system_prompt).toContain(SESSION_ID_PLACEHOLDER);
       expect(state.systemConfig.system_prompt).toContain(CWD_PLACEHOLDER);
@@ -1251,6 +1258,75 @@ describe("project-config round trip", () => {
     await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
       /legacy|separate fields/,
     );
+  });
+});
+
+describe("default_chat (new-chat defaults block)", () => {
+  const block = {
+    agent_id: "default_agent",
+    workspace: "/tmp/some-ws",
+    approval_mode: "always-ask",
+    thinking_level: "high",
+  } as const;
+
+  it("is absent from the default config (absent = the pre-existing behavior)", () => {
+    expect("default_chat" in defaultProjectConfig()).toBe(false);
+  });
+
+  it("round-trips through save/load — a known key the CLI's literal rebuild keeps", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.default_chat = { ...block };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_chat).toEqual(block);
+    // A second unrelated save/load round trip (the load→save path that only keeps known
+    // keys) must not drop the block: it is echoed in loadProjectConfig's return literal.
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).default_chat).toEqual(block);
+  });
+
+  it("loads tolerantly: an invalid value drops that key, never the load", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[default_chat]",
+        'agent_id = "default_agent"',
+        "workspace = 3", // wrong type -> dropped
+        'approval_mode = "yolo"', // unknown enum -> dropped
+        'thinking_level = "none"', // "none" is never a project default -> dropped
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_chat).toEqual({ agent_id: "default_agent" });
+  });
+
+  it("drops the block entirely when it is not a table or nothing valid remains", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'default_chat = "high"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).default_chat).toBeUndefined();
+    await fs.writeFile(file, '[default_chat]\nthinking_level = "extreme"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).default_chat).toBeUndefined();
+  });
+
+  it("renderProjectConfigToml emits the [default_chat] table after every top-level line", () => {
+    // Pathological insertion order (a read-modify-write can append scalars after the block):
+    // if default_chat rendered first, the scalars below it would be parsed back as ITS
+    // members. The renderer defers table blocks below all top-level `key = value` lines.
+    const text = renderProjectConfigToml({
+      default_chat: { thinking_level: "low" },
+      name: "after-table",
+      default_model: { provider: "p", model_id: "m" },
+      models: [{ provider: "p", model_id: "m" }],
+    });
+    const parsed = parseToml(text) as Record<string, unknown>;
+    expect(parsed.name).toBe("after-table");
+    expect(parsed.default_model).toEqual({ provider: "p", model_id: "m" });
+    expect(parsed.default_chat).toEqual({ thinking_level: "low" });
+    expect(parsed.models).toEqual([{ provider: "p", model_id: "m" }]);
   });
 });
 

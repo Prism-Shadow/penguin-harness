@@ -11,6 +11,7 @@
  */
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
+import type { ProxyEnvPolicy } from "../../../interfaces.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;
@@ -33,8 +34,8 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
 };
 
 /**
- * Harness-owned variables **removed** from the child environment (removed, not blanked: a
- * program that checks `PORT` for presence rather than value must see nothing at all).
+ * Variables **removed** from the child environment (removed, not blanked: a program that
+ * checks `PORT` for presence rather than value must see nothing at all).
  *
  * `PORT` / `HOST` are stripped because they are never about the command being run. On the
  * serving paths they are the harness's own listener: `penguin web` / `penguin server` write both
@@ -56,6 +57,13 @@ const HARDENED_ENV: NodeJS.ProcessEnv = {
  * PenguinHarness server would otherwise serve the deployment's assets instead of the ones it just
  * built in the workspace, silently and with no error to read.
  *
+ * `FORCE_COLOR` / `CLICOLOR_FORCE` are color-forcing overrides that Node (and the chalk-family
+ * libraries) deliberately let defeat `NO_COLOR`, so an inherited value would cancel the
+ * `NO_COLOR=1` + `TERM=dumb` hardening above and leak ANSI escapes into tool output (#102).
+ * Removal, not blanking, matters here too: Node reads an *empty* `FORCE_COLOR` as "force 16
+ * colors on". The vault still wins, so a user who genuinely wants forced color in commands can
+ * set it there.
+ *
  * Deliberately **not** stripped: `PENGUIN_HOME`, `PENGUIN_WEB_DB` and the rest of the user-facing
  * `PENGUIN_*` settings. Those select the *data* an Agent-started harness works against, and the
  * self-development case may legitimately want the same data root — sharing state is a config
@@ -66,6 +74,8 @@ const STRIPPED_ENV_KEYS = new Set([
   "HOST",
   "PENGUIN_CLI_ENTRY",
   "PENGUIN_WEB_DIST",
+  "FORCE_COLOR",
+  "CLICOLOR_FORCE",
   // Desktop-mode process credentials and wiring: the shell's token authorizes the
   // server shutdown endpoint (and desktop-login until redeemed), and the port file is
   // the shell's private channel — neither is a user-facing setting, and leaking them
@@ -76,15 +86,46 @@ const STRIPPED_ENV_KEYS = new Set([
   "PENGUIN_SEED_ADMIN_PASSWORD",
 ]);
 
-/** The host environment minus {@link STRIPPED_ENV_KEYS}. */
-function hostEnvForChild(): NodeJS.ProcessEnv {
+/**
+ * Proxy variables removed IN ADDITION when the host supplies a proxy policy (`proxyEnv`,
+ * see {@link CommandSessionManager}): the Web server's proxy settings must keep commands
+ * from just inheriting the serving process's proxy environment.
+ * In `strip` mode NO_PROXY is deliberately NOT removed — with no proxy variables left it
+ * is inert, and removing it would change behavior for commands that set their own proxy.
+ * In `inject` mode the inherited NO_PROXY is replaced too (the policy carries the merged
+ * list), and ALL_PROXY stays removed rather than replaced: the explicit app-level proxy
+ * outranks ambient env wholesale. Matched case-insensitively like
+ * {@link STRIPPED_ENV_KEYS}, which also covers the conventional lowercase spellings
+ * (http_proxy etc.).
+ */
+const PROXY_ENV_KEYS = new Set(["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]);
+
+/**
+ * The host environment minus {@link STRIPPED_ENV_KEYS}, with the proxy policy applied:
+ * `strip` removes {@link PROXY_ENV_KEYS}; `inject` additionally replaces NO_PROXY and
+ * sets the explicit proxy variables (both spellings — programs disagree on which they
+ * read); null passes the proxy variables through untouched.
+ */
+function hostEnvForChild(policy: ProxyEnvPolicy | null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // Matched case-insensitively rather than deleting the upper-case spellings: Windows resolves
   // environment names without regard to case but stores whatever casing was written, so a
   // `set Port=3000` before `penguin web` would survive a `delete env.PORT` and still reach the
   // child as PORT. On POSIX the two are distinct names and only the exact one exists.
   for (const [key, value] of Object.entries(process.env)) {
-    if (!STRIPPED_ENV_KEYS.has(key.toUpperCase())) env[key] = value;
+    const name = key.toUpperCase();
+    if (STRIPPED_ENV_KEYS.has(name)) continue;
+    if (policy !== null && PROXY_ENV_KEYS.has(name)) continue;
+    if (policy?.mode === "inject" && name === "NO_PROXY") continue;
+    env[key] = value;
+  }
+  if (policy?.mode === "inject") {
+    env.HTTP_PROXY = policy.url;
+    env.http_proxy = policy.url;
+    env.HTTPS_PROXY = policy.url;
+    env.https_proxy = policy.url;
+    env.NO_PROXY = policy.noProxy;
+    env.no_proxy = policy.noProxy;
   }
   return env;
 }
@@ -97,9 +138,18 @@ export class CommandSessionManager {
 
   /** Agent vault environment variables: injected into the child process on every spawn (values never enter the model context, only the environment). */
   private readonly vault: Record<string, string>;
+  /**
+   * Proxy policy for the child environment (see {@link ProxyEnvPolicy}: strip the proxy
+   * variables, inject an explicit proxy over the inherited ones, or null = pass
+   * through). A getter rather than a snapshot: the hosting server's proxy settings
+   * change at runtime, and re-reading at every spawn makes a change reach Sessions that
+   * are already running. Absent = pass through (SDK/CLI standalone use).
+   */
+  private readonly proxyEnv: (() => ProxyEnvPolicy | null) | undefined;
 
-  constructor(opts?: { vault?: Record<string, string> }) {
+  constructor(opts?: { vault?: Record<string, string>; proxyEnv?: () => ProxyEnvPolicy | null }) {
     this.vault = opts?.vault ?? {};
+    this.proxyEnv = opts?.proxyEnv;
   }
 
   /** Starts a command, returning an **unregistered** session (no process_id yet). */
@@ -113,9 +163,11 @@ export class CommandSessionManager {
       // Spread order is priority: vault overrides host variables of the same name, but must
       // come before HARDENED_ENV — the hardening entries (GIT_EDITOR/PAGER etc. that prevent
       // interactive hangs) must never be overridable by vault. The host side is stripped of
-      // the harness's own variables first (see STRIPPED_ENV_KEYS); the vault still wins, so a
-      // user who genuinely wants PORT in commands can set it there.
-      env: { ...hostEnvForChild(), ...this.vault, ...HARDENED_ENV },
+      // the harness's own variables first (see STRIPPED_ENV_KEYS) and has the proxyEnv
+      // policy applied (strip or inject); the vault still wins — over an injected proxy
+      // too — so a user who genuinely wants PORT, or their own proxy, in commands can set
+      // it there.
+      env: { ...hostEnvForChild(this.proxyEnv?.() ?? null), ...this.vault, ...HARDENED_ENV },
     });
   }
 
@@ -133,6 +185,18 @@ export class CommandSessionManager {
   /** Removes from the registry and cleans up the process group (called after the session exits). */
   remove(processId: string): void {
     this.registry.remove(processId);
+  }
+
+  /** Snapshot of the registered background command sessions (id + session), registration order. */
+  list(): Array<{ processId: string; session: ManagedSession }> {
+    return this.registry.list().map(({ id, task }) => ({ processId: id, session: task }));
+  }
+
+  /** Kills a background process by id (SIGTERM→SIGKILL on the whole group) and drops it from the registry; false when the id is unknown. */
+  kill(processId: string): boolean {
+    if (this.registry.get(processId) === undefined) return false;
+    this.registry.remove(processId);
+    return true;
   }
 
   /** Disposes: removes the fallback registration and kills all sessions (the process 'exit' fallback is hooked up by the registry itself). Idempotent. */

@@ -64,8 +64,9 @@ export interface AuthResponse {
 export interface MeResponse {
   user: UserInfo;
   /**
-   * Whether Workspace HTML previews open on a separate origin (see design §
-   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * Whether Workspace HTML previews open on a separate origin (the loopback
+   * counterpart of the App host, or PENGUIN_PREVIEW_ORIGIN when set). False means this
+   * deployment has no usable preview origin —
    * the App is reached on something other than a loopback name and
    * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
    * where `localStorage`, cookies and third-party embeds do not work. Computed per
@@ -76,7 +77,7 @@ export interface MeResponse {
    * Whether this server runs in desktop mode (spawned by the desktop shell with
    * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
    * initial-password banner and the self-update entry, and omits the old-password
-   * field when changing the password. See design § "桌面端原型".
+   * field when changing the password.
    */
   desktopMode: boolean;
   /**
@@ -117,6 +118,54 @@ export interface AdminUserCreateResponse {
 export interface AdminPasswordResetRequest {
   /** New initial password (at least 8 characters); resets invalidate all of the user's sessions. */
   password: string;
+}
+
+/**
+ * Admin-level server-global settings (SQLite server_settings):
+ * two independent proxy switches sharing one optional explicit address. In every
+ * on-state the effective NO_PROXY always includes localhost/127.0.0.1/::1 (loopback is
+ * never proxied), and changes apply to newly initiated connections/spawns immediately —
+ * no restart.
+ */
+export interface ServerSettings {
+  /**
+   * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
+   * requests, the update check, image fetches). On with `proxyUrl` set = that address
+   * for both http and https; on without an address = the proxy environment variables
+   * HTTP_PROXY / HTTPS_PROXY (both spellings); off = always direct.
+   */
+  proxyForApp: boolean;
+  /**
+   * "Agent environment uses the proxy" (default on): agent command subprocess
+   * environments. On with `proxyUrl` set = HTTP_PROXY / HTTPS_PROXY (plus lowercase
+   * twins) injected as that address with the merged NO_PROXY, overriding inherited
+   * values; on without an address = the host environment passes through unchanged;
+   * off = the proxy variables are stripped (NO_PROXY kept).
+   */
+  proxyForAgent: boolean;
+  /**
+   * The shared explicit proxy address (canonical `http(s)://host[:port]`), or null =
+   * follow the proxy environment variables. When set it takes precedence over
+   * HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
+   */
+  proxyUrl: string | null;
+}
+
+export interface ServerSettingsResponse {
+  settings: ServerSettings;
+}
+
+/** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
+export interface ServerSettingsUpdateRequest {
+  proxyForApp?: boolean;
+  proxyForAgent?: boolean;
+  /**
+   * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
+   * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,
+   * and the response echoes the stored form). Empty/whitespace-only or null clears the
+   * address (follow the environment variables); anything else is 400 `invalid_proxy_url`.
+   */
+  proxyUrl?: string | null;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -358,6 +407,49 @@ export interface ModelTestResponse {
    */
   tps?: number;
   message?: string;
+}
+
+/**
+ * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
+ * top-level `default_model` the models page's whole-table PUT writes, without resending the
+ * table (and thus without touching credentials). The pair must name a configured model
+ * entry, exactly like the whole-table route's defaultModel validation.
+ */
+export interface DefaultModelUpdateRequest {
+  provider: string;
+  modelId: string;
+}
+
+/** Response mirrors what GET models reports as `defaultModel`. */
+export interface DefaultModelResponse {
+  defaultModel: ModelRefDto;
+}
+
+// ---------------------------------------------------------------------------
+// New-chat defaults (the `[default_chat]` block of .project_config.toml)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-Project new-chat defaults: prefill for the chat draft page. Every key is optional —
+ * an absent key means "not set" (the pre-existing behavior). Serves as the GET response,
+ * the PUT request body (whole-block replace: an omitted key clears it) and the PUT
+ * response (the stored block). The default MODEL is deliberately not here: it stays the
+ * top-level `default_model` served/written via the models routes (single-sourced with the
+ * models page).
+ */
+export interface ChatDefaultsDto {
+  /** Preselected Agent; must reference an existing Agent of the Project (400 unknown_agent). */
+  agentId?: string;
+  /** Prefilled Workspace directory; absent/empty = a temporary workspace. */
+  workspace?: string;
+  /** Prefilled approval mode; absent = the built-in "allow-all". */
+  approvalMode?: ApprovalMode;
+  /**
+   * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
+   * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
+   * "none" — only the four selectable tiers.
+   */
+  thinkingLevel?: Exclude<ThinkingLevelName, "none">;
 }
 
 // ---------------------------------------------------------------------------
@@ -618,15 +710,58 @@ export interface MessagesLiveTail {
   fragments: OmniMessage[];
 }
 
+/**
+ * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
+ * only; the parameterless full read never carries it). A window is a run of whole
+ * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
+ * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
+ * or steering group ever splits across windows.
+ */
+export interface MessagesPageInfo {
+  /**
+   * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
+   * `before=` to fetch the previous window. Stable across requests and compaction —
+   * rotation opens a NEW shard and closed shards are immutable. Absent = this window
+   * reaches the very beginning of the transcript (no older history).
+   */
+  before?: string;
+  /**
+   * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
+   * window: the client offsets its global "round N" numbering by this, so a partial
+   * window never mis-numbers. 0 when the window starts at the beginning.
+   */
+  earlierTurns: number;
+  /**
+   * Cumulative stats accrued before this window, seeded into the client's stats
+   * tracker so header chips and per-turn cumulative rows equal a full load:
+   * finished-Task elapsed, subagent token totals, and the last main-session
+   * session/context token readings.
+   */
+  prior: {
+    subagentTokens: number;
+    elapsedMs: number;
+    sessionTokens: number;
+    contextTokens: number;
+  };
+}
+
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
   messages: OmniMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining
-   * mid-stream can render the currently streaming message. Omitted when idle.
+   * mid-stream can render the currently streaming message. Omitted when idle. On
+   * windowed requests it rides TAIL pages only — a `before` page is immutable history
+   * and never carries it.
    */
   live?: MessagesLiveTail;
+  /**
+   * Present exactly on windowed requests (`tailLimit` / `before`): `messages` is then
+   * the requested window (subagent pointers inside it expanded as usual) rather than
+   * the full transcript. See MessagesPageInfo.
+   */
+  page?: MessagesPageInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -751,6 +886,25 @@ export interface ApprovalDecisionRequest {
  */
 export interface RetryNowResponse {
   skipped: boolean;
+}
+
+/**
+ * One background command process started by the Session (an exec_command promoted past
+ * its yield window). Served from the ACTIVE runtime only: a session whose runtime entry
+ * is gone truthfully reports an empty list.
+ */
+export interface SessionProcessInfo {
+  processId: string;
+  /** OS pid of the process-group leader; null when the spawn itself failed. */
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: string;
+  running: boolean;
+}
+
+export interface SessionProcessesResponse {
+  processes: SessionProcessInfo[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1050,9 +1204,58 @@ export interface AgentTraceDateGroup {
   sessions: AgentTraceSessionGroup[];
 }
 
-/** Agent → date → Session → Trace file drill-down browsing structure (reverse chronological). */
+/** One Trace file in the session-centric listing (`date` carried per file: one Session's shards can span date directories). */
+export interface AgentTraceSessionFile {
+  index: number;
+  date: string;
+  sizeBytes: number;
+}
+
+/** One Session's Trace files merged across date directories (the paginated listing's unit). */
+export interface AgentTraceSessionEntry {
+  sessionId: string;
+  /**
+   * Display title, resolved only for the returned page: the sessions DB title when one
+   * exists, else derived from the Session's first user prompt (bounded head-read of the
+   * earliest shard); absent when neither yields one (the client falls back to its
+   * default title — raw session ids are never rendered).
+   */
+  title?: string;
+  /**
+   * Sidebar category of this Session, from the same bounded classification the listing
+   * filters and counts with: archived exactly from the DB row; origin from the shared
+   * in-process registry / previously observed session_meta; a DB-untracked Session this
+   * process has not yet head-read falls into `active` until a page surfaces it (its
+   * head-read then registers the true origin for subsequent requests).
+   */
+  category: SessionCategory;
+  /** Workspace path locked at creation (DB row or observed session_meta); "" when unknown — the client's merged temp-group fallback. */
+  workspace: string;
+  /** Sorted by index ascending (a higher index is newer). */
+  files: AgentTraceSessionFile[];
+}
+
+/**
+ * Agent-level Trace browsing structure. Without `limit` the response is the legacy full
+ * drill-down (`dates`: Agent → date → Session → Trace file, reverse chronological) and the
+ * paging fields are absent. With `offset`/`limit` the response is session-group-centric:
+ * `sessions` carries the requested slice (newest first by sessionId desc — ids embed a
+ * timestamp, so that is reverse chronological) with titles and classification,
+ * `totalSessions` the session-group count (within `category` when one is given, so paging
+ * and the count agree), `counts` / `workspaceCounts` the per-category totals over ALL of
+ * the Agent's session groups (folder labels / workspace-mode group headers), and `dates`
+ * stays empty (per-file stats are only taken for the returned page).
+ */
 export interface AgentTracesResponse {
   dates: AgentTraceDateGroup[];
+  /** Present only when the request paginates: the requested slice of Session groups, newest first. */
+  sessions?: AgentTraceSessionEntry[];
+  /** Present only when the request paginates: session-group count of the paged (category-filtered) set. */
+  totalSessions?: number;
+  /** Present only when the request paginates: per-category totals over all of the Agent's session groups. */
+  counts?: SessionCategoryCounts;
+  /** Present only when the request paginates: `counts` broken down by Workspace path ("" = unknown). */
+  workspaceCounts?: Record<string, SessionCategoryCounts>;
 }
 
 export interface TraceImportRequest {
@@ -1395,6 +1598,19 @@ export interface AgentSkillsResponse {
 /** POST install request: all names must exist in the library; already-installed ones are overwritten with library content (i.e. updated). */
 export interface SkillInstallRequest {
   names: string[];
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/skills/archive: install one Skill from an uploaded zip.
+ * Layout: SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md
+ * (the directory name is then the Skill name). 201 returns the refreshed installed list
+ * (AgentSkillsResponse); an already-installed name without `overwrite` is 409 `skill_exists`.
+ */
+export interface SkillArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, same as the Agent snapshot import). */
+  dataBase64: string;
+  /** Replace an already-installed Skill of the same name (deletes its directory first). */
+  overwrite?: boolean;
 }
 
 // ---------------------------------------------------------------------------

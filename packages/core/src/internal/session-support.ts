@@ -91,7 +91,7 @@ export async function createTempWorkspace(
   await fs.mkdir(base, { recursive: true });
   // The final directory must use a non-recursive mkdir: recursive mkdir succeeds
   // silently when the directory already exists, which would put a new Session into
-  // an existing temp Workspace; EEXIST means an id collision, so retry with a new id.
+  // an existing temporary workspace; EEXIST means an id collision, so retry with a new id.
   for (let attempt = 0; attempt < MAX_TMP_ID_ATTEMPTS; attempt++) {
     const dir = path.join(base, `tmp-${randomUUID().slice(0, 8)}`);
     try {

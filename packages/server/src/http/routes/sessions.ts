@@ -17,15 +17,19 @@ import type {
   FilesStatResponse,
   GoalResponse,
   MessagesLiveTail,
+  MessagesPageInfo,
   MessagesResponse,
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
   RetryNowResponse,
   TaskCreateResponse,
 } from "../../api/types.js";
+import { decodeCursor } from "../../services/message-window.js";
+import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -61,7 +65,8 @@ const SESSION_TITLE_MAX = 120;
 const STAT_MAX_PATHS = 100;
 const STAT_MAX_PATH_LEN = 512;
 
-const APPROVAL_MODES: readonly ApprovalMode[] = [
+/** The four approval modes (shared with the chat-defaults route's validation). */
+export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "allow-all",
   "deny-all",
   "read-only",
@@ -70,6 +75,51 @@ const APPROVAL_MODES: readonly ApprovalMode[] = [
 
 /** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
 const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
+
+/** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
+const MESSAGES_PAGE_LIMIT_MAX = 1000;
+const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
+
+/** Parse one windowed-read unit-count param (positive integer, capped). */
+function pageLimit(raw: string, name: string): number {
+  if (!/^\d{1,4}$/.test(raw)) throw badRequest(`${name} must be a positive integer.`);
+  const v = Number.parseInt(raw, 10);
+  if (v < 1 || v > MESSAGES_PAGE_LIMIT_MAX) {
+    throw badRequest(`${name} must be an integer between 1 and ${MESSAGES_PAGE_LIMIT_MAX}.`);
+  }
+  return v;
+}
+
+/**
+ * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
+ * read, byte-identical to the pre-pagination response (other consumers depend on it).
+ * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
+ * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
+ * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
+ */
+function messagesPageQuery(c: Context): MessagesPageRequest | null {
+  const rawTail = c.req.query("tailLimit");
+  const rawBefore = c.req.query("before");
+  const rawLimit = c.req.query("limit");
+  if (rawTail === undefined && rawBefore === undefined) {
+    if (rawLimit !== undefined) throw badRequest("limit requires before.");
+    return null;
+  }
+  if (rawTail !== undefined) {
+    if (rawBefore !== undefined) throw badRequest("tailLimit and before are mutually exclusive.");
+    if (rawLimit !== undefined) throw badRequest("limit only applies to before requests.");
+    return { kind: "tail", limit: pageLimit(rawTail, "tailLimit") };
+  }
+  const cursor = decodeCursor(rawBefore!);
+  if (cursor === null) {
+    throw badRequest("before must be a cursor of the form <shardIndex>:<ordinal>.");
+  }
+  return {
+    kind: "before",
+    cursor,
+    limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
+  };
+}
 
 /** Accepted `category` query values of the list endpoint (SessionCategory, spelled out for validation). */
 const SESSION_CATEGORIES: readonly SessionCategory[] = [
@@ -493,6 +543,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/:sessionId/messages", async (c) => {
     const row = resolveSession(c);
+    const page = messagesPageQuery(c);
     // Live tail (running/compacting sessions only): capture the channel cursor and the
     // open-fragment snapshot together, synchronously — no await between the two, and both
     // BEFORE the trace read starts. That ordering is what makes the client contract safe
@@ -503,12 +554,40 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // cursor — the client's overlap dedup against `messages` decides for them — so a
     // complete message whose trace append is still in flight when the read starts is not
     // lost either.
+    //
+    // Windowed reads keep the same contract on TAIL pages only: a tail page ends at the
+    // transcript's live edge, so the attachment's semantics are identical. A `before`
+    // page is immutable history — attaching in-flight fragments to it would seed them at
+    // the wrong position — so it never carries `live`.
     let live: MessagesLiveTail | undefined;
-    if (deps.manager.statusOf(row.sessionId) !== "idle") {
+    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
       live = {
         cursor: deps.channels.get(row.sessionId).lastEventId,
         fragments: deps.manager.liveFragments(row.sessionId),
       };
+    }
+    if (page !== null) {
+      const result = await deps.traceService.readMessagesPage(
+        row.projectId,
+        row.agentId,
+        row.sessionId,
+        page,
+      );
+      const info: MessagesPageInfo = {
+        ...(result.before !== undefined ? { before: result.before } : {}),
+        earlierTurns: result.prior.turns,
+        prior: {
+          subagentTokens: result.prior.subagentTokens,
+          elapsedMs: result.prior.elapsedMs,
+          sessionTokens: result.prior.sessionTokens,
+          contextTokens: result.prior.contextTokens,
+        },
+      };
+      return c.json({
+        messages: result.messages,
+        ...(live !== undefined ? { live } : {}),
+        page: info,
+      } satisfies MessagesResponse);
     }
     const messages = await deps.traceService.readMessages(
       row.projectId,
@@ -698,6 +777,41 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, aborted ? 202 : 204);
   });
 
+  // —— Background processes (the details popover's interactive list) ——
+
+  // Processes the conversation started (exec_commands promoted to background). Served
+  // from the ACTIVE runtime only: an evicted or never-loaded session truthfully reports
+  // none — the environment that owned them is gone, and resurrecting an entry could only
+  // ever produce an empty list anyway.
+  app.get("/:sessionId/processes", (c) => {
+    const row = resolveSession(c);
+    const processes = deps.manager.listProcesses(row.sessionId).map((p) => ({
+      processId: p.processId,
+      pid: p.pid,
+      cmd: p.cmd,
+      cwd: p.cwd,
+      startedAt: new Date(p.startedAt).toISOString(),
+      running: p.running,
+    }));
+    return c.json({ processes } satisfies SessionProcessesResponse);
+  });
+
+  // Stop one background process (SIGTERM to the whole group, SIGKILL after a grace
+  // period). 404 when the id is gone — already exited and reaped, or the runtime was
+  // evicted; the UI just refreshes its list either way.
+  app.post("/:sessionId/processes/:processId/kill", (c) => {
+    const row = resolveSession(c);
+    const killed = deps.manager.killProcess(row.sessionId, pathParam(c, "processId"));
+    if (!killed) {
+      throw new HttpError(
+        404,
+        "process_not_found",
+        "Process does not exist or has already exited.",
+      );
+    }
+    return c.body(null, 204);
+  });
+
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
   // next retry immediately (attempt counter unchanged). Benign either way — 200 with
   // skipped:false when no reconnect wait is in progress, so a timing race (the wait
@@ -759,7 +873,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
-  // preview origin (see design § "Workspace 文件预览").
+  // preview origin.
   //
   // A redirect rather than a JSON endpoint the UI fetches, because the alternative is
   // worse on two counts: opening the tab after an await trips popup blockers, and a

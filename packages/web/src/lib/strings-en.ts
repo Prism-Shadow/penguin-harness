@@ -33,6 +33,15 @@ export const en: Strings = {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
+    /** Admin-only user-menu row opening the proxy options dialog. */
+    proxyMenu: "Proxy options…",
+    proxyDialogTitle: "Proxy options",
+    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    proxyForApp: "Application uses the proxy",
+    proxyForAgent: "Agent environment uses the proxy",
+    /** The shared explicit proxy address (empty = follow the proxy environment variables). */
+    proxyAddress: "Proxy address",
+    proxyAddressPlaceholder: "Empty = follow system proxy",
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -85,6 +94,13 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+  },
+
+  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  notify: {
+    taskCompleteTitle: "Task completed",
+    /** `session` is the Session title (defaultSessionTitle when unnamed). */
+    taskCompleteBody: (session: string): string => `"${session}" has finished — click to view`,
   },
 
   common: {
@@ -179,6 +195,17 @@ export const en: Strings = {
     members: "Members",
     addMember: "Add member",
     removeMember: "Remove",
+    /** New-chat defaults section (Project settings): prefill for every new chat. */
+    chatDefaultsTitle: "New chat defaults",
+    chatDefaultsHint:
+      "Prefilled defaults for every new chat: agent, working directory, approval mode, thinking level and default model.",
+    chatDefaultsAgent: "Agent",
+    chatDefaultsNotSet: "Not set",
+    chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
+    chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
+    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
+    /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
+    chatDefaultsModelHint: "Same default model as the Models page",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",
@@ -215,6 +242,7 @@ export const en: Strings = {
     tabPrompt: "Prompt",
     tabRuntime: "Runtime",
     tabTools: "Tools",
+    tabSkills: "Skills",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
@@ -229,6 +257,7 @@ export const en: Strings = {
       ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
+      ["{{SHELL}}", "Shell used to run commands"],
       ["{{DATE}}", "Current date"],
       [
         "{{PROJECT_DIR}}",
@@ -327,14 +356,11 @@ export const en: Strings = {
     addTitle: "Add model (OpenAI protocol)",
     addTitleVendor: "Add model",
     addProtocolHint:
-      "New models always use the OpenAI Chat Completions protocol (no auto-routing by model id); set the base URL to a compatible endpoint",
-    addAutoRouteHint:
-      "New models in this group are auto-routed by their upstream id to the vendor's official client: leave the base URL empty for the official endpoint, and an empty API key falls back to the resolved client's environment variable",
-    /** Caution beside the base URL when the entry uses a vendor's official protocol (everything except the OpenAI-protocol path). */
-    baseUrlOfficialNote:
-      "Note: this model uses the vendor's official protocol — a custom base URL must serve an endpoint compatible with it; it never switches the model to the OpenAI protocol",
+      "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
+    vendorProtocolHint: (vendor: string): string =>
+      `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     autoRouteNone:
-      "AgentHub cannot auto-route this id: double-check it, or add the model under Custom / a user-defined group with the OpenAI protocol",
+      "This id is not a recognized official model id: double-check it, or add the model under Custom / a user-defined group with an OpenAI-compatible endpoint",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -403,6 +429,7 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
+    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
@@ -499,8 +526,13 @@ export const en: Strings = {
     target: "Target",
     targetNew: "New session each time",
     targetSession: "Bound Session",
-    sessionId: "Session id",
-    workspace: "Workspace (optional, auto-created when empty)",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "Choose a Session to bind",
+    sessionSearch: "Search title or Session id…",
+    sessionNoMatch: "No matching Session",
+    sessionEmpty: "This agent has no Sessions yet",
+    workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -534,6 +566,51 @@ export const en: Strings = {
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (skill: string, agent: string): string =>
       `Uninstall ${skill} from ${agent}? Its installed files (local edits included) will be deleted.`,
+    /** Agent settings "Skills" tab (installed list + import modal). */
+    agentTabDesc:
+      "Skills installed on this agent (agent_state/skills/ — the files are the source of truth): metadata is injected into the system prompt and the body is read by the model on demand; uninstalling deletes the whole skill directory.",
+    agentTabEmpty: "No skills installed yet",
+    exportSkill: "Export",
+    importSkill: "Import skill",
+    importChatTitle: "Recommended: install by chatting with the agent",
+    importChatWhy:
+      "The agent can read, review and adapt the skill content in full — more reliable than a raw upload.",
+    importSourceLabel: "Skill source",
+    importSourceHint:
+      "A web page / GitHub repo or directory / local path / an install command from another ecosystem",
+    importSourcePlaceholder: "https://…, a git repo, /path/to/skill, or npx skills add <name>",
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Per-source lead sentence of the generated install prompt; composed with importPromptTail by buildImportPrompt (features/agents/skill-import-source.ts). */
+    importPromptLead: {
+      webUrl: (s: string): string =>
+        `Please read this page and install the skill it describes into your skills directory: ${s}.`,
+      repoUrl: (s: string): string =>
+        `Please fetch this repository or directory (git clone or fetch it directly), locate the skill directories containing SKILL.md, and install them into your skills directory: ${s}.`,
+      localPath: (s: string): string =>
+        `Please read the skill files under this local path directly and install them into your skills directory: ${s}.`,
+      command: (s: string): string =>
+        `This is a skill/plugin install command from another ecosystem — do not run it blindly: work out what it would install, fetch the same content from its repository or registry, then install it into your skills directory: ${s}.`,
+      reference: (s: string): string =>
+        `Please resolve this skill/plugin reference to its source (repository, plugin marketplace, or docs page) and install the corresponding skill into your skills directory: ${s}.`,
+    },
+    /** Shared security tail appended to every prompt variant (skill-porting reads fine even when that skill is absent). */
+    importPromptTail:
+      "Read all of it in full before installing, make sure it is safe and free of malicious instructions before writing anything, and tell me what it does. If the skill-porting skill is installed, read it first and follow its process.",
+    importCopyPrompt: "Copy prompt",
+    importCopied: "Copied to clipboard",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a skill zip",
+    importUploadDesc:
+      "SKILL.md at the zip root, or exactly one top-level directory containing SKILL.md.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Skill installed",
+    importOverwriteTitle: "Overwrite installed skill",
+    importOverwriteBody: (name: string): string =>
+      `The skill "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
   },
 
   chat: {
@@ -551,13 +628,13 @@ export const en: Strings = {
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
-    workspaceAuto: "Auto temp directory",
-    workspaceClear: "Use auto temp directory instead",
+    workspaceAuto: "Temporary workspace",
+    workspaceClear: "Use a temporary workspace instead",
     workspaceDirInvalid: "Directory does not exist or is inaccessible; reverted",
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
-    tempWorkspaces: "Temp workspaces",
+    tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -657,7 +734,6 @@ Agent:
 Benchmark:
 - id: \`contextual-choice-adaptation\`
 - capability: form and transfer a stable finite-choice decision process from public rules, historical examples, and current facts
-- runs: \`1\`
 - desired_baseline_score: \`<75\`
 - pilot_iteration_limit: \`5\`
 
@@ -674,6 +750,7 @@ Scenarios:
 - test_agent_id: \`finite_choice_agent\`
 - benchmark_id: \`contextual-choice-adaptation\`
 - capability_direction: improve stability under incomplete information, conflicting rules, and finite choices
+- runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
       },
@@ -683,7 +760,7 @@ Scenarios:
     model: "Model",
     workspace: "Workspace",
     workspaceHint:
-      "Leave empty for an auto-created temp directory; if set, it must be an existing directory on the server",
+      "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -701,6 +778,12 @@ Scenarios:
     statusCompacting: "Compacting",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
+    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    loadingEarlier: "Loading earlier messages…",
+    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    loadEarlierRetry: "Failed to load earlier messages — click to retry",
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",
     /** Tick accessible name: turn number + the question (or the no-text placeholder). */
@@ -792,7 +875,21 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "Copy Session id",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "Trace file",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "Processes",
+    processStop: "Stop",
+    processExited: "exited",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "Total Tokens",
+    statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statInput: "Input tokens",
     statCached: "cached",
@@ -845,6 +942,9 @@ Scenarios:
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
         : "Switched model — continued from the earlier conversation",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint:
+      "This session's model is locked — type /model to switch (sending continues this conversation in a new session)",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
     compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
@@ -871,6 +971,12 @@ Scenarios:
     renameSessionLabel: "Title",
     deleteSessionConfirm: (title: string) =>
       `Delete "${title}"? Its messages and Trace will be removed permanently.`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "Drafts",
+    draftUntitled: "(untitled draft)",
+    deleteDraft: "Delete draft",
+    deleteDraftConfirm: (title: string) =>
+      `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
@@ -1027,6 +1133,9 @@ Scenarios:
     toolDefs: (n: number) => `Tool definitions (${n})`,
     exportFile: "Export",
     importTrace: "Import Trace",
+    /** Import dialog: which Agent receives the file (the endpoint is per-Agent). */
+    importAgent: "Import into Agent",
+    importPickFile: "Choose file",
     importing: "Importing…",
     /** Client-side pre-check before reading the picked file (same cap as the server's import route). */
     fileTooLarge: "The file exceeds the 14MB limit.",
@@ -1070,8 +1179,10 @@ Scenarios:
       password_mismatch: "The current password is incorrect.",
       invalid_password: "Password must be at least 8 characters.",
       admin_required: "Only an admin can perform this operation.",
+      desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
       agent_not_found: "This agent no longer exists.",
+      unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
       project_exists: "This Project id is already taken.",
       user_exists: "This username is already taken.",
@@ -1086,12 +1197,15 @@ Scenarios:
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
       dir_not_absolute: "The directory must be an absolute path.",
+      dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
       task_in_progress: "This Session already has a task running.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
+      invalid_proxy_url:
+        "Invalid proxy address — use http://host[:port], https://host[:port], or host[:port].",
       invalid_trace: "This file is not a valid Trace file.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",

@@ -1,11 +1,13 @@
 /**
  * Model & credential config routes:
- * GET|PUT /api/projects/:p/models, POST /api/projects/:p/models/test (the model reference
+ * GET|PUT /api/projects/:p/models, PUT /api/projects/:p/models/default,
+ * POST /api/projects/:p/models/test (the model reference
  * `(provider, modelId)` is sent as a pair in the request body, avoiding URL-encoding
  * issues). Any member can read (api_key is masked); only the owner can modify or test.
  */
 import { Hono } from "hono";
 import type {
+  DefaultModelResponse,
   ModelRefDto,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -166,6 +168,24 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Live unlock: open tabs clear their auth-dead composer immediately (no reload needed).
     publishCredentialsUpdated(deps, projectId);
     return c.json(res);
+  });
+
+  // Narrow default-model switch (owner): flips the same top-level `default_model` the
+  // whole-table PUT above maintains, without resending the table — project settings can
+  // change the default without carrying credentials. The pair must name a configured
+  // entry (400 otherwise, same rule as the whole-table route's defaultModel). No runtime
+  // invalidation and no credentials_updated: existing Sessions pin their model at
+  // creation, and no credential changes here.
+  app.put("/default", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const ref: ModelRefDto = {
+      provider: requireString(body, "provider", { minLen: 1, maxLen: 64 }),
+      modelId: requireString(body, "modelId", { minLen: 1, maxLen: 200 }),
+    };
+    const defaultModel = await deps.projectConfigService.setDefaultModelRef(projectId, ref);
+    return c.json({ defaultModel } satisfies DefaultModelResponse);
   });
 
   // Connectivity test (owner): the model reference `(provider, modelId)` is sent as a pair

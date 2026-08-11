@@ -25,6 +25,13 @@ export interface AdminServiceDeps {
   authSessions: AuthSessionsRepo;
   projects: ProjectsRepo;
   projectService: ProjectService;
+  /**
+   * Fired after a password reset. The server wires it to drop the stored
+   * initial-password plaintext once it goes stale (a reset re-arms the initial FLAG,
+   * but with an admin-chosen value the stored seed no longer matches — see
+   * initial-password.ts); test constructions may omit it.
+   */
+  onPasswordChanged?: (userId: string) => void;
   now?: () => Date;
 }
 
@@ -81,6 +88,7 @@ export class AdminService {
     }
     this.deps.users.updatePassword(userId, await hashPassword(password), true);
     this.deps.authSessions.deleteByUser(userId);
+    this.deps.onPasswordChanged?.(userId);
   }
 
   /** Delete user: the built-in admin cannot be deleted; owned Projects (including data directories) are deleted along with it. */

@@ -9,8 +9,13 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { saveProjectConfig, scheduleDir } from "@prismshadow/penguin-core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  agentsDir,
+  projectConfigPath,
+  saveProjectConfig,
+  scheduleDir,
+} from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { ProjectsRepo } from "../src/db/repos/projects.js";
 import { SchedulesRepo } from "../src/db/repos/schedules.js";
@@ -18,6 +23,7 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import { Scheduler } from "../src/runtime/scheduler.js";
+import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
 
@@ -95,6 +101,7 @@ describe("scheduler", () => {
           return { sessionId };
         },
       },
+      projectConfig: new ProjectConfigService(root),
       errors: { record: (args) => void errors.push(args) },
       notify: (userId, event) => void events.push({ userId, event }),
       now: () => nowMs,
@@ -131,6 +138,104 @@ describe("scheduler", () => {
   function iso(ms: number): string {
     return new Date(ms).toISOString();
   }
+
+  /**
+   * Ages the given paths' mtimes past the mtime gate's FRESH_MS window (fresh mtimes are
+   * deliberately never cached as clean), so steady-state assertions see a tree that looks
+   * quiet — exactly like files written minutes ago. Fixed instants keep backdates idempotent
+   * and let a later edit be given a *different* stable mtime.
+   */
+  async function backdate(paths: string[], instant = "2026-01-01T00:00:00Z"): Promise<void> {
+    const at = new Date(instant);
+    for (const p of paths) await fs.utimes(p, at, at);
+  }
+
+  it("steady state: an unchanged tree ticks with zero file reads and zero dir listings (stat-gated); a new file re-scans", async () => {
+    insertSession("session-1");
+    // Carries a model reference so every tick also exercises model-ref validation —
+    // the per-tick .project_config.toml read+parse this change eliminates.
+    await writeFile("cached", [
+      `prompt = "cached prompt"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `period = "30m"`,
+      `provider = "custom"`,
+      `model_id = "m-bench"`,
+    ]);
+    await backdate([
+      agentsDir(root, P),
+      scheduleDir(root, P, A),
+      path.join(scheduleDir(root, P, A), "cached.toml"),
+      projectConfigPath(root, P),
+    ]);
+    await scheduler.tickOnce(); // First look: populates the gate caches (this pass reads).
+    expect(repo.find(P, A, "cached")).not.toBeNull();
+
+    const fileReads = scheduler.files.counters.fileReads;
+    const dirScans = scheduler.files.counters.dirScans;
+    const readFileSpy = vi.spyOn(fs, "readFile");
+    const readdirSpy = vi.spyOn(fs, "readdir");
+    await scheduler.tickOnce();
+    await scheduler.tickOnce();
+    // Unchanged tree: the ticks are pure stats — no schedule-file reads, no readdir of the
+    // agents/schedule dirs, and no .project_config.toml read for model-ref validation either.
+    expect(scheduler.files.counters.fileReads).toBe(fileReads);
+    expect(scheduler.files.counters.dirScans).toBe(dirScans);
+    expect(readFileSpy).not.toHaveBeenCalled();
+    expect(readdirSpy).not.toHaveBeenCalled();
+    readFileSpy.mockRestore();
+    readdirSpy.mockRestore();
+
+    // A new file moves the schedule dir's mtime: the gate notices and registers it.
+    await writeFile("added", [
+      `prompt = "a"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 60 * MIN)}"`,
+      `session_id = "session-1"`,
+    ]);
+    await scheduler.tickOnce();
+    expect(repo.find(P, A, "added")).not.toBeNull();
+    expect(scheduler.files.counters.dirScans).toBe(dirScans + 1);
+  });
+
+  it("an in-place edit (file mtime moves, dir mtime does not) is picked up next tick and fires with the new content", async () => {
+    insertSession("session-1");
+    await writeFile("inplace", [
+      `prompt = "old prompt"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 5 * MIN)}"`,
+      `period = "5m"`,
+      `session_id = "session-1"`,
+    ]);
+    await backdate([
+      agentsDir(root, P),
+      scheduleDir(root, P, A),
+      path.join(scheduleDir(root, P, A), "inplace.toml"),
+      projectConfigPath(root, P),
+    ]);
+    await scheduler.tickOnce(); // Populate the gate caches at the stable mtimes.
+    await scheduler.tickOnce(); // Steady state: served from memory.
+
+    // Overwriting an existing file's CONTENT never moves the directory's mtime — only the
+    // file's own — which is exactly what the per-file stats of the unchanged-dir path catch.
+    await writeFile("inplace", [
+      `prompt = "new prompt"`,
+      `enabled = true`,
+      `start_at = "${iso(T0 + 5 * MIN)}"`,
+      `period = "5m"`,
+      `session_id = "session-1"`,
+    ]);
+    await backdate([path.join(scheduleDir(root, P, A), "inplace.toml")], "2026-01-01T00:01:00Z");
+
+    nowMs = T0 + 5 * MIN;
+    const dirScans = scheduler.files.counters.dirScans;
+    await scheduler.tickOnce();
+    expect(started).toHaveLength(1);
+    expect(started[0]?.text).toContain("new prompt");
+    expect(started[0]?.text).not.toContain("old prompt");
+    // The pickup came from the unchanged-dir path's per-file stat, not a directory rescan.
+    expect(scheduler.files.counters.dirScans).toBe(dirScans);
+  });
 
   it("periodic task: registration consumes past slots (missed, not backfilled); fires once on time, never twice", async () => {
     insertSession("session-1");

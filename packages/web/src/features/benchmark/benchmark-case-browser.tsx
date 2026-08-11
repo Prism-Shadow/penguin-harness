@@ -10,6 +10,7 @@ import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
+import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { SkeletonList } from "../../components/ui/skeleton";
@@ -69,16 +70,16 @@ interface MaterialGroupProps extends Props {
   label: string;
   hiddenLabel?: string;
   defaultOpen?: boolean;
+  /** Auto-preview this group's root readme.md on first load. Exactly one group (the statement)
+   *  may carry it: both groups now open by default, and two racing auto-previews would leave the
+   *  preview pane on whichever listing happened to resolve last. */
+  autoPreviewReadme?: boolean;
   onPreview: (material: CaseMaterial, path: string) => void;
 }
 
 function extOf(name: string): string {
   const index = name.lastIndexOf(".");
   return index >= 0 ? name.slice(index + 1).toLowerCase() : name.toLowerCase();
-}
-
-function joinPath(dir: string, name: string): string {
-  return dir === "" ? name : `${dir}/${name}`;
 }
 
 function dirOf(filePath: string): string {
@@ -132,11 +133,17 @@ function MaterialGroup({
   label,
   hiddenLabel,
   defaultOpen = false,
+  autoPreviewReadme = false,
   onPreview,
 }: MaterialGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [path, setPath] = useState("");
-  const [listing, setListing] = useState<WorkspaceFilesResponse | null>(null);
+  /** Bound to the path it was fetched for: entry targets join against `base`, so a click on a
+   *  row that is momentarily stale (the fetch effect nulls the listing, but the state update
+   *  commits one frame later) cannot compound segments onto an already-advanced `path`. */
+  const [listing, setListing] = useState<{ base: string; res: WorkspaceFilesResponse } | null>(
+    null,
+  );
   const [listError, setListError] = useState<string | null>(null);
   const initialReadmeOpened = useRef(false);
 
@@ -149,8 +156,8 @@ function MaterialGroup({
       .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
       .then((data) => {
         if (cancelled) return;
-        setListing(data);
-        if (path === "" && !initialReadmeOpened.current) {
+        setListing({ base: path, res: data });
+        if (autoPreviewReadme && path === "" && !initialReadmeOpened.current) {
           initialReadmeOpened.current = true;
           const readme = data.entries.find(
             (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
@@ -164,16 +171,28 @@ function MaterialGroup({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, benchmarkId, caseSummary.id, material, onPreview, open, path]);
+  }, [
+    projectId,
+    agentId,
+    benchmarkId,
+    caseSummary.id,
+    material,
+    autoPreviewReadme,
+    onPreview,
+    open,
+    path,
+  ]);
 
   const crumbs = path === "" ? [] : path.split("/");
 
   const openEntry = (entry: WorkspaceFileEntry) => {
+    if (listing === null) return; // rows only render out of a loaded listing
+    const target = joinWorkspacePath(listing.base, entry.name);
     if (entry.kind === "dir") {
-      setPath(joinPath(path, entry.name));
+      setPath(target);
       return;
     }
-    onPreview(material, joinPath(path, entry.name));
+    onPreview(material, target);
   };
 
   return (
@@ -219,10 +238,10 @@ function MaterialGroup({
           )}
           {listError && <p className="px-6 py-2 text-xs text-red-500">{listError}</p>}
           {!listing && !listError && <SkeletonList rows={3} />}
-          {listing?.entries.length === 0 && (
+          {listing?.res.entries.length === 0 && (
             <p className="px-6 py-2 text-xs text-gray-400">{S.files.empty}</p>
           )}
-          {listing?.entries.map((entry) => (
+          {listing?.res.entries.map((entry) => (
             <button
               key={`${entry.kind}/${entry.name}`}
               type="button"
@@ -379,6 +398,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             material="statement"
             label={S.benchmark.taskMaterials}
             defaultOpen
+            autoPreviewReadme
             onPreview={previewPath}
           />
           <MaterialGroup
@@ -389,6 +409,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             material="rubric"
             label={S.benchmark.rubric}
             hiddenLabel={S.benchmark.agentHidden}
+            defaultOpen
             onPreview={previewPath}
           />
         </div>

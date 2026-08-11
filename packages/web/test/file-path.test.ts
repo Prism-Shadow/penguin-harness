@@ -1,9 +1,10 @@
 /**
  * file-path.ts unit tests: whether inline code in message text looks like a file path,
- * and all branches of normalizing body paths to a Workspace-relative path (toWorkspaceRelative).
+ * all branches of normalizing body paths to a Workspace-relative path (toWorkspaceRelative),
+ * and the directory-browser navigation join (joinWorkspacePath).
  */
 import { describe, expect, it } from "vitest";
-import { isFilePathLike, toWorkspaceRelative } from "../src/lib/file-path";
+import { isFilePathLike, joinWorkspacePath, toWorkspaceRelative } from "../src/lib/file-path";
 
 describe("isFilePathLike", () => {
   it("relative path + image extension → match", () => {
@@ -131,5 +132,29 @@ describe("toWorkspaceRelative", () => {
 
   it("surrounding whitespace is trimmed before normalization", () => {
     expect(toWorkspaceRelative(`  ${WS}/a.txt  `, WS)).toBe("a.txt");
+  });
+});
+
+describe("joinWorkspacePath", () => {
+  it("joins an entry name onto the Workspace root (empty base)", () => {
+    expect(joinWorkspacePath("", "home")).toBe("home");
+  });
+
+  it("joins an entry name onto a nested base", () => {
+    expect(joinWorkspacePath("home/user", "docs")).toBe("home/user/docs");
+  });
+
+  it("two clicks on the same row from the same listing generation are idempotent (regression: compounded descent)", () => {
+    // The files-panel race: while the navigation fetch is in flight, the listing for `base`
+    // stays rendered but the path state has already advanced. Click #2 on the same stale row
+    // must recompute the SAME target from the listing's own base…
+    const base = "";
+    const first = joinWorkspacePath(base, "home");
+    const pathStateAfterFirstClick = first;
+    const second = joinWorkspacePath(base, "home");
+    expect(second).toBe(first);
+    // …whereas joining against the advanced path state — the old behavior — compounds the
+    // segment into a directory that does not exist ("home/home", then "home/home/home", …).
+    expect(joinWorkspacePath(pathStateAfterFirstClick, "home")).toBe("home/home");
   });
 });

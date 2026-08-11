@@ -12,10 +12,9 @@
  * up to date / downloading / failed), the same rule the Web App's check-for-updates row
  * follows — a manual action that answers with silence reads as broken.
  *
- * M4a (signing) is still pending, and that limits what this can do in practice: macOS
- * refuses to apply an update whose signature it cannot verify, so until Developer ID
- * signing lands, macOS builds will find updates and fail to install them. Windows NSIS
- * and Linux AppImage work unsigned.
+ * Release builds use Developer ID signing on macOS; unsigned dry-run macOS artifacts can
+ * still find updates, but Gatekeeper will not apply them as trusted replacements.
+ * Windows NSIS and Linux AppImage continue to work without code-signing for now.
  */
 import { app, dialog, shell } from "electron";
 import type { BrowserWindow } from "electron";

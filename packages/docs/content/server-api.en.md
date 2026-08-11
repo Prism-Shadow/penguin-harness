@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie session: `penguin_session` (HttpOnly, SameSite=Lax), valid for 7 days with sliding renewal;
 - Passwords are stored as scrypt hashes; the server keeps only the sha256 of the session token, never the plaintext;
-- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) printed once to the server console — `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
+- No open registration: the built-in admin `admin` is seeded at startup with a random initial password (of the form `penguin-1234`) — kept in `<root>/initial-admin-password` and re-printed to the server console on every start until it is changed; `PENGUIN_SEED_ADMIN_PASSWORD` pins it for automation — and all other accounts are created by an admin;
 - Same-origin only — no CORS middleware is enabled.
 
 ```bash
@@ -67,6 +67,23 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
 
+In desktop mode (the server spawned by the desktop app) the whole surface answers `403` with code `desktop_single_user`: the desktop app is single-user, so user management is disabled — existing users in the data root are untouched.
+
+### Server Settings (admin only)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
+| PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+
+The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
+
+- `proxyForApp` ("application uses the proxy", default on) governs the server's own outbound traffic (LLM requests, the update check, image fetches): on with `proxyUrl` set → that address for both http and https, **taking precedence over the proxy environment variables** — no environment variable needs to be configured; on without an address → the environment variables HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings); off → always direct.
+- `proxyForAgent` ("agent environment uses the proxy", default on) governs agent command subprocess environments: on with `proxyUrl` set → `HTTP_PROXY` / `HTTPS_PROXY` (plus lowercase twins) are injected as that address together with the merged NO_PROXY, overriding inherited values; on without an address → the host environment passes through unchanged; off → the proxy variables are stripped (NO_PROXY is kept).
+- `proxyUrl` (default null = follow the environment variables) is the shared explicit address. Validation on PUT: the value is trimmed; empty or null clears the address; accepted forms are `http://host[:port]`, `https://host[:port]`, and bare `host[:port]` (normalized to `http://host[:port]` — only normalized values are stored, and the response echoes the stored form); anything else is `400` with code `invalid_proxy_url`, and the rejected PUT writes nothing.
+
+In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied).
+
 ### Version and Self-Update
 
 | Method | Path | Description |
@@ -88,7 +105,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /api/projects/:projectId/members | Add a member: `{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | Remove a member |
 
-Member writes are owner-only.
+Member writes are owner-only. The member routes also answer `403 desktop_single_user` in desktop mode (see User Administration above).
 
 ### Models
 
@@ -135,7 +152,7 @@ Schedule writes are owner-only. A task in new-Session mode carries `modelId` and
 | POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?}` → 201 |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
-On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary directory, and the approval mode defaults to `allow-all`.
+On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.
 
 ### Usage and Traces (Agent Level)
 

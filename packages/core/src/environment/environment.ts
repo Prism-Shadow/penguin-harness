@@ -27,6 +27,7 @@ import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
 import type { OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
+  BackgroundCommandInfo,
   EnvironmentConfig,
   EnvironmentInterface,
   ToolConfig,
@@ -110,10 +111,11 @@ export class Environment implements EnvironmentInterface {
     // The background session registry is created alongside Environment (one per Session) and
     // injected into whichever tools need it; all sessions are finalized together on dispose.
     // The vault environment variables are injected into child processes by the command session
-    // registry at spawn time.
-    this.commandSessions = new CommandSessionManager(
-      config.vault !== undefined ? { vault: config.vault } : {},
-    );
+    // registry at spawn time (which also applies the proxyEnv policy — strip or inject).
+    this.commandSessions = new CommandSessionManager({
+      ...(config.vault !== undefined ? { vault: config.vault } : {}),
+      ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
+    });
     this.subagentSessions = new SubagentSessionManager();
     const services = {
       ...config.services,
@@ -132,6 +134,23 @@ export class Environment implements EnvironmentInterface {
   dispose(): void {
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
+  }
+
+  /** Background command processes registered by exec_command (still-listed exited ones included; the host UI filters as it sees fit). */
+  listBackgroundCommands(): BackgroundCommandInfo[] {
+    return this.commandSessions.list().map(({ processId, session }) => ({
+      processId,
+      pid: session.pid,
+      cmd: session.cmd,
+      cwd: session.cwd,
+      startedAt: session.startedAt,
+      running: session.running,
+    }));
+  }
+
+  /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */
+  killBackgroundCommand(processId: string): boolean {
+    return this.commandSessions.kill(processId);
   }
 
   /**

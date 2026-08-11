@@ -75,34 +75,38 @@ function parseModelRef(value: unknown): { provider: string; modelId: string } | 
 export function parseDraft(raw: string | null): DraftCache {
   if (!raw) return {};
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return {};
-    const o = parsed as Record<string, unknown>;
-    const out: DraftCache = {};
-    if (typeof o.text === "string") out.text = o.text;
-    if (typeof o.agentId === "string") out.agentId = o.agentId;
-    if (typeof o.workspace === "string") out.workspace = o.workspace;
-    const modelRef = parseModelRef(o.modelRef);
-    if (modelRef) out.modelRef = modelRef;
-    if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
-    const switchModelRef = parseModelRef(o.switchModelRef);
-    if (switchModelRef) out.switchModelRef = switchModelRef;
-    if (Array.isArray(o.skills)) {
-      // Elements are validated one by one: non-string items are filtered out; if empty after
-      // filtering, the whole field is omitted.
-      const skills = o.skills.filter((s): s is string => typeof s === "string");
-      if (skills.length > 0) out.skills = skills;
-    }
-    if (
-      typeof o.approvalMode === "string" &&
-      APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
-    ) {
-      out.approvalMode = o.approvalMode as ApprovalMode;
-    }
-    return out;
+    return draftFromUnknown(JSON.parse(raw));
   } catch {
     return {};
   }
+}
+
+/** Field-by-field validation of an already-parsed value (shared with the parked-drafts store, whose entries embed a draft object). */
+export function draftFromUnknown(parsed: unknown): DraftCache {
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const o = parsed as Record<string, unknown>;
+  const out: DraftCache = {};
+  if (typeof o.text === "string") out.text = o.text;
+  if (typeof o.agentId === "string") out.agentId = o.agentId;
+  if (typeof o.workspace === "string") out.workspace = o.workspace;
+  const modelRef = parseModelRef(o.modelRef);
+  if (modelRef) out.modelRef = modelRef;
+  if (typeof o.handoffAgentId === "string") out.handoffAgentId = o.handoffAgentId;
+  const switchModelRef = parseModelRef(o.switchModelRef);
+  if (switchModelRef) out.switchModelRef = switchModelRef;
+  if (Array.isArray(o.skills)) {
+    // Elements are validated one by one: non-string items are filtered out; if empty after
+    // filtering, the whole field is omitted.
+    const skills = o.skills.filter((s): s is string => typeof s === "string");
+    if (skills.length > 0) out.skills = skills;
+  }
+  if (
+    typeof o.approvalMode === "string" &&
+    APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
+  ) {
+    out.approvalMode = o.approvalMode as ApprovalMode;
+  }
+  return out;
 }
 
 export function loadDraft(key: string, storage: DraftStorage = localStorage): DraftCache {
@@ -130,5 +134,55 @@ export function clearDraft(key: string, storage: DraftStorage = localStorage): v
     storage.removeItem(key);
   } catch {
     /* ignore */
+  }
+}
+
+/**
+ * Drops the draft-cached model selection for this user × Project, so an open draft follows
+ * a just-changed Project default model instead of pinning the old pick forever. Shared by
+ * the models page and the project-settings default-model control (single implementation —
+ * both surfaces flip the SAME `default_model`, so they must release the draft pin the same
+ * way). Everything else in the draft is preserved; a draft with no cached pick is a no-op.
+ */
+export function clearDraftModelRef(
+  userId: string,
+  projectId: string,
+  storage: DraftStorage = localStorage,
+): void {
+  const key = draftKey(userId, projectId);
+  const draft = loadDraft(key, storage);
+  if (draft.modelRef) saveDraft(key, { ...draft, modelRef: undefined }, storage);
+}
+
+/**
+ * Drops the draft-cached Agent / Workspace / approval-mode selections for this user ×
+ * Project — the fields the `[default_chat]` block seeds — so the next new-conversation
+ * draft re-seeds from the just-saved Project defaults instead of the values a previous
+ * visit pinned into the cache (the draft page persists all selections on mount, so a
+ * stale cache otherwise shadows a defaults change forever). Called by the
+ * project-settings save when the block actually changed. Deliberately narrower than the
+ * full seeded set: typed text and staged skills are user content; modelRef is the
+ * "switch-becomes-default" carry-over released only by clearDraftModelRef when the
+ * default MODEL itself changes (the model is not part of the `[default_chat]` block);
+ * the handoff/switch chips are explicit user staging, never default-derived. A draft
+ * with none of the three fields is a no-op, never an errant write.
+ */
+export function clearDraftChatDefaults(
+  userId: string,
+  projectId: string,
+  storage: DraftStorage = localStorage,
+): void {
+  const key = draftKey(userId, projectId);
+  const draft = loadDraft(key, storage);
+  if (
+    draft.agentId !== undefined ||
+    draft.workspace !== undefined ||
+    draft.approvalMode !== undefined
+  ) {
+    saveDraft(
+      key,
+      { ...draft, agentId: undefined, workspace: undefined, approvalMode: undefined },
+      storage,
+    );
   }
 }

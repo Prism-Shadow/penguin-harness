@@ -13,7 +13,7 @@ Six levels: Project → Agent → Workspace → Session → Task → Request.
 | --- | --- |
 | Project | Top-level unit organizing Agents; owns the model and credential configuration; in the multi-user Web setup, users and Projects are many-to-many |
 | Agent | The executing subject; has exactly one Agent State (a persistent directory); one Agent can serve many Workspaces |
-| Workspace | The working directory of one run — the only file scope the model sees; an explicit `workspaceDir` must already exist, otherwise a temp Workspace `workspaces/tmp-<8hex>` is created |
+| Workspace | The working directory of one run — the only file scope the model sees; an explicit `workspaceDir` must already exist, otherwise a temporary Workspace `workspaces/tmp-<8hex>` is created |
 | Session | A continuous conversation under one (Agent, Workspace); model and Workspace are locked at Session creation; ids look like `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
 | Task | One execution goal started by one Prompt; consists of one or more consecutive Requests |
 | Request | One LLM API call: context and tool definitions in, streamed output out |
@@ -39,7 +39,7 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
         │                             # convention, not a path the code creates, so tooling is
         │                             # installed once for any task; project dependencies stay
         │                             # in the project
-        ├── workspaces/               # temp Workspaces (tmp-<8hex>)
+        ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
         ├── benchmarks/               # capability Benchmark cases and scores
         └── snapshots/                # Agent State version snapshots
 ```
@@ -54,6 +54,8 @@ A Trace is an append-only JSON Lines file; each line is one OmniMessage envelope
 - Recorded: `session_meta`, complete `model_msg`, and all `event_msg`.
 - Not recorded: streaming `partial_*` fragments (the producer appends the complete message once the segment ends), and nested messages tagged with `origin` — a subagent's messages go to the child Session's own Trace, while the parent Trace keeps a single `subagent` pointer event at the spawn site recording the child Session id.
 - `request_begin` and `request_end(status)` come in pairs delimiting one Request; replay uses `request_end.status === "completed"` as the commit criterion for that turn.
+- Appends are serialized inside the writer: records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line — a multi-megabyte record such as a base64 image Data URL can never be torn apart by a concurrent append, and file rotation never splits a record.
+- Each record is appended with a single `write(2)` (not `fs.appendFile`, which splits payloads larger than 512 KiB into multiple underlying writes), so an abnormal process exit can at most truncate the last record — it can never tear one apart in the middle. Before Session resumption continues an existing file, the writer probes the file tail: if a previous crash left a torn line (no trailing newline), the next record is preceded by a newline, so the torn line never swallows the records appended after it.
 
 See `packages/core/src/trace/writer.ts` for the implementation.
 
@@ -82,7 +84,7 @@ The Trace is the single source of truth for recovery — there is no separate se
 4. Reconstruct the carry-over (undelivered tool outputs, interruption markers) plus turn and Token counters;
 5. Continue appending to the same Trace file.
 
-Recovery requires that the Workspace and the model still exist. What recovery guarantees is structural legality: only committed turns are replayed, with `tool_call` / `tool_call_output` pairing intact; incomplete model output (thinking, text) is allowed to be lost. A truncated last line left by an abnormal process exit is tolerated and ignored. See `packages/core/src/trace/resume.ts`.
+Recovery requires that the Workspace and the model still exist. What recovery guarantees is structural legality: only committed turns are replayed, with `tool_call` / `tool_call_output` pairing intact; incomplete model output (thinking, text) is allowed to be lost. A truncated last line left by an abnormal process exit is tolerated and ignored; a malformed line in the middle of a file (e.g. in a file damaged before writer appends were serialized) is skipped with a diagnostic on stderr, and every parseable record is kept. See `packages/core/src/trace/resume.ts`.
 
 Special case: if the latest Trace file ends with a completed compaction, that context is closed as a whole — resume starts from an empty context; in summarize mode the `[context_summary]` is reconstructed and prepended to the first input after resume (old Traces using the earlier angle-bracket `<summary>` form are still understood).
 

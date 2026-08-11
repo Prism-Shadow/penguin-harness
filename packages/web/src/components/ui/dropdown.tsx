@@ -1,7 +1,9 @@
 /**
  * Dropdown container (controlled): clicking outside collapses it; the panel is absolutely
- * positioned (z-40, per the layering convention — chrome avoids stacking contexts, menus are
- * z-40, overlays are z-50). menuClass controls the docking direction and width.
+ * positioned (z-40, per the layering convention — chrome avoids stacking contexts, in-flow
+ * menus are z-40, overlays are z-50, and **portaled** popups are z-[60] so they clear an
+ * open Modal, matching Select's portal panel). menuClass controls the docking direction and
+ * width.
  *
  * `portal` switches the panel to the shared popup strategy (same idea as OptionMenu's
  * use-portal-panel): mounted on document.body with `position: fixed` against viewport
@@ -9,10 +11,17 @@
  * container (the composer toolbar scrolls horizontally on phones) makes that mandatory:
  * setting one axis to a non-`visible` overflow makes the other compute to `auto` too, so an
  * absolutely-positioned panel — an upward one especially — is clipped away entirely.
+ *
+ * Escape goes through the shared esc-layer stack (see modal.tsx): while open, the menu is
+ * the topmost layer, so one Escape closes only the menu even inside a Modal — the Modal's
+ * own handler sees itself not on top and stays; the next Escape closes the dialog. The
+ * event is deliberately NOT stopped, so element-level Escape handlers inside the panel
+ * (e.g. an input reverting its draft) still run on the same press.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, ReactNode } from "react";
+import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;
@@ -64,26 +73,38 @@ export function Dropdown({
     maxHeight: number;
   } | null>(null);
 
+  // Latest-callback refs: the open effect below must re-run ONLY on open/close — if it also
+  // re-ran on a callback identity change, its esc-layer would pop and re-push, wrongly
+  // jumping above any dialog opened in the meantime.
+  const setOpenRef = useRef(setOpen);
+  setOpenRef.current = setOpen;
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
+
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
       if (ref.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
-      setOpen(false);
+      setOpenRef.current(false);
     };
+    // Escape closes only when this menu is the topmost esc layer (see the header comment).
+    const layer = pushEscLayer();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (onEscape) onEscape();
-      else setOpen(false);
+      if (e.key !== "Escape" || !isTopEscLayer(layer)) return;
+      const esc = onEscapeRef.current;
+      if (esc) esc();
+      else setOpenRef.current(false);
     };
     window.addEventListener("mousedown", onClick);
     window.addEventListener("keydown", onKey);
     return () => {
+      popEscLayer(layer);
       window.removeEventListener("mousedown", onClick);
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, setOpen, onEscape]);
+  }, [open]);
 
   // Portal mode: place the panel against the trigger's viewport rect, clamped to stay fully
   // on-screen. Measured after paint so the panel's own (class-driven) size is known — the
@@ -145,7 +166,10 @@ export function Dropdown({
     };
   }, [open, portal, place]);
 
-  const panelClass = `anim-pop z-40 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
+  // Portaled panels sit at z-[60], above a Modal's z-50 overlay (a body portal appended
+  // after the overlay would otherwise paint UNDER it and be unclickable); in-flow panels
+  // keep the z-40 menu tier — they stack within their host's own context.
+  const panelClass = `anim-pop ${portal ? "z-[60]" : "z-40"} overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900 ${
     portal ? "" : "max-h-[70vh]"
   } ${menuClass ?? "left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] origin-top-left"}`;
 

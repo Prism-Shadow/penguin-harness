@@ -1,8 +1,9 @@
 /**
- * Desktop shell main process (design § "桌面端原型").
+ * Desktop shell main process.
  *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
- * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its ephemeral port, and load
+ * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
+ * still free, so origin-scoped localStorage preferences survive restarts), and load
  * `http://localhost:<port>/api/auth/desktop-login?token=…` — the one-shot token lands
  * the window signed in as admin. The window is a plain browser environment (no preload,
  * no node integration); every capability flows through the server's HTTP API.
@@ -18,10 +19,12 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
-import { installApplicationMenu } from "./menu.js";
-import { initUpdater } from "./updater.js";
+import { resolveWindowIcon } from "./app-icon.js";
+import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
+import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import { initUpdater } from "./updater.js";
 import {
   desktopLoginUrl,
   isAppUrl,
@@ -31,6 +34,10 @@ import {
 } from "./util.js";
 
 app.setName("PenguinHarness");
+// Windows toasts (the web app's task-completion notifications) need the AppUserModelID
+// of the installed shortcuts; electron-builder stamps them with the appId. Keep in sync
+// with electron-builder.yml.
+if (process.platform === "win32") app.setAppUserModelId("com.prismshadow.penguinharness");
 
 let win: BrowserWindow | null = null;
 let server: EmbeddedServer | null = null;
@@ -47,11 +54,15 @@ function fatal(context: string, err: unknown): void {
 }
 
 function createWindow(url: string): void {
+  // Linux window/taskbar icon (and Windows dev runs); packaged Windows uses the exe
+  // resources and macOS its bundle icns, so those ignore it (see app-icon.ts).
+  const iconPath = resolveWindowIcon(app.getAppPath(), process.platform);
   win = new BrowserWindow({
     width: 1280,
     height: 860,
     show: false,
     autoHideMenuBar: true,
+    ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
       // The window is a plain browser: no Node, no preload — the minimal attack surface.
       contextIsolation: true,
@@ -76,6 +87,7 @@ function createWindow(url: string): void {
           width: 1100,
           height: 800,
           autoHideMenuBar: true,
+          ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: the preview is Agent-written, untrusted
           // HTML and must never get Node.
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
@@ -117,6 +129,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,
     portFile: path.join(app.getPath("userData"), "server-port"),
+    preferredPortFile: path.join(app.getPath("userData"), "preferred-port"),
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),
   });
   server = started;
@@ -202,12 +215,20 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  void app.whenReady().then(() => {
-    installApplicationMenu();
-    // Updates are surfaced natively (menu + dialogs); the window gets no IPC channel.
-    initUpdater(() => win);
-    return boot().catch((err) => fatal("PenguinHarness failed to start.", err));
-  });
+  void app.whenReady().then(() =>
+    (async () => {
+      // Standard menu plus native desktop-only actions; the window gets no IPC channel.
+      installAppMenu({
+        includeCliInstall: currentCliInstallKind() !== null,
+        onInstallCli: () => void installCliCommand(win),
+      });
+      initUpdater(() => win);
+      await boot();
+      // First launch only: offer the 'penguin' command once; the menu entry remains.
+      // Skipped in smoke mode — a modal dialog would hang the automated run.
+      if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await maybeOfferCliInstall(win);
+    })().catch((err) => fatal("PenguinHarness failed to start.", err)),
+  );
 }
 
 // --- smoke hook ------------------------------------------------------------

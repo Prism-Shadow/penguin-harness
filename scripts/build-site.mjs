@@ -14,7 +14,12 @@ import { execSync } from "node:child_process";
 import { cpSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { absoluteUrl, blogRoutes, docsRoutes } from "../packages/landing/scripts/site-routes.mjs";
+import {
+  absoluteUrl,
+  blogRoutes,
+  docsRoutes,
+  pageRoutes,
+} from "../packages/landing/scripts/site-routes.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const base = process.env.BASE_PATH ?? "/";
@@ -40,7 +45,7 @@ cpSync(join(root, "packages", "docs", "dist"), docsTarget, { recursive: true });
 // that has to name routes from both sites. It is also the only way a crawler learns
 // those routes — both pages ship an empty <div id="root"> and build their navigation
 // in JS, so following links is not an option.
-const routes = [{ route: "/" }, ...blogRoutes(), ...docsRoutes()];
+const routes = [{ route: "/" }, ...pageRoutes(), ...blogRoutes(), ...docsRoutes()];
 const sitemap = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',

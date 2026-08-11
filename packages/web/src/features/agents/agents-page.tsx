@@ -4,7 +4,9 @@
  * one horizontal band of "info | 30-day activity sparkline | button group" per row.
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
- * relative time (today/yesterday/n days ago), with meaning folded into the hover title.
+ * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
+ * tool / vault-key / schedule / skill counts deep-link to the settings page's matching tab
+ * (?tab=tools|vault|schedules|skills).
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" / "Traces" (deep link
  * via ?agentId= to the usage center / trace observability; traces use an eye line icon =
@@ -20,6 +22,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
@@ -33,6 +36,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
@@ -63,10 +67,19 @@ const CARD_ICONS = {
   traces: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
 } as const;
 
+/**
+ * Stat entries that deep-link into a settings tab: same look as the plain stat spans
+ * (no button chrome) plus a subtle hover text-color shift and pointer cursor.
+ */
+const STAT_LINK_CLASS =
+  "inline-flex min-w-[2.25rem] shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
+  "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
+
 export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
   const { locale } = useLocale();
+  const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const [createOpen, setCreateOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
@@ -128,8 +141,20 @@ export function AgentsPage() {
    * rather than the previous one from the cache.
    */
   const newChat = (agentId: string) => {
+    // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
+    if (user && projectId) parkActiveDraft(user.userId, projectId);
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+  };
+
+  /**
+   * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
+   * page lands directly on the matching tab (unknown keys fall back to Overview there, so
+   * "skills" is harmless until the Skills tab ships).
+   */
+  const openSettingsTab = (agentId: string, tab: "tools" | "vault" | "schedules" | "skills") => {
+    setCurrentAgentId(agentId);
+    navigate(`/agents/${agentId}?tab=${tab}`);
   };
 
   const doDelete = async () => {
@@ -197,7 +222,7 @@ export function AgentsPage() {
                       (same line as the name); description/stats share the same left edge as the
                       avatar (the column's left edge) */}
                   <div className="min-w-[14rem] flex-1">
-                    {/* Title line: small avatar + name + agentId + active badge */}
+                    {/* Title line: small avatar + name + agentId + version badge */}
                     <div className="flex items-center gap-2">
                       <AgentAvatar
                         id={a.agentId}
@@ -213,11 +238,6 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
-                      {a.activeSessionCount > 0 && (
-                        <Badge tone="brand">
-                          {S.agent.activeSessions} {a.activeSessionCount}
-                        </Badge>
-                      )}
                     </div>
                     {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
                     <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
@@ -225,7 +245,10 @@ export function AgentsPage() {
                     </p>
                     {/* Stats on their own line: same color/font size as the description; each
                         reserves a minimum width so they align vertically across cards; meaning
-                        folded into the hover title */}
+                        folded into the hover title. Tool/vault/schedule/skill counts are buttons
+                        deep-linking to the matching settings tab (also for built-in Agents —
+                        their Settings entry point has no gating either); session count and
+                        last-modified stay plain text */}
                     <div className="mt-1.5 flex items-center gap-x-2.5 text-xs text-gray-500 dark:text-gray-400">
                       <span
                         className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
@@ -234,34 +257,46 @@ export function AgentsPage() {
                         <GlyphIcon d={CARD_ICONS.sessions} size={12} />
                         {a.sessionCount}
                       </span>
-                      <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
                         title={S.agent.toolCount(a.toolCount)}
+                        aria-label={S.agent.toolCount(a.toolCount)}
+                        onClick={() => openSettingsTab(a.agentId, "tools")}
                       >
                         <GlyphIcon d={STAT_ICONS.toolCalls} size={12} />
                         {a.toolCount}
-                      </span>
-                      <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
                         title={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                        aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
+                        onClick={() => openSettingsTab(a.agentId, "vault")}
                       >
                         <GlyphIcon d={CARD_ICONS.vaultKeys} size={12} />
                         {a.vaultKeyCount}
-                      </span>
-                      <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
                         title={S.agent.scheduleCount(a.scheduleCount)}
+                        aria-label={S.agent.scheduleCount(a.scheduleCount)}
+                        onClick={() => openSettingsTab(a.agentId, "schedules")}
                       >
                         <GlyphIcon d={CARD_ICONS.schedules} size={12} />
                         {a.scheduleCount}
-                      </span>
-                      <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
                         title={S.skills.skillCount(a.skillCount)}
+                        aria-label={S.skills.skillCount(a.skillCount)}
+                        onClick={() => openSettingsTab(a.agentId, "skills")}
                       >
                         <GlyphIcon d={CARD_ICONS.skills} size={12} />
                         {a.skillCount}
-                      </span>
+                      </button>
                       <span
                         className="inline-flex shrink-0 items-center gap-1"
                         title={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}

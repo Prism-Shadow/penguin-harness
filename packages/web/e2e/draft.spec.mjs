@@ -4,7 +4,7 @@
  *   the first message is sent, and all four selections land faithfully in its meta;
  * - the draft auto-caches (body persisted via debounce): after a page reload, both the body and
  *   the selections are restored, and the cache clears once sending succeeds;
- * - the sidebar defaults to grouping by Workspace: auto temp directories merge into one
+ * - the sidebar defaults to grouping by Workspace: temporary workspaces merge into one
  *   "临时工作区" group, a named directory groups under its basename, and that group header's
  *   "+" pre-fills the draft's Workspace (via router state, applied once per navigation — a
  *   manual change made afterwards survives a reload instead of being re-overridden);
@@ -171,8 +171,11 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   );
 
   // —— Default grouping: the sidebar groups Sessions by Workspace — the session just created
-  // used the auto temp directory, so it lands in the merged "临时工作区" group. ——
-  await expect(page.getByText("临时工作区")).toBeVisible();
+  // used an auto-created temporary workspace, so it lands in the merged "临时工作区" group.
+  // Scoped to the sidebar (<aside>): the draft page's Workspace pill reads 临时工作区 too
+  // (S.chat.workspaceAuto === S.chat.tempWorkspaces), so a page-wide text lookup would be
+  // ambiguous whenever both are on screen. ——
+  await expect(page.locator("aside").getByText("临时工作区", { exact: true })).toBeVisible();
 
   // A session in a named Workspace groups under that directory's basename, and its group
   // header's "+" pre-fills the draft's Workspace selection with the group's path.
@@ -201,12 +204,39 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
     new RegExp(`${wsLabel}$`),
   );
-  await page.getByRole("button", { name: "上级目录" }).click();
+  // Regression (workspace picker race): while a /dirs request is in flight the picker's rows
+  // are disabled, so a rapid double-click on "parent dir" must issue exactly ONE request and
+  // ascend exactly one level — previously both clicks fired an un-sequenced load and could
+  // relocate the browsing position. The response is gated on an explicit release (not a
+  // timeout) so the second click deterministically lands inside the loading window.
+  let releaseDirs;
+  const dirsGate = new Promise((resolve) => {
+    releaseDirs = resolve;
+  });
+  let dirsRequests = 0;
+  const dirsRoute = (url) => url.pathname.endsWith("/dirs");
+  const gateDirs = async (route) => {
+    dirsRequests += 1;
+    await dirsGate;
+    await route.continue();
+  };
+  await page.route(dirsRoute, gateDirs);
+  const upRow = page.getByRole("button", { name: "上级目录" });
+  await upRow.click();
+  // force: the row is disabled while loading, and a plain click would stall on Playwright's
+  // actionability wait instead of exercising the double-click; the disabled button swallows it.
+  await upRow.click({ force: true });
+  releaseDirs();
+  const parentLabel = basename(dirname(namedWs));
+  await expect(page.getByRole("textbox", { name: "Workspace" })).toHaveValue(
+    new RegExp(`${parentLabel}$`),
+  );
   await expect(page.getByRole("textbox", { name: "Workspace" })).not.toHaveValue(
     new RegExp(`${wsLabel}$`),
   );
+  expect(dirsRequests, "double-click while loading fires a single /dirs request").toBe(1);
+  await page.unroute(dirsRoute, gateDirs);
   await page.getByRole("button", { name: "使用此目录" }).click();
-  const parentLabel = basename(dirname(namedWs));
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
   await page.reload();
   await expect(page.getByLabel("Workspace")).toContainText(parentLabel);
@@ -215,7 +245,9 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // —— Pinning: the header's hover pin toggle lifts a group above the others in its mode and
   // persists per Project (localStorage penguin.sidebarPinnedGroups.<projectId>); order is
   // asserted geometrically, like layout.spec does for the login language buttons. ——
-  const tempLabel = page.getByText("临时工作区", { exact: true });
+  // Sidebar-scoped for the same reason as the group assertion above: the draft's Workspace
+  // pill would also read 临时工作区 whenever its selection is empty.
+  const tempLabel = page.locator("aside").getByText("临时工作区", { exact: true });
   const namedLabel = page.getByText(wsLabel, { exact: true });
   const yOf = async (locator) => (await locator.boundingBox())?.y ?? -1;
   // Unpinned baseline: the merged temp group sits below the named group.

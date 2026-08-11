@@ -155,12 +155,29 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   return <>{nodes}</>;
 }
 
+/** Scroll-up backfill wiring (windowed history): state + trigger for the top-of-stream affordance. */
+export interface OlderHistoryControls {
+  /** Older windows exist beyond the loaded history (scrolling near the top triggers onLoad). */
+  hasMore: boolean;
+  /** A backfill request is in flight (spinner row). */
+  loading: boolean;
+  /** The last backfill failed (retry row); null = fine. */
+  error: string | null;
+  /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
+  prependedCount: number;
+  onLoad: () => void;
+}
+
+/** Distance from the top (px) at which scrolling starts fetching the previous history window. */
+const OLDER_TRIGGER_PX = 300;
+
 export function MessageStream({
   items,
   version,
   ctx,
   scrollElRef,
   outline,
+  older,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -174,6 +191,8 @@ export function MessageStream({
    * and anchor its absolute positioning to this wrapper, which only this component owns.
    */
   outline?: ReactNode;
+  /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
+  older?: OlderHistoryControls;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
@@ -220,6 +239,19 @@ export function MessageStream({
     );
   };
 
+  /** Held refs for prepend scroll anchoring (see the layout effect below). */
+  const olderRef = useRef(older);
+  olderRef.current = older;
+  const lastPrependedRef = useRef(older?.prependedCount ?? 0);
+  const lastHeightRef = useRef(0);
+
+  /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
+  const maybeLoadOlder = (el: HTMLDivElement) => {
+    const o = olderRef.current;
+    if (!o || !o.hasMore || o.loading || o.error !== null) return;
+    if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
+  };
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -234,6 +266,7 @@ export function MessageStream({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
+    maybeLoadOlder(el);
     syncJump();
   };
 
@@ -242,11 +275,48 @@ export function MessageStream({
   // during the animated return — the glide owns the scroll position until it arrives.
   useLayoutEffect(() => {
     const el = scrollRef.current;
+    // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
+    // message the user was reading exactly where it was by offsetting scrollTop by the
+    // content growth (same pre-paint timing as the stick snap, so nothing flashes).
+    // Keyed on the prepend count — ordinary streaming growth at the bottom must not
+    // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
+    // it still holds the pre-prepend height. Skipped while sticking (the snap below
+    // owns the position; a prepend while stuck at the bottom cannot move the tail).
+    const prepended = older?.prependedCount ?? 0;
+    if (el && prepended > lastPrependedRef.current && !follow.stick && !returningRef.current) {
+      el.scrollTop += el.scrollHeight - lastHeightRef.current;
+    }
+    lastPrependedRef.current = prepended;
+    if (el) lastHeightRef.current = el.scrollHeight;
     if (el && follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [version, follow]);
+  }, [version, follow, older?.prependedCount]);
+
+  // The container and the content can also resize OUTSIDE stream commits: the app shell's
+  // notice banner (initial-password reminder) mounting after /api/me resolves shrinks the
+  // scroll viewport, and a late-loading image grows the transcript. Neither fires a scroll
+  // event nor bumps `version`, so while following, the view silently ended up a banner's
+  // height above the bottom right after opening a conversation. Re-snap on any such resize
+  // under the same guards as the commit snap; lastHeightRef stays in sync so a later
+  // prepend's anchor offset isn't inflated by off-commit growth the anchor already saw.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      lastHeightRef.current = el.scrollHeight;
+      if (follow.stick && !returningRef.current) el.scrollTop = el.scrollHeight;
+      syncJump();
+    });
+    ro.observe(el);
+    // The content wrapper is the scroll container's only child and stays mounted for this
+    // component's whole lifetime, so observing it once covers all content growth.
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+    // syncJump is recreated per render; the observer only needs the stable follow object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow]);
 
   /** Back-to-bottom: glide down to the live bottom (reduced motion gets an instant jump); follow re-engages on arrival. */
   const jumpToLatest = () => {
@@ -316,6 +386,32 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
+          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
+              row after a failure, and — once at least one window was backfilled — a quiet
+              beginning-of-conversation marker when there is nothing older. Idle-with-more shows
+              nothing: scrolling near the top triggers the fetch by itself. */}
+          {older && items.length > 0 && (
+            <div className="flex justify-center pb-2">
+              {older.loading ? (
+                <span className="flex items-center gap-2 py-1 text-xs text-gray-400 dark:text-gray-500">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  {S.chat.loadingEarlier}
+                </span>
+              ) : older.error !== null ? (
+                <button
+                  type="button"
+                  onClick={older.onLoad}
+                  className="py-1 text-xs text-red-600 transition-colors duration-150 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  {S.chat.loadEarlierRetry}
+                </button>
+              ) : !older.hasMore && older.prependedCount > 0 ? (
+                <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
+                  {S.chat.historyBeginning}
+                </span>
+              ) : null}
+            </div>
+          )}
           {items.length === 0 ? (
             <EmptyState title={S.chat.emptyStream} />
           ) : (

@@ -52,6 +52,8 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 - 记录的消息：`session_meta`、完整的 `model_msg`、全部 `event_msg`。
 - 不记录的消息：流式 `partial_*` 分片（片段结束后由生产方补写完整消息）；带 `origin` 标记的嵌套消息——子 Agent 的消息写入子 Session 自己的 Trace，父 Trace 只在派生位置保留一个 `subagent` 指针事件，记录子 Session id。
 - `request_begin` 与 `request_end(status)` 成对出现，界定一轮 Request；回放以 `request_end.status === "completed"` 作为该轮已提交的判据。
+- 追加在写入器内部串行执行：并发生产者（模型流、并行工具执行）的记录严格逐条落盘，每条都是一行完整内容——base64 图片 Data URL 之类的多 MB 大记录不会被并发追加撕裂，文件轮转也不会切断任何记录。
+- 每条记录以单次 `write(2)` 追加（不用 `fs.appendFile`——它会把超过 512 KiB 的负载拆成多次底层写入），因此进程异常退出至多截断最后一条记录，不会把某条记录从中间撕开。Session 恢复续写既有文件前会探测文件尾：若上次异常退出留下了残行（末尾不是换行符），下一条记录会先补换行再落盘，残行不会吞掉后续记录。
 
 实现见 `packages/core/src/trace/writer.ts`。
 
@@ -80,7 +82,7 @@ Trace 是恢复的唯一事实来源，没有独立的会话数据库需要与�
 4. 重建 carry-over（未送达的工具输出、中断标记）与轮数、Token 计数器；
 5. 继续追加写入同一个 Trace 文件。
 
-恢复的前提是 Workspace 与模型仍然存在。恢复保证的是结构合法性：只回放已提交的轮次，`tool_call` 与 `tool_call_output` 配对完整；未完成的模型输出（thinking、文本）允许丢失。异常退出留下的截断末行会被容忍并忽略。实现见 `packages/core/src/trace/resume.ts`。
+恢复的前提是 Workspace 与模型仍然存在。恢复保证的是结构合法性：只回放已提交的轮次，`tool_call` 与 `tool_call_output` 配对完整；未完成的模型输出（thinking、文本）允许丢失。异常退出留下的截断末行会被容忍并忽略；文件中间的损坏行（如写入器追加串行化之前受损的存量文件）会被跳过并在 stderr 给出诊断，其余可解析的记录全部保留。实现见 `packages/core/src/trace/resume.ts`。
 
 特殊情形：若最新 Trace 文件以一次完成的压缩收尾，则该上下文已整体关闭——恢复从空上下文开始；summarize 模式下会重建 `[context_summary]` 摘要，前置到恢复后第一轮输入中（旧 Trace 中早期的尖括号 `<summary>` 形式仍可识别）。
 

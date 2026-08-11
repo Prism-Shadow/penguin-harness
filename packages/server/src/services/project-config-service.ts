@@ -14,21 +14,33 @@
  * sent to AgentHub verbatim — string concatenation like `<provider>/<id>` is
  * forbidden everywhere in the pipeline. `default_model` / `vision_model` are `{
  * provider, model_id }` paired references (TOML tables).
+ *
+ * Reads are memoized on the file's mtime (see readTable): every consumer of this
+ * service — scheduler model-ref validation, the models/schedules routes, usage
+ * pricing — shares one parsed table per on-disk version instead of re-reading and
+ * re-parsing the TOML per call. The service's own writes all funnel through
+ * `writeRaw`, which invalidates synchronously; external edits (CLI, hand edits) are
+ * caught by the stat. The cached table is shared between callers and must be treated
+ * as immutable — every mutating method here copies before changing.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
+  CHAT_APPROVAL_MODES,
+  DEFAULT_CHAT_THINKING_LEVELS,
   GenerativeModel,
   catalogEntryFor,
   defaultProjectConfig,
+  projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
-import type { LLMOutcome, ModelRef, OmniMessage } from "@prismshadow/penguin-core";
+import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
+  ChatDefaultsDto,
   ModelInfo,
   ModelPricingDto,
   ModelRefDto,
@@ -38,6 +50,7 @@ import type {
   ModelTestResponse,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
+import { cacheable } from "../internal/mtime-gate.js";
 import type { PricingRates } from "./usage-service.js";
 
 type RawTable = Record<string, unknown>;
@@ -115,6 +128,15 @@ const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
 export class ProjectConfigService {
+  /**
+   * Parsed-table cache, one entry per Project, keyed by the config file's mtime as
+   * recorded at read time (a fresh mtime is stored as a never-matching sentinel, see
+   * mtime-gate). A repeat read while the stat still matches costs one stat and zero
+   * parses; a mismatch (external edit) or a service write (writeRaw deletes the
+   * entry) falls back to a full read.
+   */
+  private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
+
   constructor(private readonly root: string) {}
 
   private filePath(projectId: string): string {
@@ -137,14 +159,50 @@ export class ProjectConfigService {
 
   /** Reads the raw TOML object; returns an empty object if the file doesn't exist (does not write to disk). */
   async readRaw(projectId: string): Promise<RawTable> {
+    return (await this.readTable(projectId)) ?? {};
+  }
+
+  /**
+   * mtime-gated read of the parsed table; null when the file doesn't exist (readRaw
+   * flattens that to `{}`, loadConfig to the preset default config — the two
+   * pre-existing missing-file behaviors). Serving the shared cached object is safe
+   * because no consumer mutates it (see the class header).
+   */
+  private async readTable(projectId: string): Promise<RawTable | null> {
+    const file = this.filePath(projectId);
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await fs.stat(file)).mtimeMs;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      this.cache.delete(projectId); // Config deleted (or the whole Project): drop the stale entry.
+      return null;
+    }
+    const cached = this.cache.get(projectId);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.table;
     let raw: string;
     try {
-      raw = await fs.readFile(this.filePath(projectId), "utf8");
+      raw = await fs.readFile(file, "utf8");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
-      throw err;
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      this.cache.delete(projectId); // Vanished between stat and read: same as never existing.
+      return null;
     }
-    return asTable(parseToml(raw));
+    const table = asTable(parseToml(raw));
+    this.cache.set(projectId, { mtimeMs: cacheable(mtimeMs), table });
+    return table;
+  }
+
+  /**
+   * Typed view of the same cached table — byte-for-byte the semantics of core's
+   * `loadProjectConfig` (missing file → preset default config; legacy format → the
+   * same error, via core's shared narrowing) without its per-call readFile + parse.
+   * Serves the scheduler's model-ref validation (see schedule-store).
+   */
+  async loadConfig(projectId: string): Promise<ProjectConfig> {
+    const table = await this.readTable(projectId);
+    if (table === null) return defaultProjectConfig();
+    return projectConfigFromTable(this.filePath(projectId), table);
   }
 
   /**
@@ -161,6 +219,9 @@ export class ProjectConfigService {
     // (the same file should never have two formats).
     await fs.writeFile(file, renderProjectConfigToml(data), { encoding: "utf8", mode: 0o600 });
     await fs.chmod(file, 0o600);
+    // Every service write funnels through here: invalidate synchronously so the next
+    // read re-parses (external writers are caught by readTable's stat instead).
+    this.cache.delete(projectId);
   }
 
   /**
@@ -222,6 +283,77 @@ export class ProjectConfigService {
   async getDefaultModelRef(projectId: string): Promise<ModelRef | undefined> {
     const raw = await this.readRaw(projectId);
     return optRef(raw.default_model);
+  }
+
+  /**
+   * Sets the default Model to an already-configured entry (the narrow
+   * PUT /models/default route): rewrites only the top-level `default_model` — the SAME key
+   * the models page's whole-table PUT maintains, so the two surfaces stay single-sourced —
+   * preserving every other field via read-modify-write. The pair must name an entry in
+   * `models` (the identical rule updateModels applies to `defaultModel`); a reference
+   * outside the config is a 400, since createSession would error on it immediately. No
+   * runtime invalidation: existing Sessions pin their model at creation, and this route
+   * never touches credentials.
+   */
+  async setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto> {
+    const raw = await this.readRaw(projectId);
+    if (!asArray(raw.models).some((m) => entryMatches(m, ref.provider, ref.modelId))) {
+      throw badRequest(
+        `defaultModel must be included in models: ${showRef(ref.provider, ref.modelId)}.`,
+      );
+    }
+    await this.writeRaw(projectId, {
+      ...raw,
+      default_model: { provider: ref.provider, model_id: ref.modelId },
+    });
+    return { provider: ref.provider, modelId: ref.modelId };
+  }
+
+  /**
+   * New-chat defaults (`[default_chat]`): read leniently — same tolerance as core's
+   * loadProjectConfig (an invalid value drops that key; a missing/malformed block reads as
+   * empty). Members may read; only the fields present in the file appear in the DTO.
+   */
+  async getChatDefaults(projectId: string): Promise<ChatDefaultsDto> {
+    const raw = await this.readRaw(projectId);
+    const t = asTable(raw.default_chat);
+    const agentId = optStr(t.agent_id);
+    const workspace = optStr(t.workspace);
+    const approval = optStr(t.approval_mode);
+    const thinking = optStr(t.thinking_level);
+    return {
+      ...(agentId !== undefined ? { agentId } : {}),
+      ...(workspace !== undefined ? { workspace } : {}),
+      ...(approval !== undefined && (CHAT_APPROVAL_MODES as readonly string[]).includes(approval)
+        ? { approvalMode: approval as ChatDefaultsDto["approvalMode"] }
+        : {}),
+      ...(thinking !== undefined &&
+      (DEFAULT_CHAT_THINKING_LEVELS as readonly string[]).includes(thinking)
+        ? { thinkingLevel: thinking as ChatDefaultsDto["thinkingLevel"] }
+        : {}),
+    };
+  }
+
+  /**
+   * Replaces the whole `[default_chat]` block (declarative PUT: an omitted key clears it;
+   * an empty request removes the block entirely, restoring the pre-existing behavior).
+   * Field validation (enums / agent existence) happens at the route; this is a
+   * read-modify-write like setName — every other field (models, credentials, name, the
+   * default model) is preserved. Returns the stored block as re-read from disk.
+   */
+  async setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto> {
+    const raw = await this.readRaw(projectId);
+    const block: RawTable = {
+      ...(req.agentId !== undefined ? { agent_id: req.agentId } : {}),
+      ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
+      ...(req.approvalMode !== undefined ? { approval_mode: req.approvalMode } : {}),
+      ...(req.thinkingLevel !== undefined ? { thinking_level: req.thinkingLevel } : {}),
+    };
+    const next: RawTable = { ...raw };
+    if (Object.keys(block).length > 0) next.default_chat = block;
+    else delete next.default_chat;
+    await this.writeRaw(projectId, next);
+    return this.getChatDefaults(projectId);
   }
 
   /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */
