@@ -62,6 +62,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | 办公效率 | `data-analysis` | 以有界的证据检查、显式的改答案决策、原生产物处理与最终输出校验完成数据分析任务 |
 | | `firecrawl` | 经 Firecrawl API 做网络搜索与页面抓取，产出干净的 Markdown |
 | | `bento-slides` | 制作与编辑 Bento 演示文稿：单文件 `.bento.html`、文档即 JSON，把素材映射到图表、morph 转场与状态页 |
+| | `humanizer` | 去除任意语言文本的 AI 味，把行文改写成书籍、报纸、百科式的风格（不预装，按需从技能库安装） |
 | 软件开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
 | | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
 | | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |

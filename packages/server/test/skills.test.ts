@@ -78,6 +78,7 @@ describe("skills api", () => {
       "data-analysis",
       "firecrawl",
       "bento-slides",
+      "humanizer",
     ]);
     expect(body.groups[1]!.skills.map((s) => s.name)).toEqual([
       "web-design",
@@ -211,8 +212,9 @@ describe("skills api", () => {
     const body = (await res.json()) as AgentSkillsResponse;
     // loadPreinstalledSkills keeps loadLibrarySkills' name sort, matching the installed-list ordering.
     expect(body.skills.map((s) => s.name)).toEqual(loadPreinstalledSkills().map((s) => s.name));
-    // remote-claude-code ships in the library marked `preinstall: false`: not present here.
+    // remote-claude-code and humanizer ship in the library marked `preinstall: false`: not present here.
     expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
+    expect(body.skills.map((s) => s.name)).not.toContain("humanizer");
     // The installed list likewise passes through the Chinese description and the
     // short description/icon (listInstalledSkills parses these from the on-disk
     // frontmatter and icon.svg).
