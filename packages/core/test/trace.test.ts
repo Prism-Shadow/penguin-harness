@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -18,6 +18,14 @@ import type { OmniMessage } from "../src/omnimessage/index.js";
 import { Writer, parseTraceLines, readTrace } from "../src/trace/index.js";
 
 const SESSION_ID = "sess_abc";
+
+/** FileHandle's prototype, grabbed from a throwaway handle (the class is not exported). */
+async function fileHandleProto(dir: string): Promise<{ write: (...args: unknown[]) => unknown }> {
+  const probe = await open(join(dir, "probe.tmp"), "w");
+  const proto = Object.getPrototypeOf(probe) as { write: (...args: unknown[]) => unknown };
+  await probe.close();
+  return proto;
+}
 
 function meta() {
   return sessionMeta({
@@ -233,21 +241,14 @@ describe("Writer", () => {
       const big = imageUrlMessage(`data:image/png;base64,${"C".repeat(1200 * 1024)}`);
       const bigRecordBytes = Buffer.byteLength(`${JSON.stringify(big)}\n`);
 
-      // Spy on FileHandle.write via a probe handle's prototype (the class is not exported).
-      const probe = await import("node:fs/promises").then((fs) =>
-        fs.open(join(tracesDir, "probe.tmp"), "w"),
-      );
-      const fileHandleProto = Object.getPrototypeOf(probe) as {
-        write: (...args: unknown[]) => unknown;
-      };
-      await probe.close();
-      const writeSpy = vi.spyOn(fileHandleProto, "write");
+      const writeSpy = vi.spyOn(await fileHandleProto(tracesDir), "write");
       try {
         await writer.writeAll([head, big]);
-        // One write() per record — the big one lands whole, never in 524288-byte chunks.
+        // One write() per record — the big one lands whole, never in 524288-byte chunks
+        // (>= so a chunk of exactly 524288 bytes would be caught too).
         const lengths = writeSpy.mock.calls.map((call) => call[2]);
         expect(lengths).toContain(bigRecordBytes);
-        expect(lengths.filter((len) => (len as number) > 512 * 1024)).toEqual([bigRecordBytes]);
+        expect(lengths.filter((len) => (len as number) >= 512 * 1024)).toEqual([bigRecordBytes]);
       } finally {
         writeSpy.mockRestore();
       }
@@ -276,6 +277,79 @@ describe("Writer", () => {
       await writer.write(recovered);
       const rows = await readTrace(writer.currentPath());
       expect(rows).toEqual([recovered]);
+    });
+  });
+
+  // The failure branches of the single-write append: a partial write leaves a torn tail that
+  // the next append must heal; a zero-progress write must bail out instead of looping.
+  describe("append failure semantics", () => {
+    it("marks the tail torn after a partial append failure and heals on the next write", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      const first = assistantText("intact record");
+      await writer.write(first); // the shard exists with a clean tail before the failure
+
+      const torn = assistantText("torn mid-write");
+      const tornData = Buffer.from(`${JSON.stringify(torn)}\n`, "utf8");
+      const half = Math.floor(tornData.length / 2);
+      const proto = await fileHandleProto(tracesDir);
+      const originalWrite = proto.write;
+      const writeSpy = vi.spyOn(proto, "write");
+      try {
+        // First syscall lands only half the record, the second fails: ENOSPC mid-record.
+        writeSpy
+          .mockImplementationOnce(function (this: unknown, ...args: unknown[]) {
+            const [buf, offset] = args as [Buffer, number, number];
+            return originalWrite.call(this, buf, offset, half);
+          })
+          .mockImplementationOnce(() => {
+            return Promise.reject(
+              Object.assign(new Error("ENOSPC: no space left on device, write"), {
+                code: "ENOSPC",
+              }),
+            );
+          });
+        await expect(writer.write(torn)).rejects.toThrow(/ENOSPC/);
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      const healed = assistantText("after the failure");
+      await writer.write(healed);
+
+      const raw = await readFile(writer.currentPath(), "utf8");
+      expect(raw).toBe(
+        `${JSON.stringify(first)}\n` +
+          `${tornData.subarray(0, half).toString("utf8")}\n` +
+          `${JSON.stringify(healed)}\n`,
+      );
+      // The torn half-record is skipped as malformed; both intact records survive.
+      expect(parseTraceLines(raw)).toEqual([first, healed]);
+    });
+
+    it("bails out of a zero-progress write and appends cleanly afterwards (nothing reached the file)", async () => {
+      const writer = new Writer({
+        tracesDir,
+        sessionId: SESSION_ID,
+        date: new Date(2026, 0, 9),
+      });
+      const writeSpy = vi.spyOn(await fileHandleProto(tracesDir), "write");
+      try {
+        writeSpy.mockImplementationOnce((...args: unknown[]) =>
+          Promise.resolve({ bytesWritten: 0, buffer: args[0] }),
+        );
+        await expect(writer.write(assistantText("stuck"))).rejects.toThrow(/made no progress/);
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      // Zero bytes landed, so the tail is intact: the next append gets no heal prefix.
+      const next = assistantText("clean append");
+      await writer.write(next);
+      expect(await readFile(writer.currentPath(), "utf8")).toBe(`${JSON.stringify(next)}\n`);
     });
   });
 

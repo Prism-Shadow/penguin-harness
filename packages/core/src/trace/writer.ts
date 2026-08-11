@@ -116,7 +116,7 @@ export class Writer {
   private index = 1;
   /** Index whose file is prepared (date directory created, pre-existing tail probed); avoids redoing either per append. */
   private preparedIndex = -1;
-  /** True while the current shard may end mid-record (crash-torn tail found by the probe, or a failed append in this process): the next record starts on a fresh line. */
+  /** True while the current shard may end mid-record — assigned per shard by the tail probe, set by a mid-record append failure, cleared once a record fully lands. The next record then starts on a fresh line. */
   private tornTail = false;
   /** Serialization chain: mutating operations run strictly in submission order (see class docs). */
   private chain: Promise<void> = Promise.resolve();
@@ -165,7 +165,7 @@ export class Writer {
       const path = this.currentPath();
       if (this.preparedIndex !== this.index) {
         await mkdir(dirname(path), { recursive: true });
-        await this.probeTornTail(path);
+        this.tornTail = await this.probeTornTail(path);
         this.preparedIndex = this.index;
       }
       const record = `${JSON.stringify(msg)}\n`;
@@ -175,25 +175,25 @@ export class Writer {
   }
 
   /**
-   * Detects a crash-torn tail in a pre-existing shard file (resumption continues the
-   * original file): a non-empty file whose last byte is not `\n` ends mid-record, and the
-   * next append must not merge into that line. A missing file is simply fresh; any other
-   * probe error surfaces to the caller like an append failure (and is retried with the next
-   * write, since the index stays unprepared).
+   * Whether a pre-existing shard file ends mid-record (resumption continues the original
+   * file): a non-empty file whose last byte is not `\n` carries a crash-torn tail, and the
+   * next append must not merge into that line. A missing or empty file is simply fresh; any
+   * other probe error surfaces to the caller like an append failure (and is retried with the
+   * next write, since the index stays unprepared).
    */
-  private async probeTornTail(path: string): Promise<void> {
+  private async probeTornTail(path: string): Promise<boolean> {
     let fh;
     try {
       fh = await open(path, "r");
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
       throw err;
     }
     try {
       const { size } = await fh.stat();
-      if (size === 0) return;
+      if (size === 0) return false;
       const { bytesRead, buffer } = await fh.read(Buffer.alloc(1), 0, 1, size - 1);
-      if (bytesRead !== 1 || buffer[0] !== 0x0a) this.tornTail = true;
+      return bytesRead !== 1 || buffer[0] !== 0x0a;
     } finally {
       await fh.close();
     }
@@ -261,10 +261,9 @@ export class Writer {
    */
   async rotate(): Promise<void> {
     return this.enqueue(async () => {
+      // No torn-tail bookkeeping here: the first write to the new index re-probes and
+      // reassigns the flag, so the previous shard's state cannot leak into the next file.
       this.index += 1;
-      // The next shard is a brand-new file: a torn tail of the previous shard must not leak
-      // a heal prefix into it (the probe will re-evaluate if the file somehow pre-exists).
-      this.tornTail = false;
     });
   }
 }
