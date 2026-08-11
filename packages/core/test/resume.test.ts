@@ -89,7 +89,6 @@ function metaFor(
     model_id: model.model_id,
     model_context_window: 1000000,
     system_prompt: "ORIGINAL SYSTEM PROMPT",
-    tools: [],
     agent_state: "/agent/state",
     workspace: workspaceDir,
     ...(source !== undefined ? { source } : {}),
@@ -183,16 +182,22 @@ describe("agent.resumeSession", () => {
     // time. The seeded Agent config here pins "medium".
     const agent = await createAgent({});
     expect(agent.state.systemConfig.model?.thinking_level).toBe("medium");
-    const levelOf = (session: unknown): unknown =>
-      (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine.deps.llm
-        .defaultThinkingLevel;
+    const levelOf = async (session: unknown): Promise<unknown> => {
+      // The LLM only exists after the lazy first-run bootstrap — drive it before reading.
+      const gen = (session as { ensureReady(): AsyncGenerator<unknown> }).ensureReady();
+      for await (const _ of gen) {
+        // drain
+      }
+      return (session as { engine: { deps: { llm: { defaultThinkingLevel?: unknown } } } }).engine
+        .deps.llm.defaultThinkingLevel;
+    };
 
     const recorded = metaFor(SID, workspace);
     // A legacy trace: inject the retired field loosely into the on-disk meta JSON.
     (recorded.payload as unknown as Record<string, unknown>).thinking_level = "xhigh";
     await writeTraceFile(tmpRoot, SID, [recorded, userText("hello")]);
     const ignored = await agent.resumeSession({ sessionId: SID });
-    expect(levelOf(ignored)).toBe("medium");
+    expect(await levelOf(ignored)).toBe("medium");
     // The rebuilt meta holds invariants only: the legacy field is never re-recorded either.
     expect(
       "thinking_level" in (ignored.metaMessage.payload as unknown as Record<string, unknown>),
@@ -202,14 +207,14 @@ describe("agent.resumeSession", () => {
     const SID2 = "session-2026-07-06-11-00-00-abcdef02";
     await writeTraceFile(tmpRoot, SID2, [metaFor(SID2, workspace), userText("hi")]);
     const fallback = await agent.resumeSession({ sessionId: SID2 });
-    expect(levelOf(fallback)).toBe("medium");
+    expect(await levelOf(fallback)).toBe("medium");
 
     const SID3 = "session-2026-07-06-12-00-00-abcdef03";
     const legacyDefault = metaFor(SID3, workspace);
     (legacyDefault.payload as unknown as Record<string, unknown>).thinking_level = "default";
     await writeTraceFile(tmpRoot, SID3, [legacyDefault, userText("hi")]);
     const viaDefault = await agent.resumeSession({ sessionId: SID3 });
-    expect(levelOf(viaDefault)).toBe("medium");
+    expect(await levelOf(viaDefault)).toBe("medium");
   });
 
   it("does not write pairing placeholders to the trace file (resume is side-effect free)", async () => {

@@ -15,3 +15,17 @@ export { createInputSubagentTool, INPUT_SUBAGENT_NAME } from "./tools/input-suba
 export { CommandSessionManager, ManagedSession } from "./tools/command/index.js";
 export type { ProcessExit, SpawnOptions } from "./tools/command/index.js";
 export { SubagentSessionManager, ManagedSubagentSession } from "./tools/subagent/index.js";
+export {
+  DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+  MCP_TOOL_PREFIX,
+  McpToolProvider,
+  mcpToolName,
+  resolveMCPServer,
+  resolveMCPServers,
+} from "./mcp/index.js";
+export type {
+  McpToolProviderOptions,
+  ResolvedMCPServer,
+  ResolvedMCPTransport,
+  ResolveMCPServersResult,
+} from "./mcp/index.js";

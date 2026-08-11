@@ -16,7 +16,7 @@
  *     context_engine).
  *   - Path convention: `<tracesDir>/<yyyy-mm-dd>/<sessionId>_<index3>.jsonl`.
  */
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -68,22 +68,37 @@ function isRecordable(msg: OmniMessage): boolean {
 /**
  * append-only JSONL Trace writer.
  *
- * Every write uses `appendFile` (O_APPEND) rather than caching a file handle and seeking to
- * write, avoiding overwriting existing content; this also removes the need for an explicit
- * close.
+ * Every append opens the file with O_APPEND, issues **one** `write(2)` for the whole record,
+ * and closes the handle — no cached handle, no seeking, so existing content can never be
+ * overwritten. `fs.appendFile` is deliberately NOT used: it splits payloads larger than
+ * 512 KiB into multiple underlying writes (Node's internal `kWriteFileMaxChunkSize`), so a
+ * process death between chunks leaves exactly the first 524288 bytes of a big record (a huge
+ * tool_call's arguments, a base64 image Data URL) on disk — and every record appended after
+ * it glues onto that torn line, turning one crash into an unparseable line that swallows
+ * later records too. A single-write append can only be cut short by the OS itself (power
+ * loss, ENOSPC short write), which the tail-heal below and the readers' torn-tail tolerance
+ * (parseTraceLines) are built for.
+ *
+ * Tail healing: before the first append this instance makes to a **pre-existing** shard file
+ * (Session resumption continues the original file), the last byte is probed — a file not
+ * ending in `\n` carries a crash-torn tail, and the next record is prefixed with `\n` so it
+ * starts on a fresh line instead of merging into the torn one (the torn line itself is
+ * skipped by the tolerant readers; the records after it stay readable). A mid-record append
+ * failure inside this process (ENOSPC, forced short write) marks the tail torn and heals the
+ * same way on the next append. A spurious heal costs one blank line, which every reader
+ * ignores.
  *
  * Concurrency: one live Session has exactly one Writer instance, but that instance receives
  * appends from **multiple async producers in the same process** — the engine's LLM stream
- * driver and each parallel tool execution write independently. `appendFile` splits large
- * payloads (multi-MB records such as base64 image Data URLs) into multiple underlying writes,
- * so two overlapping appends can interleave mid-record and corrupt the JSONL (#215). All
- * mutating operations (`write`, `rotate`) are therefore serialized through one per-instance
- * promise chain: each record lands as one uninterrupted append, and a rotation cannot land in
- * the middle of an append. Cross-instance/file concurrency does not occur by design **within a
- * single server/CLI process**: a Session allows one active run at a time, child sessions write
- * their own files, and server-side Trace import only ever creates brand-new files (`wx`). Two
+ * driver and each parallel tool execution write independently (#215). All mutating operations
+ * (`write`, `rotate`) are therefore serialized through one per-instance promise chain: each
+ * record lands as one uninterrupted append, and a rotation cannot land in the middle of an
+ * append. Cross-instance/file concurrency does not occur by design **within a single
+ * server/CLI process**: a Session allows one active run at a time, child sessions write their
+ * own files, and server-side Trace import only ever creates brand-new files (`wx`). Two
  * processes pointed at the same agent data directory are outside this contract (and outside
- * supported usage) — the chain cannot cover them.
+ * supported usage), though the single-write append keeps even that case tear-free on local
+ * filesystems that make O_APPEND writes atomic.
  *
  * Error semantics: a failed operation rejects **that caller's** returned promise only; the
  * chain itself absorbs the failure so subsequent operations still run (a transient disk error
@@ -99,8 +114,10 @@ export class Writer {
   private readonly dateDir: string;
   /** Current Trace index, starting at 1; incremented by `rotate()`. */
   private index = 1;
-  /** Set true once the date directory has been created for the current file, to avoid a redundant mkdir. */
-  private ensuredDirForIndex = -1;
+  /** Index whose file is prepared (date directory created, pre-existing tail probed); avoids redoing either per append. */
+  private preparedIndex = -1;
+  /** True while the current shard may end mid-record — assigned per shard by the tail probe, set by a mid-record append failure, cleared once a record fully lands. The next record then starts on a fresh line. */
+  private tornTail = false;
   /** Serialization chain: mutating operations run strictly in submission order (see class docs). */
   private chain: Promise<void> = Promise.resolve();
 
@@ -133,7 +150,8 @@ export class Writer {
 
   /**
    * Appends one message. Only written if it's a recordable message; streaming `partial_*` is
-   * skipped. `mkdir -p`s the date directory on the first write to the current file.
+   * skipped. The first write to the current file `mkdir -p`s the date directory and probes a
+   * pre-existing file for a crash-torn tail (see `probeTornTail`).
    *
    * The append is serialized on the instance chain, so the record lands as one uninterrupted
    * JSONL line even when other writes (or a rotation) are submitted concurrently; the target
@@ -145,12 +163,72 @@ export class Writer {
     if (!isRecordable(msg)) return;
     return this.enqueue(async () => {
       const path = this.currentPath();
-      if (this.ensuredDirForIndex !== this.index) {
+      if (this.preparedIndex !== this.index) {
         await mkdir(dirname(path), { recursive: true });
-        this.ensuredDirForIndex = this.index;
+        this.tornTail = await this.probeTornTail(path);
+        this.preparedIndex = this.index;
       }
-      await appendFile(path, `${JSON.stringify(msg)}\n`, "utf8");
+      const record = `${JSON.stringify(msg)}\n`;
+      await this.appendRecord(path, this.tornTail ? `\n${record}` : record);
+      this.tornTail = false; // the record (and any heal prefix) fully reached the file
     });
+  }
+
+  /**
+   * Whether a pre-existing shard file ends mid-record (resumption continues the original
+   * file): a non-empty file whose last byte is not `\n` carries a crash-torn tail, and the
+   * next append must not merge into that line. A missing or empty file is simply fresh; any
+   * other probe error surfaces to the caller like an append failure (and is retried with the
+   * next write, since the index stays unprepared).
+   */
+  private async probeTornTail(path: string): Promise<boolean> {
+    let fh;
+    try {
+      fh = await open(path, "r");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
+    }
+    try {
+      const { size } = await fh.stat();
+      if (size === 0) return false;
+      const { bytesRead, buffer } = await fh.read(Buffer.alloc(1), 0, 1, size - 1);
+      return bytesRead !== 1 || buffer[0] !== 0x0a;
+    } finally {
+      await fh.close();
+    }
+  }
+
+  /**
+   * Appends one record through a single `write(2)` on an O_APPEND handle (see the class docs
+   * for why `appendFile`'s 512 KiB chunking is unacceptable here). The short-write loop is a
+   * safety net only — one iteration is the norm; if a retry is ever needed and then fails,
+   * part of the record is on disk, so the tail is marked torn for the next append to heal.
+   */
+  private async appendRecord(path: string, data: string): Promise<void> {
+    const buf = Buffer.from(data, "utf8");
+    const fh = await open(path, "a");
+    try {
+      let written = 0;
+      while (written < buf.length) {
+        let bytesWritten: number;
+        try {
+          ({ bytesWritten } = await fh.write(buf, written, buf.length - written));
+        } catch (err) {
+          if (written > 0) this.tornTail = true;
+          throw err;
+        }
+        if (bytesWritten <= 0) {
+          // A zero-progress write (out-of-space filesystems can report this instead of
+          // throwing): bail out rather than loop forever.
+          if (written > 0) this.tornTail = true;
+          throw new Error(`Trace append made no progress at byte ${written} of ${buf.length}`);
+        }
+        written += bytesWritten;
+      }
+    } finally {
+      await fh.close();
+    }
   }
 
   /** Writes multiple messages in sequence. */
@@ -183,6 +261,8 @@ export class Writer {
    */
   async rotate(): Promise<void> {
     return this.enqueue(async () => {
+      // No torn-tail bookkeeping here: the first write to the new index re-probes and
+      // reassigns the flag, so the previous shard's state cannot leak into the next file.
       this.index += 1;
     });
   }

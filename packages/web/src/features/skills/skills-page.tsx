@@ -23,9 +23,12 @@
  *   (install-again-is-update semantics), with a single success toast; the
  *   manage-installs Modal marks outdated rows with an accent "Update" button
  *   doing the same per Agent (through the same confirm);
- * - Paper plane "quick invoke": enters /chat/new draft mode with default_agent,
- *   pre-selects the skill, and pre-fills the invocation text per UI language
+ * - Paper plane "quick invoke": enters /chat/new draft mode on the currently selected
+ *   agent, pre-selects the skill, and pre-fills the invocation text per UI language
  *   ("use the X skill" in the active dictionary, overwriting any existing draft body);
+ *   disabled unless that agent has the skill installed — quick invoke opens the draft
+ *   there, so it can't pre-select a skill the current agent lacks (e.g. a preinstall:false
+ *   skill like remote-claude-code on an agent that hasn't installed it);
  * - Download "manage installs": a Modal listing every Agent in the current
  *   Project — not-installed shows "Install", installed shows "Installed"
  *   (hover switches to "Uninstall", click to uninstall); any member can
@@ -91,7 +94,7 @@ export function SkillsPage() {
   const navigate = useNavigate();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, agents, setCurrentAgentId } = useProject();
+  const { currentProject, agents, currentAgent, setCurrentAgentId } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
   const [groups, setGroups] = useState<SkillGroupItem[] | null>(null);
@@ -224,14 +227,15 @@ export function SkillsPage() {
    * field, used by ChatInput as its initial selection on mount), pre-fills
    * the invocation text per UI language (overwriting any existing draft
    * body — quick invoke's intent is unambiguous, and leftover draft text
-   * would only be noise here), and points the Agent to default_agent before
-   * entering draft mode — the route state explicitly carries agentId
-   * (overriding whatever was last selected in the cache). handoffAgentId
+   * would only be noise here), and opens the draft on the currently selected
+   * Agent — the route state carries its agentId explicitly. handoffAgentId
    * must be cleared: a leftover handoff target would forward the whole skill
-   * invocation to a different Agent — quick invoke must always start a new
-   * conversation with default_agent.
+   * invocation to a different Agent. The button is gated on the current Agent
+   * having the skill (see SkillCard.canQuickInvoke), so agentId is present here.
    */
   const quickInvoke = (name: string) => {
+    const agentId = currentAgent?.agentId;
+    if (!agentId) return;
     if (userId && projectId) {
       // Typed-but-unsent draft text becomes a parked draft conversation instead of being
       // clobbered by the canned invocation body (draft-sessions.ts).
@@ -239,14 +243,14 @@ export function SkillsPage() {
       const key = draftKey(userId, projectId);
       saveDraft(key, {
         ...loadDraft(key),
-        agentId: "default_agent",
+        agentId,
         text: S.skills.quickInvokeText(name),
         skills: [name],
         handoffAgentId: undefined,
       });
     }
-    setCurrentAgentId("default_agent");
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId: "default_agent" } });
+    setCurrentAgentId(agentId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
 
   return (
@@ -358,7 +362,7 @@ function SkillCard({
   onUpdateOutdated: (name: string, agentIds: string[]) => Promise<void>;
 }) {
   const { locale } = useLocale();
-  const { agents } = useProject();
+  const { agents, currentAgent } = useProject();
   const [installOpen, setInstallOpen] = useState(false);
   // Agents pending an update confirmation (null = none): an update is an overwriting reinstall, so it needs a confirm + a per-agent version list before it runs.
   const [pendingUpdate, setPendingUpdate] = useState<string[] | null>(null);
@@ -387,6 +391,11 @@ function SkillCard({
     skill.name,
     skill.version,
   );
+  // Quick invoke opens a draft on the currently selected Agent, so it's only offered once that
+  // Agent has this skill installed — otherwise quick invoke would pre-select a skill it lacks
+  // (e.g. a preinstall:false skill like remote-claude-code on an Agent that hasn't installed it).
+  const canQuickInvoke =
+    currentAgent !== null && (installed.get(currentAgent.agentId)?.has(skill.name) ?? false);
 
   // Short description takes priority, falling back to the full description
   // when missing (per UI language); title carries the full description for hover reading.
@@ -451,7 +460,8 @@ function SkillCard({
           size="sm"
           className="h-8 w-8 shrink-0 justify-center p-0"
           aria-label={`${S.skills.quickInvoke} ${skill.name}`}
-          title={S.skills.quickInvoke}
+          title={canQuickInvoke ? S.skills.quickInvoke : S.skills.quickInvokeNeedsInstall}
+          disabled={!canQuickInvoke}
           onClick={() => onQuickInvoke(skill.name)}
         >
           <GlyphIcon d={SEND_ICON} size={15} />

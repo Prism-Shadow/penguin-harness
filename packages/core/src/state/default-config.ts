@@ -36,6 +36,25 @@ export const OS_VERSION_PLACEHOLDER = "{{OS_VERSION}}";
 /** The shell exec_command runs (`bash` on POSIX; on Windows whatever shell.ts resolved), so the model knows which command syntax to write. */
 export const SHELL_PLACEHOLDER = "{{SHELL}}";
 export const DATE_PLACEHOLDER = "{{DATE}}";
+/**
+ * Expands to the rendered `memory.prompt` block, plus `memory.workspace_prompt` when the
+ * Session runs in a persistent Workspace; an empty string when Memory is off. A template
+ * without this placeholder injects no Memory at all — the Web App's Memory tab offers
+ * inserting it as an explicit action, nothing is spliced in automatically.
+ */
+export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
+/**
+ * Inside `memory.workspace_prompt` only: the absolute path of the current Workspace's Memory
+ * directory (`…/memory/<workspace_memory_key>`). The key half is a hash the model could never
+ * derive itself, so the resolved directory is rendered right where the prompt names it —
+ * the User section's directory stays a literal `<app_data_dir>/…` pattern, resolvable from
+ * the Environment section.
+ */
+export const WORKSPACE_MEMORY_DIR_PLACEHOLDER = "{{WORKSPACE_MEMORY_DIR}}";
+/** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
+export const WORKSPACE_MEMORY_INDEX_PLACEHOLDER = "{{WORKSPACE_MEMORY_INDEX}}";
+/** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
+export const USER_MEMORY_INDEX_PLACEHOLDER = "{{USER_MEMORY_INDEX}}";
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -51,6 +70,100 @@ export interface CompactionConfig {
   /** Prompt template for summarize compaction; defaults to the built-in value (editable config, not hardcoded). */
   prompt?: string;
 }
+
+/**
+ * Memory config (the `memory` section of `system_config.yaml`). Both prompts are editable on
+ * the Web App's Memory tab and rendered into the template's `{{MEMORY}}` placeholder.
+ * Docs: /docs/configuration § "Memory".
+ */
+export interface MemoryConfig {
+  /** Whether Memory enters the model context and its directories are prepared; defaults to true. */
+  enabled?: boolean;
+  /**
+   * The always-injected half of the `{{MEMORY}}` block: what Memory is for, the save mechanics,
+   * and the User scope with its index — carrying the `{{USER_MEMORY_INDEX}}` injection point
+   * (the User directory is literal text, not a placeholder). Defaults to the built-in value.
+   */
+  prompt?: string;
+  /**
+   * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
+   * scope, its index and the rule for choosing between the two — carrying
+   * `{{WORKSPACE_MEMORY_INDEX}}` and the `{{WORKSPACE_MEMORY_DIR}}` directory. A separate key
+   * rather than a conditional inside `prompt` because substitution has no conditionals — a
+   * temporary Workspace would otherwise be told about a scope it does not have.
+   */
+  workspace_prompt?: string;
+}
+
+/** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
+export const MEMORY_INDEX_EMPTY_NOTE = "(the index is empty — nothing has been saved yet)";
+
+/**
+ * Cap on injected index lines per scope (one memory per line by convention), so a runaway
+ * `MEMORY.md` cannot flood the context. Only the injection is capped — the file on disk is
+ * never touched — and a truncation note tells the model to open the full index itself.
+ */
+export const MEMORY_INDEX_MAX_LINES = 200;
+
+/**
+ * Character backstop on an injected index, applied after the line cap: catches the long-line
+ * index the line cap alone misses (a file under 200 lines can still be arbitrarily large).
+ * Deliberately code-only — the default prompt teaches per-line brevity (~150 characters)
+ * instead of quoting this number; when the backstop does fire, the truncation note says so.
+ */
+export const MEMORY_INDEX_MAX_CHARS = 25_000;
+
+/**
+ * Built-in default Memory Prompt: the always-injected half of the `{{MEMORY}}` block, in
+ * template-example form — a fenced frontmatter example, what is worth saving, the index
+ * contract (the line cap and a per-line length hint, so the model keeps the index short
+ * before ever hitting the code-side caps) and the hygiene rules, then the User scope section
+ * with its index. Stored
+ * per-Agent in `system_config.yaml` and editable on the Web App's Memory tab. The User
+ * directory is literal text in the template's angle-bracket convention (resolved from the
+ * Environment section by the model, like the Skills paths) — the only injection point is the
+ * index itself.
+ */
+export const DEFAULT_MEMORY_PROMPT = `# Memory
+Your long-term record across sessions: Markdown files you maintain with the file tools, in the memory directories named below (they already exist). One file per fact, with frontmatter:
+
+\`\`\`markdown
+---
+name: <kebab-case-slug, matching the file name>
+description: <one line — used to decide relevance during recall>
+updated_at: <YYYY-MM-DD>
+---
+
+<the fact; for corrections and decisions add **Why:** and **How to apply:** lines. Link related memories with [[their-name]] — a name that doesn't exist yet is fine. Write dates absolute.>
+\`\`\`
+
+Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
+
+Each directory's \`MEMORY.md\` is its index, injected below: one line per memory, under ~150 characters (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
+
+## User memory
+What holds wherever you work; every one of your sessions reads it.
+
+User Memory Dir: \`<app_data_dir>/agents/<agent_id>/agent_state/memory/user\`
+
+Index:
+{{USER_MEMORY_INDEX}}`;
+
+/**
+ * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
+ * `memory.prompt` only when the Session runs in a persistent Workspace. The rule for choosing
+ * between the two scopes lives here on purpose: a Session in a temporary Workspace has one
+ * scope and no choice to make, so it never sees the rule at all. The directory is rendered in
+ * place via `{{WORKSPACE_MEMORY_DIR}}` — its final segment is a path hash the model could not
+ * compose from Environment values the way it can the User directory.
+ */
+export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `## Workspace memory
+Facts about the workspace you are working in now. What would still hold in a different project goes in user memory; when unsure, write here.
+
+Workspace Memory Dir: \`{{WORKSPACE_MEMORY_DIR}}\`
+
+Index:
+{{WORKSPACE_MEMORY_INDEX}}`;
 
 /**
  * System-level config for Agent State, serialized as `system_config.yaml`.
@@ -78,6 +191,8 @@ export interface SystemConfig {
   };
   /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
   compaction?: CompactionConfig;
+  /** Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
+  memory?: MemoryConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
@@ -144,8 +259,10 @@ The vault holds this agent's per-agent secrets (agent_state/.vault.toml). Each e
 {{VAULT_KEYS}}
 
 # Skills
-Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
+Skills are reusable instruction packages at \`<app_data_dir>/agents/<agent_id>/agent_state/skills/<skill_name>/SKILL.md\`. When a task matches one below, or the user asks for one (the message may start with a [use_skills] block naming them), read that SKILL.md in full with read_file, then follow it. If a request names a skill without a concrete task, ask the user what they need first.
 {{SKILL_METADATA}}
+
+{{MEMORY}}
 
 # Environment
 - Platform: {{PLATFORM}}
@@ -158,6 +275,26 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - Provider: {{PROVIDER}}
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
+
+/** Whether a template carries the `{{MEMORY}}` placeholder — without it no Memory is injected. */
+export function hasMemoryPlaceholder(template: string): boolean {
+  return template.includes(MEMORY_PLACEHOLDER);
+}
+
+/**
+ * Inserts the `{{MEMORY}}` placeholder into a template: before the `# Environment` heading
+ * (the position the default template gives it), else appended at the end. Idempotent — a
+ * template already carrying it is returned unchanged. This is the explicit adoption path for
+ * Agents created before Memory shipped (the Web App's Memory tab offers it); nothing ever
+ * inserts automatically.
+ */
+export function insertMemoryPlaceholder(template: string): string {
+  if (template.includes(MEMORY_PLACEHOLDER)) return template;
+  const heading = /^#+ Environment[ \t]*$/m.exec(template);
+  return heading
+    ? `${template.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${template.slice(heading.index)}`
+    : `${template.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
+}
 
 /**
  * Built-in default compaction Prompt (summarize mode): tells the model the summary will
@@ -509,6 +646,11 @@ export function defaultSystemConfig(): SystemConfig {
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,
+    },
+    memory: {
+      enabled: true,
+      prompt: DEFAULT_MEMORY_PROMPT,
+      workspace_prompt: DEFAULT_MEMORY_WORKSPACE_PROMPT,
     },
     tools: {
       builtin: defaultBuiltinTools(),
