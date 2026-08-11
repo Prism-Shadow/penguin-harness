@@ -22,7 +22,7 @@ import {
   mcpConnectBegin,
   mcpConnectEnd,
   sessionMeta,
-  sessionTools,
+  sessionToolsReady,
 } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
@@ -52,7 +52,7 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's session_tools event. */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's session_tools_ready event. */
   meta: SessionMetaPayload;
   /**
    * Lazy session bootstrap, run once at the start of the first run (or first compaction):
@@ -242,7 +242,7 @@ export class Session {
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
       // Context compaction: new LLM factory + resolved settings + writes session_meta (and
-      // session_tools) at the start of the new Trace file after splitting.
+      // session_tools_ready) at the start of the new Trace file after splitting.
       ...(config.createLLM ? { createLLM: config.createLLM } : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
@@ -330,7 +330,7 @@ export class Session {
    * — streaming the phase as it happens. With MCP Servers configured, the connect +
    * discovery wait is bracketed by `mcp_connect_begin` / `mcp_connect_end` (per-server
    * outcomes and total wall time; the trace timeline renders the span, frontends show a
-   * connecting status). The resolved toolset then flows as one `session_tools` event —
+   * connecting status). The resolved toolset then flows as one `session_tools_ready` event —
    * split out of session_meta precisely so the meta never has to wait for this phase.
    * All three are streamed live and written to the Trace best-effort (same stance as
    * session_meta).
@@ -346,7 +346,6 @@ export class Session {
   private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
     await this.ensureMetaWritten();
     if (this.engine) return true;
-    const startedAt = performance.now();
     if (this.mcpServers.length > 0) {
       const begin = mcpConnectBegin(this.mcpServers);
       yield begin;
@@ -364,11 +363,9 @@ export class Session {
     const outcome = await raceAbort(this.bootstrapPromise, signal);
     if (outcome === "aborted") {
       if (this.mcpServers.length > 0) {
-        const end = mcpConnectEnd({
-          durationMs: Math.round(performance.now() - startedAt),
-          results: [],
-          aborted: true,
-        });
+        // The phase's wall time is the end message's timestamp minus the begin's — no
+        // duplicate duration field on the payload.
+        const end = mcpConnectEnd({ results: [], aborted: true });
         yield end;
         await this.writeTrace(end, "mcp_connect_end");
       }
@@ -379,16 +376,13 @@ export class Session {
     }
     const { tools, llm, mcp } = outcome.value;
     if (this.mcpServers.length > 0) {
-      const end = mcpConnectEnd({
-        durationMs: Math.round(performance.now() - startedAt),
-        results: mcp,
-      });
+      const end = mcpConnectEnd({ results: mcp });
       yield end;
       await this.writeTrace(end, "mcp_connect_end");
     }
-    const toolsMsg = sessionTools(tools);
+    const toolsMsg = sessionToolsReady(tools);
     yield toolsMsg;
-    await this.writeTrace(toolsMsg, "session_tools");
+    await this.writeTrace(toolsMsg, "session_tools_ready");
     this.engine = new ContextEngine({ ...this.engineDeps, llm, sessionTools: toolsMsg });
     return true;
   }

@@ -261,7 +261,9 @@ export interface McpConnectItem {
   servers: string[];
   /** True between mcp_connect_begin and mcp_connect_end (renders a connecting banner). */
   running: boolean;
-  /** Total connect + discovery wall time (from mcp_connect_end). */
+  /** The begin message's timestamp (ms); the end computes durationMs from it. */
+  beginTsMs?: number;
+  /** Total connect + discovery wall time, derived from the pair's message timestamps. */
   durationMs?: number;
   /** Servers that failed to connect (empty list omitted). */
   failed?: string[];
@@ -1333,6 +1335,7 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         id: nextId(model),
         servers: p.servers,
         running: true,
+        ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
       });
       return;
     }
@@ -1341,13 +1344,16 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       // Mid-stream join without the begin: the connect status is transient — nothing to show.
       if (!item) return;
       item.running = false;
-      item.durationMs = p.duration_ms;
+      // Wall time comes from the pair's message timestamps (the payload carries no duplicate duration).
+      if (tsMs !== undefined && item.beginTsMs !== undefined) {
+        item.durationMs = Math.max(0, tsMs - item.beginTsMs);
+      }
       if (p.aborted === true) item.aborted = true;
       const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
       if (failed.length > 0) item.failed = failed;
       return;
     }
-    case "session_tools":
+    case "session_tools_ready":
       // Informational record (the Session's resolved toolset); the chat view doesn't render it.
       return;
     case "compaction_begin": {

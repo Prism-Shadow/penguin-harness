@@ -30,7 +30,7 @@ import type { ToolCallIdAllocator } from "./llm/tool-call-ids.js";
 // Tool definitions and configuration
 // ---------------------------------------------------------------------------
 
-// ToolDefinition is defined in omnimessage/types.ts (the session_tools event carries the full tool schema); re-exported here to keep the original import path.
+// ToolDefinition is defined in omnimessage/types.ts (the session_tools_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "./omnimessage/types.js";
 
 /** Tool permission: read-only / read-write. */

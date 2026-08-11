@@ -1126,6 +1126,7 @@ Benchmark：
     kindToolGen: "工具调用生成",
     legendToolExec: "工具调用执行",
     legendOther: "其他",
+    toolParams: "参数 Schema",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

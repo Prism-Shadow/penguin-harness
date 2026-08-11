@@ -299,7 +299,7 @@ export class Agent {
     return new Session({
       // session_meta holds per-session invariants only: the thinking level is a per-turn
       // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
-      // the toolset travels as the first run's session_tools event (it is only known
+      // the toolset travels as the first run's session_tools_ready event (it is only known
       // after the MCP connect the bootstrap performs).
       meta: {
         session_id: sessionId,

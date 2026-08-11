@@ -204,7 +204,7 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
-  /** This Session's session_tools event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
+  /** This Session's session_tools_ready event (the resolved toolset); rewritten right after sessionMeta on the post-compaction Trace file, keeping every file's tool record self-contained. */
   sessionTools?: OmniMessage;
   /**
    * Input adapter for a session whose model has no vision: folds image messages into text

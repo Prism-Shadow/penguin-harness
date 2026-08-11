@@ -95,8 +95,8 @@ export interface SessionMetaPayload {
   model_context_window: number | string;
   /** The system prompt actually used by this Session (the assembled result with environment placeholders already substituted). */
   system_prompt: string;
-  // The tool definitions were embedded here (`tools`) before the session_tools split (see
-  // SessionToolsPayload): the toolset is only known after MCP servers connect, and meta
+  // The tool definitions were embedded here (`tools`) before the session_tools_ready split (see
+  // SessionToolsReadyPayload): the toolset is only known after MCP servers connect, and meta
   // must not wait for that. Pre-split Traces still carry the field on disk; it is
   // deliberately not read anywhere anymore (explicit incompatibility — their tool record
   // is simply not displayed).
@@ -406,8 +406,8 @@ export interface SubagentPayload {
  * live streams re-emit it on the next run, which is when frontends need the schemas.
  * Docs: /docs/omni-message § "event_msg".
  */
-export interface SessionToolsPayload {
-  type: "session_tools";
+export interface SessionToolsReadyPayload {
+  type: "session_tools_ready";
   tools: ToolDefinition[];
 }
 
@@ -430,7 +430,7 @@ export interface McpServerConnectResult {
  * outcomes and the total wall time (the Trace timeline renders the pair as a span).
  * Failures are per-server and non-fatal: an unreachable server is skipped — its tools are
  * absent — and the run continues. Streamed live and written to Trace; not part of reload
- * history (a transient status, unlike `session_tools`).
+ * history (a transient status, unlike `session_tools_ready`).
  * Docs: /docs/omni-message § "event_msg".
  */
 export interface McpConnectBeginPayload {
@@ -440,7 +440,7 @@ export interface McpConnectBeginPayload {
 
 export interface McpConnectEndPayload {
   type: "mcp_connect_end";
-  duration_ms: number;
+  /** Per-server outcomes; the phase's total wall time is this message's timestamp minus the begin's (messages carry their own timestamps — no duplicate duration field). */
   results: McpServerConnectResult[];
   /**
    * True when the user aborted the run mid-connect: the pair closes with whatever was
@@ -484,7 +484,7 @@ export type EventPayload =
   | CompactionEndPayload
   | GoalFinishedPayload
   | SubagentPayload
-  | SessionToolsPayload
+  | SessionToolsReadyPayload
   | McpConnectBeginPayload
   | McpConnectEndPayload;
 

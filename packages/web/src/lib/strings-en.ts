@@ -1155,6 +1155,7 @@ Scenarios:
     kindToolGen: "tool call gen",
     legendToolExec: "tool exec",
     legendOther: "Other",
+    toolParams: "Parameter schema",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",

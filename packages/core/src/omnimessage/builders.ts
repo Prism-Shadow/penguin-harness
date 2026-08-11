@@ -34,7 +34,7 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
-  SessionToolsPayload,
+  SessionToolsReadyPayload,
   StopReason,
   StreamEventType,
   SubagentPayload,
@@ -355,9 +355,9 @@ export function tokenUsage(
   return event({ type: "token_usage", session, request });
 }
 
-/** session_tools event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
-export function sessionTools(tools: ToolDefinition[]): OmniMessage<SessionToolsPayload> {
-  return event({ type: "session_tools", tools });
+/** session_tools_ready event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
+export function sessionToolsReady(tools: ToolDefinition[]): OmniMessage<SessionToolsReadyPayload> {
+  return event({ type: "session_tools_ready", tools });
 }
 
 /** mcp_connect begin event: brackets open on the first run's MCP connect + discovery phase (emitted only when servers are configured). */
@@ -365,15 +365,13 @@ export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginP
   return event({ type: "mcp_connect_begin", servers });
 }
 
-/** mcp_connect end event: per-server outcomes plus the total wall time of the connect + discovery phase; `aborted` closes the pair on a user interruption mid-connect. */
+/** mcp_connect end event: per-server outcomes (total wall time = end timestamp − begin timestamp); `aborted` closes the pair on a user interruption mid-connect. */
 export function mcpConnectEnd(args: {
-  durationMs: number;
   results: McpServerConnectResult[];
   aborted?: boolean;
 }): OmniMessage<McpConnectEndPayload> {
   return event({
     type: "mcp_connect_end",
-    duration_ms: args.durationMs,
     results: args.results,
     ...(args.aborted === true ? { aborted: true } : {}),
   });

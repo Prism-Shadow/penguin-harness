@@ -58,7 +58,7 @@ import type {
   PartialToolCallPayload,
   PartialToolCallOutputPayload,
   RequestEndPayload,
-  SessionToolsPayload,
+  SessionToolsReadyPayload,
   TextPayload,
   TokenUsagePayload,
   ToolCallPayload,
@@ -360,6 +360,8 @@ export class StreamRenderer {
    * call always precedes its output); cleared with the other per-task registrations.
    */
   private toolNames = new Map<string, string>();
+  /** Timestamp (ms) of the pending mcp_connect_begin; the end line derives its wall time from message timestamps. */
+  private mcpConnectStartMs: number | null = null;
   /**
    * Names of the tools whose assembled schema carries the `description` argument (from
    * `session_meta.tools`, i.e. after the per-tool `call_description` switch has been
@@ -806,22 +808,31 @@ export class StreamRenderer {
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_begin") {
         // Paired MCP connect events (first run only): begin shows which servers are being
-        // contacted so the pre-first-request wait is never a silent hang.
+        // contacted so the pre-first-request wait is never a silent hang. The begin
+        // timestamp is kept so the end line can report the wall time (messages carry
+        // their own timestamps; the payload holds no duplicate duration).
         const p = payload as McpConnectBeginPayload;
+        this.mcpConnectStartMs = Date.parse(msg.timestamp);
         this.finishLine();
         this.out.write(`${dim(this.t.mcpConnectStart(p.servers), this.c)}\n`);
         this.lastLineKey = null;
       } else if (payload.type === "mcp_connect_end") {
         const p = payload as McpConnectEndPayload;
         this.finishLine();
+        const startMs = this.mcpConnectStartMs;
+        this.mcpConnectStartMs = null;
+        const durationMs =
+          startMs !== null && Number.isFinite(startMs)
+            ? Math.max(0, Date.parse(msg.timestamp) - startMs)
+            : 0;
         const failed = p.results.filter((r) => r.status === "failed").map((r) => r.server);
         this.out.write(
-          `${dim(this.t.mcpConnectStop(p.duration_ms, failed, p.aborted === true), this.c)}\n`,
+          `${dim(this.t.mcpConnectStop(durationMs, failed, p.aborted === true), this.c)}\n`,
         );
         this.lastLineKey = null;
-      } else if (payload.type === "session_tools") {
+      } else if (payload.type === "session_tools_ready") {
         // Not rendered; the tool list settles each tool's preview path (description argument).
-        this.useToolSchemas((payload as SessionToolsPayload).tools);
+        this.useToolSchemas((payload as SessionToolsReadyPayload).tools);
       }
       return;
     }
@@ -830,7 +841,7 @@ export class StreamRenderer {
   /**
    * Registers the Session's assembled tool schemas, which decide each tool's preview path
    * before its arguments stream (see `describedTools`). Schemas arrive on the stream as the
-   * first run's `session_tools` event (after MCP discovery) — handled in `renderEvent` —
+   * first run's `session_tools_ready` event (after MCP discovery) — handled in `renderEvent` —
    * for the main session and sub-sessions alike.
    */
   useToolSchemas(tools: readonly ToolDefinition[]): void {

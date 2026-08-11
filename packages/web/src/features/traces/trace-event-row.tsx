@@ -43,10 +43,11 @@ const TYPE_ICON: Record<string, string> = {
   compaction_end: "M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4M9 12h6",
   abort: "M6 6h12v12H6z",
   subagent: "M12 3v6m0 0l-5 4v8m5-12l5 4v8M4 21h16",
-  // MCP connect pair: a plug shape; session_tools reuses the wrench (a toolset record).
+  // MCP connect pair: a plug shape; session_tools_ready reuses the wrench (a toolset record).
   mcp_connect_begin: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
   mcp_connect_end: "M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5",
-  session_tools: "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
+  session_tools_ready:
+    "M14.7 6.3a4 4 0 0 0-5 5L4 17v3h3l5.7-5.7a4 4 0 0 0 5-5l-2.5 2.5-2-2 2.5-2.5z",
 };
 const DEFAULT_ICON = "M12 8v5m0 3h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z";
 
@@ -105,17 +106,19 @@ export function summarizeEvent(msg: OmniMessage): string {
     case "mcp_connect_begin":
       return Array.isArray(p["servers"]) ? p["servers"].map(String).join(", ") : "";
     case "mcp_connect_end": {
+      // The phase's total wall time is the pair's timestamp difference (shown by the
+      // timeline span); the row summarizes the per-server outcomes.
       const results = Array.isArray(p["results"])
         ? (p["results"] as { server?: string; status?: string; duration_ms?: number }[])
         : [];
       const parts = results.map(
         (r) => `${String(r.server)}:${String(r.status)}(${String(r.duration_ms)}ms)`,
       );
-      const head = p["aborted"] === true ? "aborted · " : "";
-      return `${head}${String(p["duration_ms"])}ms · ${parts.join(" ")}`;
+      const head = p["aborted"] === true ? "aborted" : "";
+      return [head, parts.join(" ")].filter(Boolean).join(" · ");
     }
-    case "session_tools":
-      return Array.isArray(p["tools"]) ? `${p["tools"].length} tools` : "";
+    case "session_tools_ready":
+      return Array.isArray(p["tools"]) ? S.traces.toolDefs(p["tools"].length) : "";
     case "abort":
       return p["reason"] != null ? String(p["reason"]) : "";
     case "goal_finished":
@@ -192,9 +195,8 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
     ["workspace", String(p.workspace ?? "")],
   ];
   const prompt = String(p.system_prompt ?? "");
-  const tools = Array.isArray(p.tools)
-    ? (p.tools as Array<{ name?: string; description?: string }>)
-    : [];
+  // Pre-split traces embedded `tools` here; per the explicit-incompatibility decision the
+  // legacy field is not rendered — the toolset view is the session_tools_ready event.
   return (
     <div className="space-y-2.5">
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
@@ -216,25 +218,39 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
           </div>
         </details>
       )}
-
-      {tools.length > 0 && (
-        <details>
-          <summary className={summaryClass}>{S.traces.toolDefs(tools.length)}</summary>
-          <ul className="mt-1.5 space-y-1">
-            {tools.map((t, i) => (
-              <li key={i} className="text-xs">
-                <span className="font-mono font-semibold text-gray-700 dark:text-gray-300">
-                  {t.name ?? "—"}
-                </span>
-                {t.description && (
-                  <span className="ml-2 text-gray-500 dark:text-gray-400">{t.description}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </div>
+  );
+}
+
+/**
+ * session_tools_ready: the Session's resolved toolset as a structured list — name +
+ * description per tool, with the parameter schema behind a per-tool disclosure (raw JSON
+ * dumps read terribly for tool schemas of this size).
+ */
+function SessionToolsReadyBody({ p }: { p: Record<string, unknown> }) {
+  const tools = Array.isArray(p.tools)
+    ? (p.tools as Array<{ name?: string; description?: string; parameters?: unknown }>)
+    : [];
+  if (tools.length === 0) return <p className="text-xs text-gray-400">—</p>;
+  return (
+    <ul className="divide-y divide-gray-100 rounded-md border border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">
+      {tools.map((t, i) => (
+        <li key={i} className="px-2.5 py-1.5 text-xs">
+          <span className="font-mono font-semibold text-gray-700 dark:text-gray-300">
+            {t.name ?? "—"}
+          </span>
+          {t.description && (
+            <p className="mt-0.5 text-gray-500 dark:text-gray-400">{t.description}</p>
+          )}
+          {t.parameters !== undefined && (
+            <details className="mt-1">
+              <summary className={summaryClass}>{S.traces.toolParams}</summary>
+              <pre className={`${codeBlock} mt-1`}>{JSON.stringify(t.parameters, null, 2)}</pre>
+            </details>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -242,6 +258,7 @@ function SessionMetaBody({ p }: { p: Record<string, unknown> }) {
 function EventBody({ msg }: { msg: OmniMessage }) {
   const p = msg.payload as Record<string, unknown> & { type?: string };
   if (msg.type === "session_meta") return <SessionMetaBody p={p} />;
+  if (p.type === "session_tools_ready") return <SessionToolsReadyBody p={p} />;
   switch (p.type) {
     case "text":
     case "thinking": {

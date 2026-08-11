@@ -334,15 +334,17 @@ describe("Session first-run bootstrap events", () => {
       const streamed: OmniMessage[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
       const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types.slice(0, 3)).toEqual(["mcp_connect_begin", "mcp_connect_end", "session_tools"]);
+      expect(types.slice(0, 3)).toEqual([
+        "mcp_connect_begin",
+        "mcp_connect_end",
+        "session_tools_ready",
+      ]);
       expect(types).toContain("text");
       const begin = streamed[0]!.payload as { servers?: string[] };
       expect(begin.servers).toEqual(["fx"]);
       const end = streamed[1]!.payload as {
-        duration_ms?: number;
         results?: { server: string; status: string; tools?: number; duration_ms: number }[];
       };
-      expect(end.duration_ms).toBeGreaterThan(0);
       expect(end.results).toHaveLength(1);
       expect(end.results![0]).toMatchObject({ server: "fx", status: "ok", tools: 6 });
       const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
@@ -355,14 +357,14 @@ describe("Session first-run bootstrap events", () => {
         "session_meta",
         "mcp_connect_begin",
         "mcp_connect_end",
-        "session_tools",
+        "session_tools_ready",
       ]);
       // Second run: the bootstrap already happened — no repeated events.
       const second: OmniMessage[] = [];
       for await (const msg of session.run([userText("again")])) second.push(msg);
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes).not.toContain("mcp_connect_begin");
-      expect(secondTypes).not.toContain("session_tools");
+      expect(secondTypes).not.toContain("session_tools_ready");
     } finally {
       session.dispose();
     }
@@ -379,7 +381,7 @@ describe("Session first-run bootstrap events", () => {
       const streamed: OmniMessage[] = [];
       for await (const msg of session.run([userText("go")])) streamed.push(msg);
       const types = streamed.map((m) => (m.payload as { type?: string }).type);
-      expect(types[0]).toBe("session_tools");
+      expect(types[0]).toBe("session_tools_ready");
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
@@ -457,7 +459,7 @@ describe("Session first-run bootstrap events", () => {
       expect(secondTypes.slice(0, 3)).toEqual([
         "mcp_connect_begin",
         "mcp_connect_end",
-        "session_tools",
+        "session_tools_ready",
       ]);
       expect((second[1]!.payload as { aborted?: boolean }).aborted).toBeUndefined();
       expect(secondTypes).toContain("text");
