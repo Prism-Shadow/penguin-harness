@@ -253,7 +253,7 @@ describe("memory api", () => {
     );
     // The Environment line the Workspace half points at is inserted right after the heading.
     expect(cfg.config.systemPrompt).toContain(
-      "# Environment\n- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}",
+      "# Environment\n- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}",
     );
 
     // Idempotent: a second call changes nothing and still succeeds.

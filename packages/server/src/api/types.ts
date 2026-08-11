@@ -517,7 +517,7 @@ export interface AgentMemoryConfigDto {
   enabled: boolean;
   /** The always-injected half of the `{{MEMORY}}` block (carries `{{MEMORY_USER_INDEX}}`; directories are literal text). */
   prompt: string;
-  /** Appended only in a persistent Workspace (carries `{{MEMORY_INDEX}}`; the directory is the template's `{{WORKSPACE_MEMORY_DIR}}` Environment line). */
+  /** Appended only in a persistent Workspace (carries `{{MEMORY_INDEX}}`; the directory pattern's final segment is the template's `{{WORKSPACE_MEMORY_KEY}}` Environment line). */
   workspacePrompt: string;
 }
 

@@ -256,8 +256,8 @@ export const zh = {
       ["{{AGENT_ID}}", "当前 Agent id"],
       ["{{CWD}}", "Workspace 绝对路径"],
       [
-        "{{WORKSPACE_MEMORY_DIR}}",
-        "当前工作区记忆目录的绝对路径（临时工作区或关闭记忆时为 (none — …) 说明值）",
+        "{{WORKSPACE_MEMORY_KEY}}",
+        "当前工作区记忆目录的目录名（记忆路径模式的最后一段；临时工作区或关闭记忆时为 (none — …) 说明值）",
       ],
       ["{{PROVIDER}}", "模型 provider 分组"],
       ["{{MODEL_ID}}", "上游模型 id"],
@@ -471,8 +471,9 @@ export const zh = {
     workspacePromptLabel: "工作区附加段",
     /**
      * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
-     * last. Only the two indexes — directories are literal text in the prompts, and the
-     * workspace directory is the template's {{WORKSPACE_MEMORY_DIR}} Environment line.
+     * last. Only the two indexes — directories are literal patterns in the prompts, and the
+     * workspace pattern's final segment is the template's {{WORKSPACE_MEMORY_KEY}}
+     * Environment line.
      */
     promptPlaceholders: [
       [

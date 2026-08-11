@@ -260,11 +260,13 @@ describe("{{MEMORY}} rendering", () => {
   it("renders both scopes as heading-led sections, dirs literal, only the indexes injected", async () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, undefined, undefined, bothScopes);
-    // The User directory is a literal angle-bracket pattern; the Workspace one is a concrete
-    // per-Session value and rides the template's Environment line instead.
+    // Both Directory lines are the same literal pattern; only the Workspace one's final
+    // segment is a per-Session value, riding the template's Environment line.
     expect(prompt).toContain("Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user");
-    expect(prompt).toContain("Directory: <workspace_memory_dir>");
-    expect(prompt).toContain("- Workspace Memory Dir: /data/memory/my-app-12345678");
+    expect(prompt).toContain(
+      "Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>",
+    );
+    expect(prompt).toContain("- Workspace Memory Key: my-app-12345678");
     expect(prompt).toContain(`${USER_LINE}\n`);
     expect(prompt).toContain("Index:\n- [pnpm](prefers-pnpm.md) — package manager");
     expect(prompt).toContain(`${WORKSPACE_LINE}\n`);
@@ -286,7 +288,7 @@ describe("{{MEMORY}} rendering", () => {
     // The Workspace half is a separate config key precisely so it can be left out entirely:
     // a temporary Workspace must never be told about a scope it does not have. The Environment
     // line still renders, saying why there is nothing to point at.
-    expect(prompt).toContain("- Workspace Memory Dir: (none — temporary workspace)");
+    expect(prompt).toContain("- Workspace Memory Key: (none — temporary workspace)");
     expect(prompt).not.toContain(WORKSPACE_LINE);
     // The scope-choice rule lives in the Workspace half, so a one-scope Session never sees it.
     expect(prompt).not.toContain("Facts about the workspace");
@@ -347,7 +349,7 @@ describe("{{MEMORY}} rendering", () => {
     expect(prompt).not.toContain(USER_LINE);
     expect(prompt).not.toContain(WORKSPACE_LINE);
     // The Environment line still renders and says why there is no directory to point at.
-    expect(prompt).toContain("- Workspace Memory Dir: (none — memory is off)");
+    expect(prompt).toContain("- Workspace Memory Key: (none — memory is off)");
     // Neighboring sections are untouched.
     expect(prompt).toContain("# Skills");
     expect(prompt).toContain("# Environment");
@@ -401,12 +403,12 @@ describe("{{MEMORY}} rendering", () => {
     const state = await agentState();
     const prompt = assembleSystemPrompt(state, undefined, ["SOME_KEY"], undefined, {
       userDir: "/data/memory/user",
-      userIndex: "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_DIR}}",
+      userIndex: "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_KEY}}",
     });
     // {{MEMORY}} expands last, so the tokens the model wrote stay literal text — the
     // Environment-line placeholder included, which was consumed before the block landed.
     expect(prompt).toContain(
-      "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_DIR}}",
+      "- [x](x.md) — {{VAULT_KEYS}} {{SESSION_ID}} {{WORKSPACE_MEMORY_KEY}}",
     );
   });
 
@@ -447,9 +449,7 @@ describe("{{MEMORY}} rendering", () => {
     const agent = await createAgent({ root });
     const withWorkspace = await agent.createSession({ workspaceDir: workspace });
     const key = await workspaceMemoryKey(workspace);
-    expect(sessionPrompt(withWorkspace)).toContain(
-      memoryScopeDir(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, key),
-    );
+    expect(sessionPrompt(withWorkspace)).toContain(`- Workspace Memory Key: ${key}`);
     expect(sessionPrompt(withWorkspace)).toContain(WORKSPACE_LINE);
 
     // No Workspace given: the SDK allocates a temporary one, which gets the User scope only —
@@ -460,7 +460,7 @@ describe("{{MEMORY}} rendering", () => {
       "Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/user",
     );
     expect(sessionPrompt(temporary)).toContain(
-      "- Workspace Memory Dir: (none — temporary workspace)",
+      "- Workspace Memory Key: (none — temporary workspace)",
     );
     expect(sessionPrompt(temporary)).not.toContain(WORKSPACE_LINE);
     expect(

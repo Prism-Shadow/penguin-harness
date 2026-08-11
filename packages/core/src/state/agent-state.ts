@@ -30,7 +30,7 @@ import {
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
   MEMORY_PLACEHOLDER,
-  WORKSPACE_MEMORY_DIR_PLACEHOLDER,
+  WORKSPACE_MEMORY_KEY_PLACEHOLDER,
   MEMORY_INDEX_PLACEHOLDER,
   MEMORY_USER_INDEX_PLACEHOLDER,
   MEMORY_INDEX_EMPTY_NOTE,
@@ -321,9 +321,10 @@ function indexForInjection(index: string): string {
  *
  * Every word of the block comes from `system_config.yaml`; the only text this function can add
  * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). The only
- * injection points are the two indexes — directories are literal text in the prompts, with the
- * Workspace one read from the Environment section's `Workspace Memory Dir` line. Topic bodies
- * are never injected — the indexes say what exists, and the model opens what it needs.
+ * injection points are the two indexes — directories are literal patterns in the prompts, with
+ * the Workspace pattern's per-Session segment read from the Environment section's
+ * `Workspace Memory Key` line. Topic bodies are never injected — the indexes say what exists,
+ * and the model opens what it needs.
  */
 function memorySection(
   config: MemoryConfig | undefined,
@@ -355,16 +356,17 @@ function memorySection(
 }
 
 /**
- * The `{{WORKSPACE_MEMORY_DIR}}` value for the template's `- Workspace Memory Dir:` Environment
- * line: the absolute path of this Session's Workspace Memory directory, or a self-describing
- * "(none — …)" when there is none to point at. The line renders in every Session —
- * substitution has no conditionals — and nothing references the value in the none cases (the
- * Memory block's Workspace half is only appended alongside a real directory), so the
- * none-values are purely the Environment section telling the truth.
+ * The `{{WORKSPACE_MEMORY_KEY}}` value for the template's `- Workspace Memory Key:` Environment
+ * line: the directory name of this Session's Workspace Memory scope — the final segment of the
+ * Memory prompt's `…/memory/<workspace_memory_key>` pattern — or a self-describing "(none — …)"
+ * when there is none to point at. The line renders in every Session — substitution has no
+ * conditionals — and nothing references the value in the none cases (the Memory block's
+ * Workspace half is only appended alongside a real directory), so the none-values are purely
+ * the Environment section telling the truth.
  */
-function workspaceMemoryDirValue(memory: SessionMemory | null | undefined): string {
+function workspaceMemoryKeyValue(memory: SessionMemory | null | undefined): string {
   if (!memory) return "(none — memory is off)";
-  return memory.workspace?.dir ?? "(none — temporary workspace)";
+  return memory.workspace?.key ?? "(none — temporary workspace)";
 }
 
 /**
@@ -538,7 +540,7 @@ function withShellLineFallback(
  * (plus `memory.workspace_prompt` in a persistent Workspace), and to an empty string when
  * Memory is disabled — only those blocks' own `{{MEMORY_USER_INDEX}}` / `{{MEMORY_INDEX}}`
  * carry Memory content (indexes capped, topic bodies always read on demand), while
- * `{{WORKSPACE_MEMORY_DIR}}` renders the Workspace Memory directory into the template's
+ * `{{WORKSPACE_MEMORY_KEY}}` renders the Workspace Memory directory name into the template's
  * Environment section (a "(none — …)" value when there is none to point at, so the line always
  * tells the truth). A custom template that removes a placeholder gets no corresponding
  * content injected — a template without `{{MEMORY}}` injects no Memory, and the Web App's
@@ -581,8 +583,8 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
-    .split(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
-    .join(workspaceMemoryDirValue(memory))
+    .split(WORKSPACE_MEMORY_KEY_PLACEHOLDER)
+    .join(workspaceMemoryKeyValue(memory))
     // {{MEMORY}} expands last: everything the Memory block carries (index lines the model wrote
     // included) lands after the other placeholders were consumed, so index content can never
     // smuggle a {{VAULT_KEYS}}-style token into a second expansion.

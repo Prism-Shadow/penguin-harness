@@ -44,13 +44,15 @@ export const DATE_PLACEHOLDER = "{{DATE}}";
  */
 export const MEMORY_PLACEHOLDER = "{{MEMORY}}";
 /**
- * Inside the template's Environment section (`- Workspace Memory Dir: …`): the absolute path of
- * the current Workspace's Memory directory, or a self-describing `(none — …)` value in a
- * temporary Workspace / with Memory off. The Memory prompts reference it as
- * `<workspace_memory_dir>` — a concrete per-Session value belongs in Environment, next to CWD,
- * while directories that are pure patterns are written literally in the prompts.
+ * Inside the template's Environment section (`- Workspace Memory Key: …`): the current
+ * Workspace's Memory directory name — the workspace memory key, `memory/`'s subdirectory — or
+ * a self-describing `(none — …)` value in a temporary Workspace / with Memory off. The Memory
+ * prompts reference it as the final segment of the composed pattern
+ * `<app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>`, mirroring the
+ * User section's literal `…/memory/user` line — only the per-Session segment is a value, and
+ * values live in Environment, next to CWD.
  */
-export const WORKSPACE_MEMORY_DIR_PLACEHOLDER = "{{WORKSPACE_MEMORY_DIR}}";
+export const WORKSPACE_MEMORY_KEY_PLACEHOLDER = "{{WORKSPACE_MEMORY_KEY}}";
 /** Inside `memory.workspace_prompt` only: the content of the current Workspace scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
 export const MEMORY_INDEX_PLACEHOLDER = "{{MEMORY_INDEX}}";
 /** Inside either Memory prompt: the content of the User scope's `MEMORY.md` index (capped, see MEMORY_INDEX_MAX_LINES / MEMORY_INDEX_MAX_CHARS). */
@@ -88,9 +90,10 @@ export interface MemoryConfig {
   /**
    * Appended to `prompt` only when the Session runs in a persistent Workspace: the Workspace
    * scope, its index and the rule for choosing between the two — carrying `{{MEMORY_INDEX}}`,
-   * with the directory read from the Environment section's `Workspace Memory Dir` line. A
-   * separate key rather than a conditional inside `prompt` because substitution has no
-   * conditionals — a temporary Workspace would otherwise be told about a scope it does not have.
+   * with the directory pattern's per-Session segment read from the Environment section's
+   * `Workspace Memory Key` line. A separate key rather than a conditional inside `prompt`
+   * because substitution has no conditionals — a temporary Workspace would otherwise be told
+   * about a scope it does not have.
    */
   workspace_prompt?: string;
 }
@@ -148,13 +151,13 @@ Index:
  * Built-in default for the Workspace half of the `{{MEMORY}}` block, appended to
  * `memory.prompt` only when the Session runs in a persistent Workspace. The rule for choosing
  * between the two scopes lives here on purpose: a Session in a temporary Workspace has one
- * scope and no choice to make, so it never sees the rule at all. The directory is the
- * Environment section's `Workspace Memory Dir` value — a concrete per-Session path, unlike the
- * User directory's fixed pattern, so it lives with the other per-Session values.
+ * scope and no choice to make, so it never sees the rule at all. The Directory line mirrors
+ * the User section's pattern; its one per-Session segment, `<workspace_memory_key>`, is the
+ * Environment section's `Workspace Memory Key` value.
  */
 export const DEFAULT_MEMORY_WORKSPACE_PROMPT = `## Workspace memory
 Facts about the workspace you are working in now. What would still hold in a different project goes in user memory; when unsure, write here.
-Directory: <workspace_memory_dir>
+Directory: <app_data_dir>/agents/<agent_id>/agent_state/memory/<workspace_memory_key>
 Index:
 {{MEMORY_INDEX}}`;
 
@@ -261,26 +264,26 @@ Skills are reusable instruction packages at <app_data_dir>/agents/<agent_id>/age
 - App Data Dir: {{PROJECT_DIR}}
 - Agent ID: {{AGENT_ID}}
 - CWD: {{CWD}}
-- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}
+- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}
 - Provider: {{PROVIDER}}
 - Model ID: {{MODEL_ID}}
 - Session ID: {{SESSION_ID}}`;
 
 /**
  * Whether a template carries both Memory placeholders: `{{MEMORY}}` (the block itself) and
- * `{{WORKSPACE_MEMORY_DIR}}` (the Environment line the block's Workspace half points at).
+ * `{{WORKSPACE_MEMORY_KEY}}` (the Environment line the block's Workspace half points at).
  * Whatever is missing is simply not injected.
  */
 export function hasMemoryPlaceholder(template: string): boolean {
   return (
-    template.includes(MEMORY_PLACEHOLDER) && template.includes(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+    template.includes(MEMORY_PLACEHOLDER) && template.includes(WORKSPACE_MEMORY_KEY_PLACEHOLDER)
   );
 }
 
 /**
  * Inserts the missing Memory placeholders into a template: `{{MEMORY}}` before the
  * `# Environment` heading (the position the default template gives it), else appended at the
- * end; the `- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}` line right after that heading
+ * end; the `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` line right after that heading
  * (any level), else appended. Idempotent — whatever is already present stays where it is. This
  * is the explicit adoption path for Agents created before Memory shipped (the Web App's Memory
  * tab offers it); nothing ever inserts automatically.
@@ -293,8 +296,8 @@ export function insertMemoryPlaceholder(template: string): string {
       ? `${next.slice(0, heading.index)}${MEMORY_PLACEHOLDER}\n\n${next.slice(heading.index)}`
       : `${next.trimEnd()}\n\n${MEMORY_PLACEHOLDER}\n`;
   }
-  if (!next.includes(WORKSPACE_MEMORY_DIR_PLACEHOLDER)) {
-    const line = `- Workspace Memory Dir: ${WORKSPACE_MEMORY_DIR_PLACEHOLDER}`;
+  if (!next.includes(WORKSPACE_MEMORY_KEY_PLACEHOLDER)) {
+    const line = `- Workspace Memory Key: ${WORKSPACE_MEMORY_KEY_PLACEHOLDER}`;
     const heading = /^#+ Environment[ \t]*$/m.exec(next);
     if (heading) {
       const at = heading.index + heading[0].length;

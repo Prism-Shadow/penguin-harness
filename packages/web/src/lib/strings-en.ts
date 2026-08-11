@@ -267,8 +267,8 @@ export const en: Strings = {
       ["{{AGENT_ID}}", "Current agent id"],
       ["{{CWD}}", "Absolute Workspace path"],
       [
-        "{{WORKSPACE_MEMORY_DIR}}",
-        "Absolute path of the current workspace's memory directory ((none — …) in a temporary workspace or with memory off)",
+        "{{WORKSPACE_MEMORY_KEY}}",
+        "Directory name of the current workspace's memory scope — the memory path pattern's final segment ((none — …) in a temporary workspace or with memory off)",
       ],
       ["{{PROVIDER}}", "Model provider group"],
       ["{{MODEL_ID}}", "Upstream model id"],
@@ -492,8 +492,9 @@ export const en: Strings = {
     workspacePromptLabel: "Workspace addendum",
     /**
      * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
-     * last. Only the two indexes — directories are literal text in the prompts, and the
-     * workspace directory is the template's {{WORKSPACE_MEMORY_DIR}} Environment line.
+     * last. Only the two indexes — directories are literal patterns in the prompts, and the
+     * workspace pattern's final segment is the template's {{WORKSPACE_MEMORY_KEY}}
+     * Environment line.
      */
     promptPlaceholders: [
       [

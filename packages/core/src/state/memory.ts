@@ -26,7 +26,7 @@
  *     ├── user/                        # User scope (no marker: it stands for no path)
  *     │   ├── MEMORY.md                # this scope's index
  *     │   └── <topic>.md
- *     └── <workspace_key>/
+ *     └── <workspace_memory_key>/
  *         ├── .workspace               # the Workspace path this key stands for
  *         ├── MEMORY.md
  *         └── <topic>.md               # frontmatter + body, semantic topics (not per Task/date)
@@ -80,9 +80,9 @@ export interface MemoryTopicMetadata {
 
 /** The Workspace scope of one Session: absent when the Session runs in a temporary Workspace. */
 export interface SessionWorkspaceMemory {
-  /** Workspace key — the `memory/` subdirectory name and the API's scope key. */
+  /** Workspace memory key — the `memory/` subdirectory name, the API's scope key, and the `{{WORKSPACE_MEMORY_KEY}}` value on the template's Environment line. */
   key: string;
-  /** Absolute path of the Workspace's topic directory (the `{{WORKSPACE_MEMORY_DIR}}` value on the template's Environment line). */
+  /** Absolute path of the Workspace's topic directory — used by the server and Web App; the prompt composes it from the pattern and the key. */
   dir: string;
   /** Content of this scope's `MEMORY.md` (the `{{MEMORY_INDEX}}` value; empty string when blank). */
   index: string;

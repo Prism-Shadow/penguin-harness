@@ -156,7 +156,7 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
 | `{{MEMORY_USER_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
-| `{{WORKSPACE_MEMORY_DIR}}` | On the template's Environment line: absolute path of the current Workspace's memory directory, `(none — …)` in a temporary Workspace or with Memory off |
+| `{{WORKSPACE_MEMORY_KEY}}` | On the template's Environment line: directory name of the current Workspace's memory scope — the memory path pattern's final segment; `(none — …)` in a temporary Workspace or with Memory off |
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
@@ -180,7 +180,7 @@ On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes �
 Memory has two scopes, both belonging to one Agent and never shared with another:
 
 - **User scope** (`memory/user/`) — what stays true wherever the Agent works: who the user is, their standing preferences, reference material not tied to one codebase. Every Session reads it, including one running in a temporary Workspace, which has no other place to write.
-- **Workspace scope** (`memory/<workspace_key>/`) — facts about one Workspace. Sessions of one Agent in one Workspace share it; different Workspaces keep their topic files apart.
+- **Workspace scope** (`memory/<workspace_memory_key>/`) — facts about one Workspace. Sessions of one Agent in one Workspace share it; different Workspaces keep their topic files apart.
 
 Each scope carries its own `MEMORY.md` index, and different Agents never share Memory even in the same Workspace. Because Memory lives in Agent State it travels with export / import and snapshots, and every Project member who can reach the Agent can read it — so credentials and sensitive personal data never belong in it.
 
@@ -195,9 +195,9 @@ agent_state/memory/
     └── testing-conventions.md
 ```
 
-`user` is a reserved directory name, safe because every generated workspace key is `<base>-<8 hex>` and therefore always carries a hyphen — a hyphen-free name can never be produced.
+`user` is a reserved directory name, safe because every generated workspace memory key is `<base>-<8 hex>` and therefore always carries a hyphen — a hyphen-free name can never be produced.
 
-The workspace key is `<safe-basename>-<8 hex of the real path's sha256>`. Identity is the directory itself and has nothing to do with Git: two symlinks to one directory resolve to one key, while moving or renaming a directory makes it a new Workspace (the old Memory stays on disk under the old key). A temporary Workspace — one PenguinHarness allocated under `agents/<agent_id>/workspaces/` — gets no Workspace scope at all, a subagent inheriting one included: a temporary Workspace is allocated per Session, so no later Session would ever run there to read it back. Such a Session still gets the user scope, which is where anything it learns belongs anyway.
+The workspace memory key is `<safe-basename>-<8 hex of the real path's sha256>`. Identity is the directory itself and has nothing to do with Git: two symlinks to one directory resolve to one key, while moving or renaming a directory makes it a new Workspace (the old Memory stays on disk under the old key). A temporary Workspace — one PenguinHarness allocated under `agents/<agent_id>/workspaces/` — gets no Workspace scope at all, a subagent inheriting one included: a temporary Workspace is allocated per Session, so no later Session would ever run there to read it back. Such a Session still gets the user scope, which is where anything it learns belongs anyway.
 
 A topic file is a semantic subject, not one per Task, Session or date, and carries frontmatter:
 
@@ -215,13 +215,13 @@ These three fields are all the frontmatter there is — which layer a memory bel
 
 Each `MEMORY.md` lists its scope's memories one line each — `- [Title](file.md) — hook`, links relative to the scope directory — and is updated in the same round as the file, so the two never disagree.
 
-Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. It expands to `memory.prompt` — what Memory is for, the save mechanics, then a `## User memory` section with its index (`{{MEMORY_USER_INDEX}}`) — plus `memory.workspace_prompt`, a `## Workspace memory` section with `{{MEMORY_INDEX}}`, when the Session runs in a persistent Workspace. Both prompts are per-Agent config, editable on the settings page's Memory tab, and organized by Markdown headings like the template's other sections — the indexes are the only injection points. Directories are literal text: the user directory is the fixed pattern `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`, while the Workspace directory is a concrete per-Session value and therefore rides the template's Environment section as the `- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}` line, next to `CWD` (`(none — …)` in a temporary Workspace or with Memory off).
+Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. It expands to `memory.prompt` — what Memory is for, the save mechanics, then a `## User memory` section with its index (`{{MEMORY_USER_INDEX}}`) — plus `memory.workspace_prompt`, a `## Workspace memory` section with `{{MEMORY_INDEX}}`, when the Session runs in a persistent Workspace. Both prompts are per-Agent config, editable on the settings page's Memory tab, and organized by Markdown headings like the template's other sections — the indexes are the only injection points. Both Directory lines are the same literal pattern `<app_data_dir>/agents/<agent_id>/agent_state/memory/<…>`: the user section ends in the literal `user`, while the workspace section ends in `<workspace_memory_key>` — a per-Session value that rides the template's Environment section as the `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` line, next to `CWD` (`(none — …)` in a temporary Workspace or with Memory off).
 
 A blank index injects an explicit "nothing saved yet" note. Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for indexes whose few lines are enormous — past a cap a truncation note tells the model to open the full `MEMORY.md` itself, and the file on disk is never touched. Both caps are also declared in the default Memory prompt, so the model keeps the index short before ever hitting them. Topic bodies are read on demand by the model.
 
 The two halves are separate config keys because substitution has no conditionals: a temporary Workspace must never be handed the Workspace section (its directory line and the scope-choice rule), so that half is simply not appended there. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
 
-A template without `{{MEMORY}}` injects no Memory — an Agent created before Memory shipped, for instance. The Memory tab reports this and offers inserting the placeholders (`{{MEMORY}}` before `# Environment`, the `Workspace Memory Dir` line right after that heading) as an explicit one-click action; nothing is ever spliced in automatically. The assembled prompt is recorded in `session_meta`.
+A template without `{{MEMORY}}` injects no Memory — an Agent created before Memory shipped, for instance. The Memory tab reports this and offers inserting the placeholders (`{{MEMORY}}` before `# Environment`, the `Workspace Memory Key` line right after that heading) as an explicit one-click action; nothing is ever spliced in automatically. The assembled prompt is recorded in `session_meta`.
 
 To read, delete or ask the Agent to edit what it has saved, use the settings page's [Memory tab](/web-app#agent-settings-agents).
 
