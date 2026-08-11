@@ -30,7 +30,9 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
 └── agents/
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
-        │                             # tools/, memory/, skills/, schedule/
+        │                             # tools/, skills/, schedule/
+        │   └── memory/               # Memory: user/ plus one directory per Workspace,
+        │                             # each with its own MEMORY.md index
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # temp files, one subdirectory per Session id (e.g. pasted images)
@@ -55,6 +57,7 @@ A Trace is an append-only JSON Lines file; each line is one OmniMessage envelope
 - Not recorded: streaming `partial_*` fragments (the producer appends the complete message once the segment ends), and nested messages tagged with `origin` — a subagent's messages go to the child Session's own Trace, while the parent Trace keeps a single `subagent` pointer event at the spawn site recording the child Session id.
 - `request_begin` and `request_end(status)` come in pairs delimiting one Request; replay uses `request_end.status === "completed"` as the commit criterion for that turn.
 - Appends are serialized inside the writer: records from concurrent producers (the model stream, parallel tool executions) land strictly one after another, each as a single uninterrupted line — a multi-megabyte record such as a base64 image Data URL can never be torn apart by a concurrent append, and file rotation never splits a record.
+- Each record is appended with a single `write(2)` (not `fs.appendFile`, which splits payloads larger than 512 KiB into multiple underlying writes), so an abnormal process exit can at most truncate the last record — it can never tear one apart in the middle. Before Session resumption continues an existing file, the writer probes the file tail: if a previous crash left a torn line (no trailing newline), the next record is preceded by a newline, so the torn line never swallows the records appended after it.
 
 See `packages/core/src/trace/writer.ts` for the implementation.
 

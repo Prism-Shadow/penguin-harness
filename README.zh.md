@@ -218,7 +218,7 @@ tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 
 如需使用离线文档 Skill，同样传输并解压与目标平台匹配的 `penguin-offline-<target>` 包。系统需要预装带 `venv` 的 CPython 3.9–3.13；Linux 要求 glibc 2.17 或更高，不支持 musl/Alpine。每个 Skill 只会从包内共享 wheelhouse 将锁定依赖安装到各自的 Agent 受控环境，不会写入系统 Python。
 
-安装或升级 Penguin 不会改写已有 Agent State。离线 profile 安装后首次初始化的 `default_agent` 会获得当前 Skill 库；对于已有 Agent，请先从 Skill 库安装 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`，再选择使用。
+安装或升级 Penguin 不会改写已有 Agent State。离线 profile 安装后首次初始化的 `default_agent` 会获得当前预装 Skill 集合；对于已有 Agent，请先从 Skill 库安装 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`，再选择使用。
 
 **macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 

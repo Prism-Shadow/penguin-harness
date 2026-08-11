@@ -124,7 +124,6 @@ const metaMessage = sessionMeta({
   model_id: "test-model",
   model_context_window: 200000,
   system_prompt: "sp",
-  tools: [],
   agent_state: "/tmp/state",
   workspace: "/tmp/ws",
 });

@@ -218,7 +218,7 @@ tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 
 For the offline document Skills, transfer and extract the matching `penguin-offline-<target>` archive the same way. It requires system CPython 3.9–3.13 with `venv`; Linux requires glibc 2.17 or newer and does not support musl/Alpine. Each Skill installs only its locked dependencies from the shared bundled wheelhouse into an Agent-owned environment, not system Python.
 
-Installing or upgrading Penguin never rewrites existing Agent State. A `default_agent` initialized after the offline profile is installed receives the current Skill library; for an existing Agent, install `word-docx`, `powerpoint-pptx`, and `pdf-tools` from the Skill library before selecting them.
+Installing or upgrading Penguin never rewrites existing Agent State. A `default_agent` initialized after the offline profile is installed receives the current preinstalled Skill set; for an existing Agent, install `word-docx`, `powerpoint-pptx`, and `pdf-tools` from the Skill library before selecting them.
 
 **macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64.tar.gz`):**
 

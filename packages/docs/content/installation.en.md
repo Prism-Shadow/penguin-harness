@@ -58,7 +58,7 @@ penguin -v
 
 The same Release artifacts serve offline installation. Download the file matching the target computer on a connected machine: `penguin-<target>` for the lightweight standard profile, or `penguin-offline-<target>` for optional offline capabilities. Linux and macOS artifacts use `.tar.gz`; Windows uses `.zip`. The offline profile contains deterministic DOCX inspection/editing, PPTX inspection/slide append, and PDF inspection/merge Skills; future offline Skills extend the same profile. Transfer that one file, then extract it once.
 
-Installing or upgrading Penguin never rewrites existing Agent State. A `default_agent` initialized after the offline profile is installed receives the current Skill library; for an existing Agent, install `word-docx`, `powerpoint-pptx`, and `pdf-tools` from the Skill library before selecting them.
+Installing or upgrading Penguin never rewrites existing Agent State. A `default_agent` initialized after the offline profile is installed receives the current preinstalled Skill set; for an existing Agent, install `word-docx`, `powerpoint-pptx`, and `pdf-tools` from the Skill library before selecting them.
 
 On Windows, double-click `install.cmd`, or run:
 

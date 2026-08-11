@@ -46,6 +46,7 @@ import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { vaultRoutes } from "./http/routes/vault.js";
+import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
@@ -70,6 +71,7 @@ import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { desktopRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
+import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
@@ -106,6 +108,7 @@ export interface AppDeps {
   projectConfigService: ProjectConfigService;
   agentService: AgentService;
   agentConfigService: AgentConfigService;
+  memoryService: MemoryService;
   sessionService: SessionService;
   traceService: TraceService;
   /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
@@ -180,6 +183,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const memoryService = new MemoryService(config.root, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
   // SessionService (creation / adoption / lazy list resolution), and the Trace index /
@@ -314,6 +318,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projectConfigService,
     agentService,
     agentConfigService,
+    memoryService,
     sessionService,
     traceService,
     traceIndex,
@@ -435,6 +440,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));

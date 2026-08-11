@@ -225,12 +225,14 @@ export const zh = {
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
     scheduleCount: (n: number): string => `${n} 个定时任务`,
+    memoryCount: (n: number): string => `${n} 条记忆`,
     updatedAt: "最后修改",
     activity: (days: number): string => `近 ${days} 天 Session 活跃度`,
     settings: "Agent 设置",
     backToList: "返回 Agents",
     tabOverview: "概览",
     tabPrompt: "Prompt",
+    tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
@@ -246,6 +248,10 @@ export const zh = {
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
       ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
       ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      [
+        "{{MEMORY}}",
+        "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
+      ],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{SHELL}}", "命令执行使用的 Shell"],
@@ -300,7 +306,57 @@ export const zh = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
-    mcpServers: "MCP Server（只读）",
+    mcpServers: "MCP Server",
+    mcpDesc:
+      "连接外部 MCP Server：其工具以 mcp__<name>__<tool> 并入本 Agent 的工具列表。此区块的改动即时保存。",
+    mcpEmpty: "尚未配置 MCP Server",
+    mcpAdd: "添加 MCP Server",
+    mcpEditTitle: "编辑 MCP Server",
+    mcpRemove: "删除",
+    mcpName: "name",
+    mcpNameHint: "工具名前缀：mcp__<name>__<tool>；限字母、数字、_ 和 -",
+    mcpTransport: "transport",
+    mcpTransportStdio: "本地进程：启动 command 后经 stdin/stdout 通信",
+    mcpTransportHttp: "Streamable HTTP：当前规范的远程 transport",
+    mcpTransportSse: "旧版 HTTP+SSE：仅为未迁移的服务保留",
+    mcpTarget: "command / url",
+    mcpCommand: "command",
+    mcpArgs: "args",
+    mcpArgsHint: "每行一个参数",
+    mcpEnv: "env",
+    mcpEnvHint: "每行一条 KEY=value；Agent vault 不注入 MCP Server 进程",
+    mcpCwd: "cwd",
+    mcpCwdHint: "留空则使用本次 Session 的 Workspace",
+    mcpUrl: "url",
+    mcpHeaders: "headers",
+    mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpConnectTimeout: "connectTimeoutMs",
+    mcpBudgetsHint:
+      "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
+    mcpNameInvalid: "限字母、数字、_ 和 -，且以字母或数字开头",
+    mcpUrlInvalid: "必须是合法的 http(s) URL",
+    mcpLineInvalid: (line: number): string => `第 ${line} 行格式无效`,
+    mcpNumberInvalid: "必须是 > 0 的整数",
+    mcpDuplicateName: "同名 Server 已存在",
+    mcpTest: "测试连接",
+    mcpTesting: "测试中…",
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
+      return toolCount === 0
+        ? `连接成功，但该 Server 未暴露任何工具${timing}`
+        : `连接成功，发现 ${toolCount} 个工具${timing}`;
+    },
+    mcpTestFail: (detail: string): string => `连接失败：${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `将逐一连接已配置的 ${n} 个 MCP Server 并做工具发现（真实连接，不保存任何改动），结果显示在各行上。`,
+    mcpTestAllStart: "开始测试",
+    mcpTestPending: "测试中…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} 个工具${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "连接失败",
+    mcpDeleteTitle: "删除 MCP Server",
+    mcpDeleteConfirm: (name: string): string =>
+      `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     deleteAgent: "删除 Agent",
@@ -454,6 +510,69 @@ export const zh = {
     contextWindowInvalid: "必须为数字",
   },
 
+  memory: {
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：agent 会在对话中自行记下值得保留的信息，你也可以直接让它记住某件事。用户记忆对本 Agent 的所有会话生效，工作区记忆按工作区隔离；记忆修改在对话中由 agent 完成。关闭开关只停止使用记忆，不删除任何文件。",
+    enable: "启用记忆",
+    userScope: "用户记忆",
+    templateMissing: "提示词模板中没有 {{MEMORY}} 占位符，记忆不会进入上下文。",
+    insertPlaceholder: "插入 {{MEMORY}} 占位符",
+    insertPlaceholderDone: "已插入",
+    promptSection: "记忆提示词",
+    promptSectionHint:
+      "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
+    promptLabel: "主提示词",
+    workspacePromptLabel: "工作区附加段",
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
+     */
+    promptPlaceholders: [
+      [
+        "{{USER_MEMORY_INDEX}}",
+        "用户记忆索引 MEMORY.md 的内容（最多注入 200 行、总计 25000 字符）",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_INDEX}}",
+        "当前工作区记忆索引的内容（最多注入 200 行、总计 25000 字符）；仅在工作区附加段生效",
+      ],
+      ["{{WORKSPACE_MEMORY_DIR}}", "当前工作区记忆目录的绝对路径；仅在工作区附加段生效"],
+    ],
+    insertToken: "插入到光标处",
+    itemCount: (n: number): string => `${n} 条`,
+    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
+    emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
+    add: "添加",
+    addTitle: "添加记忆",
+    addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
+    addContentLabel: "要记住的内容或来源",
+    addContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "请把下面的内容整理成记忆，存入用户记忆：",
+      workspace: "请把下面的内容整理成记忆，存入这个工作区的记忆：",
+    },
+    view: "查看",
+    edit: "编辑",
+    editTitle: "编辑记忆",
+    editWhy:
+      "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
+    editRequirementLabel: "修改要求",
+    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editPromptLabel: "引导语预览",
+    editCopyPrompt: "复制 Prompt",
+    editCopied: "已复制",
+    editOpenChat: "打开新对话",
+    delete: "删除",
+    deleteTitle: "删除这条记忆？",
+    deleteConfirm: (name: string): string =>
+      `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteDone: "已删除",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
+    editPromptTail: "修改要求：",
+  },
+
   vault: {
     desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（exec_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。保存后自下一个任务起生效（进行中的任务不受影响）。",
     key: "键名",
@@ -527,6 +646,8 @@ export const zh = {
     quickInvoke: "快捷调用",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
+    /** Title on a disabled quick-invoke button: quick invoke opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. preinstall:false skills like remote-claude-code) can't be quick-invoked until it's installed on that agent. */
+    quickInvokeNeedsInstall: "先在当前 Agent 安装该技能后才能快捷调用",
     manageInstall: "管理安装",
     manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
@@ -926,14 +1047,28 @@ Benchmark：
     modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
-    compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP 连接",
+    mcpServerList: (servers: string[]): string => servers.join("、"),
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
+      return parts.join("；");
+    },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} 个工具`,
+    mcpServerFailed: "连接失败",
+    mcpConnectAborted: "已中断，下次发送时重新连接",
+    compactionTitle: "压缩",
     compactionDone: (mode: string): string =>
-      mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
+      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
+      if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
-        ? `[压缩] 失败（${errorMessage}），保留当前上下文`
-        : "[压缩] 失败，保留当前上下文";
+        ? `失败（${errorMessage}），保留当前上下文`
+        : "失败，保留当前上下文";
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",
@@ -1078,6 +1213,8 @@ Benchmark：
     kindModelReply: "模型回复",
     kindToolGen: "工具调用生成",
     legendToolExec: "工具调用执行",
+    legendOther: "其他",
+    toolParams: "参数 Schema",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

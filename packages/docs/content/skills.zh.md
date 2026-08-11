@@ -5,7 +5,7 @@ description: Skill 以目录加 SKILL.md 承载可复用指令，元数据先行
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`;frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标，以及 `SKILL.md` 引用的其他文件（例如它链接到的 `reference/` 子目录）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`;frontmatter 中的 `name` 以目录名为准。
 
 frontmatter 字段：
 
@@ -14,6 +14,7 @@ frontmatter 字段：
 | `name` | Skill 名，与目录名一致 |
 | `description` | 英文单行描述，注入系统 Prompt |
 | `short_description` / `short_description_zh` | UI 短标签(卡片等紧凑位置用)，不注入 Prompt |
+| `preinstall` | 可选；`false` 表示不进入 default_agent 的预装集合，仅可从技能库手动安装 |
 | `version` | 自然数版本号，默认 1 |
 | `updated` | 更新日期 |
 
@@ -32,7 +33,7 @@ updated: 2026-07-17
 具体的步骤、边界与验收标准……
 ```
 
-解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空。
+解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。
 
 ## 渐进式加载
 
@@ -46,9 +47,9 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 已安装的 Skill 位于 Agent State 的 `agent_state/skills/<name>/`。文件即事实源：每次读取直接读文件、不设缓存，因此 Skill 天然可编辑。
 
-- 内置 Agent `default_agent` 在初始化时安装完整 Skill 库；
+- 内置 Agent `default_agent` 在初始化时安装完整 Skill 库（标记 `preinstall: false` 的 Skill 除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的 Skill 库页，或经 SDK;
-- 安装会递归复制库中 Skill 目录内的全部普通文件（包括 `SKILL.md`、`icon.svg`、脚本与其他资源），并保持相对路径。
+- 安装会把库里的 `SKILL.md` 原样写入（含 frontmatter），并递归复制 `icon.svg`、脚本、二进制资源及其他文件，同时保持相对路径；每次安装以原子方式替换整个目录，因此重装会清除新版本不再携带的文件。
 
 Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带原始 `skills/` 目录；运行时库内容的事实源同样是包内的 `skills/<name>/SKILL.md` 文件。
 
@@ -61,8 +62,12 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | 办公效率 | `data-analysis` | 以有界的证据检查、显式的改答案决策、原生产物处理与最终输出校验完成数据分析任务 |
 | | `firecrawl` | 经 Firecrawl API 做网络搜索与页面抓取，产出干净的 Markdown |
 | | `bento-slides` | 制作与编辑 Bento 演示文稿：单文件 `.bento.html`、文档即 JSON，把素材映射到图表、morph 转场与状态页 |
+| | `word-docx` | 离线 profile：通过内置确定性工具和 Agent 自有 Python 环境检查、编辑 DOCX 文件 |
+| | `powerpoint-pptx` | 离线 profile：通过内置确定性工具检查 PPTX 文件并追加标题正文页 |
+| | `pdf-tools` | 离线 profile：通过内置确定性工具检查和合并 PDF 文件 |
 | 软件开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
 | | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
+| | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |
 | AI 应用开发 | `penguin-sdk` | 基于 SDK 构建 AI 与 RAG 应用：createSession/run 流式循环，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |

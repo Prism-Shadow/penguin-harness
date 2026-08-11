@@ -143,8 +143,10 @@ interface EnvironmentServices {
 }
 
 interface MCPServerConfig {
-  name: string;
-  config: Record<string, unknown>;
+  name: string;                             // tool-name prefix: discovered tools appear as mcp__<name>__<tool>
+  config: Record<string, unknown>;          // stays an open object at this seam; typed at assembly time by
+                                            // environment/mcp into a transport description (stdio / http / sse),
+                                            // see /tools § MCP Servers
 }
 ```
 

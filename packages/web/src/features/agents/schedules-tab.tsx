@@ -199,7 +199,7 @@ function SessionSelect({
 }
 
 export function SchedulesTab({ agentId }: { agentId: string }) {
-  const { currentProject } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
 
@@ -320,6 +320,8 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       setForm(null);
       toastSuccess(S.common.saved);
       await load();
+      // A created schedule moves the agent card's count; refresh the list provider too.
+      void reloadAgents();
     } catch (e) {
       // A 400 (validated with the same rules as hand-written files) isn't tied to one field — show it under the modal form.
       setFormError(apiErrorText(e));
@@ -382,6 +384,8 @@ export function SchedulesTab({ agentId }: { agentId: string }) {
       await api.deleteSchedule(projectId, agentId, deleting);
       if (form?.editing === deleting) setForm(null);
       await load();
+      // The agent card's schedule count changed; refresh the list provider too.
+      void reloadAgents();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
