@@ -495,10 +495,12 @@ run_profile_rejection offline-universal \
 run_profile_rejection offline-archive \
   "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
   --offline --archive "$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET"
-TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET" \
+(
+  TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET"
   run_profile_rejection offline-archive-env \
     "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
     --offline
+)
 run_profile_rejection offline-unsupported-os \
   "unsupported OS" FreeBSD x86_64 \
   --offline
