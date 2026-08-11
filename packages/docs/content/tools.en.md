@@ -5,7 +5,7 @@ description: The deliberately minimal built-in toolset, its execution contract w
 
 ## Design
 
-PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing — line-numbered output and exact-string replacement beat quoting `sed` one-liners — while the shell (`exec_command`) remains the general-purpose fallback for everything else: running programs, searching, installing dependencies. Every tool that remains earns its schema tokens.
+PenguinHarness ships a deliberately minimal built-in toolset: dedicated file tools (`read_file` / `edit_file` / `write_file`) cover precise reading and editing, native `web_search` covers current-source discovery, and the shell (`exec_command`) remains the general-purpose fallback for running programs, retrieving selected pages, and installing dependencies. Every tool that remains earns its schema tokens.
 
 ## Execution contract
 
@@ -72,10 +72,11 @@ Each tool is described by one `ToolDefinitionConfig`:
 
 ## Built-in tools
 
-There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 10 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
+| `web_search` | r | 30000 | Search the live web through a host-configured SearXNG instance |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
 | `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
 | `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
@@ -86,11 +87,24 @@ There are 9 built-in tools (assembled via `packages/core/src/environment/tools/r
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+Note that an existing Agent's persisted `tools.builtin` list is frozen as written: Agents created before `web_search` do not receive it automatically. Use **Restore default configuration** in Agent settings (which replaces the full config) or add its complete definition from `packages/core/src/state/default-config.ts` to `system_config.yaml`.
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The search/command/subagent tools (`web_search`, `exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+
+### Web search
+
+`web_search` calls SearXNG's JSON `/search` endpoint and returns at most 10 normalized results.
+It accepts `query` (required), `limit` (1–10, default 5), `language`, `safesearch` (0–2),
+and `time_range` (`day` / `month` / `year`). Responses are capped at 2 MiB, only HTTP(S)
+result URLs are retained, duplicate URLs are removed, and titles/snippets are labeled as untrusted
+external content.
+
+The SearXNG endpoint is host configuration and never a tool argument. Resolution order is an SDK
+`EnvironmentServices.webSearch.endpoint` override, the Agent Vault's `SEARXNG_ENDPOINT`, the
+process environment's `SEARXNG_ENDPOINT`, then `http://127.0.0.1:8080`. The instance must include
+`json` in SearXNG's `search.formats`; an HTTP 403 response includes this diagnostic.
 
 ### Command sessions
 
@@ -225,7 +239,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "
 | Surface | Behavior |
 | --- | --- |
 | SDK | Pass `approve` per `session.run`; with none injected the engine denies by default (conservative — nothing gets approved unattended) |
-| CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
+| CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools, including `web_search`, and defers rw / unknown tools to a human |
 | Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, so changes take effect immediately; manual decisions arrive via the API |
 
 A deny produces a synthetic aborted `tool_call_output` (`Tool call denied by user.`) for the model to react to. Every decision is written to the Trace as an `approval_decision` event, forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).

@@ -214,7 +214,7 @@ describe("loadOrInitAgentState", () => {
 });
 
 describe("buildToolConfig", () => {
-  it("exposes command, file, subagent (rw) and image (r) tools", async () => {
+  it("exposes command, file, web, subagent and image tools", async () => {
     const state = await loadOrInitAgentState();
     const cfg = buildToolConfig(state);
     expect(cfg.mcpServers).toEqual([]);
@@ -222,6 +222,7 @@ describe("buildToolConfig", () => {
       "read_file",
       "edit_file",
       "write_file",
+      "web_search",
       "exec_command",
       "input_command",
       "run_subagent",
@@ -234,7 +235,7 @@ describe("buildToolConfig", () => {
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
     expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
-    // The four command/subagent tools declare the description call argument in config,
+    // Search plus the four command/subagent tools declare the description call argument in config,
     // toggled by the per-entry call_description field (default true).
     expect(exec.call_description).toBe(true);
     expect(
@@ -272,6 +273,14 @@ describe("buildToolConfig", () => {
     expect((writeFile.parameters as { required?: string[] }).required).toEqual([
       "file_path",
       "content",
+    ]);
+    const webSearch = cfg.customTools.find((t) => t.name === "web_search")!;
+    expect(webSearch.permission).toBe("r");
+    expect(webSearch.timeoutMs).toBe(30000);
+    expect(webSearch.call_description).toBe(true);
+    expect((webSearch.parameters as { required?: string[] }).required).toEqual([
+      "description",
+      "query",
     ]);
     const sub = cfg.customTools.find((t) => t.name === "run_subagent")!;
     expect(sub.permission).toBe("rw");
@@ -350,6 +359,7 @@ describe("buildToolConfig", () => {
       "read_file",
       "edit_file",
       "write_file",
+      "web_search",
       "exec_command",
       "input_command",
       "run_subagent",

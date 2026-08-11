@@ -269,6 +269,17 @@ export interface VisionDescriberService {
   createLLM?: () => LLMInterface;
 }
 
+/** Fetch contract injected into the native web_search tool for host overrides and offline tests. */
+export type WebSearchFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/** Runtime configuration for native web search; SearXNG is the default provider. */
+export interface WebSearchService {
+  /** SearXNG base URL; defaults to SEARXNG_ENDPOINT from the Agent vault/process, then http://127.0.0.1:8080. */
+  endpoint?: string;
+  /** Optional fetch override; normal runtimes use globalThis.fetch. */
+  fetch?: WebSearchFetch;
+}
+
 /**
  * Runtime services Environment injects into individual tools (e.g. `run_subagent` needs `SubagentRunner`); most tools don't use these.
  * Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig".
@@ -277,6 +288,8 @@ export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
   /** Injected when the session model doesn't support images: for describe_image's single-shot vision-model proxy reading. */
   visionDescriber?: VisionDescriberService;
+  /** Native web-search provider override; Environment fills its endpoint from the Agent vault/process when omitted. */
+  webSearch?: WebSearchService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */

@@ -3,7 +3,7 @@
  * API and compares it with the running version (core's VERSION), for the web UI's
  * update reminder (GET /api/version/update-check).
  *
- * This is the server's only outbound internet call, so it is strictly fail-soft: check()
+ * This is the server's only autonomous outbound internet call, so it is strictly fail-soft: check()
  * never throws and never surfaces an upstream failure as a 5xx — a failed lookup returns
  * a normal response with `error` set and `latestVersion` null. Outcomes are cached
  * in-memory (success for 1 hour, failure for 10 minutes) so a sidebar that opens on every

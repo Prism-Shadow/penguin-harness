@@ -250,6 +250,11 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 ## Roadmap
 
+- [x] Native `web_search`, backed by SearXNG by default
+- [ ] Optional local SearXNG provisioning and health checks
+- [ ] Native static-page `web_fetch`
+- [ ] Optional Playwright fallback for dynamic pages
+- [ ] Bounded multi-page `web_crawl`
 - [ ] Public release of the benchmark suite
 - [x] Desktop app
 - [x] Windows support
@@ -257,6 +262,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] Company-level self evolving
 - [ ] OpenShell integration (permission-governed shell)
 - More to come…
+
+See [ROADMAP.md](ROADMAP.md) for the web-access architecture, safety boundaries, and delivery phases.
 
 ## Development
 

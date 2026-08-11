@@ -138,6 +138,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // run_subagent 所需
   visionDescriber?: VisionDescriberService; // text-only 模型的 describe_image 所需
+  webSearch?: WebSearchService;             // 可选 SearXNG 端点/fetch 覆盖
   commandSessions?: CommandSessionManager;  // 长驻命令会话登记表(Environment 内部构造)
   subagentSessions?: SubagentSessionManager;// 后台 Subagent 会话登记表(同上)
 }
@@ -177,7 +178,7 @@ interface ToolDefinitionConfig {
   name: string;
   description: string;
   parameters?: Record<string, unknown>;   // JSON Schema
-  permission?: "r" | "rw";
+  permission?: "r" | "rw" | "network";
   forModel?: "vision" | "text-only";      // 按 Session 模型类别装配
   timeoutMs?: number;                     // 默认 120000;<=0 关闭
   maxOutputLength?: number;               // 默认 16000,头部保留截断;<=0 关闭

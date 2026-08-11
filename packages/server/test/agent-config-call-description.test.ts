@@ -1,7 +1,7 @@
 /**
  * Agent config route: the per-tool `call_description` field on toolsBuiltin rows. The
  * default config writes `call_description: true` (plus the `description` property in
- * parameters) on the four command/subagent tools; PUT round-trips a flipped `false` into
+ * parameters) on search plus the four command/subagent tools; PUT round-trips a flipped `false` into
  * system_config.yaml (preserving the rest of the file); a non-boolean value is a 400.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,11 +36,23 @@ describe("agent config: per-tool call_description", () => {
   it("defaults carry call_description: true and the description property; PUT false round-trips", async () => {
     const initial = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
     const names = initial.config.toolsBuiltin.map((tool) => tool.name);
-    // File tools lead the default toolset; the renamed shell tool follows.
-    expect(names.slice(0, 4)).toEqual(["read_file", "edit_file", "write_file", "exec_command"]);
+    // File tools lead the default toolset; native web search follows before the shell tool.
+    expect(names.slice(0, 5)).toEqual([
+      "read_file",
+      "edit_file",
+      "write_file",
+      "web_search",
+      "exec_command",
+    ]);
     const propsOf = (tool: ToolDefinitionConfig): Record<string, unknown> =>
       (tool.parameters as { properties: Record<string, unknown> }).properties;
-    for (const name of ["exec_command", "input_command", "run_subagent", "input_subagent"]) {
+    for (const name of [
+      "web_search",
+      "exec_command",
+      "input_command",
+      "run_subagent",
+      "input_subagent",
+    ]) {
       const tool = initial.config.toolsBuiltin.find((row) => row.name === name)!;
       expect(tool.call_description).toBe(true);
       expect(propsOf(tool)["description"]).toBeDefined();
@@ -50,6 +62,9 @@ describe("agent config: per-tool call_description", () => {
       expect(tool.call_description).toBeUndefined();
       expect(propsOf(tool)["description"]).toBeUndefined();
     }
+    expect(initial.config.toolsBuiltin.find((row) => row.name === "web_search")!.permission).toBe(
+      "r",
+    );
 
     // Flip exec_command's toggle off via the whole-table PUT.
     const tools = initial.config.toolsBuiltin.map((row) =>

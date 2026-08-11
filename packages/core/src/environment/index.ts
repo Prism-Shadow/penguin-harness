@@ -12,6 +12,11 @@ export { createExecCommandTool, EXEC_COMMAND_NAME } from "./tools/exec-command.j
 export { createInputCommandTool, INPUT_COMMAND_NAME } from "./tools/input-command.js";
 export { createSubagentTool, SUBAGENT_NAME } from "./tools/run-subagent.js";
 export { createInputSubagentTool, INPUT_SUBAGENT_NAME } from "./tools/input-subagent.js";
+export {
+  createWebSearchTool,
+  WEB_SEARCH_NAME,
+  DEFAULT_SEARXNG_ENDPOINT,
+} from "./tools/web-search.js";
 export { CommandSessionManager, ManagedSession } from "./tools/command/index.js";
 export type { ProcessExit, SpawnOptions } from "./tools/command/index.js";
 export { SubagentSessionManager, ManagedSubagentSession } from "./tools/subagent/index.js";

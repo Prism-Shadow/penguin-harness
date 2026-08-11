@@ -138,6 +138,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
   visionDescriber?: VisionDescriberService; // needed by describe_image on text-only models
+  webSearch?: WebSearchService;             // optional SearXNG endpoint/fetch override
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
 }
@@ -178,7 +179,7 @@ interface ToolDefinitionConfig {
   name: string;
   description: string;
   parameters?: Record<string, unknown>;   // JSON Schema
-  permission?: "r" | "rw";
+  permission?: "r" | "rw" | "network";
   forModel?: "vision" | "text-only";      // assembled per session-model class
   timeoutMs?: number;                     // default 120000; <=0 disables
   maxOutputLength?: number;               // default 16000, head-kept truncation; <=0 disables

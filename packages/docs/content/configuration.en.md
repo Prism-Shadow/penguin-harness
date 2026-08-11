@@ -19,7 +19,8 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
-| `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
+| `PENGUIN_UPDATE_CHECK` | `off` disables the web app's autonomous new-release check | enabled |
+| `SEARXNG_ENDPOINT` | Base URL of the SearXNG instance used by native `web_search`; an Agent Vault value with the same name takes precedence | `http://127.0.0.1:8080` |
 
 These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and the internal `PENGUIN_CLI_ENTRY` are **removed from the environment of commands the Agent runs** — otherwise a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own. The rest of the host environment passes through, with one further exception: `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` are always forced to fixed values, so that a command cannot hang waiting on an editor, a credential prompt or a pager. The Agent's [vault](#vault) is applied on top of the host environment — setting `PORT` there does reach commands — but not on top of those six.
 
@@ -173,6 +174,7 @@ On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes �
 
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
+- `SEARXNG_ENDPOINT` is also consumed by native `web_search`; it overrides the process environment and the local default, while its value remains outside model context and Trace;
 - Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
 - Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
