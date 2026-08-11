@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Skill's frontmatter metadata (four fields: name / description / version / updated; description itself is English-only, may also carry description_zh and short_description(_zh)). */
+/** Skill's frontmatter metadata (four core fields: name / description / version / updated; may also carry short_description(_zh) and `preinstall`; description itself is English-only). */
 export interface SkillMetadata {
   /** Skill name (matches its containing directory name). */
   name: string;
@@ -24,6 +24,8 @@ export interface SkillMetadata {
   shortDescription?: string;
   /** Chinese short description (frontmatter `short_description_zh`, optional). */
   shortDescriptionZh?: string;
+  /** Preinstall marker (frontmatter `preinstall`, optional): false keeps the Skill out of default_agent's preinstalled set (library install stays manual); omitted means preinstalled. */
+  preinstall?: boolean;
   /** Version number (natural number); falls back to 1 on parse failure. */
   version: number;
   /** Update date (YYYY-MM-DD); defaults to "". */
@@ -57,7 +59,8 @@ export interface ResolvedSkillGroup extends Omit<SkillGroupInfo, "skills"> {
  * first `---` block (split on the first colon, value trimmed, values may themselves contain colons);
  * all fields are scalars, no YAML dependency needed.
  * Error tolerance: returns null if the `---` block or name is missing; version falls back to 1 if
- * it isn't a natural number; updated defaults to "".
+ * it isn't a natural number; updated defaults to ""; preinstall is recognized only as the
+ * literal `false` (anything else, or absence, means the default: preinstalled).
  */
 export function parseSkillFrontmatter(content: string): SkillMetadata | null {
   // Strip a possible UTF-8 BOM (may be introduced by editors when manually editing an installed SKILL.md); CRLF is handled by \r?\n.
@@ -81,6 +84,8 @@ export function parseSkillFrontmatter(content: string): SkillMetadata | null {
     // short_description(_zh) is optional: omitted when absent (undefined keys aren't set).
     ...(shortDescription !== undefined ? { shortDescription } : {}),
     ...(shortDescriptionZh !== undefined ? { shortDescriptionZh } : {}),
+    // preinstall is meaningful only as the literal `false` (skip default_agent preinstall).
+    ...(fields["preinstall"] === "false" ? { preinstall: false } : {}),
     version: Number.isInteger(version) && version >= 1 ? version : 1,
     updated: fields["updated"] ?? "",
   };
@@ -134,6 +139,15 @@ export function loadLibrarySkills(): LibrarySkill[] {
 }
 
 /**
+ * Reads the library Skills that default_agent preinstalls at initialization: every library
+ * Skill except those whose frontmatter sets `preinstall: false` (those stay in the library
+ * for manual install only).
+ */
+export function loadPreinstalledSkills(): LibrarySkill[] {
+  return loadLibrarySkills().filter((skill) => skill.preinstall !== false);
+}
+
+/**
  * Skill group manifest; members are library directory names.
  * Docs: /docs/skills § "Built-in library".
  */
@@ -162,6 +176,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
       "ollama",
       "llamafactory",
       "skill-porting",
+      "remote-claude-code",
     ],
   },
   {

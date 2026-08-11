@@ -2,8 +2,9 @@
  * Integration tests for the Skill routes: library catalog structure (any logged-in user), member
  * install/uninstall with 404 for outsiders, 404 for unknown skills, installed
  * files matching the library content, idempotent update on reinstall, the
- * directory disappearing after uninstall, default_agent starting with all
- * skills installed while a newly created plain Agent has none, and the zip
+ * directory disappearing after uninstall, default_agent starting with the
+ * preinstalled library set (preinstall: false skills stay manual-install)
+ * while a newly created plain Agent has none, and the zip
  * archive install/export (layouts, zip-slip and limit rejections, 409
  * skill_exists + overwrite replace, byte-identical export round-trip).
  */
@@ -12,7 +13,7 @@ import path from "node:path";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { skillsDir } from "@prismshadow/penguin-core";
-import { librarySkill, loadLibrarySkills } from "@prismshadow/penguin-skills";
+import { librarySkill, loadPreinstalledSkills } from "@prismshadow/penguin-skills";
 import type {
   AgentSkillsResponse,
   ProjectCreateResponse,
@@ -90,6 +91,7 @@ describe("skills api", () => {
       "ollama",
       "llamafactory",
       "skill-porting",
+      "remote-claude-code",
     ]);
     expect(body.groups[3]!.skills.map((s) => s.name)).toEqual([
       "agent-creation",
@@ -203,12 +205,14 @@ describe("skills api", () => {
     expect((await member.get(base("no_such_agent"))).status).toBe(404);
   });
 
-  it("default_agent starts with every library skill installed; a new plain Agent has none", async () => {
+  it("default_agent starts with the preinstalled library set; preinstall:false skills stay manual-install", async () => {
     const res = await member.get(base("default_agent"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as AgentSkillsResponse;
-    // loadLibrarySkills itself sorts by name, matching the installed-list ordering.
-    expect(body.skills.map((s) => s.name)).toEqual(loadLibrarySkills().map((s) => s.name));
+    // loadPreinstalledSkills keeps loadLibrarySkills' name sort, matching the installed-list ordering.
+    expect(body.skills.map((s) => s.name)).toEqual(loadPreinstalledSkills().map((s) => s.name));
+    // remote-claude-code ships in the library marked `preinstall: false`: not present here.
+    expect(body.skills.map((s) => s.name)).not.toContain("remote-claude-code");
     // The installed list likewise passes through the Chinese description and the
     // short description/icon (listInstalledSkills parses these from the on-disk
     // frontmatter and icon.svg).
@@ -217,6 +221,12 @@ describe("skills api", () => {
       expect(skill.shortDescriptionZh, skill.name).toBeTruthy();
       expect(skill.icon, skill.name).toContain("<svg");
     }
+
+    // Manual install from the library still works for a preinstall:false skill.
+    const manual = await member.post(base("default_agent"), { names: ["remote-claude-code"] });
+    expect(manual.status).toBe(201);
+    const withManual = (await manual.json()) as AgentSkillsResponse;
+    expect(withManual.skills.map((s) => s.name)).toContain("remote-claude-code");
 
     await createPlainAgent("fresh_agent");
     const fresh = (await (await member.get(base("fresh_agent"))).json()) as AgentSkillsResponse;

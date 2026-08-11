@@ -1,8 +1,9 @@
 /**
  * Tests for the Skill library file source of truth and its parser: loadLibrarySkills reading
- * files into a manifest, loadSkillGroups grouping, groupSkills' Other group and missing-member
- * tolerance, librarySkill's traversal-name rejection, doc conventions (`## Before you start` is
- * mandatory), and parseSkillFrontmatter's error tolerance.
+ * files into a manifest, loadPreinstalledSkills' preinstall filter, loadSkillGroups grouping,
+ * groupSkills' Other group and missing-member tolerance, librarySkill's traversal-name
+ * rejection, doc conventions (`## Before you start` is mandatory), and parseSkillFrontmatter's
+ * error tolerance.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
   groupSkills,
   librarySkill,
   loadLibrarySkills,
+  loadPreinstalledSkills,
   loadSkillGroups,
   parseSkillFrontmatter,
   type LibrarySkill,
@@ -85,6 +87,19 @@ describe("loadLibrarySkills", () => {
   });
 });
 
+describe("loadPreinstalledSkills", () => {
+  it("excludes skills whose frontmatter sets preinstall: false and keeps everything else", () => {
+    const all = loadLibrarySkills();
+    const preinstalled = loadPreinstalledSkills().map((s) => s.name);
+    expect(preinstalled).toEqual(all.filter((s) => s.preinstall !== false).map((s) => s.name));
+    // remote-claude-code is the library's manual-install skill: in the library, not preinstalled.
+    expect(all.map((s) => s.name)).toContain("remote-claude-code");
+    expect(librarySkill("remote-claude-code")?.preinstall).toBe(false);
+    expect(preinstalled).not.toContain("remote-claude-code");
+    expect(preinstalled.length).toBeGreaterThan(0);
+  });
+});
+
 describe("loadSkillGroups / groupSkills", () => {
   it("loads groups per SKILL_GROUPS, members complete with Chinese titles, no Other group", () => {
     const groups = loadSkillGroups();
@@ -112,6 +127,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "ollama",
       "llamafactory",
       "skill-porting",
+      "remote-claude-code",
     ]);
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
@@ -175,6 +191,7 @@ describe("loadSkillGroups / groupSkills", () => {
           "ollama",
           "llamafactory",
           "skill-porting",
+          "remote-claude-code",
         ],
       },
       {
@@ -418,6 +435,17 @@ describe("parseSkillFrontmatter", () => {
     const without = parseSkillFrontmatter("---\nname: demo\ndescription: Do x\n---\nBody");
     expect(without && "shortDescription" in without).toBe(false);
     expect(without && "shortDescriptionZh" in without).toBe(false);
+  });
+
+  it("preinstall is recognized only as the literal false; other values or absence omit the field", () => {
+    const off = parseSkillFrontmatter("---\nname: demo\npreinstall: false\n---\nBody");
+    expect(off?.preinstall).toBe(false);
+    for (const value of ["true", "no", "0", "False"]) {
+      const meta = parseSkillFrontmatter(`---\nname: demo\npreinstall: ${value}\n---\nBody`);
+      expect(meta && "preinstall" in meta, value).toBe(false);
+    }
+    const absent = parseSkillFrontmatter("---\nname: demo\n---\nBody");
+    expect(absent && "preinstall" in absent).toBe(false);
   });
 
   it("parses UTF-8 BOM and CRLF newlines normally (hand-edited files may introduce them)", () => {

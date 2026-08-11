@@ -14,6 +14,7 @@ frontmatter 字段：
 | `name` | Skill 名，与目录名一致 |
 | `description` | 英文单行描述，注入系统 Prompt |
 | `short_description` / `short_description_zh` | UI 短标签(卡片等紧凑位置用)，不注入 Prompt |
+| `preinstall` | 可选；`false` 表示不进入 default_agent 的预装集合，仅可从技能库手动安装 |
 | `version` | 自然数版本号，默认 1 |
 | `updated` | 更新日期 |
 
@@ -32,7 +33,7 @@ updated: 2026-07-17
 具体的步骤、边界与验收标准……
 ```
 
-解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空。
+解析是容错的：只识别首个 `---` 块内的 `key: value` 标量行；`version` 不是自然数时回退为 1,`updated` 缺省为空；`preinstall` 仅识别字面量 `false`。
 
 ## 渐进式加载
 
@@ -46,7 +47,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 已安装的 Skill 位于 Agent State 的 `agent_state/skills/<name>/`。文件即事实源：每次读取直接读文件、不设缓存，因此 Skill 天然可编辑。
 
-- 内置 Agent `default_agent` 在初始化时安装完整 Skill 库；
+- 内置 Agent `default_agent` 在初始化时安装完整 Skill 库（标记 `preinstall: false` 的 Skill 除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的 Skill 库页，或经 SDK;
 - 安装即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 一并拷贝。
 
@@ -70,6 +71,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `ollama` | 用 Ollama 部署与运行本地模型，把 OpenAI 兼容端点接入应用与 Agent |
 | | `llamafactory` | 用 LlamaFactory 微调 LLM：注册数据集、以 YAML 配置训练、合并 LoRA 适配器并部署产物 |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh、GitHub 仓库或本地目录）的 Skill 经审查与规范化后安装进 Agent |
+| | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |
 | Agent 调优 | `agent-creation` | 根据需求创建或配置 Agent State，编写 AGENTS.md、设置身份信息并安装所需 Skill |
 | | `benchmark-design` | 为指定 Agent 设计并校准多 Case Benchmark，建立可追溯的 Formal Baseline |
 | | `agent-evaluation` | 内部叶子执行器：根据完整评测协议隔离执行并私密评分一个 Case Run |

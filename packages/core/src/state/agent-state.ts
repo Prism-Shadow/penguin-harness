@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  loadLibrarySkills,
+  loadPreinstalledSkills,
   parseSkillFrontmatter,
   type SkillMetadata,
 } from "@prismshadow/penguin-skills";
@@ -163,15 +163,15 @@ export async function loadOrInitAgentState(opts?: {
     };
     agentsMd = preset?.agentsMd ?? defaultAgentsMd();
     // Only installs the Skills specified by preset (a plain newly created Agent gets none
-    // pre-installed). A default_agent with no
-    // preset (e.g. created on first CLI run) still gets every Skill in the library pre-installed
-    // — the install policy follows Agent identity, not whether creation came from the server or
+    // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
+    // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
+    // the install policy follows Agent identity, not whether creation came from the server or
     // was done directly via SDK/CLI.
     // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
     // reads SKILL.md with shell and follows it.
     const skills =
       opts?.preset === undefined && agentId === DEFAULT_AGENT_ID
-        ? loadLibrarySkills()
+        ? loadPreinstalledSkills()
         : (opts?.preset?.skills ?? []);
     await Promise.all([
       fs.writeFile(mdPath, agentsMd, "utf8"),

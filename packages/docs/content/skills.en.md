@@ -14,6 +14,7 @@ Frontmatter fields:
 | `name` | Skill name, matching the directory name |
 | `description` | English one-liner injected into the system prompt |
 | `short_description` / `short_description_zh` | UI labels for compact spots such as cards; not injected into the prompt |
+| `preinstall` | Optional; `false` keeps the Skill out of default_agent's preinstalled set — install it manually from the library |
 | `version` | Natural-number version, default 1 |
 | `updated` | Update date |
 
@@ -32,7 +33,7 @@ updated: 2026-07-17
 Concrete steps, boundaries and acceptance criteria...
 ```
 
-Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized; a `version` that is not a natural number falls back to 1, and a missing `updated` defaults to empty.
+Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized; a `version` that is not a natural number falls back to 1, and a missing `updated` defaults to empty. For `preinstall`, only the literal `false` is recognized.
 
 ## Progressive loading
 
@@ -46,7 +47,7 @@ If a message only names a skill without a concrete task, the model is instructed
 
 Installed Skills live under `agent_state/skills/<name>/` inside the Agent State. The files are the source of truth: every read goes straight to disk with no cache, which makes Skills naturally editable.
 
-- The built-in Agent `default_agent` gets the whole library installed at initialization;
+- The built-in Agent `default_agent` gets the whole library installed at initialization, except Skills marked `preinstall: false` — those are only ever installed manually;
 - other Agents install on demand — through the Web UI's Skill library page, or via the SDK;
 - installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` alongside it.
 
@@ -70,6 +71,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `ollama` | Deploy and serve local models with Ollama: pull and run them, then expose the OpenAI-compatible endpoint to apps and agents |
 | | `llamafactory` | Fine-tune LLMs with LlamaFactory: register datasets, train via YAML configs, merge LoRA adapters and serve the result |
 | | `skill-porting` | Port skills from external sources — plugin marketplaces, skills.sh registries, GitHub repos or local folders — into the agent after review and normalization |
+| | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |
 | Agent Tuning | `agent-creation` | Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata and installing needed Skills |
 | | `benchmark-design` | Design and calibrate a multi-Case capability Benchmark for a specified Agent and establish a traceable Formal Baseline |
 | | `agent-evaluation` | Internal leaf worker that executes and privately scores exactly one Case run from a complete evaluation protocol |
