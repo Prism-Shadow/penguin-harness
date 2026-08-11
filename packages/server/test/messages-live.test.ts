@@ -11,6 +11,7 @@ import {
   partialText,
   partialThinking,
   partialToolCallOutput,
+  requestBegin,
   toolCall,
   toolCallOutput,
   userText,
@@ -39,6 +40,9 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
     steer: () => false,
     skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
+      // A real run opens its first LLM request before any model output — and the
+      // manager's pending-input holds end exactly there.
+      yield requestBegin();
       yield partialThinking("start");
       yield partialThinking("delta", "let me think");
       // A closed segment: start+delta+stop+complete leaves no open fragment behind.

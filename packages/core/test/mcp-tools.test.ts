@@ -403,6 +403,15 @@ describe("Session first-run bootstrap events", () => {
       toolConfig: { customTools: [], mcpServers: [] },
     });
     const written: OmniMessage[] = [];
+    // Capturing LLM: the carry-over assertion below reads what the request delivered.
+    const requests: OmniMessage[][] = [];
+    const capturingLLM: LLMInterface = {
+      async *streamGenerate(parameters): AsyncGenerator<OmniMessage, LLMOutcome> {
+        requests.push(parameters.newMessages);
+        yield assistantText("done");
+        return { status: "completed" };
+      },
+    };
     const session = new Session({
       meta: {
         session_id: "s-mcp-abort",
@@ -416,7 +425,7 @@ describe("Session first-run bootstrap events", () => {
       bootstrap: async () => {
         calls += 1;
         await gate;
-        return { tools: [{ name: "t", description: "d" }], llm: fakeLLM, mcp: [] };
+        return { tools: [{ name: "t", description: "d" }], llm: capturingLLM, mcp: [] };
       },
       mcpServers: ["fx"],
       environment: env,
@@ -465,6 +474,18 @@ describe("Session first-run bootstrap events", () => {
       expect(secondTypes).toContain("text");
       // Abort cancels the attempt: the next run started a FRESH bootstrap (reconnect).
       expect(calls).toBe(2);
+      // The aborted run's input is carried into this run — persisted ahead of the new
+      // input (dropping it would silently lose the user's message: nothing had reached
+      // the Trace) and delivered to the model in the same order.
+      const writtenUserTexts = written
+        .filter((m) => m.type === "model_msg")
+        .map((m) => (m.payload as { text?: string }).text)
+        .filter((t): t is string => t === "go" || t === "again");
+      expect(writtenUserTexts).toEqual(["go", "again"]);
+      const requestTexts = (requests.at(-1) ?? [])
+        .map((m) => (m.payload as { text?: string }).text)
+        .filter((t): t is string => t === "go" || t === "again");
+      expect(requestTexts).toEqual(["go", "again"]);
     } finally {
       session.dispose();
     }

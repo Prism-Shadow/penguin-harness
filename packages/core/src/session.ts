@@ -189,6 +189,12 @@ export class Session {
 
   /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
   private engine: ContextEngine | null = null;
+  /**
+   * Inputs of a run aborted mid-bootstrap, carried into the next run: the engine did not
+   * exist yet, so nothing reached the Trace — dropping them would silently lose the
+   * user's message. Prepended (and re-persisted by the engine) on the next run.
+   */
+  private carryOverInput: OmniMessage[] = [];
   private readonly bootstrap: SessionConfig["bootstrap"];
   private readonly cancelBootstrap: (() => void) | undefined;
   private readonly mcpServers: string[];
@@ -295,8 +301,21 @@ export class Session {
   ): AsyncGenerator<OmniMessage> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
+    // A previously aborted bootstrap dropped these before the engine existed: they lead
+    // this run's input (already folded by their own run), so the model finally sees them
+    // and the engine's run-start write persists them.
+    if (this.carryOverInput.length > 0) {
+      newMessages = [...this.carryOverInput, ...newMessages];
+      this.carryOverInput = [];
+    }
     const ready = yield* this.ensureReady(opts?.signal);
-    if (!ready) return; // Aborted mid-bootstrap: the attempt is cancelled (cancelBootstrap); the next run reconnects from scratch.
+    if (!ready) {
+      // Aborted mid-bootstrap: the attempt is cancelled (cancelBootstrap) and the next
+      // run reconnects from scratch — carrying this input (merged, so repeated aborts
+      // keep accumulating exactly once each).
+      this.carryOverInput = newMessages;
+      return;
+    }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
@@ -344,7 +363,8 @@ export class Session {
    * (`cancelBootstrap` → the provider aborts pending connects and resets — the next run
    * reconnects from scratch), the pair closes with `status: "aborted"`, and a standard
    * abort event follows; nothing reaches the Trace (no engine exists — the aborted
-   * phase is live-only). No-op returning true once the engine exists; a rejected
+   * phase is live-only, and the caller stashes the run's input as carryOverInput so the
+   * next run delivers and persists it). No-op returning true once the engine exists; a rejected
    * bootstrap (unreadable resume history, LLM construction) throws to the caller, and a
    * later run retries with a fresh attempt.
    */

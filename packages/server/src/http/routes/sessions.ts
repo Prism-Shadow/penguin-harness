@@ -574,18 +574,23 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // the wrong position — so it never carries `live`.
     let live: MessagesLiveTail | undefined;
     let pendingInputs: OmniMessage[] = [];
-    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
-      live = {
-        cursor: deps.channels.get(row.sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(row.sessionId),
-      };
-      // The running Task's inputs (published at launch) and its streamed bootstrap
-      // records (mcp_connect pair / tool_list_ready): the engine's Trace writes for both
-      // land only after the first run's connect, so a client rebuilding during that
-      // window would otherwise see neither its own message nor the connecting status — a
+    if (page?.kind !== "before") {
+      if (deps.manager.statusOf(row.sessionId) !== "idle") {
+        live = {
+          cursor: deps.channels.get(row.sessionId).lastEventId,
+          fragments: deps.manager.liveFragments(row.sessionId),
+        };
+      }
+      // The Task's inputs (published at launch) and its streamed bootstrap records
+      // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
+      // only after the first run's connect, so a client rebuilding during that window
+      // would otherwise see neither its own message nor the connecting status — a
       // silent blank while a slow MCP server times out. Appended below when the trace
-      // read hasn't caught up; `before` pages are immutable history and never carry them
-      // (same rule as `live`).
+      // read hasn't caught up; `before` pages are immutable history and never carry
+      // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
+      // wrote nothing to the Trace, and its held input is the only copy a reload can
+      // show until the next run persists it (the holds survive idle for exactly that
+      // case — see the manager's request_begin clear).
       pendingInputs = [
         ...deps.manager.pendingInputs(row.sessionId),
         ...deps.manager.pendingBootstrap(row.sessionId),

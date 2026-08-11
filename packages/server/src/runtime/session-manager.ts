@@ -614,8 +614,10 @@ export class SessionManager {
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
       // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
-      // inputs onto the stream, but the Trace write still waits for the bootstrap).
-      entry.pendingInputs = args.input;
+      // inputs onto the stream, but the Trace write still waits for the bootstrap);
+      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
+      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
+      entry.pendingBootstrap = [];
       this.publishState(entry, "running");
       const approve = makeApprove({
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
@@ -764,8 +766,13 @@ export class SessionManager {
     // Publish the input messages first (visible to other subscribers; the Trace is
     // persisted by the SDK), then flip the running status. The same envelopes are held as
     // pendingInputs so GET /messages can serve them before the engine's Trace write
-    // catches up (delayed by the first run's MCP connect).
-    entry.pendingInputs = input;
+    // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
+    // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
+    // carries them into this run) and must stay served until this run persists them.
+    // The previous attempt's bootstrap records are dropped instead — this run streams
+    // its own connect phase, and a stale aborted pair would render as an extra row.
+    entry.pendingInputs = [...entry.pendingInputs, ...input];
+    entry.pendingBootstrap = [];
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
@@ -1351,10 +1358,10 @@ export class SessionManager {
       // The run is over: no fragment will ever continue, so drop the live tail before the
       // idle flip (GET /messages stops attaching `live` the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
-      // The engine has long since written the inputs to the Trace (at run start, abort
-      // included) — history now serves them, so the pending holds end with the run.
-      entry.pendingInputs = [];
-      entry.pendingBootstrap = [];
+      // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
+      // to the Trace, so its held input (and the aborted connect pair) are the only copy
+      // a reload can show until the next run carries the input forward and persists it.
+      // Runs that issued a request already cleared them at their first request_begin.
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;

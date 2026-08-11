@@ -61,11 +61,15 @@ function ServerGroup({ outcome, tools }: { outcome: McpServerOutcome; tools: Mcp
   }
   return (
     <div>
+      {/* Stacked sticky, second level (the thinking/tool-row idiom): while this group's
+          expanded body scrolls, its row pins right below the banner's own sticky header
+          (top-4 = the header's -top-4 plus its height), opaque so scrolling tool rows
+          can't bleed through. */}
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/40"
+        className="sticky top-4 z-[4] flex w-full items-center gap-2 bg-white px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
         {row}
       </button>

@@ -12,7 +12,12 @@
  * user's message a second time at the end of the conversation.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assistantText, mcpConnectBegin, requestBegin } from "@prismshadow/penguin-core";
+import {
+  assistantText,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  requestBegin,
+} from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -146,5 +151,97 @@ describe("GET /messages serves the running task's pending inputs", () => {
     expect(after.messages.map((m) => (m.payload as { type?: string }).type)).not.toContain(
       "mcp_connect_begin",
     );
+  });
+
+  it("keeps the holds after a run aborted mid-bootstrap (no request_begin): a reload still sees the message; the next run appends", async () => {
+    const SID2 = "session-2026-08-11-10-00-00-eeff0003";
+    const row: SessionRow = {
+      sessionId: SID2,
+      projectId: "pender-default_project",
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m1",
+      workspace: "/tmp/w",
+      approvalMode: "always-ask",
+      title: null,
+      createdAt: new Date().toISOString(),
+    };
+    t.deps.sessionsRepo.insert(row);
+    // First run: connect aborted before any request (the core cancels the bootstrap and
+    // carries the input). Second run: a fresh connect that reaches request_begin.
+    let runs = 0;
+    let releaseConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => {
+      releaseConnect = resolve;
+    });
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    t.deps.manager.adopt(row, {
+      sessionId: SID2,
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run() {
+        runs += 1;
+        yield mcpConnectBegin(["fx"]);
+        if (runs === 1) {
+          yield mcpConnectEnd({ status: "aborted", results: [] });
+          return;
+        }
+        // Parked between the connect stream and the first request, so the test can
+        // observe the holds while they still exist.
+        await connectGate;
+        yield requestBegin();
+        await secondGate;
+        yield assistantText("done");
+      },
+      async *compact() {},
+    });
+
+    const first = await api.post(`/api/sessions/${SID2}/tasks`, {
+      input: [{ type: "text", text: "lost?" }],
+    });
+    expect(first.status).toBe(202);
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
+
+    // Idle after the aborted bootstrap: nothing reached the Trace, so the held input and
+    // the aborted connect pair are the only copy a reload can show — they must survive.
+    const afterAbort = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
+      messages: OmniMessage[];
+    };
+    expect(afterAbort.messages.map((m) => (m.payload as { text?: string }).text)).toContain(
+      "lost?",
+    );
+    const abortTypes = afterAbort.messages.map((m) => (m.payload as { type?: string }).type);
+    expect(abortTypes).toContain("mcp_connect_begin");
+    expect(abortTypes).toContain("mcp_connect_end");
+
+    // Next send: the new input APPENDS to the held one (both served), while the stale
+    // aborted connect pair is dropped — this run streams its own bootstrap.
+    const second = await api.post(`/api/sessions/${SID2}/tasks`, {
+      input: [{ type: "text", text: "retry" }],
+    });
+    expect(second.status).toBe(202);
+    await waitFor(() => t.deps.manager.pendingBootstrap(SID2).length === 1);
+    const during = (await (await api.get(`/api/sessions/${SID2}/messages`)).json()) as {
+      messages: OmniMessage[];
+    };
+    const texts = during.messages.map((m) => (m.payload as { text?: string }).text);
+    expect(texts.filter((x) => x === "lost?")).toHaveLength(1);
+    expect(texts.filter((x) => x === "retry")).toHaveLength(1);
+    expect(
+      during.messages.filter((m) => (m.payload as { type?: string }).type === "mcp_connect_begin"),
+    ).toHaveLength(1);
+
+    // request_begin ends the holds (the engine has persisted the carried inputs by then).
+    releaseConnect();
+    await waitFor(() => t.deps.manager.pendingInputs(SID2).length === 0);
+    expect(t.deps.manager.pendingBootstrap(SID2)).toHaveLength(0);
+    releaseSecond();
+    await waitFor(() => t.deps.manager.statusOf(SID2) === "idle");
   });
 });
