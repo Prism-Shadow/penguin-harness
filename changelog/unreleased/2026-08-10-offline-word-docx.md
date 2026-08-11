@@ -1,6 +1,6 @@
-# Offline capability profile (initial word-docx support)
+# Offline document capability profile
 
-Penguin now has a separate offline capability profile for every native release target: Linux and macOS x64/arm64, and Windows x64. The initial profile provides deterministic DOCX inspection and basic editing in fully offline deployments, while standard releases and npm packages remain lightweight. Future PPTX, PDF and other Skills extend this profile rather than creating product-specific Harness variants.
+Penguin now has a separate offline capability profile for every native release target: Linux and macOS x64/arm64, and Windows x64. It provides deterministic DOCX inspection/basic editing, PPTX inspection/slide append, and PDF inspection/merge in fully offline deployments, while standard releases and npm packages remain lightweight. Future capabilities extend this profile rather than creating product-specific Harness variants.
 
 ## Complete Skill resources
 
@@ -8,11 +8,11 @@ Library Skill installation now copies every regular file in the Skill directory 
 
 ## Offline dependencies and controlled environment
 
-Each platform-specific offline bundle adds the `word-docx` Skill, its fixed helper scripts, and hash-locked wheels for CPython 3.9–3.13 on that target. On first use, the bootstrap installs those wheels without network access into the Agent-owned `shared_env/word-docx` virtual environment; it does not modify the system Python environment. A compatible system Python with `venv` remains a prerequisite; Linux requires glibc 2.17 or newer and does not support musl/Alpine.
+Each platform-specific offline bundle adds the `word-docx`, `powerpoint-pptx`, and `pdf-tools` Skills, their fixed helpers, and one deduplicated wheelhouse for CPython 3.9–3.13 on that target. On first use, a shared bootstrap installs only that Skill's locked dependencies into its own Agent-owned `shared_env/<skill>` virtual environment without network access or system Python changes. A compatible system Python with `venv` remains a prerequisite; Linux requires glibc 2.17 or newer and does not support musl/Alpine.
 
-## Safe basic editing
+## Safe document operations
 
-The first release supports paragraph inspection, appending headings and paragraphs, and replacing ordinary text within a run. A document without a requested built-in heading style falls back to a bold ordinary paragraph. Editing always uses distinct input and output paths, refuses to overwrite an existing output, reopens the generated DOCX, verifies the requested content, and confirms that the source file did not change. The release workflow validates the separate artifact and runs its acceptance test in Docker with networking disabled.
+DOCX supports paragraph inspection, appending headings/paragraphs, and replacing ordinary text within a run; a missing heading style falls back to a bold ordinary paragraph. PPTX supports slide-text inspection and appending one title-and-body slide. PDF supports page/text inspection and ordered merging of existing, unencrypted files. Every write uses distinct input/output paths, refuses an existing output, reopens and validates the result, and confirms that all sources remain unchanged. The release workflow validates every target and runs all three helpers in Docker with networking disabled across Python 3.9–3.13.
 
 `penguin update` detects the installed `lib/offline/profile.json` marker and keeps selecting the same offline profile, so updates do not silently replace it with a standard package.
 

@@ -46,13 +46,20 @@ The bundled binaries are byte-identical to the `MinGit-<version>-64-bit.zip` ass
 no patches are applied. If you need the corresponding source and cannot obtain it from the URLs
 above, open an issue on this repository and we will provide it.
 
-## Offline profile word-docx wheels — `lib/offline/word-docx/wheels/`
+## Offline profile Python wheels — `lib/offline/wheels/`
 
 Present only in the platform-specific `penguin-offline-*` artifacts; standard Release and npm
-artifacts do not include these files. The offline profile carries unmodified Python wheels for
-`python-docx` (MIT), `lxml` (BSD-3-Clause), and `typing_extensions` (PSF-2.0), at the versions and SHA256
-hashes pinned in `packages/skills/offline/word-docx/requirements.lock`. Each wheel retains its
-license text under its `.dist-info/licenses/` directory.
+artifacts do not include these files. The profile carries unmodified, hash-locked wheels for:
 
-Sources: <https://github.com/python-openxml/python-docx>, <https://github.com/lxml/lxml>, and
-<https://github.com/python/typing_extensions>.
+- `python-docx` (MIT), `python-pptx` (MIT), and `lxml` (BSD-3-Clause)
+- `Pillow` (MIT-CMU) and `XlsxWriter` (BSD-2-Clause)
+- `pypdf` (BSD-3-Clause) and `typing_extensions` (PSF-2.0)
+
+Versions and SHA256 hashes are pinned in the three `requirements.lock` files under
+`packages/skills/offline/`. Each wheel retains its upstream license file in its `.dist-info`
+directory.
+
+Sources: <https://github.com/python-openxml/python-docx>,
+<https://github.com/scanny/python-pptx>, <https://github.com/lxml/lxml>,
+<https://github.com/python-pillow/Pillow>, <https://github.com/jmcnamara/XlsxWriter>,
+<https://github.com/py-pdf/pypdf>, and <https://github.com/python/typing_extensions>.

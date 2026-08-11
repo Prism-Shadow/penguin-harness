@@ -167,7 +167,14 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
       {
         id: "office-productivity",
-        skills: ["data-analysis", "firecrawl", "bento-slides", "word-docx"],
+        skills: [
+          "data-analysis",
+          "firecrawl",
+          "bento-slides",
+          "word-docx",
+          "powerpoint-pptx",
+          "pdf-tools",
+        ],
       },
       { id: "software-development", skills: ["web-design", "software-engineering"] },
       {

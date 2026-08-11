@@ -1,7 +1,7 @@
 #!/bin/sh
 # Derive one platform-specific offline profile from the canonical standard bundle built from
-# the same source revision. The profile currently adds word-docx; future offline Skills belong
-# in this same overlay instead of creating capability-specific public package names.
+# the same source revision. The profile currently adds offline DOCX, PPTX and PDF helpers; future
+# offline Skills belong in this same overlay instead of creating capability-specific package names.
 #
 # Usage: package-offline-bundle.sh <standard-bundle> [output-dir]
 # Supported standard bundles: Linux/macOS x64/arm64 tarballs and the Windows x64 zip.
@@ -15,7 +15,9 @@ INPUT="${1:?usage: package-offline-bundle.sh <standard-bundle> [output-dir]}"
 OUTPUT_INPUT="${2:-dist-offline}"
 BUILD_PYTHON="${PENGUIN_OFFLINE_BUILD_PYTHON:-python3}"
 SOURCE_WHEELS="${PENGUIN_OFFLINE_WHEELHOUSE:-}"
-SKILL_SOURCE="$ROOT_DIR/packages/skills/offline/word-docx"
+SKILLS_ROOT="$ROOT_DIR/packages/skills/offline"
+OFFLINE_SKILLS="word-docx powerpoint-pptx pdf-tools"
+SHARED_BOOTSTRAP="$SKILLS_ROOT/_shared/bootstrap_runtime.py"
 
 resolve_path() {
   case "$1" in
@@ -42,12 +44,23 @@ OUTPUT_DIR="$(resolve_path "$OUTPUT_INPUT")"
   echo "error: standard bundle not found: $INPUT" >&2
   exit 1
 }
-for file in SKILL.md requirements.lock scripts/bootstrap.py scripts/docx_helper.py; do
-  [ -f "$SKILL_SOURCE/$file" ] || {
-    echo "error: word-docx Skill source is missing $file" >&2
-    exit 1
-  }
+for skill in $OFFLINE_SKILLS; do
+  case "$skill" in
+    word-docx) helper=scripts/docx_helper.py ;;
+    powerpoint-pptx) helper=scripts/pptx_helper.py ;;
+    pdf-tools) helper=scripts/pdf_helper.py ;;
+  esac
+  for file in SKILL.md requirements.lock scripts/bootstrap.py "$helper"; do
+    [ -f "$SKILLS_ROOT/$skill/$file" ] || {
+      echo "error: $skill Skill source is missing $file" >&2
+      exit 1
+    }
+  done
 done
+[ -f "$SHARED_BOOTSTRAP" ] || {
+  echo "error: shared offline bootstrap is missing: $SHARED_BOOTSTRAP" >&2
+  exit 1
+}
 command -v tar >/dev/null 2>&1 || {
   echo "error: tar is required" >&2
   exit 1
@@ -247,13 +260,20 @@ LIBRARY="$PAYLOAD/penguin/lib/node_modules/@prismshadow/penguin-skills/skills"
   echo "error: standard bundle unexpectedly contains an offline profile" >&2
   exit 1
 }
-[ ! -e "$LIBRARY/word-docx" ] || {
-  echo "error: standard bundle already contains word-docx" >&2
-  exit 1
-}
-for file in SKILL.md requirements.lock scripts/bootstrap.py scripts/docx_helper.py; do
-  mkdir -p "$LIBRARY/word-docx/$(dirname "$file")"
-  cp "$SKILL_SOURCE/$file" "$LIBRARY/word-docx/$file"
+for skill in $OFFLINE_SKILLS; do
+  [ ! -e "$LIBRARY/$skill" ] || {
+    echo "error: standard bundle already contains $skill" >&2
+    exit 1
+  }
+  case "$skill" in
+    word-docx) helper=scripts/docx_helper.py ;;
+    powerpoint-pptx) helper=scripts/pptx_helper.py ;;
+    pdf-tools) helper=scripts/pdf_helper.py ;;
+  esac
+  for file in SKILL.md requirements.lock scripts/bootstrap.py "$helper"; do
+    mkdir -p "$LIBRARY/$skill/$(dirname "$file")"
+    cp "$SKILLS_ROOT/$skill/$file" "$LIBRARY/$skill/$file"
+  done
 done
 
 # Reject legacy or mismatched standard bundles without executing input package code.
@@ -283,9 +303,10 @@ else
 fi
 
 OFFLINE_ROOT="$PAYLOAD/penguin/lib/offline"
-WHEELS="$OFFLINE_ROOT/word-docx/wheels"
-mkdir -p "$WHEELS"
-printf '{"schemaVersion":1,"profile":"offline","target":"%s","capabilities":["word-docx"]}\n' \
+WHEELS="$OFFLINE_ROOT/wheels"
+mkdir -p "$WHEELS" "$OFFLINE_ROOT/_shared"
+cp "$SHARED_BOOTSTRAP" "$OFFLINE_ROOT/_shared/bootstrap_runtime.py"
+printf '{"schemaVersion":1,"profile":"offline","target":"%s","capabilities":["word-docx","powerpoint-pptx","pdf-tools"]}\n' \
   "$TARGET" > "$OFFLINE_ROOT/profile.json"
 
 if [ -n "$SOURCE_WHEELS" ]; then
@@ -301,9 +322,7 @@ wheel_platform() {
   case "$TARGET" in
     linux-x64) printf '%s\n' manylinux_2_17_x86_64 ;;
     linux-arm64) printf '%s\n' manylinux_2_17_aarch64 ;;
-    darwin-x64)
-      case "$minor" in 39|310|311) printf '%s\n' macosx_10_9_x86_64 ;; *) printf '%s\n' macosx_10_13_x86_64 ;; esac
-      ;;
+    darwin-x64) printf '%s\n' macosx_10_13_x86_64 ;;
     darwin-arm64) printf '%s\n' macosx_11_0_arm64 ;;
     win32-x64) printf '%s\n' win_amd64 ;;
   esac
@@ -320,13 +339,25 @@ for minor in 39 310 311 312 313; do
     --python-version "$minor" \
     --abi "cp$minor" \
     --require-hashes \
-    --requirement "$SKILL_SOURCE/requirements.lock" \
+    --requirement "$SKILLS_ROOT/word-docx/requirements.lock" \
+    --requirement "$SKILLS_ROOT/powerpoint-pptx/requirements.lock" \
+    --requirement "$SKILLS_ROOT/pdf-tools/requirements.lock" \
     --dest "$WHEELS"
 done
-[ "$(find "$WHEELS" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "7" ] || {
-  echo "error: expected seven locked wheels for $TARGET" >&2
+[ "$(find "$WHEELS" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "15" ] || {
+  echo "error: expected fifteen locked wheels for $TARGET" >&2
   exit 1
 }
+
+# The earlier DOCX profile stored its wheels at offline/word-docx/wheels. Existing Agents keep
+# their installed bootstrap across an application update, so retain that lookup path for POSIX
+# test/development upgrades without duplicating the wheel payload. Zip archives do not preserve
+# this symlink portably; no DOCX offline profile has been released yet, so Windows has no public
+# compatibility requirement.
+if [ "$FORMAT" = "tar" ]; then
+  mkdir -p "$OFFLINE_ROOT/word-docx"
+  ln -s ../wheels "$OFFLINE_ROOT/word-docx/wheels"
+fi
 
 if [ "$FORMAT" = "tar" ]; then
   LAUNCHER="$PAYLOAD/penguin/bin/penguin"

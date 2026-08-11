@@ -18,7 +18,7 @@ description: 通过安装脚本、npm 或源码安装 PenguinHarness。
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-安装与当前原生平台匹配的离线 profile（首期包含 `word-docx`）：
+安装与当前原生平台匹配的离线 profile（包含 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`）：
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
@@ -56,7 +56,7 @@ penguin -v
 
 ### 离线安装
 
-离线安装使用与在线安装相同的 Release 制品。先在可联网电脑上下载与目标电脑匹配的文件：轻量标准 profile 使用 `penguin-<target>`，可选离线能力使用 `penguin-offline-<target>`；Linux/macOS 后缀为 `.tar.gz`，Windows 为 `.zip`。首期离线 profile 包含 `word-docx`，后续 Office/PDF Skill 继续扩展同一 profile。传输选中的一个文件后解压一次。
+离线安装使用与在线安装相同的 Release 制品。先在可联网电脑上下载与目标电脑匹配的文件：轻量标准 profile 使用 `penguin-<target>`，可选离线能力使用 `penguin-offline-<target>`；Linux/macOS 后缀为 `.tar.gz`，Windows 为 `.zip`。离线 profile 包含确定性的 DOCX 检查/编辑、PPTX 检查/追加幻灯片和 PDF 检查/合并 Skill，后续离线 Skill 继续扩展同一 profile。传输选中的一个文件后解压一次。
 
 Windows 上双击 `install.cmd`，或执行：
 

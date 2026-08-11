@@ -177,7 +177,7 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # start the service and open http://127.0.0.1:7364
 ```
 
-To add capabilities that must also work without network access, install the matching offline profile. The initial profile includes `word-docx` and requires system CPython 3.9–3.13 with `venv`:
+To add document capabilities that also work without network access, install the matching offline profile. It includes `word-docx`, `powerpoint-pptx`, and `pdf-tools`, and requires system CPython 3.9–3.13 with `venv`:
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
@@ -206,7 +206,7 @@ penguin web        # start the service and open http://127.0.0.1:7364
 <details>
 <summary><b>📴 Offline install (air-gapped machines)</b></summary>
 
-Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches a standard package per native target — Linux and macOS in x64 / arm64 and Windows in x64 — plus a runtime-less universal package. Each native target also has a matching `penguin-offline-<target>` profile. The initial offline profile adds the `word-docx` Skill and compatible Python wheels; future Office/PDF Skills will extend the same profile. The same files serve online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
+Every <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> attaches a standard package per native target — Linux and macOS in x64 / arm64 and Windows in x64 — plus a runtime-less universal package. Each native target also has a matching `penguin-offline-<target>` profile containing deterministic DOCX inspection/editing, PPTX inspection/slide append, and PDF inspection/merge Skills with compatible Python wheels. Future offline Skills extend this same profile. The same files serve online and offline installation. Each package seals the program payload, its SHA256 checksum and the platform's installer: download the one file on a networked machine, copy it to the target, extract once and run the bundled installer — no network, no separate checksum file to carry (the sealed SHA256 is always verified).
 
 **Linux (on arm64, use `penguin-linux-arm64.tar.gz`):**
 
@@ -216,7 +216,7 @@ tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
 
-For offline DOCX editing, transfer and extract the matching `penguin-offline-<target>` archive the same way. It requires system CPython 3.9–3.13 with `venv`; Linux requires glibc 2.17 or newer and does not support musl/Alpine. Python dependencies are installed from bundled wheels into the Agent-owned environment, not system Python.
+For the offline document Skills, transfer and extract the matching `penguin-offline-<target>` archive the same way. It requires system CPython 3.9–3.13 with `venv`; Linux requires glibc 2.17 or newer and does not support musl/Alpine. Each Skill installs only its locked dependencies from the shared bundled wheelhouse into an Agent-owned environment, not system Python.
 
 **macOS (Apple silicon shown; on Intel, use `penguin-darwin-x64.tar.gz`):**
 

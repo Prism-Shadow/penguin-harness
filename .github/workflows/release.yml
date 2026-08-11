@@ -289,8 +289,8 @@ jobs:
         run: sh scripts/package-release-bundles.sh payloads dist-artifacts
 
       # Standard bundles remain lightweight. Each native target also gets an offline profile
-      # derived from its same-revision standard bundle. The first profile capability is word-docx;
-      # later offline Skills are added to this overlay without creating another Harness variant.
+      # derived from its same-revision standard bundle. Offline Skills are added to this one
+      # overlay without creating capability-specific Harness variants.
       - name: Package offline profile bundles
         run: |
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
@@ -345,18 +345,18 @@ jobs:
 
           # Standard payloads never carry optional offline resources.
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            if tar -tzf "$PAYLOAD_DIR/$target.tar.gz" | grep -q '/offline/\|/word-docx/'; then
+            if tar -tzf "$PAYLOAD_DIR/$target.tar.gz" | grep -q '/offline/\|/word-docx/\|/powerpoint-pptx/\|/pdf-tools/'; then
               echo "standard $target payload unexpectedly contains offline resources" >&2
               exit 1
             fi
           done
-          if unzip -Z1 "$PAYLOAD_DIR/win32-x64.zip" | grep -q '/offline/\|/word-docx/'; then
+          if unzip -Z1 "$PAYLOAD_DIR/win32-x64.zip" | grep -q '/offline/\|/word-docx/\|/powerpoint-pptx/\|/pdf-tools/'; then
             echo "standard win32-x64 payload unexpectedly contains offline resources" >&2
             exit 1
           fi
 
-          # Every native target has a matching offline profile containing the complete first
-          # capability (word-docx), exactly seven compatible wheels, and launcher configuration.
+          # Every native target has the complete DOCX/PPTX/PDF Skill set, its fifteen compatible
+          # wheels (five lxml, five Pillow, five universal), and launcher configuration.
           for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64; do
             extracted="$WORK_DIR/offline-$target"
             mkdir -p "$extracted"
@@ -382,14 +382,25 @@ jobs:
               grep -Fq 'PENGUIN_OFFLINE_ROOT' "$extracted/payload/penguin/bin/penguin"
             fi
             profile="$extracted/payload/penguin/lib/offline/profile.json"
-            node -e 'const p=require(process.argv[1]); if(p.profile!=="offline"||p.target!==process.argv[2]||!p.capabilities.includes("word-docx")) process.exit(1)' "$profile" "$target"
-            skill="$extracted/payload/penguin/lib/node_modules/@prismshadow/penguin-skills/skills/word-docx"
-            [ -f "$skill/SKILL.md" ]
-            [ -f "$skill/requirements.lock" ]
-            [ -f "$skill/scripts/bootstrap.py" ]
-            [ -f "$skill/scripts/docx_helper.py" ]
-            wheels="$extracted/payload/penguin/lib/offline/word-docx/wheels"
-            [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 7 ]
+            node -e 'const p=require(process.argv[1]); const c=["word-docx","powerpoint-pptx","pdf-tools"]; if(p.profile!=="offline"||p.target!==process.argv[2]||!c.every(x=>p.capabilities.includes(x))) process.exit(1)' "$profile" "$target"
+            skills="$extracted/payload/penguin/lib/node_modules/@prismshadow/penguin-skills/skills"
+            for entry in \
+              word-docx/scripts/docx_helper.py \
+              powerpoint-pptx/scripts/pptx_helper.py \
+              pdf-tools/scripts/pdf_helper.py; do
+              skill="${entry%%/*}"
+              [ -f "$skills/$skill/SKILL.md" ]
+              [ -f "$skills/$skill/requirements.lock" ]
+              [ -f "$skills/$skill/scripts/bootstrap.py" ]
+              [ -f "$skills/$entry" ]
+            done
+            [ -f "$extracted/payload/penguin/lib/offline/_shared/bootstrap_runtime.py" ]
+            wheels="$extracted/payload/penguin/lib/offline/wheels"
+            [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 15 ]
+            if [ "$target" != "win32-x64" ]; then
+              [ -L "$extracted/payload/penguin/lib/offline/word-docx/wheels" ]
+              [ "$(readlink "$extracted/payload/penguin/lib/offline/word-docx/wheels")" = ../wheels ]
+            fi
           done
 
       - name: Test Linux x64 offline profile fully offline
@@ -401,12 +412,12 @@ jobs:
           for minor in 9 10 11 12 13; do
             sh scripts/test-offline-bundle.sh \
               dist-artifacts/penguin-offline-linux-x64.tar.gz \
-              "python:3.$minor-slim" >"/tmp/word-docx-python-3.$minor.log" 2>&1 &
+              "python:3.$minor-slim" >"/tmp/offline-skills-python-3.$minor.log" 2>&1 &
             pids="$pids $!"
           done
           status=0
           for pid in $pids; do wait "$pid" || status=1; done
-          for minor in 9 10 11 12 13; do cat "/tmp/word-docx-python-3.$minor.log"; done
+          for minor in 9 10 11 12 13; do cat "/tmp/offline-skills-python-3.$minor.log"; done
           exit "$status"
 
       # Summary covers the six standard bundles and five native offline-profile bundles.

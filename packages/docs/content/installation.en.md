@@ -18,7 +18,7 @@ On Linux / macOS:
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-For the matching native offline profile (initially containing `word-docx`):
+For the matching native offline profile (containing `word-docx`, `powerpoint-pptx`, and `pdf-tools`):
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
@@ -56,7 +56,7 @@ penguin -v
 
 ### Offline install
 
-The same Release artifacts serve offline installation. Download the file matching the target computer on a connected machine: `penguin-<target>` for the lightweight standard profile, or `penguin-offline-<target>` for optional offline capabilities. Linux and macOS artifacts use `.tar.gz`; Windows uses `.zip`. The first offline profile contains `word-docx`; future Office/PDF Skills extend the same profile. Transfer that one file, then extract it once.
+The same Release artifacts serve offline installation. Download the file matching the target computer on a connected machine: `penguin-<target>` for the lightweight standard profile, or `penguin-offline-<target>` for optional offline capabilities. Linux and macOS artifacts use `.tar.gz`; Windows uses `.zip`. The offline profile contains deterministic DOCX inspection/editing, PPTX inspection/slide append, and PDF inspection/merge Skills; future offline Skills extend the same profile. Transfer that one file, then extract it once.
 
 On Windows, double-click `install.cmd`, or run:
 

@@ -119,12 +119,10 @@ jobs:
         shell: pwsh
         run: ./scripts/test-installer.ps1
 
-  # Native wheel/bootstrap coverage for every offline Release target. Each runner downloads only
-  # its locked Python 3.13 wheels first; the test then creates the Agent-owned venv from that local
-  # directory, races two initializers, edits a DOCX and reopens it. Package shape/checksums stay in
-  # the Release job, while this matrix catches OS/architecture-specific Python behavior on PRs.
-  offline-word-docx-native:
-    name: Offline word-docx (${{ matrix.target }})
+  # Native wheel/bootstrap coverage for every offline Release target. Each runner downloads its
+  # locked Python 3.13 wheel set, creates three Agent-owned venvs, and reopens DOCX/PPTX/PDF output.
+  offline-skills-native:
+    name: Offline Skills (${{ matrix.target }})
     strategy:
       fail-fast: false
       matrix:
@@ -154,7 +152,9 @@ jobs:
           --only-binary=:all:
           --require-hashes
           --requirement packages/skills/offline/word-docx/requirements.lock
+          --requirement packages/skills/offline/powerpoint-pptx/requirements.lock
+          --requirement packages/skills/offline/pdf-tools/requirements.lock
           --dest .offline-wheels
 
-      - name: Test controlled environment and DOCX edit
-        run: python -I scripts/test-word-docx-runtime.py --wheel-dir .offline-wheels
+      - name: Test controlled environments and document operations
+        run: python -I scripts/test-offline-skills-runtime.py --wheel-dir .offline-wheels
