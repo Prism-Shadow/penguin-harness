@@ -34,6 +34,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -46,9 +47,6 @@ const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
 const CARD_ICONS = {
   /** New chat (plus sign) */
   newChat: "M12 5v14M5 12h14",
-  /** Settings (gear, same as sidebar user menu) */
-  settings:
-    "M10.3 4.3a2 2 0 0 1 3.4 0l.5.8a2 2 0 0 0 1.8 1l1-.1a2 2 0 0 1 1.7 3l-.5.8a2 2 0 0 0 0 2l.5.8a2 2 0 0 1-1.7 3l-1-.1a2 2 0 0 0-1.8 1l-.5.8a2 2 0 0 1-3.4 0l-.5-.8a2 2 0 0 0-1.8-1l-1 .1a2 2 0 0 1-1.7-3l.5-.8a2 2 0 0 0 0-2l-.5-.8a2 2 0 0 1 1.7-3l1 .1a2 2 0 0 0 1.8-1zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
   /** Delete (trash can) */
   trash:
     "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6",
@@ -343,10 +341,7 @@ export function AgentsPage() {
                         navigate(`/agents/${a.agentId}`);
                       }}
                     >
-                      <GlyphIcon
-                        d={CARD_ICONS.settings}
-                        className="text-gray-600 dark:text-gray-300"
-                      />
+                      <GlyphIcon d={GEAR_ICON} />
                       {S.common.settings}
                     </Button>
                     <Button
