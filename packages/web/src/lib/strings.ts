@@ -255,7 +255,7 @@ export const zh = {
       ],
       ["{{AGENT_ID}}", "当前 Agent id"],
       ["{{CWD}}", "Workspace 绝对路径"],
-      ["{{WORKSPACE_MEMORY_KEY}}", "当前工作区的记忆目录名；临时工作区或关闭记忆时为 (none — …)"],
+      ["{{WORKSPACE_MEMORY_KEY}}", "当前工作区的记忆目录名；临时工作区或关闭记忆时为 none"],
       ["{{PROVIDER}}", "模型 provider 分组"],
       ["{{MODEL_ID}}", "上游模型 id"],
       ["{{SESSION_ID}}", "当前 Session id"],

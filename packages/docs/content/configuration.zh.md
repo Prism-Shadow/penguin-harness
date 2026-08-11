@@ -156,7 +156,7 @@ compaction:
 | `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
 | `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
 | `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
-| `{{WORKSPACE_MEMORY_KEY}}` | 模板 Environment 段的一行：当前 Workspace 的记忆目录名；临时 Workspace 或关闭记忆时为 `(none — …)` |
+| `{{WORKSPACE_MEMORY_KEY}}` | 模板 Environment 段的一行：当前 Workspace 的记忆目录名；临时 Workspace 时为 `(none — temporary workspace)`，关闭记忆时为 `(none — memory is off)` |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
 | `{{DATE}}` | 当前日期 |
@@ -215,7 +215,7 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 每份 `MEMORY.md` 一行列一条记忆——`- [标题](file.md) — 一句钩子`，链接相对本作用域目录——并与记忆文件同轮更新，两者永不脱节。
 
-进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{MEMORY_USER_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织，索引是仅有的注入点。两个 Directory 行是同一个字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/<…>`：用户小节以字面 `user` 结尾，Workspace 小节以 `<workspace_memory_key>` 结尾——这一段是逐 Session 的值，走模板 Environment 段的 `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` 一行，与 `CWD` 并列（临时 Workspace 或关闭记忆时为 `(none — …)` 说明值）。
+进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{MEMORY_USER_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织，索引是仅有的注入点。两个 Directory 行是同一个字面模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/<…>`：用户小节以字面 `user` 结尾，Workspace 小节以 `<workspace_memory_key>` 结尾——这一段是逐 Session 的值，走模板 Environment 段的 `- Workspace Memory Key: {{WORKSPACE_MEMORY_KEY}}` 一行，与 `CWD` 并列（临时 Workspace 时渲染 `(none — temporary workspace)`，关闭记忆时渲染 `(none — memory is off)`）。
 
 空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。两个上限也写进了默认记忆提示词，模型在撞线之前就知道要把索引保持在限内。主题正文由模型按需读取。
 
