@@ -62,11 +62,17 @@ jobs:
         include:
           - os: ubuntu-latest
             args: --linux
+            environment: desktop-build
           - os: macos-latest
             args: --mac
+            environment: apple-signing
           - os: windows-latest
             args: --win
+            environment: desktop-build
     runs-on: ${{ matrix.os }}
+    environment:
+      name: ${{ matrix.environment }}
+      deployment: false
     permissions:
       contents: read
     steps:
