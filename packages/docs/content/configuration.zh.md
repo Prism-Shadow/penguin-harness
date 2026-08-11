@@ -154,8 +154,8 @@ compaction:
 | `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
 | `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
 | `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
-| `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多 200 行 / 约 25k 字符） |
-| `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多 200 行 / 约 25k 字符） |
+| `{{MEMORY_USER_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
+| `{{MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
 | `{{WORKSPACE_MEMORY_DIR}}` | 模板 Environment 段的一行：当前 Workspace 记忆目录的绝对路径；临时 Workspace 或关闭记忆时为 `(none — …)` 说明值 |
 | `{{PLATFORM}}` | 运行平台 |
 | `{{OS_VERSION}}` | 操作系统版本 |
@@ -217,7 +217,7 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 进入上下文的只有索引，入口是模板的 `{{MEMORY}}` 占位符。它展开为 `memory.prompt`——记忆的用途、写入规范，以及 `## User memory` 小节与其索引（`{{MEMORY_USER_INDEX}}`）——持久 Workspace 的会话再追加 `memory.workspace_prompt`（`## Workspace memory` 小节，含 `{{MEMORY_INDEX}}`）。两个提示词都是 Agent 级配置，可在设置页记忆标签直接编辑；区块和模板其他小节一样用 Markdown 标题组织，索引是仅有的注入点。目录全部写成字面文本：用户目录是固定模式 `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`，Workspace 目录是逐 Session 的具体值，因此走模板 Environment 段的 `- Workspace Memory Dir: {{WORKSPACE_MEMORY_DIR}}` 一行，与 `CWD` 并列（临时 Workspace 或关闭记忆时为 `(none — …)` 说明值）。
 
-空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以约 25k 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。两个上限也写进了默认记忆提示词，模型在撞线之前就知道要把索引保持在限内。主题正文由模型按需读取。
+空索引会注入一句"尚未保存任何内容"的占位说明。每个作用域最多注入 200 行索引（按约定每条记忆一行），再以总计 25000 字符兜底——防住行数不多但单行超长的索引；超出上限的部分以截断提示替代、由模型自行读取完整 `MEMORY.md`，磁盘上的文件不受影响。两个上限也写进了默认记忆提示词，模型在撞线之前就知道要把索引保持在限内。主题正文由模型按需读取。
 
 两半之所以是两个独立配置键：替换引擎没有条件分支，临时 Workspace 绝不能被塞进 Workspace 小节（它的目录行和作用域二选一规则），所以那一半在临时 Workspace 下干脆不追加。Harness 只负责确定记忆位置并限制写入边界，判断什么值得保存、如何划分主题、如何维护索引都由模型用现有文件工具完成。
 

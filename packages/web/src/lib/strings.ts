@@ -475,10 +475,13 @@ export const zh = {
      * workspace directory is the template's {{WORKSPACE_MEMORY_DIR}} Environment line.
      */
     promptPlaceholders: [
-      ["{{MEMORY_USER_INDEX}}", "用户记忆索引 MEMORY.md 的内容（超 200 行 / 约 25k 字符截断）"],
+      [
+        "{{MEMORY_USER_INDEX}}",
+        "用户记忆索引 MEMORY.md 的内容（最多注入 200 行、总计 25000 字符）",
+      ],
       [
         "{{MEMORY_INDEX}}",
-        "当前工作区记忆索引的内容（超 200 行 / 约 25k 字符截断）；仅在工作区附加段生效",
+        "当前工作区记忆索引的内容（最多注入 200 行、总计 25000 字符）；仅在工作区附加段生效",
       ],
     ],
     insertToken: "插入到光标处",

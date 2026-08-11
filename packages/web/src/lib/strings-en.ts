@@ -498,11 +498,11 @@ export const en: Strings = {
     promptPlaceholders: [
       [
         "{{MEMORY_USER_INDEX}}",
-        "Content of the user MEMORY.md index (truncated past 200 lines / ~25k characters)",
+        "Content of the user MEMORY.md index (at most 200 lines and 25,000 characters total)",
       ],
       [
         "{{MEMORY_INDEX}}",
-        "Content of the workspace MEMORY.md index (truncated past 200 lines / ~25k characters); effective only in the workspace addendum",
+        "Content of the workspace MEMORY.md index (at most 200 lines and 25,000 characters total); effective only in the workspace addendum",
       ],
     ],
     insertToken: "Insert at the cursor",
