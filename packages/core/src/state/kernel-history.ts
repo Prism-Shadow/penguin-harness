@@ -143,9 +143,10 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   test asserts against permanently (the recipe read the *current* defaults, so it stopped
  *   reproducing this era the first time the template evolved past the toggles generation).
  * - `"2026-08-11"` (current) — the toggles generation, pinned by the guard test. Revised in
- *   place the same day when the web-search tip joined the default template — the same-day
- *   rule in action: no later generation exists, so the entry is not yet frozen and the
- *   superseded hash simply disappears (nothing in the wild was stamped with it).
+ *   place the same day as the web-search tip joined the default template (and again as the
+ *   tip gained its CAPTCHA/Playwright fallback note) — the same-day rule in action: no later
+ *   generation exists, so the entry is not yet frozen and each superseded hash simply
+ *   disappears (nothing in the wild was stamped with it).
  *
  * Generations older than the seeded ones cannot be fully reconstructed; their values match
  * no recorded hash and are conservatively kept by a kernel update (restore-default-config is
@@ -183,7 +184,7 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
       "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
   },
   "2026-08-11": {
-    system_prompt: "c5be0d4b5627ebf23e953923a27df971d3836486494127c8bfba68d368ad45ea",
+    system_prompt: "7018eb4c52623e9f79d9b979b0b0773cc56e465e1f7d5c3d60baa10c26067455",
     max_turns: "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
     "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
     "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
