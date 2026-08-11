@@ -5,7 +5,7 @@ description: Skills package reusable instructions as directories with a SKILL.md
 
 ## Anatomy of a Skill
 
-A Skill is a directory containing a `SKILL.md`, optionally with a custom `icon.svg`. The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
+A Skill is a directory containing a `SKILL.md`, optionally with a custom `icon.svg` and any other files the `SKILL.md` references (for example a `reference/` subtree it links to). The directory name is the authoritative skill name and must match `^[A-Za-z0-9_-]+$`; a `name` in the frontmatter is overridden by it.
 
 Frontmatter fields:
 
@@ -49,7 +49,7 @@ Installed Skills live under `agent_state/skills/<name>/` inside the Agent State.
 
 - The built-in Agent `default_agent` gets the whole library installed at initialization, except Skills marked `preinstall: false` — those are only ever installed manually;
 - other Agents install on demand — through the Web UI's Skill library page, or via the SDK;
-- installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` alongside it.
+- installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` and other files in the skill directory (subdirectories preserved) alongside it; each install replaces the whole directory, so reinstalling drops files a newer version no longer ships.
 
 The library ships as the npm package `@prismshadow/penguin-skills`, carrying the raw `skills/` directory in the tarball; at runtime the package's `skills/<name>/SKILL.md` files are likewise the source of truth for library content.
 

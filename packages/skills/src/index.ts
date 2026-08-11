@@ -37,6 +37,14 @@ export interface LibrarySkill extends SkillMetadata {
   content: string;
   /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
   icon?: string;
+  /**
+   * Optional auxiliary files the SKILL.md references (e.g. `reference/API.md`), keyed by
+   * POSIX-relative path within the skill directory; every entry except the top-level SKILL.md and
+   * icon.svg, which have their own fields. Written alongside SKILL.md on install (subdirectories
+   * preserved). Read as UTF-8 text — library content is committed text (reference docs, templates,
+   * snippets); the field is omitted when a skill has no extra files.
+   */
+  files?: Record<string, string>;
 }
 
 /** Skill group manifest entry: group id, title (optionally with a Chinese title, displayed per UI language), and member Skill names. */
@@ -98,11 +106,37 @@ const SKILLS_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Recursively collects a skill directory's auxiliary files — every regular file except the
+ * top-level SKILL.md and icon.svg, which are carried by dedicated fields — keyed by POSIX-relative
+ * path. These are resources a SKILL.md may reference (e.g. `reference/API.md`), installed alongside
+ * it. Read as UTF-8 text; symlinks and other non-regular entries are skipped. Returns undefined
+ * when the directory has no such files.
+ */
+function readSkillFiles(dir: string): Record<string, string> | undefined {
+  const files: Record<string, string> = {};
+  const walk = (abs: string, rel: string): void => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(path.join(abs, entry.name), childRel);
+      } else if (entry.isFile()) {
+        // SKILL.md and icon.svg at the root are carried by the content / icon fields.
+        if (rel === "" && (entry.name === "SKILL.md" || entry.name === "icon.svg")) continue;
+        files[childRel] = fs.readFileSync(path.join(abs, entry.name), "utf8");
+      }
+    }
+  };
+  walk(dir, "");
+  return Object.keys(files).length > 0 ? files : undefined;
+}
+
+/**
  * Reads a single library directory to construct a LibrarySkill; returns undefined if SKILL.md
  * doesn't exist. name is taken from the directory name (overriding frontmatter); falls back to
  * empty metadata if frontmatter parsing fails.
  * The optional icon.svg in the directory is read alongside it (as a raw string); the icon field
- * is omitted if missing.
+ * is omitted if missing. Any other files in the directory (e.g. a `reference/` subtree the
+ * SKILL.md links to) are collected into `files`, omitted when there are none.
  */
 function readSkillDir(name: string): LibrarySkill | undefined {
   const dir = path.join(SKILLS_ROOT, name);
@@ -118,13 +152,20 @@ function readSkillDir(name: string): LibrarySkill | undefined {
   } catch {
     // icon.svg is optional: no custom icon if missing.
   }
+  const files = readSkillFiles(dir);
   const meta = parseSkillFrontmatter(content) ?? {
     name,
     description: "",
     version: 1,
     updated: "",
   };
-  return { ...meta, name, content, ...(icon !== undefined ? { icon } : {}) };
+  return {
+    ...meta,
+    name,
+    content,
+    ...(icon !== undefined ? { icon } : {}),
+    ...(files !== undefined ? { files } : {}),
+  };
 }
 
 /** Reads all Skills in the library (one per subdirectory under `skills/`), sorted by name. */

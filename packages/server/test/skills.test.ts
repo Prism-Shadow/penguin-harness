@@ -227,6 +227,18 @@ describe("skills api", () => {
     expect(manual.status).toBe(201);
     const withManual = (await manual.json()) as AgentSkillsResponse;
     expect(withManual.skills.map((s) => s.name)).toContain("remote-claude-code");
+    // A multi-file skill: the file its SKILL.md references is installed alongside SKILL.md,
+    // byte-identical to the library source (subdirectory preserved).
+    const aux = "reference/persistent-session.md";
+    const refPath = path.join(
+      skillsDir(t.root, projectId, "default_agent"),
+      "remote-claude-code",
+      "reference",
+      "persistent-session.md",
+    );
+    expect(await fs.readFile(refPath, "utf8")).toBe(
+      librarySkill("remote-claude-code")!.files![aux],
+    );
 
     await createPlainAgent("fresh_agent");
     const fresh = (await (await member.get(base("fresh_agent"))).json()) as AgentSkillsResponse;

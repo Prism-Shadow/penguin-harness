@@ -1,9 +1,9 @@
 /**
  * Tests for the Skill library file source of truth and its parser: loadLibrarySkills reading
- * files into a manifest, loadPreinstalledSkills' preinstall filter, loadSkillGroups grouping,
- * groupSkills' Other group and missing-member tolerance, librarySkill's traversal-name
- * rejection, doc conventions (`## Before you start` is mandatory), and parseSkillFrontmatter's
- * error tolerance.
+ * files into a manifest (including auxiliary files a SKILL.md references), loadPreinstalledSkills'
+ * preinstall filter, loadSkillGroups grouping, groupSkills' Other group and missing-member
+ * tolerance, librarySkill's traversal-name rejection, doc conventions (`## Before you start` is
+ * mandatory), and parseSkillFrontmatter's error tolerance.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -84,6 +84,26 @@ describe("loadLibrarySkills", () => {
     for (const skill of loadLibrarySkills()) {
       expect(skill.content, skill.name).toContain("## Before you start");
     }
+  });
+
+  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", async () => {
+    // remote-claude-code is a multi-file skill: its SKILL.md links to a reference/ document.
+    const skill = librarySkill("remote-claude-code")!;
+    const aux = "reference/persistent-session.md";
+    expect(skill.files, "remote-claude-code carries files").toBeDefined();
+    expect(Object.keys(skill.files!)).toContain(aux);
+    // Read verbatim from disk, and the SKILL.md really links to it.
+    expect(skill.files![aux]).toBe(
+      await fs.readFile(path.join(skillsRoot, skill.name, aux), "utf8"),
+    );
+    expect(skill.content).toContain(aux);
+    // SKILL.md and icon.svg are carried by their own fields, never duplicated into files.
+    for (const key of Object.keys(skill.files!)) {
+      expect(key).not.toBe("SKILL.md");
+      expect(key).not.toBe("icon.svg");
+    }
+    // A skill that ships only SKILL.md + icon.svg omits the field entirely.
+    expect("files" in librarySkill("firecrawl")!).toBe(false);
   });
 });
 

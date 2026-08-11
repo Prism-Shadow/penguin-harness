@@ -5,7 +5,7 @@ description: Skill 以目录加 SKILL.md 承载可复用指令，元数据先行
 
 ## Skill 的形态
 
-一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`;frontmatter 中的 `name` 以目录名为准。
+一个 Skill 就是一个目录：内含一份 `SKILL.md`，可选附带一个 `icon.svg` 自定义图标，以及 `SKILL.md` 引用的其他文件（例如它链接到的 `reference/` 子目录）。目录名即权威的 Skill 名，须匹配 `^[A-Za-z0-9_-]+$`;frontmatter 中的 `name` 以目录名为准。
 
 frontmatter 字段：
 
@@ -49,7 +49,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整 Skill 库（标记 `preinstall: false` 的 Skill 除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的 Skill 库页，或经 SDK;
-- 安装即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 一并拷贝。
+- 安装即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 与其他文件（保留子目录）一并拷贝；每次安装整目录替换，因此重装会丢弃新版本不再携带的文件。
 
 Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带原始 `skills/` 目录；运行时库内容的事实源同样是包内的 `skills/<name>/SKILL.md` 文件。
 
