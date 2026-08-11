@@ -53,7 +53,7 @@ Web 应用这一个月的积累不少，拣要紧的说。对话头部的统计�
 
 ## 安装或升级
 
-桌面端：前往 [penguin.ooo/download](https://penguin.ooo/download) 下载对应平台安装包。
+桌面端：前往 [penguin.ooo/download](https://penguin.ooo/download) 下载对应平台安装包。本版起 macOS 安装包已签名并公证，Gatekeeper 直接放行；Windows 构建仍未签名，SmartScreen 里选「更多信息 → 仍要运行」。
 
 CLI / 服务端：
 
