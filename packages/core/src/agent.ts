@@ -17,6 +17,7 @@ import {
   formatModelRef,
   getModel,
   listInstalledSkills,
+  listScheduleNames,
   loadAgentVault,
   loadOrInitAgentState,
   loadProjectConfig,
@@ -262,6 +263,13 @@ export class Agent {
       this.state.projectId,
       this.state.agentId,
     );
+    // Schedule task names for the {{SCHEDULES}} roster: read fresh like the vault and Skills
+    // above (names only; the files' contents are the server-side scheduler's concern).
+    const scheduleNames = await listScheduleNames(
+      this.state.root,
+      this.state.projectId,
+      this.state.agentId,
+    );
     // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
     // the user scope only (nothing written against it could ever be read back). Reads the
     // current indexes every time, like the vault and Skills above.
@@ -278,7 +286,7 @@ export class Agent {
     // into the prompt (so the model knows which API keys are available); values only
     // go into the subprocess environment. Skills only inject metadata (name and
     // description); the model reads the body on demand via shell. Memory likewise injects
-    // only its index; topic bodies are read on demand.
+    // only its index; topic bodies are read on demand. Schedules inject only task names.
     const systemPrompt = assembleSystemPrompt(
       this.state,
       sessionEnvironment(workspaceDir, sessionId, {
@@ -290,6 +298,7 @@ export class Agent {
       Object.keys(vault),
       installedSkills,
       memory,
+      scheduleNames,
     );
 
     const rt = await this.buildRuntime({

@@ -252,14 +252,24 @@ export const en: Strings = {
     systemPrompt: "system_prompt template",
     placeholdersTitle: "Available placeholders (click to insert)",
     insertPlaceholder: "Insert at the system_prompt cursor",
-    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). */
+    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} etc.) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
-      ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
-      ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
+      [
+        "{{VAULT}}",
+        "Injects the vault block (vault.prompt with the key-name list); empty when its toggle is off",
+      ],
+      [
+        "{{SKILLS}}",
+        "Injects the skills block (skills.prompt with installed-skill metadata); empty when its toggle is off",
+      ],
       [
         "{{MEMORY}}",
         "Injects the memory block: memory.prompt plus memory.workspace_prompt (persistent workspaces only); empty when memory is off",
+      ],
+      [
+        "{{SCHEDULES}}",
+        "Injects the scheduled-tasks block (schedules.prompt with the task-name roster); empty when its toggle is off",
       ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
@@ -614,6 +624,26 @@ export const en: Strings = {
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
     valueRequired: "Value must not be empty",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable vault",
+      templateMissing:
+        "The prompt template has no {{VAULT}} placeholder, so the vault section never enters the context.",
+      legacyTemplate:
+        "The template still carries the legacy hardcoded # Vault section: one-click migration replaces it in place with the {{VAULT}} placeholder, wording unchanged, after which it is editable below.",
+      insertPlaceholder: "Insert the {{VAULT}} placeholder",
+      migrate: "Migrate to the {{VAULT}} placeholder",
+      promptSection: "Vault prompt",
+      promptSectionHint:
+        "What the template's {{VAULT}} placeholder expands to; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{VAULT_KEYS}}",
+          'Vault key-name list (one "- KEY" line per key, names only — values are never injected; empty when no keys)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   schedule: {
@@ -662,6 +692,23 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable schedules",
+      templateMissing:
+        "The prompt template has no {{SCHEDULES}} placeholder, so the scheduled-tasks section never enters the context.",
+      insertPlaceholder: "Insert the {{SCHEDULES}} placeholder",
+      promptSection: "Schedules prompt",
+      promptSectionHint:
+        "What the template's {{SCHEDULES}} placeholder expands to — teaches the model to manage scheduled tasks with its file tools; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{SCHEDULE_LIST}}",
+          'Current task-name list (one "- name" line per task; an empty-roster note when none exist)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   skills: {
@@ -738,6 +785,26 @@ export const en: Strings = {
     importOverwriteBody: (name: string): string =>
       `The skill "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
     importOverwriteAction: "Overwrite",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable skills",
+      templateMissing:
+        "The prompt template has no {{SKILLS}} placeholder, so the skills section never enters the context.",
+      legacyTemplate:
+        "The template still carries the legacy hardcoded # Skills section: one-click migration replaces it in place with the {{SKILLS}} placeholder, wording unchanged, after which it is editable below.",
+      insertPlaceholder: "Insert the {{SKILLS}} placeholder",
+      migrate: "Migrate to the {{SKILLS}} placeholder",
+      promptSection: "Skills prompt",
+      promptSectionHint:
+        "What the template's {{SKILLS}} placeholder expands to; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{SKILL_METADATA}}",
+          'Installed skills\' metadata lines (one "- name — description" line per skill; empty when none)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   chat: {

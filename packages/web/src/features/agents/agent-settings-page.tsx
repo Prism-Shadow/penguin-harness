@@ -260,9 +260,11 @@ export function AgentSettingsPage() {
               <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
             </div>
           )}
-          {tab === "skills" && <SkillsTab agentId={agentId} />}
-          {tab === "vault" && <VaultTab agentId={agentId} />}
-          {tab === "schedules" && <SchedulesTab agentId={agentId} />}
+          {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "vault" && <VaultTab agentId={agentId} onConfigChanged={refreshConfig} />}
+          {tab === "schedules" && (
+            <SchedulesTab agentId={agentId} onConfigChanged={refreshConfig} />
+          )}
         </div>
       </div>
     </div>

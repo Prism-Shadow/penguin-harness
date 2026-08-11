@@ -243,15 +243,16 @@ export const zh = {
     systemPrompt: "system_prompt 模板",
     placeholdersTitle: "可用占位符（点击插入）",
     insertPlaceholder: "插入到 system_prompt 光标处",
-    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). */
+    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} 等) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
-      ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
-      ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      ["{{VAULT}}", "注入保险柜区块（vault.prompt，含键名清单）；开关关闭时为空"],
+      ["{{SKILLS}}", "注入技能区块（skills.prompt，含已安装技能元数据）；开关关闭时为空"],
       [
         "{{MEMORY}}",
         "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
       ],
+      ["{{SCHEDULES}}", "注入定时任务区块（schedules.prompt，含任务名清单）；开关关闭时为空"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{SHELL}}", "命令执行使用的 Shell"],
@@ -590,6 +591,21 @@ export const zh = {
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
     valueRequired: "值不能为空",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用密钥保险柜",
+      templateMissing: "提示词模板中没有 {{VAULT}} 占位符，保险柜小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Vault 段落：一键迁移会将该段落原位替换为 {{VAULT}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{VAULT}} 占位符",
+      migrate: "迁移为 {{VAULT}} 占位符",
+      promptSection: "保险柜提示词",
+      promptSectionHint: "注入模板 {{VAULT}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{VAULT_KEYS}}", "保险柜键名列表（每键一行「- KEY」，仅键名，值永不注入；无键时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   schedule: {
@@ -638,6 +654,19 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用定时任务",
+      templateMissing: "提示词模板中没有 {{SCHEDULES}} 占位符，定时任务小节不会进入上下文。",
+      insertPlaceholder: "插入 {{SCHEDULES}} 占位符",
+      promptSection: "定时任务提示词",
+      promptSectionHint:
+        "注入模板 {{SCHEDULES}} 占位符的内容，教模型用文件工具管理定时任务；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SCHEDULE_LIST}}", "现有任务名列表（每任务一行「- 名称」；无任务时注入空清单说明）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   skills: {
@@ -712,6 +741,21 @@ export const zh = {
     importOverwriteBody: (name: string): string =>
       `技能「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
     importOverwriteAction: "覆盖安装",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用技能",
+      templateMissing: "提示词模板中没有 {{SKILLS}} 占位符，技能小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Skills 段落：一键迁移会将该段落原位替换为 {{SKILLS}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{SKILLS}} 占位符",
+      migrate: "迁移为 {{SKILLS}} 占位符",
+      promptSection: "技能提示词",
+      promptSectionHint: "注入模板 {{SKILLS}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SKILL_METADATA}}", "已安装技能的元数据行（每技能一行「- 名称 — 描述」；无技能时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   chat: {

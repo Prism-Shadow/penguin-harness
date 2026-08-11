@@ -109,6 +109,12 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | built-in template | Always-injected half of the `{{MEMORY}}` block, editable on the Memory tab — carries `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | built-in template | Appended only in a persistent Workspace, editable on the Memory tab — carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
+| `vault.enabled` | `true` | Whether the vault section enters the context (with it off, values are still injected into subprocess environments — the model just doesn't see the key-name list) |
+| `vault.prompt` | built-in template | The `{{VAULT}}` block, editable on the Vault tab — carries `{{VAULT_KEYS}}` |
+| `skills.enabled` | `true` | Whether the skills section enters the context (with it off, installed skills remain explicitly invocable via `[use_skills]`) |
+| `skills.prompt` | built-in template | The `{{SKILLS}}` block, editable on the Skills tab — carries `{{SKILL_METADATA}}` |
+| `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
+| `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
 
@@ -152,9 +158,13 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | Placeholder | Injected content |
 | --- | --- |
 | `{{AGENTS_MD}}` | Full text of `AGENTS.md` |
-| `{{VAULT_KEYS}}` | List of Vault key names (names only) |
-| `{{SKILL_METADATA}}` | Metadata of installed Skills |
+| `{{VAULT}}` | The rendered `vault.prompt` block (the vault section); empty when `vault.enabled` is off. A template without it injects no vault section — the Vault tab offers inserting/migrating it explicitly |
+| `{{SKILLS}}` | The rendered `skills.prompt` block (the skills section); empty when `skills.enabled` is off. A template without it injects no skills section — the Skills tab offers inserting/migrating it explicitly |
 | `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
+| `{{SCHEDULES}}` | The rendered `schedules.prompt` block (the scheduled-tasks section); empty when `schedules.enabled` is off. A template without it injects no schedules section — the Schedules tab offers inserting it explicitly |
+| `{{VAULT_KEYS}}` | Inside `vault.prompt`: the Vault key-name list (names only, one `- KEY` line per key). For legacy templates, an occurrence directly in the template body is still substituted, honoring `vault.enabled` the same way |
+| `{{SKILL_METADATA}}` | Inside `skills.prompt`: the installed Skills' metadata lines. For legacy templates, an occurrence directly in the template body is still substituted, honoring `skills.enabled` the same way |
+| `{{SCHEDULE_LIST}}` | Inside `schedules.prompt`: the current task-name list (one `- name` line per task; an empty-roster note when none exist) |
 | `{{USER_MEMORY_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{WORKSPACE_MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{WORKSPACE_MEMORY_DIR}}` | Inside `memory.workspace_prompt` only: absolute path of the current Workspace's Memory directory |
@@ -173,6 +183,10 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
+
+The Vault / Skills / Memory / Schedules sections all follow the same placeholder + toggle + editable prompt pattern: the template holds only the `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` placeholders, the section text lives in the corresponding `*.prompt` config (edited on its settings tab), and turning `*.enabled` off empties the whole block. The four section placeholders are expanded **last, in a single pass** at assembly time: expansion products are never rescanned, so placeholder-looking text inside a memory index or a section prompt stays literal instead of triggering a second substitution.
+
+**Legacy templates**: `system_config.yaml` is materialized at Agent creation and never auto-upgraded, so an Agent created before this mechanism carries hardcoded `# Vault` / `# Skills` section text with inline `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}` in its template. Such templates keep working: the inline placeholders are still substituted, and now honor the new toggles (an off switch substitutes an empty string). The matching tab reports the legacy template and offers one-click migration — replacing the old default section verbatim, in place, with the new placeholder, leaving the assembled prompt unchanged; a template whose section text was customized doesn't match the verbatim migration and is treated as missing the placeholder instead, with a one-click insert (before `# Environment`).
 
 ## Memory
 
@@ -232,7 +246,7 @@ To read, delete or ask the Agent to edit what it has saved, use the settings pag
 
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
-- Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
+- Only key names are disclosed in the system prompt: the template's `{{VAULT}}` placeholder expands to `vault.prompt` (carrying the `{{VAULT_KEYS}}` key-name list), editable on the Vault tab; with `vault.enabled` off the block is empty — values are still injected into subprocesses, the model just doesn't see the key-name list. A legacy template's inline `{{VAULT_KEYS}}` is still substituted under the same toggle, and the tab offers one-click migration (see "System prompt placeholders");
 - Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
 
@@ -257,6 +271,8 @@ enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
 ```
+
+The template's `{{SCHEDULES}}` placeholder expands to `schedules.prompt`: it teaches the model to manage these TOML files with its own file tools (the directory, the field rules, the ~30-second automatic pickup, and the hygiene rules against duplicates), ending with the current task-name list via `{{SCHEDULE_LIST}}`. The prompt is editable on the Schedules tab; with `schedules.enabled` off the block is empty — the server still fires tasks on schedule, the model just isn't taught the task system. An Agent created before this mechanism has no such placeholder in its template; the tab offers one-click insertion.
 
 ## Design principle
 
