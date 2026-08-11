@@ -68,6 +68,8 @@ const CARD_ICONS = {
   /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
   memory:
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
+  /** Kernel update available (rotate-cw — the skill library's update glyph), deep-links to the settings overview */
+  kernelUpdate: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
 } as const;
 
 /**
@@ -157,7 +159,7 @@ export function AgentsPage() {
    */
   const openSettingsTab = (
     agentId: string,
-    tab: "tools" | "vault" | "schedules" | "skills" | "memory",
+    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "memory",
   ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
@@ -244,6 +246,20 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
+                      {/* Kernel-outdated hint: minimal icon + tooltip (skills-library update
+                          convention, no textual/red alarm), deep-linking to the settings
+                          overview where the update action lives. */}
+                      {a.kernelOutdated && (
+                        <button
+                          type="button"
+                          className="shrink-0 cursor-pointer text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                          title={S.agent.kernelOutdatedHint}
+                          aria-label={S.agent.kernelOutdatedHint}
+                          onClick={() => openSettingsTab(a.agentId, "overview")}
+                        >
+                          <GlyphIcon d={CARD_ICONS.kernelUpdate} size={12} />
+                        </button>
+                      )}
                     </div>
                     {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
                     <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">

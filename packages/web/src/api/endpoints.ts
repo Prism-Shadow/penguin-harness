@@ -15,6 +15,7 @@ import type {
   AgentCreateResponse,
   AgentImportRequest,
   AgentImportResponse,
+  AgentKernelUpdateResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
   AgentSkillsResponse,
@@ -308,6 +309,13 @@ export const testAgentMcpServer = (projectId: string, agentId: string, body: MCP
 export const resetAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
+/** Smart-merge the config up to the current defaults generation (customizations kept and reported); non-destructive sibling of resetAgentConfig. */
+export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentKernelUpdateResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
     { method: "POST" },
   );
 

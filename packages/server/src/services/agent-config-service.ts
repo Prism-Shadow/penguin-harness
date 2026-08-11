@@ -15,9 +15,12 @@ import {
   DEFAULT_SCHEDULES_PROMPT,
   DEFAULT_SKILLS_PROMPT,
   DEFAULT_VAULT_PROMPT,
+  KERNEL_VERSION,
   LEGACY_SKILLS_SECTION,
   LEGACY_VAULT_SECTION,
   agentsMdPath,
+  applyKernelUpdate,
+  isKernelOutdated,
   agentStateDir,
   agentStateVersion,
   hasSchedulesPlaceholder,
@@ -42,6 +45,7 @@ import type {
 import type {
   AgentConfigDto,
   AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
   AgentModelConfigDto,
   AgentCompactionConfigDto,
   AgentMemoryConfigDto,
@@ -105,7 +109,13 @@ export class AgentConfigService {
   async readCardMeta(
     projectId: string,
     agentId: string,
-  ): Promise<{ name?: string; description?: string; toolCount: number; version: number }> {
+  ): Promise<{
+    name?: string;
+    description?: string;
+    toolCount: number;
+    version: number;
+    kernelOutdated: boolean;
+  }> {
     try {
       const raw = await fs.readFile(systemConfigPath(this.root, projectId, agentId), "utf8");
       const parsed = asRecord(parseYaml(raw));
@@ -116,9 +126,13 @@ export class AgentConfigService {
         ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
         toolCount: countOf(tools.builtin) + countOf(tools.mcpServers),
         version: agentStateVersion({ version: parsed.version as number | undefined }),
+        kernelOutdated: isKernelOutdated(
+          typeof parsed.kernel_version === "string" ? parsed.kernel_version : null,
+        ),
       };
     } catch {
-      return { toolCount: 0, version: 1 };
+      // A corrupt config carries no readable stamp either: reported outdated, like a pre-stamp one.
+      return { toolCount: 0, version: 1, kernelOutdated: true };
     }
   }
 
@@ -197,10 +211,17 @@ export class AgentConfigService {
       prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
       templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
     };
+    // Kernel stamp: reported literally (null = predates the mechanism), with the current
+    // generation and the outdated verdict beside it, so the client renders the update hint
+    // without knowing core's KERNEL_VERSION.
+    const kernelVersion = typeof parsed.kernel_version === "string" ? parsed.kernel_version : null;
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
       version: agentStateVersion({ version: parsed.version as number | undefined }),
+      kernelVersion,
+      kernelLatest: KERNEL_VERSION,
+      kernelOutdated: isKernelOutdated(kernelVersion),
       systemPrompt,
       ...(typeof parsed.max_turns === "number" ? { maxTurns: parsed.max_turns } : {}),
       ...(Object.keys(modelDto).length > 0 ? { model: modelDto } : {}),
@@ -252,6 +273,17 @@ export class AgentConfigService {
   async resetConfig(projectId: string, agentId: string): Promise<void> {
     await this.requireExists(projectId, agentId);
     await resetSystemConfigToDefaults(this.root, projectId, agentId);
+  }
+
+  /**
+   * Smart-merges the config up to the current defaults generation (core's applyKernelUpdate):
+   * leaves still carrying a recorded generation's default follow the new defaults, user
+   * customizations are kept and reported; the config is stamped with the new kernel version.
+   * The destructive full-refresh alternative stays resetConfig.
+   */
+  async kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse> {
+    await this.requireExists(projectId, agentId);
+    return applyKernelUpdate(this.root, projectId, agentId);
   }
 
   private async applyConfigUpdate(

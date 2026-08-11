@@ -500,6 +500,8 @@ export interface AgentSummary {
   toolCount: number;
   /** Agent State version number (the `version` in system_config.yaml; treated as 1 if missing). */
   version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (a missing stamp counts as outdated) — drives the list card's update hint. */
+  kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
   /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
@@ -592,6 +594,12 @@ export interface AgentConfigDto {
   description?: string;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
+  /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
+  kernelVersion: string | null;
+  /** The current defaults generation (core's KERNEL_VERSION) — what a kernel update would stamp. */
+  kernelLatest: string;
+  /** Whether the stamp is behind kernelLatest (a missing stamp counts as outdated). */
+  kernelOutdated: boolean;
   systemPrompt: string;
   maxTurns?: number;
   model?: AgentModelConfigDto;
@@ -612,6 +620,20 @@ export interface AgentConfigResponse {
   /** Agent State absolute path. */
   stateDir: string;
   activeSessionCount: number;
+}
+
+/**
+ * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
+ * Paths are dotted config leaves (`system_prompt`, `memory.prompt`, `tools.builtin.<name>`…)
+ * in defaults-traversal order; the client maps them to display names.
+ */
+export interface AgentKernelUpdateResponse {
+  /** Leaves advanced to the new default (previously missing, or an untouched old default). */
+  advanced: string[];
+  /** Leaves kept because the stored value matches no recorded defaults generation (user customizations, kept conservatively). */
+  kept: string[];
+  /** The kernel stamp written (the current defaults generation). */
+  kernelVersion: string;
 }
 
 /** POST …/config/mcp-test result: reachability of one MCP Server entry. */

@@ -2,8 +2,9 @@
  * Agent config routes (reads/writes system_config.yaml and AGENTS.md):
  * GET|PUT /api/projects/:p/agents/:a/config, plus POST …/config/reset to adopt the
  * current default config (keeps only name/description/version — the config-side
- * analogue of a skill update) and POST …/config/mcp-test to probe one MCP Server
- * entry's reachability. Members can read and write (unrestricted).
+ * analogue of a skill update), POST …/config/kernel-update to smart-merge up to the
+ * current defaults generation (customizations kept), and POST …/config/mcp-test to
+ * probe one MCP Server entry's reachability. Members can read and write (unrestricted).
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import type { MCPServerConfig } from "@prismshadow/penguin-core";
 import type {
   AgentConfigResponse,
   AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
   McpServerTestResponse,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -123,6 +125,18 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
       await provider.close();
       void rm(workspaceDir, { recursive: true, force: true }).catch(() => undefined);
     }
+  });
+
+  // Smart-merge the config up to the current defaults generation (see
+  // AgentConfigService.kernelUpdate): non-destructive sibling of /reset, same member-level
+  // authorization as /reset and PUT. Responds with the merge report (advanced / kept paths +
+  // the new stamp); the client re-GETs the config for the fresh values.
+  app.post("/kernel-update", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const result = await deps.agentConfigService.kernelUpdate(projectId, agentId);
+    return c.json(result satisfies AgentKernelUpdateResponse);
   });
 
   // Overwrite system_config.yaml with the current defaults (see AgentConfigService.resetConfig

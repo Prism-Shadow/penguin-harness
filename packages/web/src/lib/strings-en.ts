@@ -412,6 +412,45 @@ export const en: Strings = {
     resetConfigConfirmBody:
       "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
     resetConfigDone: "Configuration restored to the current defaults",
+    kernelVersionLabel: "Config kernel version",
+    kernelLegacy: "predates kernel versioning",
+    kernelOutdatedHint: "Kernel update available",
+    kernelUpToDate: "Up to date",
+    kernelUpdateTitle: "Update kernel",
+    kernelUpdateDesc:
+      "The kernel version records which generation of the built-in defaults this config is based on (by date), unrelated to the Agent State version that increments on optimization. Updating merges losslessly: untouched fields follow the new defaults, customized fields are kept and listed in the result; unrecognized old values are conservatively kept — use Restore default configuration next to it for a full refresh.",
+    kernelVersions: (current: string, latest: string): string =>
+      `current ${current} · latest ${latest}`,
+    kernelUpdateAction: "Update kernel",
+    kernelUpdateConfirmBody:
+      "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+    kernelUpdateDone: (version: string, advanced: number): string =>
+      advanced > 0
+        ? `Kernel updated to ${version}; ${advanced} field(s) now follow the new defaults`
+        : `Kernel updated to ${version}; every field was already current or kept as customized`,
+    kernelUpdateKeptIntro: "Kept because customized:",
+    kernelListSeparator: ", ",
+    kernelFieldTool: (name: string): string => `tool ${name}`,
+    kernelFields: {
+      system_prompt: "system prompt template",
+      max_turns: "max turns per task",
+      "model.max_tokens": "model max output tokens",
+      "model.thinking_level": "thinking level",
+      "model.timeoutMs": "request timeout",
+      "compaction.max_context_length": "compaction context threshold",
+      "compaction.max_session_turns": "compaction session-turn threshold",
+      "compaction.mode": "compaction mode",
+      "compaction.prompt": "compaction prompt",
+      "memory.enabled": "memory switch",
+      "memory.prompt": "memory prompt",
+      "memory.workspace_prompt": "workspace memory prompt",
+      "vault.enabled": "Vault section switch",
+      "vault.prompt": "Vault prompt",
+      "skills.enabled": "Skills section switch",
+      "skills.prompt": "Skills prompt",
+      "schedules.enabled": "Schedules section switch",
+      "schedules.prompt": "Schedules prompt",
+    } as Record<string, string>,
   },
 
   models: {

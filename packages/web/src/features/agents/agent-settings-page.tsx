@@ -1,7 +1,7 @@
 /**
  * Agent settings page: eight tabs —
- * Overview (name/description/State path/active count/State version + snapshot
- * export-import + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * Overview (name/description/State path/active count/State version/kernel version + snapshot
+ * export-import + kernel update + restore default configuration), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
@@ -15,6 +15,7 @@ import type {
   AgentConfigResponse,
   AgentConfigUpdateRequest,
   AgentCompactionConfigDto,
+  AgentKernelUpdateResponse,
   AgentModelConfigDto,
 } from "@prismshadow/penguin-server/api";
 import type { ToolDefinitionConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
@@ -33,8 +34,10 @@ import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-me
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
 import { Skeleton } from "../../components/ui/skeleton";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillsTab } from "./skills-tab";
 import { MemoryTab } from "./memory-tab";
+import { kernelFieldLabel } from "./kernel-labels";
 import { VaultTab } from "./vault-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { McpServersSection } from "./mcp-servers-section";
@@ -173,6 +176,17 @@ export function AgentSettingsPage() {
     void reloadAgents();
   }, [load, reloadAgents]);
 
+  /**
+   * Kernel update succeeded: refresh in place (keepStale keeps the Overview mounted so its
+   * kept-fields report stays visible; the other tabs re-seed on their next mount) and reload
+   * the list for its outdated markers. The toast comes from the Overview tab, which holds
+   * the merge report.
+   */
+  const onKernelUpdated = useCallback(() => {
+    load({ keepStale: true });
+    void reloadAgents();
+  }, [load, reloadAgents]);
+
   const save = useCallback(
     async (update: AgentConfigUpdateRequest) => {
       if (!projectId || !agentId) return;
@@ -247,6 +261,7 @@ export function AgentSettingsPage() {
               onSave={save}
               onImported={onImported}
               onConfigReset={onConfigReset}
+              onKernelUpdated={onKernelUpdated}
             />
           )}
           {tab === "prompt" && <PromptTab data={data} onSave={save} />}
@@ -280,18 +295,23 @@ const TRANSFER_BUTTON_CLASS =
   "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
   "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
 
+/** Kernel-outdated hint icon (rotate-cw, 24×24 line path — the skill library's update glyph). */
+const KERNEL_UPDATE_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
+
 function OverviewTab({
   data,
   agentId,
   onSave,
   onImported,
   onConfigReset,
+  onKernelUpdated,
 }: {
   data: AgentConfigResponse;
   agentId: string;
   onSave: SaveFn;
   onImported: (version: number) => void;
   onConfigReset: () => void;
+  onKernelUpdated: () => void;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -304,6 +324,10 @@ function OverviewTab({
   const [conflict, setConflict] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [kernelOpen, setKernelOpen] = useState(false);
+  const [kernelUpdating, setKernelUpdating] = useState(false);
+  /** Last kernel update's merge report (kept fields listed under the section until the next full reload). */
+  const [kernelResult, setKernelResult] = useState<AgentKernelUpdateResponse | null>(null);
   const { requestSave, element: saveConfirm } = useSaveConfirm();
 
   const runReset = async () => {
@@ -317,6 +341,22 @@ function OverviewTab({
       toastError(apiErrorText(e));
     } finally {
       setResetting(false);
+    }
+  };
+
+  const runKernelUpdate = async () => {
+    if (!projectId) return;
+    setKernelUpdating(true);
+    try {
+      const res = await api.kernelUpdateAgentConfig(projectId, agentId);
+      setKernelOpen(false);
+      setKernelResult(res);
+      toastSuccess(S.agent.kernelUpdateDone(res.kernelVersion, res.advanced.length));
+      onKernelUpdated();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setKernelUpdating(false);
     }
   };
 
@@ -399,6 +439,27 @@ function OverviewTab({
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateVersion}</p>
         <p className="font-mono text-sm">v{data.config.version}</p>
       </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.kernelVersionLabel}</p>
+        <p className="flex items-center gap-1.5 text-sm">
+          {data.config.kernelVersion !== null ? (
+            <span className="font-mono">{data.config.kernelVersion}</span>
+          ) : (
+            <span className="text-gray-500 dark:text-gray-400">{S.agent.kernelLegacy}</span>
+          )}
+          {/* Minimal outdated hint: icon + tooltip only (no textual alarm). */}
+          {data.config.kernelOutdated && (
+            <span
+              role="img"
+              title={S.agent.kernelOutdatedHint}
+              aria-label={S.agent.kernelOutdatedHint}
+              className="text-gray-400 dark:text-gray-500"
+            >
+              <GlyphIcon d={KERNEL_UPDATE_ICON} size={12} />
+            </span>
+          )}
+        </p>
+      </div>
 
       {/* Snapshot export / import: export is available to any member; import overwrites the entire Agent State, visible only to owners. */}
       <div>
@@ -428,6 +489,36 @@ function OverviewTab({
         )}
       </div>
 
+      {/* Kernel update: smart-merge onto the current defaults generation (customizations kept
+          and listed) — the non-destructive sibling of the restore action right below. */}
+      <div>
+        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.kernelUpdateTitle}</p>
+        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.kernelUpdateDesc}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            disabled={kernelUpdating || !data.config.kernelOutdated}
+            onClick={() => setKernelOpen(true)}
+          >
+            {S.agent.kernelUpdateAction}
+          </Button>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {S.agent.kernelVersions(
+              data.config.kernelVersion ?? S.agent.kernelLegacy,
+              data.config.kernelLatest,
+            )}
+            {!data.config.kernelOutdated && ` · ${S.agent.kernelUpToDate}`}
+          </span>
+        </div>
+        {/* Merge report: which fields were kept because customized (lightweight inline note, same tone as the import error line above). */}
+        {kernelResult !== null && kernelResult.kept.length > 0 && (
+          <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {S.agent.kernelUpdateKeptIntro}
+            {kernelResult.kept.map(kernelFieldLabel).join(S.agent.kernelListSeparator)}
+          </p>
+        )}
+      </div>
+
       {/* Restore default configuration: overwrite system_config.yaml with the current defaults (name/description/version kept) — the config-side analogue of a skill update. */}
       <div>
         <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.resetConfigTitle}</p>
@@ -453,6 +544,20 @@ function OverviewTab({
         }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.agent.importConflictBody}</p>
+      </ConfirmModal>
+
+      {/* Kernel update confirmation: lossless by design, but it still rewrites config fields — confirm-first like the sibling reset. */}
+      <ConfirmModal
+        open={kernelOpen}
+        title={S.agent.kernelUpdateTitle}
+        busy={kernelUpdating}
+        onClose={() => setKernelOpen(false)}
+        onConfirm={() => void runKernelUpdate()}
+        confirmLabel={S.agent.kernelUpdateAction}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.agent.kernelUpdateConfirmBody}
+        </p>
       </ConfirmModal>
 
       {/* Reset confirmation: overwriting customizations with the defaults is destructive, so it keeps the danger tone. */}

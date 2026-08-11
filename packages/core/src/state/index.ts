@@ -5,6 +5,8 @@
  */
 export * from "./paths.js";
 export * from "./default-config.js";
+export * from "./kernel-history.js";
+export * from "./kernel-update.js";
 export * from "./builtin-agents.js";
 export * from "./model-catalog.js";
 export * from "./project-config.js";
