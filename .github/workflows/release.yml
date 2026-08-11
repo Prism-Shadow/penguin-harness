@@ -390,6 +390,7 @@ jobs:
               pdf-tools/scripts/pdf_helper.py; do
               skill="${entry%%/*}"
               [ -f "$skills/$skill/SKILL.md" ]
+              [ -f "$skills/$skill/icon.svg" ]
               [ -f "$skills/$skill/requirements.lock" ]
               [ -f "$skills/$skill/scripts/bootstrap.py" ]
               [ -f "$skills/$entry" ]

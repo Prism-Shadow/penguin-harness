@@ -12,6 +12,10 @@ import tempfile
 from typing import Callable
 
 from docx import Document
+from docx.oxml.ns import qn
+
+
+ORDINARY_RUN_CHILDREN = {qn(name) for name in ("w:rPr", "w:t", "w:tab", "w:br", "w:cr")}
 
 
 def file_digest(path: Path) -> str:
@@ -43,6 +47,10 @@ def output_path(raw: str, source: Path) -> Path:
 
 def paragraph_texts(document: Document) -> list[str]:
     return [paragraph.text for paragraph in document.paragraphs]
+
+
+def is_ordinary_text_run(run) -> bool:
+    return all(child.tag in ORDINARY_RUN_CHILDREN for child in run._r)
 
 
 def save_verified(
@@ -138,15 +146,22 @@ def replace_text(args: argparse.Namespace) -> dict[str, object]:
     source = input_path(args.input)
     output = output_path(args.output, source)
     document = Document(source)
-    replacements = 0
+    matching_runs = []
     for paragraph in document.paragraphs:
         for run in paragraph.runs:
             count = run.text.count(args.old)
             if count:
-                run.text = run.text.replace(args.old, args.new)
-                replacements += count
-    if replacements == 0:
+                if not is_ordinary_text_run(run):
+                    raise ValueError(
+                        "text occurs in a run containing a drawing, object, field, or other "
+                        "non-text content; refusing a destructive replacement"
+                    )
+                matching_runs.append((run, count))
+    if not matching_runs:
         raise ValueError(f"text was not found within an ordinary text run: {args.old!r}")
+    replacements = sum(count for _, count in matching_runs)
+    for run, _ in matching_runs:
+        run.text = run.text.replace(args.old, args.new)
     expected_texts = paragraph_texts(document)
 
     def verify(reopened: Document) -> None:

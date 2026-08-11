@@ -1,6 +1,6 @@
 # Unreleased
 
-- [2026-08-10] Skills and release tooling: per-platform offline capability bundles initially add complete `word-docx` resources, hash-locked dependencies in an Agent-owned virtual environment, deterministic basic DOCX editing, and a network-disabled Docker acceptance test while standard packages remain lightweight. ([details](2026-08-10-offline-word-docx.md))
+- [2026-08-10] Skills and release tooling: per-platform offline capability bundles initially add complete DOCX, PPTX, and PDF Skills, hash-locked dependencies in Agent-owned virtual environments, deterministic document helpers, and network-disabled Docker acceptance tests while standard packages remain lightweight. ([details](2026-08-10-offline-word-docx.md))
 
 - [2026-08-07] Core: default `max_turns` becomes -1 (unlimited, SDK fallback aligned), request caps and the compaction threshold derive from the model's context window (vLLM-class small windows work; #218), the LLM retry ladder slows to a 2s base with "everything except auth retries" classification, and Trace appends are serialized with best-effort tolerant reads for damaged files (#215). ([details](2026-08-07-core-runtime.md))
 

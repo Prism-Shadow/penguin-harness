@@ -57,9 +57,9 @@ PENGUIN_HOME=/tmp/data \
 library=/tmp/penguin/lib/node_modules/@prismshadow/penguin-skills/skills
 skills=/tmp/data/default_project/agents/default_agent/agent_state/skills
 for file in \
-  word-docx/scripts/bootstrap.py word-docx/scripts/docx_helper.py word-docx/requirements.lock \
-  powerpoint-pptx/scripts/bootstrap.py powerpoint-pptx/scripts/pptx_helper.py powerpoint-pptx/requirements.lock \
-  pdf-tools/scripts/bootstrap.py pdf-tools/scripts/pdf_helper.py pdf-tools/requirements.lock; do
+  word-docx/SKILL.md word-docx/icon.svg word-docx/scripts/bootstrap.py word-docx/scripts/docx_helper.py word-docx/requirements.lock \
+  powerpoint-pptx/SKILL.md powerpoint-pptx/icon.svg powerpoint-pptx/scripts/bootstrap.py powerpoint-pptx/scripts/pptx_helper.py powerpoint-pptx/requirements.lock \
+  pdf-tools/SKILL.md pdf-tools/icon.svg pdf-tools/scripts/bootstrap.py pdf-tools/scripts/pdf_helper.py pdf-tools/requirements.lock; do
   test -f "$library/$file"
 done
 test -f /tmp/penguin/lib/offline/_shared/bootstrap_runtime.py
@@ -83,9 +83,9 @@ test "$(cat /tmp/offline-root.txt)" = /tmp/penguin/lib/offline
 # command is expected to stop afterwards; its installed Skill tree must still be complete.
 PENGUIN_HOME=/tmp/data /tmp/penguin/bin/penguin run --message init >/tmp/init.log 2>&1 || true
 for file in \
-  word-docx/scripts/bootstrap.py word-docx/scripts/docx_helper.py word-docx/requirements.lock \
-  powerpoint-pptx/scripts/bootstrap.py powerpoint-pptx/scripts/pptx_helper.py powerpoint-pptx/requirements.lock \
-  pdf-tools/scripts/bootstrap.py pdf-tools/scripts/pdf_helper.py pdf-tools/requirements.lock; do
+  word-docx/SKILL.md word-docx/icon.svg word-docx/scripts/bootstrap.py word-docx/scripts/docx_helper.py word-docx/requirements.lock \
+  powerpoint-pptx/SKILL.md powerpoint-pptx/icon.svg powerpoint-pptx/scripts/bootstrap.py powerpoint-pptx/scripts/pptx_helper.py powerpoint-pptx/requirements.lock \
+  pdf-tools/SKILL.md pdf-tools/icon.svg pdf-tools/scripts/bootstrap.py pdf-tools/scripts/pdf_helper.py pdf-tools/requirements.lock; do
   test -f "$skills/$file"
 done
 

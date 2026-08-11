@@ -74,6 +74,26 @@ def requirement_marker(requirements: Path) -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}:{digest}\n"
 
 
+def import_command(python: Path, imports: tuple[str, ...]) -> list[str]:
+    return [str(python), "-I", "-c", "; ".join(f"import {name}" for name in imports)]
+
+
+def imports_available(python: Path, imports: tuple[str, ...], environment: dict[str, str]) -> bool:
+    try:
+        return (
+            subprocess.run(
+                import_command(python, imports),
+                check=False,
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        return False
+
+
 def ensure_environment(skill_dir: Path, skill_name: str, imports: tuple[str, ...]) -> Path:
     version = sys.version_info[:2]
     if version not in SUPPORTED_PYTHONS:
@@ -99,19 +119,20 @@ def ensure_environment(skill_dir: Path, skill_name: str, imports: tuple[str, ...
     marker_path = environment / ".requirements.sha256"
     expected_marker = requirement_marker(requirements)
     shared_dir.mkdir(parents=True, exist_ok=True)
+    install_env = clean_environment()
 
     with exclusive_lock(shared_dir / f".{skill_name}.lock", skill_name):
         python = environment_python(environment)
         if python.is_file() and marker_path.is_file():
             if marker_path.read_text(encoding="utf-8") == expected_marker:
-                return python
+                if imports_available(python, imports, install_env):
+                    return python
 
         if environment.exists():
             shutil.rmtree(environment)
         try:
             venv.EnvBuilder(with_pip=True).create(environment)
             python = environment_python(environment)
-            install_env = clean_environment()
             install_env.update(
                 {
                     "PIP_CONFIG_FILE": os.devnull,
@@ -143,7 +164,7 @@ def ensure_environment(skill_dir: Path, skill_name: str, imports: tuple[str, ...
                 stdout=sys.stderr,
             )
             subprocess.run(
-                [str(python), "-I", "-c", "; ".join(f"import {name}" for name in imports)],
+                import_command(python, imports),
                 check=True,
                 env=install_env,
             )

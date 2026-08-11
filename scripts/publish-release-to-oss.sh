@@ -63,19 +63,37 @@ command -v jq >/dev/null 2>&1 || {
   exit 1
 }
 
-BUNDLES="
+STANDARD_BUNDLES="
 penguin-linux-x64.tar.gz
 penguin-linux-arm64.tar.gz
 penguin-darwin-x64.tar.gz
 penguin-darwin-arm64.tar.gz
 penguin-universal.tar.gz
 penguin-win32-x64.zip
+"
+OFFLINE_BUNDLES="
 penguin-offline-linux-x64.tar.gz
 penguin-offline-linux-arm64.tar.gz
 penguin-offline-darwin-x64.tar.gz
 penguin-offline-darwin-arm64.tar.gz
 penguin-offline-win32-x64.zip
 "
+# Releases created before the offline profile have no offline assets. Keep those releases
+# retryable, but treat any partial offline group as an invalid current release.
+BUNDLES="$STANDARD_BUNDLES"
+for bundle in $OFFLINE_BUNDLES; do
+  if [ -e "$RELEASE_DIR/$bundle" ] || [ -e "$RELEASE_DIR/$bundle.sha256" ]; then
+    BUNDLES="$STANDARD_BUNDLES
+$OFFLINE_BUNDLES"
+    break
+  fi
+done
+
+BUNDLE_CHECKSUMS=""
+for bundle in $BUNDLES; do
+  BUNDLE_CHECKSUMS="$BUNDLE_CHECKSUMS
+$bundle.sha256"
+done
 # Desktop installers carry version-less names (see packages/desktop/electron-builder.yml)
 # and are verified as a set through SHA256SUMS.desktop instead of per-file .sha256 twins.
 DESKTOP_INSTALLERS="
@@ -88,17 +106,7 @@ penguin-desktop-linux-amd64.deb
 penguin-desktop-win32-x64.exe
 "
 FILES="$BUNDLES
-penguin-linux-x64.tar.gz.sha256
-penguin-linux-arm64.tar.gz.sha256
-penguin-darwin-x64.tar.gz.sha256
-penguin-darwin-arm64.tar.gz.sha256
-penguin-universal.tar.gz.sha256
-penguin-win32-x64.zip.sha256
-penguin-offline-linux-x64.tar.gz.sha256
-penguin-offline-linux-arm64.tar.gz.sha256
-penguin-offline-darwin-x64.tar.gz.sha256
-penguin-offline-darwin-arm64.tar.gz.sha256
-penguin-offline-win32-x64.zip.sha256
+$BUNDLE_CHECKSUMS
 SHA256SUMS
 $DESKTOP_INSTALLERS
 SHA256SUMS.desktop

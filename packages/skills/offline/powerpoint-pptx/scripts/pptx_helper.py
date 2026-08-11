@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -139,7 +140,9 @@ def append_slide(args: argparse.Namespace) -> dict[str, object]:
         texts = slide_texts(reopened)
         if len(texts) != len(before) + 1 or texts[: len(before)] != before:
             raise RuntimeError("existing slides changed or slide count differs after reopen")
-        if args.title not in texts[-1] or args.body not in texts[-1]:
+        actual = Counter(texts[-1])
+        required = Counter((args.title, args.body))
+        if any(actual[text] < count for text, count in required.items()):
             raise RuntimeError("new slide content is missing after reopen")
 
     save_verified(presentation, source, output, verify)

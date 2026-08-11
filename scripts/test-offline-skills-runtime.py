@@ -124,6 +124,31 @@ def main() -> int:
         ):
             checked([str(python), "-I", "-c", imports], env=environment, operation="import probe")
 
+        # A matching marker must not make a damaged cached environment permanent. Remove one
+        # installed package, then prove the next bootstrap call rebuilds the environment offline.
+        location = run(
+            [
+                str(word_python),
+                "-I",
+                "-c",
+                "from pathlib import Path; import docx; print(Path(docx.__file__).resolve().parent)",
+            ],
+            env=environment,
+        )
+        if location.returncode != 0:
+            raise RuntimeError(f"DOCX package lookup failed:\n{location.stdout}")
+        shutil.rmtree(Path(location.stdout.strip()))
+        checked(
+            [sys.executable, "-I", str(bootstraps["word-docx"]), "--help"],
+            env=environment,
+            operation="damaged DOCX environment recovery",
+        )
+        checked(
+            [str(word_python), "-I", "-c", "import docx, lxml"],
+            env=environment,
+            operation="recovered DOCX import probe",
+        )
+
         docx_input = root / "input-without-heading.docx"
         docx_output = root / "output.docx"
         checked(
@@ -178,6 +203,61 @@ def main() -> int:
             ],
             env=environment,
             operation="DOCX reopen verification",
+        )
+
+        # Assigning Run.text rebuilds the run XML. Refuse replacement when a matching run also
+        # carries an inline image instead of silently deleting the drawing and reporting success.
+        mixed_input = root / "input-mixed-run.docx"
+        mixed_output = root / "output-mixed-run.docx"
+        checked(
+            [
+                str(word_python),
+                "-I",
+                "-c",
+                (
+                    "import base64; from io import BytesIO; from docx import Document; "
+                    "d=Document(); r=d.add_paragraph().add_run('replace me '); "
+                    "r.add_picture(BytesIO(base64.b64decode("
+                    "'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='"
+                    "))); r.add_text(' safely'); d.save(r'%s')"
+                )
+                % mixed_input,
+            ],
+            env=environment,
+            operation="mixed-run DOCX fixture creation",
+        )
+        mixed_hash = digest(mixed_input)
+        rejected = run(
+            [
+                sys.executable,
+                "-I",
+                str(bootstraps["word-docx"]),
+                "replace",
+                "--input",
+                str(mixed_input),
+                "--output",
+                str(mixed_output),
+                "--old",
+                "replace me",
+                "--new",
+                "replaced",
+            ],
+            env=environment,
+        )
+        if rejected.returncode == 0 or mixed_output.exists():
+            raise RuntimeError("DOCX replacement did not reject a matching run with an image")
+        if digest(mixed_input) != mixed_hash:
+            raise RuntimeError("mixed-run source DOCX changed")
+        checked(
+            [
+                str(word_python),
+                "-I",
+                "-c",
+                "from docx import Document; assert len(Document(r'%s').inline_shapes)==1"
+                % mixed_input,
+            ],
+            env=environment,
+            operation="mixed-run DOCX preservation check",
         )
 
         pptx_input = root / "input.pptx"
@@ -236,6 +316,41 @@ def main() -> int:
             ],
             env=environment,
             operation="PPTX reopen verification",
+        )
+
+        same_text_output = root / "output-same-title-body.pptx"
+        checked(
+            [
+                sys.executable,
+                "-I",
+                str(bootstraps["powerpoint-pptx"]),
+                "append-slide",
+                "--input",
+                str(pptx_input),
+                "--output",
+                str(same_text_output),
+                "--title",
+                "Same text",
+                "--body",
+                "Same text",
+            ],
+            env=environment,
+            operation="PPTX identical title/body append",
+        )
+        checked(
+            [
+                str(pptx_python),
+                "-I",
+                "-c",
+                (
+                    "from pptx import Presentation; p=Presentation(r'%s'); "
+                    "texts=[s.text for s in p.slides[-1].shapes if getattr(s,'has_text_frame',False)]; "
+                    "assert texts.count('Same text')>=2"
+                )
+                % same_text_output,
+            ],
+            env=environment,
+            operation="PPTX identical title/body verification",
         )
 
         pdf_main = root / "main.pdf"

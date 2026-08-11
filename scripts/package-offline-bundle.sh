@@ -50,7 +50,7 @@ for skill in $OFFLINE_SKILLS; do
     powerpoint-pptx) helper=scripts/pptx_helper.py ;;
     pdf-tools) helper=scripts/pdf_helper.py ;;
   esac
-  for file in SKILL.md requirements.lock scripts/bootstrap.py "$helper"; do
+  for file in SKILL.md icon.svg requirements.lock scripts/bootstrap.py "$helper"; do
     [ -f "$SKILLS_ROOT/$skill/$file" ] || {
       echo "error: $skill Skill source is missing $file" >&2
       exit 1
@@ -270,7 +270,7 @@ for skill in $OFFLINE_SKILLS; do
     powerpoint-pptx) helper=scripts/pptx_helper.py ;;
     pdf-tools) helper=scripts/pdf_helper.py ;;
   esac
-  for file in SKILL.md requirements.lock scripts/bootstrap.py "$helper"; do
+  for file in SKILL.md icon.svg requirements.lock scripts/bootstrap.py "$helper"; do
     mkdir -p "$LIBRARY/$skill/$(dirname "$file")"
     cp "$SKILLS_ROOT/$skill/$file" "$LIBRARY/$skill/$file"
   done
