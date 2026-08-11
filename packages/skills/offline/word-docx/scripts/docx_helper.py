@@ -71,7 +71,6 @@ def save_verified(
         verify(Document(temporary))
         os.link(temporary, output)
         linked = True
-        verify(Document(output))
         if file_digest(source) != source_before:
             raise RuntimeError("source DOCX changed during editing")
     except Exception:

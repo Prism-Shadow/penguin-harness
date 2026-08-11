@@ -318,7 +318,6 @@ if [ -n "$SOURCE_WHEELS" ]; then
 fi
 
 wheel_platform() {
-  minor="$1"
   case "$TARGET" in
     linux-x64) printf '%s\n' manylinux_2_17_x86_64 ;;
     linux-arm64) printf '%s\n' manylinux_2_17_aarch64 ;;
@@ -329,7 +328,7 @@ wheel_platform() {
 }
 
 for minor in 39 310 311 312 313; do
-  platform="$(wheel_platform "$minor")"
+  platform="$(wheel_platform)"
   "$BUILD_PYTHON" -m pip download \
     --disable-pip-version-check \
     --no-deps \
@@ -348,16 +347,6 @@ done
   echo "error: expected fifteen locked wheels for $TARGET" >&2
   exit 1
 }
-
-# The earlier DOCX profile stored its wheels at offline/word-docx/wheels. Existing Agents keep
-# their installed bootstrap across an application update, so retain that lookup path for POSIX
-# test/development upgrades without duplicating the wheel payload. Zip archives do not preserve
-# this symlink portably; no DOCX offline profile has been released yet, so Windows has no public
-# compatibility requirement.
-if [ "$FORMAT" = "tar" ]; then
-  mkdir -p "$OFFLINE_ROOT/word-docx"
-  ln -s ../wheels "$OFFLINE_ROOT/word-docx/wheels"
-fi
 
 if [ "$FORMAT" = "tar" ]; then
   LAUNCHER="$PAYLOAD/penguin/bin/penguin"

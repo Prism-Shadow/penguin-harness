@@ -64,8 +64,6 @@ for file in \
 done
 test -f /tmp/penguin/lib/offline/_shared/bootstrap_runtime.py
 test "$(find /tmp/penguin/lib/offline/wheels -type f -name '*.whl' | wc -l | tr -d ' ')" = 15
-test -L /tmp/penguin/lib/offline/word-docx/wheels
-test "$(find -L /tmp/penguin/lib/offline/word-docx/wheels -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 15
 
 # Prove the installed launcher exports the package's resource root to its Node child. The direct
 # Python Helper checks below then reuse the observed value instead of assuming the path.

@@ -93,7 +93,6 @@ def save_verified(
         verify(open_reader(temporary))
         os.link(temporary, output)
         linked = True
-        verify(open_reader(output))
         for source in sources:
             if file_digest(source) != source_hashes[source]:
                 raise RuntimeError(f"source PDF changed during merge: {source}")

@@ -72,7 +72,6 @@ def save_verified(
         verify(Presentation(temporary))
         os.link(temporary, output)
         linked = True
-        verify(Presentation(output))
         if file_digest(source) != source_before:
             raise RuntimeError("source PPTX changed during editing")
     except Exception:

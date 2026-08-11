@@ -284,10 +284,7 @@ jobs:
           exit /b %ERRORLEVEL%
           EOF
           # cmd.exe is only fully reliable with CRLF batch files.
-          while IFS= read -r line; do
-            printf '%s\r\n' "$line"
-          done < out/penguin/bin/penguin.cmd > out/penguin/bin/penguin.cmd.tmp
-          mv out/penguin/bin/penguin.cmd.tmp out/penguin/bin/penguin.cmd
+          sed -i 's/$/\r/' out/penguin/bin/penguin.cmd
           (cd out && zip -qr ../payloads/win32-x64.zip penguin)
 
       # The canonical artifacts: each payload is sealed with its checksum and the native
@@ -405,10 +402,6 @@ jobs:
             [ -f "$extracted/payload/penguin/lib/offline/_shared/bootstrap_runtime.py" ]
             wheels="$extracted/payload/penguin/lib/offline/wheels"
             [ "$(find "$wheels" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = 15 ]
-            if [ "$target" != "win32-x64" ]; then
-              [ -L "$extracted/payload/penguin/lib/offline/word-docx/wheels" ]
-              [ "$(readlink "$extracted/payload/penguin/lib/offline/word-docx/wheels")" = ../wheels ]
-            fi
           done
 
       - name: Test Linux x64 offline profile fully offline
@@ -646,13 +639,11 @@ jobs:
             fi
           fi
           grep -q 'export const VERSION = "' packages/core/src/index.ts
-          sed "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
-          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
+          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"$V\"/" packages/core/src/index.ts
           D="$(date -u +%Y-%m-%d)"
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
-          sed "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts > packages/core/src/index.ts.tmp
-          mv packages/core/src/index.ts.tmp packages/core/src/index.ts
+          sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
