@@ -62,6 +62,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | Office Productivity | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
+| | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
 | Software Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
 | | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
 | | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |

@@ -65,9 +65,11 @@ describe("Skill installation policy", () => {
       (s) => s.name,
     );
     expect(names).toEqual(loadPreinstalledSkills().map((s) => s.name));
-    // A `preinstall: false` library skill stays out of the preinstalled set (manual install only).
-    expect(librarySkill("remote-claude-code")?.preinstall).toBe(false);
-    expect(names).not.toContain("remote-claude-code");
+    // `preinstall: false` library skills stay out of the preinstalled set (manual install only).
+    for (const name of ["remote-claude-code", "humanizer"]) {
+      expect(librarySkill(name)?.preinstall, name).toBe(false);
+      expect(names, name).not.toContain(name);
+    }
   });
 });
 

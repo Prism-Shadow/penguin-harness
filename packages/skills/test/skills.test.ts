@@ -112,10 +112,15 @@ describe("loadPreinstalledSkills", () => {
     const all = loadLibrarySkills();
     const preinstalled = loadPreinstalledSkills().map((s) => s.name);
     expect(preinstalled).toEqual(all.filter((s) => s.preinstall !== false).map((s) => s.name));
-    // remote-claude-code is the library's manual-install skill: in the library, not preinstalled.
-    expect(all.map((s) => s.name)).toContain("remote-claude-code");
-    expect(librarySkill("remote-claude-code")?.preinstall).toBe(false);
-    expect(preinstalled).not.toContain("remote-claude-code");
+    // remote-claude-code and humanizer are the library's manual-install skills: in the library, not preinstalled.
+    for (const name of ["remote-claude-code", "humanizer"]) {
+      expect(
+        all.map((s) => s.name),
+        name,
+      ).toContain(name);
+      expect(librarySkill(name)?.preinstall, name).toBe(false);
+      expect(preinstalled, name).not.toContain(name);
+    }
     expect(preinstalled.length).toBeGreaterThan(0);
   });
 });
@@ -133,6 +138,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "firecrawl",
       "bento-slides",
+      "humanizer",
     ]);
     expect(groups[0]!.title).toBe("Office Productivity");
     expect(groups[0]!.titleZh).toBe("办公效率");
@@ -202,7 +208,10 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
-      { id: "office-productivity", skills: ["data-analysis", "firecrawl", "bento-slides"] },
+      {
+        id: "office-productivity",
+        skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
+      },
       {
         id: "software-development",
         skills: ["web-design", "software-engineering", "remote-claude-code"],
