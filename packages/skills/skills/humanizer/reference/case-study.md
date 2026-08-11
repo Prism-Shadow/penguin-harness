@@ -1,6 +1,6 @@
 # Case study: measuring the AI out of prose
 
-How the tells in SKILL.md were derived, in three rounds. Round one is a controlled exercise: one assignment answered twice, first as a deliberately typical AI draft, the register a default assistant produces unprompted, then as a rewrite into print register; both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff produced the sentence-layer tells (1–10). Round two is a set of field tests, added after human readers flagged text that already followed round one; it produced the discourse-layer tells (11–17). Round three scaled the method: ten fresh pieces across five languages and ten genres, written honestly to the first two layers, were reviewed blind by independent editors; what they still caught produced the scrub-layer tells (18–24) and the per-language lists in `language-cues.md`. Rounds one and two are in Chinese; round three covers Chinese, English, Japanese, French, German and Spanish.
+How the tells in SKILL.md were derived, in four rounds. Round one is a controlled exercise: one assignment answered twice, first as a deliberately typical AI draft, the register a default assistant produces unprompted, then as a rewrite into print register; both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff produced the sentence-layer tells (1–10). Round two is a set of field tests, added after human readers flagged text that already followed round one; it produced the discourse-layer tells (11–17). Round three scaled the method: ten fresh pieces across five languages and ten genres, written honestly to the first two layers, were reviewed blind by independent editors; what they still caught produced the scrub-layer tells (18–24) and the per-language lists in `language-cues.md`. Round four is a user-run field test on fresh material that caught the density rule overshooting (tell 25). Rounds one and two are in Chinese; round three covers Chinese, English, Japanese, French, German and Spanish.
 
 The assignment, as a user would phrase it: 请帮我写一篇图文稿，大约 1000 字，讲清楚"skill 是什么"。(Write an illustrated piece of about 1,000 characters explaining what a skill is.)
 
@@ -184,3 +184,19 @@ Agreement on the double-reviewed pieces was high: 55/70 and 85/80, with the same
 28. **Language-relative budgets.** The Spanish reviewer flagged the total absence of rayas, the German reviewer the absence of Gedankenstriche, in the same batch where English dash removal was the fix. One number cannot govern six languages; the budgets moved into `language-cues.md`.
 29. **Revision against flags works, and what survives is instructive.** The blind re-scores fell from ~71 to 30 average, but the residual flags name the next frontier: cleft series used as a piece's sole engine (three 「〜したのは〜だ」 priority-clefts; twin ……的是X clefts on consecutive paragraphs), matched-numeral ring symmetry (the 2/9 anecdote closing as "nine weeks … looked like two"), and one escalating negative triad the author had been flagged on and kept anyway because it was good. The census must outrank the author's affection: a flagged pattern kept for its quality is still a flag.
 30. **Earned instances get cleared.** The re-reviewer explicitly considered and cleared two AではなくB frames because each carried the actual experimental contrast, and passed the one-per-piece corrective turns elsewhere. The budgets in tells 1, 2 and 13 calibrate to what independent readers accept; the rules survive contact when the kept instance is load-bearing.
+
+## Round four: user field test, the compression tells
+
+A reader ran the skill against fresh zh material (a game-history retrospective) and returned two passages with three complaints. The passages, as submitted:
+
+> 爱因斯坦回到过去抹掉希特勒；纳粹从历史中消失，却没有换来和平，斯大林治下的苏联大举西进，盟军被迫应战。
+
+> 初代销量不错，1997年又先后推出《反击》《劫后余生》两个资料片。1998年西木被艺电收购；2000年的《红色警戒2》以尤里的心灵控制为核心设定，2001年资料片《尤里的复仇》让它在网吧里又火了许多年。
+
+The complaints: both passages still feel like 排比 although no function word repeats; prose should not carry this many semicolons; and 初代销量不错 has no subject — the first generation of what?
+
+### Findings, round four
+
+31. **Skeleton runs go below the sentence.** Four equal-weight subject–verb clauses in one breath read as parallelism with no repeated word at all; the isochronous beat is the 排比, not the wording. A run of clauses each opening on a year is the same tell in the anaphora position — a changelog wearing prose. Tell 12 extended to clause scale.
+32. **Density overshoots into telegraph.** The year-stamp run, the semicolon-strung events and the elided subject are the density pass cutting grammar instead of fat: the third documented overcorrection, after the cold open (round two) and the scrub fingerprint (round three). Every strengthening rule so far has produced its own artifact when overdriven, which is an argument for the gate reading, not against the rules. New tell 25; the density step gained its counterweight.
+33. **Semicolon budgets are language-relative and lower than assumed.** Round three caught English scrubbing inflating semicolons where dashes died; round four shows Chinese narrative barely tolerates them at all — 分号 belongs to formal parallel enumeration, not storytelling. Both live in `language-cues.md`.
