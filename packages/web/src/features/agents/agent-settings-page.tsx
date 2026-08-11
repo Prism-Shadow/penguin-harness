@@ -1,8 +1,8 @@
 /**
  * Agent settings page: eight tabs —
- * Overview (name/description/State path/active count/State version + a kernel card grouping
- * the defaults generation with its update / restore-defaults actions + snapshot
- * export-import), Prompt (AGENTS.md and system_prompt editors + placeholder
+ * Overview (name/description form + an Agent State card grouping the State version,
+ * snapshot export-import and the copyable State path + a kernel card grouping the
+ * defaults generation with its update / restore-defaults actions), Prompt (AGENTS.md and system_prompt editors + placeholder
  * reference), Memory (memory-tab.tsx), Runtime (max_turns, model.*, compaction.*), Tools (editable built-in
  * tools table + the MCP Server form, mcp-servers-section.tsx), Skills (skills-tab.tsx),
  * Vault (vault-tab.tsx), Schedule (schedules-tab.tsx).
@@ -34,6 +34,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
+import { CopyButton } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillsTab } from "./skills-tab";
@@ -426,20 +427,69 @@ function OverviewTab({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateDir}</p>
-        <p className="break-all font-mono text-xs text-gray-500 dark:text-gray-400">
-          {data.stateDir}
-        </p>
-      </div>
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.activeSessions}</p>
-        <p className="text-sm">{data.activeSessionCount}</p>
-      </div>
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.stateVersion}</p>
-        <p className="font-mono text-sm">v{data.config.version}</p>
-      </div>
+      <Button size="sm" variant="primary" onClick={submit}>
+        {S.common.save}
+      </Button>
+      {saveConfirm}
+
+      {/* Agent State card (the kernel card's visual family): the State version with the
+          snapshot transfer actions grouped beside it (export is available to any member;
+          import overwrites the entire Agent State, so it is visible only to owners), and
+          the State path below with the shared copy affordance. */}
+      <section className="rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{S.agent.stateTitle}</p>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {S.agent.stateVersion} <span className="font-mono">v{data.config.version}</span>
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {projectId && (
+              <a
+                href={api.agentExportUrl(projectId, agentId)}
+                download
+                className={TRANSFER_BUTTON_CLASS}
+              >
+                {S.agent.exportSnapshot}
+              </a>
+            )}
+            {isOwner && (
+              <label
+                className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
+              >
+                <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
+                {importing ? S.agent.importing : S.agent.importSnapshot}
+              </label>
+            )}
+          </div>
+        </div>
+        {/* State path row (the chat details card's Session id convention): selectable mono
+            text with the shared CopyButton beside it; the title attribute carries the full
+            path for hover. */}
+        <div className="mt-2">
+          <p className="text-xs font-medium text-gray-500">{S.agent.stateDir}</p>
+          <div className="flex items-start gap-1.5">
+            <span
+              title={data.stateDir}
+              className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-gray-500 dark:text-gray-400"
+            >
+              {data.stateDir}
+            </span>
+            <CopyButton
+              text={data.stateDir}
+              label={S.agent.copyStateDir}
+              showCopiedText
+              className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            />
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.transferDesc}</p>
+        {importError && (
+          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
+        )}
+      </section>
+
       {/* Kernel card (the injection-toggle cards' visual family): the defaults generation the
           config is based on, with its two maintenance actions grouped beside it — update
           (smart merge, enabled only when outdated) and restore defaults (destructive, danger
@@ -500,39 +550,6 @@ function OverviewTab({
           </p>
         )}
       </section>
-
-      {/* Snapshot export / import: export is available to any member; import overwrites the entire Agent State, visible only to owners. */}
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.transferTitle}</p>
-        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">{S.agent.transferDesc}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          {projectId && (
-            <a
-              href={api.agentExportUrl(projectId, agentId)}
-              download
-              className={TRANSFER_BUTTON_CLASS}
-            >
-              {S.agent.exportSnapshot}
-            </a>
-          )}
-          {isOwner && (
-            <label
-              className={`${TRANSFER_BUTTON_CLASS} ${importing ? "pointer-events-none opacity-60" : ""}`}
-            >
-              <HiddenFileInput accept=".tar.gz,.tgz" disabled={importing} onChange={onPickFile} />
-              {importing ? S.agent.importing : S.agent.importSnapshot}
-            </label>
-          )}
-        </div>
-        {importError && (
-          <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{importError}</p>
-        )}
-      </div>
-
-      <Button size="sm" variant="primary" onClick={submit}>
-        {S.common.save}
-      </Button>
-      {saveConfirm}
 
       {/* Version conflict confirmation: resend the same package with confirm: true after confirming. */}
       <ConfirmModal

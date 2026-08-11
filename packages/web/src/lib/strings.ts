@@ -220,7 +220,6 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
-    activeSessions: "活跃 Session",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -239,6 +238,7 @@ export const zh = {
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
+    copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt 模板",
     placeholdersTitle: "可用占位符（点击插入）",
@@ -364,8 +364,9 @@ export const zh = {
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
+    /** Agent State card: the State version with the snapshot transfer actions, plus the copyable State path. */
+    stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferTitle: "导出 / 导入",
     transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
     exportSnapshot: "导出快照",
     importSnapshot: "导入快照",
