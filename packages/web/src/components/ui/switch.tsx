@@ -3,9 +3,12 @@
  * button is keyboard-operable out of the box — Space/Enter activate it — and is labelable
  * content, so clicking an enclosing `<label>`'s text toggles it too). Sliding knob with an
  * ease-out color/transform transition; the on-state follows the theme accent variable (same
- * source as Button primary), the off-state is gray. Track and knob each carry an inset/outer
- * hairline so the edges stay defined on any surface (the dark neutral accent is near-white,
- * where the white knob would otherwise vanish); dark-mode aware; disabled dims and blocks.
+ * source as Button primary), the off-state is gray. The 18px knob rides in the 20px track
+ * with a symmetric 1px gap all around (the iOS knob/track proportion) and carries no offset
+ * shadow — a directional shadow reads as vertical asymmetry at this size. Track and knob
+ * each carry a hairline (inset ring / outer ring) that meet across that gap, so the edges
+ * stay defined on any surface (the dark neutral accent is near-white, where the white knob
+ * would otherwise vanish); dark-mode aware; disabled dims and blocks.
  * The focus ring is accent-tinted and `focus-visible`-only, so keyboard focus shows it but a
  * mouse click doesn't leave a lingering halo. Sized for compact (sm) form rows, matching the
  * dialogs' controls.
@@ -41,8 +44,8 @@ export function Switch({ checked, onChange, disabled, className, ...rest }: Swit
     >
       <span
         aria-hidden
-        className={`inline-block size-4 rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-transform duration-200 ease-out ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`inline-block size-[18px] rounded-full bg-white ring-1 ring-black/10 transition-transform duration-200 ease-out ${
+          checked ? "translate-x-[17px]" : "translate-x-px"
         }`}
       />
     </button>
