@@ -1,6 +1,6 @@
-# Case study: measuring the AI out of a thousand-character explainer
+# Case study: measuring the AI out of prose
 
-How the tells in SKILL.md were derived. One assignment was answered twice: first as a deliberately typical AI draft, the register a default assistant produces unprompted, and then as a rewrite into print register. Both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff between the two produced the numbered findings at the end. The exercise is in Chinese; the English cues in SKILL.md are the same structures as they surface in English AI output, because the structural rules needed no translation, only the surface cues did.
+How the tells in SKILL.md were derived, in two rounds. Round one is a controlled exercise: one assignment answered twice, first as a deliberately typical AI draft, the register a default assistant produces unprompted, then as a rewrite into print register; both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff produced the sentence-layer tells (1–10). Round two is a set of field tests, added after human readers flagged text that already followed round one; it produced the discourse-layer tells (11–17). The exercises are in Chinese; the English cues in SKILL.md are the same structures as they surface in English AI output, because the structural rules needed no translation, only the surface cues did.
 
 The assignment, as a user would phrase it: 请帮我写一篇图文稿，大约 1000 字，讲清楚"skill 是什么"。(Write an illustrated piece of about 1,000 characters explaining what a skill is.)
 
@@ -102,7 +102,7 @@ Counted mechanically over both texts (characters exclude whitespace; sentence te
 
 The revision also carries roughly twice the discrete facts (format and metadata, token cost of the summary, Anthropic and 2025, the pre-skill alternatives, tool-versus-skill with two concrete examples each, multi-file layout, versioned updates) in 17% fewer characters.
 
-## Findings
+## Findings, round one
 
 1. **Scaffolding is length-sensitive.** The baseline spent five subheadings, a numbered section scheme and a 结语 on a thousand characters; print explainers of that size run as continuous prose. Deleting the scaffold forced real transitions, and those transitions displaced filler sentences. This became tell 6.
 2. **The contrast template is the strongest single signature.** 不是……而是…… appeared three times in one short piece. Each instance was replaceable by asserting the positive directly, and nothing was lost. Tell 1.
@@ -118,3 +118,34 @@ The revision also carries roughly twice the discrete facts (format and metadata,
 12. **Humanized text is shorter per fact.** 1,061 characters became 878 while the fact count roughly doubled, and the gap to the 1,000-character target was filled by adding a substantive paragraph (multi-file layout, versioned updates), not by restoring rhetoric. This became method step 5.
 13. **Rhythm was the last thing to break.** Even with the templates gone, the draft droned until sentence lengths were forced apart: 写一次，装进 Agent sits next to a fifty-character qualified sentence. Varying length deliberately became tell 8.
 14. **Typography belongs to the genre.** Five bold runs and bracketed image directives (【配图建议：……】) are deck register; the print version uses plain captions (图：……) and no bold in running text. Folded into tells 6 and 10.
+
+## Round two: field tests
+
+Two pieces written to the round-one rules were then reviewed by human readers. Both passed the round-one census (no dashes, no contrast templates, no manufactured triads, merged paragraphs, concrete facts, third person) and both were still flagged. Every flag sat above the sentence: in the opening, in the shape of adjacent sentences, or in the argument. Those flags became the discourse-layer tells.
+
+### Field test A: an MCP explainer (zh, four paragraphs)
+
+Three reader flags:
+
+- **The opening.** 大模型本身只会生成文本：查不了数据库，调不动软件。 as the first line: a categorical, colon-hinged verdict with no ground under it. Readers expect a beat of orientation before a verdict; the era-opener ban from round one had been overshot into a cold open. The fix is reordering, not rewording: open on the M×N integration situation the protocol answers, and let the verdict land after it (tell 11; the overcorrection lesson is finding 16 below).
+- **Staccato.** 假设有 M 个应用、N 个工具，就要维护 M×N 套接口；接口一旦变动，各端的代码都要跟着改。 Clipped clauses strung together read as their own uniformity; round one had only named the medium-length drone (tell 8, extended).
+- **A skeleton run.** 工具方写一个 MCP 服务器，所有兼容应用都能调用；应用方支持 MCP，就能接上生态里现成的服务器。 followed by 数据访问、权限、连接方式都在协议里有统一约定，不再为每个组合单独开发。 Three sentences on one template (topic, then 都能／就能／不再 verdict); each is fine alone, and the reader's word for the run was 审美疲劳 (tell 12).
+
+### Field test B: a tech commentary (zh, five paragraphs, ~1,200 characters)
+
+An essay arguing that the stronger the model, the more its surrounding harness matters. The reviewing read put its AI-feel at 30–40%, "not because the language is unnatural but because it is too complete" (过于完整): every paragraph correct, every loop closed, every line serving the thesis. Specific flags:
+
+- **One paragraph template, aphorism density.** Paragraphs ran claim, explanation, widened conclusion, each peaking in a quotable: 模型的能力抬高的是上限，上限能在多大程度上被兑现，取决于 harness。 / 真正决定一个系统能完成什么任务的，是它周围那层看不见的结构。 / 单点生成能力普遍够用之后，系统之间的差异就由 harness 决定。 Reviewed singly each passed; in sequence they read as a metronome (tell 13).
+- **Thesis restatement.** The reviewer counted the central claim expressed five or six ways across the piece and recommended cutting 20–30%; none of the echoes carried new material (tell 14).
+- **Abstraction chains.** 每一次能力扩张都会把原先不属于 harness 的部分吸纳进来。 and 边界一直在外移 : concept subjects acting on concept objects through stock commentary phrases. The requested fix was mechanism-level concreteness: when context is compacted, how a failed tool call is retried, where long-task progress is saved, how work is handed between agents (tell 15).
+- **Overclaims.** 这说明 harness 是一个独立的设计空间……无法……当作顺手附赠的配件 and 现成的参照并不存在, both hung on one recalled case. The calibrated rewrites (这至少说明……、至少在当时……) were accepted as more human (tell 16).
+- **Unanchored attribution.** 作者认为、据他回忆、作者称之为 throughout, with no name, date or link, plus a bare project name dropped without a gloss: the reviewer's phrase was that it reads like an automatic digest of social media posts (folded into tell 7).
+- **A calque.** 模型本身所占的比重不断缩小，系统其余部分所占的比重不断增大。 tracks the English "the model becomes a smaller part of the system" word for word; recast in native idiom (随着任务变复杂，决定成败的因素越来越多，模型本身只是其中一环) the AI feel disappeared (tell 17).
+
+### Findings, round two
+
+15. **The sentence-layer counters are necessary, not sufficient.** Both pieces scored clean on every round-one counter and were still flagged. The second layer lives in shapes: of the opening, of adjacent sentences, of paragraphs, of the argument. This added the shape pass to the method.
+16. **Overcorrection creates new tells.** Banning era openers produced the cold-open verdict; a rule needs its counterweight stated. One grounding sentence is orientation, not throat-clearing.
+17. **Repetition hides at the argument level.** No sentence restated its neighbor, yet the thesis was restated across paragraphs half a dozen times. The census must count claim-level repetition, not just adjacent echo.
+18. **"Too complete" is itself a tell.** Every loop closed, every paragraph landing, no unresolved edge. Edited human prose keeps some unevenness: hedged claims, paragraphs that end on a fact, a question left open.
+19. **The effective fixes were material, not verbal.** Add the mechanism, name the source, gloss the term, calibrate the claim to the evidence; where the concrete detail does not exist, that is missing research, and the round-one rule stands: never invent it.
