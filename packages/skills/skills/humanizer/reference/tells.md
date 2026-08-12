@@ -1,6 +1,6 @@
 # The tell catalog
 
-The diagnostic instrument behind the humanizer skill: twenty-five tells in three layers, used in the census and revision steps of the method — not as drafting constraints. Drafting against this list produces compliance-shaped prose; the scrub layer below exists because of exactly that. The counts and quoted patterns come from the four measured rounds in [`case-study.md`](case-study.md); per-language surface forms are in [`language-cues.md`](language-cues.md).
+The diagnostic instrument behind the humanizer skill: twenty-five tells in three layers, used in the census and revision steps of the method — not as drafting constraints. Drafting against this list produces compliance-shaped prose; the scrub layer below exists because of exactly that. The counts and quoted patterns come from the six measured rounds in [`case-study.md`](case-study.md); per-language surface forms are in [`language-cues.md`](language-cues.md).
 
 ## Sentence layer
 
