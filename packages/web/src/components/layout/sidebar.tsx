@@ -1,8 +1,9 @@
 /**
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
- * one collapsible group behind a header toggle whose state persists in localStorage; the
- * pinned new-chat block above never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
+ * one collapsible group behind a bare chevron on the full-width divider under the new-chat
+ * block; state persists in localStorage, the pinned new-chat block itself never
+ * collapses) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
@@ -56,6 +57,7 @@ import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { Chevron } from "../ui/chevron";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -94,9 +96,6 @@ import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-
-/** Page-nav group glyph (lucide layout-grid: four tiles), the collapsible nav group's header icon. */
-const PAGES_ICON = "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 const PIN_ICON =
@@ -804,6 +803,25 @@ export function Sidebar({
           </span>
           {S.chat.newSessionMenu}
         </button>
+        {/* Divider-toggle of the page-nav group (智能体 → 评估中心): the full-width hairline
+            under this pinned block IS the collapse toggle — two line segments flanking a bare
+            centered chevron (the site-wide Chevron: right = collapsed, down = expanded), no
+            label, no icon, no background fill; hover only darkens the chevron. Living in the
+            pinned block, the line stays put at every scroll offset, exactly where the
+            block-to-scroller boundary sits. Icon-only, so tooltip + aria carry the name
+            (GroupHeader's collapse/expand wording). */}
+        <button
+          type="button"
+          onClick={toggleNavGroup}
+          aria-expanded={!navCollapsed}
+          aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+          title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+          className="-mx-2 mt-1 flex items-center gap-1.5 py-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
+        >
+          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          <Chevron open={!navCollapsed} size={12} />
+          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        </button>
       </div>
 
       {/* Scroll area: the page nav and the session list scroll together, so the nav rides up
@@ -818,20 +836,6 @@ export function Sidebar({
           folder made the whole page scroll (composer pushed up, blank space below). */}
       <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <nav className="space-y-0.5">
-          {/* Page-nav group header: collapse toggle for the 智能体 → 评估中心 entries. The
-              pinned "New chat" block above sits outside the group and stays visible in
-              both states. */}
-          <GroupHeader
-            open={!navCollapsed}
-            onToggle={toggleNavGroup}
-            icon={
-              <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                <Icon d={PAGES_ICON} size={14} />
-              </span>
-            }
-            label={S.nav.pages}
-            uppercase
-          />
           {navItems.map((item) => (
             <NavLink
               key={item.to}

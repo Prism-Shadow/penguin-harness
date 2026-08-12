@@ -1,11 +1,13 @@
 /**
- * nav-group-collapse.ts unit tests: the sidebar's collapsible page-nav group. The group
- * covers exactly the 智能体 → 评估中心 run of entries in rendered order (the sidebar
- * derives its nav rows from the NAV_GROUP_KEYS manifest, so the range is pinned here);
- * the pinned "New chat" block is never part of the manifest, so collapsing cannot hide
- * it. The choice persists globally in one localStorage key (injectable storage): a
- * remount reads it back, nothing stored / unrecognized values / throwing storage all
- * fall back to expanded — the default.
+ * nav-group-collapse.ts unit tests: the sidebar's collapsible page-nav group, toggled
+ * by a bare chevron on the divider under the pinned "New chat" block (no label, no
+ * icon — tooltip and aria carry the collapse/expand names). The group covers exactly
+ * the 智能体 → 评估中心 run of entries in rendered order (the sidebar derives its nav
+ * rows from the NAV_GROUP_KEYS manifest, so the range is pinned here); the pinned
+ * "New chat" block is never part of the manifest, so collapsing cannot hide it. The
+ * choice persists globally in one localStorage key (injectable storage): a remount
+ * reads it back, nothing stored / unrecognized values / throwing storage all fall
+ * back to expanded — the default.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -66,6 +68,13 @@ describe("visibleNavKeys", () => {
   it("expanded renders the whole group; collapsed hides every group entry", () => {
     expect(visibleNavKeys(false)).toEqual(NAV_GROUP_KEYS);
     expect(visibleNavKeys(true)).toEqual([]);
+  });
+
+  it("the divider toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
+    expect(zh.nav.collapseGroup).toBe("折叠");
+    expect(zh.nav.expandGroup).toBe("展开");
+    expect(en.nav.collapseGroup).toBe("Collapse");
+    expect(en.nav.expandGroup).toBe("Expand");
   });
 });
 

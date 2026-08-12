@@ -21,8 +21,6 @@ export const zh = {
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
-    /** Header label of the collapsible page-entries group (智能体 → 评估中心). */
-    pages: "页面",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "最近一次对话",
     collapseSidebar: "收起侧栏",
