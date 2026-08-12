@@ -1,7 +1,8 @@
 /**
  * Single-column sidebar, top to bottom:
- * Project switcher -> new chat (default_agent draft) + fixed nav (Agents / models / cost center /
- * Trace) -> Session area with two grouping modes (a small toggle in the section header; the
+ * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
+ * one collapsible group behind a header toggle whose state persists in localStorage; the
+ * pinned new-chat block above never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
@@ -46,6 +47,11 @@ import {
   workspaceGroupKey,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
+import {
+  initialNavGroupCollapsed,
+  storeNavGroupCollapsed,
+  visibleNavKeys,
+} from "../../lib/nav-group-collapse";
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
@@ -88,6 +94,9 @@ import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
+
+/** Page-nav group glyph (lucide layout-grid: four tiles), the collapsible nav group's header icon. */
+const PAGES_ICON = "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 const PIN_ICON =
@@ -250,6 +259,8 @@ export function Sidebar({
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
+  /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
+  const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
   const [groupMode, setGroupModeState] = useState<GroupMode>(initialGroupMode);
   /** Collapsed groups (expanded by default), keyed by Agent id or Workspace group key depending on the mode; persisted per Project. */
@@ -292,6 +303,13 @@ export function Sidebar({
     setGroupModeState(mode);
     // The two modes have unrelated group lists: restart the reveal window.
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+  };
+
+  /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
+  const toggleNavGroup = () => {
+    const next = !navCollapsed;
+    storeNavGroupCollapsed(next);
+    setNavCollapsed(next);
   };
 
   /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
@@ -659,14 +677,10 @@ export function Sidebar({
     />
   );
 
-  const navItems: Array<{ to: string; label: string; icon: string }> = [
-    { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-    { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
-    { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-    { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-    { to: "/traces", label: S.nav.traces, icon: NAV_ICONS.traces },
-    { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-  ];
+  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest); empty while collapsed. */
+  const navItems: Array<{ to: string; label: string; icon: string }> = visibleNavKeys(
+    navCollapsed,
+  ).map((key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }));
 
   const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
     { value: "light", label: S.settings.themeLight },
@@ -804,6 +818,20 @@ export function Sidebar({
           folder made the whole page scroll (composer pushed up, blank space below). */}
       <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <nav className="space-y-0.5">
+          {/* Page-nav group header: collapse toggle for the 智能体 → 评估中心 entries. The
+              pinned "New chat" block above sits outside the group and stays visible in
+              both states. */}
+          <GroupHeader
+            open={!navCollapsed}
+            onToggle={toggleNavGroup}
+            icon={
+              <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                <Icon d={PAGES_ICON} size={14} />
+              </span>
+            }
+            label={S.nav.pages}
+            uppercase
+          />
           {navItems.map((item) => (
             <NavLink
               key={item.to}

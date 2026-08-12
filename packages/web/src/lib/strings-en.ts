@@ -19,6 +19,8 @@ export const en: Strings = {
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
+    /** Header label of the collapsible page-entries group (Agents → Evaluation Center). */
+    pages: "Pages",
     // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
     collapseSidebar: "Collapse sidebar",
