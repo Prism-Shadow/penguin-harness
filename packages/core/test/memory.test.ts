@@ -342,7 +342,9 @@ describe("{{MEMORY}} rendering", () => {
 
   it("injects nothing at all when the Session has no Memory", async () => {
     const state = await agentState();
-    const prompt = assembleSystemPrompt(state);
+    // Skill data provided (an empty list) so the neighboring {{SKILLS}} section renders and
+    // proves it is untouched by Memory's absence.
+    const prompt = assembleSystemPrompt(state, undefined, undefined, []);
     expect(prompt).not.toContain("{{MEMORY}}");
     expect(prompt).not.toContain("# Memory");
     expect(prompt).not.toContain(USER_LINE);

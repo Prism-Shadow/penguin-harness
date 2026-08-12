@@ -65,9 +65,11 @@ describe("Skill installation policy", () => {
       (s) => s.name,
     );
     expect(names).toEqual(loadPreinstalledSkills().map((s) => s.name));
-    // A `preinstall: false` library skill stays out of the preinstalled set (manual install only).
-    expect(librarySkill("remote-claude-code")?.preinstall).toBe(false);
-    expect(names).not.toContain("remote-claude-code");
+    // `preinstall: false` library skills stay out of the preinstalled set (manual install only).
+    for (const name of ["remote-claude-code", "humanizer"]) {
+      expect(librarySkill(name)?.preinstall, name).toBe(false);
+      expect(names, name).not.toContain(name);
+    }
   });
 });
 
@@ -125,18 +127,25 @@ describe("provisionProjectAgents", () => {
 describe("App Data Dir / Agent ID placeholders", () => {
   it("assembleSystemPrompt injects App Data Dir and Agent ID (Skill lookup uses app-data-dir-relative paths, no .penguin dependency)", async () => {
     const state = await loadOrInitAgentState({ agentId: "env_agent" });
-    const prompt = assembleSystemPrompt(state, {
-      sessionId: "session-x",
-      cwd: "/tmp/ws",
-      agentId: "env_agent",
-      projectDir: "/tmp/proj",
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      platform: "linux",
-      osVersion: "test",
-      shell: "bash",
-      date: "2026-07-08",
-    });
+    // Skill data provided (an empty list) so the {{SKILLS}} section — home of the skill
+    // lookup path convention this test pins — renders.
+    const prompt = assembleSystemPrompt(
+      state,
+      {
+        sessionId: "session-x",
+        cwd: "/tmp/ws",
+        agentId: "env_agent",
+        projectDir: "/tmp/proj",
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        platform: "linux",
+        osVersion: "test",
+        shell: "bash",
+        date: "2026-07-08",
+      },
+      undefined,
+      [],
+    );
     expect(prompt).toContain("Agent ID: env_agent");
     expect(prompt).toContain("App Data Dir: /tmp/proj");
     expect(prompt).not.toContain("{{AGENT_ID}}");

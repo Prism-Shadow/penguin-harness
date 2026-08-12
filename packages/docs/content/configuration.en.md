@@ -97,6 +97,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `name` | — | Agent display name (falls back to the id) |
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
+| `kernel_version` | current kernel version | Config kernel version (a date string): which generation of the built-in defaults this config is based on, stamped at creation, restore-defaults and kernel update; unrelated to `version`, never changed by user edits; missing = predates the mechanism (i.e. outdated) |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
@@ -109,6 +110,12 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | built-in template | Always-injected half of the `{{MEMORY}}` block, editable on the Memory tab — carries `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | built-in template | Appended only in a persistent Workspace, editable on the Memory tab — carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
+| `vault.enabled` | `true` | Whether the vault section enters the context (with it off, values are still injected into subprocess environments — the model just doesn't see the key-name list) |
+| `vault.prompt` | built-in template | The `{{VAULT}}` block, editable on the Vault tab — carries `{{VAULT_KEYS}}` |
+| `skills.enabled` | `true` | Whether the skills section enters the context (with it off, installed skills remain explicitly invocable via `[use_skills]`) |
+| `skills.prompt` | built-in template | The `{{SKILLS}}` block, editable on the Skills tab — carries `{{SKILL_METADATA}}` |
+| `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
+| `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
 | `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
 
@@ -143,7 +150,12 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
-An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. To adopt the current defaults (for example an updated built-in system prompt), use the settings page's **Restore default configuration** action: like a skill update it overwrites the existing configuration — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`.
+An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel and the settings page and agents list show an update hint. Two paths adopt the current defaults (side by side on the settings overview):
+
+- **Update kernel**: a lossless merge. Field by field: a missing field, or one still equal to a *recorded* generation's built-in default, follows the current default; a user-edited field stays unchanged and is listed in the result. `tools.builtin` merges per tool name — only the edited tool is kept, the rest follow, and user-added entries are untouched; `name`, `description`, `version` and `tools.mcpServers` are never touched. The config is then stamped with the current `kernel_version`. Matching is **conservative**: only values whose hash hits a recorded generation count as old defaults — generations too old to reconstruct are kept as if customized.
+- **Restore default configuration**: like a skill update, overwrites the existing configuration with the current defaults — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`. The full-refresh fallback when the kernel update's conservative matching leaves fields behind.
+
+For developers: `kernel_version` advances manually, and only on a substantive change to the built-in defaults (using that day's date). The pinned-hash test in CI (`core/test/kernel-version.test.ts`) recomputes every default leaf hash against the latest `kernel-history.ts` entry and fails on drift, telling you to bump `KERNEL_VERSION` and append a new entry; several changes on the same day may revise that day's entry, while older entries are frozen forever — they are what identifies "still the old default".
 
 ### System prompt placeholders
 
@@ -152,9 +164,13 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | Placeholder | Injected content |
 | --- | --- |
 | `{{AGENTS_MD}}` | Full text of `AGENTS.md` |
-| `{{VAULT_KEYS}}` | List of Vault key names (names only) |
-| `{{SKILL_METADATA}}` | Metadata of installed Skills |
+| `{{VAULT}}` | The rendered `vault.prompt` block (the vault section); empty when `vault.enabled` is off. A template without it injects no vault section — the Vault tab offers inserting/migrating it explicitly |
+| `{{SKILLS}}` | The rendered `skills.prompt` block (the skills section); empty when `skills.enabled` is off. A template without it injects no skills section — the Skills tab offers inserting/migrating it explicitly |
 | `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
+| `{{SCHEDULES}}` | The rendered `schedules.prompt` block (the scheduled-tasks section); empty when `schedules.enabled` is off. A template without it injects no schedules section — the Schedules tab offers inserting it explicitly |
+| `{{VAULT_KEYS}}` | Inside `vault.prompt`: the Vault key-name list (names only, one `- KEY` line per key). For legacy templates, an occurrence directly in the template body is still substituted, honoring `vault.enabled` the same way |
+| `{{SKILL_METADATA}}` | Inside `skills.prompt`: the installed Skills' metadata lines. For legacy templates, an occurrence directly in the template body is still substituted, honoring `skills.enabled` the same way |
+| `{{SCHEDULE_LIST}}` | Inside `schedules.prompt`: the current task-name list (one `- name` line per task; an empty-roster note when none exist) |
 | `{{USER_MEMORY_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{WORKSPACE_MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
 | `{{WORKSPACE_MEMORY_DIR}}` | Inside `memory.workspace_prompt` only: absolute path of the current Workspace's Memory directory |
@@ -173,6 +189,10 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
+
+The Vault / Skills / Memory / Schedules sections all follow the same placeholder + toggle + editable prompt pattern: the template holds only the `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` placeholders, the section text lives in the corresponding `*.prompt` config (edited on its settings tab), and turning `*.enabled` off empties the whole block. The four section placeholders are expanded **last, in a single pass** at assembly time: expansion products are never rescanned, so placeholder-looking text inside a memory index or a section prompt stays literal instead of triggering a second substitution.
+
+**Legacy templates**: `system_config.yaml` is materialized at Agent creation and never auto-upgraded, so an Agent created before this mechanism carries hardcoded `# Vault` / `# Skills` section text with inline `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}` in its template. Such templates keep working: the inline placeholders are still substituted, and now honor the new toggles (an off switch substitutes an empty string). The matching tab reports the legacy template and offers one-click migration — replacing the old default section verbatim, in place, with the new placeholder, leaving the assembled prompt unchanged; a template whose section text was customized doesn't match the verbatim migration and is treated as missing the placeholder instead, with a one-click insert (before `# Environment`).
 
 ## Memory
 
@@ -232,7 +252,7 @@ To read, delete or ask the Agent to edit what it has saved, use the settings pag
 
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
-- Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
+- Only key names are disclosed in the system prompt: the template's `{{VAULT}}` placeholder expands to `vault.prompt` (carrying the `{{VAULT_KEYS}}` key-name list), editable on the Vault tab; with `vault.enabled` off the block is empty — values are still injected into subprocesses, the model just doesn't see the key-name list. A legacy template's inline `{{VAULT_KEYS}}` is still substituted under the same toggle, and the tab offers one-click migration (see "System prompt placeholders");
 - Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
 
@@ -257,6 +277,8 @@ enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
 ```
+
+The template's `{{SCHEDULES}}` placeholder expands to `schedules.prompt`: it teaches the model to manage these TOML files with its own file tools (the directory, the field rules, the ~30-second automatic pickup, and the hygiene rules against duplicates), ending with the current task-name list via `{{SCHEDULE_LIST}}`. The prompt is editable on the Schedules tab; with `schedules.enabled` off the block is empty — the server still fires tasks on schedule, the model just isn't taught the task system. An Agent created before this mechanism has no such placeholder in its template; the tab offers one-click insertion.
 
 ## Design principle
 

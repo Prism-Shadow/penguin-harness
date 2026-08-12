@@ -62,6 +62,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | 办公效率 | `data-analysis` | 以有界的证据检查、显式的改答案决策、原生产物处理与最终输出校验完成数据分析任务 |
 | | `firecrawl` | 经 Firecrawl API 做网络搜索与页面抓取，产出干净的 Markdown |
 | | `bento-slides` | 制作与编辑 Bento 演示文稿：单文件 `.bento.html`、文档即 JSON，把素材映射到图表、morph 转场与状态页 |
+| | `humanizer` | 去除任意语言文本的 AI 味，把行文改写成书籍、报纸、百科式的风格（不预装，按需从技能库安装） |
 | | `word-docx` | 离线 profile：通过内置确定性工具和 Agent 自有 Python 环境检查、编辑 DOCX 文件 |
 | | `powerpoint-pptx` | 离线 profile：通过内置确定性工具检查 PPTX 文件并追加标题正文页 |
 | | `pdf-tools` | 离线 profile：通过内置确定性工具检查和合并 PDF 文件 |

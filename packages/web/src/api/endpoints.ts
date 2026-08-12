@@ -15,7 +15,11 @@ import type {
   AgentCreateResponse,
   AgentImportRequest,
   AgentImportResponse,
+  AgentKernelUpdateResponse,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
   AgentSkillsResponse,
+  AgentVaultConfigDto,
   AgentsResponse,
   AgentTracesResponse,
   ApprovalDecisionRequest,
@@ -210,6 +214,27 @@ export const putVault = (projectId: string, agentId: string, body: VaultUpdateRe
     { method: "PUT", body },
   );
 
+/** Inserts the {{VAULT}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Vault section verbatim when one is present (idempotent, owner-only). */
+export const insertVaultPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentVaultConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
+/** Inserts the {{SKILLS}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Skills section verbatim when one is present (idempotent). */
+export const insertSkillsPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentSkillsConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
+/** Inserts the {{SCHEDULES}} placeholder into the agent's prompt template (idempotent, owner-only; Schedules has no legacy section to migrate). */
+export const insertSchedulesPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentSchedulesConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
 // Memory (Agent-level, agent_state/memory/) -------------------------------------------------
 
 /** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
@@ -284,6 +309,13 @@ export const testAgentMcpServer = (projectId: string, agentId: string, body: MCP
 export const resetAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
+/** Smart-merge the config up to the current defaults generation (customizations kept and reported); non-destructive sibling of resetAgentConfig. */
+export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentKernelUpdateResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
     { method: "POST" },
   );
 

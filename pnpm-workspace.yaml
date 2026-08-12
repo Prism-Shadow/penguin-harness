@@ -6,6 +6,14 @@ packages:
 overrides:
   "@anthropic-ai/sdk": "^0.91.1"
   esbuild: "^0.28.1"
+  # GHSA-frvp-7c67-39w9: @hono/node-server < 2.0.5 path traversal (serve-static on
+  # Windows). Our direct dep is already ^2.0.5; this forces the transitive copy pulled
+  # by @modelcontextprotocol/node (which pins ^1.19.9, no fixed upstream release yet).
+  # Remove once @modelcontextprotocol/node depends on @hono/node-server >= 2.0.5.
+  "@hono/node-server": ">=2.0.5"
+  # nanoid < 3.3.17 high (custom generators can loop indefinitely on size 0); only
+  # 3.x copies exist here (transitive). Remove once no dependent resolves < 3.3.17.
+  nanoid: "^3.3.17"
 injectWorkspacePackages: true
 syncInjectedDepsAfterScripts:
   - build

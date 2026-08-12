@@ -91,6 +91,17 @@ describe("installSkill / removeSkill", () => {
     await expect(fs.access(skillFile("bundled", "requirements.lock"))).rejects.toThrow();
   });
 
+  it("preserves binary auxiliary resource bytes without UTF-8 conversion", async () => {
+    const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff]);
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "binary-resource",
+      content: "---\nname: binary-resource\n---\n\nBody\n",
+      files: { "assets/image.bin": binary },
+    });
+
+    expect(await fs.readFile(skillFile("binary-resource", "assets/image.bin"))).toEqual(binary);
+  });
+
   it("rejects unsafe bundled resource paths before writing", async () => {
     await expect(
       installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {

@@ -180,6 +180,8 @@ export interface UiPrefs {
    * scanning (#139).
    */
   showCliSessions?: boolean;
+  /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
+  initialPasswordBannerDismissed?: boolean;
   [key: string]: unknown;
 }
 
@@ -500,6 +502,8 @@ export interface AgentSummary {
   toolCount: number;
   /** Agent State version number (the `version` in system_config.yaml; treated as 1 if missing). */
   version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (a missing stamp counts as outdated) — drives the list card's update hint. */
+  kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
   /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
@@ -548,17 +552,64 @@ export interface AgentMemoryConfigDto {
   workspacePrompt: string;
 }
 
+/**
+ * Vault prompt-injection config, edited on the Vault tab. `enabled` / `prompt` report
+ * effective values (a config with no `vault` section reads as enabled with the built-in
+ * prompt, matching core); the last two are read-only facts computed from the stored template.
+ */
+export interface AgentVaultConfigDto {
+  /** Whether the Vault section enters the model context (values are injected into subprocesses regardless). */
+  enabled: boolean;
+  /** The `{{VAULT}}` block (carries `{{VAULT_KEYS}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{VAULT}}`; POST …/vault/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Vault section verbatim (a pre-`{{VAULT}}` Agent) — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Skills prompt-injection config, edited on the Skills tab; same field semantics as AgentVaultConfigDto, for `{{SKILLS}}` / `{{SKILL_METADATA}}` and the legacy # Skills section. */
+export interface AgentSkillsConfigDto {
+  /** Whether the Skills section enters the model context (installed skills remain explicitly invocable regardless). */
+  enabled: boolean;
+  /** The `{{SKILLS}}` block (carries `{{SKILL_METADATA}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SKILLS}}`; POST …/skills/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Skills section verbatim — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Schedules prompt-injection config, edited on the Schedules tab. No legacy field: Schedules never had a hardcoded template section. */
+export interface AgentSchedulesConfigDto {
+  /** Whether the Scheduled Tasks section enters the model context (the server fires configured tasks regardless). */
+  enabled: boolean;
+  /** The `{{SCHEDULES}}` block (carries `{{SCHEDULE_LIST}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SCHEDULES}}`; POST …/schedules/template-placeholder inserts it explicitly. */
+  templateHasPlaceholder: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
   description?: string;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
+  /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
+  kernelVersion: string | null;
+  /** The current defaults generation (core's KERNEL_VERSION) — what a kernel update would stamp. */
+  kernelLatest: string;
+  /** Whether the stamp is behind kernelLatest (a missing stamp counts as outdated). */
+  kernelOutdated: boolean;
   systemPrompt: string;
   maxTurns?: number;
   model?: AgentModelConfigDto;
   compaction?: AgentCompactionConfigDto;
   memory: AgentMemoryConfigDto;
+  vault: AgentVaultConfigDto;
+  skills: AgentSkillsConfigDto;
+  schedules: AgentSchedulesConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -571,6 +622,20 @@ export interface AgentConfigResponse {
   /** Agent State absolute path. */
   stateDir: string;
   activeSessionCount: number;
+}
+
+/**
+ * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
+ * Paths are dotted config leaves (`system_prompt`, `memory.prompt`, `tools.builtin.<name>`…)
+ * in defaults-traversal order; the client maps them to display names.
+ */
+export interface AgentKernelUpdateResponse {
+  /** Leaves advanced to the new default (previously missing, or an untouched old default). */
+  advanced: string[];
+  /** Leaves kept because the stored value matches no recorded defaults generation (user customizations, kept conservatively). */
+  kept: string[];
+  /** The kernel stamp written (the current defaults generation). */
+  kernelVersion: string;
 }
 
 /** POST …/config/mcp-test result: reachability of one MCP Server entry. */
@@ -595,6 +660,10 @@ export interface AgentConfigUpdateRequest {
     model?: AgentModelConfigDto;
     compaction?: AgentCompactionConfigDto;
     memory?: Partial<AgentMemoryConfigDto>;
+    /** Only the writable half of the DTO — the template facts (templateHasPlaceholder / legacySectionPresent) are computed, never written. */
+    vault?: { enabled?: boolean; prompt?: string };
+    skills?: { enabled?: boolean; prompt?: string };
+    schedules?: { enabled?: boolean; prompt?: string };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };

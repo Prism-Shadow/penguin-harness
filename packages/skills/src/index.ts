@@ -203,6 +203,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
       "data-analysis",
       "firecrawl",
       "bento-slides",
+      "humanizer",
       "word-docx",
       "powerpoint-pptx",
       "pdf-tools",

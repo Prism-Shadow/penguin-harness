@@ -97,6 +97,7 @@ output = 0.857143
 | `name` | — | Agent 展示名（缺省回退到 id） |
 | `description` | — | Agent 描述 |
 | `version` | `1` | Agent State 版本号（自然数），每次成功优化自增 |
+| `kernel_version` | 当前内核版本 | 配置内核版本（日期字符串）：记录该配置基于哪一代内置默认，创建、还原默认与更新内核时盖章；与 `version` 无关，用户编辑不改变它，缺失视为早于内核版本机制（即过期） |
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
 | `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
@@ -109,6 +110,12 @@ output = 0.857143
 | `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{WORKSPACE_MEMORY_INDEX}}` 与 `{{WORKSPACE_MEMORY_DIR}}` |
+| `vault.enabled` | `true` | 保险柜小节是否进入上下文（关闭后值仍注入子进程环境，只是模型看不到键名清单） |
+| `vault.prompt` | 内置模板 | `{{VAULT}}` 区块内容，可在 Vault 标签页编辑——含 `{{VAULT_KEYS}}` |
+| `skills.enabled` | `true` | 技能小节是否进入上下文（关闭后已装技能仍可被 `[use_skills]` 显式调用） |
+| `skills.prompt` | 内置模板 | `{{SKILLS}}` 区块内容，可在技能标签页编辑——含 `{{SKILL_METADATA}}` |
+| `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
+| `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集，详见[工具与审批](/tools)的 MCP Server 一节 |
 
@@ -143,7 +150,12 @@ compaction:
 # 参见「工具与审批」页。
 ```
 
-既有 Agent 始终按其磁盘上的配置原样运行——更新后的代码默认值不会自动合并。要采用当前默认值（例如更新后的内置系统提示词），可使用设置页的**还原为默认配置**操作：与 Skill 更新同语义，会用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。
+既有 Agent 始终按其磁盘上的配置原样运行——更新后的代码默认值不会自动合并。内置默认发生实质变化时，配置的 `kernel_version` 落后于当前内核版本，详情页与智能体列表会给出更新提示。采用当前默认值有两条路径（同在设置页概览、相邻放置）：
+
+- **更新内核**：无损合并。逐字段比对：字段缺失、或仍等于某一代已记录的内置默认，跟进当前默认；被用户改过的保持不变并在结果中列出。`tools.builtin` 按工具名逐个比对——只保留改过的那一个，其余照常跟进，用户自加的条目不受影响；`name`、`description`、`version` 与 `tools.mcpServers` 永不触碰。完成后盖章 `kernel_version`。比对是**保守**的：只有哈希命中已记录代际的值才被视为旧默认，太老而无法识别的代际一律按自定义保留。
+- **还原为默认配置**：与 Skill 更新同语义，用当前默认值覆盖现有配置——自定义系统提示词、工具列表、模型/压缩参数与 MCP Server——仅保留 `name`、`description` 与 `version`。更新内核因保守保留而没跟上时，这是全量刷新的兜底。
+
+面向开发者：`kernel_version` 只在对内置默认做出实质修改时手动前进（取当日日期）。CI 的 pinned-hash 测试（`core/test/kernel-version.test.ts`）重算全部默认字段哈希并与 `kernel-history.ts` 最新条目比对，不一致即失败并提示更新 `KERNEL_VERSION`、追加新条目；同日多次变更可修订当日条目，历史条目一经冻结不再改动——它们就是「仍是旧默认」的识别依据。
 
 ### 系统提示词占位符
 
@@ -152,9 +164,13 @@ compaction:
 | 占位符 | 注入内容 |
 | --- | --- |
 | `{{AGENTS_MD}}` | `AGENTS.md` 的全文 |
-| `{{VAULT_KEYS}}` | Vault 的键名列表（仅键名） |
-| `{{SKILL_METADATA}}` | 已安装 Skill 的元数据 |
+| `{{VAULT}}` | 渲染后的 `vault.prompt` 区块（保险柜小节）；`vault.enabled` 关闭时为空。模板没有它就不注入该小节——Vault 标签页提供显式插入/迁移 |
+| `{{SKILLS}}` | 渲染后的 `skills.prompt` 区块（技能小节）；`skills.enabled` 关闭时为空。模板没有它就不注入该小节——技能标签页提供显式插入/迁移 |
 | `{{MEMORY}}` | 渲染后的 `memory.prompt` 区块，持久 Workspace 下再追加 `memory.workspace_prompt`；关闭记忆时为空。模板没有它就不注入记忆——记忆标签页提供显式插入 |
+| `{{SCHEDULES}}` | 渲染后的 `schedules.prompt` 区块（定时任务小节）；`schedules.enabled` 关闭时为空。模板没有它就不注入该小节——定时任务标签页提供显式插入 |
+| `{{VAULT_KEYS}}` | `vault.prompt` 内：Vault 的键名列表（仅键名，每键一行 `- KEY`）。为兼容旧模板，直接写在模板正文中的该占位符仍会被替换，并同样受 `vault.enabled` 控制 |
+| `{{SKILL_METADATA}}` | `skills.prompt` 内：已安装 Skill 的元数据行。为兼容旧模板，直接写在模板正文中的该占位符仍会被替换，并同样受 `skills.enabled` 控制 |
+| `{{SCHEDULE_LIST}}` | `schedules.prompt` 内：现有定时任务名列表（每任务一行 `- name`；无任务时为空清单说明） |
 | `{{USER_MEMORY_INDEX}}` | 记忆提示词内：用户作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
 | `{{WORKSPACE_MEMORY_INDEX}}` | 仅 `memory.workspace_prompt` 内：Workspace 作用域 `MEMORY.md` 索引的内容（最多注入 200 行、总计 25000 字符） |
 | `{{WORKSPACE_MEMORY_DIR}}` | 仅 `memory.workspace_prompt` 内：当前 Workspace 记忆目录的绝对路径 |
@@ -173,6 +189,10 @@ compaction:
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
 `agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。
+
+Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
+
+**旧模板兼容**：`system_config.yaml` 在 Agent 创建时物化、从不自动升级，早于本机制创建的 Agent 模板中是硬编码的 `# Vault` / `# Skills` 段落文字加内联 `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}`。这类模板继续工作：内联占位符仍被替换，且同样受新开关控制（关闭时替换为空串）。对应标签页会提示「旧版模板」并提供一键迁移——把旧默认段落逐字原位替换为新占位符，装配结果不变；自定义改动过段落文字的模板不匹配逐字迁移，则按缺占位符处理、提供一键插入（插到 `# Environment` 之前）。
 
 ## 记忆
 
@@ -232,7 +252,7 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 - 键名须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（shell 环境变量命名规则）；
 - 值只注入工具子进程的环境变量，永远不进入模型上下文与 Trace；
-- 系统提示词中经 `{{VAULT_KEYS}}` 只披露键名；
+- 系统提示词中只披露键名：模板的 `{{VAULT}}` 占位符展开为 `vault.prompt`（内含 `{{VAULT_KEYS}}` 键名列表），提示词可在 Vault 标签页编辑；`vault.enabled` 关闭则整段为空——值照旧注入子进程，只是模型看不到键名清单。旧模板的内联 `{{VAULT_KEYS}}` 仍被替换并受同一开关控制，标签页提供一键迁移（见「系统提示词占位符」一节）；
 - 经 Web/API 保存会使该 Agent 已缓存的 Session 运行时失效：其任意 Session 的下一个任务会重新恢复（resume）并使用新值；进行中的任务保持其启动时的值（CLI 直接改文件对运行中的 server 则要等 Session 下次创建或恢复时生效）；
 - 通过 CLI `penguin config vault set/list/remove` 或 Web 的 Vault 标签页管理。
 
@@ -257,6 +277,8 @@ enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
 ```
+
+模板的 `{{SCHEDULES}}` 占位符展开为 `schedules.prompt`：教模型用文件工具自行管理这些 TOML 文件（目录、字段规则、约 30 秒自动生效、防重复等卫生规则），末尾经 `{{SCHEDULE_LIST}}` 注入现有任务名列表。提示词可在定时任务标签页编辑；`schedules.enabled` 关闭则整段为空——server 照常按计划触发任务，只是模型不了解任务体系。早于本机制创建的 Agent 模板没有该占位符，标签页提供一键插入。
 
 ## 设计原则
 

@@ -220,7 +220,6 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
-    activeSessions: "活跃 Session",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -231,7 +230,7 @@ export const zh = {
     settings: "Agent 设置",
     backToList: "返回 Agents",
     tabOverview: "概览",
-    tabPrompt: "Prompt",
+    tabPrompt: "系统提示词",
     tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
@@ -239,19 +238,21 @@ export const zh = {
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
+    copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt 模板",
     placeholdersTitle: "可用占位符（点击插入）",
     insertPlaceholder: "插入到 system_prompt 光标处",
-    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). */
+    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} 等) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
-      ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
-      ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      ["{{VAULT}}", "注入保险柜区块（vault.prompt，含键名清单）；开关关闭时为空"],
+      ["{{SKILLS}}", "注入技能区块（skills.prompt，含已安装技能元数据）；开关关闭时为空"],
       [
         "{{MEMORY}}",
         "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
       ],
+      ["{{SCHEDULES}}", "注入定时任务区块（schedules.prompt，含任务名清单）；开关关闭时为空"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
       ["{{SHELL}}", "命令执行使用的 Shell"],
@@ -363,8 +364,9 @@ export const zh = {
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
+    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferTitle: "导出 / 导入",
     transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
     exportSnapshot: "导出快照",
     importSnapshot: "导入快照",
@@ -373,12 +375,51 @@ export const zh = {
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
     resetConfigTitle: "还原为默认配置",
-    resetConfigDesc:
-      "把 system_config.yaml 还原为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
       "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
+    /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
+    kernelTitle: "内核",
+    kernelLegacy: "早于内核版本机制",
+    kernelOutdatedHint: "内核有更新",
+    kernelUpToDate: "已是最新",
+    kernelUpdateTitle: "更新内核",
+    /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
+    kernelCurrent: "当前",
+    kernelLatest: "最新",
+    kernelUpdateAction: "更新内核",
+    kernelUpdateConfirmBody:
+      "将把未自定义的字段更新为当前内置默认值；自定义过的字段保持不变并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+    kernelUpdateDone: (version: string, advanced: number): string =>
+      advanced > 0
+        ? `内核已更新至 ${version}，${advanced} 个字段跟进新默认`
+        : `内核已更新至 ${version}，字段均已是当前默认或保持自定义`,
+    kernelUpdateKeptIntro: "以下字段因自定义被保留：",
+    kernelListSeparator: "、",
+    /** Display name of a per-tool merge leaf (`tools.builtin.<name>`) in the kept/advanced lists. */
+    kernelFieldTool: (name: string): string => `工具 ${name}`,
+    /** Display names of the fixed kernel merge leaves (dotted config paths); unknown paths fall back to the raw path. */
+    kernelFields: {
+      system_prompt: "系统提示词模板",
+      max_turns: "单任务最大轮数",
+      "model.max_tokens": "模型最大输出 Token",
+      "model.thinking_level": "思考力度",
+      "model.timeoutMs": "请求超时",
+      "compaction.max_context_length": "压缩上下文阈值",
+      "compaction.max_session_turns": "压缩会话轮数阈值",
+      "compaction.mode": "压缩模式",
+      "compaction.prompt": "压缩提示词",
+      "memory.enabled": "记忆开关",
+      "memory.prompt": "记忆提示词",
+      "memory.workspace_prompt": "工作区记忆提示词",
+      "vault.enabled": "Vault 小节开关",
+      "vault.prompt": "Vault 提示词",
+      "skills.enabled": "技能小节开关",
+      "skills.prompt": "技能提示词",
+      "schedules.enabled": "定时任务小节开关",
+      "schedules.prompt": "定时任务提示词",
+    } as Record<string, string>,
   },
 
   models: {
@@ -590,6 +631,21 @@ export const zh = {
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
     valueRequired: "值不能为空",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用密钥保险柜",
+      templateMissing: "提示词模板中没有 {{VAULT}} 占位符，保险柜小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Vault 段落：一键迁移会将该段落原位替换为 {{VAULT}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{VAULT}} 占位符",
+      migrate: "迁移为 {{VAULT}} 占位符",
+      promptSection: "保险柜提示词",
+      promptSectionHint: "注入模板 {{VAULT}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{VAULT_KEYS}}", "保险柜键名列表（每键一行「- KEY」，仅键名，值永不注入；无键时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   schedule: {
@@ -638,6 +694,19 @@ export const zh = {
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用定时任务",
+      templateMissing: "提示词模板中没有 {{SCHEDULES}} 占位符，定时任务小节不会进入上下文。",
+      insertPlaceholder: "插入 {{SCHEDULES}} 占位符",
+      promptSection: "定时任务提示词",
+      promptSectionHint:
+        "注入模板 {{SCHEDULES}} 占位符的内容，教模型用文件工具管理定时任务；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SCHEDULE_LIST}}", "现有任务名列表（每任务一行「- 名称」；无任务时注入空清单说明）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   skills: {
@@ -712,6 +781,21 @@ export const zh = {
     importOverwriteBody: (name: string): string =>
       `技能「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
     importOverwriteAction: "覆盖安装",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用技能",
+      templateMissing: "提示词模板中没有 {{SKILLS}} 占位符，技能小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Skills 段落：一键迁移会将该段落原位替换为 {{SKILLS}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{SKILLS}} 占位符",
+      migrate: "迁移为 {{SKILLS}} 占位符",
+      promptSection: "技能提示词",
+      promptSectionHint: "注入模板 {{SKILLS}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SKILL_METADATA}}", "已安装技能的元数据行（每技能一行「- 名称 — 描述」；无技能时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   chat: {
@@ -1044,7 +1128,7 @@ Benchmark：
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "会话的模型已锁定：输入 /model 指令可切换模型（发送时开启新会话延续本对话）",
+    modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */

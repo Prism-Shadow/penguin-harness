@@ -62,6 +62,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | Office Productivity | `data-analysis` | Complete data-analysis tasks with bounded evidence inspection, explicit answer-changing decisions, native artifact handling and final output verification |
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
+| | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
 | | `word-docx` | Offline profile: inspect and edit DOCX files with bundled deterministic tooling and an Agent-owned Python environment |
 | | `powerpoint-pptx` | Offline profile: inspect PPTX files and append title-and-body slides with bundled deterministic tooling |
 | | `pdf-tools` | Offline profile: inspect and merge PDF files with bundled deterministic tooling |
