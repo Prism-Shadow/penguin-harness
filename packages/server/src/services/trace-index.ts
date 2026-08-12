@@ -12,14 +12,16 @@
  *     Writer without telling the server which shard rotated — those land via the
  *     reconciler like external writes (the run bumps the date-dir mtime).
  *   - mtime-gated reconciliation (reconcileAgent): the hot path stats the Agent's
- *     traces root plus its newest known date dir (TWO stat calls, no readdir; a new
- *     date dir bumps the root's mtime, a new file in the current date dir bumps that
- *     dir's mtime). Only on a change does it readdir — and only the date dirs whose
- *     mtime moved — registering new shards and classifying each new Session ONCE
- *     (bounded head-read of the earliest shard for origin/workspace/title). Restart
- *     forgets the in-memory gate, so the first request per Agent after an upgrade or
- *     restart runs one full diff (this is also how the index first populates: no
- *     migration step needed).
+ *     traces root plus every known date dir (N stat calls, no readdir; a new
+ *     date dir bumps the root's mtime, a new file in any existing date dir bumps
+ *     that dir's mtime — including compaction's rotate() which writes to the
+ *     session's original date dir, not necessarily the newest). Only on a change
+ *     does it readdir — and only the date dirs whose mtime moved — registering
+ *     new shards and classifying each new Session ONCE (bounded head-read of the
+ *     earliest shard for origin/workspace/title). Restart forgets the in-memory
+ *     gate, so the first request per Agent after an upgrade or restart runs one
+ *     full diff (this is also how the index first populates: no migration step
+ *     needed).
  *   - Forced reconciliation (`force`): ignores the gate and diffs every date dir —
  *     the miss-retry path for gate blind spots (e.g. an external write into an OLD
  *     date dir moves neither gated mtime). A stale index therefore degrades to one
@@ -166,16 +168,23 @@ export class TraceIndexService {
       return;
     }
     if (!force && cached && cached.root === rootMtime) {
-      // Root unchanged (no date dir created/removed). The one blind spot on this level is
-      // a new file inside an EXISTING date dir — in practice always the newest one (the
-      // Writer names dirs by current local date) — so gate on that single dir's mtime too.
+      // Root unchanged (no date dir created/removed). A new file inside an EXISTING date
+      // dir moves that dir's mtime — but not necessarily the newest one: Trace Writer's
+      // rotate() (compaction) creates a new shard in the session's ORIGINAL date dir,
+      // which may be older than the newest dir. Stat every known date dir instead of
+      // only the newest; this is still readdir-free (N stat calls, N = date dir count).
       // Cached sentinels (-1: the dir was fresh when last seen) never match, forcing a
       // re-diff until the tree has been quiet (see mtime-gate's FRESH_MS).
-      const newest = [...cached.dates.keys()].sort().at(-1);
-      if (newest === undefined) return;
-      this.counters.gateStats += 1;
-      const m = await statMtime(path.join(dir, newest));
-      if (m !== null && m === cached.dates.get(newest)) return;
+      let changed: string | null = null;
+      for (const date of cached.dates.keys()) {
+        this.counters.gateStats += 1;
+        const m = await statMtime(path.join(dir, date));
+        if (m === null || m !== cached.dates.get(date)) {
+          changed = date;
+          break;
+        }
+      }
+      if (changed === null) return;
     }
 
     // Change detected / first look / force: diff date dirs (readdir only the changed ones).

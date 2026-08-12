@@ -100,8 +100,31 @@ describe("trace-index", () => {
     expect(h.traceIndex.repo.getSession(S2)?.metaRead).toBe(true);
   });
 
-  it("a write into an OLD date dir slips past the gate; the consumers' force-retry (locateAll) recovers it", async () => {
-    // Two date dirs indexed; the gate then watches the root + the NEWEST dir only.
+  it("a new shard (compaction rotate) in a NON-newest date dir is caught by the gate", async () => {
+    // Simulates compaction: session starts in 2026-07-05, then rotate() creates _002
+    // in the SAME date dir — but a newer date dir (2026-07-06) already exists.
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("first turn")]);
+    await writeTraceFile(root, P, A, "2026-07-06", S2, 1, [userText("other session next day")]);
+    await backdate(
+      tracesRoot(root),
+      path.join(tracesRoot(root), "2026-07-05"),
+      path.join(tracesRoot(root), "2026-07-06"),
+    );
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toHaveLength(1);
+
+    // Compaction rotate: new shard in the OLD date dir (2026-07-05), not the newest (2026-07-06).
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 2, [userText("post-compaction turn")]);
+    await h.traceIndex.reconcileAgent(P, A);
+    // The gate must catch the change in the non-newest dir and register the new shard.
+    expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toHaveLength(2);
+  });
+
+  it("a write into an OLD date dir with backdated mtime slips past the gate; the consumers' force-retry (locateAll) recovers it", async () => {
+    // Two date dirs indexed; the gate now watches the root + ALL date dirs.
+    // A normal write moves the old dir's mtime and is caught (covered by the test above).
+    // The remaining blind spot is a backdated write: the external writer changes the
+    // old dir but then resets its mtime to the cached value, making the change invisible.
     await writeTraceFile(root, P, A, "2026-07-01", OLD, 1, [userText("old day")]);
     await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [userText("new day")]);
     await backdate(
