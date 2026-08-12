@@ -22,10 +22,14 @@
  *     gate, so the first request per Agent after an upgrade or restart runs one
  *     full diff (this is also how the index first populates: no migration step
  *     needed).
- *   - Forced reconciliation (`force`): ignores the gate and diffs every date dir —
- *     the miss-retry path for gate blind spots (e.g. an external write into an OLD
- *     date dir moves neither gated mtime). A stale index therefore degrades to one
- *     extra scan, never to a false 404.
+ *   - Forced reconciliation (`force`): ignores the gate and diffs every date dir.
+ *     The remaining gate blind spot is a backdated write — an external process that
+ *     changes a file and then resets its directory's mtime to the cached value, making
+ *     the change invisible to stat-based detection. locateAll() forces only on a
+ *     whole-session miss (zero indexed rows); a backdated new shard for a session that
+ *     already has indexed rows is not covered and remains missing until an unrelated
+ *     force, an explicit forced reconciliation, or a restart. A stale index therefore
+ *     degrades to one extra scan, never to a false 404.
  *
  * Single-flight per Agent: concurrent requests share one in-flight reconcile instead
  * of stampeding the directory.
@@ -123,9 +127,9 @@ export class TraceIndexService {
   ) {}
 
   /**
-   * Brings one Agent's index in step with disk. Hot path (nothing changed): two stat
-   * calls, zero readdir. `force` ignores the mtime gate and diffs every date dir (the
-   * consumers' miss-retry path).
+   * Brings one Agent's index in step with disk. Hot path (nothing changed): one root
+   * stat plus up to N date-dir stats (N = date dir count), zero readdir. `force`
+   * ignores the mtime gate and diffs every date dir (the consumers' miss-retry path).
    */
   reconcileAgent(
     projectId: string,
