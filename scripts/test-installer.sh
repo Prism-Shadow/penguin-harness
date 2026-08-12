@@ -64,6 +64,21 @@ case "$(uname -s):$(uname -m)" in
   *) fail_test "unsupported fixture platform" ;;
 esac
 HOST_ASSET="penguin-$HOST_TARGET.tar.gz"
+HOST_UNAME_S="$(uname -s)"
+HOST_UNAME_M="$(uname -m)"
+
+# Installer profile tests need deterministic platform coverage even when this fixture is run on
+# macOS or arm64. Only install.sh sees this stub; payload creation above used the real host.
+cat > "$STUB_BIN/uname" <<'EOF'
+#!/bin/sh
+case "$1" in
+  -s) printf '%s\n' "${TEST_UNAME_S:?}" ;;
+  -m) printf '%s\n' "${TEST_UNAME_M:?}" ;;
+  *) exit 2 ;;
+esac
+EOF
+chmod +x "$STUB_BIN/uname"
+export TEST_UNAME_S="$HOST_UNAME_S" TEST_UNAME_M="$HOST_UNAME_M"
 
 # --- Build fixture payloads and package them exactly like the release workflow. ---
 for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64 universal; do
@@ -77,6 +92,25 @@ printf '%s\n' '{"schemaVersion":1,"target":"win32-x64"}' > "$windows_payload/pac
 
 sh "$ROOT_DIR/scripts/package-release-bundles.sh" "$PAYLOAD_DIR" "$ARTIFACT_DIR"
 
+# Tiny offline-profile fixtures exercise installer routing independently of the real release
+# packager, whose Skill and wheel contents have their own acceptance test.
+for target in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+  fixture_root="$WORK_DIR/offline-$target"
+  mkdir -p "$fixture_root/payload" "$fixture_root/bundle"
+  tar -xzf "$PAYLOAD_DIR/$target.tar.gz" -C "$fixture_root/payload"
+  mkdir -p "$fixture_root/payload/penguin/lib/offline"
+  printf '{"schemaVersion":1,"profile":"offline","target":"%s","capabilities":["word-docx"]}\n' \
+    "$target" > "$fixture_root/payload/penguin/lib/offline/profile.json"
+  tar -czf "$fixture_root/bundle/payload.tar.gz" -C "$fixture_root/payload" penguin
+  write_sha256 "$fixture_root/bundle/payload.tar.gz"
+  cp "$ROOT_DIR/install.sh" "$fixture_root/bundle/install.sh"
+  chmod +x "$fixture_root/bundle/install.sh"
+  asset="$ARTIFACT_DIR/penguin-offline-$target.tar.gz"
+  tar -czf "$asset" -C "$fixture_root/bundle" install.sh payload.tar.gz payload.tar.gz.sha256
+  write_sha256 "$asset"
+done
+OFFLINE_LINUX_X64_ASSET="penguin-offline-linux-x64.tar.gz"
+
 # Exercise the exact release-workflow stamping block against new, legacy, and inconsistent tag
 # sources. The workflow must keep this logic inline because it checks out the requested tag, which
 # may predate any helper script added to the repository.
@@ -87,7 +121,8 @@ awk '
   in_run && /^      - name:/ { exit }
   in_run { sub(/^          /, ""); print }
 ' "$ROOT_DIR/.github/workflows/release.yml" > "$STAMP_SCRIPT"
-sed -i 's/^TAG=.*/TAG="${TEST_RELEASE_TAG:?}"/' "$STAMP_SCRIPT"
+sed 's/^TAG=.*/TAG="${TEST_RELEASE_TAG:?}"/' "$STAMP_SCRIPT" > "$STAMP_SCRIPT.tmp"
+mv "$STAMP_SCRIPT.tmp" "$STAMP_SCRIPT"
 grep -q 'SH_HAS_MARKER' "$STAMP_SCRIPT" \
   || fail_test "release workflow stamping block could not be extracted"
 
@@ -376,17 +411,21 @@ run_online_case() {
   download_fallback_base_url="${7:-}"
   installer_path="${8:-$ROOT_DIR/install.sh}"
   source_mode="${9:-auto}"
+  installer_arg="${10:-}"
+  test_uname_s="${11:-$HOST_UNAME_S}"
+  test_uname_m="${12:-$HOST_UNAME_M}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
   : > "$CASE_LOG"
   set +e
   REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
     PENGUIN_DOWNLOAD_SOURCE="$source_mode" \
-    sh "$installer_path" >"$CASE_OUTPUT" 2>&1
+    sh "$installer_path" ${installer_arg:+"$installer_arg"} >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -405,6 +444,66 @@ grep -q "/latest.json\$" "$WORK_DIR/canonical.log" \
   || fail_test "unstamped installer did not resolve the OSS latest metadata"
 grep -q "/releases/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/canonical.log" \
   || fail_test "unstamped installer did not lock the resolved OSS release"
+
+for spec in \
+  "offline-linux-x64 Linux x86_64 linux-x64" \
+  "offline-linux-arm64 Linux aarch64 linux-arm64" \
+  "offline-darwin-x64 Darwin x86_64 darwin-x64" \
+  "offline-darwin-arm64 Darwin arm64 darwin-arm64"; do
+  set -- $spec
+  run_online_case "$1" canonical "" success 3 "" "" "$ROOT_DIR/install.sh" auto \
+    --offline "$2" "$3"
+  grep -q "/releases/v0.0.0-test/penguin-offline-$4.tar.gz\$" "$WORK_DIR/$1.log" \
+    || fail_test "--offline did not select the $4 offline asset"
+done
+
+run_online_case offline-fallback primary-network "" success 3 "" "" \
+  "$STAMPED_INSTALLER" auto --offline Linux x86_64
+grep -q "github.com/.*/releases/download/v0.0.0-test/$OFFLINE_LINUX_X64_ASSET\$" \
+  "$WORK_DIR/offline-fallback.log" \
+  || fail_test "--offline did not fall back to the same-version GitHub asset"
+
+run_online_case offline-outer-mismatch outer-sha-mismatch "" failure 3 "" "" \
+  "$ROOT_DIR/install.sh" auto --offline Linux x86_64
+
+run_profile_rejection() {
+  name="$1"
+  expected_message="$2"
+  test_uname_s="$3"
+  test_uname_m="$4"
+  shift 4
+  output="$WORK_DIR/$name.output"
+  requests="$WORK_DIR/$name.log"
+  : > "$requests"
+  set +e
+  REQUEST_LOG="$requests" MODE=canonical PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
+    HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$WORK_DIR/$name-install" \
+    PENGUIN_ARCHIVE="${TEST_ARCHIVE_ENV:-}" \
+    sh "$ROOT_DIR/install.sh" "$@" >"$output" 2>&1
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail_test "$name unexpectedly succeeded"
+  grep -Fq -- "$expected_message" "$output" \
+    || fail_test "$name did not report the expected refusal"
+  [ ! -s "$requests" ] || fail_test "$name accessed the network before refusing"
+}
+
+run_profile_rejection offline-universal \
+  "--offline cannot be combined with --universal" Linux x86_64 \
+  --offline --universal
+run_profile_rejection offline-archive \
+  "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+  --offline --archive "$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET"
+(
+  TEST_ARCHIVE_ENV="$ARTIFACT_DIR/$OFFLINE_LINUX_X64_ASSET"
+  run_profile_rejection offline-archive-env \
+    "--offline cannot be combined with --archive/PENGUIN_ARCHIVE" Linux x86_64 \
+    --offline
+)
+run_profile_rejection offline-unsupported-os \
+  "unsupported OS" FreeBSD x86_64 \
+  --offline
 
 run_online_case stamped canonical "" success 2 "" "" "$STAMPED_INSTALLER"
 [ "$(sed -n '1p' "$WORK_DIR/stamped.log")" = \
@@ -457,6 +556,9 @@ run_forwarder_case() {
   source="${4:-auto}"
   version="${5:-}"
   expected="${6:-success}"
+  forwarded_arg="${7:-}"
+  test_uname_s="${8:-$HOST_UNAME_S}"
+  test_uname_m="${9:-$HOST_UNAME_M}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
@@ -468,11 +570,13 @@ run_forwarder_case() {
   fi
   set +e
   REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+    TEST_UNAME_S="$test_uname_s" TEST_UNAME_M="$test_uname_m" \
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
     PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" \
-    sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+    sh "$ROOT_DIR/packages/landing/public/install.sh" \
+      ${forwarded_arg:+"$forwarded_arg"} >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -515,5 +619,11 @@ run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
 [ "$(sed -n '2p' "$WORK_DIR/forwarder-pinned.log")" = \
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
   || fail_test "pinned installer did not keep the selected release version"
+
+run_forwarder_case forwarder-offline canonical 3 auto v0.0.0-test success \
+  --offline Linux x86_64
+[ "$(sed -n '2p' "$WORK_DIR/forwarder-offline.log")" = \
+  "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$OFFLINE_LINUX_X64_ASSET" ] \
+  || fail_test "stable forwarder did not pass --offline to the release installer"
 
 echo "Installer bundle, offline, rollback and online tests passed."

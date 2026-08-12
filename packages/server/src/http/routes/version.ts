@@ -16,8 +16,8 @@
  * the command, its arguments, or its environment.
  *
  * Interpreting the CLI's outcome: `penguin update` exits non-zero only when an upgrade was
- * attempted and failed; refusals (source checkout, unrecognized layout, Windows) print a
- * message and exit 0. Exit codes alone therefore cannot separate "updated" from
+ * attempted and failed; refusals (source checkout, unrecognized layout, or unsupported
+ * Windows update paths) print a message and exit 0. Exit codes alone therefore cannot separate "updated" from
  * "unsupported", so the spawn forces PENGUIN_LANG=en and classifies by the refusal
  * messages' stable English fragments (packages/cli/src/i18n.ts, `update` section). That
  * matching is reliable here because the spawned CLI and this server ship in lockstep from

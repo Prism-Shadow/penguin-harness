@@ -49,7 +49,7 @@ Skill 采用「先索引、后正文」的设计：系统 Prompt 经 `{{SKILL_ME
 
 - 内置 Agent `default_agent` 在初始化时安装完整 Skill 库（标记 `preinstall: false` 的 Skill 除外，仅手动安装）；
 - 其他 Agent 按需安装：经 Web 界面的 Skill 库页，或经 SDK;
-- 安装即把库里的 `SKILL.md` 原样写入(含 frontmatter)，目录内的 `icon.svg` 与其他文件（保留子目录）一并拷贝；每次安装整目录替换，因此重装会丢弃新版本不再携带的文件。
+- 安装会把库里的 `SKILL.md` 原样写入（含 frontmatter），并递归复制 `icon.svg`、脚本、二进制资源及其他文件，同时保持相对路径；每次安装以原子方式替换整个目录，因此重装会清除新版本不再携带的文件。
 
 Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带原始 `skills/` 目录；运行时库内容的事实源同样是包内的 `skills/<name>/SKILL.md` 文件。
 
@@ -63,6 +63,9 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | | `firecrawl` | 经 Firecrawl API 做网络搜索与页面抓取，产出干净的 Markdown |
 | | `bento-slides` | 制作与编辑 Bento 演示文稿：单文件 `.bento.html`、文档即 JSON，把素材映射到图表、morph 转场与状态页 |
 | | `humanizer` | 去除任意语言文本的 AI 味，把行文改写成书籍、报纸、百科式的风格（不预装，按需从技能库安装） |
+| | `word-docx` | 离线 profile：通过内置确定性工具和 Agent 自有 Python 环境检查、编辑 DOCX 文件 |
+| | `powerpoint-pptx` | 离线 profile：通过内置确定性工具检查 PPTX 文件并追加标题正文页 |
+| | `pdf-tools` | 离线 profile：通过内置确定性工具检查和合并 PDF 文件 |
 | 软件开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
 | | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
 | | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI 与多轮续接（不预装，按需从技能库安装） |

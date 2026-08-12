@@ -97,7 +97,13 @@ export interface Messages {
     /** `--release` naming a release older than the running one: allowed, but said out loud. */
     targetIsOlder(target: string): string;
     /** Pre-confirmation plan for a tarball install (mechanism, target, install dir, data-dir guarantee). */
-    planTarball(current: string, target: string, installDir: string, universal: boolean): string;
+    planTarball(
+      current: string,
+      target: string,
+      installDir: string,
+      universal: boolean,
+      offline: boolean,
+    ): string;
     /** Pre-confirmation plan for a global npm install. */
     planNpm(current: string, target: string, manager: string, command: string): string;
     confirm(): string;
@@ -357,11 +363,11 @@ const en: Messages = {
     upToDate: (current) => `Already on the latest version (${current}); nothing to do.`,
     targetIsOlder: (target) =>
       `${target} is older than the installed version — this would be a downgrade.`,
-    planTarball: (current, target, installDir, universal) =>
+    planTarball: (current, target, installDir, universal, offline) =>
       [
         `Upgrade ${current} -> ${target}`,
         `  how:         re-run the official installer (this install came from the tarball)`,
-        `  install dir: ${installDir}${universal ? " (universal package, no bundled Node runtime)" : ""}`,
+        `  install dir: ${installDir}${universal ? " (universal package, no bundled Node runtime)" : offline ? " (offline capability profile)" : ""}`,
         `  replaces:    bin, lib, web${universal ? "" : ", node"} — your data dir is NOT touched`,
       ].join("\n"),
     planNpm: (current, target, manager, command) =>
@@ -592,11 +598,11 @@ const zh: Messages = {
     upgradeAvailable: (target) => `有可用升级：执行 \`penguin update\` 安装 ${target}。`,
     upToDate: (current) => `已是最新版本（${current}），无需升级。`,
     targetIsOlder: (target) => `${target} 低于当前已安装的版本——这将是一次降级。`,
-    planTarball: (current, target, installDir, universal) =>
+    planTarball: (current, target, installDir, universal, offline) =>
       [
         `升级 ${current} -> ${target}`,
         `  方式：    重新执行官方安装脚本（当前安装来自 tarball）`,
-        `  安装目录：${installDir}${universal ? "（universal 包，不含内置 Node 运行时）" : ""}`,
+        `  安装目录：${installDir}${universal ? "（universal 包，不含内置 Node 运行时）" : offline ? "（离线能力 profile）" : ""}`,
         `  将替换：  bin、lib、web${universal ? "" : "、node"}——数据目录不会被改动`,
       ].join("\n"),
     planNpm: (current, target, manager, command) =>

@@ -177,11 +177,23 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
 ```
 
+如需增加完全断网也可使用的文档能力，请安装与平台匹配的离线 profile。它包含 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`，系统需预装带 `venv` 的 CPython 3.9–3.13：
+
+```bash
+curl -fsSL https://penguin.ooo/install.sh | sh -s -- --offline
+```
+
 ### 🪟 Windows（在线安装，PowerShell）
 
 ```powershell
 irm https://penguin.ooo/install.ps1 | iex
 penguin web        # 启动服务并打开 http://127.0.0.1:7364
+```
+
+Windows x64 离线 profile 需要显式选择：
+
+```powershell
+& ([scriptblock]::Create((irm https://penguin.ooo/install.ps1))) -Offline
 ```
 
 ### 📦 npm（任意平台，需 Node >= 24）
@@ -194,7 +206,7 @@ penguin web        # 启动服务并打开 http://127.0.0.1:7364
 <details>
 <summary><b>📴 离线安装（无网环境）</b></summary>
 
-每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 每个目标只附带一个安装包——Linux 与 macOS 各有 x64 / arm64 两种架构，Windows 为 x64，另有不带运行时的 universal 包——同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
+每个 <a href="https://github.com/Prism-Shadow/penguin-harness/releases">GitHub Release</a> 会为每个原生目标附带标准安装包——Linux 与 macOS 各有 x64 / arm64，Windows 为 x64——另有不带运行时的 universal 包。每个原生目标还有对应的 `penguin-offline-<target>` 离线 profile，其中包含确定性的 DOCX 检查/编辑、PPTX 检查/追加幻灯片和 PDF 检查/合并 Skill，以及匹配平台的 Python wheels。后续离线 Skill 继续扩展同一 profile。同一个文件同时服务在线与离线安装。包内封入程序负载、其 SHA256 校验文件与对应平台的安装器：在有网机器下载这一个文件，拷贝到目标机器，解压一次并运行包内安装器即可——全程无需联网，也不必另外携带校验文件（包内封入的 SHA256 始终强制校验）。
 
 **Linux（arm64 机器换用 `penguin-linux-arm64.tar.gz`）：**
 
@@ -203,6 +215,10 @@ mkdir penguin-install
 tar -xzf penguin-linux-x64.tar.gz -C penguin-install
 ./penguin-install/install.sh
 ```
+
+如需使用离线文档 Skill，同样传输并解压与目标平台匹配的 `penguin-offline-<target>` 包。系统需要预装带 `venv` 的 CPython 3.9–3.13；Linux 要求 glibc 2.17 或更高，不支持 musl/Alpine。每个 Skill 只会从包内共享 wheelhouse 将锁定依赖安装到各自的 Agent 受控环境，不会写入系统 Python。
+
+安装或升级 Penguin 不会改写已有 Agent State。离线 profile 安装后首次初始化的 `default_agent` 会获得当前预装 Skill 集合；对于已有 Agent，请先从 Skill 库安装 `word-docx`、`powerpoint-pptx` 和 `pdf-tools`，再选择使用。
 
 **macOS（Apple 芯片用 arm64 包，Intel 芯片换用 `penguin-darwin-x64.tar.gz`）：**
 

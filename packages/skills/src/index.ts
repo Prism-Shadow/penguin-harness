@@ -32,7 +32,7 @@ export interface SkillMetadata {
   updated: string;
 }
 
-/** A Skill in the library: metadata + full SKILL.md content (including frontmatter, written as-is on install). */
+/** A Skill in the library: metadata + full directory resources, copied as-is on install. */
 export interface LibrarySkill extends SkillMetadata {
   content: string;
   /** Optional raw `icon.svg` content in the directory (custom icon, the file is the sole source, copied alongside SKILL.md on install); absent means none (frontend falls back to the default book icon). */
@@ -41,10 +41,10 @@ export interface LibrarySkill extends SkillMetadata {
    * Optional auxiliary files the SKILL.md references (e.g. `reference/API.md`), keyed by
    * POSIX-relative path within the skill directory; every entry except the top-level SKILL.md and
    * icon.svg, which have their own fields. Written alongside SKILL.md on install (subdirectories
-   * preserved). Read as UTF-8 text — library content is committed text (reference docs, templates,
-   * snippets); the field is omitted when a skill has no extra files.
+   * preserved). Values are raw bytes so binary assets are copied without corruption; the field is
+   * omitted when a skill has no extra files.
    */
-  files?: Record<string, string>;
+  files?: Readonly<Record<string, Uint8Array>>;
 }
 
 /** Skill group manifest entry: group id, title (optionally with a Chinese title, displayed per UI language), and member Skill names. */
@@ -109,20 +109,22 @@ export const SKILL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
  * Recursively collects a skill directory's auxiliary files — every regular file except the
  * top-level SKILL.md and icon.svg, which are carried by dedicated fields — keyed by POSIX-relative
  * path. These are resources a SKILL.md may reference (e.g. `reference/API.md`), installed alongside
- * it. Read as UTF-8 text; symlinks and other non-regular entries are skipped. Returns undefined
+ * it. Values are read as raw bytes; symlinks and other non-regular entries are skipped. Returns undefined
  * when the directory has no such files.
  */
-function readSkillFiles(dir: string): Record<string, string> | undefined {
-  const files: Record<string, string> = {};
+function readSkillFiles(dir: string): Readonly<Record<string, Uint8Array>> | undefined {
+  const files: Record<string, Uint8Array> = {};
   const walk = (abs: string, rel: string): void => {
-    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+    for (const entry of fs
+      .readdirSync(abs, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         walk(path.join(abs, entry.name), childRel);
       } else if (entry.isFile()) {
         // SKILL.md and icon.svg at the root are carried by the content / icon fields.
         if (rel === "" && (entry.name === "SKILL.md" || entry.name === "icon.svg")) continue;
-        files[childRel] = fs.readFileSync(path.join(abs, entry.name), "utf8");
+        files[childRel] = fs.readFileSync(path.join(abs, entry.name));
       }
     }
   };
@@ -197,7 +199,15 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
     id: "office-productivity",
     title: "Office Productivity",
     titleZh: "办公效率",
-    skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
+    skills: [
+      "data-analysis",
+      "firecrawl",
+      "bento-slides",
+      "humanizer",
+      "word-docx",
+      "powerpoint-pptx",
+      "pdf-tools",
+    ],
   },
   {
     id: "software-development",

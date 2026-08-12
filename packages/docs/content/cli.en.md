@@ -165,7 +165,7 @@ Release discovery and tarball downloads honor `PENGUIN_DOWNLOAD_SOURCE=auto|oss|
 
 | Install kind | How it upgrades |
 | --- | --- |
-| Tarball (`install.sh`, default `~/.penguin`) | Re-runs the official installer, preserving the install dir and whether the package bundles a Node runtime |
+| Tarball (`install.sh`, default `~/.penguin`) | Re-runs the official installer, preserving the install dir, bundled Node choice, and an installed offline profile |
 | Global npm/pnpm/yarn/bun install | Runs that manager's global install of `@prismshadow/penguin-cli@<target>`; if the manager cannot be identified, prints the command instead of guessing |
 | Source checkout | Refused — update it with `git pull` and a rebuild |
 

@@ -72,6 +72,65 @@ describe("installSkill / removeSkill", () => {
     expect(await fs.readFile(skillMd("penguin-sdk"), "utf8")).toContain("New body");
   });
 
+  it("recursively installs bundled resources and removes stale files on reinstall", async () => {
+    const content = "---\nname: bundled\nversion: 1\n---\n\nBody\n";
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "bundled",
+      content,
+      files: {
+        "scripts/helper.py": Buffer.from("print('ok')\n"),
+        "requirements.lock": Buffer.from("demo==1\n"),
+      },
+    });
+    expect(await fs.readFile(skillFile("bundled", "scripts/helper.py"), "utf8")).toBe(
+      "print('ok')\n",
+    );
+
+    await install("bundled", content);
+    await expect(fs.access(skillFile("bundled", "scripts/helper.py"))).rejects.toThrow();
+    await expect(fs.access(skillFile("bundled", "requirements.lock"))).rejects.toThrow();
+  });
+
+  it("preserves binary auxiliary resource bytes without UTF-8 conversion", async () => {
+    const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff]);
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "binary-resource",
+      content: "---\nname: binary-resource\n---\n\nBody\n",
+      files: { "assets/image.bin": binary },
+    });
+
+    expect(await fs.readFile(skillFile("binary-resource", "assets/image.bin"))).toEqual(binary);
+  });
+
+  it("rejects unsafe bundled resource paths before writing", async () => {
+    await expect(
+      installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+        name: "bundled",
+        content: "---\nname: bundled\n---\n",
+        files: { "../outside": Buffer.from("bad") },
+      }),
+    ).rejects.toThrow(/Invalid skill file path/);
+    await expect(fs.access(skillMd("bundled"))).rejects.toThrow();
+  });
+
+  it("serializes concurrent replacements so the installed tree is never mixed", async () => {
+    const content = "---\nname: bundled\nversion: 1\n---\n\nBody\n";
+    const replace = (value: string) =>
+      installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+        name: "bundled",
+        content,
+        files: {
+          "scripts/one.txt": Buffer.from(value),
+          "scripts/two.txt": Buffer.from(value),
+        },
+      });
+    await Promise.all([replace("first"), replace("second")]);
+    const one = await fs.readFile(skillFile("bundled", "scripts/one.txt"), "utf8");
+    const two = await fs.readFile(skillFile("bundled", "scripts/two.txt"), "utf8");
+    expect(["first", "second"]).toContain(one);
+    expect(two).toBe(one);
+  });
+
   it("rejects invalid skill names (path traversal safety)", async () => {
     await expect(install("../evil", "x")).rejects.toThrow(/skill_name/);
     await expect(install("a/b", "x")).rejects.toThrow(/skill_name/);
@@ -84,7 +143,10 @@ describe("installSkill / removeSkill", () => {
     await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
       name: "multi",
       content: "---\nname: multi\n---\nBody\n",
-      files: { "reference/API.md": "# API\n", "reference/nested/notes.txt": "notes\n" },
+      files: {
+        "reference/API.md": Buffer.from("# API\n"),
+        "reference/nested/notes.txt": Buffer.from("notes\n"),
+      },
     });
     expect(await fs.readFile(skillFile("multi", "reference/API.md"), "utf8")).toBe("# API\n");
     expect(await fs.readFile(skillFile("multi", "reference/nested/notes.txt"), "utf8")).toBe(
@@ -95,7 +157,7 @@ describe("installSkill / removeSkill", () => {
     await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
       name: "multi",
       content: "---\nname: multi\n---\nBody\n",
-      files: { "reference/API.md": "# API v2\n" },
+      files: { "reference/API.md": Buffer.from("# API v2\n") },
     });
     expect(await fs.readFile(skillFile("multi", "reference/API.md"), "utf8")).toBe("# API v2\n");
     await expect(fs.access(skillFile("multi", "reference/nested/notes.txt"))).rejects.toThrow();
@@ -107,7 +169,7 @@ describe("installSkill / removeSkill", () => {
         installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
           name: "guarded",
           content: "---\nname: guarded\n---\nBody\n",
-          files: { [bad]: "x" },
+          files: { [bad]: Buffer.from("x") },
         }),
       ).rejects.toThrow(/skill file path/);
       // The guard runs before any write: the skill directory is never created.

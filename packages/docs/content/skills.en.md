@@ -49,7 +49,7 @@ Installed Skills live under `agent_state/skills/<name>/` inside the Agent State.
 
 - The built-in Agent `default_agent` gets the whole library installed at initialization, except Skills marked `preinstall: false` — those are only ever installed manually;
 - other Agents install on demand — through the Web UI's Skill library page, or via the SDK;
-- installing writes the library `SKILL.md` verbatim (frontmatter included) and copies any `icon.svg` and other files in the skill directory (subdirectories preserved) alongside it; each install replaces the whole directory, so reinstalling drops files a newer version no longer ships.
+- installing writes the library `SKILL.md` verbatim (frontmatter included) and recursively copies any `icon.svg`, scripts, binary assets, and other resources while preserving relative paths; each install atomically replaces the whole directory, so reinstalling drops files a newer version no longer ships.
 
 The library ships as the npm package `@prismshadow/penguin-skills`, carrying the raw `skills/` directory in the tarball; at runtime the package's `skills/<name>/SKILL.md` files are likewise the source of truth for library content.
 
@@ -63,6 +63,9 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | | `firecrawl` | Web search and page scraping into clean markdown via the Firecrawl API |
 | | `bento-slides` | Author and edit Bento presentations: single-file `.bento.html` decks whose document is JSON, mapping material to charts, morph transitions and state slides |
 | | `humanizer` | Strip AI-writing tells from prose in any language and rewrite it into the register of books, newspapers and encyclopedias (not preinstalled: install from the library when needed) |
+| | `word-docx` | Offline profile: inspect and edit DOCX files with bundled deterministic tooling and an Agent-owned Python environment |
+| | `powerpoint-pptx` | Offline profile: inspect PPTX files and append title-and-body slides with bundled deterministic tooling |
+| | `pdf-tools` | Offline profile: inspect and merge PDF files with bundled deterministic tooling |
 | Software Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
 | | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
 | | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI and multi-turn continuity (not preinstalled: install from the library when needed) |

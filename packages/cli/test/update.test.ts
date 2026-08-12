@@ -373,6 +373,17 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
     ).toEqual({ args: ["/tmp/penguin-install-1.sh", "--universal"], env: {} });
   });
 
+  it("an offline install keeps the offline profile during an update", () => {
+    expect(
+      buildInstallerInvocation({
+        ...base,
+        installDir: "/home/me/.penguin",
+        hasBundledNode: true,
+        offline: true,
+      }),
+    ).toEqual({ args: ["/tmp/penguin-install-1.sh", "--offline"], env: {} });
+  });
+
   it("a non-default install dir is passed through, or the upgrade would relocate the install", () => {
     expect(
       buildInstallerInvocation({
@@ -563,14 +574,24 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     expect(planUpdate({ ...base, install: tarball })).toEqual({
       action: "tarball",
       installDir: "/home/me/.penguin",
+      offline: false,
     });
     expect(
       planUpdate({ ...base, install: { kind: "tarball", installDir: "/opt/penguin" } }),
-    ).toEqual({ action: "tarball", installDir: "/opt/penguin" });
+    ).toEqual({ action: "tarball", installDir: "/opt/penguin", offline: false });
     // No installDir on the info (shouldn't happen, but the fallback is the default install dir).
     expect(planUpdate({ ...base, install: { kind: "tarball" } })).toEqual({
       action: "tarball",
       installDir: "/home/me/.penguin",
+      offline: false,
+    });
+  });
+
+  it("preserves the generic offline profile when updating a tarball install", () => {
+    expect(planUpdate({ ...base, install: tarball, hasOfflineProfile: true })).toEqual({
+      action: "tarball",
+      installDir: "/home/me/.penguin",
+      offline: true,
     });
   });
 

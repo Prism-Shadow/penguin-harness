@@ -20,7 +20,7 @@ as `NODE_RUNTIME_VERSION` in the release workflow.
 
 ## MinGit (Git for Windows) — `git/`
 
-Present in `penguin-win32-x64.zip` only.
+Present in `penguin-win32-x64.zip` and `penguin-offline-win32-x64.zip` only.
 
 The Windows package bundles **MinGit**, the minimal redistributable build of Git for Windows,
 unmodified, as published by the Git for Windows project. It supplies the POSIX shell that the
@@ -45,3 +45,21 @@ MinGit is published by the Git for Windows project at:
 The bundled binaries are byte-identical to the `MinGit-<version>-64-bit.zip` asset of that tag;
 no patches are applied. If you need the corresponding source and cannot obtain it from the URLs
 above, open an issue on this repository and we will provide it.
+
+## Offline profile Python wheels — `lib/offline/wheels/`
+
+Present only in the platform-specific `penguin-offline-*` artifacts; standard Release and npm
+artifacts do not include these files. The profile carries unmodified, hash-locked wheels for:
+
+- `python-docx` (MIT), `python-pptx` (MIT), and `lxml` (BSD-3-Clause)
+- `Pillow` (MIT-CMU) and `XlsxWriter` (BSD-2-Clause)
+- `pypdf` (BSD-3-Clause) and `typing_extensions` (PSF-2.0)
+
+Versions and SHA256 hashes are pinned in the three `requirements.lock` files under
+`packages/skills/offline/`. Each wheel retains its upstream license file in its `.dist-info`
+directory.
+
+Sources: <https://github.com/python-openxml/python-docx>,
+<https://github.com/scanny/python-pptx>, <https://github.com/lxml/lxml>,
+<https://github.com/python-pillow/Pillow>, <https://github.com/jmcnamara/XlsxWriter>,
+<https://github.com/py-pdf/pypdf>, and <https://github.com/python/typing_extensions>.

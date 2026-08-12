@@ -6,8 +6,8 @@
  *   POST     /api/projects/:p/agents/:a/skills/archive    # install one skill from an uploaded zip (any member)
  *   GET      /api/projects/:p/agents/:a/skills/:name/archive  # export one installed skill as a zip (any member)
  *   DELETE   /api/projects/:p/agents/:a/skills/:name      # uninstall (any member)
- * Installing writes the library's SKILL.md verbatim to agent_state/skills/<name>/;
- * reinstalling overwrites with the library content (i.e. an update). The archive routes
+ * Installing recursively copies the library Skill's regular files to agent_state/skills/<name>/;
+ * reinstalling replaces the directory with the complete library content. The archive routes
  * are symmetric: POST writes every zip file under skills/<name>/ (replace semantics with
  * `overwrite`), GET packs the whole directory back under a single top-level <name>/ so
  * the download round-trips through the POST unchanged. The scope is small enough to skip

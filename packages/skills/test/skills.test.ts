@@ -93,8 +93,8 @@ describe("loadLibrarySkills", () => {
     expect(skill.files, "remote-claude-code carries files").toBeDefined();
     expect(Object.keys(skill.files!)).toContain(aux);
     // Read verbatim from disk, and the SKILL.md really links to it.
-    expect(skill.files![aux]).toBe(
-      await fs.readFile(path.join(skillsRoot, skill.name, aux), "utf8"),
+    expect(Buffer.from(skill.files![aux]!)).toEqual(
+      await fs.readFile(path.join(skillsRoot, skill.name, aux)),
     );
     expect(skill.content).toContain(aux);
     // SKILL.md and icon.svg are carried by their own fields, never duplicated into files.
@@ -210,7 +210,15 @@ describe("loadSkillGroups / groupSkills", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
       {
         id: "office-productivity",
-        skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
+        skills: [
+          "data-analysis",
+          "firecrawl",
+          "bento-slides",
+          "humanizer",
+          "word-docx",
+          "powerpoint-pptx",
+          "pdf-tools",
+        ],
       },
       {
         id: "software-development",

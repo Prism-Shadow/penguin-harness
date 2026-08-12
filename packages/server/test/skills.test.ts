@@ -238,8 +238,8 @@ describe("skills api", () => {
       "reference",
       "persistent-session.md",
     );
-    expect(await fs.readFile(refPath, "utf8")).toBe(
-      librarySkill("remote-claude-code")!.files![aux],
+    expect(await fs.readFile(refPath)).toEqual(
+      Buffer.from(librarySkill("remote-claude-code")!.files![aux]!),
     );
 
     await createPlainAgent("fresh_agent");

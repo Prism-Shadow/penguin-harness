@@ -203,6 +203,8 @@ export function globalInstallCommand(
  *   the upgrade would silently relocate it;
  * - `--universal` is passed when the current install has no bundled `node/` directory, or the user
  *   would silently gain a runtime they deliberately did not install (and lose it in reverse);
+ * - `--offline` is passed when the current install carries the offline profile, so an update never
+ *   replaces it with the lightweight standard profile;
  * - `PENGUIN_VERSION` pins the target when `--release` was given.
  *
  * Pure so every combination is unit-testable; the caller supplies the two facts that need the
@@ -212,13 +214,15 @@ export function buildInstallerInvocation(opts: {
   scriptPath: string;
   installDir: string;
   hasBundledNode: boolean;
+  offline?: boolean;
   defaultInstallDir: string;
   version?: string;
   downloadBaseUrl?: string;
   downloadFallbackBaseUrl?: string;
 }): { args: string[]; env: Record<string, string> } {
   const args = [opts.scriptPath];
-  if (!opts.hasBundledNode) args.push("--universal");
+  if (opts.offline) args.push("--offline");
+  else if (!opts.hasBundledNode) args.push("--universal");
   const env: Record<string, string> = {};
   if (path.resolve(opts.installDir) !== path.resolve(opts.defaultInstallDir)) {
     env.PENGUIN_INSTALL_DIR = opts.installDir;
@@ -460,7 +464,7 @@ export type UpdatePlan =
   | { action: "refuse"; reason: "windows-global"; command: string }
   | { action: "refuse"; reason: "windows-installer" }
   | { action: "npm"; manager: PackageManager; command: string; args: string[] }
-  | { action: "tarball"; installDir: string };
+  | { action: "tarball"; installDir: string; offline: boolean };
 
 /**
  * The whole decision, as one pure function: which of the outcomes above this invocation is, given
@@ -483,6 +487,8 @@ export function planUpdate(input: {
   platform: string;
   /** `~/.penguin`, passed in rather than read, so the tarball branch stays pure. */
   defaultInstallDir: string;
+  /** The tarball install contains the separately released offline capability profile. */
+  hasOfflineProfile?: boolean;
 }): UpdatePlan {
   const { current, target, install } = input;
   const comparison = compareVersions(target, current);
@@ -509,7 +515,11 @@ export function planUpdate(input: {
   }
 
   if (input.platform === "win32") return { action: "refuse", reason: "windows-installer" };
-  return { action: "tarball", installDir: install.installDir ?? input.defaultInstallDir };
+  return {
+    action: "tarball",
+    installDir: install.installDir ?? input.defaultInstallDir,
+    offline: input.hasOfflineProfile === true,
+  };
 }
 
 /** The line printed for a refusal — one message per reason, no fallthrough. */
@@ -543,14 +553,20 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       const target = release.version;
       const modulePath = selfPath();
       const defaultInstallDir = path.join(homedir(), ".penguin");
+      const install = detectInstall(modulePath);
+      const detectedInstallDir =
+        install.kind === "tarball" ? (install.installDir ?? defaultInstallDir) : undefined;
       const plan = planUpdate({
         current,
         target,
         ...(opts.check !== undefined ? { check: opts.check } : {}),
-        install: detectInstall(modulePath),
+        install,
         modulePath,
         platform: process.platform,
         defaultInstallDir,
+        hasOfflineProfile:
+          detectedInstallDir !== undefined &&
+          existsSync(path.join(detectedInstallDir, "lib", "offline", "profile.json")),
       });
 
       if (plan.action === "report") {
@@ -585,7 +601,7 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       const installDir = plan.installDir;
       const hasBundledNode = existsSync(path.join(installDir, "node"));
       process.stdout.write(
-        `${t.update.planTarball(current, target, installDir, !hasBundledNode)}\n`,
+        `${t.update.planTarball(current, target, installDir, !hasBundledNode, plan.offline)}\n`,
       );
       if (!(await confirmUpgrade(opts.yes, t))) return;
 
@@ -629,6 +645,7 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
         scriptPath,
         installDir,
         hasBundledNode,
+        offline: plan.offline,
         defaultInstallDir,
         version: target,
         downloadBaseUrl: downloaded.candidate.baseUrl,
