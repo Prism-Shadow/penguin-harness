@@ -84,6 +84,7 @@ import {
 import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
+import { buildSessionLearningPrompt, canLearnFromSession } from "./session-learning";
 
 const STAT_ICONS = {
   // Tokens (database / stacked cylinders)
@@ -276,6 +277,7 @@ export function ChatPage() {
   const [, bumpUsageStamp] = useState(0);
   const [credentialGuide, setCredentialGuide] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [learningBusy, setLearningBusy] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   // Background processes the conversation started (details popover list + the header's
@@ -448,6 +450,7 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  useEffect(() => setLearningBusy(false), [selectedSessionId]);
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1184,6 +1187,50 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
+  /**
+   * One explicit product bridge from a settled user chat into the existing Builder. The new
+   * Session is ordinary on purpose: its first Prompt establishes the read-only review contract;
+   * a later user-confirmed turn may use the Agent's existing Memory, Skill, or tuning workflows.
+   */
+  const startLearningReview = async () => {
+    if (!selected || !projectId || learningBusy || stream.taskState !== "idle") return;
+    setLearningBusy(true);
+    let createdId: string | null = null;
+    try {
+      // List rows intentionally omit tracePath; the single-session read resolves the latest
+      // context shard only when the user asks to learn from this Session.
+      const source = await api.getSession(selected.sessionId);
+      if (!source.session.tracePath) {
+        toastError(S.chat.learningTraceMissing);
+        setLearningBusy(false);
+        return;
+      }
+      const created = await api.createSession(projectId, "default_agent", {
+        workspace: source.session.workspace,
+      });
+      createdId = created.session.sessionId;
+      const started = await api.postTask(createdId, {
+        input: [
+          {
+            type: "text",
+            text: buildSessionLearningPrompt({
+              agentId: source.session.agentId,
+              sessionId: source.session.sessionId,
+              tracePath: source.session.tracePath,
+              workspace: source.session.workspace,
+            }),
+          },
+        ],
+      });
+      addSession(created.session);
+      navigate(`/chat/${started.sessionId}`);
+    } catch (error) {
+      if (createdId) void api.deleteSession(createdId).catch(() => undefined);
+      toastError(apiErrorText(error));
+      setLearningBusy(false);
+    }
+  };
+
   // Auth-dead gate (recoverable): an auth failure is on record AND the Project's credentials
   // have not been updated since — only the model reference is fixed at creation, credentials
   // come from the current Project config, so a key update (Models page) unlocks the session
@@ -1275,6 +1322,42 @@ export function ChatPage() {
               </span>
             )}
           </div>
+
+          {/* A settled, trace-backed user conversation can be reviewed by the Builder. Source
+              Sessions created by automation/subagents/Promotion stay out of this explicit
+              conversation-learning entry; their evidence already belongs to their own flow. */}
+          {canLearnFromSession({
+            ...(selected.source !== undefined ? { source: selected.source } : {}),
+            hasTrace: selected.hasTrace,
+            taskCount,
+            taskState: stream.taskState,
+          }) && (
+            <button
+              type="button"
+              disabled={learningBusy}
+              onClick={() => void startLearningReview()}
+              title={learningBusy ? S.chat.learningFromSession : S.chat.learnFromSession}
+              aria-label={learningBusy ? S.chat.learningFromSession : S.chat.learnFromSession}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-wait disabled:opacity-60 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Zm6 9 .8 2.2L21 15l-2.2.8L18 18l-.8-2.2L15 15l2.2-.8L18 12ZM6 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3Z" />
+              </svg>
+              <span className="hidden xl:inline">
+                {learningBusy ? S.chat.learningFromSession : S.chat.learnFromSession}
+              </span>
+            </button>
+          )}
 
           {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
           <button
