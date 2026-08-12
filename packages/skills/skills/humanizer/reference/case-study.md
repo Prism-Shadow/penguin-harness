@@ -1,6 +1,6 @@
 # Case study: measuring the AI out of prose
 
-How the tells in SKILL.md were derived, in five rounds. Round one is a controlled exercise: one assignment answered twice, first as a deliberately typical AI draft, the register a default assistant produces unprompted, then as a rewrite into print register; both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff produced the sentence-layer tells (1–10). Round two is a set of field tests, added after human readers flagged text that already followed round one; it produced the discourse-layer tells (11–17). Round three scaled the method: ten fresh pieces across five languages and ten genres, written honestly to the first two layers, were reviewed blind by independent editors; what they still caught produced the scrub-layer tells (18–24) and the per-language lists in `language-cues.md`. Round four is a user-run field test on fresh material that caught the density rule overshooting (tell 25), and round five a further user pass on regenerated material that caught the repair itself compressing (clipped conditionals, particle-chain monotony). Rounds one and two are in Chinese; round three covers Chinese, English, Japanese, French, German and Spanish.
+How the tells in SKILL.md were derived, in six rounds. Round one is a controlled exercise: one assignment answered twice, first as a deliberately typical AI draft, the register a default assistant produces unprompted, then as a rewrite into print register; both versions were kept, the tells were counted with pattern matching rather than judgment, and the diff produced the sentence-layer tells (1–10). Round two is a set of field tests, added after human readers flagged text that already followed round one; it produced the discourse-layer tells (11–17). Round three scaled the method: ten fresh pieces across five languages and ten genres, written honestly to the first two layers, were reviewed blind by independent editors; what they still caught produced the scrub-layer tells (18–24) and the per-language lists in `language-cues.md`. Round four is a user-run field test on fresh material that caught the density rule overshooting (tell 25), and round five a further user pass on regenerated material that caught the repair itself compressing (clipped conditionals, particle-chain monotony). Round six is a user editing session on one release-note passage whose four successive rejections (让-chains, announcement scaffolding, the before/after frame, contrived colloquialism) converged on plain statement. Rounds one and two are in Chinese; round three covers Chinese, English, Japanese, French, German and Spanish.
 
 The assignment, as a user would phrase it: 请帮我写一篇图文稿，大约 1000 字，讲清楚"skill 是什么"。(Write an illustrated piece of about 1,000 characters explaining what a skill is.)
 
@@ -212,3 +212,19 @@ An explainer regenerated under the round-four rules drew two further flags from 
 
 34. **Compression re-emerges at ever smaller scales.** Year-stamp runs (round four) gave way to four-character clause pivots and single-particle logic chains; the census must follow the pressure downward — count the workhorse connective and the clipped conditionals, not just clause chains.
 35. **A spot that survives repair is overloaded.** The same sentence failed in three different wordings across three rounds; no wording fixes a sentence asked to carry cause, scale and consequence in one breath. Local repair loops end by restructuring the thought, and the method's gate now says so.
+
+## Round six: user field test, the announcement frame
+
+A user brought one zh release-note passage and rejected four successive rewrites, each fix drawing the next flag. The original:
+
+> 前几个版本，我们让 Agent 能够读写文件、调用技能、启动子代理和执行定时任务。这一次，我们让 Agent 拥有了长期记忆，让它在新的会话中也能延续之前积累的信息。
+
+The first rewrite broke the 「让」字链 — three causative clauses on one engine — but kept the paired opener, and was rejected: 「前几个版本」「这一版」这种排比也很 AI 味。 The second dropped the parallelism for one-way progression, existing abilities first and 现在它又多了长期记忆 after, and was rejected too: 这种过去和现在的对比就很 AI 味，只写现在就行。 The third stated only the present but kept 照样用得上 — the first rewrite's patch for the abstract 延续之前积累的信息 — now flagged: 这种感觉很刻意。 Accepted, with the flatter 之前积累的信息也还在 offered as an equal:
+
+> Agent 有了长期记忆，新会话里也能接着用之前积累的信息。
+
+### Findings, round six
+
+36. **The announcement frame is a tell at every strength.** Full 排比 scaffold, then bare before/after progression with no parallel wording: each weakening of the frame was still flagged, and the accepted fix stated the present alone — the change is the news, the frame adds nothing. The temporal frame joined tell 1's contrast family with the same budget and fix; the zh cues gained the 「让」字链 and the 今昔架子.
+37. **Repair overshoots into performative casualness.** 照样用得上, installed as the fix for an abstract phrase, survived two further rounds before being flagged as deliberate: the fourth documented overcorrection artifact, after the cold open, the scrub fingerprint and telegraph compression. Tell 19 extended — when an abstract phrase needs replacing, the plainest statement beats the folksiest.
+38. **One session can run the whole arc.** 让-chain, 排比, contrast frame, contrived colloquialism: each round's fix minted the next round's tell, and four exchanges converged on the plain present-state sentence. The gate's natural-distribution reading is not only a cross-piece average; it is where a single sentence's repair loop ends.
