@@ -463,13 +463,13 @@ describe("Session.runGoal input", () => {
       model_id: "m1",
       model_context_window: 1000,
       system_prompt: "sp",
-      tools: [],
       agent_state: dir,
       workspace: dir,
     };
     return new Session({
       meta,
-      llm: fakeLLM(completeOn),
+      bootstrap: async () => ({ tools: [], llm: fakeLLM(completeOn), mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
       imagesDir: path.join(dir, "scratchpad", "session-1"),
       modelHasVision: true,

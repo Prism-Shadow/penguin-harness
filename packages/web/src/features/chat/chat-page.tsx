@@ -23,6 +23,7 @@ import type {
   ModelRefDto,
   ModelsResponse,
   SessionProcessInfo,
+  SessionStatus,
   SkillMetadataItem,
   TaskCreateRequest,
   TaskInputPart,
@@ -52,6 +53,7 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
+import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
@@ -131,6 +133,30 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
       </svg>
       {value}
     </span>
+  );
+}
+
+/**
+ * Session id row in the details card: the id is selectable mono text (styled like the other
+ * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
+ * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ */
+function SessionIdRow({ sessionId }: { sessionId: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {S.chat.sessionIdLabel}
+      </p>
+      <div className="flex items-start gap-1.5">
+        <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
+        <CopyButton
+          text={sessionId}
+          label={S.chat.copySessionId}
+          showCopiedText
+          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -558,18 +584,33 @@ export function ChatPage() {
     if (selected) setStatus(selected.sessionId, stream.taskState);
   }, [stream.taskState, selected, setStatus]);
 
-  // Task returns from running/compacting to idle: this turn may have spawned a sub-session or
-  // auto-created a new Agent — reload the session and Agent lists so they appear in the sidebar
-  // immediately (no manual refresh needed).
-  const prevTaskRef = useRef(stream.taskState);
+  // Task returns from running/compacting to idle ON THE SAME SESSION: this turn may have
+  // spawned a sub-session or auto-created a new Agent — reload both lists so they appear in
+  // the sidebar immediately (no manual refresh needed). Guarded by session identity: the
+  // stream resets its state to "idle" whenever it detaches (switching conversations,
+  // entering the draft), and treating that phantom transition as a completion made every
+  // mid-run "new chat" click reload the sessions + agents contexts — an app-wide re-render
+  // arriving right after the click, occasionally visible as an uncontrolled flicker. On a
+  // switch the tracker restarts from "idle": a state observed in the same commit as the id
+  // change still belongs to the previous stream, so it must not seed the new session's
+  // baseline (the new stream's own task_state push advances it).
+  const prevTaskRef = useRef<{ id: string | null; state: SessionStatus }>({
+    id: selectedSessionId,
+    state: "idle",
+  });
   useEffect(() => {
     const prev = prevTaskRef.current;
-    prevTaskRef.current = stream.taskState;
-    if (prev !== "idle" && stream.taskState === "idle") {
+    const sameSession = prev.id === selectedSessionId;
+    prevTaskRef.current = {
+      id: selectedSessionId,
+      state: sameSession ? stream.taskState : "idle",
+    };
+    if (!sameSession || selectedSessionId === null) return;
+    if (prev.state !== "idle" && stream.taskState === "idle") {
       void reloadSessions();
       void reloadAgents();
     }
-  }, [stream.taskState, reloadSessions, reloadAgents]);
+  }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
@@ -936,11 +977,20 @@ export function ChatPage() {
   // server-side and auto-sends it as an ordinary next task once this run finishes (the
   // "N queued" count arrives via task_state). Succeeds either way (queued or started
   // directly in the completion race), so the input area clears the draft on true.
+  // The per-turn thinking level rides along exactly as it does on onSend: the level is the
+  // one picked when the follow-up was composed, and the server keeps it with the queued
+  // input and applies it at auto-start (see TaskCreateRequest.queueIfBusy).
   const onQueueFollowUp = useCallback(
     async (input: TaskInputPart[]): Promise<boolean> => {
       if (!selected) return false;
       try {
-        const res = await api.postTask(selected.sessionId, { input, queueIfBusy: true });
+        const res = await api.postTask(selected.sessionId, {
+          input,
+          queueIfBusy: true,
+          ...(turnThinkingLevel
+            ? { thinkingLevel: turnThinkingLevel as TaskCreateRequest["thinkingLevel"] }
+            : {}),
+        });
         discardSessionDraft();
         await syncHealedSessionId(selected.sessionId, res.sessionId);
         return true;
@@ -949,7 +999,7 @@ export function ChatPage() {
         return false;
       }
     },
-    [selected, discardSessionDraft, syncHealedSessionId],
+    [selected, turnThinkingLevel, discardSessionDraft, syncHealedSessionId],
   );
 
   // Mid-run steering: the message is queued on the server and delivered between turns as a
@@ -1406,6 +1456,7 @@ export function ChatPage() {
                   </span>
                 </p>
               </div>
+              <SessionIdRow sessionId={selected.sessionId} />
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}

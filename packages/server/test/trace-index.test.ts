@@ -42,7 +42,6 @@ function meta(sessionId: string, over: Partial<SessionMetaPayload> = {}): Sessio
     provider: "custom",
     model_context_window: 1000,
     system_prompt: "sp",
-    tools: [],
     agent_state: "/tmp/a",
     workspace: "/ws/one",
     ...over,

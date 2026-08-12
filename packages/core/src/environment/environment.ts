@@ -4,8 +4,10 @@
  * Environment has no knowledge of any specific tool: it only assembles the tool names supported
  * by ToolConfig into BuiltinTool instances (see `environment/tools/`), and dispatches execution
  * by looking up the tool name. Adding a new built-in tool only requires implementing BuiltinTool
- * and registering it — no changes to this file needed. Tool call **rendering** is not core's
- * concern; it's handled by the CLI / Web frontend.
+ * and registering it — no changes to this file needed. Tools from configured MCP Servers join
+ * through the same BuiltinTool shape (see `environment/mcp/`) under `mcp__<server>__<tool>`
+ * names, so the execution contract below applies to them unchanged. Tool call **rendering** is
+ * not core's concern; it's handled by the CLI / Web frontend.
  *
  * The **framing and finalization** of the tool stream is handled uniformly by Environment:
  * - Entering execution immediately emits `start`; the tool only needs to yield output deltas
@@ -25,7 +27,7 @@
  */
 import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
-import type { OmniMessage, StopReason } from "../omnimessage/index.js";
+import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
   EnvironmentConfig,
@@ -37,6 +39,7 @@ import type {
 } from "../interfaces.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
+import { McpToolProvider } from "./mcp/provider.js";
 import { CommandSessionManager } from "./tools/command/index.js";
 import { SubagentSessionManager } from "./tools/subagent/index.js";
 import {
@@ -94,6 +97,8 @@ export class Environment implements EnvironmentInterface {
   private readonly truncatedToolOutputArchive: TruncatedToolOutputArchive | null;
   /** Assembled built-in tools: tool name -> BuiltinTool. Only tools supported by the registry and present in config. */
   private readonly tools: Map<string, BuiltinTool>;
+  /** MCP Server bridge (null when config lists no servers): lazily connects and exposes `mcp__<server>__<tool>` entries. */
+  private readonly mcp: McpToolProvider | null;
   /** Long-running command session registry: constructed within this Environment and shared between exec_command / input_command. */
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
@@ -137,12 +142,23 @@ export class Environment implements EnvironmentInterface {
       const factory = BUILTIN_TOOL_FACTORIES[def.name];
       if (factory) this.tools.set(def.name, factory(def, services));
     }
+    // MCP Servers bridge in lazily: construction only records the config; connecting and
+    // tool discovery happen on the first listTools()/executeTool() (see McpToolProvider).
+    // The vault is deliberately not handed over: MCP server processes see only the SDK's
+    // safe env defaults plus the entry's own env.
+    this.mcp =
+      config.toolConfig.mcpServers.length > 0
+        ? new McpToolProvider(config.toolConfig.mcpServers, {
+            workspaceDir: config.workspaceDir,
+          })
+        : null;
   }
 
-  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent). Idempotent. */
+  /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */
   dispose(): void {
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
+    this.mcp?.closeQuietly();
   }
 
   /** Background command processes registered by exec_command (still-listed exited ones included; the host UI filters as it sees fit). */
@@ -171,22 +187,43 @@ export class Environment implements EnvironmentInterface {
    * implementation is needed, use a separate explicit tool-name entry with a `forModel`
    * annotation (e.g. read_image / describe_image).
    * Only exposes `{name, description, parameters}`, dropping permission/maxOutputLength.
-   * MCP Server config flows into Environment via toolConfig; enumerating concrete MCP tools
-   * is left to a later adapter layer.
+   * MCP Server tools follow the builtin list: the first call connects the configured
+   * servers and appends their discovered tools as `mcp__<server>__<tool>` entries
+   * (unreachable servers are skipped with a stderr warning; see environment/mcp/).
    */
   async listTools(): Promise<ToolDefinition[]> {
-    return this.toolConfig.customTools
+    const builtin = this.toolConfig.customTools
       .filter((tool) => this.tools.has(tool.name))
       .map((tool) => ({
         name: tool.name,
         description: tool.description,
         ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
       }));
+    if (!this.mcp) return builtin;
+    return [...builtin, ...(await this.mcp.listTools())];
   }
 
-  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. */
+  /** Names of the validly configured MCP servers (config order; empty without MCP). Concrete-class surface for the composition layer's connect events — not part of EnvironmentInterface. */
+  mcpServerNames(): string[] {
+    return this.mcp?.serverNames() ?? [];
+  }
+
+  /** Per-server MCP connect outcomes, populated by the first listTools(); empty before it or without MCP. Feeds the mcp_connect_end event. */
+  mcpConnectResults(): McpServerConnectResult[] {
+    return this.mcp?.connectResults() ?? [];
+  }
+
+  /** Cancels an in-flight MCP connect attempt (user abort mid-connect): the next listTools() reconnects from scratch. No-op without MCP or when nothing is in flight. */
+  cancelMcpConnect(): void {
+    this.mcp?.cancelConnect();
+  }
+
+  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their server's `readOnlyHint` annotation after discovery. */
   toolPermission(name: string): ToolPermission | undefined {
-    return this.toolConfig.customTools.find((t) => t.name === name)?.permission;
+    return (
+      this.toolConfig.customTools.find((t) => t.name === name)?.permission ??
+      this.mcp?.toolPermission(name)
+    );
   }
 
   /**
@@ -212,7 +249,9 @@ export class Environment implements EnvironmentInterface {
     // uniformly emits stop + the full message.
     yield partialToolCallOutput({ eventType: "start", toolCallId });
 
-    const tool = this.tools.get(name);
+    // Builtin lookup first; an MCP-prefixed name resolves through the provider (which
+    // connects on demand — resolution failures fall through to the unknown-tool reply).
+    const tool = this.tools.get(name) ?? (await this.mcp?.resolveTool(name));
     if (!tool) {
       yield* emitFailure(toolCallId, `Unknown tool: ${name}`);
       return;

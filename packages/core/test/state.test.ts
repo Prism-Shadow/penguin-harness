@@ -8,6 +8,13 @@ import {
   AGENTS_MD_PLACEHOLDER,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
+  VAULT_PLACEHOLDER,
+  SKILLS_PLACEHOLDER,
+  SCHEDULES_PLACEHOLDER,
+  MEMORY_PLACEHOLDER,
+  DEFAULT_VAULT_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
   CWD_PLACEHOLDER,
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -164,28 +171,46 @@ describe("loadOrInitAgentState", () => {
       expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
         state.systemConfig.system_prompt.indexOf("# Environment"),
       );
-      // The # Vault and # Skills body sections plus their placeholders: the default template
-      // places them after [/developer_instructions] and before # Environment, in the order
-      // Vault -> Skills (the statement text is part of the template body, kept even with no
-      // keys/skills).
+      // The Vault / Skills / Memory / Schedules section placeholders: the default template
+      // places them after [/developer_instructions] and before # Environment, in that order.
+      // The section statement texts (# Vault, # Skills, [use_skills] …) moved into the
+      // editable default prompts, each carrying its inner injection point — the template body
+      // holds no inline {{VAULT_KEYS}}/{{SKILL_METADATA}} anymore (those are the legacy
+      // template form).
       const tpl = state.systemConfig.system_prompt;
-      expect(tpl).toContain("# Vault");
-      expect(tpl).toContain(VAULT_KEYS_PLACEHOLDER);
-      expect(tpl).toContain("# Skills");
-      expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(tpl).toContain("[use_skills]");
+      expect(tpl).toContain(VAULT_PLACEHOLDER);
+      expect(tpl).toContain(SKILLS_PLACEHOLDER);
+      expect(tpl).toContain(SCHEDULES_PLACEHOLDER);
+      expect(tpl).not.toContain("# Vault");
+      expect(tpl).not.toContain("# Skills");
+      expect(tpl).not.toContain(VAULT_KEYS_PLACEHOLDER);
+      expect(tpl).not.toContain(SKILL_METADATA_PLACEHOLDER);
+      expect(DEFAULT_VAULT_PROMPT).toContain("# Vault");
+      expect(DEFAULT_VAULT_PROMPT).toContain(VAULT_KEYS_PLACEHOLDER);
+      expect(DEFAULT_SKILLS_PROMPT).toContain("# Skills");
+      expect(DEFAULT_SKILLS_PROMPT).toContain(SKILL_METADATA_PLACEHOLDER);
+      expect(DEFAULT_SKILLS_PROMPT).toContain("[use_skills]");
+      expect(DEFAULT_SCHEDULES_PROMPT).toContain("# Scheduled Tasks");
+      // The per-feature injection config ships enabled with the default prompts materialized.
+      expect(state.systemConfig.vault).toEqual({ enabled: true, prompt: DEFAULT_VAULT_PROMPT });
+      expect(state.systemConfig.skills).toEqual({ enabled: true, prompt: DEFAULT_SKILLS_PROMPT });
+      expect(state.systemConfig.schedules).toEqual({
+        enabled: true,
+        prompt: DEFAULT_SCHEDULES_PROMPT,
+      });
       // Tooling installs once into a shared per-Agent directory rather than per task, so a
       // Session's scratchpad never becomes the home of a virtualenv. It governs every task, not
       // just skill runs, so it belongs to # File system — pinned by position, since the rule
-      // reads as skills-only the moment it drifts back under # Skills.
+      // reads as skills-only the moment it drifts back under # Skills (now the {{SKILLS}}
+      // block).
       expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
       expect(tpl.indexOf("# File system")).toBeLessThan(tpl.indexOf("shared_env/"));
-      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf("# Skills"));
-      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
-      expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
-      expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
-      expect(tpl.indexOf("# Skills")).toBeLessThan(tpl.indexOf(SKILL_METADATA_PLACEHOLDER));
-      expect(tpl.indexOf(SKILL_METADATA_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
+      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
+      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf(VAULT_PLACEHOLDER));
+      expect(tpl.indexOf(VAULT_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
+      expect(tpl.indexOf(SKILLS_PLACEHOLDER)).toBeLessThan(tpl.indexOf(MEMORY_PLACEHOLDER));
+      expect(tpl.indexOf(MEMORY_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SCHEDULES_PLACEHOLDER));
+      expect(tpl.indexOf(SCHEDULES_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
       expect(state.systemConfig.model?.max_tokens).toBe(32000);
       expect(state.systemConfig.model?.thinking_level).toBe("medium");
       expect(state.systemConfig.model?.timeoutMs).toBe(120000);

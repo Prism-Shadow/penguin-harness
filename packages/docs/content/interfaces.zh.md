@@ -144,8 +144,9 @@ interface EnvironmentServices {
 }
 
 interface MCPServerConfig {
-  name: string;
-  config: Record<string, unknown>;
+  name: string;                             // 工具名前缀:发现的工具以 mcp__<name>__<tool> 暴露
+  config: Record<string, unknown>;          // 接口层保持开放对象;装配期由 environment/mcp 校验成
+                                            // transport 描述(stdio / http / sse),见 /tools § MCP Server
 }
 ```
 

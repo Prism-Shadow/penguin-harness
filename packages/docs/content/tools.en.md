@@ -246,7 +246,7 @@ A deny produces a synthetic aborted `tool_call_output` (`Tool call denied by use
 
 ## Custom tools & MCP
 
-The `tools.builtin` array in `system_config.yaml` declares the toolset with entries of the same `ToolDefinitionConfig` shape. The semantics are **wholesale replacement, not merging**: omit the section entirely to keep the full default toolset; once written, the default list is replaced and every tool you keep must carry its complete definition (including the `parameters` JSON Schema — a tool's schema comes entirely from config). `tools.mcpServers` carries MCP server configs (name + config) — enumerating concrete MCP tools is reserved for a later adapter layer and not yet wired. See [Configuration](/configuration).
+The `tools.builtin` array in `system_config.yaml` declares the toolset with entries of the same `ToolDefinitionConfig` shape. The semantics are **wholesale replacement, not merging**: omit the section entirely to keep the full default toolset; once written, the default list is replaced and every tool you keep must carry its complete definition (including the `parameters` JSON Schema — a tool's schema comes entirely from config). `tools.mcpServers` carries the MCP Server configuration, covered in the next section. See also [Configuration](/configuration).
 
 ```yaml
 tools:
@@ -265,3 +265,35 @@ tools:
       # in packages/core/src/state/default-config.ts); elided here.
   mcpServers: []
 ```
+
+### MCP Servers
+
+Each `tools.mcpServers` entry is `{ name, config }`: `name` is restricted to letters/digits/`_`/`-` (it becomes the tool-name prefix), and `config` describes the transport. Three transports are supported:
+
+- `stdio` — a local process (`command` / `args` / `env` / `cwd`). The process environment is the SDK's safe inherited defaults plus the entry's `env` (later wins); the Agent vault is **not** injected into MCP Server processes (unlike command subprocesses) — a variable a Server needs must be listed explicitly in the entry's `env`. `cwd` defaults to the Session's Workspace.
+- `http` — Streamable HTTP, the current spec's remote transport (`url` / `headers`).
+- `sse` — the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
+
+The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000) and `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
+
+```yaml
+tools:
+  mcpServers:
+    - name: filesystem
+      config:
+        command: npx
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    - name: linear
+      config:
+        transport: http
+        url: https://mcp.linear.app/mcp
+        headers: { Authorization: "Bearer ..." }
+```
+
+Behavior:
+
+- Connecting is **lazy**: Session creation returns instantly, and the first `run()` connects all Servers in parallel and discovers tools once — the wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair (frontends show a connecting status; the end carries the overall status plus per-Server results), and the full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)); in the Trace all three land after the run's input, inside the new turn. Aborting mid-connect **cancels** the attempt — the next `run()` reconnects. The result is a Session-lifetime snapshot and `tools/list_changed` notifications are ignored. An unreachable Server or invalid entry only produces a stderr warning and is skipped — **the session is never blocked**.
+- Discovered tools join the flat tool namespace as `mcp__<server>__<tool>` and go through the same [execution contract](#execution-contract) (timeout, truncation, interruption) and [approval](#approval) flow as builtin tools.
+- Permission mapping: a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction.
+- Result mapping: text blocks concatenate into the output text; image blocks ride along as images (data URLs); audio and binary resources collapse to placeholder lines; a result with only `structuredContent` is serialized as JSON; a Server-reported `isError` lands as `stop_reason: "failed"` with the Server's error text as the content.
+- Session teardown (`Environment.dispose`) closes every MCP client; stdio child processes exit with it.

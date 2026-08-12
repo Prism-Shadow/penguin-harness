@@ -21,7 +21,7 @@
  * stay append-only — a preview that is not an extension of the previous one costs a fresh
  * line, leaving the superseded one on screen. Which of the two forms a call will take is
  * therefore decided **before** its arguments stream, from the tool's assembled schema
- * (`expectDescription`, taken from `session_meta.tools` — the per-tool `call_description`
+ * (`expectDescription`, taken from the `tool_list_ready` event — the per-tool `call_description`
  * switch decides whether the argument exists at all; see the docs on tool configuration):
  * - schema without the argument (and the unknown case) → the plain form streams immediately,
  *   character by character, and any stray `description` is ignored;
@@ -173,7 +173,7 @@ export function shortenPath(p: string): string {
 export interface ToolCallPreviewOptions {
   /**
    * Whether this tool's assembled schema carries the `description` argument (from
-   * `session_meta.tools`). Unknown ⇒ `false`: fall back to the plain form, matching a
+   * the `tool_list_ready` event). Unknown ⇒ `false`: fall back to the plain form, matching a
    * configuration with the argument switched off.
    */
   expectDescription?: boolean;

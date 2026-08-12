@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-desktop",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE, no private IPC).",
@@ -19,7 +19,8 @@
   "dependencies": {
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
-    "@prismshadow/penguin-server": "workspace:*"
+    "@prismshadow/penguin-server": "workspace:*",
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

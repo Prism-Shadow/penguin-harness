@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
-  loadLibrarySkills,
+  loadPreinstalledSkills,
   parseSkillFrontmatter,
   type SkillMetadata,
 } from "@prismshadow/penguin-skills";
@@ -29,6 +29,27 @@ import {
   PROVIDER_PLACEHOLDER,
   MODEL_ID_PLACEHOLDER,
   DATE_PLACEHOLDER,
+  MEMORY_PLACEHOLDER,
+  VAULT_PLACEHOLDER,
+  SKILLS_PLACEHOLDER,
+  SCHEDULES_PLACEHOLDER,
+  SCHEDULE_LIST_PLACEHOLDER,
+  SCHEDULE_LIST_EMPTY_NOTE,
+  WORKSPACE_MEMORY_DIR_PLACEHOLDER,
+  WORKSPACE_MEMORY_INDEX_PLACEHOLDER,
+  USER_MEMORY_INDEX_PLACEHOLDER,
+  MEMORY_INDEX_EMPTY_NOTE,
+  MEMORY_INDEX_MAX_LINES,
+  MEMORY_INDEX_MAX_CHARS,
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  DEFAULT_VAULT_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
+  type MemoryConfig,
+  type VaultConfig,
+  type SkillsConfig,
+  type SchedulesConfig,
   agentStateVersion,
   defaultAgentsMd,
   defaultSystemConfig,
@@ -40,6 +61,7 @@ import {
   type SystemConfig,
 } from "./default-config.js";
 import { builtinProjectAgentPresets, type AgentPreset } from "./builtin-agents.js";
+import { ensureUserMemoryDir, type SessionMemory } from "./memory.js";
 import { provisionExampleBenchmark } from "./example-benchmark.js";
 import {
   agentsMdPath,
@@ -48,6 +70,7 @@ import {
   DEFAULT_PROJECT_ID,
   memoryDir,
   resolveRoot,
+  scheduleDir,
   scratchpadDir,
   skillsDir,
   systemConfigPath,
@@ -151,7 +174,9 @@ export async function loadOrInitAgentState(opts?: {
     await Promise.all([
       fs.mkdir(stateDir, { recursive: true }),
       fs.mkdir(toolsDir(root, projectId, agentId), { recursive: true }),
-      fs.mkdir(memoryDir(root, projectId, agentId), { recursive: true }),
+      // Creates memory/user/ (and memory/ above it) with an empty MEMORY.md, so the User scope
+      // exists from the Agent's first day; Workspace scopes appear at Session creation.
+      ensureUserMemoryDir(root, projectId, agentId),
       fs.mkdir(skillsDir(root, projectId, agentId), { recursive: true }),
       fs.mkdir(scratchpadDir(root, projectId, agentId), { recursive: true }),
     ]);
@@ -163,15 +188,15 @@ export async function loadOrInitAgentState(opts?: {
     };
     agentsMd = preset?.agentsMd ?? defaultAgentsMd();
     // Only installs the Skills specified by preset (a plain newly created Agent gets none
-    // pre-installed). A default_agent with no
-    // preset (e.g. created on first CLI run) still gets every Skill in the library pre-installed
-    // — the install policy follows Agent identity, not whether creation came from the server or
+    // pre-installed). A default_agent with no preset (e.g. created on first CLI run) still gets
+    // the library's preinstalled set (Skills marked `preinstall: false` stay manual-install) —
+    // the install policy follows Agent identity, not whether creation came from the server or
     // was done directly via SDK/CLI.
     // Skills have no dedicated tool: metadata is injected via {{SKILL_METADATA}}, and the model
     // reads SKILL.md with shell and follows it.
     const skills =
       opts?.preset === undefined && agentId === DEFAULT_AGENT_ID
-        ? loadLibrarySkills()
+        ? loadPreinstalledSkills()
         : (opts?.preset?.skills ?? []);
     await Promise.all([
       fs.writeFile(mdPath, agentsMd, "utf8"),
@@ -262,41 +287,207 @@ export async function resetSystemConfigToDefaults(
  * The vault key-name list: the replacement value for `{{VAULT_KEYS}}`, one `- KEY` per line;
  * returns an empty string when there are no keys.
  * **Contains only key names, never values** — values are only injected into the exec_command
- * subprocess environment, never the model context. The statement of the vault's purpose is part
- * of the default template body (the # Vault section) and is kept even with no vault.
+ * subprocess environment, never the model context. The statement of the vault's purpose lives
+ * in `vault.prompt` (legacy templates carry it in the template body) and is kept even with no
+ * vault.
  */
 function vaultKeysList(keys: string[]): string {
   return keys.map((key) => `- ${key}`).join("\n");
 }
 
 /**
+ * An index for injection: the trimmed `MEMORY.md` content, or the empty note so the model reads
+ * "nothing saved" instead of a blank line. Injection is capped at `MEMORY_INDEX_MAX_LINES`
+ * lines (one memory per line by convention), then at `MEMORY_INDEX_MAX_CHARS` as a backstop
+ * for indexes whose few lines are enormous — past a cap the rest is replaced by a note telling
+ * the model to open the full file, and the file itself is never touched.
+ */
+function indexForInjection(index: string): string {
+  const trimmed = index.trim();
+  if (trimmed.length === 0) return MEMORY_INDEX_EMPTY_NOTE;
+  const totalLines = trimmed.split("\n").length;
+  let kept = trimmed.split("\n").slice(0, MEMORY_INDEX_MAX_LINES).join("\n");
+  if (kept.length > MEMORY_INDEX_MAX_CHARS) {
+    // Cut at a line boundary; only a single line exceeding the cap on its own is cut mid-line.
+    const cut = kept.lastIndexOf("\n", MEMORY_INDEX_MAX_CHARS);
+    kept = kept.slice(0, cut > 0 ? cut : MEMORY_INDEX_MAX_CHARS);
+  }
+  if (kept.length === trimmed.length) return trimmed;
+  const keptLines = kept.split("\n").length;
+  const reason =
+    keptLines < totalLines
+      ? `showing ${keptLines} of ${totalLines} lines`
+      : `showing the first ${MEMORY_INDEX_MAX_CHARS} characters`;
+  return `${kept}\n(index truncated: ${reason} — open MEMORY.md for the rest)`;
+}
+
+/**
+ * The `{{MEMORY}}` replacement value: the Agent's own `memory.prompt` (the User scope and its
+ * index, which every Session has), plus `memory.workspace_prompt` when the Session also runs
+ * in a persistent Workspace. An empty string when this Session has no Memory (disabled) or
+ * when every half that would render is emptied. Both prompts are per-Agent config, editable
+ * on the Web App's Memory tab.
+ *
+ * The two blocks are separate config keys because substitution has no conditionals: a
+ * temporary Workspace must never be handed the Workspace scope's section (its directory line
+ * and the scope-choice rule), so that half is simply not appended there.
+ *
+ * Every word of the block comes from `system_config.yaml`; the only text this function can add
+ * is `MEMORY_INDEX_EMPTY_NOTE` (via `indexForInjection`, which also caps the index). The only
+ * injection points are the two indexes and the Workspace directory
+ * (`{{WORKSPACE_MEMORY_DIR}}`, whose key segment is a hash the model could not compose
+ * itself) — the User directory stays a literal pattern in the prompt. Topic bodies are never
+ * injected — the indexes say what exists, and the model opens what it needs.
+ */
+function memorySection(
+  config: MemoryConfig | undefined,
+  memory: SessionMemory | null | undefined,
+): string {
+  if (!memory) return "";
+  // Missing keys fall back to the built-in defaults — matching compaction and the config DTO —
+  // so an Agent whose yaml predates Memory injects the very prompts the Memory tab shows it.
+  // An explicitly emptied half drops that half alone (`??`, not `||`): the two are edited
+  // independently on the Memory tab, so clearing one must never silence the other.
+  const promptText = config?.prompt ?? DEFAULT_MEMORY_PROMPT;
+  const workspacePromptText = config?.workspace_prompt ?? DEFAULT_MEMORY_WORKSPACE_PROMPT;
+  const substituteUser = (text: string): string =>
+    text.split(USER_MEMORY_INDEX_PLACEHOLDER).join(indexForInjection(memory.userIndex));
+
+  const userBlock = substituteUser(promptText).trim();
+  const workspace = memory.workspace;
+  const workspaceBlock =
+    workspace && workspacePromptText ? substituteUser(workspacePromptText).trim() : "";
+  const joined =
+    userBlock && workspaceBlock ? `${userBlock}\n\n${workspaceBlock}` : userBlock || workspaceBlock;
+  // The Workspace placeholders substitute over the whole joined block, so one written into
+  // the main prompt resolves too (with a real value in a persistent Workspace, blank
+  // otherwise) instead of leaking literally.
+  return joined
+    .split(WORKSPACE_MEMORY_INDEX_PLACEHOLDER)
+    .join(workspace ? indexForInjection(workspace.index) : "")
+    .split(WORKSPACE_MEMORY_DIR_PLACEHOLDER)
+    .join(workspace?.dir ?? "")
+    .trim();
+}
+
+/**
+ * The `{{VAULT}}` replacement value: the Agent's `vault.prompt` (missing key falls back to the
+ * built-in default, matching memorySection and the config DTO) with its `{{VAULT_KEYS}}`
+ * injection point replaced by the key-name list. An empty string when the section is switched
+ * off (`vault.enabled === false`) or no key data was supplied at all; an empty key **list**
+ * still renders the statement, so the model is told what the vault is even when it is empty.
+ */
+function vaultSection(config: VaultConfig | undefined, keys: string[] | undefined): string {
+  if (config?.enabled === false || keys === undefined) return "";
+  const promptText = config?.prompt ?? DEFAULT_VAULT_PROMPT;
+  return promptText.split(VAULT_KEYS_PLACEHOLDER).join(vaultKeysList(keys)).trim();
+}
+
+/**
+ * The `{{SKILLS}}` replacement value: the Agent's `skills.prompt` (default fallback like
+ * memorySection) with its `{{SKILL_METADATA}}` injection point replaced by the installed
+ * Skills' metadata lines. An empty string when the section is switched off
+ * (`skills.enabled === false`) or no skill data was supplied at all; an empty skill **list**
+ * still renders the statement. Metadata only — bodies are read on demand via shell.
+ */
+function skillsSection(
+  config: SkillsConfig | undefined,
+  skills: SkillMetadata[] | undefined,
+): string {
+  if (config?.enabled === false || skills === undefined) return "";
+  const promptText = config?.prompt ?? DEFAULT_SKILLS_PROMPT;
+  return promptText.split(SKILL_METADATA_PLACEHOLDER).join(skillMetadataSection(skills)).trim();
+}
+
+/**
+ * The `{{SCHEDULE_LIST}}` roster: one `- name` line per schedule file, or the empty note so
+ * the model reads "no tasks" instead of a blank line under `Current tasks:` (the same empty
+ * handling as indexForInjection). Names only — the model opens the files it needs.
+ */
+function scheduleListForInjection(names: string[]): string {
+  if (names.length === 0) return SCHEDULE_LIST_EMPTY_NOTE;
+  return names.map((name) => `- ${name}`).join("\n");
+}
+
+/**
+ * The `{{SCHEDULES}}` replacement value: the Agent's `schedules.prompt` (default fallback like
+ * memorySection) with its `{{SCHEDULE_LIST}}` injection point replaced by the task-name
+ * roster. An empty string when the section is switched off (`schedules.enabled === false`) or
+ * no roster was supplied at all; an empty roster still renders the guidance with the empty
+ * note, so the model learns the task system before the first task exists.
+ */
+function schedulesSection(
+  config: SchedulesConfig | undefined,
+  scheduleNames: string[] | undefined,
+): string {
+  if (config?.enabled === false || scheduleNames === undefined) return "";
+  const promptText = config?.prompt ?? DEFAULT_SCHEDULES_PROMPT;
+  return promptText
+    .split(SCHEDULE_LIST_PLACEHOLDER)
+    .join(scheduleListForInjection(scheduleNames))
+    .trim();
+}
+
+/**
+ * Guards a Skill auxiliary-file path (relative to the skill directory) before it's written:
+ * rejects empty, absolute, backslash-bearing, and any `..`-segment path so a file entry can never
+ * escape `skills/<name>/`. Mirrors the archive route's zip-slip check for the library-install path.
+ */
+function assertSafeSkillFile(rel: string): void {
+  if (
+    rel.length === 0 ||
+    path.isAbsolute(rel) ||
+    rel.includes("\\") ||
+    rel.split("/").some((segment) => segment === "..")
+  ) {
+    throw new Error(
+      `Invalid skill file path ${JSON.stringify(rel)}: it must stay within the skill directory.`,
+    );
+  }
+}
+
+/**
  * Installs a Skill into the target Agent: writes `skills/<name>/SKILL.md` verbatim (the full
- * SKILL.md content including frontmatter, ensuring a trailing newline); if the directory
- * already exists, it's overwritten (reinstalling = updating to the latest content). An optional
- * icon.svg is written alongside SKILL.md; if this install doesn't
- * include an icon, any old icon.svg is removed, preserving "overwrite update" semantics (the
- * directory content matches the Skill being installed).
+ * SKILL.md content including frontmatter, ensuring a trailing newline). An optional icon.svg and
+ * any auxiliary `files` the SKILL.md references (e.g. `reference/API.md`, subdirectories
+ * preserved) are written alongside it. The directory is replaced wholesale first, so reinstalling
+ * updates to the latest content and drops files the new version no longer ships — the directory
+ * content always matches the Skill being installed. Each file path is checked to stay within the
+ * skill directory before anything is written.
  * Docs: /docs/skills § "Installation and storage".
  */
 export async function installSkill(
   root: string,
   projectId: string,
   agentId: string,
-  skill: { name: string; content: string; icon?: string },
+  skill: { name: string; content: string; icon?: string; files?: Record<string, string> },
 ): Promise<void> {
   assertValidId("project_id", projectId);
   assertValidId("agent_id", agentId);
   assertValidId("skill_name", skill.name);
+  const auxiliary = Object.entries(skill.files ?? {});
+  for (const [rel] of auxiliary) assertSafeSkillFile(rel);
   const dir = path.join(skillsDir(root, projectId, agentId), skill.name);
+  // Clean replace: drop the old directory so no stale file survives a reinstall (same semantics
+  // as the archive route), then write SKILL.md, the optional icon, and every auxiliary file.
+  await fs.rm(dir, { recursive: true, force: true });
   await fs.mkdir(dir, { recursive: true });
   const content = skill.content.endsWith("\n") ? skill.content : `${skill.content}\n`;
-  const iconPath = path.join(dir, "icon.svg");
-  await Promise.all([
+  const writes: Array<Promise<unknown>> = [
     fs.writeFile(path.join(dir, "SKILL.md"), content, "utf8"),
-    skill.icon !== undefined
-      ? fs.writeFile(iconPath, skill.icon, "utf8")
-      : fs.rm(iconPath, { force: true }),
-  ]);
+  ];
+  if (skill.icon !== undefined) {
+    writes.push(fs.writeFile(path.join(dir, "icon.svg"), skill.icon, "utf8"));
+  }
+  for (const [rel, data] of auxiliary) {
+    const file = path.join(dir, rel);
+    writes.push(
+      fs
+        .mkdir(path.dirname(file), { recursive: true })
+        .then(() => fs.writeFile(file, data, "utf8")),
+    );
+  }
+  await Promise.all(writes);
 }
 
 /** Uninstalls a Skill: deletes the entire `skills/<name>/` directory; idempotent, no error if it doesn't exist. */
@@ -387,6 +578,30 @@ export function skillMetadataSection(skills: SkillMetadata[]): string {
 }
 
 /**
+ * Task names of the Agent's schedule files: the `agent_state/schedule/*.toml` basenames minus
+ * the extension, sorted by name (the stable order Prompt injection wants); [] when the
+ * directory does not exist (schedules unconfigured). Names only, contents never read — the
+ * `{{SCHEDULE_LIST}}` roster needs just the identities, and file validity is the scheduler's
+ * concern (server-side).
+ */
+export async function listScheduleNames(
+  root: string,
+  projectId: string,
+  agentId: string,
+): Promise<string[]> {
+  assertValidId("project_id", projectId);
+  assertValidId("agent_id", agentId);
+  try {
+    return (await fs.readdir(scheduleDir(root, projectId, agentId), { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".toml"))
+      .map((entry) => entry.name.slice(0, -".toml".length))
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Windows compatibility fallback for pre-`{{SHELL}}` system prompt templates.
  *
  * `system_config.yaml` is baked at Agent creation and never auto-upgraded, so an Agent created
@@ -423,22 +638,40 @@ function withShellLineFallback(
   return `${assembled}\n${line}`;
 }
 
+/** The four section placeholders, expanded together in one final pass (see assembleSystemPrompt). */
+const SECTION_PLACEHOLDER_PATTERN = /\{\{(?:MEMORY|VAULT|SKILLS|SCHEDULES)\}\}/g;
+
 /**
- * Renders the complete runtime system Prompt: substitutes `AGENTS.md`, vault key names, Skill
- * metadata, and the concrete Session runtime environment placeholders into the system Prompt
+ * Renders the complete runtime system Prompt: substitutes `AGENTS.md`, the per-feature section
+ * blocks, and the concrete Session runtime environment placeholders into the system Prompt
  * template. The assembly layer only does placeholder substitution and adds no extra text —
- * wrapper text such as `[developer_instructions]` and the # Vault / # Skills statements are
- * written directly into the system Prompt template itself (the Prompt is fully
- * transparent and editable via `system_config.yaml`). Other files in Agent State / Workspace are
- * never auto-injected. Sole exception: on win32 a template without `{{SHELL}}` gets a `- Shell:`
- * line injected at render time (see `withShellLineFallback`).
+ * wrapper text such as `[developer_instructions]` is written directly into the system Prompt
+ * template, and the # Vault / # Skills / # Memory / # Scheduled Tasks statements live in the
+ * editable `vault.prompt` / `skills.prompt` / `memory.prompt` / `schedules.prompt` config (the
+ * Prompt is fully transparent and editable via `system_config.yaml`). Other files in Agent
+ * State / Workspace are never auto-injected. Sole exception: on win32 a template without
+ * `{{SHELL}}` gets a `- Shell:` line injected at render time (see `withShellLineFallback`).
  *
- * `{{VAULT_KEYS}}` is replaced with the vault key-name list (an empty string if empty/not
- * provided): this lets the model know which APIs requiring a key it can call; values are never
- * injected. `{{SKILL_METADATA}}` is replaced with the installed Skills' metadata lines (an empty
- * string if empty/not provided). A custom template that removes a placeholder gets no
- * corresponding content injected. `{{PROJECT_DIR}}` resolves to the Project directory —
- * the app data root the default prompt labels "App Data Dir".
+ * `{{VAULT}}` expands to the rendered `vault.prompt` (its `{{VAULT_KEYS}}` carrying the
+ * key-name list — names only, values never enter the context), `{{SKILLS}}` to `skills.prompt`
+ * (its `{{SKILL_METADATA}}` carrying metadata lines; bodies are read on demand), `{{MEMORY}}`
+ * to the rendered `memory.prompt` block (plus `memory.workspace_prompt` in a persistent
+ * Workspace; only its own `{{USER_MEMORY_INDEX}}` / `{{WORKSPACE_MEMORY_INDEX}}` carry Memory
+ * content, indexes capped, and `{{WORKSPACE_MEMORY_DIR}}` renders the Workspace Memory
+ * directory), and `{{SCHEDULES}}` to `schedules.prompt` (its `{{SCHEDULE_LIST}}` carrying the
+ * task-name roster). Each expands to an empty string when its feature toggle is off. A custom
+ * template that removes a placeholder gets no corresponding content injected — the Web App's
+ * feature tabs offer inserting the placeholders explicitly.
+ *
+ * The four section placeholders expand LAST and in a **single pass** (one replace over the
+ * otherwise-assembled template): every replacement product — index lines the model wrote,
+ * task names, editable section prompts — lands after all other placeholders were consumed and
+ * is itself never rescanned, so no section's content can smuggle a `{{VAULT_KEYS}}`-style
+ * token into a second expansion, and no section can trigger another section's expansion
+ * either.
+ *
+ * `{{PROJECT_DIR}}` resolves to the Project directory — the app data root the default prompt
+ * labels "App Data Dir".
  * Docs: /docs/configuration § "System prompt placeholders".
  */
 export function assembleSystemPrompt(
@@ -446,15 +679,39 @@ export function assembleSystemPrompt(
   sessionEnvironment?: SessionEnvironmentValues,
   vaultKeys?: string[],
   skillMetadata?: SkillMetadata[],
+  memory?: SessionMemory | null,
+  scheduleNames?: string[],
 ): string {
   const template = state.systemConfig.system_prompt;
+  // Legacy template-level inline substitution (compatibility): system_config.yaml is baked at
+  // Agent creation and never auto-upgraded, so templates from before the {{VAULT}}/{{SKILLS}}
+  // section placeholders carry {{VAULT_KEYS}}/{{SKILL_METADATA}} directly in the template body
+  // (inside their hardcoded # Vault / # Skills sections). Those keep substituting here — but
+  // honor the new toggles: a disabled feature renders them as empty strings, so the switches
+  // work on old templates too. In a current template these tokens only appear inside
+  // vault.prompt / skills.prompt and are handled by the section renderers instead.
+  // Retirement condition: remove this template-level substitution (leaving the tokens to the
+  // section renderers alone) once pre-{{VAULT}}/{{SKILLS}} templates are no longer expected in
+  // the wild — same horizon as LEGACY_VAULT_SECTION / LEGACY_SKILLS_SECTION.
+  const inlineVaultKeys =
+    state.systemConfig.vault?.enabled === false ? "" : vaultKeysList(vaultKeys ?? []);
+  const inlineSkillMetadata =
+    state.systemConfig.skills?.enabled === false ? "" : skillMetadataSection(skillMetadata ?? []);
+  // The single-pass replacement values for the four section placeholders (see the doc comment
+  // above for why they expand last and are never rescanned).
+  const sections: Record<string, string> = {
+    [MEMORY_PLACEHOLDER]: memorySection(state.systemConfig.memory, memory),
+    [VAULT_PLACEHOLDER]: vaultSection(state.systemConfig.vault, vaultKeys),
+    [SKILLS_PLACEHOLDER]: skillsSection(state.systemConfig.skills, skillMetadata),
+    [SCHEDULES_PLACEHOLDER]: schedulesSection(state.systemConfig.schedules, scheduleNames),
+  };
   const assembled = template
     .split(AGENTS_MD_PLACEHOLDER)
     .join(state.agentsMd.trim())
     .split(VAULT_KEYS_PLACEHOLDER)
-    .join(vaultKeysList(vaultKeys ?? []))
+    .join(inlineVaultKeys)
     .split(SKILL_METADATA_PLACEHOLDER)
-    .join(skillMetadataSection(skillMetadata ?? []))
+    .join(inlineSkillMetadata)
     .split(AGENT_ID_PLACEHOLDER)
     .join(sessionEnvironment?.agentId ?? state.agentId)
     .split(PROJECT_DIR_PLACEHOLDER)
@@ -475,6 +732,10 @@ export function assembleSystemPrompt(
     .join(sessionEnvironment?.shell ?? "")
     .split(DATE_PLACEHOLDER)
     .join(sessionEnvironment?.date ?? "")
+    // The section placeholders expand last, all four in this one replace: a replacer
+    // function's return value is spliced in verbatim (no `$`-pattern handling) and the scan
+    // continues after it, so nothing a section carries is ever expanded again.
+    .replace(SECTION_PLACEHOLDER_PATTERN, (token) => sections[token] ?? token)
     .trim();
   return withShellLineFallback(assembled, template, sessionEnvironment);
 }
