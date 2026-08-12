@@ -25,9 +25,11 @@ diff).
 The gate now stats **every known date directory** instead of only the newest, breaking
 out on the first whose mtime differs from the cached value. This is still readdir-free
 (N stat calls where N is the date-dir count, typically 1–5) and preserves all existing
-behavior: the unchanged-tree fast path still returns early, and the backdated-mtime blind
-spot (an external write that resets a dir's mtime to the cached value) is still covered
-by `locateAll()`'s force-reconcile fallback.
+behavior: the unchanged-tree fast path still returns early. The remaining blind spot is
+a backdated write (an external process that changes a file and resets its dir's mtime to
+the cached value) — that is not covered by the gate or by `locateAll()`'s whole-session
+force-retry, and remains missing until an unrelated force, explicit forced reconciliation,
+or restart.
 
 ## Verification
 
