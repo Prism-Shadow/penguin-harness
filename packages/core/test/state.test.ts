@@ -19,6 +19,7 @@ import {
   SESSION_ID_PLACEHOLDER,
   SHELL_PLACEHOLDER,
   addModel,
+  removeModel,
   setVisionModel,
   agentsMdPath,
   agentStateDir,
@@ -1080,6 +1081,67 @@ describe("project-config round trip", () => {
     await expect(
       setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "blind" }),
     ).rejects.toThrow(/not supporting images/);
+  });
+
+  it("removeModel drops the exact pair and leaves a same-id entry in another group alone", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "pa", model_id: "m1" });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "pb", model_id: "m1" });
+    const removed = await removeModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "pa",
+      model_id: "m1",
+    });
+    expect(getModel(removed, { provider: "pa", model_id: "m1" })).toBeUndefined();
+    expect(getModel(removed, { provider: "pb", model_id: "m1" })).toBeDefined();
+    // Persisted, not just returned.
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(loaded, { provider: "pa", model_id: "m1" })).toBeUndefined();
+    expect(getModel(loaded, { provider: "pb", model_id: "m1" })).toBeDefined();
+  });
+
+  it("removeModel clears the default / vision pointers that named the removed entry", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "both",
+      vision: true,
+    });
+    const bothRef = { provider: "custom", model_id: "both" };
+    await setDefaultModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+    await setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+
+    await removeModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+    // A pointer left behind would name a model that is no longer configured, which
+    // resolveModelRef rejects on the next createSession.
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_model).toBeUndefined();
+    expect(loaded.vision_model).toBeUndefined();
+  });
+
+  it("removeModel leaves pointers aimed at other entries untouched", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "keeper",
+      vision: true,
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "spare" });
+    const keeperRef = { provider: "custom", model_id: "keeper" };
+    await setDefaultModel(tmpRoot, DEFAULT_PROJECT_ID, keeperRef);
+    await setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, keeperRef);
+
+    await removeModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "spare" });
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_model).toEqual(keeperRef);
+    expect(loaded.vision_model).toEqual(keeperRef);
+  });
+
+  it("removeModel is idempotent: an absent pair is not an error and changes nothing", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "only" });
+    const before = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const after = await removeModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "never-added",
+    });
+    expect(after.models).toEqual(before.models);
+    expect(getModel(after, { provider: "custom", model_id: "only" })).toBeDefined();
   });
 
   it("upsert preserves existing context_window and inline credential when not re-specified", async () => {

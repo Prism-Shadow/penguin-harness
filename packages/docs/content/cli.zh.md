@@ -93,16 +93,18 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--price-output <n>` | 输出价格 |
 | `--set-default` | 同时设为默认模型 |
 
-### model default / model vision / model list
+### model default / model vision / model list / model remove
 
 ```bash
 penguin config model default --model-id <id> --provider <group>
 penguin config model vision --model-id <id> --provider <group>
 penguin config model list
+penguin config model remove --model-id <id> --provider <group>
 ```
 
 - `model default` 设置 Project 默认模型；`model vision` 设置视觉代理模型。两者的 `--model-id` 与 `--provider` 均为必填，且引用必须已存在于模型列表。
 - `model list` 列出已配置模型，默认模型以 `*` 标记。
+- `model remove` 删除一个模型条目，连同内联在其上的凭据一并删除。`--model-id` 与 `--provider` 均为必填，按成对引用精确匹配——同名上游 id 在其他分组下的条目不受影响；引用不在配置中时以非零码退出。若被删条目正是默认模型或视觉模型，对应设置一并清空：留下一个指向已不存在模型的指针，只会让下一次会话直接失败。
 
 ### vault
 
