@@ -52,7 +52,6 @@ function meta(sessionId: string, agentState = "/a"): OmniMessage<SessionMetaPayl
     provider: "custom",
     model_context_window: 200000,
     system_prompt: "",
-    tools: [],
     agent_state: agentState,
     workspace: "/w",
     source: "subagent",

@@ -1,4 +1,4 @@
-# Desktop packages (design § "桌面端原型 · 打包与更新", milestone M3).
+# Desktop packages: Electron installers for the desktop shell.
 #
 # Reusable three-OS matrix: stage the pnpm-deploy app tree, run electron-builder, and
 # upload the installers as workflow artifacts named desktop-<OS>. release.yml calls this
@@ -6,19 +6,53 @@
 # installers must exist at creation time. workflow_dispatch runs it standalone as a dry
 # run on any branch.
 #
-# M3 ships unsigned artifacts; macOS signing/notarization, Windows code signing and
-# electron-updater are milestone M4.
+# macOS release artifacts are Developer ID signed and notarized when release.yml calls
+# this workflow with require_macos_signing=true. Standalone dry-runs can still build
+# unsigned artifacts when signing secrets are absent.
 name: Desktop packages
 
 on:
   workflow_call:
     inputs:
+      ref:
+        description: "Git ref to check out; release.yml passes the tag being published."
+        required: false
+        type: string
+        default: ""
       tag:
         description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
         required: false
         type: string
         default: ""
-  workflow_dispatch: {}
+      require_macos_signing:
+        description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
+    # No `secrets:` declarations here, deliberately. The signing secrets live in the
+    # `apple-signing` GitHub environment referenced by the macOS matrix job, and
+    # environment secrets resolve inside the job itself — in reusable-workflow calls
+    # included. Declaring them as workflow_call secrets rebinds those names to the
+    # caller-passed values, which are empty when the caller passes none, shadowing the
+    # environment's real values: exactly the v0.2.2 release failure ("Missing macOS
+    # signing secrets" with all six configured).
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Optional Git ref to check out."
+        required: false
+        type: string
+        default: ""
+      tag:
+        description: Release tag (vX.Y.Z) stamped into the app; empty keeps dev versions.
+        required: false
+        type: string
+        default: ""
+      require_macos_signing:
+        description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
 
 env:
   # Keep in sync with release.yml (its header comment is the source of truth; duplicated
@@ -34,15 +68,25 @@ jobs:
         include:
           - os: ubuntu-latest
             args: --linux
+            environment: desktop-build
           - os: macos-latest
             args: --mac
+            environment: apple-signing
           - os: windows-latest
             args: --win
+            environment: desktop-build
     runs-on: ${{ matrix.os }}
+    # Plain `environment:` reference (no extra keys): the job must genuinely enter the
+    # environment for its secrets to attach; the nonstandard `deployment: false` that sat
+    # here is not part of the jobs.<id>.environment schema and risked exactly that.
+    environment:
+      name: ${{ matrix.environment }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       # pnpm version comes from package.json's packageManager field.
       - uses: pnpm/action-setup@v6
@@ -99,8 +143,211 @@ jobs:
             "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit"
           unzip -q "$mingit" -d packages/desktop/stage/minigit
 
+      - name: Prepare macOS signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          REQUIRE_MACOS_SIGNING: ${{ inputs.require_macos_signing && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ "$REQUIRE_MACOS_SIGNING" != "true" ]]; then
+            echo "macOS signing not required for this dry-run; building unsigned."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          missing=()
+          [[ -z "${CSC_LINK:-}" ]] && missing+=("CSC_LINK")
+          [[ -z "${CSC_KEY_PASSWORD:-}" ]] && missing+=("CSC_KEY_PASSWORD")
+          [[ -z "${APPLE_API_KEY_BASE64:-}" ]] && missing+=("APPLE_API_KEY")
+          [[ -z "${APPLE_API_KEY_ID:-}" ]] && missing+=("APPLE_API_KEY_ID")
+          [[ -z "${APPLE_API_ISSUER:-}" ]] && missing+=("APPLE_API_ISSUER")
+
+          if ((${#missing[@]})); then
+            printf '::error title=Missing macOS signing secrets::%s\n' "${missing[*]}"
+            exit 1
+          fi
+
+          multiline=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
+            value="${!name:-}"
+            if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+              multiline+=("$name")
+            fi
+          done
+          if ((${#multiline[@]})); then
+            printf '::error title=Invalid macOS signing secrets::Secrets must be stored as single-line values: %s\n' "${multiline[*]}"
+            exit 1
+          fi
+
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$api_key_path"
+          chmod 600 "$api_key_path"
+
+          if ! grep -q "BEGIN PRIVATE KEY" "$api_key_path"; then
+            echo "::error title=Invalid APPLE_API_KEY::Decoded App Store Connect key is not a .p8 private key."
+            exit 1
+          fi
+
+          {
+            echo "CSC_LINK=$CSC_LINK"
+            echo "CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD"
+            echo "APPLE_API_KEY=$api_key_path"
+            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            if [[ -n "${APPLE_TEAM_ID:-}" ]]; then
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            fi
+          } >> "$GITHUB_ENV"
+
       - name: Build packages
-        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }}
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
+
+      - name: Notarize and staple macOS DMGs
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          dmgs=(packages/desktop/stage/out/*.dmg)
+          if ((${#dmgs[@]} == 0)); then
+            echo "::error title=Missing macOS DMG::No DMG files were produced."
+            exit 1
+          fi
+
+          for dmg in "${dmgs[@]}"; do
+            echo "::group::notarize and staple $dmg"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            xcrun notarytool submit "$dmg" \
+              --key "$APPLE_API_KEY" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" \
+              --wait
+            xcrun stapler staple "$dmg"
+            xcrun stapler validate "$dmg"
+            rm -f "$dmg.blockmap"
+            echo "Removed stale $dmg.blockmap because stapling changes the DMG bytes."
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
+
+      - name: Clean macOS update metadata
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          metadata="packages/desktop/stage/out/latest-mac.yml"
+          if [[ ! -f "$metadata" ]]; then
+            echo "::error title=Missing macOS update metadata::$metadata was not produced."
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const metadata = "packages/desktop/stage/out/latest-mac.yml";
+          const text = fs.readFileSync(metadata, "utf8");
+          const lines = text.split(/\r?\n/);
+          const output = [];
+          let removed = 0;
+          let inFiles = false;
+
+          for (let index = 0; index < lines.length; ) {
+            const line = lines[index];
+
+            if (/^files:\s*$/.test(line)) {
+              inFiles = true;
+              output.push(line);
+              index += 1;
+              continue;
+            }
+
+            if (inFiles && /^\S/.test(line)) {
+              inFiles = false;
+            }
+
+            if (inFiles && /^  - /.test(line)) {
+              const block = [line];
+              index += 1;
+              while (index < lines.length && (/^    /.test(lines[index]) || lines[index] === "")) {
+                block.push(lines[index]);
+                index += 1;
+              }
+
+              if (block.join("\n").includes(".dmg")) {
+                removed += 1;
+                continue;
+              }
+
+              output.push(...block);
+              continue;
+            }
+
+            output.push(line);
+            index += 1;
+          }
+
+          const next = output.join("\n");
+          if (next.includes(".dmg")) {
+            console.error("latest-mac.yml still references .dmg after cleanup.");
+            process.exit(1);
+          }
+          if (!/\.zip\b/.test(next)) {
+            console.error("latest-mac.yml no longer references a zip update artifact.");
+            process.exit(1);
+          }
+
+          fs.writeFileSync(metadata, next, "utf8");
+          console.log(`Removed ${removed} DMG update metadata entr${removed === 1 ? "y" : "ies"} from ${metadata}.`);
+          NODE
+
+      - name: Verify macOS signing and notarization
+        if: runner.os == 'macOS' && inputs.require_macos_signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apps=(
+            packages/desktop/stage/out/mac-arm64/PenguinHarness.app
+            packages/desktop/stage/out/mac/PenguinHarness.app
+          )
+          for app in "${apps[@]}"; do
+            if [[ ! -d "$app" ]]; then
+              echo "::error title=Missing macOS app::$app was not produced."
+              exit 1
+            fi
+
+            echo "::group::verify app $app"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            codesign --verify --deep --strict --verbose=4 "$app"
+            codesign -dv --verbose=4 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=4 "$app"
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
+
+          shopt -s nullglob
+          dmgs=(packages/desktop/stage/out/*.dmg)
+          if ((${#dmgs[@]} == 0)); then
+            echo "::error title=Missing macOS DMG::No DMG files were produced."
+            exit 1
+          fi
+
+          for dmg in "${dmgs[@]}"; do
+            echo "::group::verify dmg $dmg"
+            echo "started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            xcrun stapler validate "$dmg"
+            echo "completed_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "::endgroup::"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -113,3 +360,8 @@ jobs:
             packages/desktop/stage/out/penguin-desktop-*.dmg
             packages/desktop/stage/out/penguin-desktop-*.zip
             packages/desktop/stage/out/penguin-desktop-*.exe
+            # Update metadata: electron-updater reads latest*.yml from the Release, and
+            # the blockmaps are what make differential downloads possible. Without these
+            # the installers ship but nothing can auto-update.
+            packages/desktop/stage/out/*.yml
+            packages/desktop/stage/out/*.blockmap

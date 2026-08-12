@@ -49,7 +49,7 @@ import type { FolderCategory, SessionPartition } from "../../lib/session-groupin
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { ChevronDown, NAV_ICONS } from "../ui/icons";
+import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -73,17 +73,21 @@ import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
+import {
+  draftSessionTitle,
+  parkActiveDraft,
+  removeDraftSession,
+  useDraftSessions,
+} from "../../features/chat/draft-sessions";
+import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
-
-/** Standard gear (lucide settings): full tooth outline + center circle, crisp and undistorted at 16px. */
-const GEAR_ICON =
-  "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
 
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 const PIN_ICON =
@@ -128,6 +132,9 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
  * the composite never collides across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
+
+/** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
+const DRAFTS_GROUP_KEY = "\0drafts";
 
 /** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
 function StatusDot({ session }: { session: SessionInfo }) {
@@ -235,34 +242,11 @@ export function Sidebar({
     }
   };
   /**
-   * Admin-only "use system HTTP proxy" switch (server-global, design § "出网与系统代理"):
-   * null = not hydrated yet. Fetched lazily the first time an ADMIN opens the dropdown —
-   * same laziness as the version info above, and non-admins never call the endpoint (the
-   * row is not rendered for them either). A failed hydration stays null (row disabled)
-   * and is retried on the next open.
+   * Admin-only server-global proxy settings dialog: the menu carries only the opener
+   * row; the controls, their form semantics, and the open-time hydration all live in
+   * ProxySettingsDialog.
    */
-  const [useSystemProxy, setUseSystemProxyState] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!userOpen || user?.isAdmin !== true || useSystemProxy !== null) return;
-    let cancelled = false;
-    void api
-      .adminGetSettings()
-      .then((res) => {
-        if (!cancelled) setUseSystemProxyState(res.settings.useSystemProxy);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [userOpen, user?.isAdmin, useSystemProxy]);
-  /** Saved immediately on toggle (the user-menu quick-control convention): optimistic flip, reverted with a toast on failure. */
-  const setUseSystemProxy = (value: boolean) => {
-    setUseSystemProxyState(value);
-    void api.adminPutSettings({ useSystemProxy: value }).catch((e: unknown) => {
-      setUseSystemProxyState(!value);
-      toastError(apiErrorText(e));
-    });
-  };
+  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
@@ -293,6 +277,10 @@ export function Sidebar({
   /** Session pending delete confirmation (null = none). */
   const [deletingSession, setDeletingSession] = useState<SessionInfo | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  /** Parked draft conversation pending delete confirmation (null = none). */
+  const [deletingDraft, setDeletingDraft] = useState<DraftSessionEntry | null>(null);
+  /** Parked draft conversations of this user × Project, newest first (reactive module store). */
+  const draftEntries = useDraftSessions(user?.userId ?? null, currentProjectId);
   /** Session currently being renamed (null = none) and the title being typed. */
   const [renamingSession, setRenamingSession] = useState<SessionInfo | null>(null);
   const [renameText, setRenameText] = useState("");
@@ -489,6 +477,10 @@ export function Sidebar({
    * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
    */
   const newChat = (agentId?: string, workspace?: string) => {
+    // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
+    // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
+    // so this click always lands on an empty composer and never silently shelves content.
+    if (user && currentProjectId) parkActiveDraft(user.userId, currentProjectId);
     if (agentId) setCurrentAgentId(agentId);
     const state = {
       ...(agentId ? { agentId } : {}),
@@ -496,6 +488,16 @@ export function Sidebar({
     };
     navigate(`/chat/${DRAFT_SESSION_ID}`, Object.keys(state).length > 0 ? { state } : undefined);
     onNavigate?.();
+  };
+
+  /** Confirmed parked-draft deletion: drops the entry; a deleted draft that is open falls back to the plain new-chat page. */
+  const confirmDeleteDraft = () => {
+    if (!deletingDraft) return;
+    if (user && currentProjectId) {
+      removeDraftSession(user.userId, currentProjectId, deletingDraft.id);
+    }
+    if (activeSessionId === deletingDraft.id) navigate(`/chat/${DRAFT_SESSION_ID}`);
+    setDeletingDraft(null);
   };
 
   /** Target of the menu's "New chat": default_agent, falling back to the first Agent (if the list isn't ready yet, resolution is deferred to the draft page). */
@@ -834,6 +836,39 @@ export function Sidebar({
           <GroupModeToggle value={groupMode} onChange={setGroupMode} />
         </div>
 
+        {/* Parked draft conversations (unsent new chats, newest first): pinned above both
+            grouping modes — they belong to no Agent or Workspace until sent. Hidden
+            entirely while there are none. */}
+        {draftEntries.length > 0 && (
+          <div className="pt-2.5">
+            <GroupHeader
+              open={!collapsedGroups.has(DRAFTS_GROUP_KEY)}
+              onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
+              icon={
+                <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                  <Icon d={NEW_CHAT_ICON} size={14} />
+                </span>
+              }
+              label={S.chat.draftGroup}
+              uppercase
+              count={draftEntries.length}
+            />
+            {!collapsedGroups.has(DRAFTS_GROUP_KEY) && (
+              <ul className="space-y-0.5">
+                {draftEntries.map((entry) => (
+                  <DraftRow
+                    key={entry.id}
+                    entry={entry}
+                    active={entry.id === activeSessionId}
+                    onOpen={() => go(`/chat/${entry.id}`)}
+                    onDelete={() => setDeletingDraft(entry)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {groupMode === "agent" ? (
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
@@ -1034,19 +1069,6 @@ export function Sidebar({
             <SettingRow label={S.settings.showCliSessions}>
               <Switch checked={showCliSessions} onChange={setShowCliSessions} />
             </SettingRow>
-            {/* Admin-only, server-global (all users), saved immediately on toggle; the
-                tooltip spells out the scope and the loopback exemption. Disabled (showing
-                the default: on) until the stored value has hydrated, so a click can never
-                write a value the admin was not looking at. */}
-            {user?.isAdmin && (
-              <SettingRow label={S.settings.useSystemProxy} title={S.settings.useSystemProxyHint}>
-                <Switch
-                  checked={useSystemProxy ?? true}
-                  onChange={setUseSystemProxy}
-                  disabled={useSystemProxy === null}
-                />
-              </SettingRow>
-            )}
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
             <button
@@ -1059,6 +1081,21 @@ export function Sidebar({
             >
               {S.account.changePassword}
             </button>
+            {/* Admin-only, server-global proxy settings: one menu row opening the
+                dialog (same idiom as Change password above) — the switch, address
+                input and their live-save semantics live in ProxySettingsDialog. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setProxySettingsOpen(true);
+                }}
+              >
+                {S.settings.proxyMenu}
+              </button>
+            )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
                 layout: the menu used to stack a release-notes link, an admin "Update now" row
                 and this check row on top of each other). It reads "Check for updates" and runs
@@ -1156,6 +1193,7 @@ export function Sidebar({
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
@@ -1235,7 +1273,78 @@ export function Sidebar({
             : ""}
         </p>
       </ConfirmModal>
+
+      {/* Delete parked-draft confirmation: purely local (localStorage entry), but the typed
+          content is gone for good, which deserves the same explicit stop as a session. */}
+      <ConfirmModal
+        open={deletingDraft !== null}
+        title={S.chat.deleteDraft}
+        confirmLabel={S.common.delete}
+        onClose={() => setDeletingDraft(null)}
+        onConfirm={confirmDeleteDraft}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {deletingDraft
+            ? S.chat.deleteDraftConfirm(draftSessionTitle(deletingDraft) || S.chat.draftUntitled)
+            : ""}
+        </p>
+      </ConfirmModal>
     </div>
+  );
+}
+
+/** Single parked-draft row: first line of the unsent text + hover delete (opening resumes the draft at `/chat/<draft-id>`). */
+function DraftRow({
+  entry,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  entry: DraftSessionEntry;
+  active: boolean;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const title = draftSessionTitle(entry) || S.chat.draftUntitled;
+  return (
+    <li>
+      <div
+        className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+          active
+            ? "bg-gray-200/70 dark:bg-gray-800"
+            : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
+        >
+          <Truncated
+            text={title}
+            className={`min-w-0 flex-1 text-sm ${
+              active
+                ? "font-medium text-gray-900 dark:text-gray-100"
+                : "text-gray-700 dark:text-gray-300"
+            }`}
+          />
+        </button>
+        <div className="flex shrink-0 items-center">
+          <button
+            type="button"
+            title={S.chat.deleteDraft}
+            aria-label={S.chat.deleteDraft}
+            onClick={onDelete}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 hover:bg-gray-300/60 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-gray-700 dark:hover:text-red-400"
+          >
+            <Icon
+              d="M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6"
+              size={14}
+            />
+          </button>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -1376,18 +1485,9 @@ function SessionRow({
   );
 }
 
-function SettingRow({
-  label,
-  title,
-  children,
-}: {
-  label: string;
-  /** Optional row tooltip (e.g. the system-proxy row's scope + loopback-exemption hint). */
-  title?: string;
-  children: ReactNode;
-}) {
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div {...(title !== undefined ? { title } : {})}>
+    <div>
       <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
       {children}
     </div>

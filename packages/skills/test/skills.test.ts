@@ -1,6 +1,7 @@
 /**
  * Tests for the Skill library file source of truth and its parser: loadLibrarySkills reading
- * files into a manifest, loadSkillGroups grouping, groupSkills' Other group and missing-member
+ * files into a manifest (including auxiliary files a SKILL.md references), loadPreinstalledSkills'
+ * preinstall filter, loadSkillGroups grouping, groupSkills' Other group and missing-member
  * tolerance, librarySkill's traversal-name rejection, doc conventions (`## Before you start` is
  * mandatory), and parseSkillFrontmatter's error tolerance.
  */
@@ -12,6 +13,7 @@ import {
   groupSkills,
   librarySkill,
   loadLibrarySkills,
+  loadPreinstalledSkills,
   loadSkillGroups,
   parseSkillFrontmatter,
   type LibrarySkill,
@@ -83,6 +85,44 @@ describe("loadLibrarySkills", () => {
       expect(skill.content, skill.name).toContain("## Before you start");
     }
   });
+
+  it("collects auxiliary files a SKILL.md references (reference/*), excluding SKILL.md and icon.svg", async () => {
+    // remote-claude-code is a multi-file skill: its SKILL.md links to a reference/ document.
+    const skill = librarySkill("remote-claude-code")!;
+    const aux = "reference/persistent-session.md";
+    expect(skill.files, "remote-claude-code carries files").toBeDefined();
+    expect(Object.keys(skill.files!)).toContain(aux);
+    // Read verbatim from disk, and the SKILL.md really links to it.
+    expect(skill.files![aux]).toBe(
+      await fs.readFile(path.join(skillsRoot, skill.name, aux), "utf8"),
+    );
+    expect(skill.content).toContain(aux);
+    // SKILL.md and icon.svg are carried by their own fields, never duplicated into files.
+    for (const key of Object.keys(skill.files!)) {
+      expect(key).not.toBe("SKILL.md");
+      expect(key).not.toBe("icon.svg");
+    }
+    // A skill that ships only SKILL.md + icon.svg omits the field entirely.
+    expect("files" in librarySkill("firecrawl")!).toBe(false);
+  });
+});
+
+describe("loadPreinstalledSkills", () => {
+  it("excludes skills whose frontmatter sets preinstall: false and keeps everything else", () => {
+    const all = loadLibrarySkills();
+    const preinstalled = loadPreinstalledSkills().map((s) => s.name);
+    expect(preinstalled).toEqual(all.filter((s) => s.preinstall !== false).map((s) => s.name));
+    // remote-claude-code and humanizer are the library's manual-install skills: in the library, not preinstalled.
+    for (const name of ["remote-claude-code", "humanizer"]) {
+      expect(
+        all.map((s) => s.name),
+        name,
+      ).toContain(name);
+      expect(librarySkill(name)?.preinstall, name).toBe(false);
+      expect(preinstalled, name).not.toContain(name);
+    }
+    expect(preinstalled.length).toBeGreaterThan(0);
+  });
 });
 
 describe("loadSkillGroups / groupSkills", () => {
@@ -98,10 +138,15 @@ describe("loadSkillGroups / groupSkills", () => {
       "data-analysis",
       "firecrawl",
       "bento-slides",
+      "humanizer",
     ]);
     expect(groups[0]!.title).toBe("Office Productivity");
     expect(groups[0]!.titleZh).toBe("办公效率");
-    expect(groups[1]!.skills.map((s) => s.name)).toEqual(["web-design", "software-engineering"]);
+    expect(groups[1]!.skills.map((s) => s.name)).toEqual([
+      "web-design",
+      "software-engineering",
+      "remote-claude-code",
+    ]);
     expect(groups[1]!.title).toBe("Software Development");
     expect(groups[1]!.titleZh).toBe("软件开发");
     expect(groups[2]!.skills.map((s) => s.name)).toEqual([
@@ -163,8 +208,14 @@ describe("loadSkillGroups / groupSkills", () => {
 
   it("SKILL_GROUPS hardcodes member names (sole group info source outside library files)", () => {
     expect(SKILL_GROUPS.map((g) => ({ id: g.id, skills: g.skills }))).toEqual([
-      { id: "office-productivity", skills: ["data-analysis", "firecrawl", "bento-slides"] },
-      { id: "software-development", skills: ["web-design", "software-engineering"] },
+      {
+        id: "office-productivity",
+        skills: ["data-analysis", "firecrawl", "bento-slides", "humanizer"],
+      },
+      {
+        id: "software-development",
+        skills: ["web-design", "software-engineering", "remote-claude-code"],
+      },
       {
         id: "ai-app-development",
         skills: [
@@ -453,6 +504,17 @@ describe("parseSkillFrontmatter", () => {
     const without = parseSkillFrontmatter("---\nname: demo\ndescription: Do x\n---\nBody");
     expect(without && "shortDescription" in without).toBe(false);
     expect(without && "shortDescriptionZh" in without).toBe(false);
+  });
+
+  it("preinstall is recognized only as the literal false; other values or absence omit the field", () => {
+    const off = parseSkillFrontmatter("---\nname: demo\npreinstall: false\n---\nBody");
+    expect(off?.preinstall).toBe(false);
+    for (const value of ["true", "no", "0", "False"]) {
+      const meta = parseSkillFrontmatter(`---\nname: demo\npreinstall: ${value}\n---\nBody`);
+      expect(meta && "preinstall" in meta, value).toBe(false);
+    }
+    const absent = parseSkillFrontmatter("---\nname: demo\n---\nBody");
+    expect(absent && "preinstall" in absent).toBe(false);
   });
 
   it("parses UTF-8 BOM and CRLF newlines normally (hand-edited files may introduce them)", () => {

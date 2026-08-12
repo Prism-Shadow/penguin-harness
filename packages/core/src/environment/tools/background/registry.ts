@@ -124,6 +124,16 @@ export class BackgroundRegistry<T extends BackgroundTask> {
     return t;
   }
 
+  /**
+   * Snapshot of all registered sessions with their ids, registration order. Deliberately
+   * does NOT refresh access times: enumeration is observability (a host UI listing
+   * processes), and counting it as use would keep every idle session alive forever.
+   */
+  list(): Array<{ id: string; task: T }> {
+    if (this.disposed) return [];
+    return [...this.tasks].map(([id, task]) => ({ id, task }));
+  }
+
   /** Removes a session from the registry and finalizes it. */
   remove(id: string): void {
     const t = this.tasks.get(id);

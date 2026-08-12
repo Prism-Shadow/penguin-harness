@@ -138,9 +138,22 @@ export function toolsDir(root: string, projectId: string, agentId: string): stri
   return path.join(agentStateDir(root, projectId, agentId), "tools");
 }
 
-/** `<agentStateDir>/memory`. */
+/** `<agentStateDir>/memory`, the Memory root (one subdirectory per scope, see state/memory.ts). */
 export function memoryDir(root: string, projectId: string, agentId: string): string {
   return path.join(agentStateDir(root, projectId, agentId), "memory");
+}
+
+/**
+ * `<agentStateDir>/memory/<scopeKey>`, one Memory scope's topic-file directory — the `user`
+ * scope or one Workspace's key. Each scope carries its own `MEMORY.md` index inside.
+ */
+export function memoryScopeDir(
+  root: string,
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+): string {
+  return path.join(memoryDir(root, projectId, agentId), scopeKey);
 }
 
 /** `<agentStateDir>/skills`. */

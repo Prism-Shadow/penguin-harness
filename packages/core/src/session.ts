@@ -17,12 +17,29 @@
  * from the streamed OmniMessage on its own.
  * Docs: /docs/agent-loop; /docs/interfaces § "The Human boundary".
  */
-import { sessionMeta } from "./omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload, TokenCounts } from "./omnimessage/index.js";
+import {
+  abortEvent,
+  mcpConnectBegin,
+  mcpConnectEnd,
+  sessionMeta,
+  toolListReady,
+} from "./omnimessage/index.js";
+import type {
+  McpServerConnectResult,
+  OmniMessage,
+  SessionMetaPayload,
+  TokenCounts,
+  ToolDefinition,
+} from "./omnimessage/index.js";
 import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
-import type { EnvironmentInterface, LLMInterface, ToolPermission } from "./interfaces.js";
+import type {
+  BackgroundCommandInfo,
+  EnvironmentInterface,
+  LLMInterface,
+  ToolPermission,
+} from "./interfaces.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { ContextEngine } from "./engine/context-engine.js";
@@ -35,12 +52,29 @@ import type {
 } from "./engine/context-engine.js";
 
 export interface SessionConfig {
-  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / tools / agent_state / workspace / source). */
+  /** Session metadata — per-session invariants only (session_id / provider / model_id / model_context_window / system_prompt / agent_state / workspace / source); the toolset travels separately as the first run's tool_list_ready event. */
   meta: SessionMetaPayload;
-  llm: LLMInterface;
+  /**
+   * Lazy session bootstrap, run at the start of the first run: resolves the toolset —
+   * the Environment's first listTools connects any configured MCP Servers — and builds
+   * the session LLM from it; `mcp` carries the per-server connect outcomes for the
+   * mcp_connect_end event. Kept out of Session construction so creating a Session is
+   * instant and the connect wait streams as visible events instead. An aborted attempt
+   * is cancelled via `cancelBootstrap` — the next run calls this again and reconnects
+   * from scratch.
+   */
+  bootstrap: () => Promise<{
+    tools: ToolDefinition[];
+    llm: LLMInterface;
+    mcp: McpServerConnectResult[];
+  }>;
+  /** Cancels an in-flight bootstrap on user abort (the composition layer wires Environment.cancelMcpConnect). */
+  cancelBootstrap?: () => void;
+  /** Names of the configured MCP Servers (config order): non-empty brackets the bootstrap in mcp_connect_begin/end events; empty emits none. */
+  mcpServers: string[];
   environment: EnvironmentInterface;
   trace?: TraceSink;
-  /** Maximum LLM turns per Task (default 100; -1 removes the cap). */
+  /** Maximum LLM turns per Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
   maxTurns?: number;
   /** Creates a new LLM object after compaction (carries over the Session's accumulated Token count); context compaction is unavailable if not provided. */
   createLLM?: (sessionTokens: TokenCounts) => LLMInterface;
@@ -83,12 +117,39 @@ export interface SessionConfig {
 export interface GoalRunOptions {
   /** Token budget; omitted or -1 (`UNLIMITED_BUDGET`) means no budget. */
   budget?: number;
-  /** Hard cap on rounds — a runaway backstop, not a host knob (default 100; see goal-loop.ts). */
+  /** Hard cap on rounds — a runaway backstop, not a host knob (default 100; -1 disables; see goal-loop.ts). */
   maxRounds?: number;
 }
 
 /** `Session.run` options: the engine's per-call options, plus goal mode. */
 export type SessionRunOptions = RunOptions & { goal?: GoalRunOptions };
+
+/**
+ * Awaits `work` unless `signal` aborts first — the abort side never cancels `work`
+ * (deliberate: see the bootstrap single-flight). Settles immediately when the signal is
+ * already aborted.
+ */
+function raceAbort<T>(
+  work: Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<{ value: T } | "aborted"> {
+  if (!signal) return work.then((value) => ({ value }));
+  if (signal.aborted) return Promise.resolve("aborted");
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => resolve("aborted");
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve({ value });
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
 
 /**
  * Caps on captured title material (chars per side); accumulation stops once exceeded. The
@@ -126,7 +187,31 @@ export class Session {
   /** Session resume: the full historical messages of the current context (for rendering); undefined for a non-resumed Session. */
   readonly resumedHistory?: OmniMessage[];
 
-  private readonly engine: ContextEngine;
+  /** Built by the first run's bootstrap (`ensureReady`); null until then — the sync delegates below answer conservatively before it exists. */
+  private engine: ContextEngine | null = null;
+  /**
+   * Inputs of a run aborted mid-bootstrap, carried into the next run: the engine did not
+   * exist yet to deliver them — dropping them would silently lose the user's message.
+   * Prepended on the next run so the model finally sees them.
+   */
+  private carryOverInput: OmniMessage[] = [];
+  /**
+   * Serialized envelopes of carried inputs the ABORT path already wrote to the Trace
+   * (the aborted turn is recorded: input + connect pair + abort). The next run's engine
+   * re-delivers those inputs but must not re-write them — consumed one-shot by the
+   * skip-wrapper handed to the engine at construction.
+   */
+  private carryOverPersisted: string[] = [];
+  /** The aborted attempt's yielded records (connect pair + abort event), stashed by ensureReady for the caller's Trace write. */
+  private abortedBootstrapRecords: OmniMessage[] = [];
+  private readonly bootstrap: SessionConfig["bootstrap"];
+  private readonly cancelBootstrap: (() => void) | undefined;
+  private readonly mcpServers: string[];
+  /** Engine dependencies minus the LLM (which the bootstrap provides); kept whole so ensureReady can construct the engine late. */
+  private readonly engineDeps: Omit<
+    ConstructorParameters<typeof ContextEngine>[0],
+    "llm" | "toolList" | "bootstrapRecords"
+  >;
   private readonly environment: EnvironmentInterface;
   private readonly trace?: TraceSink;
   private readonly meta: OmniMessage;
@@ -163,12 +248,17 @@ export class Session {
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
-    this.engine = new ContextEngine({
-      llm: config.llm,
+    this.bootstrap = config.bootstrap;
+    this.cancelBootstrap = config.cancelBootstrap;
+    this.mcpServers = config.mcpServers;
+    // The engine itself is built by ensureReady() on the first run, once the bootstrap has
+    // produced the LLM: everything else it needs is captured here.
+    this.engineDeps = {
       environment: config.environment,
       ...(config.trace ? { trace: config.trace } : {}),
       ...(config.maxTurns !== undefined ? { maxTurns: config.maxTurns } : {}),
-      // Context compaction: new LLM factory + resolved settings + writes session_meta at the start of the new Trace file after splitting.
+      // Context compaction: new LLM factory + resolved settings + writes session_meta (and
+      // tool_list_ready) at the start of the new Trace file after splitting.
       ...(config.createLLM ? { createLLM: config.createLLM } : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
@@ -180,7 +270,7 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
-    });
+    };
   }
 
   /**
@@ -220,7 +310,37 @@ export class Session {
   ): AsyncGenerator<OmniMessage> {
     // Folded before Trace and title material, so the path lines are what gets recorded.
     if (!this.modelHasVision) newMessages = await this.foldImages(newMessages);
-    await this.ensureMetaWritten();
+    // A previously aborted bootstrap dropped these before the engine existed: they lead
+    // this run's input (already folded by their own run), so the model finally sees them
+    // and the engine's run-start write persists them.
+    if (this.carryOverInput.length > 0) {
+      newMessages = [...this.carryOverInput, ...newMessages];
+      this.carryOverInput = [];
+    }
+    const ready = yield* this.ensureReady(opts?.signal);
+    if (!ready) {
+      // Aborted mid-bootstrap: the attempt is cancelled (cancelBootstrap) and the next
+      // run reconnects from scratch. The aborted turn still leaves a Trace — the input,
+      // the aborted connect pair and the abort event — so the analysis page shows the
+      // interruption and a reload (or restart) does not lose the message. The engine
+      // doesn't exist, so the Session writes them itself; inputs already persisted by a
+      // previous aborted attempt are skipped (repeat aborts record each exactly once),
+      // and the next successful run's engine skips re-writing them (carryOverPersisted).
+      for (const m of newMessages) {
+        const serialized = JSON.stringify(m);
+        if (this.carryOverPersisted.includes(serialized)) continue;
+        if (await this.writeTrace(m, "aborted-run input")) {
+          this.carryOverPersisted.push(serialized);
+        }
+      }
+      for (const m of this.abortedBootstrapRecords) {
+        await this.writeTrace(m, "aborted bootstrap record");
+      }
+      this.abortedBootstrapRecords = [];
+      // Carry the merged list, so repeated aborts keep accumulating exactly once each.
+      this.carryOverInput = newMessages;
+      return;
+    }
     // Self-captures title material (the title is derived from the first-turn
     // conversation text): while material isn't frozen yet, collect this call's user text and
     // the produced model text; freezes once the first Task containing user text finishes, so
@@ -236,7 +356,7 @@ export class Session {
         );
       }
     }
-    for await (const msg of this.engine.run(newMessages, opts)) {
+    for await (const msg of this.engine!.run(newMessages, opts)) {
       if (capture) {
         this.titleAssistantText = appendTitleText(
           this.titleAssistantText,
@@ -248,6 +368,103 @@ export class Session {
       yield msg;
     }
     if (capture && this.titleUserText.trim()) this.titleMaterialFrozen = true;
+  }
+
+  /**
+   * First-run bootstrap: writes `session_meta`, resolves the toolset and builds the
+   * engine — streaming the phase as it happens. With MCP Servers configured, the connect
+   * + discovery wait is bracketed by one `mcp_connect_begin` / `mcp_connect_end` pair
+   * (overall status + per-server outcomes; the wall time is the pair's timestamp
+   * difference). The resolved toolset then flows as one `tool_list_ready` event — split
+   * out of session_meta precisely so the meta never has to wait for this phase.
+   *
+   * The three messages are yielded live here, but their Trace writes are DEFERRED to the
+   * engine (ContextEngineDeps.bootstrapRecords): the engine writes them right after this
+   * run's input, so the connect phase belongs to the new turn in the Trace — after the
+   * user's message — instead of dangling before it (their earlier timestamps keep the
+   * file chronological, since the input message was created before the connect began).
+   *
+   * Returns false when `signal` aborts mid-bootstrap: the attempt is CANCELLED
+   * (`cancelBootstrap` → the provider aborts pending connects and resets — the next run
+   * reconnects from scratch), the pair closes with `status: "aborted"`, and a standard
+   * abort event follows. The aborted records are stashed (abortedBootstrapRecords) for
+   * the caller, which writes the turn to the Trace itself — input first, then the pair
+   * and the abort — since no engine exists to do it; the input is also carried
+   * (carryOverInput) so the next run delivers it to the model without re-writing it.
+   * No-op returning true once the engine exists; a rejected
+   * bootstrap (unreadable resume history, LLM construction) throws to the caller, and a
+   * later run retries with a fresh attempt.
+   */
+  private async *ensureReady(signal?: AbortSignal): AsyncGenerator<OmniMessage, boolean> {
+    await this.ensureMetaWritten();
+    if (this.engine) return true;
+    const records: OmniMessage[] = [];
+    if (this.mcpServers.length > 0) {
+      const begin = mcpConnectBegin(this.mcpServers);
+      yield begin;
+      records.push(begin);
+    }
+    const work = this.bootstrap();
+    const outcome = await raceAbort(work, signal);
+    if (outcome === "aborted") {
+      this.cancelBootstrap?.();
+      // The cancelled attempt settles on its own (rejection expected); keep it from
+      // surfacing as an unhandled rejection.
+      work.catch(() => {});
+      // Stashed (not written here) so the caller can put the run's INPUT first — the
+      // Trace stays chronological: input, pair, abort.
+      this.abortedBootstrapRecords = records.length > 0 ? [...records] : [];
+      if (this.mcpServers.length > 0) {
+        const end = mcpConnectEnd({ status: "aborted", results: [] });
+        yield end;
+        this.abortedBootstrapRecords.push(end);
+      }
+      const aborted = abortEvent("user");
+      yield aborted;
+      this.abortedBootstrapRecords.push(aborted);
+      return false;
+    }
+    const { tools, llm, mcp } = outcome.value;
+    if (this.mcpServers.length > 0) {
+      const end = mcpConnectEnd({
+        status: mcp.some((r) => r.status !== "completed") ? "failed" : "completed",
+        results: mcp,
+      });
+      yield end;
+      records.push(end);
+    }
+    const toolsMsg = toolListReady(tools);
+    yield toolsMsg;
+    // One-shot skip list: inputs carried from an aborted bootstrap were already written
+    // to the Trace by the abort path — the engine re-delivers them (model context) but
+    // must not re-write them. Exact-envelope match, each consumed once.
+    const persisted = this.carryOverPersisted;
+    this.carryOverPersisted = [];
+    const baseTrace = this.engineDeps.trace;
+    const trace: TraceSink | undefined =
+      baseTrace && persisted.length > 0
+        ? {
+            write: async (msg) => {
+              const at = persisted.indexOf(JSON.stringify(msg));
+              if (at >= 0) {
+                persisted.splice(at, 1);
+                return;
+              }
+              await baseTrace.write(msg);
+            },
+            ...(baseTrace.rotate ? { rotate: () => baseTrace.rotate!() } : {}),
+          }
+        : baseTrace;
+    // toolsMsg rides as `toolList` alone (first-run write + rotation rewrite); the
+    // records array carries only the connect pair — one message, one carrier.
+    this.engine = new ContextEngine({
+      ...this.engineDeps,
+      ...(trace !== undefined ? { trace } : {}),
+      llm,
+      toolList: toolsMsg,
+      bootstrapRecords: records,
+    });
+    return true;
   }
 
   /**
@@ -331,7 +548,8 @@ export class Session {
    * mode; anything still queued when the run exits (abort included) is discarded.
    */
   steer(input: OmniMessage[]): boolean {
-    return this.engine.steer(input);
+    // No engine yet = no running Task to steer (the first run's bootstrap hasn't finished).
+    return this.engine?.steer(input) ?? false;
   }
 
   /**
@@ -343,7 +561,8 @@ export class Session {
    * the next `request_begin` arriving early).
    */
   skipReconnectWait(): boolean {
-    return this.engine.skipReconnectWait();
+    // No engine yet = no reconnect wait can be in progress.
+    return this.engine?.skipReconnectWait() ?? false;
   }
 
   /**
@@ -355,6 +574,10 @@ export class Session {
    * Docs: /docs/agent-loop § "Compaction".
    */
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+    // Before the first run there is no context to compact: stay a strict no-op, without
+    // bootstrapping — a session that never ran must not leave trace records (meta /
+    // tool_list_ready) behind, or an untouched session would look resumable.
+    if (!this.engine) return;
     yield* this.engine.compact(opts);
   }
 
@@ -364,21 +587,28 @@ export class Session {
    * give feedback based on this rather than triggering a silent, fruitless compaction.
    */
   compactability(): CompactAvailability {
-    return this.engine.compactability();
+    // Before the first run's bootstrap there is no context at all — "empty" is the accurate answer.
+    return this.engine?.compactability() ?? "empty";
   }
 
   /** Writes `session_meta` to the Trace before the first run/compaction; best-effort — failure doesn't interrupt the run. */
   private async ensureMetaWritten(): Promise<void> {
     if (this.metaWritten) return;
-    if (this.trace) {
-      try {
-        await this.trace.write(this.meta);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[trace] session_meta write failed: ${message}\n`);
-      }
-    }
+    await this.writeTrace(this.meta, "session_meta");
     this.metaWritten = true;
+  }
+
+  /** Best-effort `session_meta` Trace write (warn-and-continue stance): a failure logs and never interrupts the run. */
+  private async writeTrace(msg: OmniMessage, label: string): Promise<boolean> {
+    if (!this.trace) return false;
+    try {
+      await this.trace.write(msg);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[trace] ${label} write failed: ${message}\n`);
+      return false;
+    }
   }
 
   /**
@@ -417,6 +647,20 @@ export class Session {
   /** This Session's session_meta message (used e.g. by host tools to forward nested-session metadata to a parent session). */
   get metaMessage(): OmniMessage {
     return this.meta;
+  }
+
+  /**
+   * Background command processes owned by this Session's Environment (exec_commands
+   * promoted past their yield window): the host UI's process list. Empty for
+   * environments that don't track any.
+   */
+  listBackgroundCommands(): BackgroundCommandInfo[] {
+    return this.environment.listBackgroundCommands?.() ?? [];
+  }
+
+  /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
+  killBackgroundCommand(processId: string): boolean {
+    return this.environment.killBackgroundCommand?.(processId) ?? false;
   }
 
   /**

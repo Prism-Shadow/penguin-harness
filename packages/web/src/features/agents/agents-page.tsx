@@ -5,8 +5,8 @@
  * Info column has three lines: title line (small avatar + bold name + agentId); single-line
  * truncated description; and a stats line — icon + number only (Session count / tool count) plus
  * relative time (today/yesterday/n days ago), with meaning folded into the hover title; the
- * tool / vault-key / schedule / skill counts deep-link to the settings page's matching tab
- * (?tab=tools|vault|schedules|skills).
+ * tool / skill / memory / vault-key / schedule counts deep-link to the settings page's matching
+ * tab (?tab=tools|skills|memory|vault|schedules) and appear in the settings tabs' order.
  * Buttons sit to the right of the sparkline: "New Chat" (draft state, same as sidebar group
  * header) and "Settings" (goes to settings page) show text labels; "Usage" / "Traces" (deep link
  * via ?agentId= to the usage center / trace observability; traces use an eye line icon =
@@ -22,6 +22,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatDateTime, formatRelativeDays } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
+import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
@@ -33,8 +34,10 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
+import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
@@ -44,9 +47,6 @@ const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
 const CARD_ICONS = {
   /** New chat (plus sign) */
   newChat: "M12 5v14M5 12h14",
-  /** Settings (gear, same as sidebar user menu) */
-  settings:
-    "M10.3 4.3a2 2 0 0 1 3.4 0l.5.8a2 2 0 0 0 1.8 1l1-.1a2 2 0 0 1 1.7 3l-.5.8a2 2 0 0 0 0 2l.5.8a2 2 0 0 1-1.7 3l-1-.1a2 2 0 0 0-1.8 1l-.5.8a2 2 0 0 1-3.4 0l-.5-.8a2 2 0 0 0-1.8-1l-1 .1a2 2 0 0 1-1.7-3l.5-.8a2 2 0 0 0 0-2l-.5-.8a2 2 0 0 1 1.7-3l1 .1a2 2 0 0 0 1.8-1zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
   /** Delete (trash can) */
   trash:
     "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6",
@@ -63,6 +63,11 @@ const CARD_ICONS = {
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   /** Traces (eye line icon: observability; follows text color, no fill) */
   traces: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+  /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
+  memory:
+    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
+  /** Kernel update available (rotate-cw — the skill library's update glyph), deep-links to the settings overview */
+  kernelUpdate: "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10",
 } as const;
 
 /**
@@ -70,13 +75,14 @@ const CARD_ICONS = {
  * (no button chrome) plus a subtle hover text-color shift and pointer cursor.
  */
 const STAT_LINK_CLASS =
-  "inline-flex min-w-[2.25rem] shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
+  "inline-flex shrink-0 cursor-pointer items-center gap-1 tabular-nums " +
   "transition-colors duration-150 hover:text-gray-800 dark:hover:text-gray-200";
 
 export function AgentsPage() {
   const navigate = useNavigate();
   useDocumentTitle(S.nav.agents);
   const { locale } = useLocale();
+  const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
   const [createOpen, setCreateOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
@@ -138,6 +144,8 @@ export function AgentsPage() {
    * rather than the previous one from the cache.
    */
   const newChat = (agentId: string) => {
+    // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
+    if (user && projectId) parkActiveDraft(user.userId, projectId);
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
@@ -147,7 +155,10 @@ export function AgentsPage() {
    * page lands directly on the matching tab (unknown keys fall back to Overview there, so
    * "skills" is harmless until the Skills tab ships).
    */
-  const openSettingsTab = (agentId: string, tab: "tools" | "vault" | "schedules" | "skills") => {
+  const openSettingsTab = (
+    agentId: string,
+    tab: "overview" | "tools" | "vault" | "schedules" | "skills" | "memory",
+  ) => {
     setCurrentAgentId(agentId);
     navigate(`/agents/${agentId}?tab=${tab}`);
   };
@@ -233,20 +244,35 @@ export function AgentsPage() {
                         {a.agentId}
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
+                      {/* Kernel-outdated hint: minimal icon + tooltip (skills-library update
+                          convention, no textual/red alarm), deep-linking to the settings
+                          overview where the update action lives. */}
+                      {a.kernelOutdated && (
+                        <button
+                          type="button"
+                          className="shrink-0 cursor-pointer text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                          title={S.agent.kernelOutdatedHint}
+                          aria-label={S.agent.kernelOutdatedHint}
+                          onClick={() => openSettingsTab(a.agentId, "overview")}
+                        >
+                          <GlyphIcon d={CARD_ICONS.kernelUpdate} size={12} />
+                        </button>
+                      )}
                     </div>
                     {/* Description truncated to one line (an empty description still takes up a line, keeping card heights equal) */}
                     <p className="mt-1.5 min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
                       {a.description ?? ""}
                     </p>
                     {/* Stats on their own line: same color/font size as the description; each
-                        reserves a minimum width so they align vertically across cards; meaning
-                        folded into the hover title. Tool/vault/schedule/skill counts are buttons
-                        deep-linking to the matching settings tab (also for built-in Agents —
-                        their Settings entry point has no gating either); session count and
+                        item hugs its content, with spacing left to the container's uniform
+                        gap-x-4; meaning folded into the hover title. Tool/skill/memory/vault/
+                        schedule counts are buttons deep-linking to the matching settings tab,
+                        listed in the settings tabs' order (also for built-in Agents — their
+                        Settings entry point has no gating either); session count and
                         last-modified stay plain text */}
-                    <div className="mt-1.5 flex items-center gap-x-2.5 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="mt-1.5 flex items-center gap-x-4 text-xs text-gray-500 dark:text-gray-400">
                       <span
-                        className="inline-flex min-w-[2.25rem] shrink-0 items-center gap-1 tabular-nums"
+                        className="inline-flex shrink-0 items-center gap-1 tabular-nums"
                         title={S.agent.sessionCount(a.sessionCount)}
                       >
                         <GlyphIcon d={CARD_ICONS.sessions} size={12} />
@@ -261,6 +287,26 @@ export function AgentsPage() {
                       >
                         <GlyphIcon d={STAT_ICONS.toolCalls} size={12} />
                         {a.toolCount}
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
+                        title={S.skills.skillCount(a.skillCount)}
+                        aria-label={S.skills.skillCount(a.skillCount)}
+                        onClick={() => openSettingsTab(a.agentId, "skills")}
+                      >
+                        <GlyphIcon d={CARD_ICONS.skills} size={12} />
+                        {a.skillCount}
+                      </button>
+                      <button
+                        type="button"
+                        className={STAT_LINK_CLASS}
+                        title={S.agent.memoryCount(a.memoryCount)}
+                        aria-label={S.agent.memoryCount(a.memoryCount)}
+                        onClick={() => openSettingsTab(a.agentId, "memory")}
+                      >
+                        <GlyphIcon d={CARD_ICONS.memory} size={12} />
+                        {a.memoryCount}
                       </button>
                       <button
                         type="button"
@@ -281,16 +327,6 @@ export function AgentsPage() {
                       >
                         <GlyphIcon d={CARD_ICONS.schedules} size={12} />
                         {a.scheduleCount}
-                      </button>
-                      <button
-                        type="button"
-                        className={STAT_LINK_CLASS}
-                        title={S.skills.skillCount(a.skillCount)}
-                        aria-label={S.skills.skillCount(a.skillCount)}
-                        onClick={() => openSettingsTab(a.agentId, "skills")}
-                      >
-                        <GlyphIcon d={CARD_ICONS.skills} size={12} />
-                        {a.skillCount}
                       </button>
                       <span
                         className="inline-flex shrink-0 items-center gap-1"
@@ -322,10 +358,7 @@ export function AgentsPage() {
                         navigate(`/agents/${a.agentId}`);
                       }}
                     >
-                      <GlyphIcon
-                        d={CARD_ICONS.settings}
-                        className="text-gray-600 dark:text-gray-300"
-                      />
+                      <GlyphIcon d={GEAR_ICON} />
                       {S.common.settings}
                     </Button>
                     <Button

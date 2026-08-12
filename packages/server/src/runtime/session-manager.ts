@@ -40,8 +40,10 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
+  BackgroundCommandInfo,
   CompactAvailability,
   OmniMessage,
+  ProxyEnvPolicy,
   SessionMetaPayload,
   SessionTitleResult,
   TextPayload,
@@ -104,6 +106,12 @@ export interface RuntimeSession {
     material?: { userText: string; assistantText: string };
     signal?: AbortSignal;
   }): Promise<SessionTitleResult>;
+  /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
+  /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
+  dispose?(): void;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -121,13 +129,14 @@ export interface SessionLoader {
  * lets the no-Trace self-heal rebuild re-record a known origin into the fresh session_meta;
  * with no registry entry (e.g. the process restarted and no Trace was ever written) the
  * rebuilt Session is unsourced — session_meta is the single source of truth, and none survived.
- * `opts.stripProxyEnv` threads the "use system HTTP proxy" switch into core (a live getter:
- * true = strip HTTP(S)_PROXY/ALL_PROXY from agent command subprocess environments).
+ * `opts.proxyEnv` threads the admin proxy settings into core (a live getter returning the
+ * agent-command-subprocess policy: strip the proxy variables, inject the explicit proxy
+ * address, or null = pass the environment through).
  */
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionSources,
-  opts: { stripProxyEnv?: () => boolean } = {},
+  opts: { proxyEnv?: () => ProxyEnvPolicy | null } = {},
 ): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
@@ -135,7 +144,7 @@ export function createCoreSessionLoader(
         root,
         projectId: row.projectId,
         agentId: row.agentId,
-        ...(opts.stripProxyEnv ? { stripProxyEnv: opts.stripProxyEnv } : {}),
+        ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -255,6 +264,24 @@ interface RuntimeEntry {
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
+  /**
+   * The running Task's input messages, held from launch until the run ends. The engine
+   * writes these exact envelopes to the Trace only after the session bootstrap (MCP
+   * connect + discovery on the first run), so a history read during that window would
+   * miss the user's own message — and the draft flow subscribes to the stream only after
+   * the input publish, so the live channel cannot backfill it either. GET /messages
+   * appends the ones the Trace has not caught up to yet (exact-envelope dedup).
+   */
+  pendingInputs: OmniMessage[];
+  /**
+   * The running Task's streamed bootstrap records (mcp_connect begin/end,
+   * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
+   * engine until after the input lands (turn attribution), and the draft flow subscribes
+   * only after they were published — so a history rebuild during the MCP connect would
+   * otherwise show nothing at all (a silent blank while a slow server times out).
+   * GET /messages appends whichever of them the Trace has not caught up to.
+   */
+  pendingBootstrap: OmniMessage[];
   /**
    * Steering messages queued on core but not yet delivered to the model — a display mirror
    * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
@@ -422,6 +449,22 @@ export class SessionManager {
     return this.liveTail.fragments(sessionId);
   }
 
+  /**
+   * The running Task's input messages as published at launch; empty when idle. The engine
+   * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
+   * connect + discovery), so GET /messages appends whichever of them the Trace read has
+   * not caught up to yet — without this, a client rebuilding history during the connect
+   * (the draft flow subscribes only after the input publish) loses the user's own message.
+   */
+  pendingInputs(sessionId: string): OmniMessage[] {
+    return this.entries.get(sessionId)?.pendingInputs ?? [];
+  }
+
+  /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
+  pendingBootstrap(sessionId: string): OmniMessage[] {
+    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+  }
+
   /** Number of Sessions for this Agent that are currently running / compacting. */
   activeCountForAgent(projectId: string, agentId: string): number {
     let n = 0;
@@ -446,6 +489,8 @@ export class SessionManager {
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
+      pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     });
@@ -580,6 +625,11 @@ export class SessionManager {
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
+      // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
+      // inputs onto the stream, but the Trace write still waits for the bootstrap);
+      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
+      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
+      entry.pendingBootstrap = [];
       this.publishState(entry, "running");
       const approve = makeApprove({
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
@@ -726,7 +776,15 @@ export class SessionManager {
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
     // Publish the input messages first (visible to other subscribers; the Trace is
-    // persisted by the SDK), then flip the running status.
+    // persisted by the SDK), then flip the running status. The same envelopes are held as
+    // pendingInputs so GET /messages can serve them before the engine's Trace write
+    // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
+    // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
+    // carries them into this run) and must stay served until this run persists them.
+    // The previous attempt's bootstrap records are dropped instead — this run streams
+    // its own connect phase, and a stale aborted pair would render as an extra row.
+    entry.pendingInputs = [...entry.pendingInputs, ...input];
+    entry.pendingBootstrap = [];
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
@@ -875,6 +933,37 @@ export class SessionManager {
   }
 
   /**
+   * Background command processes of a LOADED session (empty when the entry is not in
+   * the active table — a resumed entry starts with a fresh environment and can only
+   * ever report an empty list, so nothing is resurrected just to answer a poll).
+   */
+  listProcesses(sessionId: string): BackgroundCommandInfo[] {
+    return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+  }
+
+  /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
+  killProcess(sessionId: string, processId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    if (killed) entry.lastActivityMs = Date.now();
+    return killed;
+  }
+
+  /**
+   * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
+   * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
+   * Agent / Project is the one intent that must also end the background processes the
+   * conversation started (a dev server surviving its deleted conversation is
+   * unreachable from every UI, running forever).
+   */
+  private disposeRemoved(entry: RuntimeEntry): void {
+    const dispose = (): void => entry.session.dispose?.();
+    if (entry.running) void entry.running.then(dispose, dispose);
+    else dispose();
+  }
+
+  /**
    * Before deleting a Project, converge all its active runs and clear them out of the
    * active table. Returns the in-flight drive Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
@@ -888,6 +977,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -910,6 +1000,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -936,6 +1027,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
+    this.disposeRemoved(entry);
     return entry.running ? [entry.running] : [];
   }
 
@@ -974,6 +1066,11 @@ export class SessionManager {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
+      // A live background process (e.g. a dev server the conversation started) pins the
+      // entry: eviction would strand the process — a resumed entry starts with a fresh
+      // environment, so the process list and its stop control would go blind while the
+      // OS process kept running. Exited-but-listed processes don't pin anything.
+      if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -1087,6 +1184,8 @@ export class SessionManager {
       running: null,
       generation,
       followUps: [],
+      pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     };
@@ -1224,6 +1323,24 @@ export class SessionManager {
             }
           }
         }
+        // Bootstrap records (first-run MCP connect + toolset): held for GET /messages
+        // until the engine's deferred Trace write catches up (see pendingBootstrap).
+        if (!msg.origin || msg.origin.length === 0) {
+          const bt = (msg.payload as { type?: string }).type;
+          if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
+            entry.pendingBootstrap.push(msg);
+          }
+          // First request of the run: the engine writes input → bootstrap records → tool
+          // list to the Trace BEFORE issuing the request, so both holds are persisted by
+          // now — end them here rather than at idle. Holding for the whole run would
+          // outlive the messages endpoint's tail-window dedup: once the Task appends
+          // more records than the window, the input would be judged "not yet in the
+          // Trace" and served a second time at the end of history.
+          if (bt === "request_begin") {
+            entry.pendingInputs = [];
+            entry.pendingBootstrap = [];
+          }
+        }
         // Live-tail bookkeeping in the same synchronous tick as the publish below: the
         // messages endpoint captures "channel cursor + open fragments" between two
         // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
@@ -1253,6 +1370,10 @@ export class SessionManager {
       // The run is over: no fragment will ever continue, so drop the live tail before the
       // idle flip (GET /messages stops attaching `live` the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
+      // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
+      // to the Trace, so its held input (and the aborted connect pair) are the only copy
+      // a reload can show until the next run carries the input forward and persists it.
+      // Runs that issued a request already cleared them at their first request_begin.
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;

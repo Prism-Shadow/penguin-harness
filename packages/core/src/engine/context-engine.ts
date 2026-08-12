@@ -165,19 +165,19 @@ export interface ContextEngineDeps {
   trace?: TraceSink;
   /** Engine initial state (derived by replaying Trace on Session resumption). */
   initialState?: EngineInitialState;
-  /** Maximum LLM turns for a single Task. Defaults to 100; -1 removes the cap. */
+  /** Maximum LLM turns for a single Task; -1 removes the cap. Omitted means -1 too — the agent-config default and the SDK fallback agree (unlimited). */
   maxTurns?: number;
   /**
    * Maximum automatic retries for LLM timeout/reconnect within a single run. Defaults
-   * to 5: with the default backoff (250ms base, 30s ceiling) that is 250+500+1000+2000+
-   * 4000 ≈ 7.75s of total patience — the first attempts stay fast enough for transport
-   * blips while the tail still gives transient provider rejections a window.
+   * to 5: with the default backoff (2s base, 30s ceiling) that is 2+4+8+16+30 ≈ 60s of
+   * total patience — transient provider failures (restarts, rate limits) get a real
+   * recovery window instead of five retries burning out in about a second (issue #218).
    */
   maxReconnects?: number;
   /**
    * Exponential backoff base (ms): the wait before reconnect retry N is
    * `base × 2^(N−1)`, capped at `reconnectBackoffMaxMs` (see reconnectDelayMs).
-   * Defaults to 250.
+   * Defaults to 2000.
    */
   reconnectBackoffMs?: number;
   /** Ceiling (ms) for a single reconnect backoff wait. Defaults to 30000. */
@@ -204,6 +204,23 @@ export interface ContextEngineDeps {
   compaction?: CompactionSettings;
   /** This Session's session_meta message; written at the start of the new Trace file after compaction splits it. */
   sessionMeta?: OmniMessage;
+  /**
+   * This Session's tool_list_ready event (the resolved toolset). Written once right after
+   * the first run's input (following `bootstrapRecords`), and rewritten right after
+   * sessionMeta on each post-compaction Trace file — every file's tool record stays
+   * self-contained. Held here alone; deliberately NOT part of `bootstrapRecords`, so the
+   * one message isn't carried twice.
+   */
+  toolList?: OmniMessage;
+  /**
+   * The first run's mcp_connect begin/end pair (empty without MCP), written once right
+   * AFTER that run's input messages — followed by `toolList` — so the connect phase lands
+   * inside the new turn in the Trace, after the user's message (their timestamps precede
+   * the write; the file stays chronologically consistent because the input message was
+   * created before the connect began). Streaming already yielded them live before the
+   * engine existed. Present (possibly empty) marks "first-run records still owed".
+   */
+  bootstrapRecords?: OmniMessage[];
   /**
    * Input adapter for a session whose model has no vision: folds image messages into text
    * lines appended to the input's user text. Absent = the model takes images directly. `run`'s
@@ -358,10 +375,14 @@ const RETRY_STATUSES: readonly StopReason[] = ["failed", "timeout", "malformed"]
 
 /**
  * Delay before reconnect attempt N (1-based): exponential growth from `base` with a hard
- * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (250ms base, 30s ceiling,
- * 5 reconnects) the ladder is 250, 500, 1000, 2000, 4000 ≈ 7.75s of total patience: one
- * shared schedule serves every retryable class, growing toward the slower ones (transient
- * provider quota errors) while the first steps stay as fast as a transport blip needs.
+ * ceiling `max` — `min(base × 2^(N−1), max)`. With the defaults (2s base, 30s ceiling,
+ * 5 reconnects) the ladder is 2s, 4s, 8s, 16s, 30s ≈ 60s of total patience: one shared
+ * schedule serves every retryable class. The base is sized for the slow ones — transient
+ * provider failures (restarts, rate limits) need seconds, not milliseconds, to
+ * recover, and the old 250ms base burned the whole ladder in ~7.75s (issue #218); it also
+ * keeps every planned wait at or above the hosts' 2s countdown floor (the Web App's
+ * COUNTDOWN_MIN_MS), so no retry ever looks like a silent stall. Transport blips pay at
+ * most one visible 2s wait — an acceptable trade for retries the user can see.
  */
 export function reconnectDelayMs(base: number, max: number, attempt: number): number {
   return Math.min(base * 2 ** (attempt - 1), max);
@@ -387,6 +408,8 @@ export class ContextEngine {
   private lastSessionTokens: TokenCounts = emptyTokenCounts();
   /** Summary produced by a Task-boundary compaction: used as the prefix of the next `run` input (merged with the next user Prompt). */
   private pendingSummary: OmniMessage | null = null;
+  /** Bootstrap records still owed to the Trace (written after the first run's input); see ContextEngineDeps.bootstrapRecords. */
+  private pendingBootstrapRecords: OmniMessage[] | null = null;
   /**
    * Set to true once compaction completes: Trace rotation is deferred until the next
    * message that needs writing (see `write`) — so that if no further messages follow the
@@ -410,9 +433,10 @@ export class ContextEngine {
   private taskRunning = false;
 
   constructor(private readonly deps: ContextEngineDeps) {
-    this.maxTurns = deps.maxTurns ?? 100;
+    this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
+    this.maxTurns = deps.maxTurns ?? -1;
     this.maxReconnects = deps.maxReconnects ?? 5;
-    this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 250;
+    this.reconnectBackoffMs = deps.reconnectBackoffMs ?? 2000;
     this.reconnectBackoffMaxMs = deps.reconnectBackoffMaxMs ?? 30_000;
     this.compactionMaxReconnects = deps.compactionMaxReconnects ?? this.maxReconnects;
     this.llm = deps.llm;
@@ -555,6 +579,13 @@ export class ContextEngine {
     // context's first input record, is written as usual.
     if (summary) await this.write(summary);
     for (const msg of newMessages) await this.write(msg);
+    if (this.pendingBootstrapRecords) {
+      // First run only: the connect pair, then the toolset record, follow the input into
+      // the Trace (see ContextEngineDeps.bootstrapRecords for the ordering rationale).
+      for (const msg of this.pendingBootstrapRecords) await this.write(msg);
+      this.pendingBootstrapRecords = null;
+      if (this.deps.toolList) await this.write(this.deps.toolList);
+    }
 
     if (signal?.aborted) {
       // Aborted before the Request was issued: the input is held **as-is** as carry-over
@@ -1715,6 +1746,7 @@ export class ContextEngine {
       try {
         if (this.deps.trace.rotate) await this.deps.trace.rotate();
         if (this.deps.sessionMeta) await this.deps.trace.write(this.deps.sessionMeta);
+        if (this.deps.toolList) await this.deps.trace.write(this.deps.toolList);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[trace] rotate failed: ${message}\n`);

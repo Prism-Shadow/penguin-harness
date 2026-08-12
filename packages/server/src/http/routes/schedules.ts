@@ -1,6 +1,7 @@
 /**
  * Schedule routes:
  *   GET|POST   /api/projects/:p/agents/:a/schedules
+ *   POST       /api/projects/:p/agents/:a/schedules/template-placeholder  # insert the {{SCHEDULES}} placeholder
  *   GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name (name is the file name)
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
@@ -161,6 +162,21 @@ export function scheduleRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     await upsert(deps, c.var.user.userId, projectId, agentId, name, body);
     return c.json(await readItem(deps, projectId, agentId, name), 201);
+  });
+
+  // Insert the {{SCHEDULES}} placeholder into the prompt template — the explicit adoption
+  // path mirroring memory's endpoint; idempotent config write, owner-level like this
+  // router's other mutations. Registered before /:name, though the static path wins anyway.
+  app.post("/template-placeholder", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const view = await deps.agentConfigService.insertTemplatePlaceholder(
+      projectId,
+      agentId,
+      "schedules",
+    );
+    return c.json(view.config.schedules);
   });
 
   app.get("/:name", async (c) => {

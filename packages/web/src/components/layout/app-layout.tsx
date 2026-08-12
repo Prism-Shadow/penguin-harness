@@ -4,8 +4,9 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
+import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { latestConversation } from "../../lib/session-grouping";
 import { useVersionInfo } from "../../lib/use-version-info";
@@ -18,6 +19,7 @@ import { GlyphIcon } from "../ui/glyph-icon";
 import { NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
@@ -40,7 +42,7 @@ const railItemClass = (active: boolean) =>
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { agents, setCurrentAgentId } = useProject();
+  const { agents, currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
   /**
    * Passive (active=false): never triggers a fetch — the rail mirrors whatever the lazy
@@ -64,8 +66,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
+  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first (draft-sessions.ts), then a default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
   const newChat = () => {
+    if (user && currentProject) parkActiveDraft(user.userId, currentProject.projectId);
     const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
     if (agentId) setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
@@ -173,6 +176,34 @@ export function AppLayout() {
   useCompletionNotifications();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  // Initial-password banner dismissal: server-persisted per user (ui_prefs). null = prefs not
+  // hydrated yet — the banner stays unrendered until the stored answer arrives, so an already
+  // dismissed banner never flashes before disappearing. Hydration only runs when the banner
+  // would show at all; unreachable prefs fail open (treated as not dismissed, banner shows).
+  const [passwordBannerDismissed, setPasswordBannerDismissed] = useState<boolean | null>(null);
+  const passwordBannerRelevant = Boolean(user?.passwordIsInitial) && !desktopMode;
+  useEffect(() => {
+    if (!passwordBannerRelevant) return;
+    let cancelled = false;
+    void api
+      .getPrefs()
+      .then((res) => {
+        if (!cancelled)
+          setPasswordBannerDismissed(res.prefs.initialPasswordBannerDismissed === true);
+      })
+      .catch(() => {
+        if (!cancelled) setPasswordBannerDismissed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [passwordBannerRelevant]);
+  const dismissPasswordBanner = () => {
+    setPasswordBannerDismissed(true);
+    // Fire-and-forget: PUT /me/prefs merges shallowly; a lost write only costs persistence,
+    // the banner is already hidden for this tab.
+    void api.putPrefs({ initialPasswordBannerDismissed: true }).catch(() => undefined);
+  };
   // Desktop sidebar collapse (persisted): collapsed state leaves a narrow rail to expand from.
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("penguin.sidebarCollapsed") === "1",
@@ -225,9 +256,11 @@ export function AppLayout() {
         </header>
 
         {/* Initial-password notice banner (seed/admin-set password): disappears once passwordIsInitial clears after a successful change.
-            Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging. */}
-        {user?.passwordIsInitial && !desktopMode && (
-          <div className="flex shrink-0 items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+            Hidden in desktop mode — the seed password there is random and never shown, so "change it" is meaningless nagging.
+            Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
+            hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
+        {passwordBannerRelevant && passwordBannerDismissed === false && (
+          <div className="relative flex shrink-0 items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-8 py-1.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
             <span>{S.account.initialPasswordBanner}</span>
             <button
               type="button"
@@ -235,6 +268,30 @@ export function AppLayout() {
               onClick={() => setChangePasswordOpen(true)}
             >
               {S.account.changeNow}
+            </button>
+            {/* Amber-toned twin of the shared CloseButton (same glyph + aria-label) — its hardcoded
+                gray colors would clash here. Flat: hover feedback is icon-color-only (no background
+                fill), same hover shades as the change-now link. Absolutely positioned at the right
+                edge: near-full-height hit area without growing the banner and without transform (see
+                the stacking-context note in the file header); the banner's symmetric px-8 keeps the
+                centered text clear. */}
+            <button
+              type="button"
+              aria-label={S.common.close}
+              title={S.common.close}
+              onClick={dismissPasswordBanner}
+              className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="currentColor"
+                aria-hidden
+              >
+                <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
             </button>
           </div>
         )}

@@ -30,7 +30,7 @@ import type { ToolCallIdAllocator } from "./llm/tool-call-ids.js";
 // Tool definitions and configuration
 // ---------------------------------------------------------------------------
 
-// ToolDefinition is defined in omnimessage/types.ts (session_meta embeds the full tool schema directly); re-exported here to keep the original import path.
+// ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "./omnimessage/types.js";
 
 /** Tool permission: read-only / read-write. */
@@ -68,6 +68,16 @@ export interface ToolDefinitionConfig {
   call_description?: boolean;
 }
 
+/**
+ * One MCP Server entry from `system_config.yaml` (`tools.mcpServers`). `name` scopes the
+ * server's tools as `mcp__<name>__<tool>`; `config` stays an open object at this seam (the
+ * stored YAML is schema-free) and is typed/validated at Environment assembly time by
+ * `environment/mcp/config.ts`: `transport: "stdio" | "http" | "sse"` (inferable from
+ * `command` / `url`), the per-transport fields (stdio: `command`/`args`/`env`/`cwd`;
+ * http/sse: `url`/`headers`), and the shared optional `connectTimeoutMs` / `timeoutMs` /
+ * `maxOutputLength`.
+ * Docs: /docs/tools § "MCP servers".
+ */
 export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
@@ -110,8 +120,19 @@ export interface GenerativeModelConfig {
   tools: ToolDefinition[];
   /** Full system Prompt after placeholder substitution in the system_config.system_prompt template. */
   systemPrompt?: string;
+  /**
+   * Model context window (tokens, from the model entry). Used to clamp each request's
+   * effective output cap so `input + max_tokens` stays inside the window (issue #218).
+   * Unset (or implausibly small, see llm/context-limits.ts resolveContextWindow): the
+   * clamp is disabled — a hard cap is never derived from an assumed window.
+   */
   contextWindow?: number;
-  /** Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the request). */
+  /**
+   * Output token cap per Request; non-positive (-1) means no explicit cap (omitted from the
+   * request). With `contextWindow` set, a positive cap is a ceiling, not a constant: each
+   * request sends `min(maxTokens, contextWindow − estimated input − safety margin)` (see
+   * llm/context-limits.ts) so small-window models never fail provider validation.
+   */
   maxTokens?: number;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
@@ -293,14 +314,31 @@ export interface EnvironmentConfig {
    */
   vault?: Record<string, string>;
   /**
-   * When it returns true, the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
-   * casing; NO_PROXY is kept) are stripped from exec_command / input_command subprocess
-   * environments. Threaded by the Web server from its admin-level "use system HTTP proxy"
-   * switch (off state); re-read at every spawn so a toggle needs no restart. Absent =
-   * proxy allowed (the default for SDK/CLI standalone use).
+   * Proxy policy for exec_command / input_command subprocess environments (see
+   * {@link ProxyEnvPolicy}). Threaded by the Web server from its admin-level proxy
+   * settings; re-read at every spawn so a settings change needs no restart. Absent, or a
+   * getter returning null = the host environment passes through unchanged (the default
+   * for SDK/CLI standalone use).
    */
-  stripProxyEnv?: () => boolean;
+  proxyEnv?: () => ProxyEnvPolicy | null;
 }
+
+/**
+ * Proxy policy applied to command subprocess environments (see
+ * {@link EnvironmentConfig.proxyEnv}):
+ * - `{ mode: "strip" }` — the proxy variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY, any
+ *   casing) are removed; NO_PROXY is kept (inert without them, and commands that set
+ *   their own proxy still honor it). The hosting server's proxy switch in the off state.
+ * - `{ mode: "inject", url, noProxy }` — the explicit proxy wins over ambient env:
+ *   HTTP_PROXY / HTTPS_PROXY (plus their lowercase twins) are set to `url` and
+ *   NO_PROXY / no_proxy to `noProxy`, overriding inherited values; an inherited
+ *   ALL_PROXY (any casing) is removed for the same reason. The caller supplies `noProxy`
+ *   pre-merged (the hosting server includes the loopback names).
+ * - `null` (or no getter at all) — pass through unchanged.
+ * The Agent vault still overrides whichever of these the policy produced: a per-Agent
+ * explicit variable outranks the host-level policy.
+ */
+export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 /**
  * An approved tool-call execution request.
@@ -312,6 +350,21 @@ export interface ToolExecutionRequest {
   signal?: AbortSignal;
   /** The parent Agent's approval callback; forwarded to tools that need to derive a child Session (run_subagent), implementing approval inheritance. */
   approve?: ApproveFn;
+}
+
+/**
+ * One background command process owned by the environment (an exec_command promoted past
+ * its yield window): the registry handle plus display metadata for a host UI's process
+ * list. `pid` is the shell leading the process group (null when the spawn itself failed);
+ * `startedAt` is epoch milliseconds.
+ */
+export interface BackgroundCommandInfo {
+  processId: string;
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: number;
+  running: boolean;
 }
 
 /**
@@ -329,6 +382,10 @@ export interface EnvironmentInterface {
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
+  /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

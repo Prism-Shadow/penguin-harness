@@ -64,8 +64,9 @@ export interface AuthResponse {
 export interface MeResponse {
   user: UserInfo;
   /**
-   * Whether Workspace HTML previews open on a separate origin (see design §
-   * "Workspace 文件预览"). False means this deployment has no usable preview origin —
+   * Whether Workspace HTML previews open on a separate origin (the loopback
+   * counterpart of the App host, or PENGUIN_PREVIEW_ORIGIN when set). False means this
+   * deployment has no usable preview origin —
    * the App is reached on something other than a loopback name and
    * PENGUIN_PREVIEW_ORIGIN is unset — so previews fall back to the same-origin sandbox,
    * where `localStorage`, cookies and third-party embeds do not work. Computed per
@@ -76,7 +77,7 @@ export interface MeResponse {
    * Whether this server runs in desktop mode (spawned by the desktop shell with
    * PENGUIN_DESKTOP_TOKEN). The web app then hides the logout entry, the
    * initial-password banner and the self-update entry, and omits the old-password
-   * field when changing the password. See design § "桌面端原型".
+   * field when changing the password.
    */
   desktopMode: boolean;
   /**
@@ -119,17 +120,35 @@ export interface AdminPasswordResetRequest {
   password: string;
 }
 
-/** Admin-level server-global settings (SQLite server_settings; design § "出网与系统代理"). */
+/**
+ * Admin-level server-global settings (SQLite server_settings):
+ * two independent proxy switches sharing one optional explicit address. In every
+ * on-state the effective NO_PROXY always includes localhost/127.0.0.1/::1 (loopback is
+ * never proxied), and changes apply to newly initiated connections/spawns immediately —
+ * no restart.
+ */
 export interface ServerSettings {
   /**
-   * "Use system HTTP proxy" (default on): whether the server process and its child
-   * processes reach the internet through the proxy named by HTTP_PROXY / HTTPS_PROXY
-   * (both spellings). Off = direct connections, with the proxy variables also stripped
-   * from agent command subprocess environments. Either way the effective NO_PROXY always
-   * includes localhost/127.0.0.1/::1 (loopback is never proxied). Toggling applies to
-   * newly initiated connections immediately — no restart.
+   * "Application uses the proxy" (default on): the server's own outbound traffic (LLM
+   * requests, the update check, image fetches). On with `proxyUrl` set = that address
+   * for both http and https; on without an address = the proxy environment variables
+   * HTTP_PROXY / HTTPS_PROXY (both spellings); off = always direct.
    */
-  useSystemProxy: boolean;
+  proxyForApp: boolean;
+  /**
+   * "Agent environment uses the proxy" (default on): agent command subprocess
+   * environments. On with `proxyUrl` set = HTTP_PROXY / HTTPS_PROXY (plus lowercase
+   * twins) injected as that address with the merged NO_PROXY, overriding inherited
+   * values; on without an address = the host environment passes through unchanged;
+   * off = the proxy variables are stripped (NO_PROXY kept).
+   */
+  proxyForAgent: boolean;
+  /**
+   * The shared explicit proxy address (canonical `http(s)://host[:port]`), or null =
+   * follow the proxy environment variables. When set it takes precedence over
+   * HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
+   */
+  proxyUrl: string | null;
 }
 
 export interface ServerSettingsResponse {
@@ -138,7 +157,15 @@ export interface ServerSettingsResponse {
 
 /** PUT body: every field optional, omitted fields keep their current value (mirrors prefs). */
 export interface ServerSettingsUpdateRequest {
-  useSystemProxy?: boolean;
+  proxyForApp?: boolean;
+  proxyForAgent?: boolean;
+  /**
+   * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
+   * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,
+   * and the response echoes the stored form). Empty/whitespace-only or null clears the
+   * address (follow the environment variables); anything else is 400 `invalid_proxy_url`.
+   */
+  proxyUrl?: string | null;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -153,6 +180,8 @@ export interface UiPrefs {
    * scanning (#139).
    */
   showCliSessions?: boolean;
+  /** The initial-password notice banner (app layout) was permanently dismissed by the user. */
+  initialPasswordBannerDismissed?: boolean;
   [key: string]: unknown;
 }
 
@@ -473,12 +502,16 @@ export interface AgentSummary {
   toolCount: number;
   /** Agent State version number (the `version` in system_config.yaml; treated as 1 if missing). */
   version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (a missing stamp counts as outdated) — drives the list card's update hint. */
+  kernelOutdated: boolean;
   /** Vault key count (number of keys in agent_state/.vault.toml). */
   vaultKeyCount: number;
   /** Schedule count (number of .toml files under agent_state/schedule/, including invalid ones). */
   scheduleCount: number;
   /** Installed Skill count (number of agent_state/skills/<name>/ directories with a SKILL.md). */
   skillCount: number;
+  /** Memory count (topic files summed over the scope directories under agent_state/memory/, independent of the memory switch). */
+  memoryCount: number;
 }
 
 export interface AgentsResponse {
@@ -510,16 +543,73 @@ export interface AgentCompactionConfigDto {
   prompt?: string;
 }
 
+/** Memory config. All fields report effective values (a config with no `memory` section reads as enabled with the built-in prompts, matching core); the prompts are edited on the Memory tab. */
+export interface AgentMemoryConfigDto {
+  enabled: boolean;
+  /** The always-injected half of the `{{MEMORY}}` block (carries `{{USER_MEMORY_INDEX}}`; the User directory is literal text). */
+  prompt: string;
+  /** Appended only in a persistent Workspace (carries `{{WORKSPACE_MEMORY_INDEX}}` and the rendered `{{WORKSPACE_MEMORY_DIR}}` directory). */
+  workspacePrompt: string;
+}
+
+/**
+ * Vault prompt-injection config, edited on the Vault tab. `enabled` / `prompt` report
+ * effective values (a config with no `vault` section reads as enabled with the built-in
+ * prompt, matching core); the last two are read-only facts computed from the stored template.
+ */
+export interface AgentVaultConfigDto {
+  /** Whether the Vault section enters the model context (values are injected into subprocesses regardless). */
+  enabled: boolean;
+  /** The `{{VAULT}}` block (carries `{{VAULT_KEYS}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{VAULT}}`; POST …/vault/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Vault section verbatim (a pre-`{{VAULT}}` Agent) — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Skills prompt-injection config, edited on the Skills tab; same field semantics as AgentVaultConfigDto, for `{{SKILLS}}` / `{{SKILL_METADATA}}` and the legacy # Skills section. */
+export interface AgentSkillsConfigDto {
+  /** Whether the Skills section enters the model context (installed skills remain explicitly invocable regardless). */
+  enabled: boolean;
+  /** The `{{SKILLS}}` block (carries `{{SKILL_METADATA}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SKILLS}}`; POST …/skills/template-placeholder inserts (or migrates to) it explicitly. */
+  templateHasPlaceholder: boolean;
+  /** Whether the stored template still carries the legacy hardcoded # Skills section verbatim — the migration case of the insert endpoint. */
+  legacySectionPresent: boolean;
+}
+
+/** Schedules prompt-injection config, edited on the Schedules tab. No legacy field: Schedules never had a hardcoded template section. */
+export interface AgentSchedulesConfigDto {
+  /** Whether the Scheduled Tasks section enters the model context (the server fires configured tasks regardless). */
+  enabled: boolean;
+  /** The `{{SCHEDULES}}` block (carries `{{SCHEDULE_LIST}}`). */
+  prompt: string;
+  /** Whether the stored template carries `{{SCHEDULES}}`; POST …/schedules/template-placeholder inserts it explicitly. */
+  templateHasPlaceholder: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
   description?: string;
   /** Agent State version number (treated as 1 if missing; shown in the settings page overview). */
   version: number;
+  /** The stored kernel stamp (`kernel_version`): which defaults generation the config is based on; null when the config predates the kernel-version mechanism. */
+  kernelVersion: string | null;
+  /** The current defaults generation (core's KERNEL_VERSION) — what a kernel update would stamp. */
+  kernelLatest: string;
+  /** Whether the stamp is behind kernelLatest (a missing stamp counts as outdated). */
+  kernelOutdated: boolean;
   systemPrompt: string;
   maxTurns?: number;
   model?: AgentModelConfigDto;
   compaction?: AgentCompactionConfigDto;
+  memory: AgentMemoryConfigDto;
+  vault: AgentVaultConfigDto;
+  skills: AgentSkillsConfigDto;
+  schedules: AgentSchedulesConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -534,6 +624,31 @@ export interface AgentConfigResponse {
   activeSessionCount: number;
 }
 
+/**
+ * POST …/config/kernel-update result: the smart merge's outcome (core's applyKernelUpdate).
+ * Paths are dotted config leaves (`system_prompt`, `memory.prompt`, `tools.builtin.<name>`…)
+ * in defaults-traversal order; the client maps them to display names.
+ */
+export interface AgentKernelUpdateResponse {
+  /** Leaves advanced to the new default (previously missing, or an untouched old default). */
+  advanced: string[];
+  /** Leaves kept because the stored value matches no recorded defaults generation (user customizations, kept conservatively). */
+  kept: string[];
+  /** The kernel stamp written (the current defaults generation). */
+  kernelVersion: string;
+}
+
+/** POST …/config/mcp-test result: reachability of one MCP Server entry. */
+export interface McpServerTestResponse {
+  ok: boolean;
+  /** Discovered tool names (`mcp__<server>__<tool>`), present on success. */
+  tools?: string[];
+  /** Failure detail (connect error, timeout, server stderr tail), present on failure. */
+  error?: string;
+  /** Connect + discovery wall time (both outcomes) — the models test reports latency, this matches. */
+  latencyMs?: number;
+}
+
 /** PUT any subset: only provided keys are updated (remaining YAML content and comments preserved); agentsMd overwrites the whole file. */
 export interface AgentConfigUpdateRequest {
   agentsMd?: string;
@@ -544,9 +659,72 @@ export interface AgentConfigUpdateRequest {
     maxTurns?: number;
     model?: AgentModelConfigDto;
     compaction?: AgentCompactionConfigDto;
+    memory?: Partial<AgentMemoryConfigDto>;
+    /** Only the writable half of the DTO — the template facts (templateHasPlaceholder / legacySectionPresent) are computed, never written. */
+    vault?: { enabled?: boolean; prompt?: string };
+    skills?: { enabled?: boolean; prompt?: string };
+    schedules?: { enabled?: boolean; prompt?: string };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
+}
+
+// ---------------------------------------------------------------------------
+// Memory
+// ---------------------------------------------------------------------------
+
+/** One Memory scope directory: `agent_state/memory/user/` or `agent_state/memory/<workspaceKey>/`. */
+export interface MemoryScopeInfo {
+  /** Directory name under `memory/`: `user`, or a Workspace's `<safe-basename>-<hash>` key. */
+  scopeKey: string;
+  /** `user` — the scope every Session reads, temporary Workspaces included; `workspace` — one Workspace's scope. */
+  kind: "user" | "workspace";
+  /** Workspace path the key was derived from, read from the directory's `.workspace` marker; unset on the user scope (it stands for no path) and for a directory edited by hand. */
+  workspacePath?: string;
+  /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
+  fileCount: number;
+  /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
+  updatedAt?: string;
+}
+
+/** One Memory topic file, as listed (frontmatter only — the body is fetched per file). */
+export interface MemoryFileInfo {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md`. */
+  name: string;
+  /** Frontmatter `name`; falls back to the file name. */
+  title: string;
+  /** Frontmatter `description`; empty when the file declares none. */
+  description: string;
+  /** Frontmatter `updated_at`, verbatim. */
+  updatedAt?: string;
+  /** File size in bytes. */
+  size: number;
+  /** File mtime (ISO 8601). */
+  modifiedAt: string;
+}
+
+/** GET …/memory — the tab's landing payload: the switch and every scope group, user scope first. */
+export interface MemoryOverviewResponse {
+  /** Whether Memory reaches the model context (the Agent-level switch). */
+  enabled: boolean;
+  /** Whether the prompt template carries the `{{MEMORY}}` placeholder. An Agent created before Memory has none and injects nothing; POST …/memory/template-placeholder inserts it explicitly. */
+  templateHasMemory: boolean;
+  /** Absolute path of `agent_state/memory/`. */
+  memoryDir: string;
+  scopes: MemoryScopeInfo[];
+}
+
+/** GET …/memory/scopes/:key/files */
+export interface MemoryFilesResponse {
+  scopeKey: string;
+  files: MemoryFileInfo[];
+}
+
+/** GET …/memory/scopes/:key/files/:name */
+export interface MemoryFileResponse {
+  scopeKey: string;
+  file: MemoryFileInfo;
+  content: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -700,7 +878,7 @@ export interface MessagesPageInfo {
   before?: string;
   /**
    * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
-   * window: the client offsets its global `第 N 轮` numbering by this, so a partial
+   * window: the client offsets its global "round N" numbering by this, so a partial
    * window never mis-numbers. 0 when the window starts at the beginning.
    */
   earlierTurns: number;
@@ -859,6 +1037,25 @@ export interface ApprovalDecisionRequest {
  */
 export interface RetryNowResponse {
   skipped: boolean;
+}
+
+/**
+ * One background command process started by the Session (an exec_command promoted past
+ * its yield window). Served from the ACTIVE runtime only: a session whose runtime entry
+ * is gone truthfully reports an empty list.
+ */
+export interface SessionProcessInfo {
+  processId: string;
+  /** OS pid of the process-group leader; null when the spawn itself failed. */
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: string;
+  running: boolean;
+}
+
+export interface SessionProcessesResponse {
+  processes: SessionProcessInfo[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,6 +1311,24 @@ export interface TraceToolSpan {
   taskIndex: number;
 }
 
+/**
+ * Non-tool auxiliary phase on the timeline: rendered in its own lane under the "other"
+ * legend category — deliberately not a tool span, since nothing was called. Currently the
+ * first run's MCP connect + discovery (from the mcp_connect_begin/end event pair).
+ */
+export interface TraceOtherSpan {
+  /** Unique bar key (e.g. `mcp-connect-<beginTs>`). */
+  key: string;
+  /** Lane label, e.g. "mcp connect". */
+  name: string;
+  startTs: string;
+  endTs: string;
+  /** Attached to the Task that follows the phase (same grouping convention as toolSpans). */
+  taskIndex: number;
+  /** True when the phase ended with failures (some servers unreachable) or was aborted. */
+  failed?: boolean;
+}
+
 export interface UsageTrendPointInTrace {
   ts: string;
   requestTotal: number;
@@ -1136,6 +1351,8 @@ export interface TraceAnalysisResponse {
   modelSegments: TraceModelSegment[];
   /** Execution timeline: each tool's approval/execution phases (independent lane, can overlap with model decoding). */
   toolSpans: TraceToolSpan[];
+  /** Execution timeline: non-tool auxiliary phases (their own "other" lanes — currently the first run's MCP connect + discovery). */
+  otherSpans: TraceOtherSpan[];
   /** Number of request_end events with status ∈ {timeout, malformed}. */
   reconnectCount: number;
   /** Number of compaction_begin events. */

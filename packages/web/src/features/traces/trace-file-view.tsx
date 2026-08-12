@@ -27,6 +27,7 @@ import type {
   ModelsResponse,
   TraceAnalysisResponse,
   TraceModelSegment,
+  TraceOtherSpan,
   TraceTaskStats,
   TraceToolSpan,
 } from "@prismshadow/penguin-server/api";
@@ -69,6 +70,7 @@ interface TaskData {
   taskIndex: number;
   segments: TraceModelSegment[];
   spans: TraceToolSpan[];
+  otherSpans: TraceOtherSpan[];
   messages: OmniMessage[];
   toolCalls: number;
   durationMs: number;
@@ -284,6 +286,7 @@ export function TraceFileView({
           taskIndex: ti,
           segments: [],
           spans: [],
+          otherSpans: [],
           messages: [],
           toolCalls: 0,
           durationMs: b ? Math.max(0, b.max - b.min) : 0,
@@ -299,6 +302,9 @@ export function TraceFileView({
       d.spans.push(s);
       d.toolCalls += 1;
     }
+    // Non-tool auxiliary phases (MCP connect); pre-otherSpans analysis payloads (cached
+    // responses) may omit the field.
+    for (const s of analysis.otherSpans ?? []) ensure(s.taskIndex).otherSpans.push(s);
     // Message attribution: **by the server-given index range**, never guessed
     // from timestamps. The same millisecond can be crowded with "the previous
     // round's last reply, compaction_begin, the compaction prompt, the next
@@ -533,7 +539,7 @@ export function TraceFileView({
             {open && (
               <div className="space-y-3 p-3">
                 {/* This round's timeline */}
-                {(t.segments.length > 0 || t.spans.length > 0) && (
+                {(t.segments.length > 0 || t.spans.length > 0 || t.otherSpans.length > 0) && (
                   <div className="rounded-md border border-gray-100 p-2 dark:border-gray-800/60">
                     <p className="mb-1.5 text-[11px] font-medium text-gray-500">
                       {S.traces.timeline}
@@ -541,6 +547,7 @@ export function TraceFileView({
                     <TimelineChart
                       segments={t.segments}
                       toolSpans={t.spans}
+                      otherSpans={t.otherSpans}
                       highlight={highlight}
                       onHighlight={onHighlight}
                       onJump={jumpTo}

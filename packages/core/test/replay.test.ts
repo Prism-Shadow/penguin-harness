@@ -12,15 +12,16 @@
  * - Tolerates a truncated trailing line left by an abnormal process exit.
  * - Round-trip: a Trace written out by the engine, once replayed, matches the history the model actually received.
  */
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
   compactionBegin,
   compactionEnd,
   emptyTokenCounts,
+  imageUrlMessage,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -31,7 +32,7 @@ import {
   userText,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
-import { parseTraceLines, resumeTrace } from "../src/trace/resume.js";
+import { parseTraceLines, readTraceTolerant, resumeTrace } from "../src/trace/resume.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import { Environment } from "../src/environment/index.js";
 import { Writer, readTrace } from "../src/trace/index.js";
@@ -51,7 +52,6 @@ function meta(): OmniMessage {
     model_id: "claude-sonnet-4-6",
     model_context_window: 1000000,
     system_prompt: "SP",
-    tools: [],
     agent_state: "/agent/state",
     workspace: "/ws",
   });
@@ -324,15 +324,130 @@ describe("resumeTrace", () => {
 });
 
 describe("parseTraceLines", () => {
+  /**
+   * Content shaped like the #215 corruption: a large record torn in half by a concurrent
+   * append, with a complete small record and a newline landing in the middle. Line 2
+   * (big prefix + small record) and line 3 (big suffix) are both unparseable.
+   */
+  function tornContent(): { content: string; survivors: OmniMessage[] } {
+    const before = userText("before");
+    const after = userText("after");
+    const big = JSON.stringify(imageUrlMessage(`data:image/png;base64,${"A".repeat(2048)}`));
+    const interleaved = JSON.stringify(tokenUsage(usage(1), usage(1)));
+    const torn = `${big.slice(0, 100)}${interleaved}\n${big.slice(100)}`;
+    const content = `${JSON.stringify(before)}\n${torn}\n${JSON.stringify(after)}\n`;
+    return { content, survivors: [before, after] };
+  }
+
   it("tolerates a torn trailing line (process crash mid-write)", () => {
     const content = `${JSON.stringify(userText("a"))}\n{"timestamp":"2026-07-06T`;
-    const msgs = parseTraceLines(content);
+    const skipped: number[] = [];
+    const msgs = parseTraceLines(content, { onSkip: (line) => skipped.push(line) });
     expect(msgs).toHaveLength(1);
+    // The trailing truncated line is the expected crash artifact — ignored, not diagnosed.
+    expect(skipped).toEqual([]);
   });
 
-  it("throws on mid-file corruption", () => {
+  it("skips a malformed middle line by default, keeping every parseable record (#215)", () => {
+    const { content, survivors } = tornContent();
+    const skipped: number[] = [];
+    const msgs = parseTraceLines(content, { onSkip: (line) => skipped.push(line) });
+    expect(msgs).toEqual(survivors);
+    expect(skipped).toEqual([2, 3]);
+  });
+
+  it('throws on mid-file corruption when onMalformed is "throw" (import validation)', () => {
     const content = `not-json\n${JSON.stringify(userText("a"))}\n`;
-    expect(() => parseTraceLines(content)).toThrow();
+    expect(() => parseTraceLines(content, { onMalformed: "throw" })).toThrow();
+    // The trailing truncated line stays tolerated even in strict mode.
+    const truncatedTail = `${JSON.stringify(userText("a"))}\n{"timestamp":"2026-07-06T`;
+    expect(parseTraceLines(truncatedTail, { onMalformed: "throw" })).toHaveLength(1);
+  });
+
+  it("handles thousands of malformed lines without quadratic rescans (wide corruption)", () => {
+    // A large mostly-unparseable file (e.g. a non-JSONL file dropped into the traces dir).
+    // The tail check must not rescan the remainder per skipped line — with the old
+    // slice-per-hit check, this content took seconds of synchronous CPU; now it's O(n).
+    const early = userText("early survivor");
+    const late = userText("late survivor");
+    const lines: string[] = [];
+    for (let i = 0; i < 5000; i++) lines.push(`{torn ${i}`);
+    lines.push(JSON.stringify(early));
+    for (let i = 0; i < 5000; i++) lines.push(`{torn ${5000 + i}`);
+    lines.push(JSON.stringify(late));
+    const content = `${lines.join("\n")}\n`;
+
+    const skipped: number[] = [];
+    const msgs = parseTraceLines(content, { onSkip: (line) => skipped.push(line) });
+    expect(msgs).toEqual([early, late]);
+    // Every malformed line is reported exactly once, in order, none treated as the tail
+    // (the last non-empty line is the valid "late survivor").
+    expect(skipped).toHaveLength(10000);
+    expect(skipped[0]).toBe(1);
+    expect(skipped[4999]).toBe(5000);
+    expect(skipped[5000]).toBe(5002);
+    expect(skipped[9999]).toBe(10001);
+  });
+});
+
+describe("readTraceTolerant", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "penguin-tolerant-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it("returns the surviving records of a corrupted file without throwing (#215 recovery)", async () => {
+    // A file damaged by the pre-fix interleaving: a large record torn in half around a
+    // complete small record. No migration exists — the tolerant read IS the recovery.
+    const before = userText("before");
+    const after = userText("after");
+    const big = JSON.stringify(imageUrlMessage(`data:image/png;base64,${"B".repeat(4096)}`));
+    const interleaved = JSON.stringify(assistantText("landed mid-record"));
+    const file = join(dir, "sess_abc_001.jsonl");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      file,
+      `${JSON.stringify(before)}\n${big.slice(0, 64)}${interleaved}\n${big.slice(64)}\n${JSON.stringify(after)}\n`,
+      "utf8",
+    );
+
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const msgs = await readTraceTolerant(file);
+    expect(msgs).toEqual([before, after]);
+    // The skipped lines are diagnosed once, with the file path.
+    const diagnostics = stderr.mock.calls
+      .map((c) => String(c[0]))
+      .filter((s) => s.includes("[trace]"));
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]).toContain("skipped 2 malformed line(s)");
+    expect(diagnostics[0]).toContain(file);
+  });
+
+  it("caps the spelled-out line numbers in the diagnostic on heavily damaged files", async () => {
+    const survivor = userText("survivor");
+    const badLines = Array.from({ length: 30 }, (_, i) => `{torn ${i}`);
+    const file = join(dir, "sess_abc_001.jsonl");
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, `${badLines.join("\n")}\n${JSON.stringify(survivor)}\n`, "utf8");
+
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const msgs = await readTraceTolerant(file);
+    expect(msgs).toEqual([survivor]);
+    const diagnostic = stderr.mock.calls
+      .map((c) => String(c[0]))
+      .find((s) => s.includes("[trace]"))!;
+    // The total is exact, but only the first 20 line numbers are spelled out.
+    expect(diagnostic).toContain("skipped 30 malformed line(s)");
+    const list = /malformed line\(s\) \[([^\]]*)\]/.exec(diagnostic);
+    expect(list).not.toBeNull();
+    const firstTwenty = Array.from({ length: 20 }, (_, i) => i + 1).join(", ");
+    expect(list![1]).toBe(`${firstTwenty}, …`);
   });
 });
 

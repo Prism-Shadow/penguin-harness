@@ -21,6 +21,7 @@ import {
   createAgent as coreCreateAgent,
   isValidId,
   loadAgentVault,
+  memoryDir,
   scheduleDir,
   skillsDir,
   systemConfigPath,
@@ -28,6 +29,7 @@ import {
 import type { AgentsRepo } from "../db/repos/agents.js";
 import { SEMANTIC_ID_PATTERN, SEMANTIC_ID_RULE } from "./ids.js";
 import type { AgentConfigService } from "./agent-config-service.js";
+import { isTopicFileName } from "./memory-service.js";
 
 export interface AgentListItem {
   agentId: string;
@@ -40,12 +42,16 @@ export interface AgentListItem {
   toolCount: number;
   /** Agent State version number (missing field treated as 1). */
   version: number;
+  /** Whether the config's kernel stamp is behind the current defaults generation (missing stamp = outdated) — the list card's update hint. */
+  kernelOutdated: boolean;
   /** Number of vault keys. */
   vaultKeyCount: number;
   /** Number of scheduled tasks (count of .toml files under schedule/, including invalid ones). */
   scheduleCount: number;
   /** Number of installed Skills (count of skills/<name>/ directories that contain a SKILL.md). */
   skillCount: number;
+  /** Number of memory topic files across every scope directory under memory/ (independent of the memory switch, like skillCount). */
+  memoryCount: number;
 }
 
 export class AgentService {
@@ -91,13 +97,15 @@ export class AgentService {
     );
     return Promise.all(
       sorted.map(async (row) => {
-        const [meta, updatedAt, vaultKeyCount, scheduleCount, skillCount] = await Promise.all([
-          this.agentConfig.readCardMeta(projectId, row.agentId),
-          this.configUpdatedAt(projectId, row.agentId),
-          this.vaultKeyCount(projectId, row.agentId),
-          this.scheduleCount(projectId, row.agentId),
-          this.skillCount(projectId, row.agentId),
-        ]);
+        const [meta, updatedAt, vaultKeyCount, scheduleCount, skillCount, memoryCount] =
+          await Promise.all([
+            this.agentConfig.readCardMeta(projectId, row.agentId),
+            this.configUpdatedAt(projectId, row.agentId),
+            this.vaultKeyCount(projectId, row.agentId),
+            this.scheduleCount(projectId, row.agentId),
+            this.skillCount(projectId, row.agentId),
+            this.memoryCount(projectId, row.agentId),
+          ]);
         return {
           agentId: row.agentId,
           ...meta,
@@ -106,6 +114,7 @@ export class AgentService {
           vaultKeyCount,
           scheduleCount,
           skillCount,
+          memoryCount,
         };
       }),
     );
@@ -152,6 +161,30 @@ export class AgentService {
         }),
     );
     return present.filter(Boolean).length;
+  }
+
+  /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */
+  private async memoryCount(projectId: string, agentId: string): Promise<number> {
+    const base = memoryDir(this.root, projectId, agentId);
+    let scopes: Dirent[];
+    try {
+      scopes = await fs.readdir(base, { withFileTypes: true });
+    } catch {
+      return 0;
+    }
+    const counts = await Promise.all(
+      scopes
+        .filter((d) => d.isDirectory())
+        .map(async (d) => {
+          try {
+            const files = await fs.readdir(path.join(base, d.name), { withFileTypes: true });
+            return files.filter((f) => f.isFile() && isTopicFileName(f.name)).length;
+          } catch {
+            return 0;
+          }
+        }),
+    );
+    return counts.reduce((sum, n) => sum + n, 0);
   }
 
   /** Last config modification time: the later of system_config.yaml and AGENTS.md mtime; omitted if neither is readable. */
@@ -247,10 +280,12 @@ export class AgentService {
       updatedAt: createdAt,
       toolCount: meta.toolCount,
       version: meta.version,
+      kernelOutdated: meta.kernelOutdated,
       vaultKeyCount: 0,
       scheduleCount: 0,
       // Read the real count: coreCreateAgent seeds the default skill set for default_agent.
       skillCount: await this.skillCount(projectId, agentId),
+      memoryCount: 0,
     };
   }
 }

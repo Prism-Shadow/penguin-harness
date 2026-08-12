@@ -15,6 +15,7 @@
  * added to session-manager's active table (state idle).
  */
 import { createAgent, isSessionMeta } from "@prismshadow/penguin-core";
+import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   SessionCategory,
@@ -52,11 +53,11 @@ export interface SessionServiceDeps {
   /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
   traceIndex: TraceIndexService;
   /**
-   * "Use system HTTP proxy" switch threading (same getter the session loader passes,
-   * see createCoreSessionLoader): the runtime created here is adopted by the manager
-   * and runs the Session's first Task, so it needs the strip policy too.
+   * Admin proxy-settings threading (same getter the session loader passes, see
+   * createCoreSessionLoader): the runtime created here is adopted by the manager and
+   * runs the Session's first Task, so it needs the command-subprocess proxy policy too.
    */
-  stripProxyEnv?: () => boolean;
+  proxyEnv?: () => ProxyEnvPolicy | null;
 }
 
 export class SessionService {
@@ -332,7 +333,7 @@ export class SessionService {
       root: this.deps.root,
       projectId: args.projectId,
       agentId: args.agentId,
-      ...(this.deps.stripProxyEnv ? { stripProxyEnv: this.deps.stripProxyEnv } : {}),
+      ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
     });
     let session;
     try {

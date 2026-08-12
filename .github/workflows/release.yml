@@ -79,13 +79,19 @@ jobs:
 
   # Desktop installers (Electron shell, three-OS matrix). Runs BEFORE the release job:
   # Release assets are immutable once published, so the installers must exist when the
-  # Release is created. See design § "桌面端原型 · 打包与更新" (M3).
+  # Release is created.
   desktop:
     needs: check-release
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
     with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      require_macos_signing: true
+    # The signing secrets themselves live in the `apple-signing` environment and resolve
+    # inside the called job; `inherit` additionally forwards repo-level secrets so the
+    # called workflow never sees a name shadowed to empty (the v0.2.2 failure mode).
+    secrets: inherit
 
   release:
     needs: [check-release, desktop]

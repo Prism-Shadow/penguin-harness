@@ -60,7 +60,7 @@ interface LLMOutcome {
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
 | `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / transport disconnect / transient provider quota error | auto-reconnect within the run |
+| `timeout` | timeout / transport disconnect | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
 | `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
 | `aborted` | user interrupt | stop, hand back to the user |
@@ -127,8 +127,13 @@ interface EnvironmentConfig {
   sessionScratchpadDir?: string;            // this Session's scratchpad (scratchpad/<sessionId>); enables truncated-output recovery
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
-  stripProxyEnv?: () => boolean;            // true = strip HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept) from command subprocesses; re-read per spawn, absent = proxy allowed
+  proxyEnv?: () => ProxyEnvPolicy | null;   // command-subprocess proxy policy; re-read per spawn, absent or null = pass through
 }
+
+// "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
+// proxy over the inherited env: HTTP(S)_PROXY (+ lowercase twins) = url, NO_PROXY = noProxy
+// (supplied pre-merged by the caller), inherited ALL_PROXY removed. Vault entries still win.
+type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
@@ -138,8 +143,10 @@ interface EnvironmentServices {
 }
 
 interface MCPServerConfig {
-  name: string;
-  config: Record<string, unknown>;
+  name: string;                             // tool-name prefix: discovered tools appear as mcp__<name>__<tool>
+  config: Record<string, unknown>;          // stays an open object at this seam; typed at assembly time by
+                                            // environment/mcp into a transport description (stdio / http / sse),
+                                            // see /tools § MCP Servers
 }
 ```
 

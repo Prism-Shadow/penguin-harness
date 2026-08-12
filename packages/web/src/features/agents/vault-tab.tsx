@@ -8,6 +8,10 @@
  * The key name is injected into the Agent's system prompt to inform the model; the
  * value is injected only into the exec_command subprocess environment, never into
  * the model context.
+ *
+ * Prompt-injection controls (usePromptInjection): the vault.enabled switch, the
+ * {{VAULT}}-placeholder alert (with legacy-template migration) and the editable
+ * vault.prompt section, mirroring the Memory tab — owner-only, like the table edits.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { VaultEntryInfo, VaultUpdateRequest } from "@prismshadow/penguin-server/api";
@@ -22,14 +26,30 @@ import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
+import { usePromptInjection } from "./prompt-injection-controls";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-export function VaultTab({ agentId }: { agentId: string }) {
-  const { currentProject } = useProject();
+export function VaultTab({
+  agentId,
+  onConfigChanged,
+}: {
+  agentId: string;
+  /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
+  onConfigChanged?: () => void;
+}) {
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
+  // Prompt-injection controls follow the tab's existing gate: owner-only edits.
+  const { applyConfig, toggleCard, alertStrip, promptSection } = usePromptInjection({
+    agentId,
+    feature: "vault",
+    strings: S.vault.injection,
+    canEdit: isOwner,
+    onConfigChanged,
+  });
 
   const [entries, setEntries] = useState<VaultEntryInfo[] | null>(null);
   // Tab-level error is only the initial load failure; saves/deletes report via toast.
@@ -51,12 +71,17 @@ export function VaultTab({ agentId }: { agentId: string }) {
     setEntries(null);
     setError(null);
     try {
-      const res = await api.getVault(projectId, agentId);
+      // The injection controls' state loads in parallel with the tab's own table.
+      const [res, configView] = await Promise.all([
+        api.getVault(projectId, agentId),
+        api.getAgentConfig(projectId, agentId),
+      ]);
       setEntries(res.entries);
+      applyConfig(configView.config);
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, applyConfig]);
 
   useEffect(() => {
     void load();
@@ -70,6 +95,8 @@ export function VaultTab({ agentId }: { agentId: string }) {
       const res = await api.putVault(projectId, agentId, body);
       setEntries(res.entries);
       toastSuccess(S.common.saved);
+      // Add / delete moves the agent card's vault-key count; refresh the list provider too.
+      void reloadAgents();
       return null;
     } catch (e) {
       return apiErrorText(e);
@@ -138,6 +165,9 @@ export function VaultTab({ agentId }: { agentId: string }) {
         )}
       </div>
 
+      {toggleCard}
+      {alertStrip}
+
       {entries === null ? (
         <SkeletonList rows={4} />
       ) : entries.length === 0 ? (
@@ -188,6 +218,8 @@ export function VaultTab({ agentId }: { agentId: string }) {
           {S.vault.add}
         </Button>
       )}
+
+      {promptSection}
 
       <Modal
         open={adding}

@@ -11,7 +11,7 @@
  *
  * Published as `@prismshadow/penguin-server/lock` (side-effect-free) so the CLI and the
  * desktop shell can pre-check a root without importing the package entry, which starts
- * listening. Docs: design § "桌面端原型 · 数据根与实例互斥".
+ * listening.
  */
 import fs from "node:fs";
 import net from "node:net";

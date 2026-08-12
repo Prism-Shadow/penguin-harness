@@ -4,10 +4,9 @@
  * Two trigger variants, one menu:
  * - "pill" (default): the draft page's pill trigger with viewport-docked in-flow menu —
  *   moved verbatim, unchanged markup/classes/behavior;
- * - "form": a full-width trigger styled like the dialog's Input/Select (controlBase +
- *   the sm size tier), with the SAME menu portaled to body — a dialog's overflow-y-auto
- *   content area would clip an in-flow panel, and the portal tier (z-[60]) clears the
- *   Modal overlay.
+ * - "form": the shared FormPicker (full-width Input/Select-styled trigger, portaled menu) —
+ *   a dialog's overflow-y-auto content area would clip an in-flow panel, and the portal
+ *   tier (z-[60]) clears the Modal overlay.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -17,9 +16,8 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { Chevron } from "../../components/ui/chevron";
 import { Dropdown } from "../../components/ui/dropdown";
-import { controlBase } from "../../components/ui/field";
-import { ChevronDown } from "../../components/ui/icons";
-import { noAutofill, sizeClass } from "../../components/ui/input";
+import { FormPicker } from "../../components/ui/form-picker";
+import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
@@ -109,11 +107,25 @@ export function WorkspaceSelect({
     [projectId],
   );
 
+  // Only loads on first expand: an already-filled absolute path is used as the starting point, otherwise the server falls back to the home directory.
+  const loadOnFirstOpen = (next: boolean) => {
+    if (next && !browsedRef.current) {
+      browsedRef.current = true;
+      const ws = workspace.trim();
+      loadDir(ws.startsWith("/") ? ws : "");
+    }
+  };
+
+  /** Form-variant open handler (FormPicker owns the trigger): portaled, so no dock measurement — just open + lazy load. */
+  const setFormOpen = (next: boolean) => {
+    setOpen(next);
+    loadOnFirstOpen(next);
+  };
+
+  /** Pill-variant trigger: measures viewport room to dock the in-flow panel left/right before opening. */
   const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
     const next = !open;
-    // The dock measurement steers the in-flow (pill) panel only; the form variant portals,
-    // and Dropdown's own viewport clamping takes over.
-    if (next && variant === "pill") {
+    if (next) {
       const r = e.currentTarget.getBoundingClientRect();
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
       const margin = 12; // breathing room against the viewport edge
@@ -128,12 +140,7 @@ export function WorkspaceSelect({
       else setMenuDock({ right: false, maxWidth: roomRight });
     }
     setOpen(next);
-    // Only loads on first expand: an already-filled absolute path is used as the starting point, otherwise the server falls back to the home directory.
-    if (next && !browsedRef.current) {
-      browsedRef.current = true;
-      const ws = workspace.trim();
-      loadDir(ws.startsWith("/") ? ws : "");
-    }
+    loadOnFirstOpen(next);
   };
 
   /**
@@ -180,171 +187,171 @@ export function WorkspaceSelect({
       />
     </svg>
   );
+  const menu = (
+    <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
+      <div className="rounded-md border border-gray-200 dark:border-gray-800">
+        {/* Current path (editable: Enter/blur commits, Escape discards) + "Use this directory" (closes the menu once selected) */}
+        <div className="flex items-center gap-1.5 border-b border-gray-100 px-1.5 py-1 dark:border-gray-800">
+          <input
+            value={pathDraft}
+            placeholder="…"
+            aria-label={S.chat.workspace}
+            {...noAutofill}
+            onChange={(e) => setPathDraft(e.target.value)}
+            onBlur={commitPathEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                commitPathEdit();
+              } else if (e.key === "Escape") {
+                // Discard the edit: only reverts the draft; Escape bubbles up to Dropdown, which closes the menu.
+                setPathDraft(dir?.path ?? "");
+              }
+            }}
+            className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-xs text-gray-600 focus:border-gray-300 focus:outline-none dark:text-gray-300 dark:focus:border-gray-600"
+          />
+          <button
+            type="button"
+            disabled={!dir}
+            onClick={() => {
+              if (!dir) return;
+              onChange(dir.path);
+              setOpen(false);
+            }}
+            className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {S.chat.workspaceUseThis}
+          </button>
+        </div>
+        {/* Directory list (excludes hidden directories) */}
+        <ul className="max-h-40 overflow-y-auto py-1">
+          {/* Rows are disabled while a load is in flight: they still show the PREVIOUS
+                directory until the response lands, so clicks during the window would resend
+                stale targets (N clicks on "parent" all resending the same dir.parent). */}
+          {parentPath !== null && (
+            <li>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => loadDir(parentPath)}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800"
+              >
+                ↰ {S.chat.workspaceUp}
+              </button>
+            </li>
+          )}
+          {entries.map((entry) => (
+            <li key={entry.path}>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => loadDir(entry.path)}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  className="shrink-0 text-gray-400"
+                  aria-hidden
+                >
+                  <path
+                    d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+              </button>
+            </li>
+          ))}
+          {dir && entries.length === 0 && (
+            <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.chat.workspaceNoSubdirs}</li>
+          )}
+          {loading && <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.common.loading}</li>}
+          {/* Load failure (e.g. the cached starting directory was deleted): provide "retry" to fall back to the home directory, avoiding getting stuck in an error state. */}
+          {error && (
+            <li className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-red-500">
+              <span className="min-w-0 flex-1 truncate" title={error}>
+                {error}
+              </span>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => loadDir("")}
+                className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                {S.common.retry}
+              </button>
+            </li>
+          )}
+        </ul>
+      </div>
+      {/* When a directory has been specified, offer a one-click way back to a temporary workspace */}
+      {trimmed && (
+        <button
+          type="button"
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+          }}
+          className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+        >
+          {S.chat.workspaceClear}
+        </button>
+      )}
+      {/* Hint text (bottom of the menu) */}
+      <p className="px-0.5 text-xs leading-5 text-gray-400 dark:text-gray-500">
+        {S.chat.workspaceHint}
+      </p>
+    </div>
+  );
+
+  // Form: the shared full-width trigger (its label goes mono once a real path is set).
+  if (variant === "form") {
+    return (
+      <FormPicker
+        open={open}
+        setOpen={setFormOpen}
+        leading={folderIcon("")}
+        label={label}
+        {...(trimmed ? { labelClassName: "font-mono" } : {})}
+        title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+        ariaLabel={S.chat.workspace}
+        ariaHaspopup="dialog"
+        menuClass="w-80"
+      >
+        {menu}
+      </FormPicker>
+    );
+  }
+
+  // Pill: the composer's compact toolbar trigger, with the in-flow panel docked left/right by `toggle`'s measurement.
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      {...(variant === "form"
-        ? // Portaled menu (size classes only; placement is measured from the trigger).
-          { menuClass: "w-80", portal: { direction: "down" as const, align: "left" as const } }
-        : {
-            menuClass: `top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
-              menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
-            }`,
-            ...(menuDock.maxWidth !== undefined
-              ? { menuStyle: { maxWidth: menuDock.maxWidth } }
-              : {}),
-          })}
+      menuClass={`top-full mt-1 w-80 max-w-[calc(100vw-2rem)] ${
+        menuDock.right ? "right-0 origin-top-right" : "left-0 origin-top-left"
+      }`}
+      {...(menuDock.maxWidth !== undefined ? { menuStyle: { maxWidth: menuDock.maxWidth } } : {})}
       button={
-        variant === "form" ? (
-          // Dialog form control: full width, same border/height/typography as Input/Select (sm tier).
-          <button
-            type="button"
-            title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
-            aria-label={S.chat.workspace}
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            onClick={toggle}
-            className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm}`}
-          >
-            {folderIcon("")}
-            <span className={`min-w-0 flex-1 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
-            <ChevronDown className="text-gray-400" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
-            aria-label={S.chat.workspace}
-            onClick={toggle}
-            className={pillClass}
-          >
-            {folderIcon("ml-0.5")}
-            <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
-            <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
-          </button>
-        )
+        <button
+          type="button"
+          title={trimmed ? `${S.chat.workspace}：${trimmed}` : S.chat.workspaceHint}
+          aria-label={S.chat.workspace}
+          onClick={toggle}
+          className={pillClass}
+        >
+          {folderIcon("ml-0.5")}
+          <span className={`min-w-0 truncate ${trimmed ? "font-mono" : ""}`}>{label}</span>
+          <Chevron open={open} size={12} className="shrink-0 text-gray-400" />
+        </button>
       }
     >
-      <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
-        <div className="rounded-md border border-gray-200 dark:border-gray-800">
-          {/* Current path (editable: Enter/blur commits, Escape discards) + "Use this directory" (closes the menu once selected) */}
-          <div className="flex items-center gap-1.5 border-b border-gray-100 px-1.5 py-1 dark:border-gray-800">
-            <input
-              value={pathDraft}
-              placeholder="…"
-              aria-label={S.chat.workspace}
-              {...noAutofill}
-              onChange={(e) => setPathDraft(e.target.value)}
-              onBlur={commitPathEdit}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  commitPathEdit();
-                } else if (e.key === "Escape") {
-                  // Discard the edit: only reverts the draft; Escape bubbles up to Dropdown, which closes the menu.
-                  setPathDraft(dir?.path ?? "");
-                }
-              }}
-              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-xs text-gray-600 focus:border-gray-300 focus:outline-none dark:text-gray-300 dark:focus:border-gray-600"
-            />
-            <button
-              type="button"
-              disabled={!dir}
-              onClick={() => {
-                if (!dir) return;
-                onChange(dir.path);
-                setOpen(false);
-              }}
-              className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {S.chat.workspaceUseThis}
-            </button>
-          </div>
-          {/* Directory list (excludes hidden directories) */}
-          <ul className="max-h-40 overflow-y-auto py-1">
-            {/* Rows are disabled while a load is in flight: they still show the PREVIOUS
-                directory until the response lands, so clicks during the window would resend
-                stale targets (N clicks on "parent" all resending the same dir.parent). */}
-            {parentPath !== null && (
-              <li>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => loadDir(parentPath)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800"
-                >
-                  ↰ {S.chat.workspaceUp}
-                </button>
-              </li>
-            )}
-            {entries.map((entry) => (
-              <li key={entry.path}>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => loadDir(entry.path)}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    className="shrink-0 text-gray-400"
-                    aria-hidden
-                  >
-                    <path
-                      d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-                      strokeWidth="1.6"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                </button>
-              </li>
-            ))}
-            {dir && entries.length === 0 && (
-              <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.chat.workspaceNoSubdirs}</li>
-            )}
-            {loading && <li className="px-2.5 py-1.5 text-xs text-gray-400">{S.common.loading}</li>}
-            {/* Load failure (e.g. the cached starting directory was deleted): provide "retry" to fall back to the home directory, avoiding getting stuck in an error state. */}
-            {error && (
-              <li className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs text-red-500">
-                <span className="min-w-0 flex-1 truncate" title={error}>
-                  {error}
-                </span>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => loadDir("")}
-                  className="shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  {S.common.retry}
-                </button>
-              </li>
-            )}
-          </ul>
-        </div>
-        {/* When a directory has been specified, offer a one-click way back to a temporary workspace */}
-        {trimmed && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange("");
-              setOpen(false);
-            }}
-            className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            {S.chat.workspaceClear}
-          </button>
-        )}
-        {/* Hint text (bottom of the menu) */}
-        <p className="px-0.5 text-xs leading-5 text-gray-400 dark:text-gray-500">
-          {S.chat.workspaceHint}
-        </p>
-      </div>
+      {menu}
     </Dropdown>
   );
 }

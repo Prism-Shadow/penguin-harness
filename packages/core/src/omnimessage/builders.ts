@@ -19,6 +19,9 @@ import type {
   ImageUrlPayload,
   InlineDataPayload,
   InlineThinkingPayload,
+  McpConnectBeginPayload,
+  McpConnectEndPayload,
+  McpServerConnectResult,
   MessageOrigin,
   ModelMessage,
   OmniMessage,
@@ -31,6 +34,7 @@ import type {
   Role,
   SessionMetaMessage,
   SessionMetaPayload,
+  McpConnectStatus,
   StopReason,
   StreamEventType,
   SubagentPayload,
@@ -39,7 +43,9 @@ import type {
   TokenCounts,
   TokenUsagePayload,
   ToolCallOutputPayload,
+  ToolListReadyPayload,
   ToolCallPayload,
+  ToolDefinition,
 } from "./types.js";
 
 /** The current moment's ISO 8601 UTC timestamp. */
@@ -348,6 +354,24 @@ export function tokenUsage(
   request: TokenCounts,
 ): OmniMessage<TokenUsagePayload> {
   return event({ type: "token_usage", session, request });
+}
+
+/** tool_list_ready event: the Session's full tool definitions, emitted once the toolset is known (first run, after MCP discovery). */
+export function toolListReady(tools: ToolDefinition[]): OmniMessage<ToolListReadyPayload> {
+  return event({ type: "tool_list_ready", tools });
+}
+
+/** mcp_connect begin event: brackets open on the first run's MCP connect + discovery phase (emitted only when servers are configured). */
+export function mcpConnectBegin(servers: string[]): OmniMessage<McpConnectBeginPayload> {
+  return event({ type: "mcp_connect_begin", servers });
+}
+
+/** mcp_connect end event: overall status (compaction_end-style) + per-server outcomes; total wall time = end timestamp − begin timestamp. */
+export function mcpConnectEnd(args: {
+  status: McpConnectStatus;
+  results: McpServerConnectResult[];
+}): OmniMessage<McpConnectEndPayload> {
+  return event({ type: "mcp_connect_end", status: args.status, results: args.results });
 }
 
 /** Adds two sets of Token counts together, used to maintain cumulative Session usage. */

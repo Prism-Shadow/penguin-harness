@@ -2,9 +2,10 @@
  * Trace service.
  *
  * History messages: all of the Session's index files concatenated in order
- * (readTraceTolerant, tolerating a truncated last line), containing only the
- * complete messages and events that were actually written to Trace (naturally
- * excluding partial_*); in-flight increments are continued by SSE.
+ * (readTraceTolerant, tolerating a truncated last line and skipping malformed
+ * middle lines), containing only the complete messages and events that were
+ * actually written to Trace (naturally excluding partial_*); in-flight
+ * increments are continued by SSE.
  * Performance analysis is derived from a single Trace file: nearest-neighbor
  * pairing of request_begin/end, tool call duration pairing, reconnect / compaction
  * counts, and Token trend.
@@ -31,6 +32,7 @@ import type {
   TraceFileInfo,
   TraceImportResponse,
   TraceModelSegment,
+  TraceOtherSpan,
   TraceTaskStats,
   TraceToolSpan,
   UsageTrendPointInTrace,
@@ -556,7 +558,11 @@ export class TraceService {
     // tool_call_output have already come back).
     const modelSegments: TraceModelSegment[] = [];
     const toolSpans: TraceToolSpan[] = [];
+    const otherSpans: TraceOtherSpan[] = [];
     const openSpansById = new Map<string, TraceToolSpan>();
+    // Open mcp_connect_begin (first-run MCP connect + discovery), closed by its end event
+    // into a synthetic tool span so the timeline shows the wait ahead of the next Task.
+    let openMcpConnect: { beginTs: string } | null = null;
     let prevSerialTs: string | null = null;
     // Task grouping: one user turn contains multiple Request rounds (the Agent
     // loop sends another round each time it calls a tool); the turn ends once the
@@ -780,6 +786,26 @@ export class TraceService {
             }
             openRequest = null;
           }
+        } else if (p.type === "mcp_connect_begin") {
+          if (!hasOrigin) openMcpConnect = { beginTs: msg.timestamp };
+        } else if (p.type === "mcp_connect_end") {
+          // The connect pair becomes an "other" span (not a tool span — nothing was
+          // called) attached to the FOLLOWING Task (taskIndex + 1: Task 0 at file start;
+          // after an in-file resume, the next Task), so the timeline renders the
+          // pre-request connect wait inside that Task's group under its own lane.
+          if (!hasOrigin && openMcpConnect) {
+            const q = p as { status?: string };
+            const failed = q.status !== "completed";
+            otherSpans.push({
+              key: `mcp-connect-${openMcpConnect.beginTs}`,
+              name: "mcp connect",
+              startTs: openMcpConnect.beginTs,
+              endTs: msg.timestamp,
+              taskIndex: taskIndex + 1,
+              ...(failed ? { failed: true } : {}),
+            });
+            openMcpConnect = null;
+          }
         } else if (p.type === "compaction_begin") {
           compactionCount++;
           // Compaction forms its own turn: otherwise, if the previous turn called
@@ -967,6 +993,7 @@ export class TraceService {
       toolCalls,
       modelSegments,
       toolSpans,
+      otherSpans,
       reconnectCount,
       compactionCount,
       usageTrend,
@@ -1218,7 +1245,9 @@ export class TraceService {
     const invalid = (message: string) => new HttpError(400, "invalid_trace", message);
     let records: OmniMessage[];
     try {
-      records = parseTraceLines(content);
+      // Strict parse: import is the gate for user-supplied files, so a malformed middle
+      // line is reported as 400 rather than silently dropped (read paths skip it instead).
+      records = parseTraceLines(content, { onMalformed: "throw" });
     } catch {
       throw invalid("The file is not valid Trace JSONL.");
     }

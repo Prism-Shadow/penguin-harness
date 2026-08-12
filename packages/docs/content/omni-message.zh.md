@@ -37,20 +37,15 @@ interface SessionMetaPayload {
   model_id: string;                       // 发给 AgentHub 的上游请求 id
   model_context_window: number | string;
   system_prompt: string;                  // 占位符替换完成后的完整系统提示词
-  tools: ToolDefinition[];                // 发给模型的完整工具 schema
   agent_state: string;                    // Agent State 绝对路径
   workspace: string;                      // Workspace 绝对路径
   source?: "subagent" | "schedule";       // Session 来源；缺省 = 用户创建
 }
-
-interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters?: Record<string, unknown>;   // JSON Schema
-}
 ```
 
 session_meta 只承载**会话级不变量**——模型、系统提示词、Workspace 在 Session 生命周期内不可变；恢复 Session 时引擎直接以 Trace 中的这条消息为运行时配置，见 [Session 与 Trace](/sessions-and-traces)。思考等级是逐轮参数（随每次 Task 下发），不记录在此；旧版 Trace 的 meta 里可能仍带 `thinking_level` 字段，恢复时会被忽略——恢复后的 Session 直接读取 Agent 当前配置。
+
+工具 schema **不在 meta 里**：工具集要等 MCP Server 连接完成才可知，而 meta 不应等待——完整工具定义在首次 run 时以独立的 `tool_list_ready` 事件下发（见 event_msg）。拆分前的旧版 Trace 在 meta 里内嵌 `tools` 字段，该字段已明确不再读取（旧 Trace 的工具记录不再展示）。
 
 ## model_msg：完整消息
 
@@ -179,9 +174,49 @@ partial_text(start) → partial_text(delta) → … → partial_text(stop) → t
 
 ## event_msg
 
-八种事件 payload，全部逐字段列出：
+十一种事件 payload，全部逐字段列出：
 
 ```ts
+interface ToolListReadyPayload {
+  type: "tool_list_ready";
+  tools: ToolDefinition[];    // 发给模型的完整工具 schema;首次 run 时发出一次(MCP 发现
+                              // 完成后),Trace 中写在本轮输入之后(归属新轮次),压缩分卷时
+                              // 随 session_meta 一并重写到新 Trace 文件
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;   // JSON Schema
+}
+
+interface McpConnectBeginPayload {
+  type: "mcp_connect_begin";
+  servers: string[];          // 正在连接的 MCP Server;仅配置了 mcpServers 时发出,
+                              // 前端据此显示连接状态
+}
+
+type McpConnectStatus = "completed" | "failed" | "aborted";
+
+interface McpConnectEndPayload {
+  type: "mcp_connect_end";
+  status: McpConnectStatus;   // 总体终态(与 compaction_end.status 同风格):completed 全部
+                              // 连上 / failed 有 Server 失败 / aborted 用户打断——打断即
+                              // 取消本次连接,下次 run 重新连接
+  results: McpServerConnectResult[];
+                              // 阶段总耗时 = end 与 begin 两条消息的 timestamp 之差
+                              // (消息自带时间戳,payload 不重复记录);aborted 时为空
+}
+
+interface McpServerConnectResult {
+  server: string;
+  transport: "stdio" | "http" | "sse";
+  status: McpConnectStatus;   // 失败逐 Server 且不致命:该 Server 被跳过,run 继续
+  duration_ms: number;        // 该 Server 自身的连接+发现耗时(无独立消息可推导)
+  tools?: number;             // 发现的工具数(completed 时)
+  error?: string;             // 失败详情(failed 时)
+}
+
 interface RequestBeginPayload {
   type: "request_begin";
 }
@@ -193,7 +228,7 @@ interface RequestEndPayload {
   // 不受影响;compaction_end 复用同一块——attempt 为最终尝试序号,error_message 为失败详情)
   error_message?: string;     // 错误详情(内部 LLMOutcome.errorMessage,内外同名),仅非
                               // completed 携带:被重试/失败的 Request 背后的真实原因
-                              // (如供应商额度码),供成本中心错误面板读取
+                              // (如供应商错误码),供成本中心错误面板读取
   attempt?: number;           // 本次重试序列内的第几次请求(1 起,权威计数):失败请求
                               // 与经重试后成功的请求携带;首发即成功不携带
   retry_in_ms?: number;       // 计划中的重连等待(毫秒),仅当引擎将在本轮内重试时携带,
@@ -260,7 +295,7 @@ type StopReason = "completed" | "failed" | "aborted" | "timeout" | "malformed" |
 | --- | --- | --- |
 | `completed` | 正常完成 | 继续 |
 | `aborted` | 用户中断 | 停止并交还用户 |
-| `timeout` | LLM 超时/传输层断连/瞬时的供应商额度错误 | 仅 LLM 侧：同一 run 内自动重连 |
+| `timeout` | LLM 超时/传输层断连 | 仅 LLM 侧：同一 run 内自动重连 |
 | `malformed` | 响应解析失败/流截断 | 仅 LLM 侧：同一 run 内自动重连 |
 | `failed` | 分类器未判定为瞬时的错误（LLM 侧）；工具执行出错（Environment 侧） | LLM 侧：同样在同一 run 内自动重连——该状态本身仍如实上报为 `failed`。Environment 侧：错误回灌给模型，从不重试 |
 | `auth` | 供应商拒绝了凭据 | 停止并交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新（凭据取自当前 Project 配置） |
