@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   archived_at   TEXT,                                -- archive time; NULL=not archived (shown by default; archived ones move under "Archived")
   client        TEXT,                                -- creating client: 'web' (created via the Web App) | 'cli' (adopted from a CLI Trace); NULL = legacy row, treated as web
   has_trace     INTEGER NOT NULL DEFAULT 0,          -- cache: a Trace record exists (set at task start / adoption / subagent registration; lazily backfilled by list hydration)
+  last_active_at TEXT,                               -- last meaningful activity (ISO; bumped at each driven run's start and end, initialized to created_at); NULL only before openDatabase's one-time backfill
   created_at    TEXT NOT NULL
 );                                            -- the schedule/subagent SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);

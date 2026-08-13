@@ -103,6 +103,24 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
+  it("SessionInfo carries lastActiveAt (ISO, = createdAt at creation) through create, list, and single GET", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    expect(session.lastActiveAt).toBe(session.createdAt);
+    expect(session.lastActiveAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const listed = list.sessions.find((s) => s.sessionId === session.sessionId);
+    expect(listed?.lastActiveAt).toBe(session.createdAt);
+
+    const got = (await (
+      await api.get(`/api/sessions/${session.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(got.session.lastActiveAt).toBe(session.createdAt);
+  });
+
   it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
     await configureModels();
     // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).

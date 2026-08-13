@@ -82,6 +82,7 @@ export class SessionService {
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt ?? row.createdAt,
       status: this.deps.manager.statusOf(row.sessionId),
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),

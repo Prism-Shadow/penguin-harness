@@ -29,8 +29,20 @@ export function openDatabase(dbPath: string): DatabaseSync {
   // schema.ts; drop entries only in a release allowed to break existing web.db files.
   ensureColumn(db, "sessions", "client", "TEXT");
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "sessions", "last_active_at", "TEXT");
   ensureColumn(db, "auth_sessions", "via", "TEXT");
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
+  // last_active_at backfill for rows formed before the column existed: the session's most
+  // recent request timestamp (usage_records, served by idx_usage_session — the closest
+  // persisted proxy for "last Trace activity"), else created_at. Guarded by IS NULL so it
+  // is idempotent — a backfilled database matches 0 rows, and a crash between the ALTER
+  // above and this UPDATE heals on the next open.
+  db.exec(
+    `UPDATE sessions SET last_active_at = COALESCE(
+       (SELECT MAX(ts) FROM usage_records WHERE usage_records.session_id = sessions.session_id),
+       created_at
+     ) WHERE last_active_at IS NULL`,
+  );
   return db;
 }
 

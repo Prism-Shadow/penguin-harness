@@ -160,6 +160,28 @@ describe("session-manager", () => {
     });
   });
 
+  it("drive stamps last_active_at: created rows start at createdAt, a run advances it, unrelated sessions untouched", async () => {
+    sessions.insert({ ...ROW, sessionId: "session-other", createdAt: "2026-07-07T00:00:00.000Z" });
+    sessions.updateApprovalMode("session-1", "allow-all");
+    // Insert default: last_active_at = created_at until the first driven run.
+    expect(sessions.findById("session-1")!.lastActiveAt).toBe(ROW.createdAt);
+    const before = new Date().toISOString();
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+    await manager.startTask("session-1", [userText("hello")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    const afterTask = sessions.findById("session-1")!.lastActiveAt!;
+    // Stamped with the server clock in the same ISO shape as created_at, past the pre-run instant.
+    expect(afterTask).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(afterTask >= before).toBe(true);
+    expect(afterTask > ROW.createdAt).toBe(true);
+    // Compaction is a driven run too: the same choke point advances the stamp again.
+    await manager.startCompact("session-1");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(sessions.findById("session-1")!.lastActiveAt! >= afterTask).toBe(true);
+    // A session with no activity keeps its creation stamp.
+    expect(sessions.findById("session-other")!.lastActiveAt).toBe("2026-07-07T00:00:00.000Z");
+  });
+
   it("startTask forwards thinkingLevel into session.run options (per-turn, this Task only)", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const seen: (string | undefined)[] = [];

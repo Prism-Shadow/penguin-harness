@@ -29,6 +29,12 @@ export interface SessionRow {
   client?: "web" | "cli" | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
   hasTrace?: boolean;
+  /**
+   * Last meaningful activity, ISO (bumped at each driven run's start and end — task, goal
+   * round, compaction; see SessionManager.drive). Always present on rows read from the DB
+   * (openDatabase backfills legacy rows once); omitting on insert defaults to createdAt.
+   */
+  lastActiveAt?: string;
   createdAt: string;
 }
 
@@ -45,6 +51,9 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     archivedAt: (r.archived_at as string | null) ?? null,
     client: (r.client as "web" | "cli" | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
+    // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
+    // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
+    lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
   };
 }
@@ -55,8 +64,8 @@ export class SessionsRepo {
   insert(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -69,6 +78,7 @@ export class SessionsRepo {
         row.title,
         row.client ?? null,
         row.hasTrace ? 1 : 0,
+        row.lastActiveAt ?? row.createdAt,
         row.createdAt,
       );
   }
@@ -77,8 +87,8 @@ export class SessionsRepo {
   insertOrIgnore(row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -91,6 +101,7 @@ export class SessionsRepo {
         row.title,
         row.client ?? null,
         row.hasTrace ? 1 : 0,
+        row.lastActiveAt ?? row.createdAt,
         row.createdAt,
       );
   }
@@ -98,6 +109,13 @@ export class SessionsRepo {
   /** Flip the has_trace cache once a Trace record exists (task start / discovery hydration); idempotent. */
   markHasTrace(sessionId: string): void {
     this.db.prepare("UPDATE sessions SET has_trace = 1 WHERE session_id = ?").run(sessionId);
+  }
+
+  /** Bump last_active_at (drive's run start/end — one write per run boundary, never per streamed message). */
+  touchLastActive(sessionId: string, at: string): void {
+    this.db
+      .prepare("UPDATE sessions SET last_active_at = ? WHERE session_id = ?")
+      .run(at, sessionId);
   }
 
   findById(sessionId: string): SessionRow | null {

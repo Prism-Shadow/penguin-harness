@@ -746,6 +746,13 @@ export interface SessionInfo {
   /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
   source?: SessionSource;
   createdAt: string;
+  /**
+   * Last meaningful activity (ISO 8601, same convention as createdAt): initialized to
+   * createdAt at creation, stamped by the server at each driven run's start and end
+   * (task, goal round, compaction). Legacy rows are backfilled once at startup from the
+   * session's most recent request timestamp, falling back to createdAt.
+   */
+  lastActiveAt: string;
   status: SessionStatus;
   /** Number of approvals awaiting human decision (a persisted count outside server events, for list badges). */
   pendingApprovalCount: number;

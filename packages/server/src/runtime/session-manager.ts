@@ -1194,8 +1194,12 @@ export class SessionManager {
   ): Promise<void> {
     // Every driven run (task, goal round, compaction) writes Trace lines: flip the row's
     // has_trace cache here, the single choke point, so listing can serve it from the DB
-    // without a directory walk (see SessionService.listSessions).
+    // without a directory walk (see SessionService.listSessions). The same choke point
+    // stamps last_active_at — once per run boundary (here and in the finally below), never
+    // per streamed message, so activity during the run (steering, approvals, follow-up
+    // queueing) is covered by the run-end stamp without any hot-loop writes.
     this.deps.sessions.markHasTrace(entry.sessionId);
+    this.deps.sessions.touchLastActive(entry.sessionId, new Date().toISOString());
     let earlyTitleFired = false;
     let mainBodyChars = 0;
     const ctx: UsageContext = {
@@ -1371,6 +1375,9 @@ export class SessionManager {
       // now-empty state.
       entry.pendingSteering = [];
       entry.lastActivityMs = Date.now();
+      // Run-end stamp (see the run-start counterpart at the top of drive). A no-op UPDATE
+      // when the row is mid-deletion — the DELETE already won.
+      this.deps.sessions.touchLastActive(entry.sessionId, new Date().toISOString());
       this.publishState(entry, "idle");
       if (titleSource && titleSource.userExcerpt.trim()) {
         // Attempt generation whenever there's user material; whether generation is
