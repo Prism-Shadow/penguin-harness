@@ -199,9 +199,9 @@ const headerControlClass = (active: boolean) =>
       : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
   }`;
 
-/** Muted section label inside the list-settings menu (分组方式 / 排序方式). */
+/** Muted section label inside the list-settings menu (分组方式 / 排序方式), at the overflow menus' density. */
 const menuSectionClass =
-  "px-3 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
+  "px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
 
 /** Compact overflow-menu row (session row menu + workspace group menu; reference density): small text, leading thin-line glyph. */
 const overflowMenuRowClass =
@@ -1306,7 +1306,7 @@ export function Sidebar({
               open={listSettingsOpen}
               setOpen={setListSettingsOpen}
               portal={{ direction: "down", align: "right" }}
-              menuClass="w-44"
+              menuClass="w-40"
               button={
                 <button
                   type="button"
@@ -2254,7 +2254,7 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
   );
 }
 
-/** List-settings menu option: label left, checkmark marks the active choice (reference-style radio row; aria-pressed carries the state). */
+/** List-settings menu option: label left, checkmark marks the active choice (reference-style radio row; aria-pressed carries the state). Same type scale as the session/workspace overflow menus (用户口径: 字体和 Session 更多一样). */
 function MenuRadioRow({
   label,
   checked,
@@ -2269,7 +2269,7 @@ function MenuRadioRow({
       type="button"
       aria-pressed={checked}
       onClick={onSelect}
-      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+      className={`${overflowMenuRowClass} justify-between`}
     >
       <span className="truncate">{label}</span>
       {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
