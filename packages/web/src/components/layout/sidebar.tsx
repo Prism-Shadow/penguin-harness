@@ -2140,10 +2140,16 @@ function SessionRow({
           )}
         </button>
         {/* Trailing swap slot: resting last-active time / hover-focus-open ellipsis menu.
-            The trigger button overlays the whole slot (absolute inset-0), so the swap is a
-            pure opacity handoff in one footprint: time hides on row hover (group-hover),
-            when the trigger holds keyboard focus (peer-focus-visible; the button precedes
-            the time span so the peer combinator can reach it), and while the menu is open. */}
+            The trigger is a CONSTANT 28px square anchored at the slot's right edge — NOT a
+            whole-slot overlay: the slot's width rides the time string (2 分钟前 vs 31 分钟前),
+            and a slot-centered glyph landed at a different x per row, so the ellipses never
+            formed a vertical column (the user saw it shift with the time's character count).
+            Right-anchored, every row's dots share one x and line up with the group-header
+            ellipsis above (a right-flush 28px square at the same 4px inset). The swap stays
+            a pure opacity handoff: time hides on row hover (group-hover), when the trigger
+            holds keyboard focus (peer-focus-visible; the button precedes the time span so
+            the peer combinator can reach it), and while the menu is open — regardless of the
+            time being wider than the square. */}
         <Dropdown
           open={menuOpen}
           setOpen={setMenuOpen}
@@ -2161,7 +2167,7 @@ function SessionRow({
                 aria-label={S.chat.sessionMenu}
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
-                className={`peer absolute inset-0 flex items-center justify-center text-gray-500 transition-all duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 ${
+                className={`peer absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center text-gray-500 transition-all duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 ${
                   menuOpen
                     ? "opacity-100"
                     : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
