@@ -179,7 +179,7 @@ interface ToolDefinitionConfig {
   name: string;
   description: string;
   parameters?: Record<string, unknown>;   // JSON Schema
-  permission?: "r" | "rw" | "network";
+  permission?: "r" | "rw";
   forModel?: "vision" | "text-only";      // 按 Session 模型类别装配
   timeoutMs?: number;                     // 默认 120000;<=0 关闭
   maxOutputLength?: number;               // 默认 16000,头部保留截断;<=0 关闭
