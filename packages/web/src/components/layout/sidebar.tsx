@@ -839,30 +839,32 @@ export function Sidebar({
               nav-row-wide button directly under the group's last entry — no divider lines,
               just a centered chevron pointing UP while expanded (click to collapse) and
               DOWN while collapsed (the button stays as the only way back, right under the
-              new-chat boundary once the entries are hidden). Nav-row height for a
-              comfortable hit target; flat at rest with the nav rows' exact hover pill
-              (the sidebar's idiom — nothing here carries a resting fill). Icon-only, so
-              tooltip + aria carry the name (GroupHeader's collapse/expand wording). */}
+              new-chat boundary once the entries are hidden). Slim (h-6) so it doesn't
+              eat vertical space, yet still a full-width hit target; flat at rest with
+              the nav rows' exact hover pill (the sidebar's idiom — nothing here carries
+              a resting fill). Icon-only, so tooltip + aria carry the name (GroupHeader's
+              collapse/expand wording). */}
           <button
             type="button"
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-8 w-full items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+            className="flex h-6 w-full items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
           >
             <ChevronDown
-              size={16}
+              size={14}
               className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
             />
           </button>
         </nav>
 
         {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage).
-            The separator above it spans the sidebar's full width (-mx-2 undoes the scroller's
-            padding, px-3 puts the row's own inset back), as it did when it sat on the scroller's
-            top edge — it now travels with the list instead of framing a pinned nav. */}
-        <div className="-mx-2 mt-3 flex items-center justify-between border-t border-gray-200 px-3 pt-2 dark:border-gray-800">
+            No ruled separator at this boundary any more — under the nav group's chevron button
+            a line read as part of the button (and ugly); spacing alone (mt-3 + pt-2, the same
+            total gap the rule sat in) now separates the nav area from the list. px-1 keeps the
+            label's inset where the full-bleed rule's -mx-2/px-3 pair used to put it. */}
+        <div className="mt-3 flex items-center justify-between px-1 pt-2">
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             {S.chat.sessionList}
           </span>
