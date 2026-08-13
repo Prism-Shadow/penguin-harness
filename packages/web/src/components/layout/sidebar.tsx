@@ -2228,15 +2228,21 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
       menuClass="w-32"
       className="shrink-0"
       button={
+        /* No hover pill on this trigger (user: color, not background, should carry the
+           hover hint) — feedback is the glyph deepening in light / brightening in dark,
+           the session-row ellipsis treatment. Geometry: the same h-7 w-7 square as the
+           sibling "+" and the LAST action in the header, flush at GroupHeader's px-1
+           inset — which equals the session rows' pr-1, so with the row trigger's 16px
+           glyph the dot columns line up with the rows' trailing slot below. */
         <button
           type="button"
           title={S.chat.workspaceMenu}
           aria-label={S.chat.workspaceMenu}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          className="flex h-7 w-7 shrink-0 items-center justify-center text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"
         >
-          <EllipsisGlyph size={15} />
+          <EllipsisGlyph size={16} />
         </button>
       }
     >
