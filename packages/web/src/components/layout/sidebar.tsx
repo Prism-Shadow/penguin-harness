@@ -859,23 +859,23 @@ export function Sidebar({
               </div>
             </div>
           </div>
-          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-6)
+          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-5)
               nav-row-wide button directly under the group's last entry — a centered chevron
               pointing UP while expanded (click to collapse) and DOWN while collapsed (the
               button stays as the only way back, right under the new-chat boundary once the
               entries are hidden). The soft resting band is deliberate — the sidebar's one
               exception to flat-at-rest: it makes the strip read as the seam between the
               page nav above and the Session list below (the ruled separator it replaces
-              was rejected as a line under the button); hover deepens it to the icon-button
-              fill so it stays clearly interactive. Icon-only, so tooltip + aria carry the
-              name (GroupHeader's collapse/expand wording). */}
+              was rejected as a line under the button); hover deepens it a step further so
+              it stays clearly interactive. Icon-only, so tooltip + aria carry the name
+              (GroupHeader's collapse/expand wording). */}
           <button
             type="button"
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-6 w-full items-center justify-center rounded-md bg-gray-200/40 text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 dark:bg-gray-800/40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="flex h-5 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
           >
             <ChevronDown
               size={14}
