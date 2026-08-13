@@ -121,4 +121,15 @@ describe("persisted collapse state (one global localStorage key)", () => {
     expect(() => storeNavGroupCollapsed(true, broken)).not.toThrow();
     expect(initialNavGroupCollapsed(broken)).toBe(false);
   });
+
+  it("storage whose GETTER throws (blocked site data) degrades instead of escaping the useState initializer", () => {
+    const hostile = {
+      get getItem(): never {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+    } as unknown as NavCollapseStorage;
+    expect(() => initialNavGroupCollapsed(hostile)).not.toThrow();
+    expect(initialNavGroupCollapsed(hostile)).toBe(false);
+  });
 });

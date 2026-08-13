@@ -17,7 +17,7 @@
  * session-derived). Once Sessions exist the entry mostly dedups away at merge, but it
  * still carries the alias and keeps the group visible after those Sessions are gone.
  */
-import { workspaceGroupKey, workspaceLabel } from "./session-grouping";
+import { isTempWorkspace, workspaceGroupKey, workspaceLabel } from "./session-grouping";
 import type { WorkspaceGroup } from "./session-grouping";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */
@@ -40,11 +40,20 @@ export const workspaceRegistryKey = (projectId: string): string =>
 /**
  * Canonical form of a picked path: trimmed, trailing separators dropped (the server
  * hands back resolved paths without them, so `/srv/app/` must dedup against
- * `/srv/app`), the filesystem root kept as-is. Empty in → empty out (never registered).
+ * `/srv/app`), roots kept whole. Both root shapes are preserved: posix `/`, and a
+ * win32 DRIVE root — stripping `C:\` down to `C:` would turn an absolute path into a
+ * drive-RELATIVE one, so the registry would hold `C:` while Sessions key `C:\`
+ * (phantom duplicate group, and a new chat resolving somewhere else entirely).
+ * win32 is a supported target (ci-windows + the `--win` desktop build).
+ * Empty in → empty out (never registered).
  */
 export function normalizeWorkspacePath(path: string): string {
   let p = path.trim();
-  while (p.length > 1 && (p.endsWith("/") || p.endsWith("\\"))) p = p.slice(0, -1);
+  while (p.length > 1 && (p.endsWith("/") || p.endsWith("\\"))) {
+    // `C:\` / `C:/` is a root: one more strip would leave the drive-relative `C:`.
+    if (/^[A-Za-z]:[/\\]$/.test(p)) break;
+    p = p.slice(0, -1);
+  }
   return p;
 }
 
@@ -67,11 +76,14 @@ function parseEntry(x: unknown): WorkspaceEntry | null {
 /** Reads a Project's registered Workspaces; no Project, nothing stored, or corrupted storage degrade to empty. Junk elements are dropped, entries re-normalized and deduped (first wins), and the old string-only shape still loads. */
 export function loadWorkspaceRegistry(
   projectId: string | null,
-  storage: WorkspaceRegistryStorage = localStorage,
+  storage?: WorkspaceRegistryStorage,
 ): WorkspaceEntry[] {
   if (projectId === null) return [];
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(workspaceRegistryKey(projectId)) ?? "[]");
+    // localStorage resolved INSIDE the try (see pinned-sessions.ts): touching it throws
+    // a SecurityError with site data blocked, and this runs from a useState initializer.
+    const store = storage ?? localStorage;
+    const parsed: unknown = JSON.parse(store.getItem(workspaceRegistryKey(projectId)) ?? "[]");
     if (!Array.isArray(parsed)) return [];
     const out: WorkspaceEntry[] = [];
     for (const x of parsed) {
@@ -88,27 +100,32 @@ export function loadWorkspaceRegistry(
 export function saveWorkspaceRegistry(
   projectId: string | null,
   entries: readonly WorkspaceEntry[],
-  storage: WorkspaceRegistryStorage = localStorage,
+  storage?: WorkspaceRegistryStorage,
 ): void {
   if (projectId === null) return;
   try {
-    storage.setItem(workspaceRegistryKey(projectId), JSON.stringify(entries));
+    (storage ?? localStorage).setItem(workspaceRegistryKey(projectId), JSON.stringify(entries));
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
 }
 
 /**
- * Registers a picked path: normalized and prepended (newest registration first — it
- * renders topmost). Returns the INPUT array unchanged (same reference) for an empty
- * path or an already-registered one — callers skip the state update and storage write.
+ * Registers a picked path: normalized and prepended (newest registration first).
+ * Returns the INPUT array unchanged (same reference) for anything unregisterable —
+ * callers skip the state update and storage write. Besides the empty path and an
+ * already-registered one, a TEMPORARY-workspace path is rejected: the merge below can
+ * never give it a group (the merged temp group owns that space), so accepting it would
+ * store an entry whose group never appears — no rename/remove overflow to undo it, and
+ * re-picking would hit the already-registered exit, leaving a ghost only a
+ * localStorage wipe could clear.
  */
 export function registerWorkspace(
   entries: readonly WorkspaceEntry[],
   path: string,
 ): readonly WorkspaceEntry[] {
   const p = normalizeWorkspacePath(path);
-  if (p === "" || entries.some((e) => e.path === p)) return entries;
+  if (p === "" || isTempWorkspace(p) || entries.some((e) => e.path === p)) return entries;
   return [{ path: p }, ...entries];
 }
 
@@ -140,12 +157,17 @@ export function unregisterWorkspace(
 
 /**
  * Merges the registered Workspaces into the session-derived grouping: registered-only
- * paths become EMPTY groups prepended in registration order (a just-added Workspace
- * surfaces at the very top), labelled by alias ?? basename; paths whose group already
+ * paths become EMPTY groups, labelled by alias ?? basename; paths whose group already
  * exists dedup away (matched by workspaceGroupKey, so trailing-separator variants
  * collide correctly) but still apply their alias to that group's label; a path that
  * reads as a temporary workspace never forms a group (the merged temp group owns that
- * space).
+ * space — registerWorkspace rejects those up front).
+ *
+ * The empty groups sort AFTER the session-derived ones (in registration order, newest
+ * first). They hold no conversations, and the list renders behind a 10-group display
+ * cap: fronting them would push every group with real chats behind 更多分组 as soon as
+ * a handful of Workspaces were registered. The sidebar widens the cap when it registers
+ * one, so a just-added Workspace is still revealed immediately.
  */
 export function mergeRegisteredWorkspaces<T>(
   groups: readonly WorkspaceGroup<T>[],
@@ -172,5 +194,5 @@ export function mergeRegisteredWorkspaces<T>(
     const alias = aliasByKey.get(g.key);
     return alias === undefined ? g : { ...g, label: alias };
   });
-  return added.length === 0 ? relabelled : [...added, ...relabelled];
+  return added.length === 0 ? relabelled : [...relabelled, ...added];
 }

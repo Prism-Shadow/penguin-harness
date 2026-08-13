@@ -55,6 +55,16 @@ describe("normalizeWorkspacePath", () => {
     expect(normalizeWorkspacePath("/")).toBe("/");
     expect(normalizeWorkspacePath("   ")).toBe("");
   });
+
+  it("a win32 DRIVE root keeps its separator (stripping it would make the path drive-relative)", () => {
+    // `C:` resolves against the drive's current directory, so the registry would hold a
+    // different location than the user picked — and never dedup with Sessions keyed `C:\`.
+    expect(normalizeWorkspacePath("C:\\")).toBe("C:\\");
+    expect(normalizeWorkspacePath("c:/")).toBe("c:/");
+    expect(normalizeWorkspacePath("  D:\\  ")).toBe("D:\\");
+    // Deeper win32 paths still lose their trailing separator.
+    expect(normalizeWorkspacePath("C:\\work\\")).toBe("C:\\work");
+  });
 });
 
 describe("registerWorkspace / unregisterWorkspace", () => {
@@ -67,6 +77,13 @@ describe("registerWorkspace / unregisterWorkspace", () => {
     // Already registered (under a trailing-separator variant) or empty: the INPUT array returns.
     expect(registerWorkspace(two, "/srv/app///")).toBe(two);
     expect(registerWorkspace(two, "   ")).toBe(two);
+  });
+
+  it("rejects a temporary-workspace path: the merge can never group it, so an entry would be an unremovable ghost", () => {
+    const entries: readonly WorkspaceEntry[] = [];
+    const temp = "/home/u/.penguin/agents/a/workspaces/tmp-0123abcd";
+    expect(registerWorkspace(entries, temp)).toBe(entries);
+    expect(registerWorkspace(entries, `${temp}/`)).toBe(entries);
   });
 
   it("unregister drops the entry — alias and all — and returns the SAME array when the path isn't registered", () => {
@@ -148,22 +165,36 @@ describe("persisted registry (per-Project localStorage)", () => {
     expect(() => saveWorkspaceRegistry("p1", [{ path: "/x" }], broken)).not.toThrow();
     expect(loadWorkspaceRegistry("p1", broken)).toEqual([]);
   });
+
+  it("storage whose GETTER throws (blocked site data) degrades instead of escaping the useState initializer", () => {
+    const hostile = {
+      get getItem(): never {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+    } as unknown as WorkspaceRegistryStorage;
+    expect(() => loadWorkspaceRegistry("p1", hostile)).not.toThrow();
+    expect(loadWorkspaceRegistry("p1", hostile)).toEqual([]);
+  });
 });
 
 describe("mergeRegisteredWorkspaces", () => {
-  it("registered-only paths become empty groups prepended in registration order, labelled alias ?? basename; session-backed paths dedup away", () => {
+  it("empty registered groups sort AFTER the session-backed ones, so real conversations keep the capped window", () => {
+    // Fronting them pushed every group holding chats behind 更多分组 (10-group cap) as
+    // soon as a few Workspaces were registered.
     const groups = [group("/srv/app", { sessions: [{ id: "s1" }] }), group("/srv/beta")];
     const merged = mergeRegisteredWorkspaces(groups, [
       { path: "/new/ws", alias: "Fancy" },
       { path: "/srv/app" },
       { path: "/another" },
     ]);
-    expect(merged.map((g) => g.key)).toEqual(["/new/ws", "/another", "/srv/app", "/srv/beta"]);
-    expect(merged[0]).toMatchObject({ label: "Fancy", fullPath: "/new/ws", temp: false });
-    expect(merged[0]!.sessions).toEqual([]);
-    expect(merged[1]!.label).toBe("another");
-    // Session-derived groups pass through untouched (same members, same order).
-    expect(merged[2]!.sessions).toEqual([{ id: "s1" }]);
+    expect(merged.map((g) => g.key)).toEqual(["/srv/app", "/srv/beta", "/new/ws", "/another"]);
+    // Session-derived groups pass through untouched (same members, same order) …
+    expect(merged[0]!.sessions).toEqual([{ id: "s1" }]);
+    // … and the registered-only ones follow in registration order, labelled alias ?? basename.
+    expect(merged[2]).toMatchObject({ label: "Fancy", fullPath: "/new/ws", temp: false });
+    expect(merged[2]!.sessions).toEqual([]);
+    expect(merged[3]!.label).toBe("another");
   });
 
   it("an alias relabels a session-backed group too (the entry dedups away but its name wins)", () => {

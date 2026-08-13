@@ -867,7 +867,8 @@ export const en: Strings = {
     searchSessions: "Search chats",
     searchSessionsPlaceholder: "Search chats…",
     searchClear: "Clear search",
-    searchNoMatches: "No matching chats",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "No matches among loaded chats",
     listSettings: "List options",
     groupModeSection: "Group by",
     sortModeSection: "Sort by",

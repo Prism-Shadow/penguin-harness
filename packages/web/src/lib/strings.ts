@@ -824,7 +824,8 @@ export const zh = {
     searchSessions: "搜索会话",
     searchSessionsPlaceholder: "搜索会话…",
     searchClear: "清除搜索",
-    searchNoMatches: "无匹配会话",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "已加载的会话中无匹配",
     listSettings: "列表选项",
     groupModeSection: "分组方式",
     sortModeSection: "排序方式",

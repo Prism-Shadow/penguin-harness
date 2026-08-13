@@ -31,11 +31,16 @@ export const pinnedSessionsKey = (projectId: string): string =>
  */
 export function loadPinnedSessions(
   projectId: string | null,
-  storage: PinnedSessionsStorage = localStorage,
+  storage?: PinnedSessionsStorage,
 ): Set<string> {
   if (projectId === null) return new Set();
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(pinnedSessionsKey(projectId)) ?? "[]");
+    // localStorage is resolved INSIDE the try, never as a default parameter: merely
+    // touching it throws a SecurityError when site data is blocked (or in a partitioned
+    // iframe), and this runs from a useState initializer — an escaping throw would take
+    // the whole sidebar's first render down.
+    const store = storage ?? localStorage;
+    const parsed: unknown = JSON.parse(store.getItem(pinnedSessionsKey(projectId)) ?? "[]");
     return new Set(
       Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [],
     );
@@ -48,11 +53,11 @@ export function loadPinnedSessions(
 export function savePinnedSessions(
   projectId: string | null,
   pinned: ReadonlySet<string>,
-  storage: PinnedSessionsStorage = localStorage,
+  storage?: PinnedSessionsStorage,
 ): void {
   if (projectId === null) return;
   try {
-    storage.setItem(pinnedSessionsKey(projectId), JSON.stringify([...pinned]));
+    (storage ?? localStorage).setItem(pinnedSessionsKey(projectId), JSON.stringify([...pinned]));
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }

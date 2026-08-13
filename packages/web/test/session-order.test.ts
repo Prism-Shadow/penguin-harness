@@ -67,33 +67,57 @@ describe("sort-mode store (one global preference)", () => {
   });
 });
 
-describe("manual-order store (per-Project localStorage)", () => {
+describe("manual-order store (per-Project × grouping-mode localStorage)", () => {
   it("nothing stored — or no Project yet — is empty, reading never writes, saving without a Project is a no-op", () => {
     const s = memStorage();
-    expect(loadSessionOrder("p1", s)).toEqual([]);
-    expect(loadSessionOrder(null, s)).toEqual([]);
+    expect(loadSessionOrder("p1", "workspace", s)).toEqual([]);
+    expect(loadSessionOrder(null, "workspace", s)).toEqual([]);
     expect(s.map.size).toBe(0);
-    saveSessionOrder(null, ["a"], s);
+    saveSessionOrder(null, "workspace", ["a"], s);
     expect(s.map.size).toBe(0);
   });
 
   it("save → load round-trips per Project; Projects are isolated", () => {
     const s = memStorage();
-    saveSessionOrder("p1", ["b", "a"], s);
-    saveSessionOrder("p2", ["c"], s);
-    expect(loadSessionOrder("p1", s)).toEqual(["b", "a"]);
-    expect(loadSessionOrder("p2", s)).toEqual(["c"]);
-    expect(loadSessionOrder("p3", s)).toEqual([]);
+    saveSessionOrder("p1", "workspace", ["b", "a"], s);
+    saveSessionOrder("p2", "workspace", ["c"], s);
+    expect(loadSessionOrder("p1", "workspace", s)).toEqual(["b", "a"]);
+    expect(loadSessionOrder("p2", "workspace", s)).toEqual(["c"]);
+    expect(loadSessionOrder("p3", "workspace", s)).toEqual([]);
+  });
+
+  it("the two grouping modes keep separate orders (their partitions differ, so one array would scramble the other)", () => {
+    const s = memStorage();
+    saveSessionOrder("p1", "workspace", ["b", "a"], s);
+    saveSessionOrder("p1", "agent", ["a", "b"], s);
+    expect(loadSessionOrder("p1", "workspace", s)).toEqual(["b", "a"]);
+    expect(loadSessionOrder("p1", "agent", s)).toEqual(["a", "b"]);
+    expect(sessionOrderKey("p1", "workspace")).not.toBe(sessionOrderKey("p1", "agent"));
   });
 
   it("malformed JSON / non-array shapes degrade to empty; junk array elements are dropped", () => {
     const s = memStorage();
     for (const raw of ["{not json", '"a"', "42", "null", "{}", ""]) {
-      s.map.set(sessionOrderKey("p1"), raw);
-      expect(loadSessionOrder("p1", s)).toEqual([]);
+      s.map.set(sessionOrderKey("p1", "workspace"), raw);
+      expect(loadSessionOrder("p1", "workspace", s)).toEqual([]);
     }
-    s.map.set(sessionOrderKey("p1"), '["a", 7, null, {"x": 1}, "b"]');
-    expect(loadSessionOrder("p1", s)).toEqual(["a", "b"]);
+    s.map.set(sessionOrderKey("p1", "workspace"), '["a", 7, null, {"x": 1}, "b"]');
+    expect(loadSessionOrder("p1", "workspace", s)).toEqual(["a", "b"]);
+  });
+
+  it("storage whose GETTER throws (blocked site data / partitioned iframe) degrades instead of escaping — these run from useState initializers", () => {
+    // The throw must be caught even when it comes from resolving the store itself, which
+    // is why localStorage is never a default parameter here.
+    const hostile = {
+      get getItem(): never {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+    } as unknown as SessionOrderStorage;
+    expect(() => loadSessionOrder("p1", "workspace", hostile)).not.toThrow();
+    expect(loadSessionOrder("p1", "workspace", hostile)).toEqual([]);
+    expect(() => initialSessionSortMode(hostile)).not.toThrow();
+    expect(initialSessionSortMode(hostile)).toBe("recent");
   });
 });
 
@@ -149,13 +173,32 @@ describe("moveInSequence / applyManualReorder (drop commit)", () => {
   it("moves the dragged id before or after the target", () => {
     expect(moveInSequence(["a", "b", "c"], "c", "a", false)).toEqual(["c", "a", "b"]);
     expect(moveInSequence(["a", "b", "c"], "a", "c", true)).toEqual(["b", "c", "a"]);
-    expect(moveInSequence(["a", "b", "c"], "a", "b", false)).toEqual(["a", "b", "c"]);
   });
 
-  it("no-ops on a self-drop or an id missing from the sequence", () => {
-    expect(moveInSequence(["a", "b"], "a", "a", true)).toEqual(["a", "b"]);
-    expect(moveInSequence(["a", "b"], "zzz", "a", true)).toEqual(["a", "b"]);
-    expect(moveInSequence(["a", "b"], "a", "zzz", true)).toEqual(["a", "b"]);
+  it("every no-op returns the INPUT reference, so the caller skips the state + storage write", () => {
+    const seq: readonly string[] = ["a", "b", "c"];
+    expect(moveInSequence(seq, "a", "a", true)).toBe(seq); // self-drop
+    expect(moveInSequence(seq, "zzz", "a", true)).toBe(seq); // dragged id absent
+    expect(moveInSequence(seq, "a", "zzz", true)).toBe(seq); // target absent
+    // Landing exactly where the row already sat, from either side of the neighbour.
+    expect(moveInSequence(seq, "a", "b", false)).toBe(seq);
+    expect(moveInSequence(seq, "b", "a", true)).toBe(seq);
+    // A real move still allocates.
+    expect(moveInSequence(seq, "c", "a", false)).not.toBe(seq);
+  });
+
+  it("a drop commits the FULL partition, so display-capped rows keep their places (the reordering regression)", () => {
+    // 15 loaded rows, only 10 visible: committing the visible slice used to drop s11..s15
+    // out of the stored order, and applyManualOrder then fronted them as "newcomers".
+    const all = Array.from({ length: 15 }, (_, i) => `s${i + 1}`);
+    const moved = moveInSequence(all, "s3", "s1", false); // drag s3 above s1
+    const stored = applyManualReorder([], moved);
+    expect(applyManualOrder(all, id, stored)).toEqual([
+      "s3",
+      "s1",
+      "s2",
+      ...all.slice(3), // s4…s15 untouched, none promoted to the top
+    ]);
   });
 
   it("committing a partition sequence fronts it and keeps every other stored id's relative order", () => {

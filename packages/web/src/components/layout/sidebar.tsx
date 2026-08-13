@@ -162,6 +162,17 @@ const SLIDERS_ICON = "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 
 const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
 
 /**
+ * Private drag payload type of a manual session reorder. Deliberately NOT `text/plain`:
+ * the composer is a controlled textarea with no drop guard, and a native text drop
+ * mutates its value and fires `input` — a mis-aimed reorder would paste a session id
+ * into the user's message. Nothing outside these rows reads this type.
+ */
+const SESSION_DRAG_MIME = "application/x-penguin-session-id";
+
+/** Manual drag-reordering needs a pointer that can drag (HTML5 DnD never fires from touch) — the outline rail's query. */
+const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
+
+/**
  * Mode-dependent create glyph: the entity's own icon (folder / robot) shrunk toward
  * the top-left, with a plus badge in the freed bottom-right corner — no knockout disc
  * needed (a background-colored punch would mismatch the hover pill), so it stays
@@ -390,9 +401,9 @@ export function Sidebar({
   );
   /** Row sort mode ("recent" default / "manual" drag order; the choice persists across sessions like the grouping mode). */
   const [sortMode, setSortModeState] = useState<SessionSortMode>(initialSessionSortMode);
-  /** Manual row order (Session ids; only relative order within a co-rendered partition matters); persisted per Project. */
+  /** Manual row order (Session ids; only relative order within a co-rendered partition matters); persisted per Project AND grouping mode — the modes cut different partitions. */
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
-    loadSessionOrder(currentProjectId),
+    loadSessionOrder(currentProjectId, initialGroupMode()),
   );
   /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist, with optional display aliases); persisted per Project. */
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
@@ -411,6 +422,20 @@ export function Sidebar({
   const [searchQuery, setSearchQuery] = useState("");
   /** Header list-settings dropdown (grouping + sort radios). */
   const [listSettingsOpen, setListSettingsOpen] = useState(false);
+  /**
+   * Whether a pointer that can drag is present (the outline rail's HOVER_QUERY idiom).
+   * HTML5 drag-and-drop never fires from touch, and the sort mode is one GLOBAL
+   * preference: offering 手动排序 in the mobile drawer would freeze that list in an
+   * order the phone has no gesture to change — and flip the desktop too. The option is
+   * hidden there; an already-stored "manual" degrades to recency on such a device.
+   */
+  const [canDrag, setCanDrag] = useState(() => window.matchMedia(DRAG_POINTER_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(DRAG_POINTER_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setCanDrag(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   /** Row being dragged (manual sort only) and the current drop hint (target row + which edge). */
   const [dragSession, setDragSession] = useState<{ scope: string; id: string } | null>(null);
   const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
@@ -419,9 +444,10 @@ export function Sidebar({
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
-    setSessionOrder(loadSessionOrder(currentProjectId));
+    setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
     setRegisteredWorkspaces(loadWorkspaceRegistry(currentProjectId));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
@@ -447,7 +473,10 @@ export function Sidebar({
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
     setGroupModeState(mode);
-    // The two modes have unrelated group lists: restart the reveal window.
+    // The two modes have unrelated group lists: restart the reveal window, and swap in
+    // this mode's own manual order (the stored sequence is read within partitions, whose
+    // boundaries are exactly what the mode decides — one shared array would scramble).
+    setSessionOrder(loadSessionOrder(currentProjectId, mode));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   };
 
@@ -486,6 +515,10 @@ export function Sidebar({
     groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
 
   const toggleGroup = (key: string) => {
+    // Inert while searching: groups render force-opened then, so a click would change
+    // nothing on screen while silently rewriting the persisted collapse state — the user
+    // would find groups flipped once the query clears.
+    if (searching) return;
     // Computed outside the state updater (theme.tsx convention): the persistence write is a
     // side effect, and updaters must stay pure (double-invoked in StrictMode).
     const next = new Set(collapsedGroups);
@@ -520,6 +553,9 @@ export function Sidebar({
   /** Search active = a non-blank query is live-filtering the list. */
   const searching = searchQuery.trim() !== "";
 
+  /** The sort actually applied: a stored "manual" needs a drag-capable pointer to mean anything (see canDrag). */
+  const effectiveSortMode: SessionSortMode = sortMode === "manual" && canDrag ? "manual" : "recent";
+
   /** Title filter of one group's loaded rows (search only sees loaded pages — there is no server-side search). */
   const filterRows = (rows: SessionInfo[]) =>
     searching ? rows.filter((s) => matchesSessionQuery(s, searchQuery)) : rows;
@@ -538,9 +574,12 @@ export function Sidebar({
   const commitManualDrop = (partitionIds: readonly string[], targetId: string, after: boolean) => {
     if (!dragSession) return;
     const seq = moveInSequence(partitionIds, dragSession.id, targetId, after);
+    // Identity guard: a drop that changes nothing (self-drop, or landing where the row
+    // already sat) must not rewrite and persist a fresh array.
+    if (seq === partitionIds) return;
     const next = applyManualReorder(sessionOrder, seq);
     setSessionOrder(next);
-    saveSessionOrder(currentProjectId, next);
+    saveSessionOrder(currentProjectId, groupMode, next);
   };
 
   /** Parked drafts through the live search (matched on their first-line title). */
@@ -580,6 +619,9 @@ export function Sidebar({
    * folder's own "More" row does the paging from there).
    */
   const toggleFolder = (groupKey: string, category: FolderCategory, agentIds: string[]) => {
+    // Inert while searching (same reason as toggleGroup): folders render force-opened,
+    // so a click would only fire a pointless category fetch and desync the open state.
+    if (searching) return;
     const key = folderKey(groupKey, category);
     const opening = !openFolders.has(key);
     setOpenFolders((prev) => {
@@ -670,7 +712,7 @@ export function Sidebar({
       const prunedOrder = removeFromSessionOrder(sessionOrder, target.sessionId);
       if (prunedOrder !== sessionOrder) {
         setSessionOrder(prunedOrder);
-        saveSessionOrder(currentProjectId, prunedOrder);
+        saveSessionOrder(currentProjectId, groupMode, prunedOrder);
       }
       setDeletingSession(null);
       // The deleted session was the one open: jump to this Agent's next conversation, otherwise
@@ -749,9 +791,18 @@ export function Sidebar({
     saveWorkspaceRegistry(currentProjectId, next);
   };
 
-  /** 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions or not. */
-  const addWorkspace = (path: string) =>
-    applyRegistryChange(registerWorkspace(registeredWorkspaces, path));
+  /**
+   * 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions
+   * or not. Empty registered groups sort after the session-backed ones, so widen the
+   * group display cap to cover the whole list — otherwise, past ten groups, the freshly
+   * added Workspace would land behind 更多分组 and the click would look like a no-op.
+   */
+  const addWorkspace = (path: string) => {
+    const next = registerWorkspace(registeredWorkspaces, path);
+    if (next === registeredWorkspaces) return;
+    applyRegistryChange(next);
+    setGroupCap((c) => Math.max(c, workspaceGroups.length + 1));
+  };
 
   /** Paths with a registry entry — only their groups offer the rename/remove overflow. */
   const registeredPaths = useMemo(
@@ -799,28 +850,38 @@ export function Sidebar({
   );
 
   /** Session rows shared by both modes; withAgentHint adds a small Agent avatar per row (workspace mode, where the group no longer names the Agent). */
-  const renderRows = (rows: SessionInfo[], withAgentHint: boolean, dragScope?: string) => (
+  const renderRows = (
+    rows: SessionInfo[],
+    withAgentHint: boolean,
+    /** Manual sort only: the drag scope (group key) plus the group's FULL ordered active list — the drop must commit every loaded row of the partition, not the display-capped slice the user happens to see. */
+    dragCtx?: { scope: string; fullRows: SessionInfo[] },
+    /** Whether these rows are the group's ACTIVE list (the only rows pinning can reorder). */
+    activeList = false,
+  ) => (
     <ul className="space-y-0.5">
       {rows.map((s) => {
         // Manual-sort drag wiring (active lists only; never while searching — a filtered
         // view is not the real order). A drop stays within its own scope AND its own
         // pin partition: dragging can reorder but never pin or unpin.
         const dragging =
-          dragScope !== undefined && dragSession?.scope === dragScope ? dragSession : null;
+          dragCtx !== undefined && dragSession?.scope === dragCtx.scope ? dragSession : null;
         const samePartition =
           dragging !== null &&
           dragging.id !== s.sessionId &&
           pinnedSessions.has(dragging.id) === pinnedSessions.has(s.sessionId);
         const drag =
-          dragScope === undefined
+          dragCtx === undefined
             ? {}
             : {
                 draggable: true,
                 onDragStart: (e: ReactDragEvent) => {
-                  // Firefox refuses to start a drag without payload data.
-                  e.dataTransfer.setData("text/plain", s.sessionId);
+                  // Firefox refuses to start a drag without payload data — but the id must
+                  // NOT ride on text/plain: the composer is a controlled textarea with no
+                  // drop guard, so a mis-aimed reorder would paste a session id straight
+                  // into the user's message. A private type is invisible to text drops.
+                  e.dataTransfer.setData(SESSION_DRAG_MIME, s.sessionId);
                   e.dataTransfer.effectAllowed = "move" as const;
-                  setDragSession({ scope: dragScope, id: s.sessionId });
+                  setDragSession({ scope: dragCtx.scope, id: s.sessionId });
                 },
                 onDragEnd: () => {
                   setDragSession(null);
@@ -843,7 +904,11 @@ export function Sidebar({
                   e.preventDefault();
                   const rect = e.currentTarget.getBoundingClientRect();
                   const after = e.clientY - rect.top > rect.height / 2;
-                  const partitionIds = rows
+                  // The FULL partition (every loaded row of this group on the dragged
+                  // row's side of the pin boundary), not the visible slice: committing
+                  // only the capped rows would drop the hidden ones out of the stored
+                  // sequence, and they would come back as "newcomers" at the top.
+                  const partitionIds = dragCtx.fullRows
                     .filter(
                       (r) => pinnedSessions.has(r.sessionId) === pinnedSessions.has(dragging.id),
                     )
@@ -865,6 +930,11 @@ export function Sidebar({
             s={s}
             active={s.sessionId === activeSessionId}
             pinned={pinnedSessions.has(s.sessionId)}
+            // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
+            // archived) are ordered chronologically inside their folder and never pass
+            // through orderSessionRows, so a pin there would write an id, light the
+            // glyph, move nothing — and then shift the active list's drag partition.
+            canPin={activeList}
             lastActive={formatRelativeShort(s.createdAt, locale)}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
@@ -959,18 +1029,26 @@ export function Sidebar({
     agentsFor: (category: SessionCategory) => string[],
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
-    // Row order: the pinned cluster always first (never hidden behind "More"); under
-    // manual sort the stored order additionally applies within each pin partition
-    // (lib/session-order.ts). Folder rows keep their chronological order: pinning and
-    // manual order are active-list concerns. While searching, the display cap is
-    // bypassed — every loaded match shows, and "More" hides (it pages the unfiltered
-    // list and would read as "more matches", which the server cannot promise).
+    // Row order: the pinned cluster first, then — under manual sort — the stored order
+    // within each pin partition (lib/session-order.ts). Both reorder only rows already
+    // FETCHED: a pinned conversation that lives past the loaded pages does not surface
+    // until "More" pulls its page in (the list has no server-side pin), so the pinned
+    // cluster leads what is loaded, not the Agent's whole history. Folder rows keep
+    // their chronological order: pinning and manual order are active-list concerns.
+    // While searching, the display cap is bypassed — every loaded match shows, and
+    // "More" hides (it pages the unfiltered list and would read as "more matches",
+    // which the server cannot promise).
     const orderedActive = orderSessionRows(parts.active, (s) => s.sessionId, {
       pinned: pinnedSessions,
-      sortMode,
+      sortMode: effectiveSortMode,
       order: sessionOrder,
     });
     const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
+    /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
+    const dragCtx =
+      effectiveSortMode === "manual" && !searching
+        ? { scope: groupKey, fullRows: orderedActive }
+        : undefined;
     // Only the outer active rows drive the group's "More" — the folders never feed it:
     // hidden loaded rows exist, or the group's own active share isn't fully loaded yet.
     const activeAgents = agentsFor("active");
@@ -993,11 +1071,7 @@ export function Sidebar({
         ) : (
           // Drag-reorder is offered on the active list under manual sort (folders keep
           // chronological order), and never on a search-filtered view.
-          renderRows(
-            shownActive,
-            withAgentHint,
-            sortMode === "manual" && !searching ? groupKey : undefined,
-          )
+          renderRows(shownActive, withAgentHint, dragCtx, true)
         )}
 
         {/* Load/reveal more (kept adjacent to the active list it extends, above the folders) */}
@@ -1312,6 +1386,7 @@ export function Sidebar({
                   type="button"
                   title={S.chat.listSettings}
                   aria-label={S.chat.listSettings}
+                  aria-haspopup="menu"
                   aria-expanded={listSettingsOpen}
                   onClick={() => setListSettingsOpen(!listSettingsOpen)}
                   className={headerControlClass(listSettingsOpen)}
@@ -1339,14 +1414,17 @@ export function Sidebar({
               />
               <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
               <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
-              <MenuRadioRow
-                label={S.chat.sortManual}
-                checked={sortMode === "manual"}
-                onSelect={() => {
-                  setSortMode("manual");
-                  setListSettingsOpen(false);
-                }}
-              />
+              {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
+              {canDrag && (
+                <MenuRadioRow
+                  label={S.chat.sortManual}
+                  checked={sortMode === "manual"}
+                  onSelect={() => {
+                    setSortMode("manual");
+                    setListSettingsOpen(false);
+                  }}
+                />
+              )}
               <MenuRadioRow
                 label={S.chat.sortRecent}
                 checked={sortMode === "recent"}
@@ -1377,6 +1455,11 @@ export function Sidebar({
               </button>
             ) : (
               <WorkspaceSelect
+                // Remount per Project: the picker browses lazily and caches the listing
+                // for its lifetime, so a long-lived instance would show the PREVIOUS
+                // Project's directories after a switch — and register that path into the
+                // new Project's registry.
+                key={currentProjectId ?? "no-project"}
                 projectId={currentProjectId ?? ""}
                 workspace=""
                 onChange={addWorkspace}
@@ -1876,7 +1959,9 @@ export function Sidebar({
           maxLength={80}
           onChange={(e) => setWorkspaceAliasText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") confirmRenameWorkspace();
+            // isComposing guard (the repo's IME convention, cf. workspace-select.tsx):
+            // accepting a Chinese candidate fires Enter, which would save the raw pinyin.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) confirmRenameWorkspace();
           }}
         />
       </Modal>
@@ -2029,6 +2114,7 @@ function SessionRow({
   s,
   active,
   pinned,
+  canPin = false,
   lastActive,
   agentHint,
   draggable = false,
@@ -2048,6 +2134,8 @@ function SessionRow({
   active: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
+  /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
+  canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
@@ -2122,7 +2210,7 @@ function SessionRow({
             }`}
           />
           {/* Pinned indicator: a dim pin after the title (tooltip + sr text; unpin lives in the row menu). */}
-          {pinned && (
+          {pinned && canPin && (
             <span
               title={S.chat.pinnedSession}
               className="shrink-0 text-gray-400 dark:text-gray-500"
@@ -2165,6 +2253,7 @@ function SessionRow({
                 type="button"
                 title={S.chat.sessionMenu}
                 aria-label={S.chat.sessionMenu}
+                aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
                 className={`peer absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center text-gray-500 transition-all duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 ${
@@ -2188,10 +2277,12 @@ function SessionRow({
             </>
           }
         >
-          <button type="button" className={overflowMenuRowClass} onClick={item(onTogglePin)}>
-            {overflowMenuGlyph(PIN_ICON)}
-            {pinned ? S.chat.unpinSession : S.chat.pinSession}
-          </button>
+          {canPin && (
+            <button type="button" className={overflowMenuRowClass} onClick={item(onTogglePin)}>
+              {overflowMenuGlyph(PIN_ICON)}
+              {pinned ? S.chat.unpinSession : S.chat.pinSession}
+            </button>
+          )}
           <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
             {overflowMenuGlyph(PENCIL_ICON)}
             {S.chat.renameSession}
@@ -2244,6 +2335,7 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
           type="button"
           title={S.chat.workspaceMenu}
           aria-label={S.chat.workspaceMenu}
+          aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
           className="flex h-7 w-7 shrink-0 items-center justify-center text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100"

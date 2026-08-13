@@ -49,22 +49,29 @@ export interface NavCollapseStorage {
 /** The single global key (`penguin.…` naming convention); holds "collapsed" / "expanded". */
 export const NAV_GROUP_COLLAPSED_KEY = "penguin.sidebarNavGroupCollapsed";
 
-/** Reads the persisted choice; only an explicit "collapsed" collapses — anything else (absent / unrecognized / throwing storage) is the expanded default. */
-export function initialNavGroupCollapsed(storage: NavCollapseStorage = localStorage): boolean {
+/**
+ * Reads the persisted choice; only an explicit "collapsed" collapses — anything else
+ * (absent / unrecognized / throwing storage) is the expanded default. `localStorage` is
+ * resolved INSIDE the try, never as a default parameter: merely touching it throws a
+ * SecurityError when site data is blocked (or in a partitioned iframe), and this runs
+ * from a useState initializer — an escaping throw would take the sidebar's first render
+ * down.
+ */
+export function initialNavGroupCollapsed(storage?: NavCollapseStorage): boolean {
   try {
-    return storage.getItem(NAV_GROUP_COLLAPSED_KEY) === "collapsed";
+    return (storage ?? localStorage).getItem(NAV_GROUP_COLLAPSED_KEY) === "collapsed";
   } catch {
     return false;
   }
 }
 
 /** Writes the choice on every toggle (best-effort: quota limits / private browsing fail silently). */
-export function storeNavGroupCollapsed(
-  collapsed: boolean,
-  storage: NavCollapseStorage = localStorage,
-): void {
+export function storeNavGroupCollapsed(collapsed: boolean, storage?: NavCollapseStorage): void {
   try {
-    storage.setItem(NAV_GROUP_COLLAPSED_KEY, collapsed ? "collapsed" : "expanded");
+    (storage ?? localStorage).setItem(
+      NAV_GROUP_COLLAPSED_KEY,
+      collapsed ? "collapsed" : "expanded",
+    );
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }

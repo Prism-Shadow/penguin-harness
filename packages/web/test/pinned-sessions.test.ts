@@ -106,6 +106,19 @@ describe("persisted pins (per-Project localStorage)", () => {
     expect(() => savePinnedSessions("p1", new Set(["a"]), broken)).not.toThrow();
     expect(loadPinnedSessions("p1", broken).size).toBe(0);
   });
+
+  it("storage whose GETTER throws (blocked site data / partitioned iframe) degrades instead of escaping", () => {
+    // These loaders run from useState initializers, so an escaping SecurityError would
+    // take the sidebar's first render down — hence localStorage is resolved inside the try.
+    const hostile = {
+      get getItem(): never {
+        throw new Error("SecurityError");
+      },
+      setItem: () => undefined,
+    } as unknown as PinnedSessionsStorage;
+    expect(() => loadPinnedSessions("p1", hostile)).not.toThrow();
+    expect(loadPinnedSessions("p1", hostile).size).toBe(0);
+  });
 });
 
 describe("togglePinnedSession / removePinnedSession", () => {

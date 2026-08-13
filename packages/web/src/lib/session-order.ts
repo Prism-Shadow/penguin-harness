@@ -5,13 +5,16 @@
  * - Sort mode — "recent" (the default: rows keep the store's newest-first order) or
  *   "manual" (drag-reorderable). One global key like the grouping mode: a single user
  *   preference, not per Project.
- * - Manual order — one per-Project array of Session ids. Only the RELATIVE order of ids
- *   that render together in one partition ever matters (rows are compared only within a
- *   group's own list), so a drop simply rewrites the affected partition's sequence to
- *   the front of the array (applyManualReorder). Rows not in the array — new Sessions —
- *   go to the TOP of their partition keeping their recency order; stored ids that no
- *   longer exist stay inert (membership lookups only) and deletion prunes via
- *   removeFromSessionOrder.
+ * - Manual order — one array of Session ids per Project AND grouping mode (the modes cut
+ *   the same Sessions into different partitions, so one shared array would let a drag in
+ *   one mode scramble the other). Only the RELATIVE order of ids that render together in
+ *   one partition ever matters (rows are compared only within a group's own list), so a
+ *   drop simply rewrites the affected partition's sequence to the front of the array
+ *   (applyManualReorder) — the caller must commit the partition's FULL loaded sequence,
+ *   not the display-capped slice, or the hidden rows would fall out and return as
+ *   "newcomers". Rows not in the array — new Sessions — go to the TOP of their partition
+ *   keeping their recency order; stored ids that no longer exist stay inert (membership
+ *   lookups only) and deletion prunes via removeFromSessionOrder.
  *
  * Ordering composes with the row pins (pinned-sessions.ts): the pinned cluster always
  * renders first, and the manual order applies WITHIN the pinned cluster and within the
@@ -21,6 +24,7 @@
  * localStorage); malformed values degrade to the defaults.
  */
 import { pinnedFirst } from "./session-grouping";
+import type { GroupMode } from "../components/ui/group-list";
 
 export type SessionSortMode = "recent" | "manual";
 
@@ -33,54 +37,67 @@ export interface SessionOrderStorage {
   setItem(key: string, value: string): void;
 }
 
-/** Reads the persisted sort mode; only an explicit "manual" switches — anything else (absent / unrecognized / throwing storage) is the "recent" default, so a fresh profile looks unchanged. */
-export function initialSessionSortMode(
-  storage: SessionOrderStorage = localStorage,
-): SessionSortMode {
+/**
+ * Reads the persisted sort mode; only an explicit "manual" switches — anything else
+ * (absent / unrecognized / throwing storage) is the "recent" default, so a fresh profile
+ * looks unchanged. `localStorage` is resolved INSIDE the try, never as a default
+ * parameter: merely touching it throws a SecurityError when site data is blocked (or in
+ * a partitioned iframe), and this runs from a useState initializer — an escaping throw
+ * would take the whole sidebar's first render down.
+ */
+export function initialSessionSortMode(storage?: SessionOrderStorage): SessionSortMode {
   try {
-    return storage.getItem(SESSION_SORT_MODE_KEY) === "manual" ? "manual" : "recent";
+    const store = storage ?? localStorage;
+    return store.getItem(SESSION_SORT_MODE_KEY) === "manual" ? "manual" : "recent";
   } catch {
     return "recent";
   }
 }
 
-export function storeSessionSortMode(
-  mode: SessionSortMode,
-  storage: SessionOrderStorage = localStorage,
-): void {
+export function storeSessionSortMode(mode: SessionSortMode, storage?: SessionOrderStorage): void {
   try {
-    storage.setItem(SESSION_SORT_MODE_KEY, mode);
+    (storage ?? localStorage).setItem(SESSION_SORT_MODE_KEY, mode);
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
 }
 
-/** Storage key of one Project's manual order (sidebar key-naming convention, `penguin.pinnedSessions.<projectId>` &c.). */
-export const sessionOrderKey = (projectId: string): string => `penguin.sessionOrder.${projectId}`;
+/**
+ * Storage key of one Project's manual order (sidebar key-naming convention,
+ * `penguin.pinnedSessions.<projectId>` &c.), scoped BY GROUPING MODE: the stored
+ * sequence is only ever read within a partition, and the two modes cut the same
+ * Sessions into different partitions — one shared array would let a drag in workspace
+ * mode scramble the agent-mode order (and vice versa).
+ */
+export const sessionOrderKey = (projectId: string, mode: GroupMode): string =>
+  `penguin.sessionOrder.${projectId}.${mode}`;
 
-/** Reads a Project's persisted manual order; no Project, nothing stored, or corrupted storage degrade to empty (pure recency). Junk array elements are dropped. */
+/** Reads a Project+mode's persisted manual order; no Project, nothing stored, or corrupted storage degrade to empty (pure recency). Junk array elements are dropped. (localStorage resolved inside the try — see initialSessionSortMode.) */
 export function loadSessionOrder(
   projectId: string | null,
-  storage: SessionOrderStorage = localStorage,
+  mode: GroupMode,
+  storage?: SessionOrderStorage,
 ): string[] {
   if (projectId === null) return [];
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(sessionOrderKey(projectId)) ?? "[]");
+    const store = storage ?? localStorage;
+    const parsed: unknown = JSON.parse(store.getItem(sessionOrderKey(projectId, mode)) ?? "[]");
     return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
   } catch {
     return [];
   }
 }
 
-/** Writes a Project's manual order on every drop (best-effort: quota limits / private browsing fail silently). */
+/** Writes a Project+mode's manual order on every drop (best-effort: quota limits / private browsing fail silently). */
 export function saveSessionOrder(
   projectId: string | null,
+  mode: GroupMode,
   order: readonly string[],
-  storage: SessionOrderStorage = localStorage,
+  storage?: SessionOrderStorage,
 ): void {
   if (projectId === null) return;
   try {
-    storage.setItem(sessionOrderKey(projectId), JSON.stringify(order));
+    (storage ?? localStorage).setItem(sessionOrderKey(projectId, mode), JSON.stringify(order));
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
@@ -130,19 +147,25 @@ export function orderSessionRows<T>(
   ];
 }
 
-/** Moves `dragId` next to `targetId` (after it when `after`, else before) in a displayed sequence; no-ops when either id is missing or they are the same. */
+/**
+ * Moves `dragId` next to `targetId` (after it when `after`, else before) in a displayed
+ * sequence. Returns the INPUT array unchanged (same reference) for every no-op — a
+ * missing id, a self-drop, or a drop that lands the row exactly where it already sat
+ * (dropping just above your next neighbour) — so callers skip the state update and the
+ * storage write instead of persisting a freshly allocated identical array.
+ */
 export function moveInSequence(
   sequence: readonly string[],
   dragId: string,
   targetId: string,
   after: boolean,
-): string[] {
-  if (dragId === targetId || !sequence.includes(dragId)) return [...sequence];
+): readonly string[] {
+  if (dragId === targetId || !sequence.includes(dragId)) return sequence;
   const without = sequence.filter((id) => id !== dragId);
   const at = without.indexOf(targetId);
-  if (at < 0) return [...sequence];
+  if (at < 0) return sequence;
   without.splice(after ? at + 1 : at, 0, dragId);
-  return without;
+  return without.every((id, i) => id === sequence[i]) ? sequence : without;
 }
 
 /**
