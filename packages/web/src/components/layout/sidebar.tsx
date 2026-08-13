@@ -1,8 +1,8 @@
 /**
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
- * one collapsible group behind a nav-row-wide arrow bar on the divider under its last entry:
- * arrow up = click to collapse, arrow down while collapsed = the way back; state persists in
+ * one collapsible group behind a nav-row-wide chevron button under its last entry: arrow
+ * up = click to collapse, arrow down while collapsed = the way back; state persists in
  * localStorage, the pinned new-chat block never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
@@ -835,27 +835,26 @@ export function Sidebar({
               {item.label}
             </NavLink>
           ))}
-          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a nav-row-wide arrow
-              bar on the divider under the group's last entry — two hairline segments flanking
-              a centered chevron that points UP while expanded (click to collapse) and DOWN
-              while collapsed (the bar stays as the only way back, sitting right under the
-              new-chat boundary once the entries are hidden). Real height for an easy hit
-              target, flat at rest, the nav rows' hover treatment. Icon-only, so tooltip +
-              aria carry the name (GroupHeader's collapse/expand wording). */}
+          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a self-contained
+              nav-row-wide button directly under the group's last entry — no divider lines,
+              just a centered chevron pointing UP while expanded (click to collapse) and
+              DOWN while collapsed (the button stays as the only way back, right under the
+              new-chat boundary once the entries are hidden). Nav-row height for a
+              comfortable hit target; flat at rest with the nav rows' exact hover pill
+              (the sidebar's idiom — nothing here carries a resting fill). Icon-only, so
+              tooltip + aria carry the name (GroupHeader's collapse/expand wording). */}
           <button
             type="button"
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-6 w-full items-center gap-1.5 rounded-md px-2.5 text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+            className="flex h-8 w-full items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
           >
-            <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
             <ChevronDown
-              size={14}
+              size={16}
               className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
             />
-            <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
           </button>
         </nav>
 
