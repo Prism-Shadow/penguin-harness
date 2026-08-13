@@ -49,9 +49,9 @@ import {
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import {
+  NAV_GROUP_KEYS,
   initialNavGroupCollapsed,
   storeNavGroupCollapsed,
-  visibleNavKeys,
 } from "../../lib/nav-group-collapse";
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
@@ -675,10 +675,10 @@ export function Sidebar({
     />
   );
 
-  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest); empty while collapsed. */
-  const navItems: Array<{ to: string; label: string; icon: string }> = visibleNavKeys(
-    navCollapsed,
-  ).map((key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }));
+  /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest). Always mounted — the collapse animates their height to zero and turns them inert. */
+  const navItems: Array<{ to: string; label: string; icon: string }> = NAV_GROUP_KEYS.map(
+    (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
+  );
 
   const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
     { value: "light", label: S.settings.themeLight },
@@ -816,41 +816,66 @@ export function Sidebar({
           folder made the whole page scroll (composer pushed up, blank space below). */}
       <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <nav className="space-y-0.5">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => onNavigate?.()}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
-                  isActive
-                    ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                    : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
-                }`
-              }
-            >
-              <span className="text-gray-500 dark:text-gray-400">
-                <Icon d={item.icon} />
-              </span>
-              {item.label}
-            </NavLink>
-          ))}
-          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a self-contained
-              nav-row-wide button directly under the group's last entry — no divider lines,
-              just a centered chevron pointing UP while expanded (click to collapse) and
-              DOWN while collapsed (the button stays as the only way back, right under the
-              new-chat boundary once the entries are hidden). Slim (h-6) so it doesn't
-              eat vertical space, yet still a full-width hit target; flat at rest with
-              the nav rows' exact hover pill (the sidebar's idiom — nothing here carries
-              a resting fill). Icon-only, so tooltip + aria carry the name (GroupHeader's
-              collapse/expand wording). */}
+          {/* Expand/collapse SLIDE: grid-template-rows tweens between 0fr and 1fr with the
+              inner overflow-hidden clipping the rows (the skills/models-page convention) —
+              the moving clip edge reveals/hides the entries while the toggle button and the
+              Session list below glide up/down with it; a subtle opacity fade rides along,
+              both 200ms, moving as one with the chevron flip below. The rows stay mounted
+              for the tween but go inert while collapsed (zero-height rows must not stay
+              Tab-focusable or clickable). Transitions fire only on state CHANGES, so a mount
+              restoring a persisted collapsed state renders collapsed instantly — only user
+              toggles animate; reduced motion is covered by the global
+              prefers-reduced-motion override in styles.css. */}
+          <div
+            className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+              navCollapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+            }`}
+          >
+            <div className="overflow-hidden" inert={navCollapsed}>
+              <div
+                className={`space-y-0.5 transition-opacity duration-200 ${
+                  navCollapsed ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                {navItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => onNavigate?.()}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors duration-150 ${
+                        isActive
+                          ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                          : "text-gray-600 hover:bg-gray-200/50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
+                      }`
+                    }
+                  >
+                    <span className="text-gray-500 dark:text-gray-400">
+                      <Icon d={item.icon} />
+                    </span>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-6)
+              nav-row-wide button directly under the group's last entry — a centered chevron
+              pointing UP while expanded (click to collapse) and DOWN while collapsed (the
+              button stays as the only way back, right under the new-chat boundary once the
+              entries are hidden). The soft resting band is deliberate — the sidebar's one
+              exception to flat-at-rest: it makes the strip read as the seam between the
+              page nav above and the Session list below (the ruled separator it replaces
+              was rejected as a line under the button); hover deepens it to the icon-button
+              fill so it stays clearly interactive. Icon-only, so tooltip + aria carry the
+              name (GroupHeader's collapse/expand wording). */}
           <button
             type="button"
             onClick={toggleNavGroup}
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-6 w-full items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+            className="flex h-6 w-full items-center justify-center rounded-md bg-gray-200/40 text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-700 dark:bg-gray-800/40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
           >
             <ChevronDown
               size={14}

@@ -29,7 +29,13 @@ export const NAV_GROUP_KEYS = [
 ] as const;
 export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
 
-/** Page entries that render: collapsing hides the whole group (the chevron-button toggle and the pinned "New chat" block above are outside it and stay). */
+/**
+ * Page entries that are visible and reachable: collapsing hides the whole group (the
+ * chevron-button toggle and the pinned "New chat" block above are outside it and stay).
+ * The sidebar keeps the rows mounted while collapsed — the collapse is an animated
+ * height tween — but at zero height, faded out, and inert: exactly this empty set of
+ * reachable entries.
+ */
 export function visibleNavKeys(collapsed: boolean): readonly NavGroupKey[] {
   return collapsed ? [] : NAV_GROUP_KEYS;
 }

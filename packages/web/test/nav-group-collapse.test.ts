@@ -66,7 +66,7 @@ describe("NAV_GROUP_KEYS", () => {
 });
 
 describe("visibleNavKeys", () => {
-  it("expanded renders the whole group; collapsed hides every group entry", () => {
+  it("expanded shows the whole group; collapsed leaves no entry visible or reachable (the sidebar renders the mounted rows inert at zero height)", () => {
     expect(visibleNavKeys(false)).toEqual(NAV_GROUP_KEYS);
     expect(visibleNavKeys(true)).toEqual([]);
   });
