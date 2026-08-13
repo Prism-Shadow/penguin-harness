@@ -837,6 +837,8 @@ export const zh = {
     renameWorkspaceLabel: "名称",
     renameWorkspaceHint: "留空则使用目录名",
     deleteWorkspace: "删除工作区",
+    deleteWorkspaceConfirm: (name: string) =>
+      `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",

@@ -880,6 +880,8 @@ export const en: Strings = {
     renameWorkspaceLabel: "Name",
     renameWorkspaceHint: "Leave empty to use the folder name",
     deleteWorkspace: "Remove workspace",
+    deleteWorkspaceConfirm: (name: string) =>
+      `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",

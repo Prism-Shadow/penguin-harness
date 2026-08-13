@@ -401,6 +401,11 @@ export function Sidebar({
   /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. */
   const [renamingWorkspace, setRenamingWorkspace] = useState<{ path: string } | null>(null);
   const [workspaceAliasText, setWorkspaceAliasText] = useState("");
+  /** Registered Workspace pending removal confirmation (null = none); label = the group's displayed name for the confirm copy. */
+  const [deletingWorkspace, setDeletingWorkspace] = useState<{
+    path: string;
+    label: string;
+  } | null>(null);
   /** Live title search: the input's visibility and its query (transient — never persisted). */
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -770,12 +775,16 @@ export function Sidebar({
   };
 
   /**
-   * 删除工作区: drops the sidebar registry entry only — disk and Sessions are never
-   * touched, so no confirmation (re-adding restores it; unlike 删除对话 nothing is
-   * lost). A group that still has Sessions simply persists as session-derived.
+   * 删除工作区 (confirmed via the shared ConfirmModal, like every destructive-looking
+   * action): drops the sidebar registry entry only — disk and Sessions are never
+   * touched, the confirm copy says exactly that, and re-adding restores it. A group
+   * that still has Sessions simply persists as session-derived.
    */
-  const removeWorkspace = (path: string) =>
-    applyRegistryChange(unregisterWorkspace(registeredWorkspaces, path));
+  const confirmDeleteWorkspace = () => {
+    if (!deletingWorkspace) return;
+    applyRegistryChange(unregisterWorkspace(registeredWorkspaces, deletingWorkspace.path));
+    setDeletingWorkspace(null);
+  };
 
   const openSession = (s: SessionInfo) => {
     // Cross-group click: the current Agent follows this Session's own Agent.
@@ -1555,7 +1564,9 @@ export function Sidebar({
                         {registeredPaths.has(group.key) && (
                           <GroupOverflowMenu
                             onRename={() => openRenameWorkspace(group.key)}
-                            onDelete={() => removeWorkspace(group.key)}
+                            onDelete={() =>
+                              setDeletingWorkspace({ path: group.key, label: group.label })
+                            }
                           />
                         )}
                       </>
@@ -1883,6 +1894,21 @@ export function Sidebar({
           {deletingSession
             ? S.chat.deleteSessionConfirm(deletingSession.title ?? S.chat.defaultSessionTitle)
             : ""}
+        </p>
+      </ConfirmModal>
+
+      {/* Remove-workspace confirmation (shared ConfirmModal, same stop as the other
+          destructive-looking actions): the copy is honest about the scope — sidebar
+          registry entry only, disk and Sessions untouched, re-addable anytime. */}
+      <ConfirmModal
+        open={deletingWorkspace !== null}
+        title={S.chat.deleteWorkspace}
+        confirmLabel={S.common.delete}
+        onClose={() => setDeletingWorkspace(null)}
+        onConfirm={confirmDeleteWorkspace}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {deletingWorkspace ? S.chat.deleteWorkspaceConfirm(deletingWorkspace.label) : ""}
         </p>
       </ConfirmModal>
 
