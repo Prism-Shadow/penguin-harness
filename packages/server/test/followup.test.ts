@@ -57,6 +57,7 @@ describe("follow-up queue route", () => {
       approvalMode: "always-ask",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     };
     t.deps.sessionsRepo.insert(row);
     runs = [];

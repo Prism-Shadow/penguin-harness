@@ -7,7 +7,9 @@
  * Product not yet released: no migration branches — everything is CREATE IF NOT EXISTS, formed
  * once. The one exception: columns added to an existing table after release of a web.db are
  * ALTERed in by the idempotent per-column guard in database.ts (ensureColumn), since CREATE
- * TABLE IF NOT EXISTS never touches an existing table.
+ * TABLE IF NOT EXISTS never touches an existing table. A *reshaped* index follows the same
+ * rule under a new name, with the superseded one dropped on open (idx_usage_session →
+ * idx_usage_session_ts): CREATE INDEX IF NOT EXISTS never rebuilds an existing index either.
  */
 
 export const SCHEMA_SQL = `
@@ -54,7 +56,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   archived_at   TEXT,                                -- archive time; NULL=not archived (shown by default; archived ones move under "Archived")
   client        TEXT,                                -- creating client: 'web' (created via the Web App) | 'cli' (adopted from a CLI Trace); NULL = legacy row, treated as web
   has_trace     INTEGER NOT NULL DEFAULT 0,          -- cache: a Trace record exists (set at task start / adoption / subagent registration; lazily backfilled by list hydration)
-  last_active_at TEXT,                               -- last meaningful activity (ISO; bumped at each driven run's start and end, initialized to created_at); NULL only before openDatabase's one-time backfill
+  last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
   created_at    TEXT NOT NULL
 );                                            -- the schedule/subagent SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
@@ -75,7 +77,7 @@ CREATE TABLE IF NOT EXISTS usage_records (
   status            TEXT NOT NULL DEFAULT 'completed'  -- request outcome: completed=success (with tokens); others=failure (0 tokens, for success rate)
 );                                            -- cost is not stored: computed at query time from current pricing
 CREATE INDEX IF NOT EXISTS idx_usage_project_date ON usage_records(project_id, date);
-CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_records(session_id);
+CREATE INDEX IF NOT EXISTS idx_usage_session_ts ON usage_records(session_id, ts);  -- (session_id) alone was idx_usage_session (dropped on open): ts makes the last_active_at backfill's MAX(ts) a covering index scan instead of a random row lookup per usage record
 CREATE TABLE IF NOT EXISTS error_records (     -- server-side error capture (the Costs page's "Errors" tab)
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   ts         TEXT NOT NULL,

@@ -747,10 +747,19 @@ export interface SessionInfo {
   source?: SessionSource;
   createdAt: string;
   /**
-   * Last meaningful activity (ISO 8601, same convention as createdAt): initialized to
-   * createdAt at creation, stamped by the server at each driven run's start and end
-   * (task, goal round, compaction). Legacy rows are backfilled once at startup from the
-   * session's most recent request timestamp, falling back to createdAt.
+   * Last activity the server drove for this Session (ISO 8601, same convention as
+   * createdAt), monotonic — it never moves backwards. Set to createdAt at creation, then
+   * stamped when a run starts and again when it ends; a run here is one Task, one
+   * compaction, or one whole goal loop (every round of a goal belongs to a single run, so
+   * an N-round goal stamps twice, not 2N times).
+   *
+   * Two kinds of row therefore stay at createdAt no matter how busy they look: Sessions
+   * adopted from a CLI Trace (this server drives none of their runs) and subagent rows
+   * (their work is driven through the parent Session's entry). Reading real activity for
+   * those would mean consulting the Trace tree, which this field deliberately does not do.
+   *
+   * Rows that predate the field are backfilled once at startup from the Session's most
+   * recent request timestamp, falling back to createdAt.
    */
   lastActiveAt: string;
   status: SessionStatus;
