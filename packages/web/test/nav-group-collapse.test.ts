@@ -1,7 +1,8 @@
 /**
  * nav-group-collapse.ts unit tests: the sidebar's collapsible page-nav group, toggled
- * by a bare chevron on the divider under the pinned "New chat" block (no label, no
- * icon — tooltip and aria carry the collapse/expand names). The group covers exactly
+ * by a nav-row-wide arrow bar on the divider under the group's last entry (no label —
+ * tooltip and aria carry the collapse/expand names; arrow up = collapse, and the bar
+ * itself stays while collapsed as the way back). The group covers exactly
  * the 智能体 → 评估中心 run of entries in rendered order (the sidebar derives its nav
  * rows from the NAV_GROUP_KEYS manifest, so the range is pinned here); the pinned
  * "New chat" block is never part of the manifest, so collapsing cannot hide it. The
@@ -70,7 +71,7 @@ describe("visibleNavKeys", () => {
     expect(visibleNavKeys(true)).toEqual([]);
   });
 
-  it("the divider toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
+  it("the arrow-bar toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
     expect(zh.nav.collapseGroup).toBe("折叠");
     expect(zh.nav.expandGroup).toBe("展开");
     expect(en.nav.collapseGroup).toBe("Collapse");

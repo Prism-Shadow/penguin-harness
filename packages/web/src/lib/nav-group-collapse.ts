@@ -1,8 +1,9 @@
 /**
  * Collapse state of the sidebar's page-nav group (pure decisions, unit tested): the
- * 智能体 → 评估中心 run of entries collapses as one group behind a bare chevron sitting
- * on the full-width divider under the pinned "New chat" block. That block is NOT part
- * of the group — it stays visible in both states (the manifest below simply never
+ * 智能体 → 评估中心 run of entries collapses as one group behind a nav-row-wide arrow
+ * bar on the divider under the group's last entry (arrow up = collapse; collapsed, the
+ * bar stays — arrow down — as the way back). The pinned "New chat" block above is NOT
+ * part of the group — it stays visible in both states (the manifest below simply never
  * contains it).
  *
  * One global storage key, not per Project: the nav is identical everywhere, so like the
@@ -28,7 +29,7 @@ export const NAV_GROUP_KEYS = [
 ] as const;
 export type NavGroupKey = (typeof NAV_GROUP_KEYS)[number];
 
-/** Page entries that render: collapsing hides the whole group (the divider toggle and the pinned "New chat" block above are outside it and stay). */
+/** Page entries that render: collapsing hides the whole group (the arrow-bar toggle and the pinned "New chat" block above are outside it and stay). */
 export function visibleNavKeys(collapsed: boolean): readonly NavGroupKey[] {
   return collapsed ? [] : NAV_GROUP_KEYS;
 }

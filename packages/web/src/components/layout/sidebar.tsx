@@ -1,9 +1,9 @@
 /**
  * Single-column sidebar, top to bottom:
  * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
- * one collapsible group behind a bare chevron on the full-width divider under the new-chat
- * block; state persists in localStorage, the pinned new-chat block itself never
- * collapses) -> Session area with two grouping modes (a small toggle in the section header; the
+ * one collapsible group behind a nav-row-wide arrow bar on the divider under its last entry:
+ * arrow up = click to collapse, arrow down while collapsed = the way back; state persists in
+ * localStorage, the pinned new-chat block never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
@@ -57,7 +57,6 @@ import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
-import { Chevron } from "../ui/chevron";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
@@ -803,25 +802,6 @@ export function Sidebar({
           </span>
           {S.chat.newSessionMenu}
         </button>
-        {/* Divider-toggle of the page-nav group (智能体 → 评估中心): the full-width hairline
-            under this pinned block IS the collapse toggle — two line segments flanking a bare
-            centered chevron (the site-wide Chevron: right = collapsed, down = expanded), no
-            label, no icon, no background fill; hover only darkens the chevron. Living in the
-            pinned block, the line stays put at every scroll offset, exactly where the
-            block-to-scroller boundary sits. Icon-only, so tooltip + aria carry the name
-            (GroupHeader's collapse/expand wording). */}
-        <button
-          type="button"
-          onClick={toggleNavGroup}
-          aria-expanded={!navCollapsed}
-          aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-          title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-          className="-mx-2 mt-1 flex items-center gap-1.5 py-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
-        >
-          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
-          <Chevron open={!navCollapsed} size={12} />
-          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
-        </button>
       </div>
 
       {/* Scroll area: the page nav and the session list scroll together, so the nav rides up
@@ -855,6 +835,28 @@ export function Sidebar({
               {item.label}
             </NavLink>
           ))}
+          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a nav-row-wide arrow
+              bar on the divider under the group's last entry — two hairline segments flanking
+              a centered chevron that points UP while expanded (click to collapse) and DOWN
+              while collapsed (the bar stays as the only way back, sitting right under the
+              new-chat boundary once the entries are hidden). Real height for an easy hit
+              target, flat at rest, the nav rows' hover treatment. Icon-only, so tooltip +
+              aria carry the name (GroupHeader's collapse/expand wording). */}
+          <button
+            type="button"
+            onClick={toggleNavGroup}
+            aria-expanded={!navCollapsed}
+            aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+            title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
+            className="flex h-6 w-full items-center gap-1.5 rounded-md px-2.5 text-gray-400 transition-colors duration-150 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+          >
+            <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
+            />
+            <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          </button>
         </nav>
 
         {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage).
