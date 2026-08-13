@@ -50,6 +50,7 @@ import {
   pinnedFirst,
   sessionCategory,
   workspaceGroupKey,
+  workspaceLabel,
 } from "../../lib/session-grouping";
 import type { FolderCategory, SessionPartition } from "../../lib/session-grouping";
 import {
@@ -68,7 +69,10 @@ import {
   mergeRegisteredWorkspaces,
   registerWorkspace,
   saveWorkspaceRegistry,
+  setWorkspaceAlias,
+  unregisterWorkspace,
 } from "../../lib/workspace-registry";
+import type { WorkspaceEntry } from "../../lib/workspace-registry";
 import {
   applyManualReorder,
   initialSessionSortMode,
@@ -198,6 +202,21 @@ const headerControlClass = (active: boolean) =>
 /** Muted section label inside the list-settings menu (分组方式 / 排序方式). */
 const menuSectionClass =
   "px-3 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
+
+/** Compact overflow-menu row (session row menu + workspace group menu; reference density): small text, leading thin-line glyph. */
+const overflowMenuRowClass =
+  "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+
+/** The overflow menus' destructive row (delete keeps the red treatment; its glyph inherits the red). */
+const overflowMenuDangerClass =
+  "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40";
+
+/** The overflow menus' muted leading glyph (the danger row inlines its own so the red inherits). */
+const overflowMenuGlyph = (d: string) => (
+  <span className="shrink-0 text-gray-400 dark:text-gray-500">
+    <Icon d={d} size={13} />
+  </span>
+);
 
 /**
  * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
@@ -375,10 +394,13 @@ export function Sidebar({
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
     loadSessionOrder(currentProjectId),
   );
-  /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist); persisted per Project. */
-  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly string[]>(() =>
+  /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist, with optional display aliases); persisted per Project. */
+  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly WorkspaceEntry[]>(() =>
     loadWorkspaceRegistry(currentProjectId),
   );
+  /** Registered Workspace being renamed (alias edit; null = none) and the alias being typed. */
+  const [renamingWorkspace, setRenamingWorkspace] = useState<{ path: string } | null>(null);
+  const [workspaceAliasText, setWorkspaceAliasText] = useState("");
   /** Live title search: the input's visibility and its query (transient — never persisted). */
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -715,13 +737,45 @@ export function Sidebar({
   const newEntityLabel =
     newEntityForGroupMode(groupMode) === "agent" ? S.agent.create : S.chat.newWorkspaceEntity;
 
-  /** 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions or not. */
-  const addWorkspace = (path: string) => {
-    const next = registerWorkspace(registeredWorkspaces, path);
+  /** Persist-if-changed for every registry mutation (register / alias / unregister share the same-reference fast exit). */
+  const applyRegistryChange = (next: readonly WorkspaceEntry[]) => {
     if (next === registeredWorkspaces) return;
     setRegisteredWorkspaces(next);
     saveWorkspaceRegistry(currentProjectId, next);
   };
+
+  /** 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions or not. */
+  const addWorkspace = (path: string) =>
+    applyRegistryChange(registerWorkspace(registeredWorkspaces, path));
+
+  /** Paths with a registry entry — only their groups offer the rename/remove overflow. */
+  const registeredPaths = useMemo(
+    () => new Set(registeredWorkspaces.map((e) => e.path)),
+    [registeredWorkspaces],
+  );
+
+  /** Open the alias editor pre-filled with the current alias ("" = following the basename). */
+  const openRenameWorkspace = (path: string) => {
+    setWorkspaceAliasText(registeredWorkspaces.find((e) => e.path === path)?.alias ?? "");
+    setRenamingWorkspace({ path });
+  };
+
+  /** Commit the alias (blank reverts the label to the directory basename). Direct save — no server, nothing destructive. */
+  const confirmRenameWorkspace = () => {
+    if (!renamingWorkspace) return;
+    applyRegistryChange(
+      setWorkspaceAlias(registeredWorkspaces, renamingWorkspace.path, workspaceAliasText),
+    );
+    setRenamingWorkspace(null);
+  };
+
+  /**
+   * 删除工作区: drops the sidebar registry entry only — disk and Sessions are never
+   * touched, so no confirmation (re-adding restores it; unlike 删除对话 nothing is
+   * lost). A group that still has Sessions simply persists as session-derived.
+   */
+  const removeWorkspace = (path: string) =>
+    applyRegistryChange(unregisterWorkspace(registeredWorkspaces, path));
 
   const openSession = (s: SessionInfo) => {
     // Cross-group click: the current Agent follows this Session's own Agent.
@@ -1148,7 +1202,7 @@ export function Sidebar({
               </div>
             </div>
           </div>
-          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-5)
+          {/* Collapse toggle of the page-nav group (智能体 → 评估中心): a slim (h-4)
               nav-row-wide button directly under the group's last entry — a centered chevron
               pointing UP while expanded (click to collapse) and DOWN while collapsed (the
               button stays as the only way back, right under the new-chat boundary once the
@@ -1164,10 +1218,10 @@ export function Sidebar({
             aria-expanded={!navCollapsed}
             aria-label={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
             title={navCollapsed ? S.nav.expandGroup : S.nav.collapseGroup}
-            className="flex h-5 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+            className="flex h-4 w-full items-center justify-center rounded-md bg-gray-200/70 text-gray-400 transition-colors duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:bg-gray-800/70 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-300"
           >
             <ChevronDown
-              size={14}
+              size={12}
               className={`transition-transform duration-200 ${navCollapsed ? "" : "rotate-180"}`}
             />
           </button>
@@ -1495,6 +1549,15 @@ export function Sidebar({
                         >
                           <Icon d="M12 5v14M5 12h14" size={18} />
                         </button>
+                        {/* Manually-added (registry-backed) Workspaces only: rename-alias /
+                            remove-from-sidebar overflow, to the right of the "+" (session-
+                            derived groups have no registry entry for these to act on). */}
+                        {registeredPaths.has(group.key) && (
+                          <GroupOverflowMenu
+                            onRename={() => openRenameWorkspace(group.key)}
+                            onDelete={() => removeWorkspace(group.key)}
+                          />
+                        )}
                       </>
                     }
                   />
@@ -1777,6 +1840,36 @@ export function Sidebar({
         />
       </Modal>
 
+      {/* Rename workspace (alias edit, same Modal + Input idiom as rename chat): the alias
+          replaces the directory basename as the group label; leaving it blank reverts to
+          the basename — so an empty save is valid here, unlike the chat rename. */}
+      <Modal
+        open={renamingWorkspace !== null}
+        title={S.chat.renameWorkspace}
+        onClose={() => setRenamingWorkspace(null)}
+        footer={
+          <>
+            <Button onClick={() => setRenamingWorkspace(null)}>{S.common.cancel}</Button>
+            <Button variant="primary" onClick={confirmRenameWorkspace}>
+              {S.common.save}
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label={S.chat.renameWorkspaceLabel}
+          hint={S.chat.renameWorkspaceHint}
+          value={workspaceAliasText}
+          placeholder={renamingWorkspace ? workspaceLabel(renamingWorkspace.path) : ""}
+          autoFocus
+          maxLength={80}
+          onChange={(e) => setWorkspaceAliasText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") confirmRenameWorkspace();
+          }}
+        />
+      </Modal>
+
       {/* Delete chat confirmation (shared ConfirmModal) */}
       <ConfirmModal
         open={deletingSession !== null}
@@ -1949,15 +2042,6 @@ function SessionRow({
   onToggleArchive: (s: SessionInfo) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  /** Menu row (reference-density): small text, compact padding, a leading thin-line glyph per item. */
-  const menuRow =
-    "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-  /** The leading glyph, muted like the rest of the icon family (the delete row lets the red inherit instead). */
-  const menuGlyph = (d: string) => (
-    <span className="shrink-0 text-gray-400 dark:text-gray-500">
-      <Icon d={d} size={13} />
-    </span>
-  );
   /** Close the menu, then run the action (every item shares this). */
   const item = (fn: (x: SessionInfo) => void) => () => {
     setMenuOpen(false);
@@ -2072,23 +2156,19 @@ function SessionRow({
             </>
           }
         >
-          <button type="button" className={menuRow} onClick={item(onTogglePin)}>
-            {menuGlyph(PIN_ICON)}
+          <button type="button" className={overflowMenuRowClass} onClick={item(onTogglePin)}>
+            {overflowMenuGlyph(PIN_ICON)}
             {pinned ? S.chat.unpinSession : S.chat.pinSession}
           </button>
-          <button type="button" className={menuRow} onClick={item(onRename)}>
-            {menuGlyph(PENCIL_ICON)}
+          <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
+            {overflowMenuGlyph(PENCIL_ICON)}
             {S.chat.renameSession}
           </button>
-          <button type="button" className={menuRow} onClick={item(onToggleArchive)}>
-            {menuGlyph(s.archived ? UNARCHIVE_ICON : ARCHIVE_ICON)}
+          <button type="button" className={overflowMenuRowClass} onClick={item(onToggleArchive)}>
+            {overflowMenuGlyph(s.archived ? UNARCHIVE_ICON : ARCHIVE_ICON)}
             {s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
           </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-            onClick={item(onDelete)}
-          >
+          <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
             {/* The glyph inherits the row's red. */}
             <span className="shrink-0">
               <Icon d={TRASH_ICON} size={13} />
@@ -2098,6 +2178,53 @@ function SessionRow({
         </Dropdown>
       </div>
     </li>
+  );
+}
+
+/**
+ * Registry-backed workspace group's overflow (… to the right of the header's "+"):
+ * 重命名工作区 / 删除工作区 in the session-row menu's compact style. Sits among the
+ * header's action buttons — outside the header's collapse toggle, so opening it never
+ * expands/collapses the group. Body-portaled like every menu inside the scroller.
+ */
+function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  /** Close first, then act (the rename modal opens on top; the delete is immediate). */
+  const item = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <Dropdown
+      open={open}
+      setOpen={setOpen}
+      portal={{ direction: "down", align: "right" }}
+      menuClass="w-32"
+      className="shrink-0"
+      button={
+        <button
+          type="button"
+          title={S.chat.workspaceMenu}
+          aria-label={S.chat.workspaceMenu}
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <EllipsisGlyph size={15} />
+        </button>
+      }
+    >
+      <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
+        {overflowMenuGlyph(PENCIL_ICON)}
+        {S.chat.renameWorkspace}
+      </button>
+      <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
+        <span className="shrink-0">
+          <Icon d={TRASH_ICON} size={13} />
+        </span>
+        {S.chat.deleteWorkspace}
+      </button>
+    </Dropdown>
   );
 }
 

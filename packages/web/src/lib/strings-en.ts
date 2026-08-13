@@ -874,6 +874,12 @@ export const en: Strings = {
     sortManual: "Manual order",
     sortRecent: "Most recent",
     newWorkspaceEntity: "New workspace",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "Workspace options",
+    renameWorkspace: "Rename workspace",
+    renameWorkspaceLabel: "Name",
+    renameWorkspaceHint: "Leave empty to use the folder name",
+    deleteWorkspace: "Remove workspace",
     tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",

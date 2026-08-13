@@ -270,7 +270,9 @@ export function WorkspaceSelect({
                     strokeLinejoin="round"
                   />
                 </svg>
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                <span className="min-w-0 flex-1 truncate" title={entry.name}>
+                  {entry.name}
+                </span>
               </button>
             </li>
           ))}
@@ -317,14 +319,16 @@ export function WorkspaceSelect({
   );
 
   // Custom trigger (sidebar header): portaled panel, right-aligned under the trigger —
-  // placement and flipping are the portal's job, so no dock measurement here.
+  // placement and flipping are the portal's job, so no dock measurement here. w-64
+  // (the Dropdown default menu width): the pill/form variants' w-80 overhung the
+  // sidebar; long entry names truncate with their full text in the row tooltip.
   if (trigger) {
     return (
       <Dropdown
         open={open}
         setOpen={setFormOpen}
         portal={{ direction: "down", align: "right" }}
-        menuClass="w-80"
+        menuClass="w-64"
         button={trigger(open, () => setFormOpen(!open))}
       >
         {menu}

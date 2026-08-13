@@ -831,6 +831,12 @@ export const zh = {
     sortManual: "手动排序",
     sortRecent: "最近更新",
     newWorkspaceEntity: "新建工作区",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "工作区选项",
+    renameWorkspace: "重命名工作区",
+    renameWorkspaceLabel: "名称",
+    renameWorkspaceHint: "留空则使用目录名",
+    deleteWorkspace: "删除工作区",
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
