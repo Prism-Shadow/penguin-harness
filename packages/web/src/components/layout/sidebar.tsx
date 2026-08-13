@@ -64,6 +64,12 @@ import {
   togglePinnedSession,
 } from "../../lib/pinned-sessions";
 import {
+  loadWorkspaceRegistry,
+  mergeRegisteredWorkspaces,
+  registerWorkspace,
+  saveWorkspaceRegistry,
+} from "../../lib/workspace-registry";
+import {
   applyManualReorder,
   initialSessionSortMode,
   loadSessionOrder,
@@ -96,10 +102,11 @@ import { Badge } from "../ui/badge";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
+import { Input, noAutofill } from "../ui/input";
 import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
+import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
   draftSessionTitle,
@@ -121,8 +128,25 @@ export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L
 const PIN_ICON =
   "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
 
-/** Horizontal ellipsis (lucide more-horizontal), the session row's overflow-menu trigger. */
-const ELLIPSIS_ICON = "M5 12h.01M12 12h.01M19 12h.01";
+/** Row-menu item glyphs (thin-line, leading each item per the reference design): pencil / archive / unarchive / trash. */
+const PENCIL_ICON = "M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3";
+const ARCHIVE_ICON =
+  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M9.5 13.5 12 16l2.5-2.5";
+const UNARCHIVE_ICON =
+  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3";
+const TRASH_ICON =
+  "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
+
+/** The session row's overflow-menu trigger: three FILLED dots (the stroke version read too faint against the last-active times). */
+function EllipsisGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="12" r="2" />
+      <circle cx="19" cy="12" r="2" />
+    </svg>
+  );
+}
 
 /** Magnifier (lucide search), the section header's search toggle. */
 const SEARCH_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
@@ -130,12 +154,35 @@ const SEARCH_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
 /** Horizontal sliders (lucide sliders-horizontal), the section header's list-settings menu. */
 const SLIDERS_ICON = "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6";
 
-/** Boxed plus (lucide square-plus), the section header's mode-dependent create button. */
-const ADD_BOX_ICON =
-  "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM12 8v8M8 12h8";
-
-/** Close cross (the search row's clear button). */
+/** Close cross (the expanded search field's clear button). */
 const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
+
+/**
+ * Mode-dependent create glyph: the entity's own icon (folder / robot) shrunk toward
+ * the top-left, with a plus badge in the freed bottom-right corner — no knockout disc
+ * needed (a background-colored punch would mismatch the hover pill), so it stays
+ * legible at icon size in both themes. Stroke style matches the shared Icon set.
+ */
+function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <g transform="translate(-1 -1) scale(0.82)">
+        <path d={base} />
+      </g>
+      <path d="M18.5 15.5v6M15.5 18.5h6" strokeWidth="2" />
+    </svg>
+  );
+}
 
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
@@ -328,6 +375,10 @@ export function Sidebar({
   const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
     loadSessionOrder(currentProjectId),
   );
+  /** Manually-added Workspaces (header 新建工作区; render as empty groups until Sessions exist); persisted per Project. */
+  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<readonly string[]>(() =>
+    loadWorkspaceRegistry(currentProjectId),
+  );
   /** Live title search: the input's visibility and its query (transient — never persisted). */
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -342,6 +393,7 @@ export function Sidebar({
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
     setSessionOrder(loadSessionOrder(currentProjectId));
+    setRegisteredWorkspaces(loadWorkspaceRegistry(currentProjectId));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -379,8 +431,11 @@ export function Sidebar({
     setNavCollapsed(next);
   };
 
-  /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last. */
-  const workspaceGroups = useMemo(() => groupSessionsByWorkspace(sessions), [sessions]);
+  /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last, plus the manually-added Workspaces as empty groups on top (newest registration first). */
+  const workspaceGroups = useMemo(
+    () => mergeRegisteredWorkspaces(groupSessionsByWorkspace(sessions), registeredWorkspaces),
+    [sessions, registeredWorkspaces],
+  );
 
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
@@ -659,6 +714,14 @@ export function Sidebar({
   /** Header create-button tooltip (the created object follows the grouping mode). */
   const newEntityLabel =
     newEntityForGroupMode(groupMode) === "agent" ? S.agent.create : S.chat.newWorkspaceEntity;
+
+  /** 新建工作区: register the browsed pick so it surfaces as a group immediately, Sessions or not. */
+  const addWorkspace = (path: string) => {
+    const next = registerWorkspace(registeredWorkspaces, path);
+    if (next === registeredWorkspaces) return;
+    setRegisteredWorkspaces(next);
+    saveWorkspaceRegistry(currentProjectId, next);
+  };
 
   const openSession = (s: SessionInfo) => {
     // Cross-group click: the current Agent follows this Session's own Agent.
@@ -1111,26 +1174,71 @@ export function Sidebar({
         </nav>
 
         {/* Section header: list label + right-aligned controls (icon + tooltip family):
-            search toggle, list settings (grouping + sort radios — the old inline
-            grouping toggle relocated into this menu), and the mode-dependent create
-            button (the created object follows the grouping mode). No ruled separator at
-            this boundary — see the nav toggle above; px-1 keeps the label's inset where
-            the full-bleed rule's -mx-2/px-3 pair used to put it. */}
-        <div className="mt-3 flex items-center justify-between px-1 pt-2">
-          <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            search, list settings (grouping + sort radios — the old inline grouping
+            toggle relocated into this menu), and the mode-dependent create button (the
+            created object follows the grouping mode). The search is a mac-style
+            IN-PLACE expansion — no extra row: the two grid columns tween (the 0fr/1fr
+            trick, horizontal), the label's column collapsing while the controls column
+            takes the full width and the field inside grows leftward over the label's
+            place; the magnifier morphs from toggle button into the field's leading
+            glyph. No ruled separator at this boundary — see the nav toggle above. */}
+        <div
+          className={`mt-3 grid items-center px-1 pt-2 transition-[grid-template-columns] duration-200 ease-out ${
+            searchOpen ? "grid-cols-[0fr_1fr]" : "grid-cols-[1fr_1fr]"
+          }`}
+        >
+          <span
+            className={`min-w-0 overflow-hidden whitespace-nowrap px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${
+              searchOpen ? "opacity-0" : "opacity-100"
+            }`}
+          >
             {S.chat.sessionList}
           </span>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              title={S.chat.searchSessions}
-              aria-label={S.chat.searchSessions}
-              aria-pressed={searchOpen}
-              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-              className={headerControlClass(searchOpen)}
-            >
-              <Icon d={SEARCH_ICON} size={14} />
-            </button>
+          <div className="flex min-w-0 items-center justify-end gap-0.5">
+            {searchOpen ? (
+              /* Expanded field: leading magnifier glyph + input + clear ×, one bordered
+                 box filling the row (its width rides the column tween). Esc and × both
+                 collapse it and drop the filter. */
+              <div className="flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md border border-gray-300 bg-white px-1.5 transition-colors duration-150 focus-within:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-500">
+                <span aria-hidden className="shrink-0 text-gray-400 dark:text-gray-500">
+                  <Icon d={SEARCH_ICON} size={12} />
+                </span>
+                <input
+                  autoFocus
+                  value={searchQuery}
+                  placeholder={S.chat.searchSessionsPlaceholder}
+                  aria-label={S.chat.searchSessions}
+                  {...noAutofill}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      closeSearch();
+                    }
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+                />
+                <button
+                  type="button"
+                  title={S.chat.searchClear}
+                  aria-label={S.chat.searchClear}
+                  onClick={closeSearch}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  <Icon d={CLOSE_ICON} size={11} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                title={S.chat.searchSessions}
+                aria-label={S.chat.searchSessions}
+                onClick={() => setSearchOpen(true)}
+                className={headerControlClass(false)}
+              >
+                <Icon d={SEARCH_ICON} size={14} />
+              </button>
+            )}
             <Dropdown
               open={listSettingsOpen}
               setOpen={setListSettingsOpen}
@@ -1185,59 +1293,46 @@ export function Sidebar({
                 }}
               />
             </Dropdown>
-            {/* Mode-dependent create — 具体新建的对象按分组方式决定: agent grouping opens
-                the Agents page's existing create dialog (route state), workspace grouping
-                starts a new-chat draft (a Workspace comes into being with the conversation
-                created in it — there is no standalone Workspace entity). */}
-            <button
-              type="button"
-              title={newEntityLabel}
-              aria-label={newEntityLabel}
-              onClick={() => {
-                if (newEntityForGroupMode(groupMode) === "agent") {
+            {/* Mode-dependent create — 具体新建的对象按分组方式决定, the icon following
+                suit (folder+ / robot+, a bottom-right plus badge on the entity's glyph):
+                agent grouping opens the Agents page's existing create dialog (route
+                state); workspace grouping opens the SAME directory-browse menu the
+                draft's workspace picker uses — the picked directory registers as a
+                workspace group immediately, Sessions or not. */}
+            {newEntityForGroupMode(groupMode) === "agent" ? (
+              <button
+                type="button"
+                title={newEntityLabel}
+                aria-label={newEntityLabel}
+                onClick={() => {
                   navigate("/agents", { state: { create: true } });
                   onNavigate?.();
-                } else {
-                  newChat(workspaceNewChatAgentId);
-                }
-              }}
-              className={headerControlClass(false)}
-            >
-              <Icon d={ADD_BOX_ICON} size={14} />
-            </button>
+                }}
+                className={headerControlClass(false)}
+              >
+                <AddBadgeIcon base={NAV_ICONS.agents} />
+              </button>
+            ) : (
+              <WorkspaceSelect
+                projectId={currentProjectId ?? ""}
+                workspace=""
+                onChange={addWorkspace}
+                trigger={(open, toggle) => (
+                  <button
+                    type="button"
+                    title={newEntityLabel}
+                    aria-label={newEntityLabel}
+                    aria-expanded={open}
+                    onClick={toggle}
+                    className={headerControlClass(open)}
+                  >
+                    <AddBadgeIcon base={FOLDER_ICON} />
+                  </button>
+                )}
+              />
+            )}
           </div>
         </div>
-
-        {/* Inline search row (revealed by the header toggle): live title filter over the
-            loaded rows of every group and folder. Transient — closing (×, Escape, or the
-            toggle) clears the filter; nothing persists. */}
-        {searchOpen && (
-          <div className="relative mt-1.5 px-1">
-            <Input
-              size="sm"
-              autoFocus
-              value={searchQuery}
-              placeholder={S.chat.searchSessionsPlaceholder}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  closeSearch();
-                }
-              }}
-              className="pr-7"
-            />
-            <button
-              type="button"
-              title={S.chat.searchClear}
-              aria-label={S.chat.searchClear}
-              onClick={closeSearch}
-              className="absolute inset-y-0 right-1 flex w-7 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <Icon d={CLOSE_ICON} size={13} />
-            </button>
-          </div>
-        )}
 
         {/* Parked draft conversations (unsent new chats, newest first): pinned above both
             grouping modes — they belong to no Agent or Workspace until sent. Hidden
@@ -1854,9 +1949,15 @@ function SessionRow({
   onToggleArchive: (s: SessionInfo) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  /** Menu row: the shared menu-item look, compacted to the row menu's scale. */
+  /** Menu row (reference-density): small text, compact padding, a leading thin-line glyph per item. */
   const menuRow =
-    "block w-full px-3 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+    "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+  /** The leading glyph, muted like the rest of the icon family (the delete row lets the red inherit instead). */
+  const menuGlyph = (d: string) => (
+    <span className="shrink-0 text-gray-400 dark:text-gray-500">
+      <Icon d={d} size={13} />
+    </span>
+  );
   /** Close the menu, then run the action (every item shares this). */
   const item = (fn: (x: SessionInfo) => void) => () => {
     setMenuOpen(false);
@@ -1938,22 +2039,25 @@ function SessionRow({
           setOpen={setMenuOpen}
           portal={{ direction: "down", align: "right" }}
           className="flex h-6 min-w-7 shrink-0 items-center justify-end"
-          menuClass="w-36"
+          menuClass="w-32"
           button={
             <>
+              {/* No hover pill on this trigger (a fill as wide as the date read ugly);
+                  feedback is the icon color deepening only, and the filled dots carry
+                  enough weight to read as interactive on their own. */}
               <button
                 type="button"
                 title={S.chat.sessionMenu}
                 aria-label={S.chat.sessionMenu}
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen(!menuOpen)}
-                className={`peer absolute inset-0 flex items-center justify-center rounded text-gray-400 transition-opacity duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 ${
+                className={`peer absolute inset-0 flex items-center justify-center text-gray-500 transition-all duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 ${
                   menuOpen
                     ? "opacity-100"
                     : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
                 }`}
               >
-                <Icon d={ELLIPSIS_ICON} size={15} />
+                <EllipsisGlyph />
               </button>
               {lastActive !== "" && (
                 <span
@@ -1969,19 +2073,26 @@ function SessionRow({
           }
         >
           <button type="button" className={menuRow} onClick={item(onTogglePin)}>
+            {menuGlyph(PIN_ICON)}
             {pinned ? S.chat.unpinSession : S.chat.pinSession}
           </button>
           <button type="button" className={menuRow} onClick={item(onRename)}>
+            {menuGlyph(PENCIL_ICON)}
             {S.chat.renameSession}
           </button>
           <button type="button" className={menuRow} onClick={item(onToggleArchive)}>
+            {menuGlyph(s.archived ? UNARCHIVE_ICON : ARCHIVE_ICON)}
             {s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
           </button>
           <button
             type="button"
-            className="block w-full px-3 py-1.5 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+            className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
             onClick={item(onDelete)}
           >
+            {/* The glyph inherits the row's red. */}
+            <span className="shrink-0">
+              <Icon d={TRASH_ICON} size={13} />
+            </span>
             {S.chat.deleteSession}
           </button>
         </Dropdown>

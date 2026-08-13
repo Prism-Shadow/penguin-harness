@@ -9,7 +9,7 @@
  *   tier (z-[60]) clears the Modal overlay.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { DirListResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -39,12 +39,19 @@ export function WorkspaceSelect({
   workspace,
   onChange,
   variant = "pill",
+  trigger,
 }: {
   projectId: string;
   workspace: string;
   onChange: (path: string) => void;
   /** Trigger style: the draft page's pill (default), or a dialog form control (see the header comment). */
   variant?: "pill" | "form";
+  /**
+   * Caller-rendered trigger (the sidebar's 新建工作区 header button): replaces the pill
+   * and switches the panel to the shared body portal — the sidebar's scroller would
+   * clip an in-flow panel. The same browse menu, byte for byte.
+   */
+  trigger?: (open: boolean, toggle: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   /**
@@ -308,6 +315,22 @@ export function WorkspaceSelect({
       </p>
     </div>
   );
+
+  // Custom trigger (sidebar header): portaled panel, right-aligned under the trigger —
+  // placement and flipping are the portal's job, so no dock measurement here.
+  if (trigger) {
+    return (
+      <Dropdown
+        open={open}
+        setOpen={setFormOpen}
+        portal={{ direction: "down", align: "right" }}
+        menuClass="w-80"
+        button={trigger(open, () => setFormOpen(!open))}
+      >
+        {menu}
+      </Dropdown>
+    );
+  }
 
   // Form: the shared full-width trigger (its label goes mono once a real path is set).
   if (variant === "form") {
