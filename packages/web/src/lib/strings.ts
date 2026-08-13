@@ -1174,6 +1174,11 @@ Benchmark：
     deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "对话选项",
+    pinSession: "置顶",
+    unpinSession: "取消置顶",
+    pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */

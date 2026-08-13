@@ -10,7 +10,10 @@
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
  * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
- * order -> bottom user config (theme / language / logout).
+ * order. Conversations can be pinned too (row ellipsis menu; persisted per Project in
+ * localStorage): pinned rows bubble to the top of their group's active list. Each row's
+ * trailing slot shows the compact last-active time at rest and swaps to the ellipsis menu
+ * on hover/focus -> bottom user config (theme / language / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -27,7 +30,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { formatMonthDay } from "../../lib/format";
+import { formatMonthDay, formatRelativeShort } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -53,6 +56,12 @@ import {
   initialNavGroupCollapsed,
   storeNavGroupCollapsed,
 } from "../../lib/nav-group-collapse";
+import {
+  loadPinnedSessions,
+  removePinnedSession,
+  savePinnedSessions,
+  togglePinnedSession,
+} from "../../lib/pinned-sessions";
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
@@ -99,6 +108,9 @@ export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L
 /** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
 const PIN_ICON =
   "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
+
+/** Horizontal ellipsis (lucide more-horizontal), the session row's overflow-menu trigger. */
+const ELLIPSIS_ICON = "M5 12h.01M12 12h.01M19 12h.01";
 
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
@@ -269,12 +281,17 @@ export function Sidebar({
   const [pinnedGroups, setPinnedGroups] = useState<ReadonlySet<string>>(() =>
     loadGroupSet(pinStoreKey),
   );
+  /** Pinned conversations (bubbled to the top of their group's active list), Session ids; persisted per Project frontend-side (lib/pinned-sessions.ts). */
+  const [pinnedSessions, setPinnedSessions] = useState<ReadonlySet<string>>(() =>
+    loadPinnedSessions(currentProjectId),
+  );
   // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
+    setPinnedSessions(loadPinnedSessions(currentProjectId));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
-  }, [collapseStoreKey, pinStoreKey]);
+  }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
@@ -351,6 +368,13 @@ export function Sidebar({
     else next.add(key);
     setPinnedGroups(next);
     saveGroupSet(pinStoreKey, next);
+  };
+
+  /** Pin / unpin one conversation (row menu; same toggle-and-persist convention). */
+  const toggleSessionPin = (sessionId: string) => {
+    const next = togglePinnedSession(pinnedSessions, sessionId);
+    setPinnedSessions(next);
+    savePinnedSessions(currentProjectId, next);
   };
 
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
@@ -456,6 +480,12 @@ export function Sidebar({
       remove(target.sessionId);
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));
+      // Prune its pin as well (removePinnedSession returns the same set when it wasn't pinned — skip the write then).
+      const prunedPins = removePinnedSession(pinnedSessions, target.sessionId);
+      if (prunedPins !== pinnedSessions) {
+        setPinnedSessions(prunedPins);
+        savePinnedSessions(currentProjectId, prunedPins);
+      }
       setDeletingSession(null);
       // The deleted session was the one open: jump to this Agent's next conversation, otherwise
       // fall back to the chat home page. Auto-opened conversations are never archived (hidden by
@@ -542,8 +572,11 @@ export function Sidebar({
           key={s.sessionId}
           s={s}
           active={s.sessionId === activeSessionId}
+          pinned={pinnedSessions.has(s.sessionId)}
+          lastActive={formatRelativeShort(s.createdAt, locale)}
           {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
           onOpen={openSession}
+          onTogglePin={(x) => toggleSessionPin(x.sessionId)}
           onRename={(x) => {
             setRenameError(null);
             setRenameText(x.title ?? "");
@@ -625,7 +658,11 @@ export function Sidebar({
     agentsFor: (category: SessionCategory) => string[],
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
-    const shownActive = parts.active.slice(0, cap);
+    // Pinned conversations bubble to the top of the group's active list (both grouping
+    // modes; the same pinnedFirst partition-keeping order the group pins use) — and land
+    // inside the display cap, so a pin is never hidden behind "More". Folder rows keep
+    // their chronological order: pinning is an active-list priority.
+    const shownActive = pinnedFirst(parts.active, (s) => s.sessionId, pinnedSessions).slice(0, cap);
     // Only the outer active rows drive the group's "More" — the folders never feed it:
     // hidden loaded rows exist, or the group's own active share isn't fully loaded yet.
     const activeAgents = agentsFor("active");
@@ -1438,27 +1475,50 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
   );
 }
 
-/** Single Session row: title + status dot/approval badge + hover action group (rename, archive/unarchive, delete). */
+/**
+ * Single Session row: title + pinned indicator + status dot/approval badge, and one
+ * trailing slot that swaps its content — at rest it shows the compact last-active time,
+ * on row hover / keyboard focus / while open it shows the ellipsis overflow menu
+ * instead (the menu trigger overlays the exact same slot; the old rename / archive /
+ * delete hover icons live inside the menu now, joined by pin — one glyph instead of a
+ * row of three). The menu panel goes through the Dropdown body portal so the sidebar
+ * scroller can't clip it.
+ */
 function SessionRow({
   s,
   active,
+  pinned,
+  lastActive,
   agentHint,
   onOpen,
+  onTogglePin,
   onRename,
   onDelete,
   onToggleArchive,
 }: {
   s: SessionInfo;
   active: boolean;
+  /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
+  pinned: boolean;
+  /** Preformatted compact last-active time ("" hides the slot's resting text). */
+  lastActive: string;
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   onOpen: (s: SessionInfo) => void;
+  onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
-  const actionBtn =
-    "flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus-visible:opacity-100 group-hover:opacity-100";
+  const [menuOpen, setMenuOpen] = useState(false);
+  /** Menu row: the shared menu-item look, compacted to the row menu's scale. */
+  const menuRow =
+    "block w-full px-3 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+  /** Close the menu, then run the action (every item shares this). */
+  const item = (fn: (x: SessionInfo) => void) => () => {
+    setMenuOpen(false);
+    fn(s);
+  };
   return (
     <li>
       <div
@@ -1491,6 +1551,16 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
+          {/* Pinned indicator: a dim pin after the title (tooltip + sr text; unpin lives in the row menu). */}
+          {pinned && (
+            <span
+              title={S.chat.pinnedSession}
+              className="shrink-0 text-gray-400 dark:text-gray-500"
+            >
+              <Icon d={PIN_ICON} size={12} />
+              <span className="sr-only">{S.chat.pinnedSession}</span>
+            </span>
+          )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusDot session={s} />
           {s.pendingApprovalCount > 0 && (
@@ -1499,47 +1569,63 @@ function SessionRow({
             </span>
           )}
         </button>
-        {/* Action group: rename + archive/unarchive + delete */}
-        <div className="flex shrink-0 items-center">
-          <button
-            type="button"
-            title={S.chat.renameSession}
-            aria-label={S.chat.renameSession}
-            onClick={() => onRename(s)}
-            className={`${actionBtn} hover:bg-gray-300/60 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200`}
-          >
-            <Icon d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3" size={14} />
+        {/* Trailing swap slot: resting last-active time / hover-focus-open ellipsis menu.
+            The trigger button overlays the whole slot (absolute inset-0), so the swap is a
+            pure opacity handoff in one footprint: time hides on row hover (group-hover),
+            when the trigger holds keyboard focus (peer-focus-visible; the button precedes
+            the time span so the peer combinator can reach it), and while the menu is open. */}
+        <Dropdown
+          open={menuOpen}
+          setOpen={setMenuOpen}
+          portal={{ direction: "down", align: "right" }}
+          className="flex h-6 min-w-7 shrink-0 items-center justify-end"
+          menuClass="w-36"
+          button={
+            <>
+              <button
+                type="button"
+                title={S.chat.sessionMenu}
+                aria-label={S.chat.sessionMenu}
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(!menuOpen)}
+                className={`peer absolute inset-0 flex items-center justify-center rounded text-gray-400 transition-opacity duration-150 hover:bg-gray-300/60 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200 ${
+                  menuOpen
+                    ? "opacity-100"
+                    : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                }`}
+              >
+                <Icon d={ELLIPSIS_ICON} size={15} />
+              </button>
+              {lastActive !== "" && (
+                <span
+                  aria-hidden
+                  className={`pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-visible:opacity-0 dark:text-gray-500 ${
+                    menuOpen ? "opacity-0" : ""
+                  }`}
+                >
+                  {lastActive}
+                </span>
+              )}
+            </>
+          }
+        >
+          <button type="button" className={menuRow} onClick={item(onTogglePin)}>
+            {pinned ? S.chat.unpinSession : S.chat.pinSession}
+          </button>
+          <button type="button" className={menuRow} onClick={item(onRename)}>
+            {S.chat.renameSession}
+          </button>
+          <button type="button" className={menuRow} onClick={item(onToggleArchive)}>
+            {s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
           </button>
           <button
             type="button"
-            title={s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
-            aria-label={s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
-            onClick={() => onToggleArchive(s)}
-            className={`${actionBtn} hover:bg-gray-300/60 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200`}
+            className="block w-full px-3 py-1.5 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+            onClick={item(onDelete)}
           >
-            <Icon
-              d={
-                s.archived
-                  ? "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3"
-                  : "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M9.5 13.5 12 16l2.5-2.5"
-              }
-              size={14}
-            />
+            {S.chat.deleteSession}
           </button>
-          <button
-            type="button"
-            title={S.chat.deleteSession}
-            aria-label={S.chat.deleteSession}
-            onClick={() => onDelete(s)}
-            className={`${actionBtn} hover:bg-gray-300/60 hover:text-red-600 dark:hover:bg-gray-700 dark:hover:text-red-400`}
-          >
-            {/* Trash can: lid (4..20), handle, body (5..19, symmetric sides), two vertical ribs */}
-            <Icon
-              d="M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6"
-              size={14}
-            />
-          </button>
-        </div>
+        </Dropdown>
       </div>
     </li>
   );

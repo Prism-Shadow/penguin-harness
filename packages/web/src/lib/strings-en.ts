@@ -1221,6 +1221,11 @@ Scenarios:
       `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "Chat options",
+    pinSession: "Pin",
+    unpinSession: "Unpin",
+    pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
