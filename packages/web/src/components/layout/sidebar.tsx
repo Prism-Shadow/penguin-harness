@@ -21,7 +21,7 @@
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type {
   SessionCategory,
@@ -45,6 +45,7 @@ import {
   SIDEBAR_PAGE_SIZE,
   aggregateWorkspaceCounts,
   groupSessionsByWorkspace,
+  matchesSessionQuery,
   partitionSessions,
   pinnedFirst,
   sessionCategory,
@@ -62,19 +63,30 @@ import {
   savePinnedSessions,
   togglePinnedSession,
 } from "../../lib/pinned-sessions";
+import {
+  applyManualReorder,
+  initialSessionSortMode,
+  loadSessionOrder,
+  moveInSequence,
+  orderSessionRows,
+  removeFromSessionOrder,
+  saveSessionOrder,
+  storeSessionSortMode,
+} from "../../lib/session-order";
+import type { SessionSortMode } from "../../lib/session-order";
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { AgentAvatar } from "../ui/agent-avatar";
-import { ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
+import { CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
   FolderSection,
   GroupHeader,
-  GroupModeToggle,
   Icon,
   MoreRow,
   initialGroupMode,
+  newEntityForGroupMode,
   storeGroupMode,
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
@@ -112,8 +124,33 @@ const PIN_ICON =
 /** Horizontal ellipsis (lucide more-horizontal), the session row's overflow-menu trigger. */
 const ELLIPSIS_ICON = "M5 12h.01M12 12h.01M19 12h.01";
 
+/** Magnifier (lucide search), the section header's search toggle. */
+const SEARCH_ICON = "M21 21l-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0z";
+
+/** Horizontal sliders (lucide sliders-horizontal), the section header's list-settings menu. */
+const SLIDERS_ICON = "M21 5h-7M10 5H3M21 12h-9M8 12H3M21 19h-5M12 19H3M14 2v6M8 9v6M16 16v6";
+
+/** Boxed plus (lucide square-plus), the section header's mode-dependent create button. */
+const ADD_BOX_ICON =
+  "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM12 8v8M8 12h8";
+
+/** Close cross (the search row's clear button). */
+const CLOSE_ICON = "M18 6L6 18M6 6l12 12";
+
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+
+/** Section-header icon control (search / list settings / create): the grouping-toggle button look — active renders as a pressed fill. */
+const headerControlClass = (active: boolean) =>
+  `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
+    active
+      ? "bg-gray-200/70 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+      : "text-gray-400 hover:bg-gray-200/50 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800/70 dark:hover:text-gray-300"
+  }`;
+
+/** Muted section label inside the list-settings menu (分组方式 / 排序方式). */
+const menuSectionClass =
+  "px-3 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
 
 /**
  * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
@@ -285,11 +322,26 @@ export function Sidebar({
   const [pinnedSessions, setPinnedSessions] = useState<ReadonlySet<string>>(() =>
     loadPinnedSessions(currentProjectId),
   );
+  /** Row sort mode ("recent" default / "manual" drag order; the choice persists across sessions like the grouping mode). */
+  const [sortMode, setSortModeState] = useState<SessionSortMode>(initialSessionSortMode);
+  /** Manual row order (Session ids; only relative order within a co-rendered partition matters); persisted per Project. */
+  const [sessionOrder, setSessionOrder] = useState<readonly string[]>(() =>
+    loadSessionOrder(currentProjectId),
+  );
+  /** Live title search: the input's visibility and its query (transient — never persisted). */
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  /** Header list-settings dropdown (grouping + sort radios). */
+  const [listSettingsOpen, setListSettingsOpen] = useState(false);
+  /** Row being dragged (manual sort only) and the current drop hint (target row + which edge). */
+  const [dragSession, setDragSession] = useState<{ scope: string; id: string } | null>(null);
+  const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null);
   // Project resolved on first load / switched: swap in that Project's persisted collapse/pin sets.
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
+    setSessionOrder(loadSessionOrder(currentProjectId));
     setGroupCap(SIDEBAR_GROUP_PAGE_SIZE);
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -376,6 +428,52 @@ export function Sidebar({
     setPinnedSessions(next);
     savePinnedSessions(currentProjectId, next);
   };
+
+  /** Switch the row sort mode (store-then-set convention). Leaving manual KEEPS the stored order — toggling back restores it. */
+  const setSortMode = (mode: SessionSortMode) => {
+    storeSessionSortMode(mode);
+    setSortModeState(mode);
+  };
+
+  /** Search active = a non-blank query is live-filtering the list. */
+  const searching = searchQuery.trim() !== "";
+
+  /** Title filter of one group's loaded rows (search only sees loaded pages — there is no server-side search). */
+  const filterRows = (rows: SessionInfo[]) =>
+    searching ? rows.filter((s) => matchesSessionQuery(s, searchQuery)) : rows;
+
+  /** Close the search row and drop the filter (the toggle button, the clear ×, and Escape all land here). */
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
+
+  /**
+   * Drop of a manual drag: commit the reordered partition sequence into the stored
+   * order (the sequence moves to the array's front; only relative order within a
+   * co-rendered partition is ever read, so other groups' ids are unaffected).
+   */
+  const commitManualDrop = (partitionIds: readonly string[], targetId: string, after: boolean) => {
+    if (!dragSession) return;
+    const seq = moveInSequence(partitionIds, dragSession.id, targetId, after);
+    const next = applyManualReorder(sessionOrder, seq);
+    setSessionOrder(next);
+    saveSessionOrder(currentProjectId, next);
+  };
+
+  /** Parked drafts through the live search (matched on their first-line title). */
+  const shownDrafts = searching
+    ? draftEntries.filter((e) =>
+        draftSessionTitle(e).toLowerCase().includes(searchQuery.trim().toLowerCase()),
+      )
+    : draftEntries;
+
+  /** Whether the active search hits anything anywhere (drafts included) — drives the quiet no-match line. */
+  const hasSearchMatches =
+    shownDrafts.length > 0 ||
+    (groupMode === "agent"
+      ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
+      : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
 
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
   const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
@@ -480,11 +578,17 @@ export function Sidebar({
       remove(target.sessionId);
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));
-      // Prune its pin as well (removePinnedSession returns the same set when it wasn't pinned — skip the write then).
+      // Prune its pin and manual-order entry as well (both helpers return the same
+      // reference when the id wasn't present — the write is skipped then).
       const prunedPins = removePinnedSession(pinnedSessions, target.sessionId);
       if (prunedPins !== pinnedSessions) {
         setPinnedSessions(prunedPins);
         savePinnedSessions(currentProjectId, prunedPins);
+      }
+      const prunedOrder = removeFromSessionOrder(sessionOrder, target.sessionId);
+      if (prunedOrder !== sessionOrder) {
+        setSessionOrder(prunedOrder);
+        saveSessionOrder(currentProjectId, prunedOrder);
       }
       setDeletingSession(null);
       // The deleted session was the one open: jump to this Agent's next conversation, otherwise
@@ -552,6 +656,10 @@ export function Sidebar({
   /** A Session always needs an Agent, so the workspace-mode "+" uses the current Agent, falling back to default_agent. */
   const workspaceNewChatAgentId = currentAgent?.agentId ?? defaultAgentId;
 
+  /** Header create-button tooltip (the created object follows the grouping mode). */
+  const newEntityLabel =
+    newEntityForGroupMode(groupMode) === "agent" ? S.agent.create : S.chat.newWorkspaceEntity;
+
   const openSession = (s: SessionInfo) => {
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
@@ -565,27 +673,87 @@ export function Sidebar({
   );
 
   /** Session rows shared by both modes; withAgentHint adds a small Agent avatar per row (workspace mode, where the group no longer names the Agent). */
-  const renderRows = (rows: SessionInfo[], withAgentHint: boolean) => (
+  const renderRows = (rows: SessionInfo[], withAgentHint: boolean, dragScope?: string) => (
     <ul className="space-y-0.5">
-      {rows.map((s) => (
-        <SessionRow
-          key={s.sessionId}
-          s={s}
-          active={s.sessionId === activeSessionId}
-          pinned={pinnedSessions.has(s.sessionId)}
-          lastActive={formatRelativeShort(s.createdAt, locale)}
-          {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
-          onOpen={openSession}
-          onTogglePin={(x) => toggleSessionPin(x.sessionId)}
-          onRename={(x) => {
-            setRenameError(null);
-            setRenameText(x.title ?? "");
-            setRenamingSession(x);
-          }}
-          onDelete={(x) => setDeletingSession(x)}
-          onToggleArchive={(x) => void toggleArchive(x)}
-        />
-      ))}
+      {rows.map((s) => {
+        // Manual-sort drag wiring (active lists only; never while searching — a filtered
+        // view is not the real order). A drop stays within its own scope AND its own
+        // pin partition: dragging can reorder but never pin or unpin.
+        const dragging =
+          dragScope !== undefined && dragSession?.scope === dragScope ? dragSession : null;
+        const samePartition =
+          dragging !== null &&
+          dragging.id !== s.sessionId &&
+          pinnedSessions.has(dragging.id) === pinnedSessions.has(s.sessionId);
+        const drag =
+          dragScope === undefined
+            ? {}
+            : {
+                draggable: true,
+                onDragStart: (e: ReactDragEvent) => {
+                  // Firefox refuses to start a drag without payload data.
+                  e.dataTransfer.setData("text/plain", s.sessionId);
+                  e.dataTransfer.effectAllowed = "move" as const;
+                  setDragSession({ scope: dragScope, id: s.sessionId });
+                },
+                onDragEnd: () => {
+                  setDragSession(null);
+                  setDropHint(null);
+                },
+                onDragOver: (e: ReactDragEvent) => {
+                  if (!dragging || !samePartition) return;
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const after = e.clientY - rect.top > rect.height / 2;
+                  setDropHint((prev) =>
+                    prev?.id === s.sessionId && prev.after === after
+                      ? prev
+                      : { id: s.sessionId, after },
+                  );
+                },
+                onDragLeave: () => setDropHint((prev) => (prev?.id === s.sessionId ? null : prev)),
+                onDrop: (e: ReactDragEvent) => {
+                  if (!dragging || !samePartition) return;
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const after = e.clientY - rect.top > rect.height / 2;
+                  const partitionIds = rows
+                    .filter(
+                      (r) => pinnedSessions.has(r.sessionId) === pinnedSessions.has(dragging.id),
+                    )
+                    .map((r) => r.sessionId);
+                  commitManualDrop(partitionIds, s.sessionId, after);
+                  setDragSession(null);
+                  setDropHint(null);
+                },
+                dropEdge:
+                  samePartition && dropHint?.id === s.sessionId
+                    ? dropHint.after
+                      ? ("below" as const)
+                      : ("above" as const)
+                    : null,
+              };
+        return (
+          <SessionRow
+            key={s.sessionId}
+            s={s}
+            active={s.sessionId === activeSessionId}
+            pinned={pinnedSessions.has(s.sessionId)}
+            lastActive={formatRelativeShort(s.createdAt, locale)}
+            {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
+            {...drag}
+            onOpen={openSession}
+            onTogglePin={(x) => toggleSessionPin(x.sessionId)}
+            onRename={(x) => {
+              setRenameError(null);
+              setRenameText(x.title ?? "");
+              setRenamingSession(x);
+            }}
+            onDelete={(x) => setDeletingSession(x)}
+            onToggleArchive={(x) => void toggleArchive(x)}
+          />
+        );
+      })}
     </ul>
   );
 
@@ -612,17 +780,24 @@ export function Sidebar({
     totals: SessionCategoryCounts | undefined,
   ) => {
     const rows = parts[category];
+    // While searching the folder speaks for its loaded MATCHES only: a match hidden
+    // behind a collapsed folder would look like a missing result (the models page's
+    // search-forces-open rationale), so the folder is forced open, labelled by the
+    // match count, hidden when nothing matches, and never offers "More" (the server
+    // cannot search unloaded rows).
+    if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
-    const total = Math.max(totals?.[category] ?? 0, rows.length);
+    const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
     // More while the group's share isn't fully loaded AND somewhere is left to fetch from
     // (counts drifting above reality would otherwise leave a dead button until reload).
-    const more = rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
+    const more =
+      !searching && rows.length < total && agentIds.some((id) => hasMoreFor(id, category));
     return (
       <FolderSection
         key={category}
         label={S.chat.folderGroups[category](total)}
-        open={openFolders.has(folderKey(groupKey, category))}
+        open={searching || openFolders.has(folderKey(groupKey, category))}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
         more={more}
         pending={pendingLoads.has(loadKey(groupKey, category))}
@@ -658,18 +833,26 @@ export function Sidebar({
     agentsFor: (category: SessionCategory) => string[],
   ) => {
     const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
-    // Pinned conversations bubble to the top of the group's active list (both grouping
-    // modes; the same pinnedFirst partition-keeping order the group pins use) — and land
-    // inside the display cap, so a pin is never hidden behind "More". Folder rows keep
-    // their chronological order: pinning is an active-list priority.
-    const shownActive = pinnedFirst(parts.active, (s) => s.sessionId, pinnedSessions).slice(0, cap);
+    // Row order: the pinned cluster always first (never hidden behind "More"); under
+    // manual sort the stored order additionally applies within each pin partition
+    // (lib/session-order.ts). Folder rows keep their chronological order: pinning and
+    // manual order are active-list concerns. While searching, the display cap is
+    // bypassed — every loaded match shows, and "More" hides (it pages the unfiltered
+    // list and would read as "more matches", which the server cannot promise).
+    const orderedActive = orderSessionRows(parts.active, (s) => s.sessionId, {
+      pinned: pinnedSessions,
+      sortMode,
+      order: sessionOrder,
+    });
+    const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     // Only the outer active rows drive the group's "More" — the folders never feed it:
     // hidden loaded rows exist, or the group's own active share isn't fully loaded yet.
     const activeAgents = agentsFor("active");
     const activeTotal = Math.max(totals?.active ?? 0, parts.active.length);
     const hasMore =
-      parts.active.length > cap ||
-      (parts.active.length < activeTotal && activeAgents.some((id) => hasMoreFor(id, "active")));
+      !searching &&
+      (parts.active.length > cap ||
+        (parts.active.length < activeTotal && activeAgents.some((id) => hasMoreFor(id, "active"))));
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
@@ -682,7 +865,13 @@ export function Sidebar({
             {S.chat.noSessions}
           </p>
         ) : (
-          renderRows(shownActive, withAgentHint)
+          // Drag-reorder is offered on the active list under manual sort (folders keep
+          // chronological order), and never on a search-filtered view.
+          renderRows(
+            shownActive,
+            withAgentHint,
+            sortMode === "manual" && !searching ? groupKey : undefined,
+          )
         )}
 
         {/* Load/reveal more (kept adjacent to the active list it extends, above the folders) */}
@@ -921,25 +1110,142 @@ export function Sidebar({
           </button>
         </nav>
 
-        {/* Section header: list label + grouping-mode toggle (the choice persists in localStorage).
-            No ruled separator at this boundary any more — under the nav group's chevron button
-            a line read as part of the button (and ugly); spacing alone (mt-3 + pt-2, the same
-            total gap the rule sat in) now separates the nav area from the list. px-1 keeps the
-            label's inset where the full-bleed rule's -mx-2/px-3 pair used to put it. */}
+        {/* Section header: list label + right-aligned controls (icon + tooltip family):
+            search toggle, list settings (grouping + sort radios — the old inline
+            grouping toggle relocated into this menu), and the mode-dependent create
+            button (the created object follows the grouping mode). No ruled separator at
+            this boundary — see the nav toggle above; px-1 keeps the label's inset where
+            the full-bleed rule's -mx-2/px-3 pair used to put it. */}
         <div className="mt-3 flex items-center justify-between px-1 pt-2">
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             {S.chat.sessionList}
           </span>
-          <GroupModeToggle value={groupMode} onChange={setGroupMode} />
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              title={S.chat.searchSessions}
+              aria-label={S.chat.searchSessions}
+              aria-pressed={searchOpen}
+              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              className={headerControlClass(searchOpen)}
+            >
+              <Icon d={SEARCH_ICON} size={14} />
+            </button>
+            <Dropdown
+              open={listSettingsOpen}
+              setOpen={setListSettingsOpen}
+              portal={{ direction: "down", align: "right" }}
+              menuClass="w-44"
+              button={
+                <button
+                  type="button"
+                  title={S.chat.listSettings}
+                  aria-label={S.chat.listSettings}
+                  aria-expanded={listSettingsOpen}
+                  onClick={() => setListSettingsOpen(!listSettingsOpen)}
+                  className={headerControlClass(listSettingsOpen)}
+                >
+                  <Icon d={SLIDERS_ICON} size={14} />
+                </button>
+              }
+            >
+              <p className={menuSectionClass}>{S.chat.groupModeSection}</p>
+              <MenuRadioRow
+                label={S.chat.groupByWorkspace}
+                checked={groupMode === "workspace"}
+                onSelect={() => {
+                  setGroupMode("workspace");
+                  setListSettingsOpen(false);
+                }}
+              />
+              <MenuRadioRow
+                label={S.chat.groupByAgent}
+                checked={groupMode === "agent"}
+                onSelect={() => {
+                  setGroupMode("agent");
+                  setListSettingsOpen(false);
+                }}
+              />
+              <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
+              <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
+              <MenuRadioRow
+                label={S.chat.sortManual}
+                checked={sortMode === "manual"}
+                onSelect={() => {
+                  setSortMode("manual");
+                  setListSettingsOpen(false);
+                }}
+              />
+              <MenuRadioRow
+                label={S.chat.sortRecent}
+                checked={sortMode === "recent"}
+                onSelect={() => {
+                  setSortMode("recent");
+                  setListSettingsOpen(false);
+                }}
+              />
+            </Dropdown>
+            {/* Mode-dependent create — 具体新建的对象按分组方式决定: agent grouping opens
+                the Agents page's existing create dialog (route state), workspace grouping
+                starts a new-chat draft (a Workspace comes into being with the conversation
+                created in it — there is no standalone Workspace entity). */}
+            <button
+              type="button"
+              title={newEntityLabel}
+              aria-label={newEntityLabel}
+              onClick={() => {
+                if (newEntityForGroupMode(groupMode) === "agent") {
+                  navigate("/agents", { state: { create: true } });
+                  onNavigate?.();
+                } else {
+                  newChat(workspaceNewChatAgentId);
+                }
+              }}
+              className={headerControlClass(false)}
+            >
+              <Icon d={ADD_BOX_ICON} size={14} />
+            </button>
+          </div>
         </div>
+
+        {/* Inline search row (revealed by the header toggle): live title filter over the
+            loaded rows of every group and folder. Transient — closing (×, Escape, or the
+            toggle) clears the filter; nothing persists. */}
+        {searchOpen && (
+          <div className="relative mt-1.5 px-1">
+            <Input
+              size="sm"
+              autoFocus
+              value={searchQuery}
+              placeholder={S.chat.searchSessionsPlaceholder}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  closeSearch();
+                }
+              }}
+              className="pr-7"
+            />
+            <button
+              type="button"
+              title={S.chat.searchClear}
+              aria-label={S.chat.searchClear}
+              onClick={closeSearch}
+              className="absolute inset-y-0 right-1 flex w-7 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              <Icon d={CLOSE_ICON} size={13} />
+            </button>
+          </div>
+        )}
 
         {/* Parked draft conversations (unsent new chats, newest first): pinned above both
             grouping modes — they belong to no Agent or Workspace until sent. Hidden
-            entirely while there are none. */}
-        {draftEntries.length > 0 && (
+            entirely while there are none; the search filter applies to their titles too. */}
+        {shownDrafts.length > 0 && (
           <div className="pt-2.5">
             <GroupHeader
-              open={!collapsedGroups.has(DRAFTS_GROUP_KEY)}
+              open={searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)}
               onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
               icon={
                 <span className="shrink-0 text-gray-400 dark:text-gray-500">
@@ -948,11 +1254,11 @@ export function Sidebar({
               }
               label={S.chat.draftGroup}
               uppercase
-              count={draftEntries.length}
+              count={shownDrafts.length}
             />
-            {!collapsedGroups.has(DRAFTS_GROUP_KEY) && (
+            {(searching || !collapsedGroups.has(DRAFTS_GROUP_KEY)) && (
               <ul className="space-y-0.5">
-                {draftEntries.map((entry) => (
+                {shownDrafts.map((entry) => (
                   <DraftRow
                     key={entry.id}
                     entry={entry}
@@ -970,9 +1276,14 @@ export function Sidebar({
           loading && agents.length === 0 ? (
             <SkeletonList rows={5} />
           ) : (
-            orderedAgents.slice(0, groupCap).map((agent) => {
-              const parts = partitionSessions(byAgent.get(agent.agentId) ?? []);
-              const collapsed = collapsedGroups.has(agent.agentId);
+            // While searching: every group renders (cap bypassed), zero-match groups
+            // hide, and the rest are forced open — a hit inside a collapsed group would
+            // look like a missing result.
+            orderedAgents.slice(0, searching ? orderedAgents.length : groupCap).map((agent) => {
+              const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
+              if (searching && groupRows.length === 0) return null;
+              const parts = partitionSessions(groupRows);
+              const collapsed = !searching && collapsedGroups.has(agent.agentId);
               const pinned = pinnedGroups.has(agent.agentId);
               return (
                 <div key={agent.agentId} className="pt-2.5">
@@ -1029,75 +1340,91 @@ export function Sidebar({
             })
           )
         ) : null}
-        {groupMode === "agent" && orderedAgents.length > groupCap
+        {groupMode === "agent" && !searching && orderedAgents.length > groupCap
           ? moreGroupsRow(orderedAgents.length)
           : null}
         {groupMode === "agent" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
-        ) : orderedWorkspaceGroups.length === 0 ? (
+        ) : orderedWorkspaceGroups.length === 0 && !searching ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
             {S.chat.noSessions}
           </p>
         ) : (
-          orderedWorkspaceGroups.slice(0, groupCap).map((group) => {
-            const parts = partitionSessions(group.sessions);
-            const collapsed = collapsedGroups.has(group.key);
-            const pinned = pinnedGroups.has(group.key);
-            /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
-            const counts = workspaceGroupCounts.get(group.key);
-            const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
-            const agentsFor = (category: SessionCategory) => [
-              ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
-            ];
-            return (
-              <div key={group.key} className="pt-2.5">
-                {/* Group header: collapse toggle (folder icon + directory basename + count, full
+          // Same search treatment as agent mode: cap bypassed, zero-match groups hidden, the rest forced open.
+          orderedWorkspaceGroups
+            .slice(0, searching ? orderedWorkspaceGroups.length : groupCap)
+            .map((group) => {
+              const groupRows = filterRows(group.sessions);
+              if (searching && groupRows.length === 0) return null;
+              const parts = partitionSessions(groupRows);
+              const collapsed = !searching && collapsedGroups.has(group.key);
+              const pinned = pinnedGroups.has(group.key);
+              /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
+              const counts = workspaceGroupCounts.get(group.key);
+              const contributingAgents = [...new Set(group.sessions.map((s) => s.agentId))];
+              const agentsFor = (category: SessionCategory) => [
+                ...new Set([...(counts?.agents[category] ?? []), ...contributingAgents]),
+              ];
+              return (
+                <div key={group.key} className="pt-2.5">
+                  {/* Group header: collapse toggle (folder icon + directory basename + count, full
                     path in the tooltip; the count = the group's active conversations only, exact
                     server share, loaded rows win a disagreement — the folders never feed it) +
                     pin + new chat in this Workspace. */}
-                <GroupHeader
-                  open={!collapsed}
-                  onToggle={() => toggleGroup(group.key)}
-                  icon={
-                    /* Folder opens and closes with the group */
-                    <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                      <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
-                    </span>
-                  }
-                  label={group.temp ? S.chat.tempWorkspaces : group.label}
-                  count={Math.max(counts?.totals.active ?? 0, parts.active.length)}
-                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
-                  actions={
-                    <>
-                      <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                      {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
-                      <button
-                        type="button"
-                        title={S.chat.newSessionInWorkspace}
-                        aria-label={S.chat.newSessionInWorkspace}
-                        onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                      >
-                        <Icon d="M12 5v14M5 12h14" size={18} />
-                      </button>
-                    </>
-                  }
-                />
+                  <GroupHeader
+                    open={!collapsed}
+                    onToggle={() => toggleGroup(group.key)}
+                    icon={
+                      /* Folder opens and closes with the group */
+                      <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                        <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
+                      </span>
+                    }
+                    label={group.temp ? S.chat.tempWorkspaces : group.label}
+                    count={
+                      searching
+                        ? parts.active.length
+                        : Math.max(counts?.totals.active ?? 0, parts.active.length)
+                    }
+                    {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                    actions={
+                      <>
+                        <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
+                        {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
+                        <button
+                          type="button"
+                          title={S.chat.newSessionInWorkspace}
+                          aria-label={S.chat.newSessionInWorkspace}
+                          onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                        >
+                          <Icon d="M12 5v14M5 12h14" size={18} />
+                        </button>
+                      </>
+                    }
+                  />
 
-                {/* A workspace group can span Agents: the group body fans folder loads and "More"
+                  {/* A workspace group can span Agents: the group body fans folder loads and "More"
                     out per category to the Agents whose share of THIS group is non-zero (plus the
                     Agents already contributing loaded rows) — the active list and each folder
                     page independently. */}
-                {collapsed
-                  ? null
-                  : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
-              </div>
-            );
-          })
+                  {collapsed
+                    ? null
+                    : renderGroupBody(group.key, parts, true, counts?.totals, agentsFor)}
+                </div>
+              );
+            })
         )}
-        {groupMode === "workspace" && orderedWorkspaceGroups.length > groupCap
+        {groupMode === "workspace" && !searching && orderedWorkspaceGroups.length > groupCap
           ? moreGroupsRow(orderedWorkspaceGroups.length)
           : null}
+
+        {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
+        {searching && !hasSearchMatches && (
+          <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+            {S.chat.searchNoMatches}
+          </p>
+        )}
       </div>
 
       {/* Bottom user config */}
@@ -1490,6 +1817,13 @@ function SessionRow({
   pinned,
   lastActive,
   agentHint,
+  draggable = false,
+  dropEdge = null,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
   onOpen,
   onTogglePin,
   onRename,
@@ -1504,6 +1838,15 @@ function SessionRow({
   lastActive: string;
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
+  /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
+  draggable?: boolean;
+  /** Drop indicator edge while another row hovers over this one (a thin accent line above/below). */
+  dropEdge?: "above" | "below" | null;
+  onDragStart?: (e: ReactDragEvent) => void;
+  onDragEnd?: () => void;
+  onDragOver?: (e: ReactDragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: ReactDragEvent) => void;
   onOpen: (s: SessionInfo) => void;
   onTogglePin: (s: SessionInfo) => void;
   onRename: (s: SessionInfo) => void;
@@ -1520,9 +1863,25 @@ function SessionRow({
     fn(s);
   };
   return (
-    <li>
+    <li
+      className="relative"
+      {...(draggable
+        ? { draggable: true, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop }
+        : {})}
+    >
+      {/* Manual-drag drop indicator: a thin accent line on the edge the drop would land on (both themes read it against the row gap). */}
+      {dropEdge !== null && (
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-[var(--accent-bg)] ${
+            dropEdge === "above" ? "-top-px" : "-bottom-px"
+          }`}
+        />
+      )}
       <div
         className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+          draggable ? "cursor-grab " : ""
+        }${
           active
             ? "bg-gray-200/70 dark:bg-gray-800"
             : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
@@ -1628,6 +1987,29 @@ function SessionRow({
         </Dropdown>
       </div>
     </li>
+  );
+}
+
+/** List-settings menu option: label left, checkmark marks the active choice (reference-style radio row; aria-pressed carries the state). */
+function MenuRadioRow({
+  label,
+  checked,
+  onSelect,
+}: {
+  label: string;
+  checked: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      onClick={onSelect}
+      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+    >
+      <span className="truncate">{label}</span>
+      {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
+    </button>
   );
 }
 

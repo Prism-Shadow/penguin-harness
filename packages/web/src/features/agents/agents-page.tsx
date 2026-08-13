@@ -14,8 +14,8 @@
  * gray placeholder with an undeletable tooltip) are square icon buttons (tooltip shows the full
  * name); "Create Agent" only fills in name + description.
  */
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -100,6 +100,19 @@ export function AgentsPage() {
     setIdError(undefined);
     setCreateOpen(true);
   };
+
+  // Cross-page create intent (the sidebar's mode-dependent "new" button navigates here
+  // with { create: true } route state — the chat draft's route-state idiom): open the
+  // existing create dialog once, then strip the state so a refresh or back-nav doesn't
+  // reopen it.
+  const location = useLocation();
+  const createIntent = (location.state as { create?: boolean } | null)?.create === true;
+  useEffect(() => {
+    if (!createIntent) return;
+    openCreate();
+    navigate(location.pathname, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createIntent]);
   /** Agent pending delete confirmation (null = none). */
   const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);

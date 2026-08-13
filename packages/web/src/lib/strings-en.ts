@@ -863,6 +863,17 @@ export const en: Strings = {
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
+    /** Session-list section header controls: search / list settings / mode-dependent create (the created object follows the grouping mode). */
+    searchSessions: "Search chats",
+    searchSessionsPlaceholder: "Search chats…",
+    searchClear: "Clear search",
+    searchNoMatches: "No matching chats",
+    listSettings: "List options",
+    groupModeSection: "Group by",
+    sortModeSection: "Sort by",
+    sortManual: "Manual order",
+    sortRecent: "Most recent",
+    newWorkspaceEntity: "New workspace",
     tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",

@@ -820,6 +820,17 @@ export const zh = {
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按 Agent 分组",
+    /** Session-list section header controls: search / list settings / mode-dependent create (具体新建的对象按分组方式决定). */
+    searchSessions: "搜索会话",
+    searchSessionsPlaceholder: "搜索会话…",
+    searchClear: "清除搜索",
+    searchNoMatches: "无匹配会话",
+    listSettings: "列表选项",
+    groupModeSection: "分组方式",
+    sortModeSection: "排序方式",
+    sortManual: "手动排序",
+    sortRecent: "最近更新",
+    newWorkspaceEntity: "新建工作区",
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
