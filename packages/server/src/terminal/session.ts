@@ -192,21 +192,36 @@ export class TerminalSession {
     });
 
     this.ptyProcess.onData((chunk) => {
-      this.terminal.write(chunk);
       this.inputMode.feed(chunk);
-      for (const listener of [...this.outputListeners]) safely(() => listener(chunk));
+      // Publish only once the emulator has consumed the chunk (`write` parses async).
+      // Publishing eagerly opens a gap where a client attaches after the publication but
+      // before the parse: the snapshot it restores from lacks the bytes AND its output
+      // subscription started too late — the chunk is simply lost to that client. Ordering
+      // behind the write callback makes every byte either part of the snapshot or
+      // delivered through the subscription, never neither.
+      this.terminal.write(chunk, () => {
+        for (const listener of [...this.outputListeners]) safely(() => listener(chunk));
+      });
     });
 
     this.ptyProcess.onExit(({ exitCode, signal }) => {
-      // The screen is still readable after the shell exits, so the tail is captured here and
-      // the session is kept (briefly) by the manager — a reload right after `exit` shows what
-      // happened instead of an empty box.
-      this.exitInfo = {
-        exitCode,
-        signal: signal ?? null,
-        lastOutputLines: lastNonEmptyLines(this.terminal, EXIT_OUTPUT_LINE_LIMIT),
+      // The screen is still readable after the shell exits, so the tail is captured and the
+      // session is kept (briefly) by the manager — a reload right after `exit` shows what
+      // happened instead of an empty box. Capture must wait for the emulator to drain its
+      // async write queue, or the final burst of output is missing from the tail.
+      const finalize = (): void => {
+        if (this.exitInfo) return;
+        this.exitInfo = {
+          exitCode,
+          signal: signal ?? null,
+          lastOutputLines: this.disposed
+            ? []
+            : lastNonEmptyLines(this.terminal, EXIT_OUTPUT_LINE_LIMIT),
+        };
+        for (const listener of [...this.exitListeners]) safely(() => listener(this.exitInfo!));
       };
-      for (const listener of [...this.exitListeners]) safely(() => listener(this.exitInfo!));
+      if (this.disposed) return finalize(); // a disposed emulator accepts no more writes
+      this.terminal.write("", finalize);
     });
   }
 

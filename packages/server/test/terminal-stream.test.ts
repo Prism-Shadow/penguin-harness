@@ -217,6 +217,52 @@ describePty("terminal stream handshake", () => {
     TEST_TIMEOUT,
   );
 
+  // The refusal cases below use a bogus id on purpose: cookie and origin are checked
+  // before the session lookup, and not creating a terminal keeps this suite's total under
+  // the per-user cap the later scenarios rely on.
+  it(
+    "treats a malformed cookie escape as unauthenticated, not as a server error",
+    async () => {
+      // "%" is an invalid percent escape: decodeURIComponent throws, and in the `upgrade`
+      // handler an uncaught throw would take down the whole server (unauthenticated DoS).
+      await expectRefused("irrelevant", { cookie: "penguin_session=%" }, 401);
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    "refuses a same-host origin on a different port — cookies are port-agnostic",
+    async () => {
+      await expectRefused(
+        "irrelevant",
+        { cookie: adminCookie, origin: `http://127.0.0.1:${port + 1}` },
+        403,
+      );
+      // The old check blanket-allowed every loopback origin; any local dev server's page
+      // could ride the session cookie into a shell.
+      await expectRefused(
+        "irrelevant",
+        { cookie: adminCookie, origin: "http://localhost:5173" },
+        403,
+      );
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    "accepts the genuinely same-origin handshake",
+    async () => {
+      const terminal = await createTerminal();
+      try {
+        const client = await attach(terminal.id, { origin: `http://127.0.0.1:${port}` });
+        await client.close();
+      } finally {
+        await api.delete(`/api/terminals/${terminal.id}`);
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   it(
     "answers 404 for unknown ids and for another user's terminal",
     async () => {

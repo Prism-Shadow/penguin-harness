@@ -35,6 +35,13 @@ import type { TerminalSession } from "./session.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
+/**
+ * Cap on bytes queued towards one viewer. `ws.send` buffers without limit when the peer
+ * cannot drain; a detached or slow viewer attached to a noisy shell would otherwise grow
+ * server memory unboundedly, once per viewer.
+ */
+const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+
 export interface TerminalWebSocketDeps {
   manager: TerminalManager;
   authService: AuthService;
@@ -78,7 +85,16 @@ function bindStream(
   ws.binaryType = "nodebuffer";
 
   const send = (bytes: Uint8Array): void => {
-    if (ws.readyState === ws.OPEN) ws.send(bytes);
+    if (ws.readyState !== ws.OPEN) return;
+    ws.send(bytes);
+    // Backpressure: cut a lagging viewer off instead of buffering for it forever — a
+    // reattach rebuilds the exact screen from the server-side snapshot anyway.
+    if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+      log(
+        `[terminal] stream ${session.id}: viewer too slow (${ws.bufferedAmount}B queued), disconnecting`,
+      );
+      ws.terminate();
+    }
   };
 
   // Buffers output until the Restore frame has been sent (see the attach sequence above).
@@ -170,21 +186,23 @@ function bindStream(
 
 /**
  * A WebSocket handshake bypasses CORS entirely, so any origin may attempt one and the cookie
- * still rides along. Only same-origin and loopback origins (the Vite dev server proxies from
- * :7365 to the API port) are accepted.
+ * still rides along. Only a genuinely same-origin page may connect: host AND port must match
+ * the Host the browser targeted. Cookies are port-agnostic, so anything looser (hostname-only,
+ * or a blanket loopback allowance) would let a page served by any other local server ride the
+ * session cookie into a shell. The Vite dev server proxies with `changeOrigin: false`, so the
+ * browser's own Host survives the proxy and this comparison holds in development too.
  */
 function isAllowedOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true; // non-browser client (CLI, tests): no ambient cookie to abuse
-  let hostname: string;
+  let parsed: URL;
   try {
-    hostname = new URL(origin).hostname;
+    parsed = new URL(origin);
   } catch {
     return false;
   }
-  const host = (req.headers.host ?? "").split(":")[0] ?? "";
-  if (hostname === host) return true;
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  return parsed.host === (req.headers.host ?? "");
 }
 
 function readCookie(header: string | undefined, name: string): string | null {
@@ -193,7 +211,13 @@ function readCookie(header: string | undefined, name: string): string | null {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
     if (part.slice(0, eq).trim() !== name) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      // A malformed percent escape is an invalid credential, not a server error — this
+      // runs in the `upgrade` handler, where a throw would take the whole process down.
+      return null;
+    }
   }
   return null;
 }
