@@ -10,7 +10,9 @@
 # at the cost of some inodes.
 #
 # macOS release artifacts are Developer ID signed and notarized in CI when the signing
-# secrets are present; unsigned dry-run builds remain possible outside the release path.
+# secrets are present. Windows release artifacts are Authenticode-signed through EVSign
+# during packaging so update metadata is generated from the final signed bytes. Unsigned
+# dry-run builds remain possible outside the release path.
 appId: com.prismshadow.penguinharness
 productName: PenguinHarness
 # Declaring the publish target is what makes electron-builder emit the update metadata
@@ -56,6 +58,20 @@ win:
   # exe (>=256px required).
   icon: build/icon.png
   artifactName: penguin-desktop-win32-${arch}.${ext}
+  verifyUpdateCodeSignature: true
+  signExts:
+    - PenguinHarness.exe
+    - elevate.exe
+    - penguin-desktop-win32-x64.exe
+    - .__uninstaller.exe
+    - "!.exe"
+  signtoolOptions:
+    sign: build/evsign.cjs
+    signingHashAlgorithms:
+      - sha256
+    publisherName:
+      - CN=RushRush Network Technology Ltd, O=RushRush Network Technology Ltd
+      - RushRush Network Technology Ltd
   target:
     - target: nsis
       arch: [x64]
