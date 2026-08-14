@@ -1224,7 +1224,13 @@ Benchmark：
     mainSessionNote: "主会话请在对话区查看",
     empty: "本次任务尚未派生子智能体",
     nodeRunning: "运行中",
+    nodeStopping: "停止中",
     nodeDone: "已完成",
+    stop: "停止子智能体",
+    stopPending: "正在停止…",
+    messageRunningPlaceholder: "发送纠偏消息…",
+    messageIdlePlaceholder: "继续这个子智能体…",
+    send: "发送",
   },
 
   files: {

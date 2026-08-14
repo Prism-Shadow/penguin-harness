@@ -233,6 +233,11 @@ export interface SubagentHandle {
     /** The parent Agent's approval callback; forwarded to the child Session to inherit the parent's approval mode. */
     approve?: ApproveFn;
   }): AsyncGenerator<OmniMessage>;
+  /**
+   * Queues a user steering message into the child Session's currently running Task. Returns
+   * false when the Task has not reached a steerable engine state (or has already ended).
+   */
+  steer?(prompt: string): boolean;
   /** Releases runtime resources held by the child Session (e.g. its managed command sessions). Idempotent. */
   dispose(): void;
 }
@@ -367,6 +372,24 @@ export interface BackgroundCommandInfo {
   running: boolean;
 }
 
+/** One child Session currently retained by a parent Session's subagent registry. */
+export interface BackgroundSubagentInfo {
+  /** The child Session id used by message origins and the Agents panel. */
+  sessionId: string;
+  /** Current lifecycle state. `stopping` lasts until the interrupted run has unwound. */
+  status: "running" | "stopping" | "idle";
+  /** Start of the current/most-recent run (epoch milliseconds), when known. */
+  startedAt: number | null;
+  /** End of the most-recent run (epoch milliseconds); null while it is active. */
+  endedAt: number | null;
+  /** Tool approvals currently waiting for a human decision. */
+  pendingApprovals: number;
+}
+
+/** Result of delivering a user-authored message to a retained child Session. */
+export type SubagentMessageResult =
+  "steered" | "started" | "not_found" | "not_running" | "stopping";
+
 /**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
@@ -386,6 +409,26 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /** Retained child Sessions owned by this Environment. Optional for standalone embedders. */
+  listSubagents?(): BackgroundSubagentInfo[];
+  /** Steers a running child, or starts a follow-up run when it is idle. */
+  sendSubagentMessage?(sessionId: string, prompt: string): SubagentMessageResult;
+  /** Interrupts one child run without disposing its Session; false when unknown/already idle. */
+  interruptSubagent?(sessionId: string): boolean;
+  /** Interrupts every currently running child and returns the number signalled. */
+  interruptAllSubagents?(): number;
+  /**
+   * Installs a long-lived human-approval sink for background child runs. Tool-local sinks
+   * temporarily take precedence and fall back to this one when their collection window ends.
+   */
+  setSubagentApprovalSink?(approve: ApproveFn | null): void;
+  /** Receives child messages produced outside an active run_subagent/input_subagent window, plus lifecycle changes. */
+  setSubagentEventSink?(
+    sink: {
+      message: (message: OmniMessage) => void;
+      change: () => void;
+    } | null,
+  ): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

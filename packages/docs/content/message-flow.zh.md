@@ -113,4 +113,4 @@ Human ──run(newMessages)──► engine
 
 ## 传输层顺序(SSE)
 
-Server 把上述输出流原样(单行 JSON)推入 per-Session SSE 通道：事件 id 单调递增，有界缓冲支持断线补发，重放窗口失效时以 `resync_required` 通知客户端重拉历史。事件次序：重连时补发的缺口(或 `resync_required`)在前，随后才是权威的 `task_state` 快照与未决审批；全新连接不重放缓冲，首条即为 `task_state` 快照。细节见 [Server API](/server-api) 的流式接口一节；自带 Web App 的"连接先行 + 去重"消费模式亦在该页。
+Server 把上述输出流原样(单行 JSON)推入 per-Session SSE 通道：事件 id 单调递增，有界缓冲支持断线补发，重放窗口失效时以 `resync_required` 通知客户端重拉历史。事件次序：重连时补发的缺口(或 `resync_required`)在前，随后才是权威的 `task_state`、`subagent_state` 快照与未决审批；全新连接不重放缓冲，前两条依次为这两个状态快照。细节见 [Server API](/server-api) 的流式接口一节；自带 Web App 的"连接先行 + 去重"消费模式亦在该页。

@@ -24,7 +24,12 @@ import {
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  BackgroundSubagentInfo,
+  OmniMessage,
+  TextPayload,
+} from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -133,6 +138,105 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const err = await manager.startTask("session-ghost", [userText("x")]).catch((e: unknown) => e);
     expect((err as { status: number }).status).toBe(404);
+  });
+
+  it("lists, steers/starts and interrupts only children owned by the parent runtime", () => {
+    let states: BackgroundSubagentInfo[] = [
+      {
+        sessionId: "child-1",
+        status: "running",
+        startedAt: Date.parse("2026-08-14T01:00:00.000Z"),
+        endedAt: null,
+        pendingApprovals: 1,
+      },
+    ];
+    const sent: Array<[string, string]> = [];
+    const interrupted: string[] = [];
+    const fake: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      listSubagents: () => states,
+      sendSubagentMessage: (sessionId, prompt) => {
+        sent.push([sessionId, prompt]);
+        return sessionId === "child-1"
+          ? states[0]!.status === "idle"
+            ? "started"
+            : "steered"
+          : "not_found";
+      },
+      interruptSubagent: (sessionId) => {
+        if (sessionId !== "child-1" || states[0]!.status !== "running") return false;
+        interrupted.push(sessionId);
+        states = [{ ...states[0]!, status: "stopping" }];
+        return true;
+      },
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(ROW, fake);
+
+    expect(manager.listSubagents("session-1")).toEqual([
+      {
+        sessionId: "child-1",
+        status: "running",
+        startedAt: "2026-08-14T01:00:00.000Z",
+        endedAt: null,
+        pendingApprovals: 1,
+      },
+    ]);
+    expect(manager.sendSubagentMessage("session-1", "child-1", "correct")).toBe("steered");
+    expect(sent).toEqual([["child-1", "correct"]]);
+    expect(manager.interruptSubagent("session-1", "child-1")).toBe(true);
+    expect(interrupted).toEqual(["child-1"]);
+    expect(() => manager.sendSubagentMessage("session-1", "other-child", "x")).toThrowError(
+      expect.objectContaining({ status: 404, code: "subagent_not_found" }),
+    );
+  });
+
+  it("publishes background child output/state and keeps approvals usable after the parent Task", async () => {
+    let sink: { message: (message: OmniMessage) => void; change: () => void } | null = null;
+    let approve: ApproveFn | null = null;
+    let state: BackgroundSubagentInfo = {
+      sessionId: "child-1",
+      status: "running",
+      startedAt: Date.now(),
+      endedAt: null,
+      pendingApprovals: 0,
+    };
+    const fake: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      listSubagents: () => [state],
+      setSubagentApprovalSink: (next) => {
+        approve = next;
+      },
+      setSubagentEventSink: (next) => {
+        sink = next;
+      },
+    };
+    const manager = makeManager(loaderOf(fake));
+    const events = capture("session-1");
+    manager.adopt(ROW, fake);
+
+    sink!.message(withOrigin(assistantText("background result"), "child-1"));
+    await waitFor(() => recorded.length === 1);
+    expect(JSON.parse(events[0]!.data)).toMatchObject({
+      origin: ["child-1"],
+      payload: { text: "background result" },
+    });
+
+    const tc = withOrigin(
+      toolCall({ name: "write_file", arguments: "{}", toolCallId: "child-tc" }),
+      "child-1",
+    );
+    const decision = approve!(tc);
+    expect(manager.pendingApprovalCount("session-1")).toBe(1);
+    expect(manager.decideApproval("session-1", "child-tc", "allow")).toBe(true);
+    await expect(decision).resolves.toBe("allow");
+
+    state = { ...state, status: "idle", endedAt: Date.now(), pendingApprovals: 0 };
+    sink!.change();
+    expect(serverEvents(events).at(-1)).toMatchObject({
+      type: "subagent_state",
+      subagents: [{ sessionId: "child-1", status: "idle" }],
+    });
   });
 
   it("startTask: publishes the input first; when driving ends it returns to idle and pushes task_state", async () => {
@@ -680,6 +784,27 @@ describe("session-manager", () => {
     expect((err as { code: string }).code).toBe("shutting_down");
     const compactErr = await manager.startCompact("session-1").catch((e: unknown) => e);
     expect((compactErr as { status: number }).status).toBe(503);
+  });
+
+  it("shutdown also interrupts background children of an idle parent and detaches their host sinks", async () => {
+    let interrupted = 0;
+    const approvals: Array<ApproveFn | null> = [];
+    const events: Array<{ message: (message: OmniMessage) => void; change: () => void } | null> =
+      [];
+    const fake: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      interruptAllSubagents: () => ++interrupted,
+      setSubagentApprovalSink: (sink) => approvals.push(sink),
+      setSubagentEventSink: (sink) => events.push(sink),
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(ROW, fake);
+
+    await manager.shutdown();
+
+    expect(interrupted).toBe(1);
+    expect(approvals.at(-1)).toBeNull();
+    expect(events.at(-1)).toBeNull();
   });
 
   it("sweepIdle: entries idle past the timeout are evicted (reloaded via the loader on next access)", async () => {

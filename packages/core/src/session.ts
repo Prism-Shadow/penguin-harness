@@ -35,9 +35,12 @@ import { imagesToScratchpadPaths } from "./internal/session-support.js";
 import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
+  ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   EnvironmentInterface,
   LLMInterface,
+  SubagentMessageResult,
   ToolPermission,
 } from "./interfaces.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
@@ -294,13 +297,24 @@ export class Session {
    * Docs: /docs/goal-mode.
    */
   async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
-    if (opts?.goal) {
-      // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
-      const { goal, ...roundOpts } = opts;
-      yield* this.runGoal(newMessages, goal, roundOpts);
-      return;
+    // A user abort owns the whole Task tree, including children that already returned from
+    // run_subagent's foreground window and are still working in the background.
+    const onAbort = (): void => {
+      this.environment.interruptAllSubagents?.();
+    };
+    if (opts?.signal?.aborted) onAbort();
+    else opts?.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      if (opts?.goal) {
+        // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
+        const { goal, ...roundOpts } = opts;
+        yield* this.runGoal(newMessages, goal, roundOpts);
+        return;
+      }
+      yield* this.runTask(newMessages, opts);
+    } finally {
+      opts?.signal?.removeEventListener("abort", onAbort);
     }
-    yield* this.runTask(newMessages, opts);
   }
 
   /** The single-Task path (a goal round runs one of these per round). */
@@ -661,6 +675,32 @@ export class Session {
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
+  }
+
+  listSubagents(): BackgroundSubagentInfo[] {
+    return this.environment.listSubagents?.() ?? [];
+  }
+
+  sendSubagentMessage(sessionId: string, prompt: string): SubagentMessageResult {
+    return this.environment.sendSubagentMessage?.(sessionId, prompt) ?? "not_found";
+  }
+
+  interruptSubagent(sessionId: string): boolean {
+    return this.environment.interruptSubagent?.(sessionId) ?? false;
+  }
+
+  interruptAllSubagents(): number {
+    return this.environment.interruptAllSubagents?.() ?? 0;
+  }
+
+  setSubagentApprovalSink(approve: ApproveFn | null): void {
+    this.environment.setSubagentApprovalSink?.(approve);
+  }
+
+  setSubagentEventSink(
+    sink: { message: (message: OmniMessage) => void; change: () => void } | null,
+  ): void {
+    this.environment.setSubagentEventSink?.(sink);
   }
 
   /**

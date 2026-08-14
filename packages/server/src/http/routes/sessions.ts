@@ -23,6 +23,8 @@ import type {
   SessionCategory,
   SessionCreateResponse,
   SessionProcessesResponse,
+  SessionSubagentsResponse,
+  SubagentMessageResponse,
   SessionResponse,
   SessionsResponse,
   RetryNowResponse,
@@ -575,7 +577,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     let live: MessagesLiveTail | undefined;
     let pendingInputs: OmniMessage[] = [];
     if (page?.kind !== "before") {
-      if (deps.manager.statusOf(row.sessionId) !== "idle") {
+      if (
+        deps.manager.statusOf(row.sessionId) !== "idle" ||
+        deps.manager.hasActiveSubagents(row.sessionId)
+      ) {
         live = {
           cursor: deps.channels.get(row.sessionId).lastEventId,
           fragments: deps.manager.liveFragments(row.sessionId),
@@ -647,6 +652,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         // Undelivered steering rides the snapshot too, so the composer's "steering queued"
         // hint (and what it says) survives a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
+      },
+      {
+        type: "subagent_state",
+        subagents: deps.manager.listSubagents(row.sessionId),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -808,6 +817,45 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // —— Child Sessions retained by this parent runtime (Agents panel controls) ——
+
+  app.get("/:sessionId/subagents", (c) => {
+    const row = resolveSession(c);
+    return c.json({
+      subagents: deps.manager.listSubagents(row.sessionId),
+    } satisfies SessionSubagentsResponse);
+  });
+
+  app.post("/:sessionId/subagents/:childSessionId/messages", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    if (!text) throw badRequest("text must be a non-empty string.");
+    const delivery = deps.manager.sendSubagentMessage(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      text,
+    );
+    return c.json({ delivery } satisfies SubagentMessageResponse, 202);
+  });
+
+  app.post("/:sessionId/subagents/:childSessionId/abort", (c) => {
+    const row = resolveSession(c);
+    const childSessionId = pathParam(c, "childSessionId");
+    const known = deps.manager
+      .listSubagents(row.sessionId)
+      .some((child) => child.sessionId === childSessionId);
+    if (!known) {
+      throw new HttpError(
+        404,
+        "subagent_not_found",
+        "This child Session is not retained by the parent.",
+      );
+    }
+    const interrupted = deps.manager.interruptSubagent(row.sessionId, childSessionId);
+    return c.body(null, interrupted ? 202 : 204);
   });
 
   // —— Background processes (the details popover's interactive list) ——

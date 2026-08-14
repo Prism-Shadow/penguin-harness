@@ -1274,7 +1274,13 @@ Scenarios:
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
     nodeRunning: "running",
+    nodeStopping: "stopping",
     nodeDone: "done",
+    stop: "Stop subagent",
+    stopPending: "Stopping…",
+    messageRunningPlaceholder: "Send a correction…",
+    messageIdlePlaceholder: "Continue this subagent…",
+    send: "Send",
   },
 
   files: {

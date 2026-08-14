@@ -187,6 +187,9 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
+| GET | /subagents | Children retained by this parent runtime: `{subagents}` with `running` / `stopping` / `idle` state and lifecycle timestamps |
+| POST | /subagents/:childSessionId/messages | Send `{text}` to a retained child: steer its running round or start a follow-up round in the same child Session when idle → 202 `{delivery: "steered" | "started"}` |
+| POST | /subagents/:childSessionId/abort | Interrupt only the child's current round without disposing its Session/context: 202 when triggered, 204 when already idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
 | GET | /files?path= | Browse the Workspace directory |
@@ -221,7 +224,7 @@ interface MessagesResponse {
 }
 ```
 
-`cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted while idle.
+`cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted only when both the parent and all retained children are idle, so refreshing after the parent Task has returned does not lose an active background child's open fragment.
 
 Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
 
@@ -300,6 +303,7 @@ Default (unnamed) SSE events carry raw OmniMessage envelopes as single-line JSON
 export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
+  | { type: "subagent_state"; subagents: SessionSubagentInfo[] }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
@@ -313,6 +317,7 @@ export type ServerEvent =
 | --- | --- |
 | approval_request | A tool call escalated to human approval: every call under always-ask, plus rw / unknown-permission calls under read-only; pending approvals are resent on reconnect |
 | task_state | The Session's run state flips (idle / running / compacting) |
+| subagent_state | The authoritative lifecycle snapshot of retained child Sessions changes; also sent on subscribe so a resumed child never stays visually "done" |
 | session_title | The model-generated title after the first turn has been persisted |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
@@ -327,7 +332,7 @@ export type ServerEvent =
 - Each channel keeps a bounded replay buffer (most recent 10,000 events or 8MB);
 - Reconnecting with `Last-Event-ID` replays the gap on a buffer hit; on a miss the server first sends `resync_required`, and the client refetches `/messages` before continuing;
 - A heartbeat comment line is written every 20 seconds;
-- Event order: on a reconnect carrying `Last-Event-ID`, **the replayed gap (or `resync_required`) arrives first**, then the initial events — the authoritative `task_state` snapshot and still-pending approval_requests — then the live stream. A fresh connection (no `Last-Event-ID`) skips replay, so its first event is the `task_state` snapshot.
+- Event order: on a reconnect carrying `Last-Event-ID`, **the replayed gap (or `resync_required`) arrives first**, then the initial events — the authoritative `task_state` and `subagent_state` snapshots followed by still-pending approval_requests — then the live stream. A fresh connection (no `Last-Event-ID`) skips replay, so its first two events are the `task_state` and `subagent_state` snapshots.
 
 ### Recommended Client Pattern
 
