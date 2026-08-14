@@ -53,6 +53,25 @@ async function createSession(request, projectId) {
   return (await res.json()).session.sessionId;
 }
 
+/**
+ * The dock attaches the user's newest live terminal before creating one, so a leftover
+ * shell from a previous test would leak into the next test's screen. Each test starts from
+ * zero terminals; kill is async (SIGHUP → pty exit), so poll until none is alive.
+ */
+async function killAllTerminals(request) {
+  const { terminals } = await (await request.get(`${BASE}/api/terminals`)).json();
+  for (const t of terminals) await request.delete(`${BASE}/api/terminals/${t.id}`);
+  await expect
+    .poll(
+      async () => {
+        const res = await (await request.get(`${BASE}/api/terminals`)).json();
+        return res.terminals.filter((t) => t.alive).length;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(0);
+}
+
 const dock = (page) => page.locator('[data-testid="terminal-dock"]');
 const dockScreenText = (page) => dock(page).locator(".xterm-rows").innerText();
 
@@ -76,6 +95,7 @@ async function waitForDockShell(page, tag) {
 test("Ctrl+` toggles the dock; the shell survives close and reopen", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
   await page.goto(`${BASE}/chat`);
   await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
 
@@ -103,6 +123,7 @@ test("Ctrl+` toggles the dock; the shell survives close and reopen", async ({ pa
 test("Detach hands the terminal to /terminal?id=… and the dock lets go", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
   await page.goto(`${BASE}/chat`);
   await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
 
@@ -135,16 +156,20 @@ test("Detach hands the terminal to /terminal?id=… and the dock lets go", async
     .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 15000 })
     .toContain("DETACHED_LIVE");
 
-  // Reopening the dock starts a fresh shell — the old one now belongs to the window.
+  // Reopening the dock reattaches the last-opened terminal — the same shell the window
+  // now holds (the stream supports multiple attached clients), per the persistence rules.
   await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
-  await waitForDockShell(page, "DOCK_UP_3");
-  expect(await dockScreenText(page)).not.toContain("DETACH_MARKER");
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("DETACH_MARKER");
 });
 
 test("panel switcher: default pins, all-panels dropdown, pin/unpin persists", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
   const sessionId = await createSession(page.request, projectId);
   await page.goto(`${BASE}/chat/${sessionId}`);
 
@@ -188,4 +213,83 @@ test("panel switcher: default pins, all-panels dropdown, pin/unpin persists", as
   await expect(page.locator('[data-testid="panel-btn-terminal"]')).toBeVisible();
   await expect(page.locator('[data-testid="panel-btn-workspace"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="panel-btn-agents"]')).toBeVisible();
+});
+
+test("terminal count badge and last-opened persistence", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+
+  // Seed one live terminal entirely through the API, with a marker on its screen.
+  const created = await page.request.post(`${BASE}/api/terminals`, {
+    data: { cwd: "/tmp", cols: 100, rows: 30 },
+  });
+  expect(created.status()).toBe(201);
+  const { id: seededId } = await created.json();
+  await page.request.post(`${BASE}/api/terminals/${seededId}/keys`, {
+    data: { keys: "echo LAST_OPENED_MARKER", literal: true },
+  });
+  await page.request.post(`${BASE}/api/terminals/${seededId}/keys`, { data: { keys: "Enter" } });
+  await expect
+    .poll(
+      async () => {
+        const res = await page.request.get(`${BASE}/api/terminals/${seededId}/capture`);
+        return (await res.json()).lines.join("\n");
+      },
+      { timeout: 20000 },
+    )
+    .toMatch(/^LAST_OPENED_MARKER$/m);
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+
+  // One live terminal → badge "1"; the terminal is not pinned by default, so the badge
+  // floats on the "all panels" trigger.
+  const badge = page.locator('[data-testid="terminal-count-badge"]');
+  await expect(badge).toHaveText("1", { timeout: 15000 });
+  await expect(
+    page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
+  ).toBeVisible();
+
+  // Opening the terminal attaches the existing (last-opened) shell instead of creating a
+  // second one: its marker is on the dock screen and the count stays 1.
+  await page.locator('[data-testid="panels-all"]').click();
+  await page.locator('[data-testid="panels-menu-terminal"]').click();
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("LAST_OPENED_MARKER");
+  await expect(badge).toHaveText("1");
+
+  // Pinning the terminal moves the badge onto the terminal's own trigger.
+  await page.locator('[data-testid="panels-all"]').click();
+  await page.locator('[data-testid="panels-pin-terminal"]').click();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.locator('[data-testid="panel-btn-terminal"] [data-testid="terminal-count-badge"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
+  ).toHaveCount(0);
+
+  // "New shell" leaves the old shell running: two live terminals now.
+  await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+  await waitForDockShell(page, "SECOND_SHELL_UP");
+  await expect(badge).toHaveText("2", { timeout: 15000 });
+
+  // Killing every terminal clears the badge entirely (0 renders nothing). A background
+  // terminal dying does not push anything to the tab — the count re-syncs on focus (or the
+  // slow poll), so nudge a focus event while polling instead of waiting out the interval.
+  await killAllTerminals(page.request);
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        return badge.count();
+      },
+      { timeout: 15000 },
+    )
+    .toBe(0);
 });
