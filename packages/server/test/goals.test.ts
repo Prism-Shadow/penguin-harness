@@ -36,6 +36,7 @@ const ROW: SessionRow = {
   approvalMode: "allow-all",
   title: null,
   createdAt: "2026-07-06T00:00:00.000Z",
+  lastActiveAt: "2026-07-06T00:00:00.000Z",
 };
 
 function usage(total: number): TokenCounts {
