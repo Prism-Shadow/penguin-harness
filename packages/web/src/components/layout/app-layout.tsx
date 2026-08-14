@@ -301,19 +301,22 @@ export function AppLayout() {
         )}
 
         {/* Integrated terminal (Codex-style), on every page, toggled via Ctrl+` or the chat
-            toolbar. Its slot follows the persisted dock position — exactly one of the four
-            renders (the component itself mounts even while hidden, for the shortcut). */}
-        {dockPosition === "top" && <TerminalDock />}
-        {/* data-dock-row: the drag preview derives the host's non-dock chrome height (mobile
-            header, banner) from this row's offset, so previews match the final layout. */}
-        <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
-          {dockPosition === "left" && <TerminalDock />}
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            toolbar. The dock keeps ONE position in the React tree for all four layouts —
+            the edge it sits on is pure CSS (this container's flex direction + the dock's
+            own order class). Moving it must never remount the component: a remount would
+            drop the terminal's WebSocket and repaint the screen mid-drag.
+            data-dock-row also anchors the drag preview's geometry (terminal-dock-layout). */}
+        <div
+          data-dock-row
+          className={`flex min-h-0 min-w-0 flex-1 ${
+            dockPosition === "left" || dockPosition === "right" ? "flex-row" : "flex-col"
+          }`}
+        >
+          <TerminalDock />
+          <main className="order-2 min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
-          {dockPosition === "right" && <TerminalDock />}
         </div>
-        {dockPosition === "bottom" && <TerminalDock />}
       </div>
 
       <ChangePasswordDialog

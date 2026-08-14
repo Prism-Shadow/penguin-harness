@@ -55,12 +55,17 @@ export function useTerminalDockPosition(): DockPosition {
   return useSyncExternalStore(subscribeTerminalDock, terminalDockPosition);
 }
 
-/** Root sizing per position; the internal header+view column is the same everywhere. */
+/**
+ * Root sizing + flex order per position; the internal header+view column is the same
+ * everywhere. `order` (against the layout row's main, order-2) is what moves the dock —
+ * the component itself never changes its place in the React tree, so repositioning never
+ * remounts it and the terminal connection survives the move untouched.
+ */
 const POSITION_CLASSES: Record<DockPosition, string> = {
-  bottom: "h-72 w-full border-t",
-  top: "h-72 w-full border-b",
-  left: "w-[26rem] border-r",
-  right: "w-[26rem] border-l",
+  bottom: "order-3 h-72 w-full border-t",
+  top: "order-1 h-72 w-full border-b",
+  left: "order-1 w-[26rem] border-r",
+  right: "order-3 w-[26rem] border-l",
 };
 
 /**
