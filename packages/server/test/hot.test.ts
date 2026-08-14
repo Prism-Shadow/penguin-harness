@@ -514,6 +514,55 @@ describe("hot skills and tools", () => {
     expect(run.result.count).toBe(2);
   });
 
+  it("one-sentence authoring: the model's contract errors are fed back until it conforms", async () => {
+    // A fake authoring model: first attempt violates the contract (no setup),
+    // second attempt — which must contain the validator's feedback — conforms.
+    const prompts: string[] = [];
+    t.deps.hot.authorLlm = (prompt) => {
+      prompts.push(prompt);
+      const script =
+        prompts.length === 1 ? 'return { name: "counter", version: 1 };' : COUNTER_SKILL;
+      return Promise.resolve("```js\n" + script + "\n```");
+    };
+
+    const res = await api.post("/api/hot/skills/author", {
+      id: "authored",
+      request: "实现计数器功能",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      attempts: number;
+      skill: { name: string };
+      tools: { name: string }[];
+    };
+    expect(body.attempts).toBe(2);
+    expect(body.skill.name).toBe("counter-skill");
+    expect(body.tools.map((tool) => tool.name)).toEqual(["count"]);
+    // The retry prompt carried the validator's verdict back to the model.
+    expect(prompts[1]).toContain("rejected by the platform's validator");
+    expect(prompts[1]).toContain("setup");
+    // And the authored tool is live.
+    const run = (await (await api.post("/api/hot/tools/count/invoke", {})).json()) as {
+      result: { count: number };
+    };
+    expect(run.result.count).toBe(1);
+  });
+
+  it("authoring without a configured model answers 503; exhausted attempts answer 422", async () => {
+    t.deps.hot.authorLlm = null;
+    expect((await api.post("/api/hot/skills/author", { request: "anything" })).status).toBe(503);
+
+    t.deps.hot.authorLlm = () => Promise.resolve("```js\nreturn 42;\n```");
+    const res = await api.post("/api/hot/skills/author", { id: "hopeless", request: "anything" });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string }; script: string };
+    expect(body.error.code).toBe("authoring_failed");
+    expect(body.script).toBe("return 42;");
+    // Nothing was installed.
+    const list = (await (await api.get("/api/hot/skills")).json()) as { skills: unknown[] };
+    expect(list.skills).toEqual([]);
+  });
+
   it("upgrading to a distro without a skills subtree is blocked while skills hold data", async () => {
     await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
     await api.post("/api/hot/platform/upgrade", { impl: "v2" });

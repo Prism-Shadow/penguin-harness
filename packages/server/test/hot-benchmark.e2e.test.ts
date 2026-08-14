@@ -15,6 +15,7 @@
  *           DEEPSEEK_MODEL (default deepseek-v4-flash).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildAuthorPrompt, extractScript } from "../src/hot/author.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -26,30 +27,9 @@ const MODEL = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 const RUNS = 3;
 const MIN_PASSES = 2;
 
-/** The spec handed to the model — the same contract routes enforce with arktype. */
-const SPEC_PROMPT = `You are writing a "hot skill script" for the PenguinHarness hot platform.
-
-The script is the BODY of a strict-mode JavaScript function receiving one
-argument named \`context\` (where \`context.state\` is your previously saved
-state, or null). It must RETURN an object with exactly this contract:
-
-- name: non-empty string
-- version: number
-- setup: function(ctx) — call ctx.registerTool({ name, description, run })
-  for each tool; \`run\` is a function receiving one JSON input argument and
-  returning a JSON result.
-- park (optional): function() returning your serializable state.
-
-No import/require/await. No code outside the function body. Reply with ONLY
-the script inside a single \`\`\`js code block.
-
-Task: register ONE tool named "word-count" whose run({ text }) returns
+/** Shared with the authoring endpoint: one spec, one benchmark, no drift. */
+const TASK = `register ONE tool named "word-count" whose run({ text }) returns
 { count: <number of whitespace-separated words in text> }.`;
-
-function extractScript(content: string): string {
-  const fenced = /```(?:js|javascript)?\s*\n([\s\S]*?)```/.exec(content);
-  return (fenced?.[1] ?? content).trim();
-}
 
 async function askDeepseek(): Promise<string> {
   const res = await fetch(`${BASE_URL}/chat/completions`, {
@@ -57,7 +37,7 @@ async function askDeepseek(): Promise<string> {
     headers: { "content-type": "application/json", authorization: `Bearer ${API_KEY}` },
     body: JSON.stringify({
       model: MODEL,
-      messages: [{ role: "user", content: SPEC_PROMPT }],
+      messages: [{ role: "user", content: buildAuthorPrompt(TASK) }],
       temperature: 0.2,
     }),
   });

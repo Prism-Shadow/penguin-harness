@@ -43,6 +43,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { AnyIface, AnyImpl, Instance } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
+import { envAuthorLlm } from "./author.js";
+import type { AuthorLlm } from "./author.js";
 import { HotResources } from "./resources.js";
 import type { PlatformApi } from "./platform-v1.js";
 import { platformV1 } from "./platform-v1.js";
@@ -143,6 +145,12 @@ interface LoadResult {
 
 export class HotHost {
   readonly resources = new HotResources();
+  /**
+   * Pluggable skill-authoring model (prompt → completion). Defaults to the
+   * env-configured DeepSeek caller (null when no key); tests inject a fake,
+   * and project-model-config wiring can replace it without touching routes.
+   */
+  authorLlm: AuthorLlm | null = envAuthorLlm();
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = platformV1.id;
