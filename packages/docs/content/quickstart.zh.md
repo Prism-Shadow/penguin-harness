@@ -47,7 +47,7 @@ penguin chat
 ```
 
 - 每输入一行即发起一个 Task。
-- `/compact` 压缩上下文；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
+- `/compact` 压缩上下文；`/clear` 开启全新 Session（原会话仍可恢复）；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
 - 退出时会打印 `penguin chat --resume <sessionId>` 提示，用于恢复本次 Session；`--resume` 不带 id 时恢复该 Agent 最近的 Session。
 
 ## SDK 示例

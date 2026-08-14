@@ -29,6 +29,15 @@ export interface SessionRow {
   client?: "web" | "cli" | null;
   /** Cache: a Trace record exists (set at task start / adoption / subagent registration; backfilled by list hydration). */
   hasTrace?: boolean;
+  /**
+   * Last activity this server drove for the session, ISO: stamped once when a run starts
+   * and once when it ends (see SessionManager.drive — a goal run is ONE drive over all its
+   * rounds, so it stamps twice, not per round). Set to createdAt at insert, and only ever
+   * moves forward (markDriven/touchLastActive clamp with MAX, so a backwards clock step
+   * cannot regress it). Rows this server never drives — CLI-adopted Sessions, subagent
+   * rows (their activity is driven through the parent's entry) — keep createdAt.
+   */
+  lastActiveAt: string;
   createdAt: string;
 }
 
@@ -45,6 +54,9 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     archivedAt: (r.archived_at as string | null) ?? null,
     client: (r.client as "web" | "cli" | null) ?? null,
     hasTrace: (r.has_trace as number) === 1,
+    // The open-time backfill leaves no NULLs; the coalesce only hardens against a row
+    // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
+    lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
   };
 }
@@ -53,32 +65,27 @@ export class SessionsRepo {
   constructor(private readonly db: DatabaseSync) {}
 
   insert(row: SessionRow): void {
-    this.db
-      .prepare(
-        `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        row.sessionId,
-        row.projectId,
-        row.agentId,
-        row.provider,
-        row.modelId,
-        row.workspace,
-        row.approvalMode,
-        row.title,
-        row.client ?? null,
-        row.hasTrace ? 1 : 0,
-        row.createdAt,
-      );
+    this.runInsert("INSERT", row);
   }
 
   /** Idempotent insert: used when Trace directory discovery backfills a row (concurrent listing discovering the same Session no longer triggers a UNIQUE violation). */
   insertOrIgnore(row: SessionRow): void {
+    this.runInsert("INSERT OR IGNORE", row);
+  }
+
+  /**
+   * The two inserts' shared column list and binding order (they differ only in conflict
+   * handling). `last_active_at` defaults **in SQL** (`COALESCE(?, ?)` over the row's own
+   * created_at, bound twice — SQLite forbids referencing a sibling column inside VALUES,
+   * and a column added by ALTER TABLE cannot be given a DEFAULT): the column is nullable
+   * for legacy reasons, so this is the one place that can guarantee it is never written
+   * NULL, whatever a caller passes.
+   */
+  private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?)`,
       )
       .run(
         row.sessionId,
@@ -91,13 +98,40 @@ export class SessionsRepo {
         row.title,
         row.client ?? null,
         row.hasTrace ? 1 : 0,
+        row.lastActiveAt ?? null,
+        row.createdAt,
         row.createdAt,
       );
   }
 
-  /** Flip the has_trace cache once a Trace record exists (task start / discovery hydration); idempotent. */
+  /** Flip the has_trace cache once a Trace record exists (discovery hydration); idempotent. */
   markHasTrace(sessionId: string): void {
     this.db.prepare("UPDATE sessions SET has_trace = 1 WHERE session_id = ?").run(sessionId);
+  }
+
+  /**
+   * A driven run touched this Session: flip the has_trace cache and stamp last_active_at in
+   * ONE statement (drive's run start — one WAL commit instead of two).
+   * `MAX(COALESCE(...))` keeps the stamp monotonic: a backwards clock step (NTP, resume
+   * from suspend) leaves the stored value alone rather than regressing the row.
+   */
+  markDriven(sessionId: string, at: string): void {
+    this.db
+      .prepare(
+        `UPDATE sessions SET has_trace = 1, last_active_at = MAX(COALESCE(last_active_at, ''), ?)
+         WHERE session_id = ?`,
+      )
+      .run(at, sessionId);
+  }
+
+  /** Stamp last_active_at alone (drive's run end); monotonic like markDriven. */
+  touchLastActive(sessionId: string, at: string): void {
+    this.db
+      .prepare(
+        `UPDATE sessions SET last_active_at = MAX(COALESCE(last_active_at, ''), ?)
+         WHERE session_id = ?`,
+      )
+      .run(at, sessionId);
   }
 
   findById(sessionId: string): SessionRow | null {
