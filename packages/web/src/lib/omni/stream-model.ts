@@ -65,6 +65,7 @@ import type {
   StopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
+import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
   beginCompaction,
@@ -136,6 +137,8 @@ export interface AssistantTextItem {
    * timestamp — the same convention as Trace (which records the **completion** time).
    */
   atMs?: number;
+  /** Stable history coordinate, present after a history read (live replies resolve it on demand). */
+  tracePosition?: TracePosition;
 }
 
 export interface ThinkingItem {
@@ -319,6 +322,10 @@ export interface TaskStatsItem {
    * message is never rendered with its own separate footer (otherwise two copy buttons would appear in the same spot).
    */
   atMs?: number;
+  /** Final assistant record of this completed Task; used by Session fork. */
+  forkPosition?: TracePosition;
+  /** True only when the final assistant segment and its Request completed normally. */
+  forkable?: boolean;
 }
 
 export type ChatItem =
@@ -581,7 +588,13 @@ export function pushMessage(
       // message's time" up to just before a complete thinking message, or the approximated historical duration would collapse to ~0ms.
       return;
     }
-    handleComplete(model, msg.payload as CompleteModelPayload, msg.timestamp, nowMs);
+    handleComplete(
+      model,
+      msg.payload as CompleteModelPayload,
+      msg.timestamp,
+      nowMs,
+      (msg as OmniMessage & { tracePosition?: TracePosition }).tracePosition,
+    );
     advanceLastTs(model, msg.timestamp);
     return;
   }
@@ -824,7 +837,9 @@ function finalizeOpenTask(model: StreamModel): void {
     id: nextId(model),
     stats,
     assistantText: reply.text,
+    forkable: reply.completed,
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
+    ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
   };
   // The stats row is inserted **before this trailing run of compaction
   // banners**: an automatic compaction triggered while finalizing a round
@@ -844,18 +859,34 @@ function finalizeOpenTask(model: StreamModel): void {
  * timestamp of the **last** assistant text item — the stats row is this
  * round's reply's footer, and this is the timestamp it shows.
  */
-function collectTaskAssistant(model: StreamModel): { text: string; atMs?: number } {
+function collectTaskAssistant(model: StreamModel): {
+  text: string;
+  atMs?: number;
+  tracePosition?: TracePosition;
+  completed: boolean;
+} {
   const parts: string[] = [];
   let atMs: number | undefined;
+  let tracePosition: TracePosition | undefined;
+  let completed = false;
   for (let i = model.items.length - 1; i >= 0; i--) {
     const it = model.items[i]!;
     if (it.kind === "task_stats") break;
     if (it.kind === "assistant_text" && it.text.trim()) {
       parts.push(it.text);
-      if (atMs === undefined) atMs = it.atMs; // walking backward: the first hit is the last one
+      if (atMs === undefined) {
+        atMs = it.atMs; // walking backward: the first hit is the last one
+        tracePosition = it.tracePosition;
+        completed = it.stopReason === "completed";
+      }
     }
   }
-  return { text: parts.reverse().join("\n\n"), ...(atMs !== undefined ? { atMs } : {}) };
+  return {
+    text: parts.reverse().join("\n\n"),
+    ...(atMs !== undefined ? { atMs } : {}),
+    ...(tracePosition !== undefined ? { tracePosition } : {}),
+    completed,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -984,6 +1015,7 @@ function handleComplete(
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
+  tracePosition?: TracePosition,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1046,6 +1078,7 @@ function handleComplete(
         target.streaming = false;
         const doneMs = tsOf(timestamp);
         if (doneMs !== undefined) target.atMs = doneMs; // the completion timestamp overrides the start placeholder
+        if (tracePosition !== undefined) target.tracePosition = tracePosition;
         if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
         if (target === model.openText) model.openText = null;
         model.pendingText = null;
@@ -1070,6 +1103,7 @@ function handleComplete(
         text: p.text,
         streaming: false,
         ...(doneMs !== undefined ? { atMs: doneMs } : {}),
+        ...(tracePosition !== undefined ? { tracePosition } : {}),
       };
       if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       model.items.push(item);
@@ -1624,18 +1658,26 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
 // Overlap dedup (connect-first + dedup)
 // ---------------------------------------------------------------------------
 
+/** Disk-only transport metadata must not make an otherwise identical SSE envelope look new. */
+function dedupKey(msg: OmniMessage): string {
+  const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
+    tracePosition?: TracePosition;
+  };
+  return JSON.stringify(envelope);
+}
+
 /** Build a dedup index from the envelope JSON of history's **last `limit` messages**. */
 export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<string> {
   const index = new Set<string>();
   for (let i = Math.max(0, messages.length - limit); i < messages.length; i++) {
-    index.add(JSON.stringify(messages[i]));
+    index.add(dedupKey(messages[i]!));
   }
   return index;
 }
 
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
 export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
-  return index.has(JSON.stringify(msg));
+  return index.has(dedupKey(msg));
 }
 
 /**

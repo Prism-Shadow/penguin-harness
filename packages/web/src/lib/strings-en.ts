@@ -1228,6 +1228,8 @@ Scenarios:
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",
     copyReply: "Copy reply",
+    forkSession: "Fork chat from here",
+    forkSessionFailed: "This reply could not be located. Refresh and try again.",
     copyMessage: "Copy message",
     deleteSession: "Delete chat",
     renameSession: "Rename chat",

@@ -838,6 +838,26 @@ export interface SessionCreateResponse {
   session: SessionInfo;
 }
 
+/** Immutable location of one record in a Session's append-only Trace. */
+export interface TracePosition {
+  /** Trace shard index (`001` on disk becomes `1`). */
+  fileIndex: number;
+  /** Zero-based record ordinal within the parsed shard. */
+  ordinal: number;
+}
+
+/** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
+export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+
+export interface SessionForkRequest {
+  /** The final root assistant text record of the completed Task to keep. */
+  position: TracePosition;
+}
+
+export interface SessionForkResponse {
+  session: SessionInfo;
+}
+
 export interface SessionResponse {
   session: SessionInfo;
 }
@@ -914,7 +934,7 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining

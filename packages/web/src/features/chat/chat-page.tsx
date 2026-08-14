@@ -40,7 +40,13 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
+import {
+  approvalKey,
+  createStreamModel,
+  finalizeHistory,
+  isModelAuthDead,
+  pushMessage,
+} from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
@@ -58,6 +64,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
@@ -1091,6 +1098,44 @@ export function ChatPage() {
     navigate("/models");
   }, [navigate]);
 
+  const onFork = useCallback(
+    async (target: ForkTarget): Promise<void> => {
+      if (!selected) return;
+      try {
+        let position = target.position;
+        // Live SSE messages do not carry disk coordinates. Once the Task is idle, one history
+        // read resolves the just-finished footer onto the immutable Trace position; the fork
+        // request itself always sends that position, never display text or a timestamp.
+        if (position === undefined) {
+          const history = await api.getMessages(selected.sessionId);
+          const model = createStreamModel();
+          for (const message of history.messages) pushMessage(model, message);
+          finalizeHistory(model);
+          const match = [...model.items]
+            .reverse()
+            .find(
+              (item) =>
+                item.kind === "task_stats" &&
+                item.assistantText === target.assistantText &&
+                item.atMs === target.atMs &&
+                item.forkPosition !== undefined,
+            );
+          position = match?.kind === "task_stats" ? match.forkPosition : undefined;
+        }
+        if (position === undefined) {
+          toastError(S.chat.forkSessionFailed);
+          return;
+        }
+        const created = await api.forkSession(selected.sessionId, { position });
+        addSession(created.session);
+        navigate(`/chat/${created.session.sessionId}`);
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+      }
+    },
+    [selected, addSession, navigate],
+  );
+
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
   const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
@@ -1129,6 +1174,7 @@ export function ChatPage() {
     },
     workspace: selected?.workspace ?? null,
     statFiles,
+    onFork,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";

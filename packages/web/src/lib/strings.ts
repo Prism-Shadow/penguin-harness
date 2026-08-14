@@ -1180,6 +1180,8 @@ Benchmark：
     approvalWaiting: "待审批",
     copyCode: "复制代码",
     copyReply: "复制回复",
+    forkSession: "从这里分叉对话",
+    forkSessionFailed: "无法定位这条回复，请刷新后重试。",
     copyMessage: "复制消息",
     deleteSession: "删除对话",
     renameSession: "重命名对话",

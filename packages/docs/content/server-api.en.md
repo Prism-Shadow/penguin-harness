@@ -182,6 +182,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | PATCH | / | Update: `{approvalMode?, archived?, title?}` |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
+| POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead: it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/docs/goal-mode) |
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
@@ -207,7 +208,7 @@ The Trace stores only complete messages (streaming `partial_*` never reaches dis
 
 ```ts
 interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
@@ -222,6 +223,8 @@ interface MessagesResponse {
 ```
 
 `cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted while idle.
+
+`tracePosition` is history-response metadata, not part of the persisted OmniMessage envelope. The Web App submits the final assistant record's immutable coordinate to `/fork`; the server validates that it closes a completed Task. A fork clones the retained Trace shards and snapshots the source scratchpad under the new Session id, rewriting system-generated local attachment markers so the fork remains usable if either Session is later deleted. Running or compacting sources return 409.
 
 Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
 

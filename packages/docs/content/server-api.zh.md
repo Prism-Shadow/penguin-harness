@@ -182,6 +182,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
+| POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE 事件流（见下节） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/docs/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
@@ -207,7 +208,7 @@ Trace 只存完整消息（流式 `partial_*` 永远不落盘），所以仅靠�
 
 ```ts
 interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // Session 通道最近分配的 SSE 事件 id（`<epoch>-<seq>`）：
     // 截至该 id（含）发布的所有事件都已累积进 `fragments`。
@@ -221,6 +222,8 @@ interface MessagesResponse {
 ```
 
 `cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
+
+`tracePosition` 只是历史响应元数据，不进入持久化 OmniMessage。Web App 将一轮最后一条模型文本的不可变坐标提交给 `/fork`，服务端再校验它确实闭合了一个完整 Task。分叉会克隆保留范围内的 Trace 分片，并把源 Session 的 scratchpad 快照到新 Session id 下；系统生成的本地附件路径同步改写，因此以后删除任一 Session 都不会破坏另一方。源 Session 正在运行或压缩时返回 409。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 
