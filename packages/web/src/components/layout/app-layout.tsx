@@ -4,7 +4,7 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -21,7 +21,14 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { TerminalDock, useTerminalDockPosition } from "../../features/terminal/terminal-dock";
+import { TerminalDock } from "../../features/terminal/terminal-dock";
+import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import {
+  dockStateVersion,
+  isTerminalDockOpen,
+  openPanes,
+  subscribeTerminalDock,
+} from "../../features/terminal/terminal-dock-state";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -172,7 +179,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
-  const dockPosition = useTerminalDockPosition();
+  // Any dock-state change (panes opening/closing/moving) re-renders the slots below.
+  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
+  const dockVisible = isTerminalDockOpen();
+  const panes = openPanes();
+  const hasPane = (p: string) => dockVisible && panes.includes(p as never);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
@@ -300,23 +311,21 @@ export function AppLayout() {
           </div>
         )}
 
-        {/* Integrated terminal (Codex-style), on every page, toggled via Ctrl+` or the chat
-            toolbar. The dock keeps ONE position in the React tree for all four layouts —
-            the edge it sits on is pure CSS (this container's flex direction + the dock's
-            own order class). Moving it must never remount the component: a remount would
-            drop the terminal's WebSocket and repaint the screen mid-drag.
-            data-dock-row also anchors the drag preview's geometry (terminal-dock-layout). */}
-        <div
-          data-dock-row
-          className={`flex min-h-0 min-w-0 flex-1 ${
-            dockPosition === "left" || dockPosition === "right" ? "flex-row" : "flex-col"
-          }`}
-        >
-          <TerminalDock />
-          <main className="order-2 min-h-0 min-w-0 flex-1 overflow-hidden">
+        {/* Integrated terminal (Codex-style), on every page, toggled via Ctrl+` or the
+            chat toolbar. The dock is a set of PANES, at most one per edge; the xterm
+            views live in TerminalDockRuntime's pool and are adopted into pane bodies by
+            DOM handoff, so pane churn (opening, closing, moving edges) never reconnects
+            a terminal. data-dock-row anchors the drag preview's geometry. */}
+        {hasPane("top") && <TerminalDock position="top" />}
+        <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
+          {hasPane("left") && <TerminalDock position="left" />}
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
+          {hasPane("right") && <TerminalDock position="right" />}
         </div>
+        {hasPane("bottom") && <TerminalDock position="bottom" />}
+        <TerminalDockRuntime />
       </div>
 
       <ChangePasswordDialog

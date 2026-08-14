@@ -1,29 +1,33 @@
 /**
- * Open/closed state and screen position of the in-app terminal dock, as a tiny
- * module-level store.
+ * State of the in-app terminal dock system, as a tiny module-level store.
+ *
+ * The dock is a set of PANES, at most one per edge of the content area. Terminals are
+ * assigned to a pane (dragging a tab onto an edge moves it, creating the pane on demand);
+ * each pane remembers which of its terminals it is showing. One `visible` flag hides and
+ * restores the whole arrangement (Ctrl+`), so a toggle never loses the layout.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
- * toolbar and the global Ctrl+` handler flip `open`, AppLayout reads `position` to decide
- * which side of the content area the dock occupies, and the dock's drag-to-dock overlay
- * writes it. Both persist so the dock survives a reload the same way the shell behind it
- * does.
+ * toolbar and the global hotkey flip visibility, AppLayout renders a pane per open edge,
+ * and the drag/drop interactions inside any pane reshape the arrangement. Everything
+ * persists so a reload restores panes, sizes and assignments the same way the shells
+ * behind them survive server-side.
  */
 
-const STORAGE_KEY = "penguin.terminal.dockOpen";
-const POSITION_KEY = "penguin.terminal.dockPosition";
-const HEIGHT_RATIO_KEY = "penguin.terminal.dockHeightRatio";
-const WIDTH_RATIO_KEY = "penguin.terminal.dockWidthRatio";
+const VISIBLE_KEY = "penguin.terminal.dockOpen";
+const PANES_KEY = "penguin.terminal.dockPanes";
+const RATIOS_KEY = "penguin.terminal.dockRatios";
+const ASSIGN_KEY = "penguin.terminal.paneAssignments";
+const CURRENTS_KEY = "penguin.terminal.paneCurrents";
 
-/** Which edge of the content area the dock occupies. */
+/** Which edge of the content area a pane occupies. */
 export type DockPosition = "top" | "bottom" | "left" | "right";
 
 const POSITIONS: readonly DockPosition[] = ["top", "bottom", "left", "right"];
 
 /**
- * Dock sizes are RATIOS of the layout row, not pixels: top/bottom share one height ratio,
- * left/right share one width ratio. That is what makes a resize survive repositioning and
- * window resizes proportionally. The px minimums (and the ratio ceiling, which also leaves
- * the main content room) are enforced both by the dock's CSS and by the drag preview.
+ * Pane sizes are RATIOS of the layout row, per position. The px minimums (and the ratio
+ * ceiling, which also leaves the main content room) are enforced both by the pane's CSS
+ * and by the drag preview.
  */
 export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
 export const DEFAULT_DOCK_WIDTH_RATIO = 0.33;
@@ -32,109 +36,245 @@ export const DOCK_RATIO_MAX = 0.85;
 export const DOCK_MIN_HEIGHT_PX = 140;
 export const DOCK_MIN_WIDTH_PX = 320;
 
+export function isHorizontal(position: DockPosition): boolean {
+  return position === "top" || position === "bottom";
+}
+
 function clampRatio(value: number): number {
   if (!Number.isFinite(value)) return DOCK_RATIO_MIN;
   return Math.min(DOCK_RATIO_MAX, Math.max(DOCK_RATIO_MIN, value));
 }
 
-function loadRatio(key: string, fallback: number): number {
+function readJson<T>(key: string, fallback: T): T {
   try {
-    const stored = Number.parseFloat(localStorage.getItem(key) ?? "");
-    return Number.isFinite(stored) ? clampRatio(stored) : fallback;
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
   } catch {
     return fallback;
   }
 }
 
-let open = ((): boolean => {
+function writeJson(key: string, value: unknown): void {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Private-mode storage failures only cost persistence.
+  }
+}
+
+let visible = ((): boolean => {
+  try {
+    return localStorage.getItem(VISIBLE_KEY) === "1";
   } catch {
     return false;
   }
 })();
 
-let position: DockPosition = ((): DockPosition => {
-  try {
-    const stored = localStorage.getItem(POSITION_KEY);
-    return POSITIONS.includes(stored as DockPosition) ? (stored as DockPosition) : "bottom";
-  } catch {
-    return "bottom";
-  }
-})();
+let panes: DockPosition[] = readJson<DockPosition[]>(PANES_KEY, []).filter(
+  (p): p is DockPosition => POSITIONS.includes(p),
+);
 
-let heightRatio = loadRatio(HEIGHT_RATIO_KEY, DEFAULT_DOCK_HEIGHT_RATIO);
-let widthRatio = loadRatio(WIDTH_RATIO_KEY, DEFAULT_DOCK_WIDTH_RATIO);
+let ratios: Partial<Record<DockPosition, number>> = readJson(RATIOS_KEY, {});
+
+/** terminalId -> pane. Unassigned terminals belong to the primary (first open) pane. */
+let assignments: Record<string, DockPosition> = readJson(ASSIGN_KEY, {});
+
+/** Which terminal each pane is showing. */
+let currents: Partial<Record<DockPosition, string>> = readJson(CURRENTS_KEY, {});
 
 const listeners = new Set<() => void>();
+let version = 0;
 
-export function isTerminalDockOpen(): boolean {
-  return open;
-}
-
-export function setTerminalDockOpen(next: boolean): void {
-  if (next === open) return;
-  open = next;
-  try {
-    localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
+function notify(): void {
+  version += 1;
   for (const listener of [...listeners]) listener();
 }
 
-export function toggleTerminalDock(): void {
-  setTerminalDockOpen(!open);
-}
-
-export function terminalDockPosition(): DockPosition {
-  return position;
-}
-
-export function setTerminalDockPosition(next: DockPosition): void {
-  if (next === position) return;
-  position = next;
-  try {
-    localStorage.setItem(POSITION_KEY, next);
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
-  for (const listener of [...listeners]) listener();
-}
-
-export function terminalDockHeightRatio(): number {
-  return heightRatio;
-}
-
-export function terminalDockWidthRatio(): number {
-  return widthRatio;
-}
-
-export function setTerminalDockHeightRatio(next: number): void {
-  const clamped = clampRatio(next);
-  if (clamped === heightRatio) return;
-  heightRatio = clamped;
-  try {
-    localStorage.setItem(HEIGHT_RATIO_KEY, String(clamped));
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
-  for (const listener of [...listeners]) listener();
-}
-
-export function setTerminalDockWidthRatio(next: number): void {
-  const clamped = clampRatio(next);
-  if (clamped === widthRatio) return;
-  widthRatio = clamped;
-  try {
-    localStorage.setItem(WIDTH_RATIO_KEY, String(clamped));
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
-  for (const listener of [...listeners]) listener();
+/** Monotonic change counter — subscribe with this snapshot to re-render on ANY change. */
+export function dockStateVersion(): number {
+  return version;
 }
 
 export function subscribeTerminalDock(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+// ---------------------------------------------------------------------------- visibility
+
+export function isTerminalDockOpen(): boolean {
+  return visible && panes.length > 0;
+}
+
+export function setTerminalDockOpen(next: boolean): void {
+  visible = next;
+  if (next && panes.length === 0) panes = ["bottom"];
+  writeJson(PANES_KEY, panes);
+  try {
+    localStorage.setItem(VISIBLE_KEY, next ? "1" : "0");
+  } catch {
+    // Persistence only.
+  }
+  notify();
+}
+
+export function toggleTerminalDock(): void {
+  setTerminalDockOpen(!isTerminalDockOpen());
+}
+
+// --------------------------------------------------------------------------------- panes
+
+/** Open panes; stable snapshot (same reference until contents change). */
+export function openPanes(): DockPosition[] {
+  return panes;
+}
+
+/** The pane unassigned terminals belong to. */
+export function primaryPane(): DockPosition {
+  return panes[0] ?? "bottom";
+}
+
+export function ensurePaneOpen(position: DockPosition): void {
+  visible = true;
+  try {
+    localStorage.setItem(VISIBLE_KEY, "1");
+  } catch {
+    // Persistence only.
+  }
+  if (!panes.includes(position)) {
+    panes = [...panes, position];
+    writeJson(PANES_KEY, panes);
+  }
+  notify();
+}
+
+/**
+ * Closes one pane. Its terminals fold back into the primary remaining pane (the shells
+ * keep running server-side either way); closing the last pane hides the dock.
+ */
+export function closePane(position: DockPosition): void {
+  if (!panes.includes(position)) return;
+  panes = panes.filter((p) => p !== position);
+  writeJson(PANES_KEY, panes);
+  delete currents[position];
+  writeJson(CURRENTS_KEY, currents);
+  const fallback = panes[0];
+  assignments = Object.fromEntries(
+    Object.entries(assignments).flatMap(([id, pane]) => {
+      if (pane !== position) return [[id, pane]];
+      return fallback ? [[id, fallback]] : [];
+    }),
+  );
+  writeJson(ASSIGN_KEY, assignments);
+  if (panes.length === 0) {
+    visible = false;
+    try {
+      localStorage.setItem(VISIBLE_KEY, "0");
+    } catch {
+      // Persistence only.
+    }
+  }
+  notify();
+}
+
+// -------------------------------------------------------------------------------- ratios
+
+export function paneRatio(position: DockPosition): number {
+  const fallback = isHorizontal(position) ? DEFAULT_DOCK_HEIGHT_RATIO : DEFAULT_DOCK_WIDTH_RATIO;
+  const stored = ratios[position];
+  return typeof stored === "number" ? clampRatio(stored) : fallback;
+}
+
+export function setPaneRatio(position: DockPosition, next: number): void {
+  const clamped = clampRatio(next);
+  if (clamped === ratios[position]) return;
+  ratios = { ...ratios, [position]: clamped };
+  writeJson(RATIOS_KEY, ratios);
+  notify();
+}
+
+export function resetPaneRatio(position: DockPosition): void {
+  const { [position]: _dropped, ...rest } = ratios;
+  ratios = rest;
+  writeJson(RATIOS_KEY, ratios);
+  notify();
+}
+
+// --------------------------------------------------------------------- pane assignments
+
+/** The pane a terminal belongs to (its assigned pane while open, else the primary one). */
+export function paneOfTerminal(id: string): DockPosition {
+  const assigned = assignments[id];
+  return assigned !== undefined && panes.includes(assigned) ? assigned : primaryPane();
+}
+
+/** Moves a terminal to a pane (opening it if needed) and shows it there. */
+export function assignTerminalToPane(id: string, position: DockPosition): void {
+  ensurePaneOpen(position);
+  assignments = { ...assignments, [id]: position };
+  writeJson(ASSIGN_KEY, assignments);
+  setPaneCurrent(position, id);
+}
+
+/** Drops assignment entries for terminals that no longer exist. */
+export function pruneAssignments(liveIds: ReadonlySet<string>): void {
+  const next = Object.fromEntries(
+    Object.entries(assignments).filter(([id]) => liveIds.has(id)),
+  );
+  if (Object.keys(next).length === Object.keys(assignments).length) return;
+  assignments = next;
+  writeJson(ASSIGN_KEY, assignments);
+  notify();
+}
+
+// ------------------------------------------------------------------------ pane currents
+
+export function paneCurrent(position: DockPosition): string | null {
+  return currents[position] ?? null;
+}
+
+export function setPaneCurrent(position: DockPosition, id: string | null): void {
+  if ((currents[position] ?? null) === id) {
+    notify(); // assignment may still have changed alongside
+    return;
+  }
+  if (id === null) delete currents[position];
+  else currents = { ...currents, [position]: id };
+  writeJson(CURRENTS_KEY, currents);
+  notify();
+}
+
+/**
+ * Moves a whole pane to another edge: every terminal of the source pane (and its shown
+ * terminal) lands on the target, merging with anything already there; the source closes.
+ */
+export function movePane(from: DockPosition, to: DockPosition): void {
+  if (from === to) return;
+  const shown = currents[from] ?? null;
+  const movedIds = Object.entries(assignments)
+    .filter(([, pane]) => pane === from)
+    .map(([id]) => id);
+  // A same-orientation move carries the pane's size along ("keep the ratio"): the user
+  // sized THIS pane, and it is the same pane on the other edge. Cross-orientation moves
+  // and merges into an existing pane keep the target's own size.
+  if (
+    !panes.includes(to) &&
+    isHorizontal(from) === isHorizontal(to) &&
+    ratios[from] !== undefined
+  ) {
+    ratios = { ...ratios, [to]: ratios[from] };
+    writeJson(RATIOS_KEY, ratios);
+  }
+  ensurePaneOpen(to);
+  assignments = {
+    ...assignments,
+    ...Object.fromEntries(movedIds.map((id) => [id, to])),
+  };
+  writeJson(ASSIGN_KEY, assignments);
+  panes = panes.filter((p) => p !== from);
+  writeJson(PANES_KEY, panes);
+  delete currents[from];
+  if (shown) currents = { ...currents, [to]: shown };
+  writeJson(CURRENTS_KEY, currents);
+  notify();
 }

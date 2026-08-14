@@ -1,91 +1,71 @@
 /**
- * In-app terminal dock (Codex-style integrated terminal): a panel across the bottom of the
- * main content column, toggled by Ctrl+` or the sidebar's terminal entry, present on every
- * page because it mounts in AppLayout.
+ * One dock pane: a terminal panel on one edge of the content area (terminal-dock-state.ts
+ * owns which edges have panes). AppLayout renders a pane per open edge; the terminal
+ * views themselves live in the shared pool (terminal-view-pool.tsx) and are adopted into
+ * this pane's body by DOM handoff, so nothing about a pane's own lifecycle ever remounts
+ * an xterm or drops its stream.
  *
- * The header carries a tab strip of every live terminal the user has — created anywhere:
- * this dock, the /terminal page, a detached window, the API — so terminals can be seen,
- * switched between, and closed (the × kills the shell), not just added. The strip renders
- * the shared terminal-list store; the badge in the chat toolbar shows the same list's size.
- *
- * The shell is the same server-side terminal the standalone page uses, and opening the
- * dock always lands on a live shell (the persistence rules):
- * - the terminal opened last time (stored id) when it is still alive;
- * - otherwise the newest of the user's live terminals;
- * - otherwise a fresh shell is created (and kept: closing the dock only hides the view).
- * "Detach" opens `/terminal?id=<id>` in its own window; the stored id is kept, so
- * reopening the dock shows that same shell again (multi-client attach).
- * A reload restores both the dock (open state persists) and the shell (id persists).
+ * The header carries the pane's tab strip (the terminals assigned to this pane), a "+" to
+ * open another shell here, the current shell's status, detach-to-window and close. Tabs
+ * drag sideways to reorder; dragging a tab OUT of the strip brings up the edge overlay
+ * (bands + drop targets + landing preview) and dropping on another edge moves that
+ * terminal there — creating the pane if needed. Dragging the header itself moves the
+ * whole pane the same way (merging into an existing pane on that edge). The boundary with
+ * the main content resizes the pane (ratio-persisted; double-click resets).
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import {
+  assignTerminalToPane,
+  closePane,
+  dockStateVersion,
   DEFAULT_DOCK_HEIGHT_RATIO,
   DEFAULT_DOCK_WIDTH_RATIO,
+  isHorizontal,
   isTerminalDockOpen,
-  setTerminalDockHeightRatio,
-  setTerminalDockOpen,
-  setTerminalDockPosition,
-  setTerminalDockWidthRatio,
+  movePane,
+  paneCurrent,
+  paneOfTerminal,
+  paneRatio,
+  resetPaneRatio,
+  setPaneCurrent,
+  setPaneRatio,
   subscribeTerminalDock,
-  terminalDockHeightRatio,
-  terminalDockPosition,
-  terminalDockWidthRatio,
-  toggleTerminalDock,
   type DockPosition,
 } from "./terminal-dock-state";
 import { DockLayoutOverlay, dockDropCandidate } from "./terminal-dock-layout";
-import {
-  TerminalView,
-  fetchJson,
-  type TerminalInfo,
-  type TerminalStatus,
-} from "./terminal-view";
+import { fetchJson, type TerminalInfo } from "./terminal-view";
 import {
   killTerminal,
   liveTerminals,
   noteTerminalCreated,
-  noteTerminalTitle,
   refreshTerminals,
   setTerminalTabOrder,
   subscribeTerminals,
 } from "./terminal-list";
+import {
+  subscribeTerminalViewStates,
+  terminalViewContainer,
+  terminalViewState,
+} from "./terminal-view-pool";
 
-const DOCK_ID_KEY = "penguin.terminal.dock.id";
-/** The dock always opens in the home directory (project-scoped cwd can come later). */
+/** The dock always opens new shells in the home directory (project cwd can come later). */
 const DOCK_CWD = "~";
 
 export function useTerminalDockOpen(): boolean {
   return useSyncExternalStore(subscribeTerminalDock, isTerminalDockOpen);
 }
 
-/** Which edge of the content area the dock occupies — AppLayout picks the slot from this. */
-export function useTerminalDockPosition(): DockPosition {
-  return useSyncExternalStore(subscribeTerminalDock, terminalDockPosition);
-}
-
-/**
- * Root placement + flex order per position; the internal header+view column is the same
- * everywhere. `order` (against the layout row's main, order-2) is what moves the dock —
- * the component itself never changes its place in the React tree, so repositioning never
- * remounts it and the terminal connection survives the move untouched. The size itself is
- * a ratio of the layout row (inline percentage style), clamped by the min/max classes so
- * neither the dock nor the main content can be crushed away.
- */
+/** Root sizing per position; sizes are inline ratios, clamps are CSS (px minimums must
+ * equal the DOCK_MIN_*_PX constants the drag preview uses, at every font scale). */
 const POSITION_CLASSES: Record<DockPosition, string> = {
-  // px minimums on purpose (not the rem spacing scale): they must equal the
-  // DOCK_MIN_*_PX constants the drag preview clamps with, at every font scale.
-  bottom: "order-3 w-full border-t min-h-[140px] max-h-[85%]",
-  top: "order-1 w-full border-b min-h-[140px] max-h-[85%]",
-  left: "order-1 border-r min-w-[320px] max-w-[85%]",
-  right: "order-3 border-l min-w-[320px] max-w-[85%]",
+  bottom: "w-full border-t min-h-[140px] max-h-[85%]",
+  top: "w-full border-b min-h-[140px] max-h-[85%]",
+  left: "border-r min-w-[320px] max-w-[85%]",
+  right: "border-l min-w-[320px] max-w-[85%]",
 };
 
-/**
- * Resize handle placement: a 6px strip straddling the dock's inner edge (the boundary
- * with the main content), so the grab target is forgiving on both sides of the line.
- */
+/** Resize handle placement: a 6px strip straddling the pane's inner edge. */
 const RESIZER_CLASSES: Record<DockPosition, string> = {
   bottom: "left-0 right-0 -top-[3px] h-1.5 cursor-ns-resize",
   top: "left-0 right-0 -bottom-[3px] h-1.5 cursor-ns-resize",
@@ -93,52 +73,7 @@ const RESIZER_CLASSES: Record<DockPosition, string> = {
   right: "top-0 bottom-0 -left-[3px] w-1.5 cursor-ew-resize",
 };
 
-/**
- * Resolves the terminal the dock should show: last opened (stored id) if still alive, else
- * the newest live terminal from anywhere, else a fresh one. Only the last case creates —
- * unless `forceCreate` ("New shell"), which skips the reattach paths entirely (they would
- * otherwise just hand back the shell the user asked to leave).
- */
-async function ensureDockTerminal(
-  cols: number,
-  rows: number,
-  forceCreate: boolean,
-): Promise<TerminalInfo> {
-  if (!forceCreate) {
-    const storedId = localStorage.getItem(DOCK_ID_KEY);
-    if (storedId) {
-      const existing = await fetchJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(
-        () => null,
-      );
-      if (existing?.alive) return existing;
-    }
-
-    // No usable stored id: fall back to the newest live terminal (the list is ordered by
-    // createdAt ascending), wherever it was opened from.
-    const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(
-      () => null,
-    );
-    const alive = (listed?.terminals ?? []).filter((t) => t.alive);
-    const latest = alive.at(-1);
-    if (latest) {
-      localStorage.setItem(DOCK_ID_KEY, latest.id);
-      return latest;
-    }
-  }
-
-  const created = await fetchJson<TerminalInfo>("/api/terminals", {
-    method: "POST",
-    body: JSON.stringify({ cwd: DOCK_CWD, cols, rows }),
-  });
-  if (!created) throw new Error("Server did not return a terminal.");
-  localStorage.setItem(DOCK_ID_KEY, created.id);
-  // Straight into the shared list: the tab strip and count react to the user's create
-  // immediately instead of after the next reconciling fetch.
-  noteTerminalCreated(created);
-  return created;
-}
-
-/** Small icon-sized header button shared by the dock's controls. */
+/** Small icon-sized header button shared by the pane's controls. */
 function DockButton(props: { label: string; testId: string; onClick: () => void; d: string }) {
   return (
     <button
@@ -183,8 +118,8 @@ function displayTitle(title: string | null | undefined): string {
 }
 
 /**
- * One tab in the strip: name (title once the shell sets one) + a kill ×. Two sibling
- * buttons, not nested — a button inside a button is invalid and unclickable.
+ * One tab in the strip: number + name/title + a kill ×. Two sibling buttons, not nested —
+ * a button inside a button is invalid and unclickable.
  */
 function TerminalTab(props: {
   terminal: TerminalInfo;
@@ -237,156 +172,182 @@ function TerminalTab(props: {
   );
 }
 
-export function TerminalDock() {
-  const open = useTerminalDockOpen();
-  const position = useTerminalDockPosition();
-  const heightRatio = useSyncExternalStore(subscribeTerminalDock, terminalDockHeightRatio);
-  const widthRatio = useSyncExternalStore(subscribeTerminalDock, terminalDockWidthRatio);
-  const [resizing, setResizing] = useState(false);
-  const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
-  const [status, setStatus] = useState<TerminalStatus>("connecting");
-  const [detail, setDetail] = useState("");
-  const [info, setInfo] = useState<TerminalInfo | null>(null);
-  const [generation, setGeneration] = useState(0);
-  /** Armed by "New shell" for exactly the next attach; consumed inside ensure. */
-  const forceCreateRef = useRef(false);
-  /** Header drag-to-dock: origin until the threshold, then the live drop candidate. */
-  const dragOrigin = useRef<{ x: number; y: number; started: boolean } | null>(null);
-  const [drag, setDrag] = useState<{ active: boolean; candidate: DockPosition | null }>({
-    active: false,
-    candidate: null,
-  });
+/** Creates a fresh shell assigned to (and shown in) the given pane. */
+async function createShellInPane(position: DockPosition): Promise<void> {
+  const created = await fetchJson<TerminalInfo>("/api/terminals", {
+    method: "POST",
+    body: JSON.stringify({ cwd: DOCK_CWD }),
+  }).catch(() => null);
+  if (!created) return;
+  noteTerminalCreated(created);
+  assignTerminalToPane(created.id, position);
+}
 
-  const ensure = useCallback(async (cols: number, rows: number): Promise<TerminalInfo> => {
-    const forceCreate = forceCreateRef.current;
-    forceCreateRef.current = false;
-    return ensureDockTerminal(cols, rows, forceCreate);
-  }, []);
+/** One resolution at a time per pane — mount effects can fire in quick succession. */
+const resolving = new Set<DockPosition>();
 
-  // Ctrl+` toggles the dock from anywhere in the app (the Codex/VS Code binding). Bound
-  // here so it exists exactly once, dock visible or not.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-      if (event.key !== "`" && event.code !== "Backquote") return;
-      event.preventDefault();
-      toggleTerminalDock();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  // An opening dock re-reads the tab strip: terminals may have been opened or closed from
-  // other surfaces while it was hidden.
-  useEffect(() => {
-    if (open) void refreshTerminals();
-  }, [open]);
-
-  /** Remounts the view onto another terminal (or a to-be-created one when id is null). */
-  const switchTo = useCallback((id: string | null) => {
-    if (id === null) localStorage.removeItem(DOCK_ID_KEY);
-    else localStorage.setItem(DOCK_ID_KEY, id);
-    setStatus("connecting");
-    setDetail("");
-    setInfo(null);
-    setGeneration((n) => n + 1);
-  }, []);
-
-  const onStatus = useCallback((next: TerminalStatus, statusDetail: string) => {
-    setStatus(next);
-    setDetail(statusDetail);
-    // A shell exiting under the dock changes the tab strip and the toolbar badge.
-    if (next === "exited") void refreshTerminals();
-  }, []);
-
-  const onInfo = useCallback((next: TerminalInfo) => {
-    setInfo(next);
-    // Attaching may have created a terminal; either way the strip/badge re-sync.
+/**
+ * First-show resolution for a pane: keep its stored terminal when still alive, else the
+ * newest live terminal assigned here, else create one. Runs only when the pane has no
+ * usable current — a shell exiting later must NOT auto-respawn (the user sees the exit).
+ */
+async function resolvePaneCurrent(position: DockPosition): Promise<void> {
+  if (resolving.has(position)) return;
+  resolving.add(position);
+  try {
+    const storedId = paneCurrent(position);
+    if (storedId) {
+      const existing = await fetchJson<TerminalInfo>(
+        `/api/terminals/${encodeURIComponent(storedId)}`,
+      ).catch(() => null);
+      if (existing?.alive) return;
+    }
+    const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(
+      () => null,
+    );
+    const mine = (listed?.terminals ?? []).filter(
+      (t) => t.alive && paneOfTerminal(t.id) === position,
+    );
+    const newest = mine.at(-1);
+    if (newest) {
+      setPaneCurrent(position, newest.id);
+      return;
+    }
+    await createShellInPane(position);
+  } finally {
+    resolving.delete(position);
     void refreshTerminals();
-  }, []);
+  }
+}
 
-  /** Live OSC title from the attached shell → the shared list → this tab's label. */
-  const onTitle = useCallback(
-    (title: string) => {
-      if (info) noteTerminalTitle(info.id, title);
-    },
-    [info],
+export function TerminalDock({ position }: { position: DockPosition }) {
+  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
+  const allTerminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  const currentId = paneCurrent(position);
+  const viewState = useSyncExternalStore(subscribeTerminalViewStates, () =>
+    terminalViewState(currentId),
   );
 
-  /** Fresh shell in a new tab; the current one keeps running. */
-  const newShell = useCallback(() => {
-    forceCreateRef.current = true;
-    switchTo(null);
-  }, [switchTo]);
+  const paneTerminals = useMemo(
+    () => allTerminals.filter((t) => paneOfTerminal(t.id) === position),
+    // paneOfTerminal reads dock-state; dockStateVersion above re-renders us on any change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allTerminals, position, dockStateVersion()],
+  );
+
+  // First show (and whenever the pane ends up with no shown terminal): resolve one.
+  useEffect(() => {
+    if (currentId === null) void resolvePaneCurrent(position);
+  }, [currentId, position]);
+
+  // Adopt the shown terminal's pooled container into this pane's body.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body || currentId === null) return;
+    const container = terminalViewContainer(currentId);
+    body.appendChild(container);
+    return () => {
+      if (container.parentElement === body) body.removeChild(container);
+    };
+  }, [currentId]);
 
   const selectTerminal = useCallback(
     (id: string) => {
-      if (id !== info?.id) switchTo(id);
+      if (id !== paneCurrent(position)) setPaneCurrent(position, id);
     },
-    [info, switchTo],
+    [position],
   );
 
-  /** Kills the shell behind a tab; killing the current tab moves to the newest remaining. */
+  /** Fresh shell in a new tab of this pane; the current one keeps running. */
+  const newShell = useCallback(() => {
+    void createShellInPane(position);
+  }, [position]);
+
+  /** Kills a tab's shell; killing the last one closes the pane (never auto-respawns). */
   const onKillTerminal = useCallback(
     (id: string) => {
       void killTerminal(id);
-      if (id !== info?.id && info !== null) return; // a background tab: the strip just updates
-      // The killed shell can still report alive for a moment (SIGHUP is async), so the
-      // reattach fallback must not run — target the survivor explicitly.
-      const remaining = terminals.filter((t) => t.id !== id);
-      const survivor = remaining.at(-1);
-      if (survivor) {
-        switchTo(survivor.id);
-      } else {
-        // Killing the LAST terminal means "I'm done" — close the dock instead of spawning
-        // a replacement nobody asked for. Reopening creates afresh (the persistence rules).
-        localStorage.removeItem(DOCK_ID_KEY);
-        setTerminalDockOpen(false);
+      const remaining = paneTerminals.filter((t) => t.id !== id);
+      if (remaining.length === 0) {
+        closePane(position);
+        return;
+      }
+      if (id === paneCurrent(position)) {
+        setPaneCurrent(position, remaining.at(-1)!.id);
       }
     },
-    [info, switchTo, terminals],
+    [paneTerminals, position],
   );
 
   /**
-   * Codex-style detach of one terminal into its own window. With other terminals open the
-   * dock stays — detaching the current tab moves it to the newest remaining one; only
-   * detaching the last terminal closes the dock. The detached shell stays in the tab
-   * strip (it is still a live terminal; the stream supports multiple attached clients).
+   * Detach the shown terminal to its own /terminal window. The shell stays live (and
+   * listed — multi-client attach); the pane moves on to its newest other terminal, or
+   * closes when this was the only one.
    */
-  const detachTerminal = useCallback(
-    (id: string) => {
-      window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
-      if (id !== info?.id && info !== null) return; // a background tab: nothing to switch
-      const next = terminals.filter((t) => t.id !== id).at(-1);
-      if (next) {
-        switchTo(next.id);
-      } else {
-        localStorage.removeItem(DOCK_ID_KEY);
-        setTerminalDockOpen(false);
-      }
-    },
-    [info, switchTo, terminals],
-  );
-
-  /** The header's detach button: detaches whatever terminal is currently shown. */
   const detach = useCallback(() => {
-    const id = info?.id ?? localStorage.getItem(DOCK_ID_KEY);
-    if (id) detachTerminal(id);
-  }, [detachTerminal, info]);
+    const id = paneCurrent(position);
+    if (!id) return;
+    window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
+    const remaining = paneTerminals.filter((t) => t.id !== id);
+    if (remaining.length > 0) setPaneCurrent(position, remaining.at(-1)!.id);
+    else closePane(position);
+  }, [paneTerminals, position]);
 
-  /**
-   * Tab dragging, delegated on the strip. Two gestures share one drag:
-   * - sideways within the strip: reorder — the pointer's x against the other tabs'
-   *   midpoints re-inserts the dragged id and the order persists live;
-   * - pulled OUT of the strip (vertically past a slack band): detach — a floating hint
-   *   follows the pointer, and releasing opens that terminal in its own window.
-   * A press that never crosses the threshold stays a plain click (the tab's own select
-   * handler).
-   */
+  // ------------------------------------------------------------------ header drag: move pane
+  const headerDrag = useRef<{ x: number; y: number; started: boolean } | null>(null);
+  const [headerDragState, setHeaderDragState] = useState<{
+    active: boolean;
+    candidate: DockPosition | null;
+  }>({ active: false, candidate: null });
+
+  const onHeaderPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, [data-testid='terminal-tab']")) return;
+    headerDrag.current = { x: event.clientX, y: event.clientY, started: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const onHeaderPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const origin = headerDrag.current;
+    if (!origin) return;
+    if (!origin.started) {
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 5) return;
+      origin.started = true;
+    }
+    setHeaderDragState({
+      active: true,
+      candidate: dockDropCandidate(event.clientX, event.clientY),
+    });
+  }, []);
+
+  const onHeaderPointerUp = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const origin = headerDrag.current;
+      headerDrag.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (!origin?.started) return;
+      const candidate = headerDragState.candidate;
+      setHeaderDragState({ active: false, candidate: null });
+      if (candidate && candidate !== position) movePane(position, candidate);
+    },
+    [headerDragState.candidate, position],
+  );
+
+  const onHeaderPointerCancel = useCallback(() => {
+    headerDrag.current = null;
+    setHeaderDragState({ active: false, candidate: null });
+  }, []);
+
+  // --------------------------------------------------- tab drag: reorder or move to a pane
   const tabDrag = useRef<{ id: string; startX: number; startY: number; started: boolean } | null>(
     null,
   );
-  const [dragOut, setDragOut] = useState<{ x: number; y: number } | null>(null);
+  const [tabDragState, setTabDragState] = useState<{
+    active: boolean;
+    candidate: DockPosition | null;
+  }>({ active: false, candidate: null });
 
   const onStripPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -401,8 +362,8 @@ export function TerminalDock() {
       started: false,
     };
     // Capture immediately: a fast pull leaves the strip before any move event would have
-    // bubbled through it, and the drag would never see the pointer again. Captured, every
-    // move/up lands here — including the tap case, resolved as a select on pointerup.
+    // bubbled through it. Captured, every move/up lands here — the tap case included,
+    // resolved as a select on pointerup (capture retargets the browser click).
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
 
@@ -415,14 +376,18 @@ export function TerminalDock() {
       drag.started = true;
     }
 
-    // Out of the strip (with a little slack): the gesture becomes detach, not reorder.
+    // Out of the strip (with a little slack): the gesture becomes "move to an edge" — the
+    // same overlay as moving a pane, with the landing preview showing the new layout.
     const strip = event.currentTarget.getBoundingClientRect();
     const outside = event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20;
     if (outside) {
-      setDragOut({ x: event.clientX, y: event.clientY });
+      setTabDragState({
+        active: true,
+        candidate: dockDropCandidate(event.clientX, event.clientY),
+      });
       return;
     }
-    setDragOut(null);
+    setTabDragState({ active: false, candidate: null });
 
     const tabEls = [
       ...event.currentTarget.querySelectorAll<HTMLElement>("[data-terminal-id]"),
@@ -445,61 +410,26 @@ export function TerminalDock() {
   const onStripPointerUp = useCallback(() => {
     const drag = tabDrag.current;
     tabDrag.current = null;
-    // Pointer capture retargets the browser's click to the strip, so the tab's own click
-    // handler never fires from a mouse press — the tap resolves here instead.
-    if (drag && !drag.started) selectTerminal(drag.id);
-    if (drag?.started && dragOut) detachTerminal(drag.id);
-    setDragOut(null);
-  }, [detachTerminal, dragOut, selectTerminal]);
-
-  /**
-   * Header drag-to-dock. Buttons and tabs keep their own gestures; a drag starts from any
-   * other point of the header once the pointer moves past a small threshold, and pointer
-   * capture keeps the move/up events coming even while the pointer crosses the overlay.
-   */
-  const onHeaderPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button, [data-testid='terminal-tab']")) return;
-    dragOrigin.current = { x: event.clientX, y: event.clientY, started: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
-
-  const onHeaderPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const origin = dragOrigin.current;
-    if (!origin) return;
-    if (!origin.started) {
-      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 5) return;
-      origin.started = true;
+    const { active, candidate } = tabDragState;
+    setTabDragState({ active: false, candidate: null });
+    if (drag && !drag.started) {
+      selectTerminal(drag.id);
+      return;
     }
-    setDrag({ active: true, candidate: dockDropCandidate(event.clientX, event.clientY) });
-  }, []);
+    if (!drag?.started || !active || !candidate || candidate === position) return;
+    // Move the dragged terminal to the chosen edge (creating that pane on demand) and
+    // keep this pane on its next terminal — or close it when that was the last one.
+    const remaining = paneTerminals.filter((t) => t.id !== drag.id);
+    assignTerminalToPane(drag.id, candidate);
+    if (paneCurrent(position) === drag.id || remaining.length === 0) {
+      if (remaining.length > 0) setPaneCurrent(position, remaining.at(-1)!.id);
+      else closePane(position);
+    }
+  }, [paneTerminals, position, selectTerminal, tabDragState]);
 
-  const onHeaderPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      const origin = dragOrigin.current;
-      dragOrigin.current = null;
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-      if (!origin?.started) return;
-      const candidate = drag.candidate;
-      setDrag({ active: false, candidate: null });
-      // Applying remounts the dock in its new slot; the view reattaches and the server's
-      // restore stream repaints the screen, so the shell itself never notices the move.
-      if (candidate) setTerminalDockPosition(candidate);
-    },
-    [drag.candidate],
-  );
+  // ------------------------------------------------------------------------ boundary resize
+  const [resizing, setResizing] = useState(false);
 
-  const onHeaderPointerCancel = useCallback(() => {
-    dragOrigin.current = null;
-    setDrag({ active: false, candidate: null });
-  }, []);
-
-  /**
-   * Boundary resize: the pointer's distance from the row's opposite edge becomes the new
-   * ratio, applied live (the ratio store re-renders the percentage size; xterm refits via
-   * its ResizeObserver — the same path as a window resize, so nothing reconnects).
-   */
   const onResizerPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -510,20 +440,26 @@ export function TerminalDock() {
   const onResizerPointerMove = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
       if (!resizing) return;
-      const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect();
-      if (!row || row.width === 0 || row.height === 0) return;
+      // The ratio's basis must match what the CSS percentage resolves against: the host
+      // column for top/bottom panes (they are its direct children), whose width the
+      // layout row shares for left/right. The pane's own rect anchors the far edge.
+      const host = document.querySelector("[data-dock-host]")?.getBoundingClientRect();
+      const pane = event.currentTarget
+        .closest("[data-testid='terminal-dock']")
+        ?.getBoundingClientRect();
+      if (!host || !pane || host.width === 0 || host.height === 0) return;
       switch (position) {
         case "bottom":
-          setTerminalDockHeightRatio((row.bottom - event.clientY) / row.height);
+          setPaneRatio(position, (pane.bottom - event.clientY) / host.height);
           break;
         case "top":
-          setTerminalDockHeightRatio((event.clientY - row.top) / row.height);
+          setPaneRatio(position, (event.clientY - pane.top) / host.height);
           break;
         case "left":
-          setTerminalDockWidthRatio((event.clientX - row.left) / row.width);
+          setPaneRatio(position, (event.clientX - pane.left) / host.width);
           break;
         case "right":
-          setTerminalDockWidthRatio((row.right - event.clientX) / row.width);
+          setPaneRatio(position, (pane.right - event.clientX) / host.width);
           break;
       }
     },
@@ -535,33 +471,31 @@ export function TerminalDock() {
     setResizing(false);
   }, []);
 
-  /** Double-click the boundary: back to the default size for this orientation. */
-  const onResizerDoubleClick = useCallback(() => {
-    if (position === "top" || position === "bottom") {
-      setTerminalDockHeightRatio(DEFAULT_DOCK_HEIGHT_RATIO);
-    } else {
-      setTerminalDockWidthRatio(DEFAULT_DOCK_WIDTH_RATIO);
-    }
-  }, [position]);
+  const onResizerDoubleClick = useCallback(() => resetPaneRatio(position), [position]);
 
-  if (!open) return null;
-
+  // ------------------------------------------------------------------------------- render
+  const horizontal = isHorizontal(position);
+  const ratio = paneRatio(position);
+  const status = viewState.status;
+  const detail = viewState.detail;
   const statusText =
     status === "exited" && detail
       ? `${S.terminal.status.exited} — ${S.terminal.exitedWithCode(detail)}`
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
-  const horizontal = position === "top" || position === "bottom";
+  const overlayActive = headerDragState.active || tabDragState.active;
+  const overlayCandidate = headerDragState.active
+    ? headerDragState.candidate
+    : tabDragState.candidate;
 
   return (
     <div
       data-testid="terminal-dock"
       data-position={position}
-      style={horizontal ? { height: `${heightRatio * 100}%` } : { width: `${widthRatio * 100}%` }}
-      className={`relative flex shrink-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
+      style={horizontal ? { height: `${ratio * 100}%` } : { width: `${ratio * 100}%` }}
+      className={`relative flex min-h-0 min-w-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
     >
-      {/* Boundary resize handle: invisible until hovered/active, forgiving 6px hit strip.
-          role=separator for assistive tech; double-click restores the default size. */}
+      {/* Boundary resize handle: invisible until hovered/active, forgiving 6px hit strip. */}
       <div
         data-testid="terminal-dock-resizer"
         role="separator"
@@ -577,6 +511,7 @@ export function TerminalDock() {
           resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
         }`}
       />
+
       <header
         data-testid="terminal-dock-header"
         onPointerDown={onHeaderPointerDown}
@@ -587,9 +522,9 @@ export function TerminalDock() {
       >
         <span className="shrink-0 font-medium">{S.terminal.title}</span>
 
-        {/* Tab strip: every live terminal, current one highlighted, drag sideways to
-            reorder. Scrolls when the shells outgrow the header — which is why the new-tab
-            button lives OUTSIDE it: "+" must never scroll out of reach. */}
+        {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
+            reorder, drag out to move onto another edge. Scrolls when the shells outgrow
+            the header — which is why the new-tab button lives OUTSIDE it. */}
         <div
           data-testid="terminal-tab-strip"
           onPointerDown={onStripPointerDown}
@@ -598,18 +533,17 @@ export function TerminalDock() {
           onPointerCancel={onStripPointerUp}
           className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
         >
-          {terminals.map((terminal, index) => (
+          {paneTerminals.map((terminal, index) => (
             <TerminalTab
               key={terminal.id}
               terminal={terminal}
               index={index}
-              active={terminal.id === info?.id}
+              active={terminal.id === currentId}
               onSelect={() => selectTerminal(terminal.id)}
               onKill={() => onKillTerminal(terminal.id)}
             />
           ))}
         </div>
-        {/* New shell: plus, pinned right after the strip like a browser's new-tab button. */}
         <DockButton
           label={S.terminal.newShell}
           testId="terminal-dock-new-shell"
@@ -639,37 +573,20 @@ export function TerminalDock() {
             onClick={detach}
             d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
           />
-          {/* Close: X (hides the dock; the shells keep running server-side) */}
+          {/* Close pane: X (its shells keep running; they fold into the primary pane) */}
           <DockButton
             label={S.terminal.close}
             testId="terminal-dock-close"
-            onClick={() => setTerminalDockOpen(false)}
+            onClick={() => closePane(position)}
             d="M6 6l12 12M18 6L6 18"
           />
         </div>
       </header>
-      <TerminalView
-        key={generation}
-        ensure={ensure}
-        onStatus={onStatus}
-        onInfo={onInfo}
-        onTitle={onTitle}
-        className="min-h-0 flex-1 overflow-hidden px-2 py-1"
-      />
-      {drag.active && <DockLayoutOverlay candidate={drag.candidate} />}
-      {/* Floating hint while a tab is dragged out of the strip: release = own window. */}
-      {dragOut &&
-        createPortal(
-          <div
-            data-testid="tab-detach-hint"
-            aria-hidden
-            className="pointer-events-none fixed z-[70] rounded-md border border-white/20 bg-gray-900/95 px-2 py-1 text-xs text-white shadow-lg"
-            style={{ left: dragOut.x + 12, top: dragOut.y + 12 }}
-          >
-            {S.terminal.dragOutHint}
-          </div>,
-          document.body,
-        )}
+
+      {/* The shown terminal's pooled view is adopted here (see the body effect). */}
+      <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1" />
+
+      {overlayActive && <DockLayoutOverlay candidate={overlayCandidate} />}
     </div>
   );
 }

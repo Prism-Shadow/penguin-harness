@@ -37,8 +37,6 @@ export const en: Strings = {
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
     resize: "Resize terminal panel",
-    /** Floating hint while a tab is dragged out of the strip. */
-    dragOutHint: "Release to open in a new window",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",

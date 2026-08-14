@@ -10,6 +10,7 @@
  *   tab cannot see (a shell exiting on its own, terminals opened from another window).
  */
 import type { TerminalInfo } from "./terminal-view";
+import { pruneAssignments } from "./terminal-dock-state";
 
 const POLL_MS = 30_000;
 
@@ -111,7 +112,9 @@ export function refreshTerminals(): Promise<void> {
       for (const id of pendingKills.keys()) {
         if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
-      commit(data.terminals.filter((t) => t.alive && !isPendingKill(t.id)));
+      const live = data.terminals.filter((t) => t.alive && !isPendingKill(t.id));
+      pruneAssignments(new Set(live.map((t) => t.id)));
+      commit(live);
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.
     } finally {

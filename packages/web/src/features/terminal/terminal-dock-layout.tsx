@@ -20,8 +20,8 @@ import {
   DOCK_MIN_HEIGHT_PX,
   DOCK_MIN_WIDTH_PX,
   DOCK_RATIO_MAX,
-  terminalDockHeightRatio,
-  terminalDockWidthRatio,
+  isHorizontal,
+  paneRatio,
   type DockPosition,
 } from "./terminal-dock-state";
 
@@ -33,20 +33,17 @@ export function dockHostRect(): DOMRect | null {
 }
 
 /**
- * Everything needed to draw the preview as the region the dock would REALLY occupy after
- * the move — measured from the live layout, not assumed:
- * - the dock's sizes are stored ratios of the layout row, clamped exactly like the dock's
- *   own CSS (px minimums, ratio ceiling), so the preview resolves them the same way;
- * - the extent for the dock's current orientation comes from its own rendered rect;
- * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): every
- *   dock position lives inside the layout row, which starts below that chrome, so the
- *   row's own top IS the content top for all four candidates.
+ * Everything needed to draw the preview as the region a pane at the candidate edge would
+ * REALLY occupy — measured from the live layout, not assumed:
+ * - a pane already open on that edge contributes its exact rendered rect;
+ * - otherwise the edge's stored ratio applies, clamped exactly like the pane's own CSS
+ *   (px minimums, ratio ceiling);
+ * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): the
+ *   layout row starts below that chrome, so its top is the content top.
  */
 interface DockGeometry {
   host: DOMRect;
   contentTop: number;
-  dockHeight: number;
-  dockWidth: number;
 }
 
 function clampSize(value: number, minPx: number, max: number): number {
@@ -56,32 +53,18 @@ function clampSize(value: number, minPx: number, max: number): number {
 function measureDockGeometry(): DockGeometry | null {
   const host = dockHostRect();
   if (!host) return null;
-  const dockEl = document.querySelector<HTMLElement>("[data-testid='terminal-dock']");
-  const dockRect = dockEl?.getBoundingClientRect() ?? null;
-  const position = dockEl?.dataset.position;
-  const horizontal = position === "top" || position === "bottom";
-
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? null;
   const contentTop = row ? Math.max(host.top, row.top) : host.top;
-  const contentHeight = host.bottom - contentTop;
+  return { host, contentTop };
+}
 
-  const dockHeight =
-    horizontal && dockRect
-      ? dockRect.height
-      : clampSize(
-          terminalDockHeightRatio() * contentHeight,
-          DOCK_MIN_HEIGHT_PX,
-          DOCK_RATIO_MAX * contentHeight,
-        );
-  const dockWidth =
-    !horizontal && dockRect
-      ? dockRect.width
-      : clampSize(
-          terminalDockWidthRatio() * host.width,
-          DOCK_MIN_WIDTH_PX,
-          DOCK_RATIO_MAX * host.width,
-        );
-  return { host, contentTop, dockHeight, dockWidth };
+/** The rendered rect of an already-open pane at `position`, if any. */
+function openPaneRect(position: DockPosition): DOMRect | null {
+  return (
+    document
+      .querySelector<HTMLElement>(`[data-testid='terminal-dock'][data-position='${position}']`)
+      ?.getBoundingClientRect() ?? null
+  );
 }
 
 /** Resolves the drop candidate for a pointer position: widget rectangles first, then edge bands. */
@@ -104,12 +87,30 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
   return nearest[1] <= EDGE_BAND ? nearest[0] : null;
 }
 
-/** The exact region the dock would occupy after landing on `position`. */
+/** The exact region a pane at `position` would occupy after the drop. */
 function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProperties {
   const { host, contentTop } = geometry;
   const contentHeight = host.bottom - contentTop;
-  const height = Math.min(geometry.dockHeight, contentHeight);
-  const width = Math.min(geometry.dockWidth, host.width);
+  const existing = openPaneRect(position);
+  // Height percentages resolve against the HOST column (top/bottom panes are its direct
+  // children), so the ratio's px value uses host.height — the region is then clipped to
+  // the content area below the chrome.
+  const height = Math.min(
+    existing && isHorizontal(position)
+      ? existing.height
+      : clampSize(
+          paneRatio(position) * host.height,
+          DOCK_MIN_HEIGHT_PX,
+          DOCK_RATIO_MAX * host.height,
+        ),
+    contentHeight,
+  );
+  const width = Math.min(
+    existing && !isHorizontal(position)
+      ? existing.width
+      : clampSize(paneRatio(position) * host.width, DOCK_MIN_WIDTH_PX, DOCK_RATIO_MAX * host.width),
+    host.width,
+  );
   switch (position) {
     case "top":
       return { left: host.left, top: contentTop, width: host.width, height };
