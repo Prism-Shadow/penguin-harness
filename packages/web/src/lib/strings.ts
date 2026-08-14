@@ -1218,8 +1218,8 @@ Benchmark：
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
     openAgents: "智能体面板",
-    /** Panel switcher (chat toolbar top-right): the "all panels" dropdown and its pin toggles. */
-    allPanels: "全部",
+    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
+    panelsCreate: "创建",
     workspacePanel: "工作区",
     pinPanel: "置顶到栏目",
     unpinPanel: "取消置顶",

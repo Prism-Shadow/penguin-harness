@@ -20,6 +20,32 @@ let inflight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Terminals the user just asked to kill, excluded from refresh results while the shell is
+ * still winding down (a DELETE only signals; `alive` flips when the pty exits a moment
+ * later). Without this, the reconciling refresh would resurrect the tab the user just
+ * closed. Entries clear when the server stops listing the id, or after a deadline.
+ */
+const pendingKills = new Map<string, number>();
+
+function isPendingKill(id: string): boolean {
+  const deadline = pendingKills.get(id);
+  if (deadline === undefined) return false;
+  if (Date.now() > deadline) {
+    pendingKills.delete(id);
+    return false;
+  }
+  return true;
+}
+
+function commit(next: TerminalInfo[]): void {
+  const nextFingerprint = JSON.stringify(next);
+  if (nextFingerprint === fingerprint) return;
+  terminals = next;
+  fingerprint = nextFingerprint;
+  for (const listener of [...listeners]) listener();
+}
+
 /** Live terminals, ordered by creation time (the server's list order). */
 export function liveTerminals(): TerminalInfo[] {
   return terminals;
@@ -37,13 +63,11 @@ export function refreshTerminals(): Promise<void> {
       const res = await fetch("/api/terminals", { credentials: "same-origin" });
       if (!res.ok) return; // signed out or server unreachable: keep the last known list
       const data = (await res.json()) as { terminals: TerminalInfo[] };
-      const next = data.terminals.filter((t) => t.alive);
-      const nextFingerprint = JSON.stringify(next);
-      if (nextFingerprint !== fingerprint) {
-        terminals = next;
-        fingerprint = nextFingerprint;
-        for (const listener of [...listeners]) listener();
+      const listed = new Set(data.terminals.map((t) => t.id));
+      for (const id of pendingKills.keys()) {
+        if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
+      commit(data.terminals.filter((t) => t.alive && !isPendingKill(t.id)));
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.
     } finally {
@@ -73,21 +97,32 @@ export function subscribeTerminals(listener: () => void): () => void {
 }
 
 /**
- * Kills a terminal and re-syncs. The DELETE only signals the shell — `alive` flips when
- * the pty actually exits a moment later — so a couple of short delayed refreshes follow
- * the immediate one to let the tab (and badge) settle without waiting for the slow poll.
+ * A terminal the user just created (the POST response in hand): into the list right away,
+ * so the count/tabs react to the user's own action instantly rather than after a re-fetch.
+ */
+export function noteTerminalCreated(info: TerminalInfo): void {
+  if (terminals.some((t) => t.id === info.id)) return;
+  commit([...terminals, info]);
+}
+
+/**
+ * Kills a terminal. Optimistic: the user's intent is immediate, so the entry leaves the
+ * list (count, tabs, badge) before the server round-trip; delayed refreshes reconcile once
+ * the pty has actually exited, with `pendingKills` keeping the dying shell from
+ * reappearing in between.
  */
 export async function killTerminal(id: string): Promise<void> {
+  pendingKills.set(id, Date.now() + 10_000);
+  commit(terminals.filter((t) => t.id !== id));
   try {
     await fetch(`/api/terminals/${encodeURIComponent(id)}`, {
       method: "DELETE",
       credentials: "same-origin",
     });
   } catch {
-    // Refresh below still reconciles with whatever the server thinks.
+    // The delayed refreshes below still reconcile with whatever the server thinks.
   }
-  await refreshTerminals();
-  for (const delay of [300, 1200]) {
+  for (const delay of [300, 1500]) {
     setTimeout(() => void refreshTerminals(), delay);
   }
 }

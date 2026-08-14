@@ -29,8 +29,8 @@ const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace"];
 
 /** Folder glyph, duplicated from the chat stats icons to avoid exporting page internals. */
 const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
-/** 2x2 grid: the "all panels" trigger. */
-const ALL_ICON = "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z";
+/** Plus: the "create" trigger opening the panels menu. */
+const CREATE_ICON = "M12 5v14M5 12h14";
 /** Pin (map-pin style tack), shown filled while pinned. */
 const PIN_ICON = "M12 17v5M7 4h10l-1.5 6.5L18 13H6l2.5-2.5z";
 
@@ -202,7 +202,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
           </button>
         ))}
 
-      {/* "All panels" dropdown: every panel, icon + name, with a pin toggle per row. */}
+      {/* "Create" dropdown: every panel, icon + name, with a pin toggle per row. */}
       <Dropdown
         open={menuOpen}
         setOpen={setMenuOpen}
@@ -212,12 +212,12 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             type="button"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(!menuOpen)}
-            title={S.chat.allPanels}
-            aria-label={S.chat.allPanels}
+            title={S.chat.panelsCreate}
+            aria-label={S.chat.panelsCreate}
             data-testid="panels-all"
             className={triggerClass(menuOpen)}
           >
-            <PathGlyph d={ALL_ICON} />
+            <PathGlyph d={CREATE_ICON} />
             {!terminalPinned && <TerminalCountBadge count={terminalCount} />}
           </button>
         }
@@ -244,11 +244,10 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
                 <span className="shrink-0 text-gray-500 dark:text-gray-400">{entry.glyph()}</span>
-                <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-                {entry.pending && (
-                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                )}
-                {/* Live shell count on the terminal row, mirroring the toolbar badge. */}
+                <span className="min-w-0 truncate">{entry.label}</span>
+                {/* Live shell count, right beside the name — the row's right edge belongs
+                    to the pin toggle (a hover-revealed slot that must not look like a gap
+                    next to content). */}
                 {entry.key === "terminal" && terminalCount > 0 && (
                   <span
                     data-testid="panels-menu-terminal-count"
@@ -256,6 +255,10 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                   >
                     {terminalCount}
                   </span>
+                )}
+                <span className="min-w-0 flex-1" />
+                {entry.pending && (
+                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                 )}
               </button>
               {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
