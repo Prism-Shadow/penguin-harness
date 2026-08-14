@@ -109,6 +109,7 @@ import {
 import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
+import { PanelsToolbar } from "./panels-toolbar";
 
 const STAT_ICONS = {
   // Tokens (database / stacked cylinders)
@@ -1579,73 +1580,18 @@ export function ChatPage() {
             )}
           </div>
 
-          {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
-          <button
-            type="button"
-            aria-expanded={subagentsPanel.open}
-            onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
-            title={S.chat.openAgents}
-            aria-label={S.chat.openAgents}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
-              subagentsPanel.open
-                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            {/* Nodes/network glyph (spawn tree). */}
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden
-            >
-              <circle cx="5" cy="12" r="2.5" />
-              <circle cx="19" cy="5.5" r="2.5" />
-              <circle cx="19" cy="18.5" r="2.5" />
-              <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
-            </svg>
-            {/* At md widths the pinned sidebar leaves less room than the viewport breakpoint
-                suggests. Keep both panel actions icon-only until lg so the running status and
-                live stats retain their own layout space. */}
-            <span className="hidden lg:inline">{S.chat.openAgents}</span>
-            {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
-            {anySubagentPending && (
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            )}
-          </button>
-
-          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts); opening closes the subagents panel (wrapped setOpen). */}
-          <button
-            type="button"
-            aria-expanded={filesPanel.open}
-            onClick={() => filesPanel.setOpen(!filesPanel.open)}
-            title={S.chat.openWorkspace}
-            aria-label={S.chat.openWorkspace}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
-              filesPanel.open
-                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden
-            >
-              <path d={STAT_ICONS.folder} />
-            </svg>
-            {/* Below lg the button is icon-only (title/aria keep the name): between md and lg
-                the pinned sidebar makes the chat toolbar substantially narrower than the
-                viewport, so the action labels would squeeze the status into the Token stats. */}
-            <span className="hidden lg:inline">{S.chat.openWorkspace}</span>
-          </button>
+          {/* Panel switcher (icon-only): pinned panel triggers + the "all panels" dropdown
+              with per-panel pin toggles. Subagents panel docks the latest-Task call graph
+              (use-subagents-panel.ts), Workspace docks the files panel (use-files-panel.ts) —
+              opening either closes the other (wrapped setOpen) — and the terminal toggles the
+              app-wide dock (terminal-dock.tsx). */}
+          <PanelsToolbar
+            agentsOpen={subagentsPanel.open}
+            onToggleAgents={() => subagentsPanel.setOpen(!subagentsPanel.open)}
+            agentsPending={anySubagentPending}
+            workspaceOpen={filesPanel.open}
+            onToggleWorkspace={() => filesPanel.setOpen(!filesPanel.open)}
+          />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel

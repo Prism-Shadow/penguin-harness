@@ -21,6 +21,7 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { TerminalDock } from "../../features/terminal/terminal-dock";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -299,6 +300,10 @@ export function AppLayout() {
         <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
+
+        {/* Integrated terminal (Codex-style): bottom panel of the content column, on every
+            page. Toggled via Ctrl+` (bound inside) or the sidebar's terminal entry. */}
+        <TerminalDock />
       </div>
 
       <ChangePasswordDialog
