@@ -160,8 +160,10 @@ export class TraceService {
   /**
    * All of this Session's Trace files (sorted by index ascending), served from the
    * index. An empty answer force-reconciles once and retries before being believed:
-   * disk is the source of truth, and a gate blind spot (an external write into an old
-   * date dir) must cost one extra scan, never a false 404.
+   * disk is the source of truth, and a gate blind spot (a backdated write, or an
+   * in-place append, which moves no directory mtime — see trace-index's header) must
+   * cost one extra scan, never a false 404. Note this retry only covers a WHOLE-session
+   * miss: a session with some shards indexed and a later one missed is served as-is.
    */
   private async locateAll(
     projectId: string,

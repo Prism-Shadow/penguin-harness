@@ -22,9 +22,10 @@ const OLD = "session-2026-07-01-08-00-00-aabb0003";
  * assertions first make the tree look quiet, exactly like a tree written minutes ago.
  */
 async function backdate(...paths: string[]): Promise<void> {
-  // A FIXED past instant, so repeated backdates are idempotent: the blind-spot test
-  // resets a changed dir to exactly the mtime the gate cached, which is precisely the
-  // "old dir changed without moving any gated mtime" scenario.
+  // A FIXED past instant, so repeated backdates are idempotent. Every date dir is now
+  // gated, so the blind-spot test relies on that idempotence rather than on an unwatched
+  // dir: it resets a CHANGED dir to exactly the mtime the gate already cached, which is
+  // the surviving "backdated write" scenario.
   const old = new Date("2026-01-01T00:00:00.000Z");
   for (const p of paths) {
     await fs.utimes(p, old, old);
@@ -83,11 +84,15 @@ describe("trace-index", () => {
     expect(h.traceIndex.counters.headReads).toBe(1);
 
     // Steady state: reconciling an unchanged tree is pure gate stats — no readdir, no reads.
+    // gateStats is pinned too: the gate costs one root stat plus one per date dir, and
+    // only one date dir exists here. Without this the hot path could grow silently.
     const scans = h.traceIndex.counters.dirScans;
+    const gate = h.traceIndex.counters.gateStats;
     await h.traceIndex.reconcileAgent(P, A);
     await h.traceIndex.reconcileAgent(P, A);
     expect(h.traceIndex.counters.dirScans).toBe(scans);
     expect(h.traceIndex.counters.headReads).toBe(1);
+    expect(h.traceIndex.counters.gateStats).toBe(gate + 2 * (1 + 1));
 
     // A new shard in the same (newest) date dir moves that dir's mtime: the gate notices.
     await writeTraceFile(root, P, A, "2026-07-05", S2, 1, [
@@ -118,6 +123,21 @@ describe("trace-index", () => {
     await h.traceIndex.reconcileAgent(P, A);
     // The gate must catch the change in the non-newest dir and register the new shard.
     expect(h.traceIndex.repo.listFilesBySession(P, A, S1)).toHaveLength(2);
+
+    // The newest dir is gated FIRST and short-circuits: with the tree quiet again, a
+    // change confined to the newest dir must settle the gate in one date-dir stat, so
+    // the older dirs stay off the hot path however many of them accumulate.
+    await backdate(
+      tracesRoot(root),
+      path.join(tracesRoot(root), "2026-07-05"),
+      path.join(tracesRoot(root), "2026-07-06"),
+    );
+    await h.traceIndex.reconcileAgent(P, A);
+    const gate = h.traceIndex.counters.gateStats;
+    await writeTraceFile(root, P, A, "2026-07-06", S2, 2, [userText("newest dir moves")]);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.listFilesBySession(P, A, S2)).toHaveLength(2);
+    expect(h.traceIndex.counters.gateStats).toBe(gate + 2); // root + newest only
   });
 
   it("a write into an OLD date dir with backdated mtime slips past the gate; the consumers' force-retry (locateAll) recovers it", async () => {
