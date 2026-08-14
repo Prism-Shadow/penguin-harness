@@ -217,6 +217,7 @@ export const SKILL_GROUPS: SkillGroupInfo[] = [
       "ollama",
       "llamafactory",
       "skill-porting",
+      "hot-skill-authoring",
     ],
   },
   {

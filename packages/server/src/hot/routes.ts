@@ -12,10 +12,10 @@ import { Hono } from "hono";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { ifaceData } from "@prismshadow/penguin-core/kernel";
 import type { AppDeps } from "../app.js";
+import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
-import { errorBody, HttpError } from "../http/errors.js";
+import { HttpError } from "../http/errors.js";
 import type { AgentSlotCtx } from "./agent-slot.js";
-import { AuthoringFailed, authorSkillScript } from "./author.js";
 import { ScriptContractError, validateSkillScript } from "./script.js";
 import type { SkillSlotCtx } from "./skill-slot.js";
 import type { TerminalApiV2 } from "./terminal.js";
@@ -33,6 +33,10 @@ function asBadRequest(err: unknown): never {
 export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const hot = deps.hot;
+  // Mounted BEFORE the global cookie-auth middleware (see app.ts): this gate
+  // does its own two-credential auth so local agents can call in with the
+  // file-permission-gated Bearer token instead of a browser session.
+  const cookieAuth = authMiddleware(deps.authService);
 
   routes.use("*", async (c, next) => {
     // Dangerous-network default-off: hot APIs load and run code, so on a
@@ -50,13 +54,23 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
         );
       }
     }
-    if (!c.get("user").isAdmin) {
-      throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
+    const gated = async (): Promise<void> => {
+      // The upgrade endpoint enqueues internally; everything else waits out
+      // any in-flight swap here (unobservable freeze: latency, not errors).
+      if (!c.req.path.endsWith("/platform/upgrade")) await hot.waitIdle();
+      await next();
+    };
+    // Local-agent credential: the per-boot token from $PENGUIN_HOME/hot/api.json.
+    if (c.req.header("authorization") === `Bearer ${hot.apiToken}`) {
+      return gated();
     }
-    // The upgrade endpoint enqueues internally; everything else waits out any
-    // in-flight swap here (unobservable freeze: latency, not errors).
-    if (!c.req.path.endsWith("/platform/upgrade")) await hot.waitIdle();
-    await next();
+    // Browser credential: the standard cookie session, admins only.
+    return cookieAuth(c, async () => {
+      if (!c.get("user").isAdmin) {
+        throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
+      }
+      await gated();
+    });
   });
 
   // -- Platform ------------------------------------------------------------
@@ -295,73 +309,6 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     }
   });
 
-  /**
-   * The one-sentence path: describe the capability, the authoring model
-   * writes the script, the arktype gate judges it (failures are fed back to
-   * the model for another attempt), and a passing script is installed — the
-   * caller never touches curl or code.
-   */
-  routes.post("/skills/author", async (c) => {
-    const body = await c.req.json<{ request: string; id?: string }>();
-    if (typeof body.request !== "string" || body.request.trim() === "") {
-      throw new HttpError(400, "bad_request", "Missing request (describe the capability).");
-    }
-    const id = body.id ?? `skill_${Math.random().toString(36).slice(2, 8)}`;
-    if (!/^[a-z0-9_-]+$/i.test(id)) throw new HttpError(400, "bad_request", "Invalid skill id.");
-    const llm = hot.authorLlm;
-    if (llm === null) {
-      throw new HttpError(
-        503,
-        "no_authoring_model",
-        "No authoring model is configured (set DEEPSEEK_API_KEY, or plug one into hot.authorLlm).",
-      );
-    }
-    const inst = await hot.ensure();
-    const skills = inst.api.skills();
-    if (skills.get(id) !== undefined) {
-      throw new HttpError(400, "bad_request", `Skill '${id}' already exists.`);
-    }
-    let authored;
-    try {
-      authored = await authorSkillScript(llm, body.request.trim());
-    } catch (err) {
-      if (err instanceof AuthoringFailed) {
-        // Not a client error and not a crash: the model exhausted its
-        // attempts. The last script + validator verdict come back for a
-        // human (or a stronger model) to pick up.
-        return c.json(
-          { ...errorBody("authoring_failed", err.message), script: err.lastScript },
-          422,
-        );
-      }
-      throw new HttpError(
-        502,
-        "bad_gateway",
-        `authoring model call failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-    try {
-      const api = await skills.add(id, { script: authored.script, rev: 1, state: null });
-      api.setup(id, inst.api.tools());
-      return c.json(
-        {
-          id,
-          skill: api.describe(),
-          tools: inst.api
-            .tools()
-            .list()
-            .filter((t) => t.owner === id),
-          attempts: authored.attempts,
-          script: authored.script,
-        },
-        201,
-      );
-    } catch (err) {
-      skills.remove(id);
-      asBadRequest(err);
-    }
-  });
-
   routes.get("/skills", async (c) => {
     const inst = await hot.ensure();
     const skills = inst.api.skills();
@@ -425,28 +372,6 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
         "bad_request",
         `tool '${name}' failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-    }
-  });
-
-  // -- Demo UI panel (the web platform bundle in miniature) -----------------
-
-  routes.get("/ui/manifest", (c) => c.json(hot.uiManifest()));
-
-  routes.get("/ui/panel.js", (c) => {
-    const { content, rev } = hot.readUiPanel();
-    return c.body(content, 200, {
-      "Content-Type": "text/javascript; charset=utf-8",
-      "Cache-Control": "no-cache",
-      ETag: `"${rev}"`,
-    });
-  });
-
-  routes.post("/ui/activate", async (c) => {
-    const body = await c.req.json<{ version: string }>();
-    try {
-      return c.json(hot.activateUiPanel(body.version));
-    } catch (err) {
-      throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
     }
   });
 

@@ -3,20 +3,9 @@
  * Kept separate from vite.config.ts: vitest's bundled vite 5 types conflict with this package's vite 7
  * plugin types, and tests don't need the plugin anyway.
  */
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: {
-    alias: [
-      // Same aliasing as vite.config.ts: the zero-dependency kernel comes from
-      // the workspace source, sidestepping stale pnpm file: copies of core.
-      {
-        find: /^@prismshadow\/penguin-core\/kernel$/,
-        replacement: fileURLToPath(new URL("../core/src/kernel/index.ts", import.meta.url)),
-      },
-    ],
-  },
   test: {
     environment: "node",
     // Only run unit tests under test/; e2e/ (Playwright, has its own test:e2e) is excluded from vitest.

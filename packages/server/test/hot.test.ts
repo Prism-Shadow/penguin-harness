@@ -85,6 +85,35 @@ describe("hot platform", () => {
     expect(res.status).toBe(403);
   });
 
+  it("the local-agent Bearer token is admin-equivalent for hot APIs (no cookie needed)", async () => {
+    const bearer = { authorization: `Bearer ${t.deps.hot.apiToken}` };
+    // No cookie at all: the file-permission-gated token authenticates by itself.
+    const res = await t.app.request("/api/hot/tools", { headers: bearer });
+    expect(res.status).toBe(200);
+    // A wrong token falls through to cookie auth and fails as unauthenticated.
+    const bad = await t.app.request("/api/hot/tools", {
+      headers: { authorization: "Bearer not-the-token" },
+    });
+    expect(bad.status).toBe(401);
+    // The full skill loop works over the token (what the SKILL.md teaches).
+    const install = await t.app.request("/api/hot/skills", {
+      method: "POST",
+      headers: { ...bearer, "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "via-token",
+        script:
+          'return { name: "t", version: 1, setup(ctx) { ctx.registerTool({ name: "ping", description: "pong", run: () => ({ pong: true }) }); } };',
+      }),
+    });
+    expect(install.status).toBe(201);
+    const run = await t.app.request("/api/hot/tools/ping/invoke", {
+      method: "POST",
+      headers: { ...bearer, "content-type": "application/json" },
+      body: JSON.stringify({ input: null }),
+    });
+    expect(((await run.json()) as { result: { pong: boolean } }).result.pong).toBe(true);
+  });
+
   it("boots platform v1 lazily and reports its serialized iface", async () => {
     const res = await api.get("/api/hot/platform");
     expect(res.status).toBe(200);
@@ -308,26 +337,6 @@ describe("hot platform", () => {
       400,
     );
   });
-
-  it("serves the demo UI panel with a content rev and hot-activates versions", async () => {
-    const m1 = (await (await api.get("/api/hot/ui/manifest")).json()) as {
-      version: string;
-      rev: string;
-    };
-    expect(m1.version).toBe("v1");
-
-    const js = await api.get("/api/hot/ui/panel.js");
-    expect(js.status).toBe(200);
-    expect(js.headers.get("content-type")).toContain("javascript");
-    expect(await js.text()).toContain("demo-panel");
-
-    const m2 = (await (await api.post("/api/hot/ui/activate", { version: "v2" })).json()) as {
-      version: string;
-      rev: string;
-    };
-    expect(m2.version).toBe("v2");
-    expect(m2.rev).not.toBe(m1.rev);
-  });
 });
 
 describe("hot host capability degradation", () => {
@@ -512,55 +521,6 @@ describe("hot skills and tools", () => {
       result: { count: number };
     };
     expect(run.result.count).toBe(2);
-  });
-
-  it("one-sentence authoring: the model's contract errors are fed back until it conforms", async () => {
-    // A fake authoring model: first attempt violates the contract (no setup),
-    // second attempt — which must contain the validator's feedback — conforms.
-    const prompts: string[] = [];
-    t.deps.hot.authorLlm = (prompt) => {
-      prompts.push(prompt);
-      const script =
-        prompts.length === 1 ? 'return { name: "counter", version: 1 };' : COUNTER_SKILL;
-      return Promise.resolve("```js\n" + script + "\n```");
-    };
-
-    const res = await api.post("/api/hot/skills/author", {
-      id: "authored",
-      request: "实现计数器功能",
-    });
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as {
-      attempts: number;
-      skill: { name: string };
-      tools: { name: string }[];
-    };
-    expect(body.attempts).toBe(2);
-    expect(body.skill.name).toBe("counter-skill");
-    expect(body.tools.map((tool) => tool.name)).toEqual(["count"]);
-    // The retry prompt carried the validator's verdict back to the model.
-    expect(prompts[1]).toContain("rejected by the platform's validator");
-    expect(prompts[1]).toContain("setup");
-    // And the authored tool is live.
-    const run = (await (await api.post("/api/hot/tools/count/invoke", {})).json()) as {
-      result: { count: number };
-    };
-    expect(run.result.count).toBe(1);
-  });
-
-  it("authoring without a configured model answers 503; exhausted attempts answer 422", async () => {
-    t.deps.hot.authorLlm = null;
-    expect((await api.post("/api/hot/skills/author", { request: "anything" })).status).toBe(503);
-
-    t.deps.hot.authorLlm = () => Promise.resolve("```js\nreturn 42;\n```");
-    const res = await api.post("/api/hot/skills/author", { id: "hopeless", request: "anything" });
-    expect(res.status).toBe(422);
-    const body = (await res.json()) as { error: { code: string }; script: string };
-    expect(body.error.code).toBe("authoring_failed");
-    expect(body.script).toBe("return 42;");
-    // Nothing was installed.
-    const list = (await (await api.get("/api/hot/skills")).json()) as { skills: unknown[] };
-    expect(list.skills).toEqual([]);
   });
 
   it("upgrading to a distro without a skills subtree is blocked while skills hold data", async () => {

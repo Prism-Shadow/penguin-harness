@@ -18,7 +18,6 @@ import { UsagePage } from "./features/usage/usage-page";
 import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { AdminUsersPage } from "./features/admin/admin-users-page";
-import { HotPage } from "./features/hot/hot-page";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -57,8 +56,6 @@ export function AppRouter() {
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
-          {/* Hot-update MVP demo (admin only; direct URL, no sidebar entry). */}
-          <Route path="/hot" element={<HotPage />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>

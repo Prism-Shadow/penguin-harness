@@ -148,6 +148,9 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
     startedAt: new Date().toISOString(),
   });
   if (config.portFile !== null) writePortFile(config.portFile, info.port);
+  // Local-agent credential for the hot platform APIs ($PENGUIN_HOME/hot/api.json,
+  // 0600): written once the port is known, consumed by the hot-skill-authoring SKILL.
+  void deps.hot.writeApiFile(`http://127.0.0.1:${info.port}`);
   if (config.host === "127.0.0.1" || config.host === "localhost") {
     ipv6Loopback = serve({ fetch: app.fetch, hostname: "::1", port: info.port });
     ipv6Loopback.on("error", (err: NodeJS.ErrnoException) => {
@@ -178,6 +181,12 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.hot.dispose();
+  // Best-effort: retire the per-boot local-agent credential with the process.
+  try {
+    fs.rmSync(path.join(config.root, "hot", "api.json"), { force: true });
+  } catch {
+    // A stale file only holds a dead token; the next boot overwrites it.
+  }
   deps.channels.dispose();
   ipv6Loopback?.close();
   server.close(() => {
