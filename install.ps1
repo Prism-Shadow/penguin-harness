@@ -253,7 +253,7 @@ function Select-FastBenchmarkSource(
 
   $OssEstimate = [double]$AssetSize / ([double]$ProbeSize / [Math]::Max([double]$OssProbe.Seconds, 0.001))
   $GitHubEstimate = [double]$AssetSize / ([double]$ProbeSize / [Math]::Max([double]$GitHubProbe.Seconds, 0.001))
-  if ($GitHubEstimate -le ($OssEstimate * 0.80) -and ($OssEstimate - $GitHubEstimate) -ge 2.0) {
+  if ($GitHubEstimate -lt $OssEstimate) {
     return "github"
   }
   return "oss"
@@ -289,11 +289,11 @@ function Select-BenchmarkDownloadSources([string]$Tag, [string]$Tmp) {
   $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline
   $Choice = Select-FastBenchmarkSource $OssLarge $GitHubLarge $Manifest.LargeProbe.Size $Manifest.AssetSize
   if ($Choice -eq "github") {
-    Write-Host "Selected GitHub (faster probe result)."
+    Write-Host "Selected GitHub (shorter estimated download time)."
     return [PSCustomObject]@{ BaseUrl = $GitHubBase; FallbackBaseUrl = $OssBase }
   }
   if ($Choice -eq "oss") {
-    Write-Host "Selected OSS mirror (default or faster probe result)."
+    Write-Host "Selected OSS mirror (shorter or equal estimated download time)."
     return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
   }
   return $null

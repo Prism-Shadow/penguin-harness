@@ -429,7 +429,7 @@ select_fast_source_from_metrics() {
       if (github_body < 0.001) github_body = 0.001
       oss_est = oss["start"] + asset / (probe / oss_body)
       github_est = github["start"] + asset / (probe / github_body)
-      if (github_est <= oss_est * 0.80 && oss_est - github_est >= 2) print "github"
+      if (github_est < oss_est) print "github"
       else print "oss"
     }
   ' "$sfm_oss_metrics" "$sfm_github_metrics"
@@ -478,11 +478,11 @@ benchmark_release_sources() {
   if [ "$brs_choice" = "github" ]; then
     BENCHMARK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
     BENCHMARK_FALLBACK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
-    echo "Selected GitHub (faster probe result)."
+    echo "Selected GitHub (shorter estimated download time)."
   else
     BENCHMARK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
     BENCHMARK_FALLBACK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
-    echo "Selected OSS mirror (default or faster probe result)."
+    echo "Selected OSS mirror (shorter or equal estimated download time)."
   fi
   return 0
 }

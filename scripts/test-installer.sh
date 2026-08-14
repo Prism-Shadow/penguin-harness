@@ -357,7 +357,7 @@ case "$MODE:$base" in
     printf '%s\n' '{"schemaVersion":1,"tag":"v0.0.0-test","releaseBaseUrl":"https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"}' > "$output"
     ;;
   benchmark-missing-manifest:release-download-manifest.tsv) exit 22 ;;
-  benchmark-github-fast:release-download-manifest.tsv | benchmark-missing-manifest-github:release-download-manifest.tsv)
+  benchmark-github-fast:release-download-manifest.tsv | benchmark-github-slightly-fast:release-download-manifest.tsv | benchmark-missing-manifest-github:release-download-manifest.tsv)
     {
       printf 'penguin-release-download-manifest\t1\tv0.0.0-test\n'
       printf 'probe\tsmall\tprobe-64k.bin\t65536\t%s\n' "$PROBE64_HASH"
@@ -365,17 +365,17 @@ case "$MODE:$base" in
       printf 'asset\t%s\t%s\t%s\n' "$HOST_ASSET" "$BENCHMARK_ASSET_SIZE" "$HOST_ASSET_HASH"
     } > "$output"
     ;;
-  benchmark-github-fast:probe-64k.bin) cp "$PROBE64" "$output" ;;
-  benchmark-github-fast:probe-1m.bin) cp "$PROBE1M" "$output" ;;
-  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | benchmark-github-fast:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
+  benchmark-github-fast:probe-64k.bin | benchmark-github-slightly-fast:probe-64k.bin) cp "$PROBE64" "$output" ;;
+  benchmark-github-fast:probe-1m.bin | benchmark-github-slightly-fast:probe-1m.bin) cp "$PROBE1M" "$output" ;;
+  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | benchmark-github-fast:install.sh | benchmark-github-slightly-fast:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
   404:penguin-*) exit 22 ;;
   network:penguin-*) exit 7 ;;
   outer-sha-mismatch:penguin-*.sha256) printf '%064d  %s\n' 0 "${base%.sha256}" > "$output" ;;
   outer-sha-mismatch:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   inner-sha-mismatch:penguin-*.sha256) cp "$BAD_BUNDLE.sha256" "$output" ;;
   inner-sha-mismatch:penguin-*) cp "$BAD_BUNDLE" "$output" ;;
-  benchmark-github-fast:penguin-*.sha256 | benchmark-missing-manifest:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
-  benchmark-github-fast:penguin-* | benchmark-missing-manifest:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  benchmark-github-fast:penguin-*.sha256 | benchmark-github-slightly-fast:penguin-*.sha256 | benchmark-missing-manifest:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  benchmark-github-fast:penguin-* | benchmark-github-slightly-fast:penguin-* | benchmark-missing-manifest:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   forced-oss-payload:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
@@ -390,6 +390,8 @@ if [ -n "$writeout" ]; then
   case "$MODE:$url" in
     benchmark-github-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
     benchmark-github-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.100 2.100 499321' ;;
+    benchmark-github-slightly-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.115 9118052' ;;
+    benchmark-github-slightly-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
     benchmark-github-fast:*) printf '%s' '0.020 0.060 1092266' ;;
     *) printf '%s' '0.010 0.020 3276800' ;;
   esac
@@ -458,6 +460,9 @@ run_online_case benchmark-github-fast benchmark-github-fast "" success 7 "" "" "
   || fail_test "benchmark selected more than one primary bundle download"
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/benchmark-github-fast.log" \
   || fail_test "benchmark did not select the faster GitHub source"
+run_online_case benchmark-github-slightly-fast benchmark-github-slightly-fast "" success 7 "" "" "$STAMPED_INSTALLER" auto 1
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/benchmark-github-slightly-fast.log" \
+  || fail_test "benchmark did not select the shorter estimated GitHub source"
 
 run_online_case benchmark-missing-manifest benchmark-missing-manifest "" success 4 "" "" "$STAMPED_INSTALLER" auto 1
 grep -q "Download source test was inconclusive" "$WORK_DIR/benchmark-missing-manifest.output" \
