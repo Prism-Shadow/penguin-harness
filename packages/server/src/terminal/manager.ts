@@ -53,8 +53,8 @@ export class TerminalManager {
       );
     }
 
-    // Unnamed terminals auto-increment per user ("tmp", "tmp 2", …, Paseo-style): several
-    // shells in the same directory would otherwise be indistinguishable in every list.
+    // Unnamed terminals auto-increment per user ("tmp", "tmp 2", …): several shells in
+    // the same directory would otherwise be indistinguishable in every list.
     let name = request.name;
     if (name === undefined) {
       const base = path.basename(cwd) || "terminal";

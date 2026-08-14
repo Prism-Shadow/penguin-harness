@@ -1,10 +1,8 @@
 /**
  * Terminal control plane: `/api/terminals`.
  *
- * Modelled on Paseo's terminal operations (`list_terminals` / `create_terminal` /
- * `kill_terminal` / `capture_terminal` / `send_terminal_keys`), but split the way this
- * server is built: JSON over HTTP for control, and a separate binary WebSocket for the byte
- * stream (terminal/ws.ts).
+ * Split the way this server is built: JSON over HTTP for control, and a separate binary
+ * WebSocket for the byte stream (terminal/ws.ts).
  *
  *   GET    /api/terminals            list the caller's terminals
  *   POST   /api/terminals            create one (cwd defaults to the home directory)
@@ -25,7 +23,7 @@ import type { TerminalManager } from "../../terminal/manager.js";
 
 /**
  * Key tokens accepted by POST /keys, so a caller can send Enter or Ctrl-C without
- * hand-encoding control bytes (Paseo's `send_terminal_keys`).
+ * hand-encoding control bytes.
  */
 const KEY_TOKENS: Record<string, string> = {
   Enter: "\r",

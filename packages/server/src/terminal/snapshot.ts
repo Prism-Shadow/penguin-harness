@@ -4,8 +4,7 @@
  * This is what makes a browser refresh (or a reconnect from a second device) show the
  * terminal exactly as it was: the daemon keeps an authoritative headless xterm per pty, and
  * on attach it *re-renders* that grid as an escape-sequence stream the client's real xterm
- * replays into an identical screen. Paseo does the same thing
- * (`renderTerminalSnapshotToAnsi`), and it beats the two obvious alternatives:
+ * replays into an identical screen. That beats the two obvious alternatives:
  *
  * - Replaying the raw pty byte log: unbounded, and full-screen programs (vim, top) replay
  *   as a flicker of stale frames.
@@ -169,7 +168,7 @@ function resolveIndex(value: number | undefined, total: number, fallback: "start
 }
 
 /**
- * Plain-text view of the screen (Paseo's `capture_terminal`). This is the read path for
+ * Plain-text view of the screen. This is the read path for
  * anything that is not a rendering client — tests, and later agents that need to see what a
  * command printed without parsing escape sequences.
  */

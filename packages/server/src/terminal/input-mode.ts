@@ -1,5 +1,5 @@
 /**
- * DEC private mode tracker (Paseo's `TerminalInputModeTracker`).
+ * DEC private mode tracker.
  *
  * A snapshot of the screen grid restores what is *displayed*, but not how the terminal is
  * supposed to *behave*: with bracketed paste (2004) or application cursor keys (1) lost, a
