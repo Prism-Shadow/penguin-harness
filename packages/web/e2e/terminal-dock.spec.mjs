@@ -670,33 +670,33 @@ test("hover menus: create opens on hover; terminal lists on both levels", async 
   await page.goto(`${BASE}/chat/${sessionId}`);
   await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
 
-  // 1. Hovering 创建 opens the menu — no click involved.
+  // 1. Hovering 创建 opens the menu — no click involved; the terminal row opens the dock
+  // on the seeded shell.
   await page.locator('[data-testid="panels-all"]').hover();
   await expect(page.locator('[data-testid="panels-menu-terminal"]')).toBeVisible({
     timeout: 5000,
   });
-
-  // 2. Hovering the terminal row reveals the second-level terminal list; picking the
-  // seeded terminal opens the dock right on it.
-  await page.locator('[data-testid="panels-menu-terminal"]').hover();
-  const sub = page.locator('[data-testid="panels-menu-terminal-sub"]');
-  await expect(sub).toBeVisible({ timeout: 5000 });
-  await sub.locator(`[data-testid="terminal-menu-item"][data-terminal-id="${seededId}"]`).click();
+  await page.locator('[data-testid="panels-menu-terminal"]').click();
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
   await expect(
     page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
   ).toBeVisible({ timeout: 20000 });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("HOVER_PICK_MARKER");
 
-  // 3. Pin the terminal: hovering ITS icon shows the first-level terminal list.
+  // 2. Pin the terminal: hovering ITS icon shows the terminal list; picking the seeded
+  // terminal keeps the dock on it.
   await page.locator('[data-testid="panels-all"]').hover();
   await page.locator('[data-testid="panels-pin-terminal"]').click();
   await page.keyboard.press("Escape");
   await page.mouse.move(10, 10); // clear hover state before targeting the pinned icon
   await page.locator('[data-testid="panel-btn-terminal"]').hover();
-  await expect(
-    page.locator('[data-testid="terminal-hover-menu"] [data-testid="terminal-menu-item"]').first(),
-  ).toBeVisible({ timeout: 5000 });
+  const item = page.locator(
+    `[data-testid="terminal-hover-menu"] [data-testid="terminal-menu-item"][data-terminal-id="${seededId}"]`,
+  );
+  await expect(item).toBeVisible({ timeout: 5000 });
+  await item.click();
+  await expect(dock(page)).toBeVisible();
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("HOVER_PICK_MARKER");
 });
 
 test("terminal count badge and last-opened persistence", async ({ page }) => {
