@@ -29,6 +29,23 @@ export const en: Strings = {
     unpinGroup: "Unpin group",
   },
 
+  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
+  terminal: {
+    title: "Terminal",
+    newShell: "New shell",
+    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
+    detach: "Open in new window",
+    close: "Close",
+    status: {
+      connecting: "connecting",
+      ready: "ready",
+      exited: "exited",
+      error: "error",
+    },
+    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
+    exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
   settings: {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
@@ -1158,6 +1175,11 @@ Scenarios:
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
     openAgents: "Agents panel",
+    /** Panel switcher (chat toolbar top-right): the "all panels" dropdown and its pin toggles. */
+    allPanels: "All",
+    workspacePanel: "Workspace",
+    pinPanel: "Pin to toolbar",
+    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",

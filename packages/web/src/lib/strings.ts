@@ -31,6 +31,23 @@ export const zh = {
     unpinGroup: "取消置顶",
   },
 
+  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
+  terminal: {
+    title: "终端",
+    newShell: "新建 Shell",
+    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
+    detach: "在新窗口打开",
+    close: "关闭",
+    status: {
+      connecting: "连接中",
+      ready: "已连接",
+      exited: "已退出",
+      error: "连接错误",
+    },
+    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
+    exitedWithCode: (code: string): string => `退出码 ${code}`,
+  },
+
   settings: {
     language: "语言",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
@@ -1110,6 +1127,11 @@ Benchmark：
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
     openAgents: "智能体面板",
+    /** Panel switcher (chat toolbar top-right): the "all panels" dropdown and its pin toggles. */
+    allPanels: "全部",
+    workspacePanel: "工作区",
+    pinPanel: "置顶到栏目",
+    unpinPanel: "取消置顶",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
