@@ -70,8 +70,8 @@ let visible = ((): boolean => {
   }
 })();
 
-let panes: DockPosition[] = readJson<DockPosition[]>(PANES_KEY, []).filter(
-  (p): p is DockPosition => POSITIONS.includes(p),
+let panes: DockPosition[] = readJson<DockPosition[]>(PANES_KEY, []).filter((p): p is DockPosition =>
+  POSITIONS.includes(p),
 );
 
 let ratios: Partial<Record<DockPosition, number>> = readJson(RATIOS_KEY, {});
@@ -106,15 +106,19 @@ export function isTerminalDockOpen(): boolean {
   return visible && panes.length > 0;
 }
 
-export function setTerminalDockOpen(next: boolean): void {
+function persistVisible(next: boolean): void {
   visible = next;
-  if (next && panes.length === 0) panes = ["bottom"];
-  writeJson(PANES_KEY, panes);
   try {
     localStorage.setItem(VISIBLE_KEY, next ? "1" : "0");
   } catch {
-    // Persistence only.
+    // Private-mode storage failures only cost persistence.
   }
+}
+
+export function setTerminalDockOpen(next: boolean): void {
+  persistVisible(next);
+  if (next && panes.length === 0) panes = ["bottom"];
+  writeJson(PANES_KEY, panes);
   notify();
 }
 
@@ -148,12 +152,7 @@ export function primaryPane(): DockPosition {
 }
 
 export function ensurePaneOpen(position: DockPosition): void {
-  visible = true;
-  try {
-    localStorage.setItem(VISIBLE_KEY, "1");
-  } catch {
-    // Persistence only.
-  }
+  persistVisible(true);
   if (!panes.includes(position)) {
     panes = [...panes, position];
     writeJson(PANES_KEY, panes);
@@ -179,14 +178,7 @@ export function closePane(position: DockPosition): void {
     }),
   );
   writeJson(ASSIGN_KEY, assignments);
-  if (panes.length === 0) {
-    visible = false;
-    try {
-      localStorage.setItem(VISIBLE_KEY, "0");
-    } catch {
-      // Persistence only.
-    }
-  }
+  if (panes.length === 0) persistVisible(false);
   notify();
 }
 
@@ -238,9 +230,7 @@ export function showTerminal(id: string): void {
 
 /** Drops assignment entries for terminals that no longer exist. */
 export function pruneAssignments(liveIds: ReadonlySet<string>): void {
-  const next = Object.fromEntries(
-    Object.entries(assignments).filter(([id]) => liveIds.has(id)),
-  );
+  const next = Object.fromEntries(Object.entries(assignments).filter(([id]) => liveIds.has(id)));
   if (Object.keys(next).length === Object.keys(assignments).length) return;
   assignments = next;
   writeJson(ASSIGN_KEY, assignments);

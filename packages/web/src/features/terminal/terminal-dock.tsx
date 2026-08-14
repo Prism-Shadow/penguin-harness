@@ -140,9 +140,7 @@ function TerminalTab(props: {
       data-terminal-id={terminal.id}
       data-active={active}
       className={`group relative flex h-6 min-w-10 max-w-40 items-center overflow-hidden rounded-md transition-colors duration-150 ${
-        active
-          ? "bg-white/15 text-white"
-          : "text-white/50 hover:bg-white/10 hover:text-white/80"
+        active ? "bg-white/15 text-white" : "text-white/50 hover:bg-white/10 hover:text-white/80"
       }`}
     >
       {/* No shrink-0: crowded tabs squeeze browser-style down to min-w-10 — the label
@@ -166,7 +164,14 @@ function TerminalTab(props: {
         onClick={props.onKill}
         className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded bg-[#262b31] p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-100"
       >
-        <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 14 14"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden
+        >
           <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       </button>
@@ -183,6 +188,61 @@ async function createShellInPane(position: DockPosition): Promise<void> {
   if (!created) return;
   noteTerminalCreated(created);
   assignTerminalToPane(created.id, position);
+}
+
+/**
+ * Shared pointer-drag state machine for the pane's gestures (header move, tab drag,
+ * boundary resize): capture on pointerdown so a fast pull can never escape the surface, a
+ * movement threshold separating taps from drags, and latest-callback refs so `onEnd`
+ * never sees stale state. Spread the returned props on the gesture's surface.
+ */
+function usePointerDrag<T>(options: {
+  /** Resolves the drag payload from the initial event; null refuses the gesture. */
+  begin: (event: React.PointerEvent<HTMLElement>) => T | null;
+  /** px of movement that turns the press into a drag (0 = immediately). */
+  threshold?: number;
+  onMove?: (event: React.PointerEvent<HTMLElement>, payload: T) => void;
+  /** Release: `dragged` distinguishes a completed drag from a plain tap. */
+  onEnd?: (payload: T, dragged: boolean) => void;
+  /** Abandoned gesture (pointercancel): clear visuals, apply nothing. */
+  onCancel?: () => void;
+}) {
+  const latest = useRef(options);
+  latest.current = options;
+  const state = useRef<{ payload: T; x: number; y: number; started: boolean } | null>(null);
+
+  return useMemo(
+    () => ({
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (event.button !== 0) return;
+        const payload = latest.current.begin(event);
+        if (payload === null) return;
+        state.current = { payload, x: event.clientX, y: event.clientY, started: false };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      onPointerMove: (event: React.PointerEvent<HTMLElement>) => {
+        const drag = state.current;
+        if (!drag) return;
+        if (!drag.started) {
+          const threshold = latest.current.threshold ?? 5;
+          if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < threshold) return;
+          drag.started = true;
+        }
+        latest.current.onMove?.(event, drag.payload);
+      },
+      onPointerUp: (event: React.PointerEvent<HTMLElement>) => {
+        const drag = state.current;
+        state.current = null;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        if (drag) latest.current.onEnd?.(drag.payload, drag.started);
+      },
+      onPointerCancel: () => {
+        state.current = null;
+        latest.current.onCancel?.();
+      },
+    }),
+    [],
+  );
 }
 
 /** One resolution at a time per pane — mount effects can fire in quick succession. */
@@ -259,8 +319,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
     const strip = stripRef.current;
     if (!strip) return;
     const onWheel = (event: WheelEvent): void => {
-      const delta =
-        Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       if (delta === 0 || strip.scrollWidth <= strip.clientWidth) return;
       event.preventDefault();
       strip.scrollLeft += delta;
@@ -324,151 +383,106 @@ export function TerminalDock({ position }: { position: DockPosition }) {
   }, [paneTerminals, position]);
 
   // ------------------------------------------------------------------ header drag: move pane
-  const headerDrag = useRef<{ x: number; y: number; started: boolean } | null>(null);
   const [headerDragState, setHeaderDragState] = useState<{
     active: boolean;
     candidate: DockPosition | null;
   }>({ active: false, candidate: null });
+  const clearHeaderDrag = () => setHeaderDragState({ active: false, candidate: null });
 
-  const onHeaderPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button, [data-testid='terminal-tab']")) return;
-    headerDrag.current = { x: event.clientX, y: event.clientY, started: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
-
-  const onHeaderPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const origin = headerDrag.current;
-    if (!origin) return;
-    if (!origin.started) {
-      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 5) return;
-      origin.started = true;
-    }
-    setHeaderDragState({
-      active: true,
-      candidate: dockDropCandidate(event.clientX, event.clientY),
-    });
-  }, []);
-
-  const onHeaderPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      const origin = headerDrag.current;
-      headerDrag.current = null;
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-      if (!origin?.started) return;
+  const headerDragProps = usePointerDrag<object>({
+    begin: (event) =>
+      (event.target as HTMLElement).closest("button, [data-testid='terminal-tab']") ? null : {},
+    onMove: (event) =>
+      setHeaderDragState({
+        active: true,
+        candidate: dockDropCandidate(event.clientX, event.clientY),
+      }),
+    onEnd: (_payload, dragged) => {
       const candidate = headerDragState.candidate;
-      setHeaderDragState({ active: false, candidate: null });
-      if (candidate && candidate !== position) movePane(position, candidate);
+      clearHeaderDrag();
+      if (dragged && candidate && candidate !== position) movePane(position, candidate);
     },
-    [headerDragState.candidate, position],
-  );
-
-  const onHeaderPointerCancel = useCallback(() => {
-    headerDrag.current = null;
-    setHeaderDragState({ active: false, candidate: null });
-  }, []);
+    onCancel: clearHeaderDrag,
+  });
 
   // --------------------------------------------------- tab drag: reorder or move to a pane
-  const tabDrag = useRef<{ id: string; startX: number; startY: number; started: boolean } | null>(
-    null,
-  );
   const [tabDragState, setTabDragState] = useState<{
     active: boolean;
     candidate: DockPosition | null;
   }>({ active: false, candidate: null });
+  const clearTabDrag = () => setTabDragState({ active: false, candidate: null });
 
-  const onStripPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-testid='terminal-tab-kill']")) return;
-    const tab = target.closest<HTMLElement>("[data-terminal-id]");
-    if (!tab?.dataset.terminalId) return;
-    tabDrag.current = {
-      id: tab.dataset.terminalId,
-      startX: event.clientX,
-      startY: event.clientY,
-      started: false,
-    };
-    // Capture immediately: a fast pull leaves the strip before any move event would have
-    // bubbled through it. Captured, every move/up lands here — the tap case included,
-    // resolved as a select on pointerup (capture retargets the browser click).
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
-
-  const onStripPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const drag = tabDrag.current;
-    if (!drag) return;
-    if (!drag.started) {
-      const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
-      if (moved < 6) return;
-      drag.started = true;
-    }
-
-    // Out of the strip (with a little slack): the gesture becomes "move to an edge" — the
-    // same overlay as moving a pane, with the landing preview showing the new layout.
-    const strip = event.currentTarget.getBoundingClientRect();
-    const outside = event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20;
-    if (outside) {
-      setTabDragState({
-        active: true,
-        candidate: dockDropCandidate(event.clientX, event.clientY),
-      });
-      return;
-    }
-    setTabDragState({ active: false, candidate: null });
-
-    const tabEls = [
-      ...event.currentTarget.querySelectorAll<HTMLElement>("[data-terminal-id]"),
-    ];
-    const currentIds = tabEls.map((el) => el.dataset.terminalId as string);
-    const others = tabEls.filter((el) => el.dataset.terminalId !== drag.id);
-    let insertAt = others.length;
-    for (let i = 0; i < others.length; i += 1) {
-      const rect = others[i]!.getBoundingClientRect();
-      if (event.clientX < rect.left + rect.width / 2) {
-        insertAt = i;
-        break;
+  const stripDragProps = usePointerDrag<{ id: string }>({
+    threshold: 6,
+    begin: (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-testid='terminal-tab-kill']")) return null;
+      const id = target.closest<HTMLElement>("[data-terminal-id]")?.dataset.terminalId;
+      return id ? { id } : null;
+    },
+    onMove: (event, { id }) => {
+      // Out of the strip (with a little slack): the gesture becomes "move to an edge" —
+      // the same overlay as moving a pane, with the preview showing the new layout.
+      const strip = event.currentTarget.getBoundingClientRect();
+      if (event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20) {
+        setTabDragState({
+          active: true,
+          candidate: dockDropCandidate(event.clientX, event.clientY),
+        });
+        return;
       }
-    }
-    const nextIds = others.map((el) => el.dataset.terminalId as string);
-    nextIds.splice(insertAt, 0, drag.id);
-    if (nextIds.some((id, index) => id !== currentIds[index])) setTerminalTabOrder(nextIds);
-  }, []);
+      setTabDragState({ active: false, candidate: null });
 
-  const onStripPointerUp = useCallback(() => {
-    const drag = tabDrag.current;
-    tabDrag.current = null;
-    const { active, candidate } = tabDragState;
-    setTabDragState({ active: false, candidate: null });
-    if (drag && !drag.started) {
-      selectTerminal(drag.id);
-      return;
-    }
-    if (!drag?.started || !active || !candidate || candidate === position) return;
-    // Move the dragged terminal to the chosen edge (creating that pane on demand) and
-    // keep this pane on its next terminal — or close it when that was the last one.
-    const remaining = paneTerminals.filter((t) => t.id !== drag.id);
-    assignTerminalToPane(drag.id, candidate);
-    if (paneCurrent(position) === drag.id || remaining.length === 0) {
-      if (remaining.length > 0) setPaneCurrent(position, remaining.at(-1)!.id);
-      else closePane(position);
-    }
-  }, [paneTerminals, position, selectTerminal, tabDragState]);
+      // Within the strip: live reorder against the other tabs' midpoints.
+      const tabEls = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-terminal-id]")];
+      const currentIds = tabEls.map((el) => el.dataset.terminalId as string);
+      const others = tabEls.filter((el) => el.dataset.terminalId !== id);
+      let insertAt = others.length;
+      for (let i = 0; i < others.length; i += 1) {
+        const rect = others[i]!.getBoundingClientRect();
+        if (event.clientX < rect.left + rect.width / 2) {
+          insertAt = i;
+          break;
+        }
+      }
+      const nextIds = others.map((el) => el.dataset.terminalId as string);
+      nextIds.splice(insertAt, 0, id);
+      if (nextIds.some((nextId, index) => nextId !== currentIds[index]))
+        setTerminalTabOrder(nextIds);
+    },
+    onEnd: ({ id }, dragged) => {
+      const { active, candidate } = tabDragState;
+      clearTabDrag();
+      // A tap resolves to select here: pointer capture retargets the browser click to the
+      // strip, so the tab's own click handler never fires from a mouse press.
+      if (!dragged) {
+        selectTerminal(id);
+        return;
+      }
+      if (!active || !candidate || candidate === position) return;
+      // Move the dragged terminal to the chosen edge (creating that pane on demand) and
+      // keep this pane on its next terminal — or close it when that was the last one.
+      const remaining = paneTerminals.filter((t) => t.id !== id);
+      assignTerminalToPane(id, candidate);
+      if (paneCurrent(position) === id || remaining.length === 0) {
+        if (remaining.length > 0) setPaneCurrent(position, remaining.at(-1)!.id);
+        else closePane(position);
+      }
+    },
+    onCancel: clearTabDrag,
+  });
 
   // ------------------------------------------------------------------------ boundary resize
   const [resizing, setResizing] = useState(false);
 
-  const onResizerPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setResizing(true);
-  }, []);
-
-  const onResizerPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLElement>) => {
-      if (!resizing) return;
+  const resizerDragProps = usePointerDrag<object>({
+    threshold: 0,
+    begin: (event) => {
+      event.preventDefault(); // no text selection while dragging the boundary
+      setResizing(true);
+      return {};
+    },
+    onMove: (event) => {
       // The ratio's basis must match what the CSS percentage resolves against: the host
       // column for top/bottom panes (they are its direct children), whose width the
       // layout row shares for left/right. The pane's own rect anchors the far edge.
@@ -492,13 +506,9 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           break;
       }
     },
-    [position, resizing],
-  );
-
-  const onResizerPointerUp = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-    setResizing(false);
-  }, []);
+    onEnd: () => setResizing(false),
+    onCancel: () => setResizing(false),
+  });
 
   const onResizerDoubleClick = useCallback(() => resetPaneRatio(position), [position]);
 
@@ -529,10 +539,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         aria-orientation={horizontal ? "horizontal" : "vertical"}
         aria-label={S.terminal.resize}
         title={S.terminal.resize}
-        onPointerDown={onResizerPointerDown}
-        onPointerMove={onResizerPointerMove}
-        onPointerUp={onResizerPointerUp}
-        onPointerCancel={onResizerPointerUp}
+        {...resizerDragProps}
         onDoubleClick={onResizerDoubleClick}
         className={`absolute z-20 transition-colors duration-150 ${RESIZER_CLASSES[position]} ${
           resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
@@ -541,10 +548,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
 
       <header
         data-testid="terminal-dock-header"
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        onPointerCancel={onHeaderPointerCancel}
+        {...headerDragProps}
         className="flex shrink-0 cursor-grab select-none items-center gap-2 border-b border-white/10 px-3 py-1.5 text-xs"
       >
         {/* Grip: the visual "this bar drags" affordance (any non-interactive spot of the
@@ -564,17 +568,13 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           </svg>
         </span>
 
-
         {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
             reorder, drag out to move onto another edge. Scrolls when the shells outgrow
             the header. */}
         <div
           ref={stripRef}
           data-testid="terminal-tab-strip"
-          onPointerDown={onStripPointerDown}
-          onPointerMove={onStripPointerMove}
-          onPointerUp={onStripPointerUp}
-          onPointerCancel={onStripPointerUp}
+          {...stripDragProps}
           className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
         >
           {paneTerminals.map((terminal, index) => (
