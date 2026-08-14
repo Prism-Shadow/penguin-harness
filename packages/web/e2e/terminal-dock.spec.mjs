@@ -355,7 +355,7 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("FIRST_TAB_MARK");
 });
 
-test("tabs are numbered and drag-out detaches into a new window", async ({ page }) => {
+test("tabs are numbered; drag-out splits the tab into a new pane", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   await configureProjectModel(page.request);
   await killAllTerminals(page.request);
@@ -378,30 +378,69 @@ test("tabs are numbered and drag-out detaches into a new window", async ({ page 
   const lastLabel = await tabs.last().innerText();
   expect(firstLabel).not.toBe(lastLabel);
 
-  // Drag the background tab (A) downward out of the strip: a hint appears; releasing
-  // opens that terminal in its own window while the dock stays as it was.
+  const bottomPane = page.locator('[data-testid="terminal-dock"][data-position="bottom"]');
+  const leftPane = page.locator('[data-testid="terminal-dock"][data-position="left"]');
+
+  // The current shell (B) must not reconnect while A is split away: remember its xterm.
+  await page.evaluate(() => {
+    window.__xtermB = document.querySelector(
+      '[data-testid="terminal-dock"][data-position="bottom"] .xterm',
+    );
+  });
+
+  // Drag the background tab (A) out of the strip: the edge overlay appears; dropping on
+  // the "left" target splits A into a NEW PANE on the left (no browser window involved).
   const draggedId = await tabs.first().getAttribute("data-terminal-id");
   const fb = await tabs.first().boundingBox();
   await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2);
   await page.mouse.down();
   await page.mouse.move(fb.x + fb.width / 2 + 10, fb.y + 120, { steps: 5 });
-  await expect(page.locator('[data-testid="tab-detach-hint"]')).toBeVisible();
-  const [popup] = await Promise.all([page.waitForEvent("popup"), page.mouse.up()]);
-  expect(popup.url()).toContain(`/terminal?id=${draggedId}`);
-  await expect(page.locator('[data-testid="tab-detach-hint"]')).toHaveCount(0);
+  const leftTarget = page.locator('[data-dock-pos="left"]');
+  await expect(leftTarget).toBeVisible();
+  const lt = await leftTarget.boundingBox();
+  await page.mouse.move(lt.x + lt.width / 2, lt.y + lt.height / 2, { steps: 4 });
+  await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveAttribute(
+    "data-pos",
+    "left",
+  );
+  await page.mouse.up();
 
-  // A background tab was detached: the dock keeps its current shell and both terminals
-  // stay listed (the detached one is still live).
-  await expect(dock(page)).toBeVisible();
-  await expect(tabs).toHaveCount(2);
-  await expect(tabs.last()).toHaveAttribute("data-active", "true");
-  // …and the popup really is terminal A, live.
+  // Both panes exist: A's tab lives in the left pane (its screen restored there), B stays
+  // in the bottom pane — same xterm DOM node, so B never reconnected.
+  await expect(leftPane).toBeVisible({ timeout: 10000 });
   await expect(
-    popup.locator('[data-testid="terminal-status"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+    leftPane.locator(`[data-testid="terminal-tab"][data-terminal-id="${draggedId}"]`),
+  ).toBeVisible();
   await expect
-    .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 15000 })
+    .poll(() => leftPane.locator(".xterm-rows").innerText(), { timeout: 20000 })
     .toContain("NUM_A");
+  await expect(bottomPane.locator("[data-testid='terminal-tab']")).toHaveCount(1);
+  expect(
+    await page.evaluate(
+      () =>
+        document.querySelector(
+          '[data-testid="terminal-dock"][data-position="bottom"] .xterm',
+        ) === window.__xtermB,
+    ),
+    "bottom pane's xterm survived the split",
+  ).toBe(true);
+  expect(await bottomPane.locator(".xterm-rows").innerText()).toContain("NUM_B");
+
+  // The split pane is a full pane: its shell is interactive.
+  await leftPane.locator(".xterm-screen").click();
+  await page.keyboard.type("echo IN_SPLIT_PANE");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => leftPane.locator(".xterm-rows").innerText(), { timeout: 15000 })
+    .toContain("IN_SPLIT_PANE");
+
+  // The arrangement survives a reload.
+  await page.reload();
+  await expect(leftPane).toBeVisible({ timeout: 20000 });
+  await expect(bottomPane).toBeVisible();
+  await expect(
+    leftPane.locator(`[data-testid="terminal-tab"][data-terminal-id="${draggedId}"]`),
+  ).toBeVisible({ timeout: 15000 });
 });
 
 test("dock layout: drag to an edge or onto the drop targets, preview then apply", async ({
@@ -544,8 +583,9 @@ test("dock resize: drag the boundary; the ratio survives reposition and reload",
   const rz2 = await page.locator('[data-testid="terminal-dock-resizer"]').boundingBox();
   await page.mouse.dblclick(rz2.x + rz2.width / 2, rz2.y + rz2.height / 2);
   const resetBox = await dock(page).boundingBox();
-  const row = await page.locator("[data-dock-row]").boundingBox();
-  expect(Math.abs(resetBox.height - row.height * 0.4), "double-click reset").toBeLessThan(10);
+  // Height ratios resolve against the host column (the pane is its direct child).
+  const hostBox = await page.locator("[data-dock-host]").boundingBox();
+  expect(Math.abs(resetBox.height - hostBox.height * 0.4), "double-click reset").toBeLessThan(10);
 });
 
 test("terminal clipboard: keyboard copy/paste, right-click, focus", async ({ page }) => {

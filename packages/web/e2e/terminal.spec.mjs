@@ -16,6 +16,21 @@ const BASE = process.env.BASE_URL;
 const U = "terminaluser";
 const P = "password123";
 
+/** Live shells accumulate across spec reruns on one server; MAX 12/user would 429. */
+async function killAllTerminals(request) {
+  const { terminals } = await (await request.get(`${BASE}/api/terminals`)).json();
+  for (const t of terminals) await request.delete(`${BASE}/api/terminals/${t.id}`);
+  await expect
+    .poll(
+      async () => {
+        const res = await (await request.get(`${BASE}/api/terminals`)).json();
+        return res.terminals.filter((t) => t.alive).length;
+      },
+      { timeout: 10000 },
+    )
+    .toBe(0);
+}
+
 /** The DOM renderer keeps the rows as text, so the screen is readable without pixels. */
 const screenText = (page) => page.locator(".xterm-rows").innerText();
 
@@ -43,6 +58,7 @@ async function waitForShell(page, tag) {
 
 test("keeps the shell and its screen across a reload", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
   await page.goto(`${BASE}/terminal`);
   await waitForShell(page, "SHELL_UP_1");
 
@@ -82,6 +98,7 @@ test("keeps the shell and its screen across a reload", async ({ page }) => {
 
 test("New shell starts a fresh session", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
   await page.goto(`${BASE}/terminal`);
   await waitForShell(page, "SHELL_UP_2");
 
@@ -99,6 +116,7 @@ test("New shell starts a fresh session", async ({ page }) => {
 
 test("?cwd= starts the shell in the requested directory", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
   await page.goto(`${BASE}/terminal?cwd=/tmp`);
   await waitForShell(page, "SHELL_UP_CWD");
 
@@ -108,6 +126,7 @@ test("?cwd= starts the shell in the requested directory", async ({ page }) => {
 
 test("?id= attaches an existing terminal with its screen (deep link)", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
+  await killAllTerminals(page.request);
 
   // Drive a terminal entirely through the HTTP control plane first…
   const created = await page.request.post(`${BASE}/api/terminals`, {
