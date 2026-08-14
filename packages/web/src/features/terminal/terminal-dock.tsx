@@ -172,15 +172,17 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
  */
 function TerminalTab(props: {
   terminal: TerminalInfo;
-  /** Position in the strip; shown as a `1:`-style prefix (tmux convention) so tabs stay
-   * distinguishable even when several shells share a name or an identical OSC title. */
+  /** Fallback numbering for servers without `seq`; position-based, so only a fallback. */
   index: number;
   active: boolean;
   onSelect: () => void;
   onKill: () => void;
 }) {
   const { terminal, active } = props;
-  const label = `${props.index + 1}: ${terminal.title?.trim() || terminal.name}`;
+  // The `1:`-style prefix (tmux convention) keeps identically-named/-titled tabs apart.
+  // It is the terminal's STABLE seq, not its position: a dragged tab keeps its number, so
+  // where it went stays visible.
+  const label = `${terminal.seq ?? props.index + 1}: ${terminal.title?.trim() || terminal.name}`;
   return (
     <div
       data-testid="terminal-tab"

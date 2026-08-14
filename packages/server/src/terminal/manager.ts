@@ -63,9 +63,17 @@ export class TerminalManager {
       for (let n = 2; taken.has(name); n += 1) name = `${base} ${n}`;
     }
 
+    // Stable display number: smallest free among the user's live terminals, and it stays
+    // with this terminal for life. (Positional numbering would renumber tabs on every
+    // reorder — a dragged tab must keep its number so the user can see where it went.)
+    const usedSeqs = new Set(owned.map((session) => session.seq));
+    let seq = 1;
+    while (usedSeqs.has(seq)) seq += 1;
+
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
+      seq,
       name,
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),

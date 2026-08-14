@@ -62,6 +62,12 @@ export interface CreateTerminalSessionOptions {
   cwd: string;
   /** Owning user id — a shell is the most privileged thing this server hands out. */
   ownerUserId: string;
+  /**
+   * Stable per-user display number (tmux-style), assigned by the manager at creation. It
+   * travels with the terminal for its whole life — UI numbering must never depend on list
+   * position, which changes under user-reordered tabs.
+   */
+  seq?: number;
   name?: string;
   shell?: string;
   cols?: number;
@@ -71,6 +77,7 @@ export interface CreateTerminalSessionOptions {
 
 export interface TerminalSessionInfo {
   id: string;
+  seq: number;
   name: string;
   cwd: string;
   ownerUserId: string;
@@ -122,6 +129,7 @@ function buildTerminalEnv(
 
 export class TerminalSession {
   readonly id: string;
+  readonly seq: number;
   readonly cwd: string;
   readonly ownerUserId: string;
   readonly createdAt = new Date();
@@ -143,6 +151,7 @@ export class TerminalSession {
 
   constructor(options: CreateTerminalSessionOptions) {
     this.id = options.id ?? randomUUID();
+    this.seq = options.seq ?? 1;
     this.cwd = options.cwd;
     this.ownerUserId = options.ownerUserId;
     this.name = options.name ?? (path.basename(options.cwd) || "terminal");
@@ -249,6 +258,7 @@ export class TerminalSession {
   info(): TerminalSessionInfo {
     return {
       id: this.id,
+      seq: this.seq,
       name: this.name,
       cwd: this.cwd,
       ownerUserId: this.ownerUserId,

@@ -302,7 +302,9 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await expect(tabs.last()).toContainText("LIVE_TITLE_X", { timeout: 5000 });
   const titledId = await tabs.last().getAttribute("data-terminal-id");
 
-  // Reorder: drag the titled tab (B, currently last) in front of A.
+  // Reorder: drag the titled tab (B, currently last) in front of A. Its NUMBER travels
+  // with it — numbering is the terminal's stable seq, not its position, so after the drag
+  // the strip reads "2:, 1:" and you can see exactly what went where.
   const ab = await tabs.first().boundingBox();
   const bb = await tabs.last().boundingBox();
   await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
@@ -310,6 +312,8 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await page.mouse.move(ab.x + 4, ab.y + ab.height / 2, { steps: 6 });
   await page.mouse.up();
   await expect(tabs.first()).toHaveAttribute("data-terminal-id", titledId);
+  await expect(tabs.first()).toContainText("2: ");
+  await expect(tabs.last()).toContainText("1: ");
 
   // The order persists across a reload.
   await page.reload();
