@@ -81,15 +81,20 @@ async function runInDock(page, command) {
   await page.keyboard.press("Enter");
 }
 
-/** Waits until the dock's shell is really at a prompt (see terminal.spec.mjs). */
+/**
+ * Waits until the dock's shell is really at a prompt (see terminal.spec.mjs). The sentinel
+ * is typed quote-split (echo TA''G) so the command's own echo never contains the tag, and
+ * matched at end-of-line: a resize reflow right after attach can glue the echoed command
+ * and its output onto one DOM row, where a ^tag$ match would never fire.
+ */
 async function waitForDockShell(page, tag) {
   await expect(
     page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
   ).toBeVisible({ timeout: 20000 });
-  await runInDock(page, `echo ${tag}`);
+  await runInDock(page, `echo ${tag.slice(0, 2)}''${tag.slice(2)}`);
   await expect
     .poll(() => dockScreenText(page), { timeout: 30000 })
-    .toMatch(new RegExp(`^${tag}$`, "m"));
+    .toMatch(new RegExp(`${tag}$`, "m"));
 }
 
 test("Ctrl+` toggles the dock; the shell survives close and reopen", async ({ page }) => {
@@ -457,7 +462,7 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   await waitForDockShell(page, "LAYOUT_SHELL");
   await expect(dock(page)).toHaveAttribute("data-position", "bottom"); // the default
 
-  const header = page.locator('[data-testid="terminal-dock-header"]');
+  const header = page.locator('[data-testid="terminal-dock-grip"]');
   const ready = page.locator('[data-testid="terminal-dock-status"][data-status="ready"]');
 
   // Repositioning must not remount the terminal (a remount would drop the WebSocket and
@@ -468,7 +473,7 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
 
   // Method 2: drag the header onto the "left" rectangle of the left/right container.
   let hb = await header.boundingBox();
-  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
   await page.mouse.move(hb.x + 90, hb.y - 60, { steps: 4 }); // past the threshold → overlay
   const leftTarget = page.locator('[data-dock-pos="left"]');
@@ -509,7 +514,7 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   // Method 1: drag straight into the top edge band of the content area.
   hb = await header.boundingBox();
   const host = await page.locator("[data-dock-host]").boundingBox();
-  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
   await page.mouse.move(host.x + host.width / 2, host.y + 30, { steps: 6 });
   await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveAttribute(
@@ -522,7 +527,7 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
 
   // Releasing in the neutral middle changes nothing.
   hb = await header.boundingBox();
-  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
   await page.mouse.move(host.x + host.width / 2, host.y + host.height / 2, { steps: 4 });
   await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveCount(0);
@@ -563,9 +568,9 @@ test("dock resize: drag the boundary; the ratio survives reposition and reload",
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("RESIZED_OK");
 
   // Repositioning to the top keeps the height ratio (same orientation, same row height).
-  const hb = await page.locator('[data-testid="terminal-dock-header"]').boundingBox();
+  const hb = await page.locator('[data-testid="terminal-dock-grip"]').boundingBox();
   const host = await page.locator("[data-dock-host]").boundingBox();
-  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
   await page.mouse.move(host.x + host.width / 2, host.y + 30, { steps: 6 });
   await page.mouse.up();
