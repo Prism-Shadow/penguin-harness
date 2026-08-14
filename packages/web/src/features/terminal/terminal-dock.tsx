@@ -45,7 +45,9 @@ import {
   killTerminal,
   liveTerminals,
   noteTerminalCreated,
+  noteTerminalTitle,
   refreshTerminals,
+  setTerminalTabOrder,
   subscribeTerminals,
 } from "./terminal-list";
 
@@ -281,6 +283,14 @@ export function TerminalDock() {
     void refreshTerminals();
   }, []);
 
+  /** Live OSC title from the attached shell → the shared list → this tab's label. */
+  const onTitle = useCallback(
+    (title: string) => {
+      if (info) noteTerminalTitle(info.id, title);
+    },
+    [info],
+  );
+
   /** Fresh shell in a new tab; the current one keeps running. */
   const newShell = useCallback(() => {
     forceCreateRef.current = true;
@@ -316,16 +326,70 @@ export function TerminalDock() {
   );
 
   /**
-   * Codex-style detach: hand the terminal to its own window. The stored id is kept — it is
-   * still the last-opened terminal, so reopening the dock shows this same shell (the
-   * stream supports multiple attached clients).
+   * Codex-style detach: hand the CURRENT terminal to its own window. With other terminals
+   * open the dock stays — it just moves to the newest remaining tab; only detaching the
+   * last terminal closes the dock. The detached shell stays in the tab strip (it is still
+   * a live terminal; the stream supports multiple attached clients).
    */
   const detach = useCallback(() => {
     const id = info?.id ?? localStorage.getItem(DOCK_ID_KEY);
     if (!id) return;
     window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
-    setTerminalDockOpen(false);
-  }, [info]);
+    const next = terminals.filter((t) => t.id !== id).at(-1);
+    if (next) {
+      switchTo(next.id);
+    } else {
+      localStorage.removeItem(DOCK_ID_KEY);
+      setTerminalDockOpen(false);
+    }
+  }, [info, switchTo, terminals]);
+
+  /**
+   * Tab drag-to-reorder, delegated on the strip: a pointerdown on a tab (not its kill
+   * button) arms a drag; past a small threshold, the pointer's x against the other tabs'
+   * midpoints re-inserts the dragged id and the order persists live. A press that never
+   * crosses the threshold stays a plain click (the tab's own select handler).
+   */
+  const tabDrag = useRef<{ id: string; startX: number; started: boolean } | null>(null);
+
+  const onStripPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-testid='terminal-tab-kill']")) return;
+    const tab = target.closest<HTMLElement>("[data-terminal-id]");
+    if (!tab?.dataset.terminalId) return;
+    tabDrag.current = { id: tab.dataset.terminalId, startX: event.clientX, started: false };
+  }, []);
+
+  const onStripPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const drag = tabDrag.current;
+    if (!drag) return;
+    if (!drag.started) {
+      if (Math.abs(event.clientX - drag.startX) < 6) return;
+      drag.started = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
+    const tabEls = [
+      ...event.currentTarget.querySelectorAll<HTMLElement>("[data-terminal-id]"),
+    ];
+    const currentIds = tabEls.map((el) => el.dataset.terminalId as string);
+    const others = tabEls.filter((el) => el.dataset.terminalId !== drag.id);
+    let insertAt = others.length;
+    for (let i = 0; i < others.length; i += 1) {
+      const rect = others[i]!.getBoundingClientRect();
+      if (event.clientX < rect.left + rect.width / 2) {
+        insertAt = i;
+        break;
+      }
+    }
+    const nextIds = others.map((el) => el.dataset.terminalId as string);
+    nextIds.splice(insertAt, 0, drag.id);
+    if (nextIds.some((id, index) => id !== currentIds[index])) setTerminalTabOrder(nextIds);
+  }, []);
+
+  const onStripPointerUp = useCallback(() => {
+    tabDrag.current = null;
+  }, []);
 
   /**
    * Header drag-to-dock. Buttons and tabs keep their own gestures; a drag starts from any
@@ -462,9 +526,17 @@ export function TerminalDock() {
       >
         <span className="shrink-0 font-medium">{S.terminal.title}</span>
 
-        {/* Tab strip: every live terminal, current one highlighted. Scrolls sideways when
-            the shells outgrow the header; the controls at both ends stay put. */}
-        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        {/* Tab strip: every live terminal, current one highlighted, drag sideways to
+            reorder. Scrolls when the shells outgrow the header — which is why the new-tab
+            button lives OUTSIDE it: "+" must never scroll out of reach. */}
+        <div
+          data-testid="terminal-tab-strip"
+          onPointerDown={onStripPointerDown}
+          onPointerMove={onStripPointerMove}
+          onPointerUp={onStripPointerUp}
+          onPointerCancel={onStripPointerUp}
+          className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+        >
           {terminals.map((terminal) => (
             <TerminalTab
               key={terminal.id}
@@ -474,14 +546,15 @@ export function TerminalDock() {
               onKill={() => onKillTerminal(terminal.id)}
             />
           ))}
-          {/* New shell: plus, at the end of the strip like a browser's new-tab button. */}
-          <DockButton
-            label={S.terminal.newShell}
-            testId="terminal-dock-new-shell"
-            onClick={newShell}
-            d="M12 5v14M5 12h14"
-          />
         </div>
+        {/* New shell: plus, pinned right after the strip like a browser's new-tab button. */}
+        <DockButton
+          label={S.terminal.newShell}
+          testId="terminal-dock-new-shell"
+          onClick={newShell}
+          d="M12 5v14M5 12h14"
+        />
+        <span className="min-w-0 flex-1" />
 
         <span
           data-testid="terminal-dock-status"
@@ -518,6 +591,7 @@ export function TerminalDock() {
         ensure={ensure}
         onStatus={onStatus}
         onInfo={onInfo}
+        onTitle={onTitle}
         className="min-h-0 flex-1 overflow-hidden px-2 py-1"
       />
       {drag.active && <DockLayoutOverlay candidate={drag.candidate} />}

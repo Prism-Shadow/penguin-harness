@@ -60,15 +60,17 @@ export interface TerminalViewProps {
   ensure: (cols: number, rows: number) => Promise<TerminalInfo>;
   onStatus?: (status: TerminalStatus, detail: string) => void;
   onInfo?: (info: TerminalInfo) => void;
+  /** OSC window-title changes, parsed by this client's own xterm from the byte stream. */
+  onTitle?: (title: string) => void;
   className?: string;
 }
 
-export function TerminalView({ ensure, onStatus, onInfo, className }: TerminalViewProps) {
+export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // Kept in refs so the (intentionally once-per-mount) effect always calls the latest
   // callbacks without re-running when a parent re-renders with a new closure.
-  const callbacks = useRef({ ensure, onStatus, onInfo });
-  callbacks.current = { ensure, onStatus, onInfo };
+  const callbacks = useRef({ ensure, onStatus, onInfo, onTitle });
+  callbacks.current = { ensure, onStatus, onInfo, onTitle };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -200,6 +202,12 @@ export function TerminalView({ ensure, onStatus, onInfo, className }: TerminalVi
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(encodeFrame(TerminalOpcode.Input, data));
         }
+      });
+
+      // Title changes ride the ordinary byte stream (OSC 0/2); this client's xterm parses
+      // them, so the host can mirror the live title (e.g. onto the dock's tab strip).
+      term.onTitleChange((title) => {
+        if (!disposed) callbacks.current.onTitle?.(title);
       });
 
       void (async () => {
