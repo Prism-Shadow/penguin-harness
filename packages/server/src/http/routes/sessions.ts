@@ -460,8 +460,14 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, archivedAt: at };
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
+    // Re-read after the writes (and after the awaits above): a run finishing anywhere in
+    // this window advances last_active_at, and `updated` is a snapshot taken before the
+    // PATCH even started. Returning it would hand back a REGRESSED value that the web
+    // store swaps in wholesale, rolling the row backwards with no event to repair it.
+    // Falls back to the snapshot if the Session was deleted meanwhile.
+    const fresh = deps.sessionsRepo.findById(row.sessionId) ?? updated;
     return c.json({
-      session: await deps.sessionService.toInfo(updated, hasTrace),
+      session: await deps.sessionService.toInfo(fresh, hasTrace),
     } satisfies SessionResponse);
   });
 

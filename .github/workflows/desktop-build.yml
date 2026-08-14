@@ -7,8 +7,9 @@
 # run on any branch.
 #
 # macOS release artifacts are Developer ID signed and notarized when release.yml calls
-# this workflow with require_macos_signing=true. Standalone dry-runs can still build
-# unsigned artifacts when signing secrets are absent.
+# this workflow with require_macos_signing=true. Windows release installers are signed
+# with EVSign when release.yml calls this workflow with require_windows_signing=true.
+# Standalone dry-runs can still build unsigned artifacts when signing secrets are absent.
 name: Desktop packages
 
 on:
@@ -29,13 +30,19 @@ on:
         required: false
         type: boolean
         default: false
-    # No `secrets:` declarations here, deliberately. The signing secrets live in the
-    # `apple-signing` GitHub environment referenced by the macOS matrix job, and
-    # environment secrets resolve inside the job itself — in reusable-workflow calls
-    # included. Declaring them as workflow_call secrets rebinds those names to the
-    # caller-passed values, which are empty when the caller passes none, shadowing the
-    # environment's real values: exactly the v0.2.2 release failure ("Missing macOS
-    # signing secrets" with all six configured).
+      require_windows_signing:
+        description: "Sign Windows installers with EVSign, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
+    # No `secrets:` declarations here, deliberately. Signing secrets live in the
+    # job environments referenced by the matrix, and environment secrets resolve
+    # inside the job itself — in reusable-workflow calls included. Declaring them
+    # as workflow_call secrets rebinds those names to caller-passed values, which
+    # are empty when the caller passes none, shadowing the environment's real
+    # values: exactly the v0.2.2 release failure ("Missing macOS signing secrets"
+    # with all six configured). release.yml still passes `secrets: inherit` so
+    # repo-level secrets, if any, also remain visible.
   workflow_dispatch:
     inputs:
       ref:
@@ -50,6 +57,11 @@ on:
         default: ""
       require_macos_signing:
         description: "Sign/notarize macOS artifacts, failing the job if credentials are missing."
+        required: false
+        type: boolean
+        default: false
+      require_windows_signing:
+        description: "Sign Windows installers with EVSign, failing the job if credentials are missing."
         required: false
         type: boolean
         default: false
@@ -205,8 +217,134 @@ jobs:
             fi
           } >> "$GITHUB_ENV"
 
+      - name: Prepare Windows signing credentials
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          REQUIRE_WINDOWS_SIGNING: ${{ inputs.require_windows_signing && 'true' || 'false' }}
+          EVSIGN_KEY: ${{ secrets.EVSIGN_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          "EVSIGN_REQUIRE=$($env:REQUIRE_WINDOWS_SIGNING)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if ([string]::IsNullOrWhiteSpace($env:EVSIGN_KEY)) {
+            if ($env:REQUIRE_WINDOWS_SIGNING -eq "true") {
+              Write-Error "Missing EVSIGN_KEY secret required for Windows release signing."
+            }
+
+            Write-Host "EVSIGN_KEY is not configured; Windows dry-run artifacts will remain unsigned."
+            exit 0
+          }
+
+          Write-Output "::add-mask::$env:EVSIGN_KEY"
+
+          $client = Join-Path $env:RUNNER_TEMP "evsign-client.exe"
+          $expectedSigner = "Keroro Software Ltd"
+
+          # Keep using the vendor's latest CLI so compatible updates roll forward,
+          # but authenticate the downloaded executable before passing it EVSIGN_KEY.
+          Invoke-WebRequest `
+            -Uri "https://mc.evsign.cn/evsign-client-cli-windows-latest" `
+            -OutFile $client `
+            -MaximumRedirection 5 `
+            -TimeoutSec 120
+
+          if (-not (Test-Path -LiteralPath $client)) {
+            Write-Error "EVSign CLI was not downloaded to $client."
+          }
+
+          $hash = (Get-FileHash -LiteralPath $client -Algorithm SHA256).Hash
+          Write-Host "EVSign CLI SHA256: $hash"
+
+          $signature = Get-AuthenticodeSignature -LiteralPath $client
+          $signature | Format-List `
+            Status, `
+            StatusMessage, `
+            @{Label="SignerSubject"; Expression={$_.SignerCertificate.Subject}}, `
+            @{Label="SignerIssuer"; Expression={$_.SignerCertificate.Issuer}}
+
+          if ($signature.Status -ne "Valid") {
+            Write-Error "EVSign CLI Authenticode signature is not valid: $($signature.Status) $($signature.StatusMessage)"
+          }
+
+          if ($null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -notlike "*$expectedSigner*") {
+            Write-Error "EVSign CLI signer does not contain expected publisher '$expectedSigner'."
+          }
+
+          "EVSIGN_CLIENT=$client" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Build packages
+        env:
+          EVSIGN_REQUIRE: ${{ runner.os == 'Windows' && inputs.require_windows_signing && 'true' || 'false' }}
+          EVSIGN_KEY: ${{ runner.os == 'Windows' && secrets.EVSIGN_KEY || '' }}
         run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
+
+      - name: Verify Windows signing and update metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          REQUIRE_WINDOWS_SIGNING: ${{ inputs.require_windows_signing && 'true' || 'false' }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $publisher = "RushRush Network Technology Ltd"
+          $outDir = "packages/desktop/stage/out"
+          $installer = Join-Path $outDir "penguin-desktop-win32-x64.exe"
+          $latest = Join-Path $outDir "latest.yml"
+          $blockmap = "$installer.blockmap"
+          $appExe = Join-Path $outDir "win-unpacked/PenguinHarness.exe"
+          $elevateExe = Join-Path $outDir "win-unpacked/resources/elevate.exe"
+          $appUpdate = Join-Path $outDir "win-unpacked/resources/app-update.yml"
+
+          $requiredPaths = @($installer, $latest, $blockmap, $appExe, $elevateExe, $appUpdate)
+          foreach ($path in $requiredPaths) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              Write-Error "Windows build output was not produced: $path"
+            }
+          }
+
+          $signatures = @($installer, $appExe, $elevateExe)
+          foreach ($path in $signatures) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $path
+            $sig | Format-List @{Label="Path"; Expression={$path}}, Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+
+            if ($sig.Status -eq "NotSigned" -and $env:REQUIRE_WINDOWS_SIGNING -ne "true") {
+              Write-Host "$path is unsigned; allowed for this dry-run."
+              continue
+            }
+
+            if ($sig.Status -ne "Valid") {
+              Write-Error "$path signature is not valid: $($sig.Status) $($sig.StatusMessage)"
+            }
+
+            if ($null -eq $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notlike "*$publisher*") {
+              Write-Error "$path signer does not contain expected publisher '$publisher'."
+            }
+
+            if ($null -eq $sig.TimeStamperCertificate) {
+              Write-Error "$path signature is missing a timestamp certificate."
+            }
+          }
+
+          $installerPath = (Resolve-Path -LiteralPath $installer).ProviderPath
+          $installerBytes = [System.IO.File]::ReadAllBytes($installerPath)
+          $sha512 = [Convert]::ToBase64String([System.Security.Cryptography.SHA512]::Create().ComputeHash($installerBytes))
+          $size = $installerBytes.Length
+          $latestText = Get-Content -LiteralPath $latest -Raw
+
+          if ($latestText -notmatch [Regex]::Escape("sha512: $sha512")) {
+            Write-Error "latest.yml does not match the signed Windows installer sha512."
+          }
+
+          if ($latestText -notmatch [Regex]::Escape("size: $size")) {
+            Write-Error "latest.yml does not match the signed Windows installer size."
+          }
+
+          $appUpdateText = Get-Content -LiteralPath $appUpdate -Raw -Encoding UTF8
+          if ($appUpdateText -notmatch "publisherName:" -or $appUpdateText -notmatch [Regex]::Escape($publisher)) {
+            Write-Error "app-update.yml does not include the expected Windows publisherName."
+          }
 
       - name: Notarize and staple macOS DMGs
         if: runner.os == 'macOS' && inputs.require_macos_signing

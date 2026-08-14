@@ -76,6 +76,7 @@ function dbRow(over: Partial<SessionRow> & { sessionId: string }): SessionRow {
     approvalMode: "allow-all",
     title: null,
     createdAt: "2026-07-05T10:00:00.000Z",
+    lastActiveAt: "2026-07-05T10:00:00.000Z",
     ...over,
   };
 }

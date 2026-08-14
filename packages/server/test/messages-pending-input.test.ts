@@ -77,6 +77,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
       approvalMode: "always-ask",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     };
     t.deps.sessionsRepo.insert(row);
     const bootstrapGate = new Promise<void>((resolve) => {
@@ -165,6 +166,7 @@ describe("GET /messages serves the running task's pending inputs", () => {
       approvalMode: "always-ask",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     };
     t.deps.sessionsRepo.insert(row);
     // First run: connect aborted before any request (the core cancels the bootstrap and
