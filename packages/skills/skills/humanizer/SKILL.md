@@ -1,16 +1,16 @@
 ---
 name: humanizer
-description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, per-language cue files for six languages and a six-round measured case study shipped as reference files for the diagnostic census.
+description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, per-language cue files for six languages and a seven-round measured case study shipped as reference files for the diagnostic census.
 short_description: Strip AI-writing tells from prose in any language.
 short_description_zh: 去除文本的 AI 味，把行文改成书籍、报纸、百科式的风格，任何语言通用。
 preinstall: false
-version: 8
+version: 9
 updated: 2026-08-12T00:00:00Z
 ---
 
 # Humanizer
 
-Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across six rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
+Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across seven rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
 
 ## Before you start
 
