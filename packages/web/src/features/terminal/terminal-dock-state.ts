@@ -11,11 +11,40 @@
 
 const STORAGE_KEY = "penguin.terminal.dockOpen";
 const POSITION_KEY = "penguin.terminal.dockPosition";
+const HEIGHT_RATIO_KEY = "penguin.terminal.dockHeightRatio";
+const WIDTH_RATIO_KEY = "penguin.terminal.dockWidthRatio";
 
 /** Which edge of the content area the dock occupies. */
 export type DockPosition = "top" | "bottom" | "left" | "right";
 
 const POSITIONS: readonly DockPosition[] = ["top", "bottom", "left", "right"];
+
+/**
+ * Dock sizes are RATIOS of the layout row, not pixels: top/bottom share one height ratio,
+ * left/right share one width ratio. That is what makes a resize survive repositioning and
+ * window resizes proportionally. The px minimums (and the ratio ceiling, which also leaves
+ * the main content room) are enforced both by the dock's CSS and by the drag preview.
+ */
+export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
+export const DEFAULT_DOCK_WIDTH_RATIO = 0.33;
+export const DOCK_RATIO_MIN = 0.15;
+export const DOCK_RATIO_MAX = 0.85;
+export const DOCK_MIN_HEIGHT_PX = 140;
+export const DOCK_MIN_WIDTH_PX = 320;
+
+function clampRatio(value: number): number {
+  if (!Number.isFinite(value)) return DOCK_RATIO_MIN;
+  return Math.min(DOCK_RATIO_MAX, Math.max(DOCK_RATIO_MIN, value));
+}
+
+function loadRatio(key: string, fallback: number): number {
+  try {
+    const stored = Number.parseFloat(localStorage.getItem(key) ?? "");
+    return Number.isFinite(stored) ? clampRatio(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 let open = ((): boolean => {
   try {
@@ -33,6 +62,9 @@ let position: DockPosition = ((): DockPosition => {
     return "bottom";
   }
 })();
+
+let heightRatio = loadRatio(HEIGHT_RATIO_KEY, DEFAULT_DOCK_HEIGHT_RATIO);
+let widthRatio = loadRatio(WIDTH_RATIO_KEY, DEFAULT_DOCK_WIDTH_RATIO);
 
 const listeners = new Set<() => void>();
 
@@ -64,6 +96,38 @@ export function setTerminalDockPosition(next: DockPosition): void {
   position = next;
   try {
     localStorage.setItem(POSITION_KEY, next);
+  } catch {
+    // Private-mode storage failures only cost persistence.
+  }
+  for (const listener of [...listeners]) listener();
+}
+
+export function terminalDockHeightRatio(): number {
+  return heightRatio;
+}
+
+export function terminalDockWidthRatio(): number {
+  return widthRatio;
+}
+
+export function setTerminalDockHeightRatio(next: number): void {
+  const clamped = clampRatio(next);
+  if (clamped === heightRatio) return;
+  heightRatio = clamped;
+  try {
+    localStorage.setItem(HEIGHT_RATIO_KEY, String(clamped));
+  } catch {
+    // Private-mode storage failures only cost persistence.
+  }
+  for (const listener of [...listeners]) listener();
+}
+
+export function setTerminalDockWidthRatio(next: number): void {
+  const clamped = clampRatio(next);
+  if (clamped === widthRatio) return;
+  widthRatio = clamped;
+  try {
+    localStorage.setItem(WIDTH_RATIO_KEY, String(clamped));
   } catch {
     // Private-mode storage failures only cost persistence.
   }

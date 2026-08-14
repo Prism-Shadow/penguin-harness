@@ -16,13 +16,17 @@
  */
 import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
-import type { DockPosition } from "./terminal-dock-state";
+import {
+  DOCK_MIN_HEIGHT_PX,
+  DOCK_MIN_WIDTH_PX,
+  DOCK_RATIO_MAX,
+  terminalDockHeightRatio,
+  terminalDockWidthRatio,
+  type DockPosition,
+} from "./terminal-dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
-/** The dock's rem sizes (h-72 / w-[26rem]) for the orientation it is not currently in. */
-const DOCK_HEIGHT_REM = 18;
-const DOCK_WIDTH_REM = 26;
 
 export function dockHostRect(): DOMRect | null {
   return document.querySelector("[data-dock-host]")?.getBoundingClientRect() ?? null;
@@ -31,9 +35,9 @@ export function dockHostRect(): DOMRect | null {
 /**
  * Everything needed to draw the preview as the region the dock would REALLY occupy after
  * the move — measured from the live layout, not assumed:
- * - the dock's rem sizes resolve against the current root font size (the app has a
- *   font-scale setting, so 26rem is not always 416px);
- * - the exact extent for the dock's current orientation comes from its own rect;
+ * - the dock's sizes are stored ratios of the layout row, clamped exactly like the dock's
+ *   own CSS (px minimums, ratio ceiling), so the preview resolves them the same way;
+ * - the extent for the dock's current orientation comes from its own rendered rect;
  * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): every
  *   dock position lives inside the layout row, which starts below that chrome, so the
  *   row's own top IS the content top for all four candidates.
@@ -45,19 +49,38 @@ interface DockGeometry {
   dockWidth: number;
 }
 
+function clampSize(value: number, minPx: number, max: number): number {
+  return Math.min(max, Math.max(Math.min(minPx, max), value));
+}
+
 function measureDockGeometry(): DockGeometry | null {
   const host = dockHostRect();
   if (!host) return null;
-  const rootFont = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const dockEl = document.querySelector<HTMLElement>("[data-testid='terminal-dock']");
   const dockRect = dockEl?.getBoundingClientRect() ?? null;
   const position = dockEl?.dataset.position;
   const horizontal = position === "top" || position === "bottom";
-  const dockHeight = horizontal && dockRect ? dockRect.height : DOCK_HEIGHT_REM * rootFont;
-  const dockWidth = !horizontal && dockRect ? dockRect.width : DOCK_WIDTH_REM * rootFont;
 
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? null;
   const contentTop = row ? Math.max(host.top, row.top) : host.top;
+  const contentHeight = host.bottom - contentTop;
+
+  const dockHeight =
+    horizontal && dockRect
+      ? dockRect.height
+      : clampSize(
+          terminalDockHeightRatio() * contentHeight,
+          DOCK_MIN_HEIGHT_PX,
+          DOCK_RATIO_MAX * contentHeight,
+        );
+  const dockWidth =
+    !horizontal && dockRect
+      ? dockRect.width
+      : clampSize(
+          terminalDockWidthRatio() * host.width,
+          DOCK_MIN_WIDTH_PX,
+          DOCK_RATIO_MAX * host.width,
+        );
   return { host, contentTop, dockHeight, dockWidth };
 }
 
