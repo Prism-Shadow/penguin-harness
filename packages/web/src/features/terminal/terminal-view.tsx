@@ -12,11 +12,23 @@
  * To restart with a different terminal, remount it (change the React `key`).
  */
 import { useEffect, useRef } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+
+/**
+ * xterm and its addons load lazily, on the first actual terminal render: their UMD
+ * bundles touch browser globals (`self`) at import time, so a static import would crash
+ * any Node context that merely reaches this module through the import graph — which is
+ * most of the app since the dock mounts in AppLayout (unit tests import pages, pages
+ * import the toolbar, the toolbar imports the dock…).
+ */
+function loadXterm() {
+  return Promise.all([
+    import("@xterm/xterm"),
+    import("@xterm/addon-fit"),
+    import("@xterm/addon-web-links"),
+  ]);
+}
 
 export interface TerminalInfo {
   id: string;
@@ -86,7 +98,12 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
     // ("cannot read properties of undefined (reading 'dimensions')"). Starting a tick later
     // means the throwaway mount never opens a terminal at all.
     const startTimer = setTimeout(() => {
-      if (!cancelled) teardown = startTerminal(host);
+      if (cancelled) return;
+      void startTerminal(host).then((dispose) => {
+        // The lazy xterm load can outlive a quick unmount: dispose immediately then.
+        if (cancelled) dispose();
+        else teardown = dispose;
+      });
     }, 0);
 
     return () => {
@@ -95,7 +112,8 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
       teardown?.();
     };
 
-    function startTerminal(container: HTMLDivElement): () => void {
+    async function startTerminal(container: HTMLDivElement): Promise<() => void> {
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await loadXterm();
       let disposed = false;
       let socket: WebSocket | null = null;
       let exited = false;
