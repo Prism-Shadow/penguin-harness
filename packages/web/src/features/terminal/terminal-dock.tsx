@@ -20,11 +20,17 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import {
+  DEFAULT_DOCK_HEIGHT_RATIO,
+  DEFAULT_DOCK_WIDTH_RATIO,
   isTerminalDockOpen,
+  setTerminalDockHeightRatio,
   setTerminalDockOpen,
   setTerminalDockPosition,
+  setTerminalDockWidthRatio,
   subscribeTerminalDock,
+  terminalDockHeightRatio,
   terminalDockPosition,
+  terminalDockWidthRatio,
   toggleTerminalDock,
   type DockPosition,
 } from "./terminal-dock-state";
@@ -56,16 +62,31 @@ export function useTerminalDockPosition(): DockPosition {
 }
 
 /**
- * Root sizing + flex order per position; the internal header+view column is the same
+ * Root placement + flex order per position; the internal header+view column is the same
  * everywhere. `order` (against the layout row's main, order-2) is what moves the dock —
  * the component itself never changes its place in the React tree, so repositioning never
- * remounts it and the terminal connection survives the move untouched.
+ * remounts it and the terminal connection survives the move untouched. The size itself is
+ * a ratio of the layout row (inline percentage style), clamped by the min/max classes so
+ * neither the dock nor the main content can be crushed away.
  */
 const POSITION_CLASSES: Record<DockPosition, string> = {
-  bottom: "order-3 h-72 w-full border-t",
-  top: "order-1 h-72 w-full border-b",
-  left: "order-1 w-[26rem] border-r",
-  right: "order-3 w-[26rem] border-l",
+  // px minimums on purpose (not the rem spacing scale): they must equal the
+  // DOCK_MIN_*_PX constants the drag preview clamps with, at every font scale.
+  bottom: "order-3 w-full border-t min-h-[140px] max-h-[85%]",
+  top: "order-1 w-full border-b min-h-[140px] max-h-[85%]",
+  left: "order-1 border-r min-w-[320px] max-w-[85%]",
+  right: "order-3 border-l min-w-[320px] max-w-[85%]",
+};
+
+/**
+ * Resize handle placement: a 6px strip straddling the dock's inner edge (the boundary
+ * with the main content), so the grab target is forgiving on both sides of the line.
+ */
+const RESIZER_CLASSES: Record<DockPosition, string> = {
+  bottom: "left-0 right-0 -top-[3px] h-1.5 cursor-ns-resize",
+  top: "left-0 right-0 -bottom-[3px] h-1.5 cursor-ns-resize",
+  left: "top-0 bottom-0 -right-[3px] w-1.5 cursor-ew-resize",
+  right: "top-0 bottom-0 -left-[3px] w-1.5 cursor-ew-resize",
 };
 
 /**
@@ -191,6 +212,9 @@ function TerminalTab(props: {
 export function TerminalDock() {
   const open = useTerminalDockOpen();
   const position = useTerminalDockPosition();
+  const heightRatio = useSyncExternalStore(subscribeTerminalDock, terminalDockHeightRatio);
+  const widthRatio = useSyncExternalStore(subscribeTerminalDock, terminalDockWidthRatio);
+  const [resizing, setResizing] = useState(false);
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState("");
@@ -340,6 +364,55 @@ export function TerminalDock() {
     setDrag({ active: false, candidate: null });
   }, []);
 
+  /**
+   * Boundary resize: the pointer's distance from the row's opposite edge becomes the new
+   * ratio, applied live (the ratio store re-renders the percentage size; xterm refits via
+   * its ResizeObserver — the same path as a window resize, so nothing reconnects).
+   */
+  const onResizerPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizing(true);
+  }, []);
+
+  const onResizerPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (!resizing) return;
+      const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect();
+      if (!row || row.width === 0 || row.height === 0) return;
+      switch (position) {
+        case "bottom":
+          setTerminalDockHeightRatio((row.bottom - event.clientY) / row.height);
+          break;
+        case "top":
+          setTerminalDockHeightRatio((event.clientY - row.top) / row.height);
+          break;
+        case "left":
+          setTerminalDockWidthRatio((event.clientX - row.left) / row.width);
+          break;
+        case "right":
+          setTerminalDockWidthRatio((row.right - event.clientX) / row.width);
+          break;
+      }
+    },
+    [position, resizing],
+  );
+
+  const onResizerPointerUp = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setResizing(false);
+  }, []);
+
+  /** Double-click the boundary: back to the default size for this orientation. */
+  const onResizerDoubleClick = useCallback(() => {
+    if (position === "top" || position === "bottom") {
+      setTerminalDockHeightRatio(DEFAULT_DOCK_HEIGHT_RATIO);
+    } else {
+      setTerminalDockWidthRatio(DEFAULT_DOCK_WIDTH_RATIO);
+    }
+  }, [position]);
+
   if (!open) return null;
 
   const statusText =
@@ -347,12 +420,32 @@ export function TerminalDock() {
       ? `${S.terminal.status.exited} — ${S.terminal.exitedWithCode(detail)}`
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
+  const horizontal = position === "top" || position === "bottom";
+
   return (
     <div
       data-testid="terminal-dock"
       data-position={position}
-      className={`flex shrink-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
+      style={horizontal ? { height: `${heightRatio * 100}%` } : { width: `${widthRatio * 100}%` }}
+      className={`relative flex shrink-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
     >
+      {/* Boundary resize handle: invisible until hovered/active, forgiving 6px hit strip.
+          role=separator for assistive tech; double-click restores the default size. */}
+      <div
+        data-testid="terminal-dock-resizer"
+        role="separator"
+        aria-orientation={horizontal ? "horizontal" : "vertical"}
+        aria-label={S.terminal.resize}
+        title={S.terminal.resize}
+        onPointerDown={onResizerPointerDown}
+        onPointerMove={onResizerPointerMove}
+        onPointerUp={onResizerPointerUp}
+        onPointerCancel={onResizerPointerUp}
+        onDoubleClick={onResizerDoubleClick}
+        className={`absolute z-20 transition-colors duration-150 ${RESIZER_CLASSES[position]} ${
+          resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
+        }`}
+      />
       <header
         data-testid="terminal-dock-header"
         onPointerDown={onHeaderPointerDown}

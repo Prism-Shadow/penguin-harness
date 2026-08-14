@@ -361,6 +361,58 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   await expect(dock(page)).toHaveAttribute("data-position", "top");
 });
 
+test("dock resize: drag the boundary; the ratio survives reposition and reload", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "RESIZE_SHELL");
+
+  // Grow the bottom dock ~120px by dragging the boundary upward.
+  const before = await dock(page).boundingBox();
+  const rz = await page.locator('[data-testid="terminal-dock-resizer"]').boundingBox();
+  await page.mouse.move(rz.x + rz.width / 2, rz.y + rz.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rz.x + rz.width / 2, rz.y + rz.height / 2 - 120, { steps: 6 });
+  await page.mouse.up();
+  const grown = await dock(page).boundingBox();
+  expect(grown.height - before.height).toBeGreaterThan(100);
+
+  // Live resize, no reconnect: the shell answers immediately at the new size.
+  await runInDock(page, "echo RESIZED_OK");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("RESIZED_OK");
+
+  // Repositioning to the top keeps the height ratio (same orientation, same row height).
+  const hb = await page.locator('[data-testid="terminal-dock-header"]').boundingBox();
+  const host = await page.locator("[data-dock-host]").boundingBox();
+  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(host.x + host.width / 2, host.y + 30, { steps: 6 });
+  await page.mouse.up();
+  await expect(dock(page)).toHaveAttribute("data-position", "top");
+  const atTop = await dock(page).boundingBox();
+  expect(Math.abs(atTop.height - grown.height), "ratio kept across reposition").toBeLessThan(8);
+
+  // The size survives a reload…
+  await page.reload();
+  await expect(dock(page)).toBeVisible({ timeout: 20000 });
+  const reloaded = await dock(page).boundingBox();
+  expect(Math.abs(reloaded.height - grown.height), "ratio kept across reload").toBeLessThan(8);
+
+  // …and double-clicking the boundary resets to the default 40% of the row.
+  const rz2 = await page.locator('[data-testid="terminal-dock-resizer"]').boundingBox();
+  await page.mouse.dblclick(rz2.x + rz2.width / 2, rz2.y + rz2.height / 2);
+  const resetBox = await dock(page).boundingBox();
+  const row = await page.locator("[data-dock-row]").boundingBox();
+  expect(Math.abs(resetBox.height - row.height * 0.4), "double-click reset").toBeLessThan(10);
+});
+
 test("terminal count badge and last-opened persistence", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);

@@ -37,6 +37,8 @@ export const zh = {
     newShell: "新建 Shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
+    /** Boundary drag handle between the dock and the main content (double-click resets). */
+    resize: "调整终端面板大小",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
     close: "关闭",

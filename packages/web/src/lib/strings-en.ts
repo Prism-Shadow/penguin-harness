@@ -35,6 +35,8 @@ export const en: Strings = {
     newShell: "New shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
+    /** Boundary drag handle between the dock and the main content (double-click resets). */
+    resize: "Resize terminal panel",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",
