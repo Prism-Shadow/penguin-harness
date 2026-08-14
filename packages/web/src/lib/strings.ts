@@ -433,9 +433,8 @@ export const zh = {
     /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
     vendorProtocolHint: (vendor: string): string =>
       `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
-    /** Non-blocking warning under the model id (preset direct-vendor groups, adding): the typed id is not a recognized official model id. */
-    autoRouteNone:
-      "该 id 不是可识别的官方模型 id：请核对，或改在 Custom / 自建分组以 OpenAI 兼容接口接入",
+    autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
+    useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:

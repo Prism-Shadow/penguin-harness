@@ -461,7 +461,8 @@ export const en: Strings = {
     vendorProtocolHint: (vendor: string): string =>
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     autoRouteNone:
-      "This id is not a recognized official model id: double-check it, or add the model under Custom / a user-defined group with an OpenAI-compatible endpoint",
+      "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
+    useCustomGroup: "Move to Custom",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:

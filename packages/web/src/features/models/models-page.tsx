@@ -158,6 +158,11 @@ export function decimalOnly(v: string): string {
   return i === -1 ? cleaned : cleaned.slice(0, i + 1) + cleaned.slice(i + 1).replace(/\./g, "");
 }
 
+/** Moving an existing model to Custom switches it to the OpenAI-compatible client. */
+export function clientTypeAfterProviderChange(provider: string, current: string): string {
+  return provider === "custom" ? "openai" : current;
+}
+
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
   /**
@@ -1257,7 +1262,6 @@ function ModelDialog({
     dialogProvider.id !== "custom" &&
     dialogProvider.gatewayBaseUrl === undefined;
   const autoRouteMiss =
-    isNew &&
     vendorGroup &&
     !form.clientType.trim() &&
     form.modelId.trim() !== "" &&
@@ -1304,13 +1308,27 @@ function ModelDialog({
           placeholder={S.models.modelIdHint}
         />
         {fieldErrors.modelId && <FieldError>{fieldErrors.modelId}</FieldError>}
-        {/* Hint when auto-routing misses (first-party provider group, adding): warns without blocking. */}
-        {autoRouteMiss && (
-          <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
-            {S.models.autoRouteNone}
-          </span>
-        )}
       </label>
+      {autoRouteMiss && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+        >
+          <span>{S.models.autoRouteNone}</span>
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={() =>
+              set({
+                provider: "custom",
+                clientType: clientTypeAfterProviderChange("custom", form.clientType),
+              })
+            }
+          >
+            {S.models.useCustomGroup}
+          </Button>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <Input
           size="sm"
@@ -1325,7 +1343,10 @@ function ModelDialog({
           label={S.models.providerGroup}
           value={form.provider}
           disabled={!canEdit}
-          onChange={(e) => set({ provider: e.target.value })}
+          onChange={(e) => {
+            const provider = e.target.value;
+            set({ provider, clientType: clientTypeAfterProviderChange(provider, form.clientType) });
+          }}
         >
           {MODEL_PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
