@@ -23,7 +23,6 @@ import type {
   SessionCategory,
   SessionCreateResponse,
   SessionProcessesResponse,
-  SessionSubagentsResponse,
   SubagentMessageResponse,
   SessionResponse,
   SessionsResponse,
@@ -641,8 +640,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // FD-1: the first event of every new subscription (including reconnects and resync
     // rebuilds) is always a snapshot of the current running state — the frontend treats
     // this as authoritative, eliminating input-area lockup or premature Task closure
-    // caused by a stale running/idle in the list; followed by replaying all still-pending
-    // approval requests.
+    // caused by stale running/idle state in the list. The child-state snapshot follows,
+    // then all still-pending approval requests are replayed.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
@@ -820,13 +819,6 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   // —— Child Sessions retained by this parent runtime (Agents panel controls) ——
-
-  app.get("/:sessionId/subagents", (c) => {
-    const row = resolveSession(c);
-    return c.json({
-      subagents: deps.manager.listSubagents(row.sessionId),
-    } satisfies SessionSubagentsResponse);
-  });
 
   app.post("/:sessionId/subagents/:childSessionId/messages", async (c) => {
     const row = resolveSession(c);

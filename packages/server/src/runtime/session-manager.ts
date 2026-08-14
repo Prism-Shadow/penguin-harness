@@ -951,7 +951,6 @@ export class SessionManager {
       status: child.status,
       startedAt: child.startedAt === null ? null : new Date(child.startedAt).toISOString(),
       endedAt: child.endedAt === null ? null : new Date(child.endedAt).toISOString(),
-      pendingApprovals: child.pendingApprovals,
     }));
   }
 

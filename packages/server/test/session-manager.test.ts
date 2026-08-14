@@ -147,7 +147,6 @@ describe("session-manager", () => {
         status: "running",
         startedAt: Date.parse("2026-08-14T01:00:00.000Z"),
         endedAt: null,
-        pendingApprovals: 1,
       },
     ];
     const sent: Array<[string, string]> = [];
@@ -179,7 +178,6 @@ describe("session-manager", () => {
         status: "running",
         startedAt: "2026-08-14T01:00:00.000Z",
         endedAt: null,
-        pendingApprovals: 1,
       },
     ]);
     expect(manager.sendSubagentMessage("session-1", "child-1", "correct")).toBe("steered");
@@ -199,7 +197,6 @@ describe("session-manager", () => {
       status: "running",
       startedAt: Date.now(),
       endedAt: null,
-      pendingApprovals: 0,
     };
     const fake: RuntimeSession = {
       ...approvalFakeSession("session-1"),
@@ -231,7 +228,7 @@ describe("session-manager", () => {
     expect(manager.decideApproval("session-1", "child-tc", "allow")).toBe(true);
     await expect(decision).resolves.toBe("allow");
 
-    state = { ...state, status: "idle", endedAt: Date.now(), pendingApprovals: 0 };
+    state = { ...state, status: "idle", endedAt: Date.now() };
     sink!.change();
     expect(serverEvents(events).at(-1)).toMatchObject({
       type: "subagent_state",

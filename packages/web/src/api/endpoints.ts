@@ -66,7 +66,6 @@ import type {
   SessionPatchRequest,
   SessionResponse,
   SessionProcessesResponse,
-  SessionSubagentsResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -452,10 +451,6 @@ export const postAbort = (sessionId: string) =>
     method: "POST",
     body: {},
   });
-
-/** Child Sessions retained by this parent runtime (the Agents panel's authoritative lifecycle state). */
-export const getSessionSubagents = (sessionId: string) =>
-  apiFetch<SessionSubagentsResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/subagents`);
 
 /** Steers a running child, or starts a follow-up round on the same child Session when idle. */
 export const postSubagentMessage = (sessionId: string, childSessionId: string, text: string) =>

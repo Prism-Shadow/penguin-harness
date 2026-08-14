@@ -1064,11 +1064,6 @@ export interface SessionSubagentInfo {
   status: "running" | "stopping" | "idle";
   startedAt: string | null;
   endedAt: string | null;
-  pendingApprovals: number;
-}
-
-export interface SessionSubagentsResponse {
-  subagents: SessionSubagentInfo[];
 }
 
 export interface SubagentMessageResponse {

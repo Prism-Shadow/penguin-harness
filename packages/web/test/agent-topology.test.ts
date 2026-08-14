@@ -191,7 +191,6 @@ describe("mergeTopologyRuntimeState", () => {
         status: "running",
         startedAt: "2026-08-14T01:00:00.000Z",
         endedAt: null,
-        pendingApprovals: 0,
       },
     ]);
     expect(merged[1]).toMatchObject({ running: true, status: "running" });
@@ -210,7 +209,6 @@ describe("mergeTopologyRuntimeState", () => {
           status: "stopping",
           startedAt: "2026-08-14T01:00:00.000Z",
           endedAt: null,
-          pendingApprovals: 0,
         },
       ])[1],
     ).toMatchObject({ running: true, status: "stopping" });
@@ -221,7 +219,6 @@ describe("mergeTopologyRuntimeState", () => {
         status: "idle",
         startedAt: "2026-08-14T01:00:00.000Z",
         endedAt: "2026-08-14T01:00:09.000Z",
-        pendingApprovals: 0,
       },
     ]);
     expect(idle[1]).toMatchObject({ running: false, status: "idle", elapsedMs: 9000 });

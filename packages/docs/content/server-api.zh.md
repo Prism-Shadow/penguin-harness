@@ -187,7 +187,6 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
-| GET | /subagents | 该父运行时仍保留的子 Session：返回 `{subagents}`，含 `running` / `stopping` / `idle` 状态与生命周期时间 |
 | POST | /subagents/:childSessionId/messages | 向保留中的子 Session 发送 `{text}`：运行中作为纠偏消息，空闲时在同一上下文中启动后续轮次 → 202 `{delivery: "steered" | "started"}` |
 | POST | /subagents/:childSessionId/abort | 只中断子 Session 当前轮次而不销毁其上下文：触发时 202，已经空闲时 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |

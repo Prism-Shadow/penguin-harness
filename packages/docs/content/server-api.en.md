@@ -187,7 +187,6 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
-| GET | /subagents | Children retained by this parent runtime: `{subagents}` with `running` / `stopping` / `idle` state and lifecycle timestamps |
 | POST | /subagents/:childSessionId/messages | Send `{text}` to a retained child: steer its running round or start a follow-up round in the same child Session when idle → 202 `{delivery: "steered" | "started"}` |
 | POST | /subagents/:childSessionId/abort | Interrupt only the child's current round without disposing its Session/context: 202 when triggered, 204 when already idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |

@@ -251,7 +251,6 @@ describe("subagent_state", () => {
       status: "running",
       startedAt: "2026-08-14T01:00:00.000Z",
       endedAt: null,
-      pendingApprovals: 0,
     };
     h.controller.handleServer({ type: "subagent_state", subagents: [running] });
     expect(h.subagents).toEqual([[running]]);

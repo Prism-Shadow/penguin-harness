@@ -341,7 +341,6 @@ export class ManagedSubagentSession {
     return new Promise<ApprovalDecision>((resolve) => {
       this.approvals.push({ toolCall, settled: false, resolve });
       this.wakeSignal.notify(); // Wake the parent tool call waiting within the window, so it can consult as soon as possible
-      this.changeSink?.();
       void this.pumpApprovals();
     });
   };
@@ -354,7 +353,6 @@ export class ManagedSubagentSession {
     if (idx >= 0) this.approvals.splice(idx, 1);
     req.resolve(decision);
     this.wakeSignal.notify();
-    this.changeSink?.();
   }
 
   /**

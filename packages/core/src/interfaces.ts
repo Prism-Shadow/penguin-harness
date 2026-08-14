@@ -382,8 +382,6 @@ export interface BackgroundSubagentInfo {
   startedAt: number | null;
   /** End of the most-recent run (epoch milliseconds); null while it is active. */
   endedAt: number | null;
-  /** Tool approvals currently waiting for a human decision. */
-  pendingApprovals: number;
 }
 
 /** Result of delivering a user-authored message to a retained child Session. */

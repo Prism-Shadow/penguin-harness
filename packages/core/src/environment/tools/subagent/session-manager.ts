@@ -79,7 +79,6 @@ export class SubagentSessionManager {
       status: task.stopping ? "stopping" : task.running ? "running" : "idle",
       startedAt: task.startedAt,
       endedAt: task.endedAt,
-      pendingApprovals: task.pendingApprovals,
     }));
   }
 

@@ -1,4 +1,4 @@
-/** Agents-panel child control routes: parent ownership, state listing, message delivery and interrupt. */
+/** Agents-panel child control routes: parent ownership, message delivery, and interrupt. */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BackgroundSubagentInfo } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -36,7 +36,6 @@ describe("subagent controls", () => {
       status: "running",
       startedAt: Date.parse("2026-08-14T01:00:01.000Z"),
       endedAt: null,
-      pendingApprovals: 0,
     };
     const runtime: RuntimeSession = {
       sessionId: SID,
@@ -66,22 +65,8 @@ describe("subagent controls", () => {
     await t.cleanup();
   });
 
-  it("lists authoritative state and delivers a running-child correction", async () => {
+  it("delivers a running-child correction", async () => {
     const api = apiClient(t.app, cookie);
-    const listed = await api.get(`/api/sessions/${SID}/subagents`);
-    expect(listed.status).toBe(200);
-    expect(await listed.json()).toEqual({
-      subagents: [
-        {
-          sessionId: CHILD,
-          status: "running",
-          startedAt: "2026-08-14T01:00:01.000Z",
-          endedAt: null,
-          pendingApprovals: 0,
-        },
-      ],
-    });
-
     const sent = await api.post(`/api/sessions/${SID}/subagents/${CHILD}/messages`, {
       text: "  correct course  ",
     });
@@ -108,7 +93,6 @@ describe("subagent controls", () => {
 
   it("returns the same 404 to a user outside the parent Project", async () => {
     const outsider = apiClient(t.app, outsiderCookie);
-    expect((await outsider.get(`/api/sessions/${SID}/subagents`)).status).toBe(404);
     expect(
       (
         await outsider.post(`/api/sessions/${SID}/subagents/${CHILD}/messages`, {
