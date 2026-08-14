@@ -30,6 +30,7 @@ const ROW: SessionRow = {
   approvalMode: "always-ask",
   title: null,
   createdAt: "2026-07-07T00:00:00.000Z",
+  lastActiveAt: "2026-07-07T00:00:00.000Z",
 };
 
 const CTX: UsageContext = {

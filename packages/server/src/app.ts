@@ -236,6 +236,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     titles,
     log,
     goals: goalsRepo,
+    ...(overrides.now ? { now: overrides.now } : {}),
   });
   managerRef = manager;
 

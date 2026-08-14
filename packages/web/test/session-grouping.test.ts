@@ -47,6 +47,7 @@ function session(
     workspace,
     approvalMode: "allow-all",
     createdAt,
+    lastActiveAt: createdAt,
     status: "idle",
     pendingApprovalCount: 0,
     pendingFollowUpCount: 0,
