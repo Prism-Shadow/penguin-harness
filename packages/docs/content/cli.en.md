@@ -94,16 +94,18 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--price-output <n>` | Output price |
 | `--set-default` | Also set as the default model |
 
-### model default / model vision / model list
+### model default / model vision / model list / model remove
 
 ```bash
 penguin config model default --model-id <id> --provider <group>
 penguin config model vision --model-id <id> --provider <group>
 penguin config model list
+penguin config model remove --model-id <id> --provider <group>
 ```
 
 - `model default` sets the Project's default model; `model vision` sets the vision proxy model. Both require `--model-id` and `--provider`, and the reference must already exist in the model list.
 - `model list` lists configured models; the default model is marked with `*`.
+- `model remove` deletes a model entry along with the credential stored inline on it. It requires `--model-id` and `--provider` — the pair is matched exactly, so the same upstream id under another group is left alone — and exits non-zero if the pair is not in the config. When the removed entry was the default model or the vision model, that setting is cleared: a pointer left naming a model that is no longer configured would fail the next session outright.
 
 ### vault
 

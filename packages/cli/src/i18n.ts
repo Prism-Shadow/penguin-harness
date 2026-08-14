@@ -56,11 +56,12 @@ export interface Messages {
     addSetDefault: string;
     defaultDesc: string;
     visionDesc: string;
-    /** `model default` / `model vision`'s --model-id: the upstream request id (pairs with --provider as a reference). */
+    /** `model default` / `model vision` / `model remove`'s --model-id: the upstream request id (pairs with --provider as a reference). */
     refModelId: string;
-    /** `model default` / `model vision`'s --provider: the provider group of the referenced entry (required). */
+    /** `model default` / `model vision` / `model remove`'s --provider: the provider group of the referenced entry (required). */
     refProvider: string;
     listDesc: string;
+    removeDesc: string;
     langDesc: string;
     langArg: string;
     vaultDesc: string;
@@ -230,11 +231,16 @@ export interface Messages {
   langRestartConfirm(): string;
   langRestart(): string;
   langRestartHint(rcPath: string): string;
-  /** Result output for model add/default/vision: the argument is the already-formatted pair reference (formatModelRef). */
+  /** Result output for model add/default/vision/remove: the argument is the already-formatted pair reference (formatModelRef). */
   modelAdded(model: string, defaultModel: string | undefined): string;
   modelUpdated(model: string, defaultModel: string | undefined): string;
   defaultModelSet(model: string): string;
   visionModelSet(model: string): string;
+  modelRemoved(model: string, defaultModel: string | undefined): string;
+  /** `model remove` on a pair the Project config doesn't have. */
+  modelNotConfigured(model: string): string;
+  /** Follows modelRemoved when the removed entry was also the vision model. */
+  visionModelCleared(): string;
   modelListTitle(): string;
   modelListEmpty(): string;
   vaultSet(key: string): string;
@@ -320,6 +326,7 @@ const en: Messages = {
     refModelId: "Upstream model id; forms the (provider, model_id) pair reference with --provider",
     refProvider: "Provider group of the referenced entry (see `penguin config model list`)",
     listDesc: "List the Project's models (API keys hidden)",
+    removeDesc: "Remove a model from the Project (clears the default / vision pointers naming it)",
     langDesc:
       "Set the interface language (en|zh); persists PENGUIN_LANG to your shell startup file",
     langArg: "Language: en or zh",
@@ -492,6 +499,9 @@ const en: Messages = {
   modelUpdated: (model, def) => `Updated model ${model}. Default model: ${def ?? "(unset)"}`,
   defaultModelSet: (model) => `Default model set to ${model}.`,
   visionModelSet: (model) => `Vision model set to ${model}.`,
+  modelRemoved: (model, def) => `Removed model ${model}. Default model: ${def ?? "(unset)"}`,
+  modelNotConfigured: (model) => `Model ${model} is not in the Project config.`,
+  visionModelCleared: () => "It was also the vision model; that setting is now unset.",
   modelListTitle: () => "Configured models:",
   modelListEmpty: () => "No models configured yet. Add one with `penguin config model add`.",
   vaultSet: (key) => `Saved vault entry ${key}.`,
@@ -559,6 +569,7 @@ const zh: Messages = {
     refModelId: "上游模型 id；与 --provider 构成 (provider, model_id) 成对引用",
     refProvider: "引用条目的 provider 分组（见 `penguin config model list`）",
     listDesc: "列出当前 Project 的模型（API key 隐藏）",
+    removeDesc: "从当前 Project 删除一个模型（指向它的默认模型 / 视觉模型设置一并清空）",
     langDesc: "设置界面语言（en|zh）；将 PENGUIN_LANG 写入 shell 启动文件并持久化",
     langArg: "语言：en 或 zh",
     vaultDesc: "管理 Agent vault（注入该 Agent shell 命令的环境变量）",
@@ -726,6 +737,9 @@ const zh: Messages = {
   modelUpdated: (model, def) => `已更新模型 ${model}。当前默认模型：${def ?? "(未设置)"}`,
   defaultModelSet: (model) => `默认模型已设为 ${model}。`,
   visionModelSet: (model) => `视觉模型已设为 ${model}。`,
+  modelRemoved: (model, def) => `已删除模型 ${model}。当前默认模型：${def ?? "(未设置)"}`,
+  modelNotConfigured: (model) => `模型 ${model} 不在当前 Project 配置中。`,
+  visionModelCleared: () => "它同时是视觉模型，该设置已一并清空。",
   modelListTitle: () => "已配置的模型：",
   modelListEmpty: () => "尚未配置任何模型。用 `penguin config model add` 添加。",
   vaultSet: (key) => `已保存 vault 条目 ${key}。`,
