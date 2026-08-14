@@ -167,6 +167,15 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
 }
 
 /**
+ * Shell titles usually open with a `user@host` marker (bash and zsh default title
+ * strings). The host says nothing useful in a single-server UI and eats the tab's width,
+ * so it is dropped at display time only — the stored title stays untouched.
+ */
+function displayTitle(title: string | null | undefined): string {
+  return (title ?? "").trim().replace(/^\S+@\S+\s*(?::\s*)?/, "").trim();
+}
+
+/**
  * One tab in the strip: name (title once the shell sets one) + a kill ×. Two sibling
  * buttons, not nested — a button inside a button is invalid and unclickable.
  */
@@ -182,7 +191,7 @@ function TerminalTab(props: {
   // The `1:`-style prefix (tmux convention) keeps identically-named/-titled tabs apart.
   // It is the terminal's STABLE seq, not its position: a dragged tab keeps its number, so
   // where it went stays visible.
-  const label = `${terminal.seq ?? props.index + 1}: ${terminal.title?.trim() || terminal.name}`;
+  const label = `${terminal.seq ?? props.index + 1}: ${displayTitle(terminal.title) || terminal.name}`;
   return (
     <div
       data-testid="terminal-tab"

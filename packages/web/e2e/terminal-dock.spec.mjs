@@ -298,9 +298,16 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
 
   // Live title: the shell's OSC title lands on the active tab's label (sleep keeps the
   // title up until the assertion has run — the next prompt may reset it).
-  await runInDock(page, "printf '\\033]0;LIVE_TITLE_X\\007'; sleep 3");
+  await runInDock(page, "printf '\\033]0;LIVE_TITLE_X\\007'; sleep 2");
   await expect(tabs.last()).toContainText("LIVE_TITLE_X", { timeout: 5000 });
   const titledId = await tabs.last().getAttribute("data-terminal-id");
+
+  // A `user@host` marker (the bash/zsh default title shape) is dropped at display time —
+  // the host is noise in a single-server UI.
+  await runInDock(page, "printf '\\033]0;someone@somehost: CLEAN_TITLE\\007'; sleep 2");
+  await expect(tabs.last()).toContainText("CLEAN_TITLE", { timeout: 5000 });
+  expect(await tabs.last().innerText()).not.toContain("somehost");
+  await runInDock(page, "printf '\\033]0;LIVE_TITLE_X\\007'; sleep 2"); // restore for later steps
 
   // Reorder: drag the titled tab (B, currently last) in front of A. Its NUMBER travels
   // with it — numbering is the terminal's stable seq, not its position, so after the drag
