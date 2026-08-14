@@ -12,26 +12,35 @@
  * completes, so a client never observes the stop-the-world window (it only
  * sees latency). Concurrent upgrade requests serialize on the same queue.
  *
+ * Loading and compiling are decoupled capabilities:
+ *
+ * (a) LOAD — the fundamental interface: a single-file JS bundle
+ *     (`bundlePath`) plus an OPTIONAL git specifier recorded as provenance.
+ *     Needs nothing installed: no git, no compiler.
+ * (b) COMPILE — source upgrades (`repo` + `revision`, TS or JS): check out
+ *     the revision, compile the entry into ONE self-contained file in a
+ *     compiler SUBPROCESS (esbuild, resolved from the package or PATH),
+ *     incremental via a per-commit-sha output cache — then call (a).
+ * (c) Both git and the compiler are optional system capabilities. Without a
+ *     compiler, only (a) is usable (source upgrades fail with a pointer to
+ *     it). Without git, (b) degrades to reading a local working tree with a
+ *     "revision NOT verified" warning.
+ *
  * Reload is strictly request-driven: nothing watches, nothing auto-triggers.
- * The canonical upgrade descriptor is a git specifier + revision
- * (e.g. file:///home/abc/x.git + deadbeef): on request the revision is
- * checked out, COMPILED INTO A SINGLE self-contained module file (esbuild,
- * kernel bundled in), imported with a cache-busting query, and swapped in.
- * When git is not installed the host falls back to reading a local working
- * tree and surfaces a warning (the revision is then unverified).
  *
  * Protocol (one straight line, see the proposal's MVP章节):
  *   enqueue → quiesce check → park (to disk) → strict parse / migrate → boot
  *   → drain queue. A blocked reconcile leaves the old instance untouched and
  *   returns the dropped/missing/invalid paths for the upper ladder rungs.
  */
-import { spawnSync } from "node:child_process";
+import { execFile as execFileCb, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import type { AnyIface, AnyImpl, Instance } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
@@ -39,23 +48,40 @@ import type { PlatformApi } from "./platform-v1.js";
 import { platformV1 } from "./platform-v1.js";
 import { platformV2 } from "./platform-v2.js";
 
+const execFile = promisify(execFileCb);
+
 export interface PlatformBundle {
   id: string;
   iface: AnyIface;
   impl: AnyImpl;
 }
 
+export interface GitSource {
+  /** Git specifier: anything `git clone` accepts (file:///home/abc/x.git, a plain path, …). */
+  repo: string;
+  /** Revision (commit sha, tag, branch); resolved to an exact sha when git is available. */
+  revision: string;
+}
+
 export type UpgradeTarget =
+  /** Built-in demo bundle (the /hot page buttons). */
   | { impl: string }
-  | {
-      /** Git specifier: anything `git clone` accepts (file:///home/abc/x.git, a plain path, …). */
-      repo: string;
-      /** Revision to check out (commit sha, tag, branch). */
-      revision: string;
-    };
+  /** Layer (a): a prebuilt single-file JS bundle + optional provenance. */
+  | { bundlePath: string; source?: GitSource }
+  /** Layer (b): source checkout + subprocess compile, then layer (a). */
+  | GitSource;
+
+export type CompileMode = "none" | "fresh" | "cached";
 
 export type UpgradeOutcome =
-  | { status: "ok"; mode: "silent" | "migrated"; impl: string; warnings: string[] }
+  | {
+      status: "ok";
+      mode: "silent" | "migrated";
+      impl: string;
+      warnings: string[];
+      compile: CompileMode;
+      source: GitSource | null;
+    }
   | {
       status: "blocked";
       dropped: string[];
@@ -64,14 +90,19 @@ export type UpgradeOutcome =
       warnings: string[];
     };
 
-/** In-repo demo bundles (the /hot page buttons); external distros arrive via git. */
+/** In-repo demo bundles; external distros arrive via bundlePath or git. */
 const BUNDLES: Record<string, PlatformBundle> = {
   [platformV1.id]: platformV1,
   [platformV2.id]: platformV2,
 };
 
-/** Entry-point convention for a platform repo, in probe order. */
-const PLATFORM_ENTRIES = ["hot-platform.mjs", "hot-platform.ts", "hot-platform.js"];
+/** Entry-point convention for a platform source repo, in probe order. */
+const PLATFORM_ENTRIES = [
+  "hot-platform.mjs",
+  "hot-platform.ts",
+  "hot-platform.js",
+  "hot-platform.mts",
+];
 
 /** Demo UI panel versions served to the web platform host (packages/server/hot-assets/). */
 const UI_PANEL_VERSIONS = ["v1", "v2"] as const;
@@ -90,6 +121,24 @@ const ASSETS_DIR = (() => {
 export interface HotHostOptions {
   /** Test seam: the git binary to invoke (default "git"). */
   gitBin?: string;
+  /**
+   * Test seam: the compiler executable. undefined → auto-detect (esbuild
+   * package, then PATH); null → force "no compiler installed"; a string →
+   * use that executable as-is.
+   */
+  compilerBin?: string | null;
+}
+
+interface Compiler {
+  cmd: string;
+  prefixArgs: string[];
+}
+
+interface LoadResult {
+  bundle: PlatformBundle;
+  warnings: string[];
+  compile: CompileMode;
+  source: GitSource | null;
 }
 
 export class HotHost {
@@ -100,6 +149,8 @@ export class HotHost {
   private uiVersion: UiPanelVersion = "v1";
   private readonly hotDir: string;
   private readonly gitBin: string;
+  private readonly compilerOption: string | null | undefined;
+  private compilerMemo: Compiler | null | undefined;
   /** The freeze, as a queue: everything the HTTP layer gates on chains here. */
   private opQueue: Promise<unknown> = Promise.resolve();
 
@@ -109,10 +160,16 @@ export class HotHost {
   ) {
     this.hotDir = path.join(root, "hot");
     this.gitBin = options.gitBin ?? "git";
+    this.compilerOption = options.compilerBin;
   }
 
   currentImplId(): string {
     return this.implId;
+  }
+
+  /** Which optional system capabilities are present (surfaced to clients). */
+  capabilities(): { git: boolean; compiler: boolean } {
+    return { git: this.hasGit(), compiler: this.resolveCompiler() !== null };
   }
 
   /**
@@ -171,7 +228,7 @@ export class HotHost {
         warnings: [],
       };
     }
-    const { bundle, warnings } = await this.loadBundle(target);
+    const loaded = await this.loadBundle(target);
 
     // Park to disk before touching anything: crash-safe by construction.
     await fsp.mkdir(this.hotDir, { recursive: true });
@@ -180,8 +237,8 @@ export class HotHost {
 
     const result = await upgrade({
       current,
-      impl: bundle.impl,
-      iface: bundle.iface,
+      impl: loaded.bundle.impl,
+      iface: loaded.bundle.iface,
       resources: this.resources,
     });
     if (result.status === "blocked") {
@@ -192,40 +249,60 @@ export class HotHost {
         dropped: result.dropped,
         missing: result.missing,
         invalid: result.invalid,
-        warnings,
+        warnings: loaded.warnings,
       };
     }
     this.instance = result.instance as Instance<PlatformApi>;
-    this.implId = bundle.id;
+    this.implId = loaded.bundle.id;
     await fsp.writeFile(parkPath, JSON.stringify(result.doc, null, 2));
-    return { status: "ok", mode: result.mode, impl: bundle.id, warnings };
+    return {
+      status: "ok",
+      mode: result.mode,
+      impl: loaded.bundle.id,
+      warnings: loaded.warnings,
+      compile: loaded.compile,
+      source: loaded.source,
+    };
   }
 
-  private async loadBundle(
-    target: UpgradeTarget,
-  ): Promise<{ bundle: PlatformBundle; warnings: string[] }> {
+  private async loadBundle(target: UpgradeTarget): Promise<LoadResult> {
     if ("impl" in target) {
       const bundle = BUNDLES[target.impl];
       if (bundle === undefined) throw new Error(`unknown platform impl '${target.impl}'`);
-      return { bundle, warnings: [] };
+      return { bundle, warnings: [], compile: "none", source: null };
     }
-    return this.loadBundleFromGit(target.repo, target.revision);
+    if ("bundlePath" in target) {
+      // Layer (a): the fundamental interface. No git, no compiler — just a
+      // single JS file; the git specifier, when given, is provenance only.
+      return {
+        bundle: await this.importBundleFile(target.bundlePath),
+        warnings: [],
+        compile: "none",
+        source: target.source ?? null,
+      };
+    }
+    return this.loadFromSource(target.repo, target.revision);
   }
 
   /**
-   * The canonical descriptor path: check out repo@revision (or fall back to a
-   * local working tree with a warning when git is missing), compile the entry
-   * into ONE self-contained module file (kernel bundled in — the output has
-   * zero bare imports beyond node builtins), then import it cache-busted.
+   * Layer (b): checkout + subprocess compile, then layer (a). Incremental:
+   * output files are keyed by the exact commit sha, so re-upgrading to a
+   * revision that was already compiled skips the compiler entirely.
    */
-  private async loadBundleFromGit(
-    repo: string,
-    revision: string,
-  ): Promise<{ bundle: PlatformBundle; warnings: string[] }> {
+  private async loadFromSource(repo: string, revision: string): Promise<LoadResult> {
+    if (this.resolveCompiler() === null) {
+      throw new Error(
+        "no JS/TS compiler is available on this system (esbuild not installed); " +
+          "source upgrades need one — provide a prebuilt single-file bundle (bundlePath) instead",
+      );
+    }
+
     const warnings: string[] = [];
     let srcDir: string;
+    let exactSha: string | null = null;
     if (this.hasGit()) {
-      srcDir = this.checkout(repo, revision);
+      srcDir = await this.checkout(repo, revision);
+      exactSha = (await this.git(["-C", srcDir, "rev-parse", "HEAD"])).trim();
     } else {
       warnings.push(
         `git is not installed; reading '${repo}' as a local working tree — revision '${revision}' is NOT verified`,
@@ -238,37 +315,98 @@ export class HotHost {
       }
     }
 
-    const entry = findPlatformEntry(srcDir);
-    const outfile = path.join(this.hotDir, "build", `platform-${sanitize(revision)}.mjs`);
-    await fsp.mkdir(path.dirname(outfile), { recursive: true });
-    // Compiled ONLY on request (no watcher anywhere): one entry → one file.
-    const esbuild = await import("esbuild");
-    await esbuild.build({
-      entryPoints: [entry],
-      bundle: true,
-      format: "esm",
-      platform: "node",
-      outfile,
-      logLevel: "silent",
-      // The repo may import the kernel as a bare specifier; resolve it to the
-      // host's own copy so checkouts outside the workspace still build. It is
-      // then BUNDLED IN (not external): kernel objects are pure data +
-      // closures, so a private copy interoperates with the host kernel.
-      // createRequire (not import.meta.resolve): available under both Node
-      // and vitest's transform, and honors the package's exports map.
-      alias: {
-        "@prismshadow/penguin-core/kernel": createRequire(import.meta.url).resolve(
-          "@prismshadow/penguin-core/kernel",
-        ),
-      },
-    });
+    const outfile = path.join(
+      this.hotDir,
+      "build",
+      `platform-${sanitize(exactSha ?? revision)}.mjs`,
+    );
+    // Incremental cache only when the key is an exact, verified commit sha —
+    // a working-tree fallback has no stable identity and always recompiles.
+    let compile: CompileMode;
+    if (exactSha !== null && fs.existsSync(outfile)) {
+      compile = "cached";
+    } else {
+      const entry = findPlatformEntry(srcDir);
+      await this.compileSingleFile(entry, outfile);
+      compile = "fresh";
+    }
 
-    const url = `${pathToFileURL(outfile).href}?v=${Date.now()}`;
+    return {
+      bundle: await this.importBundleFile(outfile),
+      warnings,
+      compile,
+      source: { repo, revision: exactSha ?? revision },
+    };
+  }
+
+  /** Layer (a) core: import one JS file, cache-busted so re-imports load fresh code. */
+  private async importBundleFile(file: string): Promise<PlatformBundle> {
+    const resolved = path.resolve(file);
+    if (!fs.existsSync(resolved)) throw new Error(`bundle file '${file}' does not exist`);
+    const url = `${pathToFileURL(resolved).href}?v=${Date.now()}`;
     const mod = (await import(url)) as { hotPlatform?: PlatformBundle };
     if (mod.hotPlatform === undefined) {
-      throw new Error(`${entry} does not export 'hotPlatform'`);
+      throw new Error(`${file} does not export 'hotPlatform'`);
     }
-    return { bundle: mod.hotPlatform, warnings };
+    return mod.hotPlatform;
+  }
+
+  /**
+   * Compile in a SUBPROCESS (the compiler is a system capability, not a
+   * library dependency): one entry → one self-contained file. The repo may
+   * import the kernel as a bare specifier; it is aliased to the host's copy
+   * and BUNDLED IN (kernel objects are pure data + closures, so a private
+   * copy interoperates with the host kernel).
+   */
+  private async compileSingleFile(entry: string, outfile: string): Promise<void> {
+    const compiler = this.resolveCompiler()!;
+    await fsp.mkdir(path.dirname(outfile), { recursive: true });
+    const kernelPath = createRequire(import.meta.url).resolve("@prismshadow/penguin-core/kernel");
+    try {
+      await execFile(compiler.cmd, [
+        ...compiler.prefixArgs,
+        entry,
+        "--bundle",
+        "--format=esm",
+        "--platform=node",
+        `--outfile=${outfile}`,
+        "--log-level=silent",
+        `--alias:@prismshadow/penguin-core/kernel=${kernelPath}`,
+      ]);
+    } catch (err) {
+      const stderr = (err as { stderr?: string }).stderr?.trim();
+      throw new Error(`compile failed for '${entry}'${stderr ? `: ${stderr}` : ""}`);
+    }
+  }
+
+  /** esbuild from the package (run under node) or from PATH; memoized. */
+  private resolveCompiler(): Compiler | null {
+    if (this.compilerMemo !== undefined) return this.compilerMemo;
+    let found: Compiler | null = null;
+    if (this.compilerOption === null) {
+      found = null;
+    } else if (typeof this.compilerOption === "string") {
+      found = { cmd: this.compilerOption, prefixArgs: [] };
+    } else {
+      try {
+        // Executed directly: depending on the package manager this resolves
+        // to the native binary (pnpm links it) or a shebanged JS shim — both
+        // are directly executable; running it under node would break on the
+        // native-binary case.
+        const script = createRequire(import.meta.url).resolve("esbuild/bin/esbuild");
+        found = { cmd: script, prefixArgs: [] };
+      } catch {
+        try {
+          if (spawnSync("esbuild", ["--version"], { stdio: "ignore" }).status === 0) {
+            found = { cmd: "esbuild", prefixArgs: [] };
+          }
+        } catch {
+          found = null;
+        }
+      }
+    }
+    this.compilerMemo = found;
+    return found;
   }
 
   private hasGit(): boolean {
@@ -279,22 +417,22 @@ export class HotHost {
     }
   }
 
-  private checkout(repo: string, revision: string): string {
+  private async git(args: string[]): Promise<string> {
+    try {
+      const { stdout } = await execFile(this.gitBin, args);
+      return stdout;
+    } catch (err) {
+      const stderr = (err as { stderr?: string }).stderr?.trim();
+      throw new Error(`git ${args[0]} failed${stderr ? `: ${stderr}` : ""}`);
+    }
+  }
+
+  private async checkout(repo: string, revision: string): Promise<string> {
     const dir = path.join(this.hotDir, "checkouts", sanitize(revision));
-    fs.rmSync(dir, { recursive: true, force: true });
-    fs.mkdirSync(dir, { recursive: true });
-    const clone = spawnSync(this.gitBin, ["clone", "--quiet", repo, dir], { encoding: "utf8" });
-    if (clone.status !== 0) {
-      throw new Error(`git clone failed for '${repo}': ${clone.stderr?.trim()}`);
-    }
-    const checkout = spawnSync(
-      this.gitBin,
-      ["-C", dir, "checkout", "--quiet", "--detach", revision],
-      { encoding: "utf8" },
-    );
-    if (checkout.status !== 0) {
-      throw new Error(`git checkout '${revision}' failed: ${checkout.stderr?.trim()}`);
-    }
+    await fsp.rm(dir, { recursive: true, force: true });
+    await fsp.mkdir(dir, { recursive: true });
+    await this.git(["clone", "--quiet", repo, dir]);
+    await this.git(["-C", dir, "checkout", "--quiet", "--detach", revision]);
     return dir;
   }
 
