@@ -14,12 +14,7 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import {
-  TerminalView,
-  fetchJson,
-  type TerminalInfo,
-  type TerminalStatus,
-} from "./terminal-view";
+import { TerminalView, fetchJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
 import {
   isTerminalDockOpen,
   openPanes,
@@ -31,7 +26,6 @@ import { noteTerminalTitle, refreshTerminals } from "./terminal-list";
 
 export interface TerminalViewState {
   status: TerminalStatus;
-  detail: string;
   info: TerminalInfo | null;
 }
 
@@ -48,7 +42,7 @@ export function subscribeTerminalViewStates(listener: () => void): () => void {
   return () => stateListeners.delete(listener);
 }
 
-const IDLE_STATE: TerminalViewState = { status: "connecting", detail: "", info: null };
+const IDLE_STATE: TerminalViewState = { status: "connecting", info: null };
 
 export function terminalViewState(id: string | null): TerminalViewState {
   return (id !== null ? viewStates.get(id) : undefined) ?? IDLE_STATE;
@@ -127,8 +121,8 @@ export function TerminalDockRuntime() {
           <TerminalView
             key={id}
             ensure={attachById(id)}
-            onStatus={(status, detail) => {
-              setViewState(id, { status, detail });
+            onStatus={(status) => {
+              setViewState(id, { status });
               if (status === "exited") void refreshTerminals();
             }}
             onInfo={(info) => {

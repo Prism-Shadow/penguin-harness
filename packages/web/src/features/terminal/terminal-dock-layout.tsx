@@ -28,7 +28,7 @@ import {
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
 
-export function dockHostRect(): DOMRect | null {
+function dockHostRect(): DOMRect | null {
   return document.querySelector("[data-dock-host]")?.getBoundingClientRect() ?? null;
 }
 
@@ -124,16 +124,18 @@ function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProper
 }
 
 /** One drop rectangle. A div, not a button: it is only ever "clicked" by a pointer release. */
-function DropTarget(props: { position: DockPosition; candidate: DockPosition | null; shape: string }) {
+function DropTarget(props: {
+  position: DockPosition;
+  candidate: DockPosition | null;
+  shape: string;
+}) {
   const active = props.candidate === props.position;
   return (
     <div
       data-dock-pos={props.position}
       data-testid="dock-layout-target"
       className={`${props.shape} rounded-[3px] border transition-colors duration-100 ${
-        active
-          ? "border-sky-400 bg-sky-500/60"
-          : "border-white/30 bg-white/10"
+        active ? "border-sky-400 bg-sky-500/60" : "border-white/30 bg-white/10"
       }`}
     />
   );
