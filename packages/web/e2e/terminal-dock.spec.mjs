@@ -307,6 +307,12 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await runInDock(page, "printf '\\033]0;someone@somehost: CLEAN_TITLE\\007'; sleep 2");
   await expect(tabs.last()).toContainText("CLEAN_TITLE", { timeout: 5000 });
   expect(await tabs.last().innerText()).not.toContain("somehost");
+
+  // The spaceless variant (`user@host:~/path`) keeps its path — a greedy strip once ate
+  // the whole title here and the tab fell back to the assigned name.
+  await runInDock(page, "printf '\\033]0;someone@somehost:~/spaceless\\007'; sleep 2");
+  await expect(tabs.last()).toContainText("~/spaceless", { timeout: 5000 });
+  expect(await tabs.last().innerText()).not.toContain("somehost");
   await runInDock(page, "printf '\\033]0;LIVE_TITLE_X\\007'; sleep 2"); // restore for later steps
 
   // Reorder: drag the titled tab (B, currently last) in front of A. Its NUMBER travels

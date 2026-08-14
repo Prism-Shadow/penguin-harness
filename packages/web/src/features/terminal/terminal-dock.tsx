@@ -170,9 +170,16 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
  * Shell titles usually open with a `user@host` marker (bash and zsh default title
  * strings). The host says nothing useful in a single-server UI and eats the tab's width,
  * so it is dropped at display time only — the stored title stays untouched.
+ *
+ * The host part must exclude `:` explicitly: in a spaceless title like
+ * `user@host:~/work`, a greedy `\S+` would swallow the path along with the host and leave
+ * nothing of the title at all.
  */
 function displayTitle(title: string | null | undefined): string {
-  return (title ?? "").trim().replace(/^\S+@\S+\s*(?::\s*)?/, "").trim();
+  return (title ?? "")
+    .trim()
+    .replace(/^[^@\s]+@[^:\s]+:?\s*/, "")
+    .trim();
 }
 
 /**
