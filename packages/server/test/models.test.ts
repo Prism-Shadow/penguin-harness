@@ -619,6 +619,7 @@ describe("models update reaches loaded sessions (invalidation + live unlock)", (
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     });
   };
 

@@ -85,7 +85,15 @@ jobs:
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
     with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      require_macos_signing: true
+      require_windows_signing: true
+    # The signing secrets themselves live in the called workflow's matrix environments
+    # (`apple-signing` for macOS, `desktop-build` for Windows) and resolve inside those
+    # jobs; `inherit` additionally forwards repo-level secrets so the called workflow
+    # never sees a name shadowed to empty (the v0.2.2 failure mode).
+    secrets: inherit
 
   release:
     needs: [check-release, desktop]

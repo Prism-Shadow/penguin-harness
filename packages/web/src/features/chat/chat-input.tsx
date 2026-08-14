@@ -2541,7 +2541,7 @@ export function ChatInput({
                 // button's accessible name for assistive tech and name-based test queries.
                 aria-label={`${S.chat.model} ${modelRef?.modelId ?? ""}`}
                 onClick={() => toastInfo(S.chat.modelLockedHint)}
-                className="flex h-8 min-w-0 max-w-44 shrink cursor-help items-center gap-1.5 rounded-md px-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                className="flex h-8 min-w-0 max-w-44 shrink cursor-pointer items-center gap-1.5 rounded-md px-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
               >
                 <ProviderLogo
                   provider={modelRef?.provider ?? "custom"}

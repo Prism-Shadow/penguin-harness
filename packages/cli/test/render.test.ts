@@ -385,7 +385,6 @@ describe("StreamRenderer", () => {
         model_id: "m",
         model_context_window: 1,
         system_prompt: "sp",
-        tools: [{ name: "exec_command", description: "test tool" }],
         agent_state: "/a",
         workspace: "/w",
       }),

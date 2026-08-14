@@ -52,7 +52,6 @@ function meta(): OmniMessage {
     model_id: "claude-sonnet-4-6",
     model_context_window: 1000000,
     system_prompt: "SP",
-    tools: [],
     agent_state: "/agent/state",
     workspace: "/ws",
   });

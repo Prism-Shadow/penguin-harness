@@ -17,11 +17,13 @@ import {
   formatModelRef,
   getModel,
   listInstalledSkills,
+  listScheduleNames,
   loadAgentVault,
   loadOrInitAgentState,
   loadProjectConfig,
   projectDir,
   goalFilePath,
+  resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
   systemConfigPath,
@@ -47,6 +49,7 @@ import {
 } from "./internal/session-support.js";
 import { userText, withOrigin } from "./omnimessage/index.js";
 import type {
+  McpServerConnectResult,
   MessageOrigin,
   OmniMessage,
   TokenCounts,
@@ -260,12 +263,30 @@ export class Agent {
       this.state.projectId,
       this.state.agentId,
     );
+    // Schedule task names for the {{SCHEDULES}} roster: read fresh like the vault and Skills
+    // above (names only; the files' contents are the server-side scheduler's concern).
+    const scheduleNames = await listScheduleNames(
+      this.state.root,
+      this.state.projectId,
+      this.state.agentId,
+    );
+    // Memory for this Session: null when the Agent has Memory off; a temporary Workspace gets
+    // the user scope only (nothing written against it could ever be read back). Reads the
+    // current indexes every time, like the vault and Skills above.
+    const memory = await resolveSessionMemory({
+      root: this.state.root,
+      projectId: this.state.projectId,
+      agentId: this.state.agentId,
+      workspaceDir,
+      enabled: this.state.systemConfig.memory?.enabled !== false,
+    });
 
     // The assembled system prompt goes both to the LLM and into session_meta (so the
     // Trace can audit the actual effective value). The vault only injects **key names**
     // into the prompt (so the model knows which API keys are available); values only
     // go into the subprocess environment. Skills only inject metadata (name and
-    // description); the model reads the body on demand via shell.
+    // description); the model reads the body on demand via shell. Memory likewise injects
+    // only its index; topic bodies are read on demand. Schedules inject only task names.
     const systemPrompt = assembleSystemPrompt(
       this.state,
       sessionEnvironment(workspaceDir, sessionId, {
@@ -276,6 +297,8 @@ export class Agent {
       }),
       Object.keys(vault),
       installedSkills,
+      memory,
+      scheduleNames,
     );
 
     const rt = await this.buildRuntime({
@@ -297,19 +320,22 @@ export class Agent {
 
     return new Session({
       // session_meta holds per-session invariants only: the thinking level is a per-turn
-      // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here.
+      // run parameter (RunOptions.thinkingLevel) and is deliberately not recorded here;
+      // the toolset travels as the first run's tool_list_ready event (it is only known
+      // after the MCP connect the bootstrap performs).
       meta: {
         session_id: sessionId,
         provider: modelEntry.provider,
         model_id: modelEntry.model_id,
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: systemPrompt,
-        tools: rt.tools,
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         ...(opts.source !== undefined ? { source: opts.source } : {}),
       },
-      llm: rt.llm,
+      bootstrap: rt.bootstrap,
+      cancelBootstrap: () => rt.environment.cancelMcpConnect(),
+      mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,
       createLLM: rt.createLLM,
@@ -426,23 +452,29 @@ export class Agent {
       vault: await loadAgentVault(this.state.root, this.state.projectId, this.state.agentId),
     });
 
-    // History is injected once into a fresh context object (setHistory is only used
-    // on resume); Session cumulative Token counts carry over. Wrap the error
-    // descriptively: bad tool arguments in the history (e.g. truncated JSON written by
-    // a third-party OpenAI-compatible endpoint) throw a raw SyntaxError during
-    // conversion, so the error must indicate Trace history corruption rather than a
-    // regular runtime error.
-    if (resumed.history.length > 0) {
-      try {
-        rt.llm.setHistory(resumed.history);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `Resume failed: the Trace history could not be injected (records may be corrupted, e.g. invalid tool-argument JSON): ${detail}`,
-        );
+    // History is injected once into the freshly built context object as part of the lazy
+    // bootstrap (setHistory is only used on resume); Session cumulative Token counts carry
+    // over the same way. The wrap keeps the descriptive error: bad tool arguments in the
+    // history (e.g. truncated JSON written by a third-party OpenAI-compatible endpoint)
+    // throw a raw SyntaxError during conversion, and the message must indicate Trace
+    // history corruption rather than a regular runtime error. With the bootstrap being
+    // lazy, that corruption now surfaces on the first run instead of at resume time —
+    // the price of a resume that no longer blocks on MCP connects.
+    const bootstrap: typeof rt.bootstrap = async () => {
+      const r = await rt.bootstrap();
+      if (resumed.history.length > 0) {
+        try {
+          r.llm.setHistory(resumed.history);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new Error(
+            `Resume failed: the Trace history could not be injected (records may be corrupted, e.g. invalid tool-argument JSON): ${detail}`,
+          );
+        }
       }
-    }
-    rt.llm.sessionTokens = resumed.sessionTokens;
+      r.llm.sessionTokens = resumed.sessionTokens;
+      return r;
+    };
 
     // Continue writing to the original Trace file (the Trace only records real messages; synthesized paired placeholders are re-emitted in memory alongside carry-over).
     const trace = new Writer({
@@ -460,7 +492,6 @@ export class Agent {
         model_id: modelEntry.model_id,
         model_context_window: modelEntry.context_window ?? "unknown",
         system_prompt: meta.system_prompt,
-        tools: rt.tools,
         agent_state: this.state.stateDir,
         workspace: workspaceDir,
         // The origin carries over from the original session_meta (a resumed scheduled/subagent
@@ -470,7 +501,9 @@ export class Agent {
           ? { source: meta.source }
           : {}),
       },
-      llm: rt.llm,
+      bootstrap,
+      cancelBootstrap: () => rt.environment.cancelMcpConnect(),
+      mcpServers: rt.environment.mcpServerNames(),
       environment: rt.environment,
       trace,
       createLLM: rt.createLLM,
@@ -535,8 +568,18 @@ export class Agent {
     vault: Record<string, string>;
   }): Promise<{
     environment: Environment;
-    tools: ToolDefinition[];
-    llm: GenerativeModel;
+    /**
+     * Lazy session bootstrap, run by Session at the start of the first run: resolves the
+     * toolset (the Environment's first listTools connects any configured MCP Servers)
+     * and builds the session LLM from it; `mcp` carries the per-server connect outcomes
+     * for the mcp_connect_end event. Kept out of createSession on purpose — Session
+     * creation stays instant and the run streams connect status while this happens.
+     */
+    bootstrap: () => Promise<{
+      tools: ToolDefinition[];
+      llm: GenerativeModel;
+      mcp: McpServerConnectResult[];
+    }>;
     createLLM: (sessionTokens: TokenCounts) => GenerativeModel;
     createBareLLM: () => GenerativeModel;
     compaction: CompactionSettings;
@@ -722,9 +765,11 @@ export class Agent {
       }
     }
 
-    // Environment binds the Workspace and tool config; tools are listed first so
-    // GenerativeModel can be initialized. Vault environment variables are injected
-    // into command subprocesses (shared by createSession and resumeSession; the
+    // Environment binds the Workspace and tool config; the toolset is resolved lazily by
+    // the bootstrap below (Session's first run), not here — its first listTools connects
+    // any configured MCP Servers, and that wait belongs on the run stream (bracketed by
+    // mcp_connect events), not inside createSession. Vault environment variables are
+    // injected into command subprocesses (shared by createSession and resumeSession; the
     // caller reads the current agent_state/.vault.toml); a child Agent loads **its
     // own** vault via createAgent rather than inheriting the parent's.
     const environment = new Environment({
@@ -742,7 +787,6 @@ export class Agent {
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
     });
-    const tools = await environment.listTools();
 
     // Configured output cap: the entry's per-model annotation wins over the Agent's
     // system_config value; unset inherits the Agent value. This is a ceiling, not the
@@ -752,34 +796,49 @@ export class Agent {
     // against e.g. a 32768-token window — setting the entry's `context_window` is enough.
     const maxTokens = modelEntry.max_tokens ?? this.state.systemConfig.model?.max_tokens;
 
-    // LLM constructor args are extracted into a constant so they can be reused as-is when
-    // rebuilding a new LLM object after compaction (with a fresh model context) — the system
-    // prompt and tool definitions aren't part of the compacted history, so the new object keeps
-    // them unchanged. The model id sent to AgentHub is always the entry's upstream `model_id`
-    // (client_type inference/passing follows it); session_meta, Trace, usage, pricing, and catalog
-    // matching all use the (provider, model_id) pair as the primary key.
-    // The tool_call_id uniqueness registry is shared with the new LLM rebuilt from llmConfig after
-    // compaction: its uniqueness scope is the Session's whole render span, so same-named tool calls
-    // after compaction don't collide with earlier tool cards' ids.
-    const llmConfig: GenerativeModelConfig = {
-      modelId: modelEntry.model_id,
-      toolCallIds: new ToolCallIdAllocator(),
-      ...(apiKey !== undefined ? { apiKey } : {}),
-      ...(baseUrl !== undefined ? { baseUrl } : {}),
-      ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
-      tools,
-      systemPrompt,
-      ...(modelEntry.context_window !== undefined
-        ? { contextWindow: modelEntry.context_window }
-        : {}),
-      ...(maxTokens !== undefined ? { maxTokens } : {}),
-      ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
-      ...(this.state.systemConfig.model?.timeoutMs !== undefined
-        ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
-        : {}),
+    // LLM constructor args are extracted into a shared object so they can be reused as-is
+    // when rebuilding a new LLM object after compaction (with a fresh model context) — the
+    // system prompt and tool definitions aren't part of the compacted history, so the new
+    // object keeps them unchanged. The model id sent to AgentHub is always the entry's
+    // upstream `model_id` (client_type inference/passing follows it); session_meta, Trace,
+    // usage, pricing, and catalog matching all use the (provider, model_id) pair as the
+    // primary key. The tool_call_id uniqueness registry is shared with the new LLM rebuilt
+    // from llmConfig after compaction: its uniqueness scope is the Session's whole render
+    // span, so same-named tool calls after compaction don't collide with earlier cards' ids.
+    //
+    // The config is completed by `bootstrap` once the toolset is known (listTools may
+    // connect MCP Servers); `createLLM` only ever runs after the first run's bootstrap
+    // (compaction happens mid-run), so the assertion cannot fire in a legal sequence.
+    let llmConfig: GenerativeModelConfig | null = null;
+    const bootstrap = async (): Promise<{
+      tools: ToolDefinition[];
+      llm: GenerativeModel;
+      mcp: McpServerConnectResult[];
+    }> => {
+      const tools = await environment.listTools();
+      llmConfig = {
+        modelId: modelEntry.model_id,
+        toolCallIds: new ToolCallIdAllocator(),
+        ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(baseUrl !== undefined ? { baseUrl } : {}),
+        ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
+        tools,
+        systemPrompt,
+        ...(modelEntry.context_window !== undefined
+          ? { contextWindow: modelEntry.context_window }
+          : {}),
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+        ...(this.state.systemConfig.model?.timeoutMs !== undefined
+          ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
+          : {}),
+      };
+      return { tools, llm: new GenerativeModel(llmConfig), mcp: environment.mcpConnectResults() };
     };
-    const llm = new GenerativeModel(llmConfig);
     const createLLM = (sessionTokens: TokenCounts): GenerativeModel => {
+      if (llmConfig === null) {
+        throw new Error("createLLM called before the session bootstrap resolved the toolset");
+      }
       const next = new GenerativeModel(llmConfig);
       // Carries over the Session's cumulative Token counts, so token_usage.session stays continuous across compaction.
       next.sessionTokens = sessionTokens;
@@ -806,6 +865,14 @@ export class Agent {
         requestTimeoutMs: 30_000,
       });
 
+    // Credential validation stays at Session-creation time even though the session LLM is
+    // built lazily now: provider SDKs throw at **client construction** when a credential
+    // is missing (e.g. OpenAI-protocol models without apiKey/OPENAI_API_KEY), and hosts
+    // map that into their clean "credential missing" error before any Session or Trace
+    // exists. Constructing the bare LLM (same credentials, no tools, no network) keeps
+    // that throw here; the instance is discarded.
+    createBareLLM();
+
     // Compaction config: defaults are filled in here; an unknown mode falls back to summarize (the default).
     const compactionConfig = this.state.systemConfig.compaction;
     const compaction: CompactionSettings = {
@@ -818,6 +885,6 @@ export class Agent {
       prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
     };
 
-    return { environment, tools, llm, createLLM, createBareLLM, compaction };
+    return { environment, bootstrap, createLLM, createBareLLM, compaction };
   }
 }

@@ -184,8 +184,18 @@ export interface Messages {
     tokens?: { total: string; delta: string },
     errorMessage?: string,
   ): string;
+  /** mcp_connect_begin event: the first run is connecting the configured MCP servers. */
+  mcpConnectStart(servers: string[]): string;
+  /** mcp_connect_end event, one line: total wall time; `failures` carries "server (reason)" per failed connect (empty = all ok); `aborted` = the user interrupted mid-connect. */
+  mcpConnectStop(
+    durationMs: number,
+    failures: { server: string; error: string }[],
+    aborted: boolean,
+  ): string;
   /** Prompt shown when `/compact` has nothing to compact (session just started / two consecutive compactions). */
   compactNothing(): string;
+  /** Feedback after `/clear`: a fresh blank Session is now active; the old Session stays on disk (its resume command is printed right above when it has a Trace record). */
+  clearDone(): string;
   /** Dim line announcing one goal round (printed before the round runs). */
   goalRound(round: number): string;
   /** Dim summary line after a goal ends: how it ended, rounds run, tokens consumed. */
@@ -414,7 +424,7 @@ const en: Messages = {
 
   header: headerEn,
   chatHints: () =>
-    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /exit to quit; and Ctrl-C interrupts the current conversation.",
+    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -436,6 +446,13 @@ const en: Messages = {
     mode === "discard"
       ? `[compaction] discarding context (${reason})…`
       : `[compaction] summarizing context (${reason})…`,
+  mcpConnectStart: (servers) => `[mcp] connecting MCP servers (${servers.join(", ")})…`,
+  mcpConnectStop: (durationMs, failures, aborted) =>
+    aborted
+      ? "[mcp] connect interrupted — reconnects on the next run"
+      : failures.length === 0
+        ? `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] connected in ${(durationMs / 1000).toFixed(1)}s; unavailable: ${failures.map((f) => `${f.server} (${f.error})`).join(", ")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
@@ -444,6 +461,7 @@ const en: Messages = {
       : `[compaction] ${status}${errorMessage !== undefined ? ` (${errorMessage})` : ""}; keeping the current context`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[compaction] nothing to compact yet",
+  clearDone: () => "[clear] started a fresh session (the previous one is kept and resumable)",
   goalRound: (round) => `[goal] round ${round}`,
   goalFinished: (outcome, rounds, tokens) => {
     const label = {
@@ -644,7 +662,7 @@ const zh: Messages = {
 
   header: headerZh,
   chatHints: () =>
-    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/exit 退出；Ctrl-C 中断对话。",
+    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
@@ -666,6 +684,13 @@ const zh: Messages = {
     mode === "discard"
       ? `[压缩] 正在丢弃旧上下文（${reason}）……`
       : `[压缩] 正在总结压缩上下文（${reason}）……`,
+  mcpConnectStart: (servers) => `[mcp] 正在连接 MCP Server（${servers.join("、")}）……`,
+  mcpConnectStop: (durationMs, failures, aborted) =>
+    aborted
+      ? "[mcp] 连接已中断，下次运行时重新连接"
+      : failures.length === 0
+        ? `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s`
+        : `[mcp] 连接完成，耗时 ${(durationMs / 1000).toFixed(1)}s；不可用：${failures.map((f) => `${f.server}（${f.error}）`).join("、")}`,
   compactionStop: (mode, status, tokens, errorMessage) =>
     (status === "completed"
       ? mode === "discard"
@@ -674,6 +699,7 @@ const zh: Messages = {
       : `[压缩] ${status === "aborted" ? "已中断" : `失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}`}，保留当前上下文`) +
     (tokens ? ` · tokens ${tokens.total} (${tokens.delta})` : ""),
   compactNothing: () => "[压缩] 当前上下文为空，无需压缩",
+  clearDone: () => "[清空] 已开启全新 Session（原会话仍保留，可恢复）",
   goalRound: (round) => `[目标] 第 ${round} 轮`,
   goalFinished: (outcome, rounds, tokens) => {
     const label = {

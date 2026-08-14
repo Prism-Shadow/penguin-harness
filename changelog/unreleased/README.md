@@ -1,17 +1,5 @@
 # Unreleased
 
+- [2026-08-14] Match the macOS app icon's visual size to neighbouring apps. ([details](2026-08-14-macos-app-icon-size.md))
+- [2026-08-14] Unknown model IDs can be moved to Custom with the OpenAI-compatible client. ([details](2026-08-14-model-group-protocol.md))
 - [2026-08-11] CLI: `penguin config model remove --model-id <id> --provider <group>` deletes a model entry and the credential inlined on it, matched on the exact pair so a same-id entry under another group is left alone; the `default_model` / `vision_model` settings are cleared when they named the removed entry, matching what the Web App's models page already does on delete. ([details](2026-08-11-cli-model-remove.md))
-
-- [2026-08-07] Core: default `max_turns` becomes -1 (unlimited, SDK fallback aligned), request caps and the compaction threshold derive from the model's context window (vLLM-class small windows work; #218), the LLM retry ladder slows to a 2s base with "everything except auth retries" classification, and Trace appends are serialized with best-effort tolerant reads for damaged files (#215). ([details](2026-08-07-core-runtime.md))
-
-- [2026-08-06] Desktop app: penguin brand icons on every platform, task-completion system notifications (renderer-only, desktop sessions), explicit single-user mode (user/member management rejected with `desktop_single_user` and hidden), and a bundled `penguin` CLI on PATH (automatic on deb; menu-driven install elsewhere, no system Node needed). ([details](2026-08-06-desktop-app.md))
-
-- [2026-08-06] Admin proxy options: a "Proxy options" dialog (explicit Save) with independent "application" and "agent environment" switches sharing one proxy address (empty = follow the system proxy; no environment variable needed), loopback always exempt, live toggle, OS-proxy injection on desktop. ([details](2026-08-06-system-proxy-switch.md))
-
-- [2026-08-06] Web App: directory browsing no longer compounds path segments under repeated clicks (listings bound to their own directory, sequenced picker requests, localized `dir_not_found`), saving Project new-chat defaults resets the new-conversation draft (typed text survives, open drafts reseed live), the avatar update dot gains a tooltip and reaches the collapsed rail, the model catalog opens with only DeepSeek expanded and remembers the user's toggles per Project, the model dialog shows the protocol path in the base URL field and unified vendor-protocol hints, and the auto-created session workspace is consistently named 临时工作区 / "temporary workspace" (penguin-sdk skill v19). ([details](2026-08-06-web-app.md))
-
-- [2026-08-06] Landing homepage leads with the desktop app: platform-aware download CTA in the hero, closing CTA repointed, CLI one-liner install moved below the fold to the quick start; `/download` page unchanged. ([details](2026-08-06-landing-desktop-first.md))
-
-- [2026-08-06] Models: Thinking Machines Lab's Inkling joins on OpenRouter and Fireworks AI, Fireworks AI gains DeepSeek V4 Flash 0731, and the OpenRouter + SiliconFlow GLM-5.1 gateway listings are delisted (Z.AI direct stays; existing Project configs unaffected); OpenRouter prices refreshed from the models API on 2026-08-07 (Inkling cached input $0.17, four drifted rows corrected); agenthub-models skill v11. ([details](2026-08-06-model-catalog-inkling-dsv4-flash-0731.md))
-
-- [2026-08-06] Release tooling: repo versions realigned with the shipped 0.2.1, and the release workflow now refuses a tag push whose version does not match `package.json` (the drift that made every dev build nag about updates); the bump is documented as a release-prep step. ([details](2026-08-06-release-version-guard.md))

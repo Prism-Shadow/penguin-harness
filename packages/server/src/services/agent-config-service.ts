@@ -10,13 +10,30 @@
 import fs from "node:fs/promises";
 import { parseDocument, parse as parseYaml } from "yaml";
 import {
+  DEFAULT_MEMORY_PROMPT,
+  DEFAULT_MEMORY_WORKSPACE_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_VAULT_PROMPT,
+  KERNEL_VERSION,
+  LEGACY_SKILLS_SECTION,
+  LEGACY_VAULT_SECTION,
   agentsMdPath,
+  applyKernelUpdate,
+  isKernelOutdated,
   agentStateDir,
   agentStateVersion,
+  hasSchedulesPlaceholder,
+  hasSkillsPlaceholder,
+  hasVaultPlaceholder,
+  insertSchedulesPlaceholder,
+  insertSkillsPlaceholder,
+  insertVaultPlaceholder,
   VAULT_VALUE_MAX_LENGTH,
   isValidVaultKey,
   loadAgentVault,
   resetSystemConfigToDefaults,
+  resolveMCPServer,
   saveAgentVault,
   systemConfigPath,
 } from "@prismshadow/penguin-core";
@@ -28,8 +45,13 @@ import type {
 import type {
   AgentConfigDto,
   AgentConfigUpdateRequest,
+  AgentKernelUpdateResponse,
   AgentModelConfigDto,
   AgentCompactionConfigDto,
+  AgentMemoryConfigDto,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
+  AgentVaultConfigDto,
   VaultEntryInfo,
   VaultResponse,
   VaultUpdateRequest,
@@ -87,7 +109,13 @@ export class AgentConfigService {
   async readCardMeta(
     projectId: string,
     agentId: string,
-  ): Promise<{ name?: string; description?: string; toolCount: number; version: number }> {
+  ): Promise<{
+    name?: string;
+    description?: string;
+    toolCount: number;
+    version: number;
+    kernelOutdated: boolean;
+  }> {
     try {
       const raw = await fs.readFile(systemConfigPath(this.root, projectId, agentId), "utf8");
       const parsed = asRecord(parseYaml(raw));
@@ -98,9 +126,13 @@ export class AgentConfigService {
         ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
         toolCount: countOf(tools.builtin) + countOf(tools.mcpServers),
         version: agentStateVersion({ version: parsed.version as number | undefined }),
+        kernelOutdated: isKernelOutdated(
+          typeof parsed.kernel_version === "string" ? parsed.kernel_version : null,
+        ),
       };
     } catch {
-      return { toolCount: 0, version: 1 };
+      // A corrupt config carries no readable stamp either: reported outdated, like a pre-stamp one.
+      return { toolCount: 0, version: 1, kernelOutdated: true };
     }
   }
 
@@ -112,6 +144,10 @@ export class AgentConfigService {
     const parsed = asRecord(parseYaml(systemConfigYaml));
     const model = asRecord(parsed.model);
     const compaction = asRecord(parsed.compaction);
+    const memory = asRecord(parsed.memory);
+    const vault = asRecord(parsed.vault);
+    const skills = asRecord(parsed.skills);
+    const schedules = asRecord(parsed.schedules);
     const tools = asRecord(parsed.tools);
 
     let agentsMd = "";
@@ -140,14 +176,60 @@ export class AgentConfigService {
         : {}),
       ...(typeof compaction.prompt === "string" ? { prompt: compaction.prompt } : {}),
     };
+    // Memory's effective state, not the literal YAML: core treats anything but an explicit
+    // `false` as on and falls back to the built-in prompts, so a config predating the section
+    // reports the values its Sessions actually run with (whether anything reaches the prompt
+    // still depends on the template carrying {{MEMORY}}, which the Memory tab reports
+    // separately).
+    const memoryDto: AgentMemoryConfigDto = {
+      enabled: memory.enabled !== false,
+      prompt: typeof memory.prompt === "string" ? memory.prompt : DEFAULT_MEMORY_PROMPT,
+      workspacePrompt:
+        typeof memory.workspace_prompt === "string"
+          ? memory.workspace_prompt
+          : DEFAULT_MEMORY_WORKSPACE_PROMPT,
+    };
+    // Effective values like memory's, plus template facts computed from the stored template:
+    // whether the section placeholder is present, and — skills/vault only — whether the
+    // template still carries the legacy hardcoded section verbatim (the migration case;
+    // detection retires with core's LEGACY_* constants).
+    const systemPrompt = typeof parsed.system_prompt === "string" ? parsed.system_prompt : "";
+    const vaultDto: AgentVaultConfigDto = {
+      enabled: vault.enabled !== false,
+      prompt: typeof vault.prompt === "string" ? vault.prompt : DEFAULT_VAULT_PROMPT,
+      templateHasPlaceholder: hasVaultPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_VAULT_SECTION),
+    };
+    const skillsDto: AgentSkillsConfigDto = {
+      enabled: skills.enabled !== false,
+      prompt: typeof skills.prompt === "string" ? skills.prompt : DEFAULT_SKILLS_PROMPT,
+      templateHasPlaceholder: hasSkillsPlaceholder(systemPrompt),
+      legacySectionPresent: systemPrompt.includes(LEGACY_SKILLS_SECTION),
+    };
+    const schedulesDto: AgentSchedulesConfigDto = {
+      enabled: schedules.enabled !== false,
+      prompt: typeof schedules.prompt === "string" ? schedules.prompt : DEFAULT_SCHEDULES_PROMPT,
+      templateHasPlaceholder: hasSchedulesPlaceholder(systemPrompt),
+    };
+    // Kernel stamp: reported literally (null = predates the mechanism), with the current
+    // generation and the outdated verdict beside it, so the client renders the update hint
+    // without knowing core's KERNEL_VERSION.
+    const kernelVersion = typeof parsed.kernel_version === "string" ? parsed.kernel_version : null;
     const config: AgentConfigDto = {
       ...(typeof parsed.name === "string" ? { name: parsed.name } : {}),
       ...(typeof parsed.description === "string" ? { description: parsed.description } : {}),
       version: agentStateVersion({ version: parsed.version as number | undefined }),
-      systemPrompt: typeof parsed.system_prompt === "string" ? parsed.system_prompt : "",
+      kernelVersion,
+      kernelLatest: KERNEL_VERSION,
+      kernelOutdated: isKernelOutdated(kernelVersion),
+      systemPrompt,
       ...(typeof parsed.max_turns === "number" ? { maxTurns: parsed.max_turns } : {}),
       ...(Object.keys(modelDto).length > 0 ? { model: modelDto } : {}),
       ...(Object.keys(compactionDto).length > 0 ? { compaction: compactionDto } : {}),
+      memory: memoryDto,
+      vault: vaultDto,
+      skills: skillsDto,
+      schedules: schedulesDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
     };
@@ -191,6 +273,17 @@ export class AgentConfigService {
   async resetConfig(projectId: string, agentId: string): Promise<void> {
     await this.requireExists(projectId, agentId);
     await resetSystemConfigToDefaults(this.root, projectId, agentId);
+  }
+
+  /**
+   * Smart-merges the config up to the current defaults generation (core's applyKernelUpdate):
+   * leaves still carrying a recorded generation's default follow the new defaults, user
+   * customizations are kept and reported; the config is stamped with the new kernel version.
+   * The destructive full-refresh alternative stays resetConfig.
+   */
+  async kernelUpdate(projectId: string, agentId: string): Promise<AgentKernelUpdateResponse> {
+    await this.requireExists(projectId, agentId);
+    return applyKernelUpdate(this.root, projectId, agentId);
   }
 
   private async applyConfigUpdate(
@@ -248,6 +341,32 @@ export class AgentConfigService {
       setIfProvided(["compaction", "mode"], optionalEnum(compaction, "mode", COMPACTION_MODES));
       setIfProvided(["compaction", "prompt"], optionalString(compaction, "prompt"));
     }
+    if (cfg.memory !== undefined) {
+      // The toggle only decides whether Memory reaches the context and whether Workspace
+      // directories are prepared; existing Memory files are never touched by it.
+      const memory = asRecord(cfg.memory);
+      setIfProvided(["memory", "enabled"], optionalBoolean(memory, "enabled"));
+      setIfProvided(["memory", "prompt"], optionalString(memory, "prompt"));
+      setIfProvided(["memory", "workspace_prompt"], optionalString(memory, "workspacePrompt"));
+    }
+    // The vault / skills / schedules toggles only decide whether the section reaches the
+    // context: vault values still enter subprocess environments, installed skills stay
+    // invocable, and the scheduler keeps firing tasks.
+    if (cfg.vault !== undefined) {
+      const vault = asRecord(cfg.vault);
+      setIfProvided(["vault", "enabled"], optionalBoolean(vault, "enabled"));
+      setIfProvided(["vault", "prompt"], optionalString(vault, "prompt"));
+    }
+    if (cfg.skills !== undefined) {
+      const skills = asRecord(cfg.skills);
+      setIfProvided(["skills", "enabled"], optionalBoolean(skills, "enabled"));
+      setIfProvided(["skills", "prompt"], optionalString(skills, "prompt"));
+    }
+    if (cfg.schedules !== undefined) {
+      const schedules = asRecord(cfg.schedules);
+      setIfProvided(["schedules", "enabled"], optionalBoolean(schedules, "enabled"));
+      setIfProvided(["schedules", "prompt"], optionalString(schedules, "prompt"));
+    }
     if (cfg.toolsBuiltin !== undefined) {
       doc.setIn(["tools", "builtin"], validateToolsBuiltin(cfg.toolsBuiltin));
     }
@@ -256,6 +375,31 @@ export class AgentConfigService {
     }
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
+  }
+
+  /**
+   * Inserts a feature's section placeholder into the Agent's prompt template — the explicit
+   * adoption path mirroring the Memory tab's endpoint; nothing ever inserts automatically.
+   * For skills/vault the insert is migration-first (core's helpers): a stored template still
+   * carrying the legacy hardcoded section verbatim gets it replaced in place by the
+   * placeholder, otherwise the placeholder is inserted before `# Environment`. Idempotent;
+   * returns the refreshed config view (the route picks out the feature's DTO).
+   */
+  async insertTemplatePlaceholder(
+    projectId: string,
+    agentId: string,
+    feature: "vault" | "skills" | "schedules",
+  ): Promise<AgentConfigView> {
+    const view = await this.getConfig(projectId, agentId);
+    const insert = {
+      vault: insertVaultPlaceholder,
+      skills: insertSkillsPlaceholder,
+      schedules: insertSchedulesPlaceholder,
+    }[feature];
+    const next = insert(view.config.systemPrompt);
+    if (next === view.config.systemPrompt) return view;
+    await this.updateConfig(projectId, agentId, { config: { systemPrompt: next } });
+    return this.getConfig(projectId, agentId);
   }
 
   /** Read the Agent vault (agent_state/.vault.toml): values are always masked, plaintext is never sent to the client. */
@@ -351,6 +495,7 @@ function validateToolsBuiltin(value: unknown): ToolDefinitionConfig[] {
 
 function validateMcpServers(value: unknown): MCPServerConfig[] {
   if (!Array.isArray(value)) throw badRequest("mcpServers must be an array.");
+  const seen = new Set<string>();
   return value.map((item, i) => {
     const s = asRecord(item);
     if (typeof s.name !== "string" || s.name.length === 0) {
@@ -359,6 +504,18 @@ function validateMcpServers(value: unknown): MCPServerConfig[] {
     if (s.config === null || typeof s.config !== "object" || Array.isArray(s.config)) {
       throw badRequest(`mcpServers[${i}].config must be an object.`);
     }
+    // Transport-level validation through the core resolver — the single source of truth
+    // with the runtime: a precise 400 at save time beats a warn-and-skip at the next
+    // Session start.
+    try {
+      resolveMCPServer(s as unknown as MCPServerConfig);
+    } catch (err) {
+      throw badRequest(`mcpServers[${i}]: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (seen.has(s.name)) {
+      throw badRequest(`mcpServers[${i}]: duplicate server name "${s.name}".`);
+    }
+    seen.add(s.name);
     return s as unknown as MCPServerConfig;
   });
 }

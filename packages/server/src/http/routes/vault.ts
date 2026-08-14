@@ -1,6 +1,8 @@
 /**
  * Vault environment variable routes:
  * GET|PUT /api/projects/:p/agents/:a/vault (Agent-level, agent_state/.vault.toml).
+ * POST …/vault/template-placeholder inserts/migrates the {{VAULT}} placeholder in the
+ * prompt template.
  * Any member can read (values masked); only the owner can modify; 404 if the Agent doesn't exist.
  */
 import { Hono } from "hono";
@@ -53,6 +55,21 @@ export function vaultRoutes(deps: AppDeps): Hono<AppEnv> {
     // of this Agent re-resumes and picks up the new vault values.
     deps.manager.invalidateAgentRuntimes(projectId, agentId);
     return c.json(res);
+  });
+
+  // Insert (or migrate a legacy hardcoded # Vault section to) the {{VAULT}} placeholder —
+  // the explicit adoption path mirroring memory's endpoint; idempotent config write,
+  // owner-level like this router's other mutation.
+  app.post("/template-placeholder", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const view = await deps.agentConfigService.insertTemplatePlaceholder(
+      projectId,
+      agentId,
+      "vault",
+    );
+    return c.json(view.config.vault);
   });
 
   return app;

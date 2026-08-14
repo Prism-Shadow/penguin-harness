@@ -9,10 +9,20 @@
 # files sidestep every asar edge (fork-from-archive, unpacked-tree resolution splits)
 # at the cost of some inodes.
 #
-# M3 ships unsigned artifacts: macOS signing/notarization and Windows code signing are
-# milestone M4, together with electron-updater.
+# macOS release artifacts are Developer ID signed and notarized in CI when the signing
+# secrets are present. Windows release artifacts are Authenticode-signed through EVSign
+# during packaging so update metadata is generated from the final signed bytes. Unsigned
+# dry-run builds remain possible outside the release path.
 appId: com.prismshadow.penguinharness
 productName: PenguinHarness
+# Declaring the publish target is what makes electron-builder emit the update metadata
+# (latest.yml / latest-mac.yml / latest-linux.yml and the .blockmap files) next to the
+# installers; nothing is uploaded from here — the release workflow attaches the artifacts
+# it collected. electron-updater reads the same metadata from the Release.
+publish:
+  provider: github
+  owner: Prism-Shadow
+  repo: penguin-harness
 directories:
   app: stage/app
   output: stage/out
@@ -24,12 +34,14 @@ nodeGypRebuild: false
 
 mac:
   category: public.app-category.developer-tools
-  # Brand icon (rendered from packages/web/public/penguin-logo.svg by
-  # scripts/render-icon.mjs, committed): electron-builder converts the 1024px PNG to
-  # icns itself (app-builder-lib iconConverter; >=512px required).
-  icon: build/icon.png
-  # No Developer ID yet (M4): identity null skips codesign instead of failing.
-  identity: null
+  # macOS-specific 1024px master: scripts/render-icon.mjs centres the brand artwork in
+  # Apple's 824px safe area so it has the same optical size as neighbouring Dock and
+  # Launchpad icons. electron-builder converts the committed PNG to icns.
+  icon: build/icon-mac.png
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
   # Version-less artifact names, following the CLI bundles (penguin-darwin-arm64.tar.gz):
   # the version lives in the Release tag and SHA256SUMS.desktop, so the download page and
   # the OSS mirror manifest can address every installer by a stable name — and GitHub's
@@ -46,6 +58,20 @@ win:
   # exe (>=256px required).
   icon: build/icon.png
   artifactName: penguin-desktop-win32-${arch}.${ext}
+  verifyUpdateCodeSignature: true
+  signExts:
+    - PenguinHarness.exe
+    - elevate.exe
+    - penguin-desktop-win32-x64.exe
+    - .__uninstaller.exe
+    - "!.exe"
+  signtoolOptions:
+    sign: build/evsign.cjs
+    signingHashAlgorithms:
+      - sha256
+    publisherName:
+      - CN=RushRush Network Technology Ltd, O=RushRush Network Technology Ltd
+      - RushRush Network Technology Ltd
   target:
     - target: nsis
       arch: [x64]

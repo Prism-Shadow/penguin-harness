@@ -15,7 +15,11 @@ import type {
   AgentCreateResponse,
   AgentImportRequest,
   AgentImportResponse,
+  AgentKernelUpdateResponse,
+  AgentSchedulesConfigDto,
+  AgentSkillsConfigDto,
   AgentSkillsResponse,
+  AgentVaultConfigDto,
   AgentsResponse,
   AgentTracesResponse,
   ApprovalDecisionRequest,
@@ -31,10 +35,14 @@ import type {
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
+  McpServerTestResponse,
   MeResponse,
   MemberAddRequest,
   MemberAddResponse,
   MembersResponse,
+  MemoryFileResponse,
+  MemoryFilesResponse,
+  MemoryOverviewResponse,
   MessagesResponse,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -82,6 +90,7 @@ import type {
   VersionResponse,
   WorkspaceFilesResponse,
 } from "@prismshadow/penguin-server/api";
+import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
 
 // Auth & user -----------------------------------------------------------------
@@ -205,6 +214,64 @@ export const putVault = (projectId: string, agentId: string, body: VaultUpdateRe
     { method: "PUT", body },
   );
 
+/** Inserts the {{VAULT}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Vault section verbatim when one is present (idempotent, owner-only). */
+export const insertVaultPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentVaultConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/vault/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
+/** Inserts the {{SKILLS}} placeholder into the agent's prompt template — migrating a legacy hardcoded # Skills section verbatim when one is present (idempotent). */
+export const insertSkillsPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentSkillsConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
+/** Inserts the {{SCHEDULES}} placeholder into the agent's prompt template (idempotent, owner-only; Schedules has no legacy section to migrate). */
+export const insertSchedulesPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<AgentSchedulesConfigDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules/template-placeholder`,
+    { method: "POST", body: {} },
+  );
+
+// Memory (Agent-level, agent_state/memory/) -------------------------------------------------
+
+/** Base path of an Agent's Memory API; the scope key and file name are single path segments (never a path). */
+const memoryBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/memory`;
+
+const memoryFilesBase = (projectId: string, agentId: string, scopeKey: string) =>
+  `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}/files`;
+
+export const getMemoryOverview = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(memoryBase(projectId, agentId));
+
+/** Inserts the {{MEMORY}} placeholder into the agent's prompt template (idempotent) — the explicit adoption path for an agent created before Memory. */
+export const insertMemoryPlaceholder = (projectId: string, agentId: string) =>
+  apiFetch<MemoryOverviewResponse>(`${memoryBase(projectId, agentId)}/template-placeholder`, {
+    method: "POST",
+    body: {},
+  });
+
+export const getMemoryFiles = (projectId: string, agentId: string, scopeKey: string) =>
+  apiFetch<MemoryFilesResponse>(memoryFilesBase(projectId, agentId, scopeKey));
+
+export const getMemoryFile = (projectId: string, agentId: string, scopeKey: string, name: string) =>
+  apiFetch<MemoryFileResponse>(
+    `${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`,
+  );
+
+export const deleteMemoryFile = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  name: string,
+) =>
+  apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
 // Agent & its configuration ----------------------------------------------------------------
 
 export const listAgents = (projectId: string) =>
@@ -231,10 +298,24 @@ export const putAgentConfig = (
     { method: "PUT", body },
   );
 
+/** Probes one MCP Server entry's reachability (server-side connect + tool discovery; nothing is saved). */
+export const testAgentMcpServer = (projectId: string, agentId: string, body: MCPServerConfig) =>
+  apiFetch<McpServerTestResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/mcp-test`,
+    { method: "POST", body },
+  );
+
 /** Overwrite system_config.yaml with the current defaults (keeps only name/description/version). */
 export const resetAgentConfig = (projectId: string, agentId: string) =>
   apiFetch<AgentConfigResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/reset`,
+    { method: "POST" },
+  );
+
+/** Smart-merge the config up to the current defaults generation (customizations kept and reported); non-destructive sibling of resetAgentConfig. */
+export const kernelUpdateAgentConfig = (projectId: string, agentId: string) =>
+  apiFetch<AgentKernelUpdateResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/config/kernel-update`,
     { method: "POST" },
   );
 

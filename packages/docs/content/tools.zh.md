@@ -230,7 +230,7 @@ deny 会合成一条 aborted 的 `tool_call_output`(内容为 `Tool call denied 
 
 ## 自定义与 MCP
 
-`system_config.yaml` 的 `tools.builtin` 数组以 `ToolDefinitionConfig` 同构条目声明工具集。注意语义是**整体替换而非合并**：整段省略时使用完整默认工具集；一旦写出，默认列表即被替换，要保留的每个工具都必须携带完整定义（含 `parameters` JSON Schema——工具的参数 schema 完全来自配置）。`tools.mcpServers` 承载 MCP Server 配置(name + config)——具体 MCP 工具的枚举由后续适配层接管，当前仅保留配置位。见 [配置参考](/configuration)。
+`system_config.yaml` 的 `tools.builtin` 数组以 `ToolDefinitionConfig` 同构条目声明工具集。注意语义是**整体替换而非合并**：整段省略时使用完整默认工具集；一旦写出，默认列表即被替换，要保留的每个工具都必须携带完整定义（含 `parameters` JSON Schema——工具的参数 schema 完全来自配置）。`tools.mcpServers` 承载 MCP Server 配置，见下节。另见 [配置参考](/configuration)。
 
 ```yaml
 tools:
@@ -248,3 +248,35 @@ tools:
       # packages/core/src/state/default-config.ts),此处从略。
   mcpServers: []
 ```
+
+### MCP Server
+
+`tools.mcpServers` 的每个条目是 `{ name, config }`：`name` 限字母/数字/`_`/`-`（作为工具名前缀），`config` 描述 transport，支持三种：
+
+- `stdio`——本地进程（`command` / `args` / `env` / `cwd`）。进程环境为 SDK 安全继承环境叠加条目 `env`（后者覆盖前者）；Agent vault **不**注入 MCP Server 进程（与命令子进程不同）——Server 需要的变量须在条目 `env` 中显式列出。`cwd` 缺省为本次 Session 的 Workspace。
+- `http`——Streamable HTTP，当前规范的远程 transport（`url` / `headers`）。
+- `sse`——旧版 HTTP+SSE，仅为未迁移的服务保留（`url` / `headers`）。
+
+`transport` 字段可省略：有 `command` 推断为 `stdio`、有 `url` 推断为 `http`；`sse` 必须显式。三种 transport 共享可选的 `connectTimeoutMs`（连接 + 工具发现预算，默认 10000）与 `timeoutMs` / `maxOutputLength`（作用于该 Server 全部工具的执行约束，缺省用 Environment 默认值）。`headers` 附加到该 Server 的每个 HTTP 请求（含 SSE 流），可承载 `Authorization` 等认证头。
+
+```yaml
+tools:
+  mcpServers:
+    - name: filesystem
+      config:
+        command: npx
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    - name: linear
+      config:
+        transport: http
+        url: https://mcp.linear.app/mcp
+        headers: { Authorization: "Bearer ..." }
+```
+
+行为口径：
+
+- 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态；end 带总体 status 与逐 Server 结果），完成后以 `tool_list_ready` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）；这三条消息在 Trace 中写在本轮输入之后，归属新轮次。运行中打断即**取消**本次连接，下次 `run()` 重新连接。发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
+- 发现的工具以 `mcp__<server>__<tool>` 进入统一工具命名空间，与内置工具走同一条[执行契约](#执行契约)（超时、截断、打断）与[审批](#审批)流程。
+- 权限映射：Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。
+- 结果映射：text 块拼接为输出文本；image 块作为图片（data URL）随输出附带；audio 与二进制 resource 折叠为占位行；仅有 `structuredContent` 时将其序列化为 JSON；Server 报 `isError` 时落实为 `stop_reason: "failed"`，内容即 Server 给出的错误说明。
+- Session 结束（`Environment.dispose`）关闭全部 MCP 客户端，stdio 子进程一并退出。

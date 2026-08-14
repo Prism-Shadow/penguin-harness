@@ -360,7 +360,6 @@ describe("stream-error-watcher (LLM / Environment errors)", () => {
         provider: "custom",
         model_context_window: 100000,
         system_prompt: "",
-        tools: [],
         agent_state: agentState,
         workspace: "/tmp/w",
       }),
