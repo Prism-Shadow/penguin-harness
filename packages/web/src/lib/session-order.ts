@@ -123,10 +123,20 @@ export function applyManualOrder<T>(
 }
 
 /**
- * The full row-ordering pipeline of one group's active list: the pinned cluster always
- * first (pinnedFirst — the "recent" behavior as-is), and under manual sort the stored
- * order additionally applies within the pinned cluster and within the rest
- * independently, so a drag can never move a row across the pin boundary.
+ * The full row-ordering pipeline of one group's active list:
+ *
+ * 1. recency — newest `recencyOf` first (the Session's `lastActiveAt`: 「最近更新」 means
+ *    last ACTIVITY, not creation), ties broken by key descending to match the store's
+ *    stable tiebreaker. Applied in both modes: it IS the recent mode's order, and in
+ *    manual mode it is the order rows not yet in the stored sequence arrive in.
+ * 2. the pinned cluster first (pinnedFirst), then
+ * 3. under manual sort, the stored order within the pinned cluster and within the rest
+ *    independently, so a drag can never move a row across the pin boundary.
+ *
+ * Only rows already FETCHED are ordered. The server still pages by `created_at DESC`
+ * (listByAgent — there is no index on last_active_at), so a Session created long ago but
+ * active today sits on a later page and cannot climb into the sidebar's first page until
+ * "More" pulls that page in; fixing that needs a server-side ordering + index change.
  */
 export function orderSessionRows<T>(
   rows: readonly T[],
@@ -135,9 +145,17 @@ export function orderSessionRows<T>(
     pinned: ReadonlySet<string>;
     sortMode: SessionSortMode;
     order: readonly string[];
+    /** Recency key of a row (the sidebar passes `lastActiveAt`). Omitted = keep the caller's order. */
+    recencyOf?: (row: T) => string;
   },
 ): T[] {
-  const byPin = pinnedFirst(rows, keyOf, opts.pinned);
+  const recencyOf = opts.recencyOf;
+  const byRecency = recencyOf
+    ? [...rows].sort(
+        (a, b) => recencyOf(b).localeCompare(recencyOf(a)) || keyOf(b).localeCompare(keyOf(a)),
+      )
+    : rows;
+  const byPin = pinnedFirst(byRecency, keyOf, opts.pinned);
   if (opts.sortMode !== "manual") return byPin;
   const pin = byPin.filter((r) => opts.pinned.has(keyOf(r)));
   const rest = byPin.filter((r) => !opts.pinned.has(keyOf(r)));

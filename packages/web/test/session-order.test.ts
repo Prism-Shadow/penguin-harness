@@ -136,6 +136,66 @@ describe("applyManualOrder", () => {
   });
 });
 
+describe("orderSessionRows recency (最近更新 = last ACTIVITY, not creation)", () => {
+  /** Rows whose activity order deliberately disagrees with their creation order. */
+  const rows = [
+    { id: "old-but-busy", createdAt: "2026-01-01T00:00:00Z", lastActiveAt: "2026-08-14T09:00:00Z" },
+    { id: "new-but-idle", createdAt: "2026-08-13T00:00:00Z", lastActiveAt: "2026-08-13T00:00:00Z" },
+    { id: "middle", createdAt: "2026-06-01T00:00:00Z", lastActiveAt: "2026-08-14T08:00:00Z" },
+  ];
+  const key = (r: (typeof rows)[number]) => r.id;
+  const plain = { pinned: new Set<string>(), order: [] as string[] };
+
+  it("sorts by lastActiveAt desc — the createdAt order the old code produced is NOT the answer", () => {
+    const out = orderSessionRows(rows, key, {
+      ...plain,
+      sortMode: "recent",
+      recencyOf: (r) => r.lastActiveAt,
+    });
+    expect(out.map(key)).toEqual(["old-but-busy", "middle", "new-but-idle"]);
+    // Sorting the same rows by creation would put the freshly created idle one on top.
+    expect(
+      orderSessionRows(rows, key, {
+        ...plain,
+        sortMode: "recent",
+        recencyOf: (r) => r.createdAt,
+      }).map(key),
+    ).toEqual(["new-but-idle", "middle", "old-but-busy"]);
+  });
+
+  it("ties break by key descending (the store's stable tiebreaker) and the input array is never mutated", () => {
+    const tied = [
+      { id: "a", lastActiveAt: "2026-08-14T09:00:00Z" },
+      { id: "c", lastActiveAt: "2026-08-14T09:00:00Z" },
+      { id: "b", lastActiveAt: "2026-08-14T09:00:00Z" },
+    ];
+    const out = orderSessionRows(tied, (r) => r.id, {
+      ...plain,
+      sortMode: "recent",
+      recencyOf: (r) => r.lastActiveAt,
+    });
+    expect(out.map((r) => r.id)).toEqual(["c", "b", "a"]);
+    expect(tied.map((r) => r.id)).toEqual(["a", "c", "b"]); // input untouched
+  });
+
+  it("recency also decides where manual-mode newcomers land, and never crosses the pin boundary", () => {
+    const out = orderSessionRows(rows, key, {
+      pinned: new Set(["new-but-idle"]),
+      sortMode: "manual",
+      order: ["middle"], // only `middle` has a stored place
+      recencyOf: (r) => r.lastActiveAt,
+    });
+    // Pinned cluster first; among the rest the unlisted newcomer (most recently active)
+    // precedes the stored one.
+    expect(out.map(key)).toEqual(["new-but-idle", "old-but-busy", "middle"]);
+  });
+
+  it("omitting recencyOf keeps the caller's order (the composition tests below rely on it)", () => {
+    const out = orderSessionRows(rows, key, { ...plain, sortMode: "recent" });
+    expect(out.map(key)).toEqual(["old-but-busy", "new-but-idle", "middle"]);
+  });
+});
+
 describe("orderSessionRows (pin × sort composition)", () => {
   const pinned = new Set(["p1", "p2"]);
 

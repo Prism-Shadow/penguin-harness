@@ -935,7 +935,12 @@ export function Sidebar({
             // through orderSessionRows, so a pin there would write an id, light the
             // glyph, move nothing — and then shift the active list's drag partition.
             canPin={activeList}
-            lastActive={formatRelativeShort(s.createdAt, locale)}
+            // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
+            // starts and again when it ends, so a running row shows its run-start time
+            // (it recedes while the run continues — the pulsing status dot beside it is
+            // what says "active right now"). CLI-adopted and subagent rows are not
+            // driven by this server, so theirs stays at createdAt.
+            lastActive={formatRelativeShort(s.lastActiveAt, locale)}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}
@@ -1042,6 +1047,7 @@ export function Sidebar({
       pinned: pinnedSessions,
       sortMode: effectiveSortMode,
       order: sessionOrder,
+      recencyOf: (s) => s.lastActiveAt,
     });
     const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
