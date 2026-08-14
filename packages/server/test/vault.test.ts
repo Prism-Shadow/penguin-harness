@@ -150,6 +150,7 @@ describe("vault api", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     });
     const idle = () => t.deps.manager.statusOf("vault-sess-1") === "idle";
 

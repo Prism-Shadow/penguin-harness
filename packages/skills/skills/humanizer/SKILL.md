@@ -1,16 +1,16 @@
 ---
 name: humanizer
-description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, six-language cues and a five-round measured case study shipped as reference files for the diagnostic census.
+description: Rewrite or edit prose in any language so it reads like edited human writing in the register of books, newspapers and encyclopedias rather than default AI output. A small drafting core — vary every pattern, build density from anchored facts in whole grammar, cap the quotables, put a real writer with real material behind the text, let structure serve content, write each language from inside its idiom and typography, verify what you assert, and aim for the natural distribution of edited prose rather than a perfect scorecard — backed by a three-layer tell catalog, per-language cue files for six languages and a seven-round measured case study shipped as reference files for the diagnostic census.
 short_description: Strip AI-writing tells from prose in any language.
 short_description_zh: 去除文本的 AI 味，把行文改成书籍、报纸、百科式的风格，任何语言通用。
 preinstall: false
-version: 6
-updated: 2026-08-11T00:00:00Z
+version: 9
+updated: 2026-08-12T00:00:00Z
 ---
 
 # Humanizer
 
-Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across five rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
+Make prose read like edited human writing: the register of books, quality newspapers and encyclopedia entries. Everything here was derived empirically, across seven rounds of drafting, blind editorial review and revision, documented with counts in [`reference/case-study.md`](reference/case-study.md). The working surface is deliberately small: a writer boxed in by a long checklist produces compliance, not prose — that failure mode is the case study's best-documented finding. Draft with the principles below; diagnose with the catalog afterwards.
 
 ## Before you start
 
@@ -23,10 +23,10 @@ If the invocation carries no text and no assignment, ask for one: the draft to e
 3. **Cap the quotables.** One or two turned phrases can carry a piece, counting every shape: chiasmus, mirrored re-description, balanced antithesis, aphoristic kickers. State the thesis once and develop it with new material or cut the echo. Most paragraphs end flat, and an argument survives a dud.
 4. **A real writer, with the material.** Opinion owns its anecdotes and risks a judgment of its own; reportage has stood somewhere; reference registers keep the writer invisible without chaperoning the reader. Claims sized to the evidence, honest hedges kept, references anchored (who, where, when), and one non-obvious source beats a second canonical one.
 5. **Structure serves content.** Open on ground, not on a cold verdict and not on an era; paragraphs develop one idea across several sentences; headings and bullets appear only where content is genuinely enumerable; the piece ends where the information ends.
-6. **Write from inside the language.** Native idiom — a sentence that back-translates cleanly into another language was composed there, so recompose it — native punctuation at native frequency (a dash where the register expects one beats zero), and the venue's typography held consistently. Per-language budgets and surface forms: [`reference/language-cues.md`](reference/language-cues.md).
+6. **Write from inside the language.** Native idiom — a sentence that back-translates cleanly into another language was composed there, so recompose it — native punctuation at native frequency (a dash where the register expects one beats zero), and the venue's typography held consistently. Per-language budgets and surface forms: [`reference/language-cues.md`](reference/language-cues.md), which indexes one `reference/<lang>-cues.md` file per language.
 7. **True, verified, calibrated.** Never invent specifics. Re-derive every mechanism example from the stated mechanism, split fused attributions, and verify or delete every superlative. One fluent falsehood outweighs any amount of style.
 
-Over all seven: **aim for the natural distribution of edited prose, not a perfect scorecard.** Every rule above, overdriven, mints a new tell — the case study documents three such artifacts (banned openers became cold-open verdicts; scrubbed punctuation became semicolon inflation and rationed warmth; density became telegraph compression). Keep some looseness, an aside, an unresolved edge.
+Over all seven: **aim for the natural distribution of edited prose, not a perfect scorecard.** Every rule above, overdriven, mints a new tell — the case study documents four such artifacts (banned openers became cold-open verdicts; scrubbed punctuation became semicolon inflation and rationed warmth; density became telegraph compression; scrubbed abstraction became contrived colloquialism). Keep some looseness, an aside, an unresolved edge.
 
 ## Method
 
@@ -41,4 +41,4 @@ Before, tells marked: "In today's rapidly evolving AI landscape [era opener], sk
 
 After: "A skill is a document that tells an AI agent how to perform one kind of task. The agent keeps only the document's one-line summary in memory and reads the full text when a matching task arrives, so hundreds of skills can be installed at negligible cost. The format is plain Markdown with a short metadata header, which means anyone who can write instructions can write a skill."
 
-The full tell catalog is in [`reference/tells.md`](reference/tells.md), per-language surface forms in [`reference/language-cues.md`](reference/language-cues.md), and the measured record behind all of it in [`reference/case-study.md`](reference/case-study.md).
+The full tell catalog is in [`reference/tells.md`](reference/tells.md), per-language surface forms in the `reference/<lang>-cues.md` files indexed by [`reference/language-cues.md`](reference/language-cues.md), and the measured record behind all of it in [`reference/case-study.md`](reference/case-study.md).

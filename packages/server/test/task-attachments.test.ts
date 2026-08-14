@@ -98,6 +98,7 @@ describe("task input file attachments", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     };
     t.deps.sessionsRepo.insert(row);
     runs = [];
@@ -384,6 +385,7 @@ describe("task attachments are removed when the Task never starts", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     });
     dir = path.join(scratchpadDir(t.root, PID, "default_agent"), FAIL_SID);
   });
@@ -426,6 +428,7 @@ describe("scratchpad directory containment", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     });
     t.deps.manager.adopt(
       t.deps.sessionsRepo.findById(LINK_SID)!,

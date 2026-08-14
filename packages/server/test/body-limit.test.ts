@@ -82,6 +82,7 @@ describe("request body cap", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
     };
     t.deps.sessionsRepo.insert(row);
     runs = [];

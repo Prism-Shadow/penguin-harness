@@ -35,3 +35,13 @@ describe("resolveWindowIcon", () => {
     expect(resolveWindowIcon(pkgDir, "linux")).toBe(path.join(pkgDir, "build", "icon.png"));
   });
 });
+
+describe("packaged app icons", () => {
+  const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+  it("keeps a dedicated macOS master with the platform safe-area margin", () => {
+    const builderConfig = fs.readFileSync(path.join(pkgDir, "electron-builder.yml"), "utf8");
+    expect(builderConfig).toMatch(/mac:[\s\S]*?icon: build\/icon-mac\.png/);
+    expect(fs.existsSync(path.join(pkgDir, "build", "icon-mac.png"))).toBe(true);
+  });
+});

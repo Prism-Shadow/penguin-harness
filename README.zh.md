@@ -229,7 +229,7 @@ cd penguin-install
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # 单次任务
-penguin chat       # 交互式 REPL（/compact、/exit、Ctrl-C 中断）
+penguin chat       # 交互式 REPL（/compact、/clear、/exit、Ctrl-C 中断）
 penguin server     # 无界面服务（与 Web 应用同一套 API）
 ```
 

@@ -43,6 +43,7 @@ function row(workspace: string): SessionRow {
     approvalMode: "always-ask",
     title: null,
     createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(),
   };
 }
 
