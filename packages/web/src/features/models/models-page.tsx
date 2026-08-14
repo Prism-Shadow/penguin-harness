@@ -608,11 +608,11 @@ export function ModelsPage() {
                   className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
                 >
                   {/* Group header: collapse button (logo + vendor name + count) + group-level
-                      actions on the right (bulk configure key, get-key link). Actions are
-                      separate elements — can't be nested inside the collapse button (buttons
-                      can't nest). The hover highlight applies to the whole header row (not
-                      individual buttons) so the header reads as a single unit. */}
-                  <div className="flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
+                      actions on the right. Actions are separate elements because buttons can't
+                      nest. The row is a size container: the sidebar can narrow it while the
+                      viewport remains desktop-sized, so action labels must respond to this
+                      row's actual width rather than viewport breakpoints. */}
+                  <div className="@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
                     <button
                       type="button"
                       aria-expanded={open}
@@ -650,11 +650,10 @@ export function ModelsPage() {
                       </span>
                     )}
                     {isOwner && group.provider.id !== "custom" && (
-                      // Not enough room on phone width for group-level actions: collapse it
-                      // (per-model keys can still be configured in the card dialog). Wrapped
-                      // in a span and hidden there: passing hidden directly to Button conflicts
-                      // with its inline-flex base class.
-                      <span className="hidden shrink-0 sm:block">
+                      // Hide the wide bulk action when this row itself is narrow (per-model
+                      // keys remain configurable in the card dialog). Wrapped in a span:
+                      // passing hidden directly to Button conflicts with its inline-flex base.
+                      <span className="hidden shrink-0 @3xl:block">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -681,8 +680,8 @@ export function ModelsPage() {
                         onClick={() => setSpeedFor(group.provider.id)}
                       >
                         <GlyphIcon d={GAUGE_ICON} size={13} />
-                        {/* Phone width: icon only (the header can't fit three labeled actions at 390px). */}
-                        <span className="hidden sm:inline">
+                        {/* Compact rows keep this accessible action icon-only. */}
+                        <span className="hidden @3xl:inline">
                           {speedRunning === group.provider.id
                             ? S.models.speedPending
                             : S.models.speedTest}
@@ -690,14 +689,13 @@ export function ModelsPage() {
                       </Button>
                     )}
                     {group.provider.apiKeyUrl && (
-                      // Not enough room on phone width for all group-level actions: collapse
-                      // it the same way as "bulk configure key", keeping the add entry and
-                      // vendor name + count from crowding each other.
+                      // The external link is the last label admitted as space grows; it also
+                      // exists in the model dialog when the row is narrower.
                       <a
                         href={group.provider.apiKeyUrl}
                         target="_blank"
                         rel="noreferrer noopener"
-                        className="hidden shrink-0 whitespace-nowrap text-xs text-brand-600 underline-offset-2 hover:underline sm:inline dark:text-brand-300"
+                        className="hidden shrink-0 whitespace-nowrap text-xs text-brand-600 underline-offset-2 hover:underline @4xl:inline dark:text-brand-300"
                       >
                         {S.models.getApiKey} ↗
                       </a>

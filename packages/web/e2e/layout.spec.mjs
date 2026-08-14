@@ -261,6 +261,74 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   ).toBe("rgba(0, 0, 0, 0)");
 });
 
+test("models: group headers adapt to the available desktop content width", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
+  await provisionAndLogin(page.request, "modelwidthuser", P);
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto(`${BASE}/models`);
+
+  // The 900px viewport still renders the desktop sidebar, leaving only ~560px for a group
+  // header. That is the issue #294 case: viewport breakpoints alone report plenty of room.
+  const openRouter = page.getByRole("button", { name: /OpenRouter \d+ 个模型/ });
+  await openRouter.waitFor();
+
+  for (const width of [900, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const metrics = await openRouter.locator("xpath=..").evaluate((header) => {
+      const visible = (el) => {
+        for (let node = el; node; node = node.parentElement) {
+          const s = getComputedStyle(node);
+          if (s.display === "none" || s.visibility === "hidden" || Number(s.opacity) <= 0.05) {
+            return false;
+          }
+          if (node === header) break;
+        }
+        return true;
+      };
+      const textRects = [...header.querySelectorAll("*")]
+        .filter(
+          (el) =>
+            visible(el) &&
+            [...el.childNodes].some(
+              (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+            ),
+        )
+        .map((el) => el.getBoundingClientRect())
+        .filter((rect) => rect.width > 1 && rect.height > 1);
+      let overlaps = 0;
+      for (let i = 0; i < textRects.length; i += 1) {
+        for (let j = i + 1; j < textRects.length; j += 1) {
+          const a = textRects[i];
+          const b = textRects[j];
+          if (
+            Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 &&
+            Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2
+          ) {
+            overlaps += 1;
+          }
+        }
+      }
+      const providerLabel = header.querySelector("button span");
+      return {
+        clientWidth: header.clientWidth,
+        scrollWidth: header.scrollWidth,
+        providerWidth: providerLabel?.getBoundingClientRect().width ?? 0,
+        overlaps,
+      };
+    });
+
+    expect(metrics.scrollWidth, `header @${width} has no overflow`).toBeLessThanOrEqual(
+      metrics.clientWidth,
+    );
+    expect(metrics.providerWidth, `provider label @${width} remains visible`).toBeGreaterThan(0);
+    expect(metrics.overlaps, `header @${width} has no overlapping text`).toBe(0);
+    const d = await docWidths(page);
+    expect(d.scrollWidth, `models page @${width} has no overflow`).toBeLessThanOrEqual(
+      d.clientWidth,
+    );
+  }
+});
+
 test("layout: collapsed rail — order, bilingual tooltips, last conversation", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "en"));
   await provisionAndLogin(page.request, "railuser", P);
