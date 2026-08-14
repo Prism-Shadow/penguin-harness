@@ -1,10 +1,11 @@
 /**
- * Integration tests for `penguin config model add|default|vision|list` (run through
+ * Integration tests for `penguin config model add|default|vision|list|remove` (run through
  * commander's parseAsync for the full command path): --model-id always takes the
  * upstream id, paired with --provider to form a (provider, model_id) reference
- * (--provider is required on all three subcommands — the group is never inferred — and
- * default / vision raise an error when the reference isn't found in models; no string
- * concatenation is ever performed); --root
+ * (--provider is required on every subcommand that names an entry — the group is never
+ * inferred — and default / vision / remove report an error when the reference isn't found in
+ * models; no string concatenation is ever performed); remove also clears the default /
+ * vision pointers that named the removed entry; --root
  * specifies the data root directory (takes priority over PENGUIN_HOME); persisted to a
  * single hidden .project_config.toml (mode 0600, credentials inline, provider and
  * model_id as separate columns); list displays provider and model_id as separate
@@ -398,5 +399,199 @@ describe("model add/default/vision: --provider is required, (provider, model_id)
       provider: "anthropic",
       model_id: "claude-sonnet-4-6",
     });
+  });
+});
+
+describe("penguin config model remove", () => {
+  /** Reads back the persisted config, whose pointers are the point of most assertions below. */
+  async function readConfig(): Promise<{
+    models: Array<Record<string, unknown>>;
+    default_model?: TomlModelRef;
+    vision_model?: TomlModelRef;
+  }> {
+    return parseToml(
+      await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+    ) as unknown as {
+      models: Array<Record<string, unknown>>;
+      default_model?: TomlModelRef;
+      vision_model?: TomlModelRef;
+    };
+  }
+
+  it("removes the named pair and leaves every other entry in place", async () => {
+    await runModel(["add", "--model-id", "keep-me", "--provider", "custom", "--root", tmpRoot]);
+    await runModel(["add", "--model-id", "drop-me", "--provider", "custom", "--root", tmpRoot]);
+
+    const removed = await runModel([
+      "remove",
+      "--model-id",
+      "drop-me",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(removed.code).toBe(0);
+    expect(removed.out).toContain("Removed model (provider=custom, model_id=drop-me).");
+
+    const parsed = await readConfig();
+    expect(
+      parsed.models.find((m) => m.provider === "custom" && m.model_id === "drop-me"),
+    ).toBeUndefined();
+    expect(
+      parsed.models.find((m) => m.provider === "custom" && m.model_id === "keep-me"),
+    ).toBeDefined();
+  });
+
+  it("removing the default model clears the pointer, so nothing is left naming a model that is gone", async () => {
+    await runModel([
+      "add",
+      "--model-id",
+      "my-default",
+      "--provider",
+      "custom",
+      "--set-default",
+      "--root",
+      tmpRoot,
+    ]);
+    expect((await readConfig()).default_model).toEqual({
+      provider: "custom",
+      model_id: "my-default",
+    });
+
+    const removed = await runModel([
+      "remove",
+      "--model-id",
+      "my-default",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(removed.code).toBe(0);
+    // The confirmation carries the consequence: the Project no longer has a default model.
+    expect(removed.out).toContain("Default model: (unset)");
+    expect((await readConfig()).default_model).toBeUndefined();
+  });
+
+  it("removing the vision model clears that pointer and says so", async () => {
+    await runModel(["add", "--model-id", "my-eyes", "--provider", "custom", "--root", tmpRoot]);
+    await runModel(["vision", "--model-id", "my-eyes", "--provider", "custom", "--root", tmpRoot]);
+
+    const removed = await runModel([
+      "remove",
+      "--model-id",
+      "my-eyes",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(removed.code).toBe(0);
+    expect(removed.out).toContain("vision model");
+    expect((await readConfig()).vision_model).toBeUndefined();
+  });
+
+  it("removing an unrelated entry leaves both pointers untouched", async () => {
+    await runModel([
+      "add",
+      "--model-id",
+      "the-default",
+      "--provider",
+      "custom",
+      "--set-default",
+      "--root",
+      tmpRoot,
+    ]);
+    await runModel(["add", "--model-id", "the-eyes", "--provider", "custom", "--root", tmpRoot]);
+    await runModel(["vision", "--model-id", "the-eyes", "--provider", "custom", "--root", tmpRoot]);
+    await runModel(["add", "--model-id", "unrelated", "--provider", "custom", "--root", tmpRoot]);
+
+    const removed = await runModel([
+      "remove",
+      "--model-id",
+      "unrelated",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(removed.code).toBe(0);
+    expect(removed.out).not.toContain("vision model");
+
+    const parsed = await readConfig();
+    expect(parsed.default_model).toEqual({ provider: "custom", model_id: "the-default" });
+    expect(parsed.vision_model).toEqual({ provider: "custom", model_id: "the-eyes" });
+  });
+
+  it("a pair the config doesn't have: reported on stderr with a nonzero exit code", async () => {
+    const missing = await runModel([
+      "remove",
+      "--model-id",
+      "no-such-model",
+      "--provider",
+      "custom",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(missing.code).toBe(1);
+    expect(missing.err).toContain("(provider=custom, model_id=no-such-model)");
+    expect(missing.out).toBe("");
+  });
+
+  it("the pair is exact: the same upstream id under another group is a different entry and survives", async () => {
+    await runModel([
+      "add",
+      "--model-id",
+      "claude-sonnet-4-6",
+      "--provider",
+      "myproxy",
+      "--root",
+      tmpRoot,
+    ]);
+
+    // Naming the wrong group must not delete the preset entry that happens to share the id.
+    const wrongGroup = await runModel([
+      "remove",
+      "--model-id",
+      "claude-sonnet-4-6",
+      "--provider",
+      "openai",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(wrongGroup.code).toBe(1);
+
+    const removed = await runModel([
+      "remove",
+      "--model-id",
+      "claude-sonnet-4-6",
+      "--provider",
+      "myproxy",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(removed.code).toBe(0);
+
+    const parsed = await readConfig();
+    expect(
+      parsed.models.find((m) => m.provider === "myproxy" && m.model_id === "claude-sonnet-4-6"),
+    ).toBeUndefined();
+    expect(
+      parsed.models.find((m) => m.provider === "anthropic" && m.model_id === "claude-sonnet-4-6"),
+    ).toBeDefined();
+  });
+
+  it("missing --provider: a bare model_id is a usage error, so no entry is removed by guesswork", async () => {
+    await runModel(["add", "--model-id", "guard-me", "--provider", "custom", "--root", tmpRoot]);
+
+    const bad = await runModel(["remove", "--model-id", "guard-me", "--root", tmpRoot]);
+    expect(bad.code).not.toBe(0);
+    expect(bad.err).toContain("--provider");
+
+    const parsed = await readConfig();
+    expect(
+      parsed.models.find((m) => m.provider === "custom" && m.model_id === "guard-me"),
+    ).toBeDefined();
   });
 });

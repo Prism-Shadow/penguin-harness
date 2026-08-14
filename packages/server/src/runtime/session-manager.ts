@@ -222,6 +222,12 @@ export interface SessionManagerDeps {
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
+  /**
+   * Clock for persisted timestamps (last_active_at). Injected like the other services' so a
+   * stubbed clock moves this and `usage_records.ts` together — the pairing the legacy
+   * backfill assumes when it reads MAX(ts) as a session's last activity.
+   */
+  now?: () => Date;
 }
 
 /** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
@@ -396,9 +402,12 @@ export class SessionManager {
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail = new LiveTailTracker();
   private readonly sweepTimer: NodeJS.Timeout;
+  /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
+  private readonly now: () => Date;
 
   constructor(private readonly deps: SessionManagerDeps) {
     this.log = deps.log ?? ((line) => console.error(line));
+    this.now = deps.now ?? (() => new Date());
     this.sweepTimer = setInterval(() => this.sweepIdle(), ENTRY_SWEEP_INTERVAL_MS);
     this.sweepTimer.unref?.();
   }
@@ -1192,10 +1201,6 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
-    // Every driven run (task, goal round, compaction) writes Trace lines: flip the row's
-    // has_trace cache here, the single choke point, so listing can serve it from the DB
-    // without a directory walk (see SessionService.listSessions).
-    this.deps.sessions.markHasTrace(entry.sessionId);
     let earlyTitleFired = false;
     let mainBodyChars = 0;
     const ctx: UsageContext = {
@@ -1205,6 +1210,17 @@ export class SessionManager {
       provider: entry.provider,
       modelId: entry.modelId,
     };
+    // Every driven run (a Task, a compaction, or a whole goal loop — startGoal hands all of
+    // its rounds to ONE drive) writes Trace lines: flip the row's has_trace cache here, the
+    // single choke point, so listing can serve it from the DB without a directory walk (see
+    // SessionService.listSessions). The same statement stamps last_active_at, so a run costs
+    // one row write here and one more when it ends (see the finally) — never one per streamed
+    // message; activity during the run (steering, approvals, queued follow-ups) rides on the
+    // run-end stamp. Guarded: this runs BEFORE the try below, so an unexpected DB failure
+    // (a closed handle after shutdown) would otherwise reject drive() with no finally to
+    // reach — leaving the entry pinned "running" and every later Task 409ing for the
+    // process's lifetime.
+    this.touchRow(ctx, (repo, at) => repo.markDriven(ctx.sessionId, at));
     // LLM request failures and tool execution failures aren't expressed via throw (core
     // converges them into the message stream), so the try/catch below can't catch them:
     // the watcher inspects messages one by one and fishes them out for persistence
@@ -1371,6 +1387,14 @@ export class SessionManager {
       // now-empty state.
       entry.pendingSteering = [];
       entry.lastActivityMs = Date.now();
+      // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
+      // every other write in this finally: what follows — the idle broadcast, title
+      // generation, and the auto-start of queued follow-ups (this is its only call site) —
+      // must not be skippable by a DB failure, or SSE clients would sit on "running"
+      // forever with their queue stranded. A no-op UPDATE when the row is already gone:
+      // deletion normally awaits the drive first, so that only happens once its 5s wait
+      // times out.
+      this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
       this.publishState(entry, "idle");
       if (titleSource && titleSource.userExcerpt.trim()) {
         // Attempt generation whenever there's user material; whether generation is
@@ -1438,6 +1462,7 @@ export class SessionManager {
     // row deliberately stores no source column.
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
+    const createdAt = this.now().toISOString();
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -1451,7 +1476,10 @@ export class SessionManager {
       title: null,
       // Spawned by this server's run (client NULL = web); its Trace exists by construction.
       hasTrace: true,
-      createdAt: new Date().toISOString(),
+      // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
+      // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
+      lastActiveAt: createdAt,
+      createdAt,
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
     // Session's channel (a frontend currently watching the parent run refreshes its list in place).
@@ -1471,6 +1499,25 @@ export class SessionManager {
     };
     children.set(childSid, child);
     return child;
+  }
+
+  /**
+   * Runs one `sessions` row write for a driven run's bookkeeping (has_trace /
+   * last_active_at), swallowing failures the same way the per-message `recorder.record`
+   * call does: bookkeeping must never take down a run's lifecycle. The two call sites both
+   * sit outside a covering try — the run-start write precedes drive's try block, the
+   * run-end one lives in its finally — and the realistic failure (the DatabaseSync handle
+   * closed by shutdown while a run outlived its drain window) throws ERR_INVALID_STATE.
+   */
+  private touchRow(ctx: UsageContext, write: (repo: SessionsRepo, at: string) => void): void {
+    try {
+      write(this.deps.sessions, this.now().toISOString());
+    } catch (err) {
+      this.log(
+        `[session] last-active bookkeeping failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.deps.errors?.record({ source: "session", err, ctx, code: "session_touch_failed" });
+    }
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {

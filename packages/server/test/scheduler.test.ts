@@ -124,6 +124,7 @@ describe("scheduler", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: new Date(nowMs).toISOString(),
+      lastActiveAt: new Date(nowMs).toISOString(),
     });
   }
 

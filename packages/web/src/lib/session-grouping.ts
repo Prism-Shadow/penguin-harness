@@ -85,6 +85,17 @@ export function sessionCategory(s: SessionInfo): SessionCategory {
   return s.source === "subagent" || s.source === "schedule" ? s.source : "active";
 }
 
+/**
+ * Whether a Session matches the sidebar's live title search: case-insensitive substring
+ * over the stored title (untitled Sessions have none and never match a non-empty
+ * query); a blank/whitespace query matches everything (search inactive).
+ */
+export function matchesSessionQuery(s: SessionInfo, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  return (s.title ?? "").toLowerCase().includes(q);
+}
+
 /** The collapsed-folder categories of a group, in render order (below the active user rows). */
 export const FOLDER_CATEGORIES = ["subagent", "schedule", "archived"] as const;
 export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
