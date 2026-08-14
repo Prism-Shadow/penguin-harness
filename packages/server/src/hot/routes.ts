@@ -40,6 +40,10 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
       impl: hot.currentImplId(),
       iface: ifaceData(inst.iface),
       info: inst.api.info(),
+      // Optional system capabilities: without `compiler` only prebuilt
+      // single-file bundles (bundlePath) can be loaded; without `git` source
+      // upgrades degrade to unverified working trees.
+      capabilities: hot.capabilities(),
     });
   });
 
@@ -50,23 +54,38 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * The upgrade descriptor: either a built-in demo bundle ({ impl: "v2" }) or
-   * the canonical git form ({ repo: "file:///home/abc/x.git", revision:
-   * "deadbeef" }) — checked out, compiled to a single file, and swapped in,
-   * strictly on request (nothing auto-triggers a reload).
+   * The upgrade descriptor, in capability order (strictly request-driven —
+   * nothing auto-triggers a reload):
+   * - { bundlePath, source? } — layer (a), the fundamental interface: a
+   *   prebuilt single-file JS bundle plus an optional git specifier recorded
+   *   as provenance. Needs no git and no compiler.
+   * - { repo, revision } — layer (b): checkout + subprocess compile (TS/JS),
+   *   which internally ends in layer (a). Needs a compiler; degrades without
+   *   git (working tree + warning).
+   * - { impl: "v2" } — built-in demo bundle.
    */
   routes.post("/platform/upgrade", async (c) => {
-    const body = await c.req.json<{ impl?: string; repo?: string; revision?: string }>();
-    if (body.repo !== undefined && body.revision === undefined) {
-      throw new HttpError(400, "bad_request", "A git upgrade needs both repo and revision.");
+    const body = await c.req.json<{
+      impl?: string;
+      bundlePath?: string;
+      source?: { repo: string; revision: string };
+      repo?: string;
+      revision?: string;
+    }>();
+    let target;
+    if (body.bundlePath !== undefined) {
+      target = { bundlePath: body.bundlePath, ...(body.source ? { source: body.source } : {}) };
+    } else if (body.repo !== undefined) {
+      if (body.revision === undefined) {
+        throw new HttpError(400, "bad_request", "A git upgrade needs both repo and revision.");
+      }
+      target = { repo: body.repo, revision: body.revision };
+    } else {
+      target = { impl: body.impl ?? "v2" };
     }
     let outcome;
     try {
-      outcome = await hot.upgradeTo(
-        body.repo !== undefined
-          ? { repo: body.repo, revision: body.revision! }
-          : { impl: body.impl ?? "v2" },
-      );
+      outcome = await hot.upgradeTo(target);
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
     }
