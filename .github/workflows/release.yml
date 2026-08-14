@@ -88,9 +88,11 @@ jobs:
       ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       require_macos_signing: true
-    # The signing secrets themselves live in the `apple-signing` environment and resolve
-    # inside the called job; `inherit` additionally forwards repo-level secrets so the
-    # called workflow never sees a name shadowed to empty (the v0.2.2 failure mode).
+      require_windows_signing: true
+    # The signing secrets themselves live in the called workflow's matrix environments
+    # (`apple-signing` for macOS, `desktop-build` for Windows) and resolve inside those
+    # jobs; `inherit` additionally forwards repo-level secrets so the called workflow
+    # never sees a name shadowed to empty (the v0.2.2 failure mode).
     secrets: inherit
 
   release:
