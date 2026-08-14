@@ -139,7 +139,7 @@ function TerminalTab(props: {
       data-testid="terminal-tab"
       data-terminal-id={terminal.id}
       data-active={active}
-      className={`group flex max-w-40 shrink-0 items-center rounded-md transition-colors duration-150 ${
+      className={`group flex h-6 max-w-40 shrink-0 items-center rounded-md transition-colors duration-150 ${
         active
           ? "bg-white/15 text-white"
           : "text-white/50 hover:bg-white/10 hover:text-white/80"
@@ -149,9 +149,9 @@ function TerminalTab(props: {
         type="button"
         title={`${terminal.name} — ${terminal.cwd}`}
         onClick={props.onSelect}
-        className="min-w-0 truncate py-0.5 pl-2 pr-1 text-left"
+        className="flex h-full min-w-0 items-center pl-2 pr-1 text-left"
       >
-        {label}
+        <span className="block truncate">{label}</span>
       </button>
       {/* Kill: this ends the shell itself (server-side), not just a view of it.
           Hover-revealed on every tab — an always-on × reads as a stray button (worst when
@@ -536,7 +536,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         <span
           data-testid="terminal-dock-grip"
           aria-hidden
-          className="shrink-0 text-white/30"
+          className="flex h-6 shrink-0 items-center text-white/30"
         >
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
             <circle cx="2.5" cy="2.5" r="1.2" />
@@ -548,55 +548,62 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           </svg>
         </span>
 
-        {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
-            reorder, drag out to move onto another edge. Scrolls when the shells outgrow
-            the header — which is why the new-tab button lives OUTSIDE it. */}
-        <div
-          ref={stripRef}
-          data-testid="terminal-tab-strip"
-          onPointerDown={onStripPointerDown}
-          onPointerMove={onStripPointerMove}
-          onPointerUp={onStripPointerUp}
-          onPointerCancel={onStripPointerUp}
-          className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
-        >
-          {paneTerminals.map((terminal, index) => (
-            <TerminalTab
-              key={terminal.id}
-              terminal={terminal}
-              index={index}
-              active={terminal.id === currentId}
-              onSelect={() => selectTerminal(terminal.id)}
-              onKill={() => onKillTerminal(terminal.id)}
-            />
-          ))}
+        {/* Tabs group: the strip plus its new-tab "+", packed tight (one visual unit, the
+            browser-tab convention). The strip scrolls when the shells outgrow the header —
+            which is why "+" lives OUTSIDE it, always reachable. */}
+        <div className="flex min-w-0 items-center gap-1">
+          <div
+            ref={stripRef}
+            data-testid="terminal-tab-strip"
+            onPointerDown={onStripPointerDown}
+            onPointerMove={onStripPointerMove}
+            onPointerUp={onStripPointerUp}
+            onPointerCancel={onStripPointerUp}
+            className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+          >
+            {paneTerminals.map((terminal, index) => (
+              <TerminalTab
+                key={terminal.id}
+                terminal={terminal}
+                index={index}
+                active={terminal.id === currentId}
+                onSelect={() => selectTerminal(terminal.id)}
+                onKill={() => onKillTerminal(terminal.id)}
+              />
+            ))}
+          </div>
+          <DockButton
+            label={S.terminal.newShell}
+            testId="terminal-dock-new-shell"
+            onClick={newShell}
+            d="M12 5v14M5 12h14"
+          />
         </div>
-        <DockButton
-          label={S.terminal.newShell}
-          testId="terminal-dock-new-shell"
-          onClick={newShell}
-          d="M12 5v14M5 12h14"
-        />
         <span className="min-w-0 flex-1" />
 
-        <span
-          data-testid="terminal-dock-status"
-          data-status={status}
-          title={statusTitle}
-          aria-label={statusTitle}
-          className={`shrink-0 ${
-            status === "ready"
-              ? "text-emerald-400"
-              : status === "connecting"
-                ? "text-amber-400"
-                : "text-red-400"
-          }`}
-        >
-          ●
-        </span>
-        {/* Divider keeps the passive dot from blending into the action buttons. */}
-        <span aria-hidden className="h-3.5 w-px shrink-0 bg-white/10" />
+        {/* One right-hand cluster with uniform spacing: the status dot (a real circle,
+            flex-centered — a text ● sits on the font baseline and never looks centered),
+            a hairline divider, then the action buttons. */}
         <div className="flex shrink-0 items-center gap-1">
+          <span
+            data-testid="terminal-dock-status"
+            data-status={status}
+            title={statusTitle}
+            aria-label={statusTitle}
+            className="flex h-6 w-4 items-center justify-center"
+          >
+            <span
+              aria-hidden
+              className={`h-2 w-2 rounded-full ${
+                status === "ready"
+                  ? "bg-emerald-400"
+                  : status === "connecting"
+                    ? "bg-amber-400"
+                    : "bg-red-400"
+              }`}
+            />
+          </span>
+          <span aria-hidden className="h-3.5 w-px shrink-0 bg-white/10" />
           {/* Detach: box with an arrow escaping to the top right */}
           <DockButton
             label={S.terminal.detach}

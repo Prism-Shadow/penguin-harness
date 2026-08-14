@@ -104,17 +104,8 @@ function shownIdsSnapshot(): string[] {
 export function TerminalDockRuntime() {
   const ids = useSyncExternalStore(subscribeTerminalDock, shownIdsSnapshot);
 
-  // Ctrl+` toggles the dock from anywhere in the app (the Codex/VS Code binding).
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-      if (event.key !== "`" && event.code !== "Backquote") return;
-      event.preventDefault();
-      toggleTerminalDock();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // (The Ctrl+` hotkey is a module-scope listener in terminal-dock-state.ts — binding it
+  // in an effect here left a post-paint window where the shortcut was dead.)
 
   // Containers and view state of terminals that are no longer shown can go; a re-shown
   // terminal reattaches cleanly (server-side restore) with a fresh container.
