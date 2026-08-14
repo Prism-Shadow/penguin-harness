@@ -11,6 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { buildAppDeps, createApp } from "./app.js";
@@ -23,6 +24,7 @@ import {
   storeInitialAdminPassword,
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
+import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 
@@ -129,6 +131,13 @@ function writePortFile(file: string, port: number): void {
   fs.renameSync(tmp, file);
 }
 
+/** Terminal WebSocket wiring, shared by every listener this process opens. */
+const terminalWebSocketDeps = {
+  manager: deps.terminals,
+  authService: deps.authService,
+  log: (line: string) => console.log(line),
+};
+
 const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`penguin-server started: http://${appHost}:${info.port}`);
   console.log(`Data root: ${config.root}`);
@@ -155,8 +164,13 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
         `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
       );
     });
+    // The terminal stream is a WebSocket upgrade, which never reaches the Hono fetch
+    // handler — it has to be bound on each Node listener, this one included, or the
+    // terminal only works on whichever address the browser happened to resolve.
+    attachTerminalWebSocket(ipv6Loopback as unknown as HttpServer, terminalWebSocketDeps);
   }
 });
+attachTerminalWebSocket(server as unknown as HttpServer, terminalWebSocketDeps);
 
 /** Removes the instance lock and port file (best-effort; runs on both exit paths). */
 function cleanupInstanceFiles(): void {
@@ -178,6 +192,9 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.hmr.dispose();
+  // Every terminal is a live child process; without this they are reparented to init and
+  // keep running (and holding the data root) after the server is gone.
+  deps.terminals.disposeAll();
   deps.channels.dispose();
   ipv6Loopback?.close();
   server.close(() => {

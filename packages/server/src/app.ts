@@ -58,6 +58,8 @@ import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
 import { versionRoutes } from "./http/routes/version.js";
+import { terminalsRoutes } from "./http/routes/terminals.js";
+import { TerminalManager } from "./terminal/manager.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { createCoreSessionLoader, SessionManager } from "./runtime/session-manager.js";
@@ -134,6 +136,8 @@ export interface AppDeps {
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
+  /** Server-side pty sessions behind /api/terminals (the WebSocket data plane is attached in index.ts). */
+  terminals: TerminalManager;
   /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
   sessionSources: SessionSources;
   /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
@@ -360,6 +364,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     scheduler,
     channels,
     manager,
+    terminals: new TerminalManager(),
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
@@ -507,6 +512,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
+  // Terminals: control plane only. The byte stream upgrades to a WebSocket on the same path
+  // prefix and is handled off the Hono app, in terminal/ws.ts.
+  app.route("/api/terminals", terminalsRoutes(deps.terminals));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the
