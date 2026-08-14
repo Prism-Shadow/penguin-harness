@@ -84,6 +84,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     cleanup: async () => {
       deps.hmr.dispose();
       deps.channels.dispose();
+      // Terminals are real child processes: a test that opened one would otherwise leave a
+      // shell running (and the temp root busy) after the test file finishes.
+      deps.terminals.disposeAll();
       deps.db.close();
       // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
       // just-closed files (SQLite, trace writers) are still being released — Node's rm
