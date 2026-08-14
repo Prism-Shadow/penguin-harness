@@ -12,7 +12,6 @@
  * renders triggers, so pinning/unpinning never touches panel state.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -216,11 +215,6 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
   const createMenu = useHoverMenu();
   const terminalMenu = useHoverMenu();
-  /** The second-level terminal list inside the create menu (row-hover scoped; the close
-   * grace lets the pointer cross the small gap between the row and the flyout). */
-  const terminalSub = useHoverMenu();
-  /** Row rect captured when the submenu opens; anchors the body-portaled flyout. */
-  const subAnchorRef = useRef<DOMRect | null>(null);
   const terminalPinned = pins.includes("terminal");
   const menuOpen = createMenu.open;
   const setMenuOpen = createMenu.setOpen;
@@ -229,7 +223,6 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
     showTerminal(id);
     setMenuOpen(false);
     terminalMenu.setOpen(false);
-    terminalSub.setOpen(false);
   };
 
   const togglePin = (key: PanelKey): void => {
@@ -346,46 +339,15 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
         >
         {entries.map((entry) => {
           const pinned = pins.includes(entry.key);
-          const hasSubmenu = entry.key === "terminal" && terminalCount > 0;
           return (
             <div
               key={entry.key}
-              {...(hasSubmenu
-                ? {
-                    onMouseEnter: (event: React.MouseEvent<HTMLDivElement>) => {
-                      subAnchorRef.current = event.currentTarget.getBoundingClientRect();
-                      terminalSub.hoverProps.onMouseEnter();
-                    },
-                    onMouseLeave: terminalSub.hoverProps.onMouseLeave,
-                  }
-                : {})}
               className={`group relative mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
                 entry.open
                   ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
                   : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
               }`}
             >
-              {/* Second-level terminal list, flying out beside the row on hover. Portaled
-                  to body: the Dropdown panel scrolls (overflow-y-auto), which would clip
-                  an in-panel flyout into an unclickable ghost. */}
-              {hasSubmenu &&
-                terminalSub.open &&
-                subAnchorRef.current &&
-                createPortal(
-                  <div
-                    data-testid="panels-menu-terminal-sub"
-                    {...terminalSub.hoverProps}
-                    style={{
-                      position: "fixed",
-                      top: subAnchorRef.current.top - 4,
-                      right: window.innerWidth - subAnchorRef.current.left + 4,
-                    }}
-                    className="z-[60] w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
-                  >
-                    <TerminalListMenu onPick={pickTerminal} />
-                  </div>,
-                  document.body,
-                )}
               {/* The row body toggles the panel and dismisses the menu. */}
               <button
                 type="button"
