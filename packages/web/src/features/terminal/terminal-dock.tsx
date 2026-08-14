@@ -110,7 +110,7 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
  * `user@host:~/work`, a greedy `\S+` would swallow the path along with the host and leave
  * nothing of the title at all.
  */
-function displayTitle(title: string | null | undefined): string {
+export function displayTitle(title: string | null | undefined): string {
   return (title ?? "")
     .trim()
     .replace(/^[^@\s]+@[^:\s]+:?\s*/, "")
