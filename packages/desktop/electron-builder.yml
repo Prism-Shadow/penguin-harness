@@ -34,10 +34,10 @@ nodeGypRebuild: false
 
 mac:
   category: public.app-category.developer-tools
-  # Brand icon (rendered from packages/web/public/penguin-logo.svg by
-  # scripts/render-icon.mjs, committed): electron-builder converts the 1024px PNG to
-  # icns itself (app-builder-lib iconConverter; >=512px required).
-  icon: build/icon.png
+  # macOS-specific 1024px master: scripts/render-icon.mjs centres the brand artwork in
+  # Apple's 824px safe area so it has the same optical size as neighbouring Dock and
+  # Launchpad icons. electron-builder converts the committed PNG to icns.
+  icon: build/icon-mac.png
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
