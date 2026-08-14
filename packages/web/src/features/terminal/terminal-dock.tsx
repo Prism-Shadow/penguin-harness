@@ -153,16 +153,16 @@ function TerminalTab(props: {
       >
         {label}
       </button>
-      {/* Kill: this ends the shell itself (server-side), not just a view of it. */}
+      {/* Kill: this ends the shell itself (server-side), not just a view of it.
+          Hover-revealed on every tab — an always-on × reads as a stray button (worst when
+          the strip scrolls and only the ×'s sliver stays visible). */}
       <button
         type="button"
         title={S.terminal.killShell}
         aria-label={`${S.terminal.killShell}: ${label}`}
         data-testid="terminal-tab-kill"
         onClick={props.onKill}
-        className={`mr-1 rounded p-0.5 transition-opacity duration-150 hover:bg-white/20 ${
-          active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70"
-        }`}
+        className="mr-1 rounded p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-70 [&:hover]:opacity-100"
       >
         <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
           <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.6" strokeLinecap="round" />
@@ -239,6 +239,16 @@ export function TerminalDock({ position }: { position: DockPosition }) {
   useEffect(() => {
     if (currentId === null) void resolvePaneCurrent(position);
   }, [currentId, position]);
+
+  // The shown tab keeps itself in view: with many tabs the strip scrolls, and a
+  // half-clipped active tab reads as a stray × button at the strip's edge.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (currentId === null) return;
+    stripRef.current
+      ?.querySelector(`[data-terminal-id="${CSS.escape(currentId)}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [currentId, paneTerminals]);
 
   // Adopt the shown terminal's pooled container into this pane's body.
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -542,6 +552,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
             reorder, drag out to move onto another edge. Scrolls when the shells outgrow
             the header — which is why the new-tab button lives OUTSIDE it. */}
         <div
+          ref={stripRef}
           data-testid="terminal-tab-strip"
           onPointerDown={onStripPointerDown}
           onPointerMove={onStripPointerMove}
@@ -583,6 +594,8 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         >
           ●
         </span>
+        {/* Divider keeps the passive dot from blending into the action buttons. */}
+        <span aria-hidden className="h-3.5 w-px shrink-0 bg-white/10" />
         <div className="flex shrink-0 items-center gap-1">
           {/* Detach: box with an arrow escaping to the top right */}
           <DockButton
