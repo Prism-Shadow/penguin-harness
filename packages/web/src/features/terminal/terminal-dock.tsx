@@ -478,7 +478,8 @@ export function TerminalDock({ position }: { position: DockPosition }) {
   const ratio = paneRatio(position);
   const status = viewState.status;
   const detail = viewState.detail;
-  const statusText =
+  // The dot alone carries the status (colour-coded); words live in its tooltip only.
+  const statusTitle =
     status === "exited" && detail
       ? `${S.terminal.status.exited} — ${S.terminal.exitedWithCode(detail)}`
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
@@ -520,7 +521,22 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         onPointerCancel={onHeaderPointerCancel}
         className="flex shrink-0 cursor-grab select-none items-center gap-2 border-b border-white/10 px-3 py-1.5 text-xs"
       >
-        <span className="shrink-0 font-medium">{S.terminal.title}</span>
+        {/* Grip: the visual "this bar drags" affordance (any non-interactive spot of the
+            header drags the pane; the grip is the always-present, unmistakable one). */}
+        <span
+          data-testid="terminal-dock-grip"
+          aria-hidden
+          className="shrink-0 text-white/30"
+        >
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+            <circle cx="2.5" cy="2.5" r="1.2" />
+            <circle cx="7.5" cy="2.5" r="1.2" />
+            <circle cx="2.5" cy="7" r="1.2" />
+            <circle cx="7.5" cy="7" r="1.2" />
+            <circle cx="2.5" cy="11.5" r="1.2" />
+            <circle cx="7.5" cy="11.5" r="1.2" />
+          </svg>
+        </span>
 
         {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
             reorder, drag out to move onto another edge. Scrolls when the shells outgrow
@@ -555,6 +571,8 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         <span
           data-testid="terminal-dock-status"
           data-status={status}
+          title={statusTitle}
+          aria-label={statusTitle}
           className={`shrink-0 ${
             status === "ready"
               ? "text-emerald-400"
@@ -563,7 +581,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
                 : "text-red-400"
           }`}
         >
-          ● {statusText}
+          ●
         </span>
         <div className="flex shrink-0 items-center gap-1">
           {/* Detach: box with an arrow escaping to the top right */}
