@@ -53,9 +53,7 @@ async function waitForShell(page, tag) {
   // Quote-split sentinel: the typed command's echo never contains the tag, and the match
   // is end-of-line — a resize reflow right after attach can glue rows together.
   await run(page, `echo ${tag.slice(0, 2)}''${tag.slice(2)}`);
-  await expect
-    .poll(() => screenText(page), { timeout: 30000 })
-    .toMatch(new RegExp(`${tag}$`, "m"));
+  await expect.poll(() => screenText(page), { timeout: 30000 }).toMatch(new RegExp(`${tag}$`, "m"));
 }
 
 test("keeps the shell and its screen across a reload", async ({ page }) => {

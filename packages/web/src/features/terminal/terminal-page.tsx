@@ -18,12 +18,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
-import {
-  TerminalView,
-  fetchJson,
-  type TerminalInfo,
-  type TerminalStatus,
-} from "./terminal-view";
+import { TerminalView, fetchJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
 
 const STORAGE_KEY = "penguin.terminal.page.id";
 
@@ -100,7 +95,11 @@ export function TerminalPage() {
 
   const ensure = useCallback(
     async (cols: number, rows: number): Promise<TerminalInfo> => {
-      const terminal = await attachOrCreate(parseTerminalParams(window.location.search), cols, rows);
+      const terminal = await attachOrCreate(
+        parseTerminalParams(window.location.search),
+        cols,
+        rows,
+      );
       localStorage.setItem(STORAGE_KEY, terminal.id);
       writeIdToUrl(terminal.id);
       return terminal;

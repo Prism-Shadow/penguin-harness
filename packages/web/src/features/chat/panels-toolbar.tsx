@@ -337,76 +337,76 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             </button>
           }
         >
-        {entries.map((entry) => {
-          const pinned = pins.includes(entry.key);
-          return (
-            <div
-              key={entry.key}
-              className={`group relative mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                entry.open
-                  ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-              }`}
-            >
-              {/* The row body toggles the panel and dismisses the menu. */}
-              <button
-                type="button"
-                data-testid={`panels-menu-${entry.key}`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  entry.toggle();
-                }}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              >
-                <span className="shrink-0 text-gray-500 dark:text-gray-400">{entry.glyph()}</span>
-                <span className="min-w-0 truncate">{entry.label}</span>
-                {/* Live shell count, right beside the name — the row's right edge belongs
-                    to the pin toggle (a hover-revealed slot that must not look like a gap
-                    next to content). */}
-                {entry.key === "terminal" && terminalCount > 0 && (
-                  <span
-                    data-testid="panels-menu-terminal-count"
-                    className="shrink-0 rounded-full bg-gray-200 px-1.5 text-[10px] font-semibold leading-4 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-                  >
-                    {terminalCount}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1" />
-                {entry.pending && (
-                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                )}
-              </button>
-              {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
-              <button
-                type="button"
-                title={pinned ? S.chat.unpinPanel : S.chat.pinPanel}
-                aria-label={pinned ? S.chat.unpinPanel : S.chat.pinPanel}
-                aria-pressed={pinned}
-                data-testid={`panels-pin-${entry.key}`}
-                onClick={() => togglePin(entry.key)}
-                className={`shrink-0 rounded p-1 transition-colors duration-150 ${
-                  pinned
-                    ? "text-gray-700 dark:text-gray-200"
-                    : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+          {entries.map((entry) => {
+            const pinned = pins.includes(entry.key);
+            return (
+              <div
+                key={entry.key}
+                className={`group relative mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  entry.open
+                    ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
                 }`}
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill={pinned ? "currentColor" : "none"}
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
+                {/* The row body toggles the panel and dismisses the menu. */}
+                <button
+                  type="button"
+                  data-testid={`panels-menu-${entry.key}`}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    entry.toggle();
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <path d={PIN_ICON} />
-                </svg>
-              </button>
-            </div>
-          );
-        })}
+                  <span className="shrink-0 text-gray-500 dark:text-gray-400">{entry.glyph()}</span>
+                  <span className="min-w-0 truncate">{entry.label}</span>
+                  {/* Live shell count, right beside the name — the row's right edge belongs
+                    to the pin toggle (a hover-revealed slot that must not look like a gap
+                    next to content). */}
+                  {entry.key === "terminal" && terminalCount > 0 && (
+                    <span
+                      data-testid="panels-menu-terminal-count"
+                      className="shrink-0 rounded-full bg-gray-200 px-1.5 text-[10px] font-semibold leading-4 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                      {terminalCount}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1" />
+                  {entry.pending && (
+                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                  )}
+                </button>
+                {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
+                <button
+                  type="button"
+                  title={pinned ? S.chat.unpinPanel : S.chat.pinPanel}
+                  aria-label={pinned ? S.chat.unpinPanel : S.chat.pinPanel}
+                  aria-pressed={pinned}
+                  data-testid={`panels-pin-${entry.key}`}
+                  onClick={() => togglePin(entry.key)}
+                  className={`shrink-0 rounded p-1 transition-colors duration-150 ${
+                    pinned
+                      ? "text-gray-700 dark:text-gray-200"
+                      : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+                  }`}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill={pinned ? "currentColor" : "none"}
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d={PIN_ICON} />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
         </Dropdown>
       </div>
     </div>

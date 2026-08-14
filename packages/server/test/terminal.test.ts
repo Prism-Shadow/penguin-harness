@@ -28,6 +28,9 @@ import {
 
 const { Terminal } = xterm;
 
+/** Real ptys only on POSIX — see terminal-stream.test.ts for the Windows CI rationale. */
+const describePty = describe.skipIf(process.platform === "win32");
+
 /** A headless terminal fed with `input`, standing in for one whose pty produced it. */
 function terminalWith(input: string, cols = 40, rows = 6) {
   const terminal = new Terminal({ cols, rows, scrollback: 100, allowProposedApi: true });
@@ -299,7 +302,7 @@ describe("key tokens", () => {
   });
 });
 
-describe("terminal API", () => {
+describePty("terminal API", () => {
   /** Polls the capture endpoint until the shell has produced what we are waiting for. */
   async function waitForLine(
     read: () => Promise<string[]>,
@@ -449,7 +452,7 @@ describe("capture ranges", () => {
   });
 });
 
-describe("terminal manager lifecycle", () => {
+describePty("terminal manager lifecycle", () => {
   /** Direct manager (no HTTP) with a short grace so reap timing is testable. */
   function shortGraceManager(graceMs = 80): TerminalManager {
     return new TerminalManager(graceMs);
