@@ -2,10 +2,10 @@
  * Terminal WebSocket data-plane tests, over a real listening server (the stream is an HTTP
  * Upgrade, which app.request() can never exercise).
  *
- * The scenarios mirror Paseo's daemon-e2e terminal suite, adapted to this server's design:
- * handshake auth (cookie, origin, ownership), the Restore-first attach contract, reattach
- * fidelity, multi-client behaviour, size ownership, exit notification, and hostile-input
- * tolerance. These are the promises the web dock and /terminal page are built on.
+ * Scenarios: handshake auth (cookie, origin, ownership), the Restore-first attach
+ * contract, reattach fidelity, multi-client behaviour, size ownership, exit notification,
+ * and hostile-input tolerance. These are the promises the web dock and /terminal page are
+ * built on.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serve } from "@hono/node-server";

@@ -1,5 +1,5 @@
 /**
- * Terminal size ownership (Paseo's `terminal-size-ownership.ts`).
+ * Terminal size ownership.
  *
  * A pty has exactly one size, but a terminal can be attached from several places at once
  * (two browser tabs, a phone, a leftover background tab). If every attachment simply

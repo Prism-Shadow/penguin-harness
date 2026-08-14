@@ -1,17 +1,17 @@
 /**
  * One terminal session: a pty plus the daemon's authoritative view of its screen.
  *
- * The design follows Paseo's `terminal.ts`. The important idea is that the *server* owns the
- * emulator: every pty byte is fed into a headless xterm here, so the daemon always knows the
- * full screen, cursor and title. Clients are then just views that can come and go — which is
- * what makes reload/reattach, plain-text capture and multi-device viewing possible at all.
- * A client-only emulator would lose all of that the moment the tab closes.
+ * The important idea is that the *server* owns the emulator: every pty byte is fed into a
+ * headless xterm here, so the daemon always knows the full screen, cursor and title.
+ * Clients are then just views that can come and go — which is what makes reload/reattach,
+ * plain-text capture and multi-device viewing possible at all. A client-only emulator
+ * would lose all of that the moment the tab closes.
  *
- * Deliberate deviation from Paseo: sessions run in-process rather than in a forked terminal
- * worker. The worker exists there to keep pty parsing off the daemon's event loop under
- * heavy build output; it costs an IPC protocol and a second process to supervise. Worth
- * doing when this is under load, not on day one — the seam (this module is the only thing
- * that touches node-pty) is where that split would go.
+ * Sessions deliberately run in-process rather than in a forked terminal worker. A worker
+ * would keep pty parsing off the daemon's event loop under heavy build output, but costs
+ * an IPC protocol and a second process to supervise. Worth doing when this is under load,
+ * not on day one — the seam (this module is the only thing that touches node-pty) is where
+ * that split would go.
  */
 import os from "node:os";
 import path from "node:path";

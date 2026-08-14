@@ -1,5 +1,5 @@
 /**
- * Per-stream output throttle (Paseo's `TerminalOutputCoalescer`).
+ * Per-stream output throttle.
  *
  * A pty emits many small chunks; forwarding each one as its own socket frame floods the
  * event loop under build output. This merges chunks inside a short window — but as a

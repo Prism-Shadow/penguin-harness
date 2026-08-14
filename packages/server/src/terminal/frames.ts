@@ -1,5 +1,5 @@
 /**
- * Terminal stream binary frame codec (modelled on Paseo's `binary-frames/terminal.ts`).
+ * Terminal stream binary frame codec.
  *
  * Terminal traffic is the one place where JSON framing actually hurts: a build's output is
  * megabytes of bytes that would otherwise be escaped, re-parsed and re-allocated on both
