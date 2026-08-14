@@ -254,10 +254,11 @@ test("dock tabs: list every shell, switch between them, kill one", async ({ page
   ).toBeVisible({ timeout: 20000 });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_B");
 
-  // Killing the background tab (A) ends that shell; the current one is untouched.
+  // Killing the background tab (A) ends that shell; the current one is untouched. The
+  // strip reacts to the user's own kill optimistically — no server round-trip to wait for.
   await tabs.first().hover();
   await tabs.first().locator('[data-testid="terminal-tab-kill"]').click();
-  await expect(tabs).toHaveCount(1, { timeout: 15000 });
+  await expect(tabs).toHaveCount(1, { timeout: 2000 });
   expect(await dockScreenText(page)).toContain("IN_TAB_B");
 
   // Killing the last tab means "done with terminals": the dock closes rather than
@@ -535,10 +536,11 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
     page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
   ).toHaveCount(0);
 
-  // "New shell" leaves the old shell running: two live terminals now.
+  // "New shell" leaves the old shell running: two live terminals now, counted as soon as
+  // the create returns (optimistic list update, not the next poll).
   await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+  await expect(badge).toHaveText("2", { timeout: 5000 });
   await waitForDockShell(page, "SECOND_SHELL_UP");
-  await expect(badge).toHaveText("2", { timeout: 15000 });
 
   // Killing every terminal clears the badge entirely (0 renders nothing). A background
   // terminal dying does not push anything to the tab — the count re-syncs on focus (or the

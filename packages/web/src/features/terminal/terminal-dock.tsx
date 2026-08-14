@@ -44,6 +44,7 @@ import {
 import {
   killTerminal,
   liveTerminals,
+  noteTerminalCreated,
   refreshTerminals,
   subscribeTerminals,
 } from "./terminal-list";
@@ -128,6 +129,9 @@ async function ensureDockTerminal(
   });
   if (!created) throw new Error("Server did not return a terminal.");
   localStorage.setItem(DOCK_ID_KEY, created.id);
+  // Straight into the shared list: the tab strip and count react to the user's create
+  // immediately instead of after the next reconciling fetch.
+  noteTerminalCreated(created);
   return created;
 }
 

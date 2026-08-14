@@ -1179,8 +1179,8 @@ Scenarios:
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
     openAgents: "Agents panel",
-    /** Panel switcher (chat toolbar top-right): the "all panels" dropdown and its pin toggles. */
-    allPanels: "All",
+    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
+    panelsCreate: "Create",
     workspacePanel: "Workspace",
     pinPanel: "Pin to toolbar",
     unpinPanel: "Unpin",
