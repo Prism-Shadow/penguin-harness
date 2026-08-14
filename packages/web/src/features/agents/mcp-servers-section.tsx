@@ -17,7 +17,7 @@
  * remote server is able to do.
  */
 import { useState } from "react";
-import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
+import type { MCPServerConfig, ToolExposure } from "@prismshadow/penguin-core/interfaces";
 import * as api from "../../api/endpoints";
 import type { McpServerTestResponse } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
@@ -105,14 +105,21 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
 export function McpServersSection({
   agentId,
   initial,
+  initialExposure,
+  initialExposureThresholdTokens,
 }: {
   agentId: string;
   initial: MCPServerConfig[];
+  initialExposure: ToolExposure;
+  initialExposureThresholdTokens: number;
 }) {
   const { currentProject } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
   const [servers, setServers] = useState<MCPServerConfig[]>(initial);
+  const [exposure, setExposure] = useState<ToolExposure>(initialExposure);
+  const [thresholdTokens, setThresholdTokens] = useState(initialExposureThresholdTokens);
+  const [thresholdDraft, setThresholdDraft] = useState(String(initialExposureThresholdTokens));
   const [busy, setBusy] = useState(false);
   // Modal state: editIndex null = adding, a number = editing that row; closed when form is null.
   const [form, setForm] = useState<McpServerFormState | null>(null);
@@ -175,6 +182,56 @@ export function McpServersSection({
       return null;
     } catch (e) {
       return apiErrorText(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Exposure is Agent-wide and persists independently of the MCP server rows. */
+  const persistExposure = async (next: ToolExposure): Promise<void> => {
+    if (!projectId || !agentId || busy || next === exposure) return;
+    setBusy(true);
+    try {
+      const res = await api.putAgentConfig(projectId, agentId, {
+        config: { toolExposure: next },
+      });
+      setExposure(res.config.toolExposure);
+      setThresholdTokens(res.config.toolExposureThresholdTokens);
+      setThresholdDraft(String(res.config.toolExposureThresholdTokens));
+      toastSuccess(S.common.saved);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const persistThreshold = async (): Promise<void> => {
+    if (thresholdDraft.trim() === "") {
+      setThresholdDraft(String(thresholdTokens));
+      return;
+    }
+    const next = Number(thresholdDraft);
+    if (!Number.isSafeInteger(next) || next < 0) {
+      setThresholdDraft(String(thresholdTokens));
+      return;
+    }
+    if (!projectId || !agentId || busy) {
+      setThresholdDraft(String(thresholdTokens));
+      return;
+    }
+    if (next === thresholdTokens) return;
+    setBusy(true);
+    try {
+      const res = await api.putAgentConfig(projectId, agentId, {
+        config: { toolExposureThresholdTokens: next },
+      });
+      setThresholdTokens(res.config.toolExposureThresholdTokens);
+      setThresholdDraft(String(res.config.toolExposureThresholdTokens));
+      toastSuccess(S.common.saved);
+    } catch (e) {
+      setThresholdDraft(String(thresholdTokens));
+      toastError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -295,6 +352,50 @@ export function McpServersSection({
 
   return (
     <div className="space-y-4">
+      <div className="space-y-3 rounded-md border border-gray-200 p-3 dark:border-gray-800">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              {S.agent.toolExposure}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {exposure === "lazy"
+                ? S.agent.toolExposureLazyHint
+                : exposure === "auto"
+                  ? S.agent.toolExposureAutoHint
+                  : S.agent.toolExposureDirectHint}
+            </p>
+          </div>
+          <div className="w-60 shrink-0">
+            <Segmented
+              cols={3}
+              options={[
+                { value: "direct", label: S.agent.toolExposureDirect },
+                { value: "auto", label: S.agent.toolExposureAuto },
+                { value: "lazy", label: S.agent.toolExposureLazy },
+              ]}
+              value={exposure}
+              onChange={(next) => void persistExposure(next)}
+            />
+          </div>
+        </div>
+        {exposure === "auto" && (
+          <div className="max-w-xs">
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              disabled={busy}
+              label={S.agent.toolExposureThreshold}
+              hint={S.agent.toolExposureThresholdHint}
+              value={thresholdDraft}
+              onChange={(event) => setThresholdDraft(event.target.value)}
+              onBlur={() => void persistThreshold()}
+            />
+          </div>
+        )}
+      </div>
+
       <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
         {S.agent.mcpServers}
         <InfoPopover label={S.agent.mcpServers}>{S.agent.mcpDesc}</InfoPopover>

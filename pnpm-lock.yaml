@@ -100,6 +100,9 @@ importers:
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       arktype:
         specifier: ^2.2.3
         version: 2.2.3

@@ -13,6 +13,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addModel,
@@ -21,6 +22,8 @@ import {
   DEFAULT_PROJECT_ID,
   installSkill,
   loadProjectConfig,
+  TOOL_CALL_NAME,
+  TOOL_SEARCH_NAME,
   saveProjectConfig,
   setVaultEntry,
 } from "../src/index.js";
@@ -49,7 +52,12 @@ vi.mock("../src/environment/index.js", async (importOriginal) => {
 // Captures every GenerativeModelConfig buildRuntime constructs: the effective thinking level
 // is no longer observable through session_meta (it holds invariants only) — assertions read
 // the construction default from the captured config instead.
-const capturedLLMConfigs = vi.hoisted(() => ({ list: [] as { thinkingLevel?: string }[] }));
+const capturedLLMConfigs = vi.hoisted(() => ({
+  list: [] as {
+    thinkingLevel?: string;
+    tools?: { name: string; description?: string; parameters?: Record<string, unknown> }[];
+  }[],
+}));
 vi.mock("../src/llm/index.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../src/llm/index.js")>();
   class CapturingGenerativeModel extends mod.GenerativeModel {
@@ -64,6 +72,7 @@ vi.mock("../src/llm/index.js", async (importOriginal) => {
 let tmpRoot: string;
 let prevHome: string | undefined;
 let restoreKeys: () => void;
+const MCP_FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
 
 beforeEach(async () => {
   prevHome = process.env.PENGUIN_HOME;
@@ -159,6 +168,58 @@ describe("Agent.createSession workspace handling", () => {
     const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
 
     expect((llm as { requestTimeoutMs?: number }).requestTimeoutMs).toBe(3456);
+  });
+});
+
+describe("Agent.createSession frozen tool contract", () => {
+  it("reuses the frozen lazy tool contract when compaction rebuilds the model", async () => {
+    const agent = await createAgent();
+    agent.state.systemConfig.tools = {
+      ...(agent.state.systemConfig.tools ?? {}),
+      toolExposure: "lazy",
+      mcpServers: [
+        {
+          name: "fx",
+          config: {
+            command: process.execPath,
+            args: [MCP_FIXTURE],
+            cwd: path.dirname(MCP_FIXTURE),
+          },
+        },
+      ],
+    };
+    const ws = path.join(tmpRoot, "ws-lazy-mcp-rebuild");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const initial = capturedLLMConfigs.list.at(-1)!;
+      const initialMcpTools = initial.tools
+        ?.map((tool) => tool.name)
+        .filter((name) => name === TOOL_SEARCH_NAME || name === TOOL_CALL_NAME);
+      expect(initialMcpTools).toEqual([TOOL_SEARCH_NAME, TOOL_CALL_NAME]);
+
+      const rebuild = (
+        session as unknown as {
+          engineDeps: {
+            createLLM: (tokens: {
+              cache_read: number;
+              cache_write: number;
+              output: number;
+              total: number;
+            }) => unknown;
+          };
+        }
+      ).engineDeps.createLLM;
+      rebuild({ cache_read: 10, cache_write: 20, output: 30, total: 60 });
+
+      const rebuilt = capturedLLMConfigs.list.at(-1)!;
+      expect(rebuilt.tools).toBe(initial.tools);
+      expect(rebuilt.tools).toEqual(initial.tools);
+    } finally {
+      session.dispose();
+    }
   });
 });
 

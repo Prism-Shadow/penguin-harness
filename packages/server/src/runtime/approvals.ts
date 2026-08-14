@@ -19,12 +19,14 @@ import type {
   ApprovalDecision,
   ApproveFn,
   OmniMessage,
+  ToolApprovalTarget,
   ToolCallPayload,
 } from "@prismshadow/penguin-core";
 
 export interface PendingApproval {
   toolCall: OmniMessage<ToolCallPayload>;
   origin?: string[];
+  approvalTarget?: ToolApprovalTarget;
 }
 
 interface PendingEntry extends PendingApproval {
@@ -41,20 +43,25 @@ export class ApprovalRegistry {
 
   /** All currently pending approvals (for subscription replay). */
   list(): PendingApproval[] {
-    return [...this.pending.values()].map(({ toolCall, origin }) => ({
+    return [...this.pending.values()].map(({ toolCall, origin, approvalTarget }) => ({
       toolCall,
       ...(origin !== undefined ? { origin } : {}),
+      ...(approvalTarget !== undefined ? { approvalTarget } : {}),
     }));
   }
 
   /** Register and wait for a decision. Re-registering the same id (defensive) resolves the old entry as deny. */
-  wait(toolCall: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> {
+  wait(
+    toolCall: OmniMessage<ToolCallPayload>,
+    approvalTarget?: ToolApprovalTarget,
+  ): Promise<ApprovalDecision> {
     const id = toolCall.payload.tool_call_id;
     this.pending.get(id)?.resolve("deny");
     return new Promise<ApprovalDecision>((resolve) => {
       const entry: PendingEntry = {
         toolCall,
         ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
+        ...(approvalTarget !== undefined ? { approvalTarget } : {}),
         resolve: (decision) => {
           this.pending.delete(id);
           resolve(decision);
@@ -85,16 +92,19 @@ export class ApprovalRegistry {
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
-  toolPermission: (name: string) => "r" | "rw" | undefined;
+  toolPermission: (name: string, rawArguments?: string) => "r" | "rw" | undefined;
+  toolApprovalTarget?: (name: string, rawArguments?: string) => ToolApprovalTarget | undefined;
   registry: ApprovalRegistry;
   publishRequest: (pending: PendingApproval) => void;
 }): ApproveFn {
-  const { getMode, toolPermission, registry, publishRequest } = args;
+  const { getMode, toolPermission, toolApprovalTarget, registry, publishRequest } = args;
   const manual = (toolCall: OmniMessage<ToolCallPayload>): Promise<ApprovalDecision> => {
-    const promise = registry.wait(toolCall);
+    const approvalTarget = toolApprovalTarget?.(toolCall.payload.name, toolCall.payload.arguments);
+    const promise = registry.wait(toolCall, approvalTarget);
     publishRequest({
       toolCall,
       ...(toolCall.origin !== undefined ? { origin: toolCall.origin } : {}),
+      ...(approvalTarget !== undefined ? { approvalTarget } : {}),
     });
     return promise;
   };
@@ -106,7 +116,9 @@ export function makeApprove(args: {
         return "deny";
       case "read-only":
         // Auto-approve read-only tools; route read-write/unknown tools to manual approval (matches CLI semantics).
-        if (toolPermission(toolCall.payload.name) === "r") return "allow";
+        if (toolPermission(toolCall.payload.name, toolCall.payload.arguments) === "r") {
+          return "allow";
+        }
         return manual(toolCall);
       case "always-ask":
       default:

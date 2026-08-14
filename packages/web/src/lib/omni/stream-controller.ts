@@ -31,6 +31,7 @@
  */
 import { isEventMessage, isPartialPayload } from "@prismshadow/penguin-core/omnimessage";
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
+import type { ToolApprovalTarget } from "@prismshadow/penguin-core/interfaces";
 import type {
   GoalServerEvent,
   MessagesLiveTail,
@@ -60,6 +61,7 @@ import { seedPriorStats } from "./task-stats";
 export interface PendingApproval {
   toolCall: OmniMessage<ToolCallPayload>;
   origin?: string[];
+  approvalTarget?: ToolApprovalTarget;
 }
 
 /** Buffered stream event; `id` is the SSE event id (`<epoch>-<seq>`, null when unknown); `seeded` marks a live-tail fragment injected at replay time (never carried over into a later round's buffer — the new round refetches fresh fragments). */
@@ -272,6 +274,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         const toolCallId = ev.toolCall.payload.tool_call_id;
         const entry: PendingApproval = { toolCall: ev.toolCall };
         if (ev.origin) entry.origin = ev.origin;
+        if (ev.approvalTarget) entry.approvalTarget = ev.approvalTarget;
         pending.set(approvalKey(ev.origin, toolCallId), entry);
         // Resend scenario (reload / mid-stream join): sub-session messages
         // aren't in the parent Trace, so the tool card can be missing —

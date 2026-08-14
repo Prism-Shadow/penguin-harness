@@ -61,12 +61,13 @@ function approvalFakeSession(sessionId: string): RuntimeSession {
   return {
     sessionId,
     toolPermission: () => "rw",
+    toolApprovalTarget: () => ({ name: "mcp__github__create_issue", permission: "rw" }),
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
     skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
-      const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-sse" });
+      const tc = toolCall({ name: "call_tool", arguments: "{}", toolCallId: "tc-sse" });
       yield tc;
       const decision = await opts.approve(tc);
       yield approvalDecision(decision, "tc-sse");
@@ -128,9 +129,14 @@ describe("sse-stream", () => {
     const approval = JSON.parse(frames[1]!.data) as {
       type: string;
       toolCall: { payload: { tool_call_id: string } };
+      approvalTarget?: { name: string; permission?: string };
     };
     expect(approval.type).toBe("approval_request");
     expect(approval.toolCall.payload.tool_call_id).toBe("tc-sse");
+    expect(approval.approvalTarget).toEqual({
+      name: "mcp__github__create_issue",
+      permission: "rw",
+    });
 
     t.deps.manager.abortTask(SID);
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");

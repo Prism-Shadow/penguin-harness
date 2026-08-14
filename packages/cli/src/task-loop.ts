@@ -77,7 +77,10 @@ export async function runTask(
   let promptChain: Promise<unknown> = Promise.resolve();
   const interactivePrompt: ApproveFn = (tc) => {
     const result = promptChain.then(async () => {
-      opts.renderer.beginUserPrompt(tc);
+      opts.renderer.beginUserPrompt(
+        tc,
+        session.toolApprovalTarget(tc.payload.name, tc.payload.arguments),
+      );
       try {
         const decision = await basePrompt(tc);
         opts.renderer.noteApprovalDecision(tc, decision);
@@ -94,7 +97,7 @@ export async function runTask(
   };
   const approveByMode = makeApprove({
     mode: opts.mode ?? "allow-all",
-    toolPermission: (name) => session.toolPermission(name),
+    toolPermission: (name, rawArguments) => session.toolPermission(name, rawArguments),
     interactivePrompt,
   });
   // The auto-approval path (allow-all / deny-all / read-only approvals) has no prompt: it

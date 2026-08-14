@@ -20,6 +20,8 @@ import type {
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
   MCPServerConfig,
+  ToolApprovalTarget,
+  ToolExposure,
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core/interfaces";
@@ -862,6 +864,10 @@ export interface AgentConfigDto {
   schedules: AgentSchedulesConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
+  /** Model-facing tool exposure mode; `direct` preserves the historical behavior. */
+  toolExposure: ToolExposure;
+  /** Auto-mode MCP Schema threshold in estimated tokens; zero always selects the gateway. */
+  toolExposureThresholdTokens: number;
 }
 
 export interface AgentConfigResponse {
@@ -916,6 +922,8 @@ export interface AgentConfigUpdateRequest {
     schedules?: { enabled?: boolean; prompt?: string };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
+    toolExposure?: ToolExposure;
+    toolExposureThresholdTokens?: number;
   };
 }
 
@@ -1483,7 +1491,13 @@ export type ServerEvent =
    * Approval request escalated to a human: every call under always-ask, plus rw/unknown-permission
    * calls under read-only (see runtime/approvals.ts); pending approvals are resent on reconnect.
    */
-  | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
+  | {
+      type: "approval_request";
+      toolCall: OmniMessage<ToolCallPayload>;
+      origin?: string[];
+      /** Registry-resolved target for fixed gateways; never copied from model arguments. */
+      approvalTarget?: ToolApprovalTarget;
+    }
   /** Session run status flip (for toggling the input area and list); `queued` = queued follow-up count (see TaskCreateRequest.queueIfBusy). */
   | {
       type: "task_state";

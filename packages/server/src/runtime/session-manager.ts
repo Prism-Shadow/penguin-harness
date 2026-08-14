@@ -49,6 +49,7 @@ import type {
   SessionTitleResult,
   TextPayload,
   ThinkingLevelName,
+  ToolApprovalTarget,
 } from "@prismshadow/penguin-core";
 import type {
   PendingFollowUpInfo,
@@ -129,7 +130,8 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
-  toolPermission(name: string): "r" | "rw" | undefined;
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
+  toolApprovalTarget?(name: string, rawArguments?: string): ToolApprovalTarget | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
    * writes no history/Trace). Material defaults to what the Session collects itself
@@ -766,13 +768,18 @@ export class SessionManager {
       this.publishState(entry, "running");
       const approve = makeApprove({
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
+        toolPermission: (name, rawArguments) => entry.session.toolPermission(name, rawArguments),
+        toolApprovalTarget: (name, rawArguments) =>
+          entry.session.toolApprovalTarget?.(name, rawArguments),
         registry: entry.approvals,
         publishRequest: (pending) =>
           this.publishEvent(entry, {
             type: "approval_request",
             toolCall: pending.toolCall,
             ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+            ...(pending.approvalTarget !== undefined
+              ? { approvalTarget: pending.approvalTarget }
+              : {}),
           }),
       });
       const goalId = this.deps.goals?.create({
@@ -941,13 +948,18 @@ export class SessionManager {
     const approve = makeApprove({
       // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
       getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
+      toolPermission: (name, rawArguments) => entry.session.toolPermission(name, rawArguments),
+      toolApprovalTarget: (name, rawArguments) =>
+        entry.session.toolApprovalTarget?.(name, rawArguments),
       registry: entry.approvals,
       publishRequest: (pending) =>
         this.publishEvent(entry, {
           type: "approval_request",
           toolCall: pending.toolCall,
           ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+          ...(pending.approvalTarget !== undefined
+            ? { approvalTarget: pending.approvalTarget }
+            : {}),
         }),
     });
     const gen = entry.session.run(input, {

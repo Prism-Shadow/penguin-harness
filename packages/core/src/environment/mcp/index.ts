@@ -14,5 +14,13 @@ export type {
   ResolvedMCPTransport,
   ResolveMCPServersResult,
 } from "./config.js";
-export { MCP_TOOL_PREFIX, McpToolProvider, mcpToolName, renderCallToolResult } from "./provider.js";
+export {
+  DEFAULT_TOOL_EXPOSURE_THRESHOLD_TOKENS,
+  MCP_TOOL_PREFIX,
+  McpToolProvider,
+  TOOL_CALL_NAME,
+  TOOL_SEARCH_NAME,
+  mcpToolName,
+  renderCallToolResult,
+} from "./provider.js";
 export type { McpToolProviderOptions } from "./provider.js";

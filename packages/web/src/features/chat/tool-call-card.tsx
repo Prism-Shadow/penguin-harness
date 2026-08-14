@@ -199,6 +199,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const rootRef = useRef<HTMLDivElement>(null);
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
+  const approvalLabel = pending?.approvalTarget
+    ? `${item.name} → ${pending.approvalTarget.name}${
+        pending.approvalTarget.permission ? ` (${pending.approvalTarget.permission})` : ""
+      }`
+    : item.name || S.chat.unknownTool;
 
   const preview = previewArguments(item.name, item.argumentsText);
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
@@ -341,7 +346,7 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               ≥sm the row stays one line (the desktop column is wide enough in practice). */}
           <div className="mb-2 flex items-start gap-2 sm:items-center">
             <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-              {item.name || S.chat.unknownTool}
+              {approvalLabel}
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}
