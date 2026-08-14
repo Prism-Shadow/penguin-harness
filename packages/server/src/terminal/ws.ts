@@ -36,11 +36,19 @@ import type { TerminalSession } from "./session.js";
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
 /**
- * Cap on bytes queued towards one viewer. `ws.send` buffers without limit when the peer
- * cannot drain; a detached or slow viewer attached to a noisy shell would otherwise grow
- * server memory unboundedly, once per viewer.
+ * Per-viewer backpressure watermarks. `ws.send` queues without limit when the peer cannot
+ * drain, so a viewer more than HIGH_WATER behind stops receiving live output — the bytes
+ * keep feeding the server emulator, nothing of the session is lost — and once its socket
+ * drains below LOW_WATER it is repainted with one fresh Restore frame (the same
+ * self-contained repaint an attach uses) and live output resumes. Skipping ahead beats
+ * both alternatives: replaying megabytes the viewer could only fast-forward through, or
+ * disconnecting it (the client treats a closed stream as a dead pane, not a retry). The
+ * high watermark is therefore a LAG bound — how far behind a viewer may fall before it is
+ * fast-forwarded — and doubles as the per-viewer memory bound.
  */
-const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+const BACKPRESSURE_HIGH_WATER = 1024 * 1024;
+const BACKPRESSURE_LOW_WATER = 64 * 1024;
+const BACKPRESSURE_POLL_MS = 250;
 
 export interface TerminalWebSocketDeps {
   manager: TerminalManager;
@@ -85,24 +93,47 @@ function bindStream(
   ws.binaryType = "nodebuffer";
 
   const send = (bytes: Uint8Array): void => {
-    if (ws.readyState !== ws.OPEN) return;
-    ws.send(bytes);
-    // Backpressure: cut a lagging viewer off instead of buffering for it forever — a
-    // reattach rebuilds the exact screen from the server-side snapshot anyway.
-    if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
-      log(
-        `[terminal] stream ${session.id}: viewer too slow (${ws.bufferedAmount}B queued), disconnecting`,
-      );
-      ws.terminate();
-    }
+    if (ws.readyState === ws.OPEN) ws.send(bytes);
+  };
+
+  // Lagging-viewer state (see the watermark comment above): while desynced, this viewer's
+  // live output is dropped and a slow poll waits for its socket to drain for the resync.
+  let desynced = false;
+  let resyncTimer: ReturnType<typeof setInterval> | null = null;
+  const stopResyncPoll = (): void => {
+    if (resyncTimer) clearInterval(resyncTimer);
+    resyncTimer = null;
+  };
+
+  const sendOutput = (data: string): void => {
+    if (desynced) return; // dropped: the emulator keeps every byte; the resync repaints
+    send(encodeTerminalFrame({ opcode: TerminalStreamOpcode.Output, payload: data }));
+    if (ws.bufferedAmount <= BACKPRESSURE_HIGH_WATER) return;
+    desynced = true;
+    log(`[terminal] stream ${session.id}: viewer ${ws.bufferedAmount}B behind, pausing for resync`);
+    resyncTimer = setInterval(() => {
+      if (ws.readyState !== ws.OPEN) return stopResyncPoll();
+      if (ws.bufferedAmount > BACKPRESSURE_LOW_WATER) return;
+      stopResyncPoll();
+      desynced = false; // flip first: output parsed after this snapshot flows live again
+      try {
+        send(
+          encodeTerminalFrame({
+            opcode: TerminalStreamOpcode.Restore,
+            payload: session.restoreStream(),
+          }),
+        );
+      } catch {
+        // The session was reaped while this viewer lagged; the Exit frame (sent directly,
+        // never dropped) already told it the story.
+      }
+    }, BACKPRESSURE_POLL_MS);
   };
 
   // Buffers output until the Restore frame has been sent (see the attach sequence above).
   let restored = false;
   let preRestore = "";
-  const coalescer = new TerminalOutputCoalescer((data) => {
-    send(encodeTerminalFrame({ opcode: TerminalStreamOpcode.Output, payload: data }));
-  });
+  const coalescer = new TerminalOutputCoalescer(sendOutput);
 
   const unsubscribeOutput = session.onOutput((data) => {
     if (!restored) {
@@ -171,6 +202,7 @@ function bindStream(
   const teardown = (): void => {
     unsubscribeOutput();
     unsubscribeExit();
+    stopResyncPoll();
     coalescer.dispose();
     // Closing a view must not resize or kill the shell — only give up size ownership so the
     // next client to attach can claim it.
