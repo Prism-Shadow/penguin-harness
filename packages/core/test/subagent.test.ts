@@ -324,27 +324,36 @@ describe("run_subagent tool (foreground)", () => {
 });
 
 describe("run_subagent backgrounding + input_subagent", () => {
-  it("registers immediately, steers while running, interrupts one round, then starts a follow-up", async () => {
+  it("registers a foreground child immediately so the host can steer, stop, and restart it", async () => {
     const prompts: string[] = [];
     const steered: string[] = [];
     const runSignals: AbortSignal[] = [];
-    const session = new ManagedSubagentSession({
-      sessionId: HOP,
-      steer(prompt) {
-        steered.push(prompt);
-        return true;
+    const runner: SubagentRunner = {
+      async spawn() {
+        return {
+          sessionId: HOP,
+          steer(prompt) {
+            steered.push(prompt);
+            return true;
+          },
+          run: async function* ({ prompt, signal }: RunInput): AsyncGenerator<OmniMessage> {
+            prompts.push(prompt);
+            runSignals.push(signal!);
+            yield withOrigin(partialText("delta", prompt), HOP);
+            if (prompt === "first") await aborted(signal);
+          },
+          dispose() {},
+        };
       },
-      run: async function* ({ prompt, signal }: RunInput): AsyncGenerator<OmniMessage> {
-        prompts.push(prompt);
-        runSignals.push(signal!);
-        yield withOrigin(partialText("delta", prompt), HOP);
-        await aborted(signal);
-      },
-      dispose() {},
-    });
-    const { manager } = makeServices();
-    manager.register(session);
-    session.startRun("first");
+    };
+    const { services, manager } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    // Keep the real run_subagent collection window open. The child must already be visible to
+    // host controls; registering only after this promise settles would make the assertions below
+    // time out and catch the original regression.
+    const execution = collectWithReturn(
+      tool.execute({ prompt: "first", yield_time_ms: 10_000 }, CTX),
+    );
     await until(() => prompts.length === 1);
 
     expect(manager.list()[0]).toMatchObject({ sessionId: HOP, status: "running" });
@@ -352,15 +361,53 @@ describe("run_subagent backgrounding + input_subagent", () => {
     expect(steered).toEqual(["correct course"]);
     expect(manager.interrupt(HOP)).toBe(true);
     expect(manager.list()[0]!.status).toBe("stopping");
-    await until(() => !session.running);
+    const { result } = await execution;
+    expect(result).toMatchObject({ stopReason: "failed" });
+    expect(result?.note).toContain("subagent interrupted by user");
     expect(runSignals[0]!.aborted).toBe(true);
     expect(manager.list()[0]!.status).toBe("idle");
 
     expect(manager.sendMessage(HOP, "continue")).toBe("started");
-    await until(() => prompts.length === 2);
+    await until(() => prompts.length === 2 && manager.list()[0]?.status === "idle");
     expect(prompts).toEqual(["first", "continue"]);
     expect(runSignals[1]).not.toBe(runSignals[0]);
     expect(runSignals[1]!.aborted).toBe(false);
+  });
+
+  it("retains a child that finishes in the foreground and reuses the same Session", async () => {
+    const prompts: string[] = [];
+    let spawnCount = 0;
+    const runner: SubagentRunner = {
+      async spawn() {
+        spawnCount += 1;
+        return {
+          sessionId: HOP,
+          steer: () => false,
+          run: async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+            prompts.push(prompt);
+            yield withOrigin(partialText("delta", `answer:${prompt}`), HOP);
+          },
+          dispose() {},
+        };
+      },
+    };
+    const { services, manager } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    const { result } = await collectWithReturn(
+      tool.execute({ prompt: "first", yield_time_ms: 10_000 }, CTX),
+    );
+
+    const id = extractSubagentId(result);
+    expect(result).toMatchObject({ stopReason: "completed" });
+    expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
+    expect(manager.get(id)?.sessionId).toBe(HOP);
+    expect(manager.list()).toEqual([expect.objectContaining({ sessionId: HOP, status: "idle" })]);
+
+    expect(manager.sendMessage(HOP, "follow-up")).toBe("started");
+    await until(() => prompts.length === 2 && manager.list()[0]?.status === "idle");
+    expect(prompts).toEqual(["first", "follow-up"]);
+    expect(spawnCount).toBe(1);
+    expect(manager.get(id)?.sessionId).toBe(HOP);
   });
 
   it("routes messages to the host only outside a tool collection window", async () => {

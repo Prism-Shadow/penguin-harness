@@ -15,6 +15,7 @@ describe("subagent controls", () => {
   let outsiderCookie: string;
   let row: SessionRow;
   let child: BackgroundSubagentInfo;
+  let forcedMessageResult: "not_running" | null;
 
   beforeEach(async () => {
     t = await createTestApp();
@@ -37,6 +38,7 @@ describe("subagent controls", () => {
       startedAt: Date.parse("2026-08-14T01:00:01.000Z"),
       endedAt: null,
     };
+    forcedMessageResult = null;
     const runtime: RuntimeSession = {
       sessionId: SID,
       toolPermission: () => "rw",
@@ -49,6 +51,8 @@ describe("subagent controls", () => {
       listSubagents: () => [child],
       sendSubagentMessage: (sessionId) => {
         if (sessionId !== CHILD) return "not_found";
+        if (forcedMessageResult) return forcedMessageResult;
+        if (child.status === "stopping") return "stopping";
         return child.status === "idle" ? "started" : "steered";
       },
       interruptSubagent: (sessionId) => {
@@ -72,6 +76,37 @@ describe("subagent controls", () => {
     });
     expect(sent.status).toBe(202);
     expect(await sent.json()).toEqual({ delivery: "steered" });
+  });
+
+  it("starts a new turn on the same child when it is idle", async () => {
+    child = { ...child, status: "idle", endedAt: Date.now() };
+    const api = apiClient(t.app, cookie);
+    const sent = await api.post(`/api/sessions/${SID}/subagents/${CHILD}/messages`, {
+      text: "continue",
+    });
+
+    expect(sent.status).toBe(202);
+    expect(await sent.json()).toEqual({ delivery: "started" });
+  });
+
+  it("returns explicit 409 errors while the child is stopping or not yet steerable", async () => {
+    const api = apiClient(t.app, cookie);
+    child = { ...child, status: "stopping" };
+    const stopping = await api.post(`/api/sessions/${SID}/subagents/${CHILD}/messages`, {
+      text: "too soon",
+    });
+    expect(stopping.status).toBe(409);
+    expect(await stopping.json()).toMatchObject({ error: { code: "subagent_stopping" } });
+
+    child = { ...child, status: "running" };
+    forcedMessageResult = "not_running";
+    const notSteerable = await api.post(`/api/sessions/${SID}/subagents/${CHILD}/messages`, {
+      text: "startup race",
+    });
+    expect(notSteerable.status).toBe(409);
+    expect(await notSteerable.json()).toMatchObject({
+      error: { code: "subagent_not_steerable" },
+    });
   });
 
   it("interrupts idempotently and rejects blank/unknown child messages", async () => {
