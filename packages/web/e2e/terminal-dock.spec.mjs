@@ -286,6 +286,12 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   const header = page.locator('[data-testid="terminal-dock-header"]');
   const ready = page.locator('[data-testid="terminal-dock-status"][data-status="ready"]');
 
+  // Repositioning must not remount the terminal (a remount would drop the WebSocket and
+  // repaint the screen): remember the live xterm DOM node to compare after the moves.
+  await page.evaluate(() => {
+    window.__xtermBeforeMove = document.querySelector('[data-testid="terminal-dock"] .xterm');
+  });
+
   // Method 2: drag the header onto the "left" rectangle of the left/right container.
   let hb = await header.boundingBox();
   await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
@@ -312,8 +318,16 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
     );
   }
 
-  // The moved dock reattached the same shell (restore repaints it) and stays interactive.
+  // The move kept the very same terminal instance — same xterm DOM node, same connection,
+  // screen intact without any restore repaint — and it stays interactive.
   await expect(ready).toBeVisible({ timeout: 20000 });
+  expect(
+    await page.evaluate(
+      () =>
+        document.querySelector('[data-testid="terminal-dock"] .xterm') === window.__xtermBeforeMove,
+    ),
+    "xterm survived the reposition",
+  ).toBe(true);
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("LAYOUT_SHELL");
   await runInDock(page, "echo AFTER_MOVE_LEFT");
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("AFTER_MOVE_LEFT");

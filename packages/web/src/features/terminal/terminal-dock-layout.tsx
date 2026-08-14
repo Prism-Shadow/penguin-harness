@@ -34,9 +34,9 @@ export function dockHostRect(): DOMRect | null {
  * - the dock's rem sizes resolve against the current root font size (the app has a
  *   font-scale setting, so 26rem is not always 416px);
  * - the exact extent for the dock's current orientation comes from its own rect;
- * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): a
- *   side dock starts below it, and so does a top dock. The current dock's own strip is
- *   *not* chrome — it re-flows away on apply — so it is subtracted back out.
+ * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): every
+ *   dock position lives inside the layout row, which starts below that chrome, so the
+ *   row's own top IS the content top for all four candidates.
  */
 interface DockGeometry {
   host: DOMRect;
@@ -57,10 +57,8 @@ function measureDockGeometry(): DockGeometry | null {
   const dockWidth = !horizontal && dockRect ? dockRect.width : DOCK_WIDTH_REM * rootFont;
 
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? null;
-  const chromeTop = row
-    ? Math.max(0, row.top - host.top - (position === "top" && dockRect ? dockRect.height : 0))
-    : 0;
-  return { host, contentTop: host.top + chromeTop, dockHeight, dockWidth };
+  const contentTop = row ? Math.max(host.top, row.top) : host.top;
+  return { host, contentTop, dockHeight, dockWidth };
 }
 
 /** Resolves the drop candidate for a pointer position: widget rectangles first, then edge bands. */
