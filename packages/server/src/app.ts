@@ -83,6 +83,8 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { HotHost } from "./hot/host.js";
+import { hotRoutes } from "./hot/routes.js";
 import {
   createPreviewTokenSigner,
   hostOnly,
@@ -133,6 +135,8 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
+  /** Hot-updatable platform host (park/boot kernel; MVP demo tree: terminals + agents). */
+  hot: HotHost;
   /** Request log output (minimal one-liner); tests inject a noop. */
   log: (line: string) => void;
 }
@@ -338,6 +342,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
+    hot: new HotHost(config.root),
     log,
   };
 }
@@ -450,6 +455,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
+  app.route("/api/hot", hotRoutes(deps));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the

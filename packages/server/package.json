@@ -60,6 +60,7 @@
   },
   "files": [
     "dist",
+    "hot-assets",
     "web-dist",
     "LICENSE"
   ],
