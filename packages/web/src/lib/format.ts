@@ -253,6 +253,29 @@ export function formatRelativeDate(iso: string, locale: "zh" | "en"): string {
   return locale === "en" ? `updated ${days} days ago` : `${days} 天前更新`;
 }
 
+/**
+ * ISO timestamp → compact "how long ago from now" for narrow rows (the sidebar's
+ * per-conversation time): under a minute zh 「刚刚」 / en "now", then minute / hour /
+ * day steps — zh keeps the dictionary wording (`5 分钟前`), en stays ultra-short
+ * (`5m`, `3h`, `2d`) per the CLI-style abbreviation register. A week or older — or a
+ * future time (clock skew) — falls back to the absolute month-day (formatMonthDay);
+ * an unparsable value yields "" so callers hide the slot rather than show garbage.
+ */
+export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const diffMs = Date.now() - d.getTime();
+  if (diffMs < 0) return formatMonthDay(iso, locale);
+  const min = Math.floor(diffMs / 60_000);
+  if (min < 1) return locale === "en" ? "now" : "刚刚";
+  if (min < 60) return locale === "en" ? `${min}m` : `${min} 分钟前`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return locale === "en" ? `${hours}h` : `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return locale === "en" ? `${days}d` : `${days} 天前`;
+  return formatMonthDay(iso, locale);
+}
+
 /** ISO timestamp → local `HH:mm:ss` (inline display in the Trace timeline); returns the input unchanged if parsing fails. */
 export function formatTime(iso: string): string {
   const d = new Date(iso);

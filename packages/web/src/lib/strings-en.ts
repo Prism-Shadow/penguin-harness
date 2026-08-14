@@ -864,6 +864,26 @@ export const en: Strings = {
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
+    /** Session-list section header controls: search / list settings / mode-dependent create (the created object follows the grouping mode). */
+    searchSessions: "Search chats",
+    searchSessionsPlaceholder: "Search chats…",
+    searchClear: "Clear search",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "No matches among loaded chats",
+    listSettings: "List options",
+    groupModeSection: "Group by",
+    sortModeSection: "Sort by",
+    sortManual: "Manual order",
+    sortRecent: "Most recent",
+    newWorkspaceEntity: "New workspace",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "Workspace options",
+    renameWorkspace: "Rename workspace",
+    renameWorkspaceLabel: "Name",
+    renameWorkspaceHint: "Leave empty to use the folder name",
+    deleteWorkspace: "Remove workspace",
+    deleteWorkspaceConfirm: (name: string) =>
+      `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
@@ -1222,6 +1242,11 @@ Scenarios:
       `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "Chat options",
+    pinSession: "Pin",
+    unpinSession: "Unpin",
+    pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */

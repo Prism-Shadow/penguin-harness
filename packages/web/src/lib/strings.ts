@@ -819,6 +819,26 @@ export const zh = {
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按 Agent 分组",
+    /** Session-list section header controls: search / list settings / mode-dependent create (具体新建的对象按分组方式决定). */
+    searchSessions: "搜索会话",
+    searchSessionsPlaceholder: "搜索会话…",
+    searchClear: "清除搜索",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "已加载的会话中无匹配",
+    listSettings: "列表选项",
+    groupModeSection: "分组方式",
+    sortModeSection: "排序方式",
+    sortManual: "手动排序",
+    sortRecent: "最近更新",
+    newWorkspaceEntity: "新建工作区",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "工作区选项",
+    renameWorkspace: "重命名工作区",
+    renameWorkspaceLabel: "名称",
+    renameWorkspaceHint: "留空则使用目录名",
+    deleteWorkspace: "删除工作区",
+    deleteWorkspaceConfirm: (name: string) =>
+      `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
@@ -1173,6 +1193,11 @@ Benchmark：
     deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "对话选项",
+    pinSession: "置顶",
+    unpinSession: "取消置顶",
+    pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
