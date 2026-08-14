@@ -13,12 +13,37 @@ import type { TerminalInfo } from "./terminal-view";
 
 const POLL_MS = 30_000;
 
-/** Stable snapshot (same reference until contents change) for useSyncExternalStore. */
+const ORDER_KEY = "penguin.terminal.tabOrder";
+
+/** Raw live list as the server reports it (creation order). */
+let raw: TerminalInfo[] = [];
+/** Stable sorted snapshot (same reference until contents change) for useSyncExternalStore. */
 let terminals: TerminalInfo[] = [];
 let fingerprint = "";
 let inflight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * User-chosen tab order (ids), persisted. Presentation-only: ids the order does not know
+ * (new terminals, other devices) keep their creation order after the ranked ones.
+ */
+let order: string[] = (() => {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+})();
+
+function applyOrder(list: TerminalInfo[]): TerminalInfo[] {
+  const rank = new Map(order.map((id, index) => [id, index]));
+  return list
+    .map((t, index) => ({ t, key: rank.get(t.id) ?? order.length + index }))
+    .sort((a, b) => a.key - b.key)
+    .map((entry) => entry.t);
+}
 
 /**
  * Terminals the user just asked to kill, excluded from refresh results while the shell is
@@ -39,11 +64,30 @@ function isPendingKill(id: string): boolean {
 }
 
 function commit(next: TerminalInfo[]): void {
-  const nextFingerprint = JSON.stringify(next);
+  raw = next;
+  const sorted = applyOrder(next);
+  const nextFingerprint = JSON.stringify(sorted);
   if (nextFingerprint === fingerprint) return;
-  terminals = next;
+  terminals = sorted;
   fingerprint = nextFingerprint;
   for (const listener of [...listeners]) listener();
+}
+
+/** Persists a user-dragged tab order and re-sorts the snapshot. */
+export function setTerminalTabOrder(ids: string[]): void {
+  order = ids;
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+  } catch {
+    // Private-mode storage failures only cost persistence.
+  }
+  commit(raw);
+}
+
+/** Live title update from the attached client's own xterm (OSC parsed locally). */
+export function noteTerminalTitle(id: string, title: string): void {
+  if (!raw.some((t) => t.id === id && (t.title ?? "") !== title)) return;
+  commit(raw.map((t) => (t.id === id ? { ...t, title } : t)));
 }
 
 /** Live terminals, ordered by creation time (the server's list order). */
@@ -101,8 +145,8 @@ export function subscribeTerminals(listener: () => void): () => void {
  * so the count/tabs react to the user's own action instantly rather than after a re-fetch.
  */
 export function noteTerminalCreated(info: TerminalInfo): void {
-  if (terminals.some((t) => t.id === info.id)) return;
-  commit([...terminals, info]);
+  if (raw.some((t) => t.id === info.id)) return;
+  commit([...raw, info]);
 }
 
 /**
@@ -113,7 +157,7 @@ export function noteTerminalCreated(info: TerminalInfo): void {
  */
 export async function killTerminal(id: string): Promise<void> {
   pendingKills.set(id, Date.now() + 10_000);
-  commit(terminals.filter((t) => t.id !== id));
+  commit(raw.filter((t) => t.id !== id));
   try {
     await fetch(`/api/terminals/${encodeURIComponent(id)}`, {
       method: "DELETE",

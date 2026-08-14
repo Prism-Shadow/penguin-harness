@@ -275,6 +275,69 @@ test("dock tabs: list every shell, switch between them, kill one", async ({ page
   await expect(tabs).toHaveCount(1, { timeout: 15000 });
 });
 
+test("tab interactions: reorder by drag, live title, detach keeps the dock", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "TAB_I_A");
+  await runInDock(page, "echo FIRST_TAB_MARK");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("FIRST_TAB_MARK");
+
+  await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+  await waitForDockShell(page, "TAB_I_B");
+  const tabs = page.locator('[data-testid="terminal-tab"]');
+  await expect(tabs).toHaveCount(2, { timeout: 5000 });
+
+  // The "+" lives outside the scrollable strip, so it stays reachable however many tabs.
+  await expect(page.locator('[data-testid="terminal-dock-new-shell"]')).toBeVisible();
+
+  // Live title: the shell's OSC title lands on the active tab's label (sleep keeps the
+  // title up until the assertion has run — the next prompt may reset it).
+  await runInDock(page, "printf '\\033]0;LIVE_TITLE_X\\007'; sleep 3");
+  await expect(tabs.last()).toContainText("LIVE_TITLE_X", { timeout: 5000 });
+  const titledId = await tabs.last().getAttribute("data-terminal-id");
+
+  // Reorder: drag the titled tab (B, currently last) in front of A.
+  const ab = await tabs.first().boundingBox();
+  const bb = await tabs.last().boundingBox();
+  await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ab.x + 4, ab.y + ab.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(tabs.first()).toHaveAttribute("data-terminal-id", titledId);
+
+  // The order persists across a reload.
+  await page.reload();
+  await expect(dock(page)).toBeVisible({ timeout: 20000 });
+  await expect(tabs).toHaveCount(2, { timeout: 15000 });
+  await expect(tabs.first()).toHaveAttribute("data-terminal-id", titledId);
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+
+  // Detach with another terminal open: the current shell goes to its own window and the
+  // dock STAYS, switched onto the remaining tab (its screen restores).
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.locator('[data-testid="terminal-dock-detach"]').click(),
+  ]);
+  expect(popup.url()).toMatch(/\/terminal\?id=/);
+  await expect(dock(page)).toBeVisible();
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-tab"][data-active="true"]')).not.toHaveAttribute(
+    "data-terminal-id",
+    titledId,
+  );
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("FIRST_TAB_MARK");
+});
+
 test("dock layout: drag to an edge or onto the drop targets, preview then apply", async ({
   page,
 }) => {
