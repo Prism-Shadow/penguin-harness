@@ -646,6 +646,48 @@ test("terminal clipboard: keyboard copy/paste, right-click, focus", async ({ pag
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^FOCUS_BY_CLICK$/m);
 });
 
+test("tab strip squeezes when crowded and wheel-scrolls", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  // A narrow left pane makes the strip overflow with few tabs.
+  await page.addInitScript(() => {
+    localStorage.setItem("penguin.terminal.dockPanes", JSON.stringify(["left"]));
+    localStorage.setItem("penguin.terminal.dockOpen", "1");
+  });
+  await page.goto(`${BASE}/chat`);
+  await expect(dock(page)).toBeVisible({ timeout: 20000 });
+  await waitForDockShell(page, "SQUEEZE_UP");
+
+  const tabs = page.locator('[data-testid="terminal-tab"]');
+  const soloWidth = (await tabs.first().boundingBox()).width;
+
+  for (let i = 2; i <= 6; i += 1) {
+    await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+    await expect(tabs).toHaveCount(i, { timeout: 10000 });
+  }
+
+  // Crowded tabs squeeze browser-style instead of holding full width.
+  const widths = await tabs.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().width),
+  );
+  expect(Math.max(...widths)).toBeLessThan(Math.max(soloWidth, 80));
+  expect(Math.min(...widths)).toBeGreaterThanOrEqual(38); // the number stays readable
+
+  // Once the squeeze floor is hit the strip overflows — and the wheel scrolls it.
+  const strip = page.locator('[data-testid="terminal-tab-strip"]');
+  const overflow = await strip.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeGreaterThan(0);
+  await strip.evaluate((el) => {
+    el.scrollLeft = 0;
+  });
+  await strip.hover();
+  await page.mouse.wheel(0, 240);
+  await expect
+    .poll(() => strip.evaluate((el) => el.scrollLeft), { timeout: 5000 })
+    .toBeGreaterThan(0);
+});
+
 test("hover menus: create opens on hover; terminal lists on both levels", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);

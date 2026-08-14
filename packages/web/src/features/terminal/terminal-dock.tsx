@@ -139,30 +139,32 @@ function TerminalTab(props: {
       data-testid="terminal-tab"
       data-terminal-id={terminal.id}
       data-active={active}
-      className={`group flex h-6 max-w-40 shrink-0 items-center rounded-md transition-colors duration-150 ${
+      className={`group relative flex h-6 min-w-10 max-w-40 items-center overflow-hidden rounded-md transition-colors duration-150 ${
         active
           ? "bg-white/15 text-white"
           : "text-white/50 hover:bg-white/10 hover:text-white/80"
       }`}
     >
+      {/* No shrink-0: crowded tabs squeeze browser-style down to min-w-10 — the label
+          clips hard (no ellipsis) so at the floor only the "N:" number stays readable. */}
       <button
         type="button"
         title={`${terminal.name} — ${terminal.cwd}`}
         onClick={props.onSelect}
-        className="flex h-full min-w-0 items-center pl-2 pr-1 text-left"
+        className="flex h-full w-full min-w-0 items-center px-2 text-left"
       >
-        <span className="block truncate">{label}</span>
+        <span className="block w-full overflow-hidden whitespace-nowrap">{label}</span>
       </button>
-      {/* Kill: this ends the shell itself (server-side), not just a view of it.
-          Hover-revealed on every tab — an always-on × reads as a stray button (worst when
-          the strip scrolls and only the ×'s sliver stays visible). */}
+      {/* Kill: this ends the shell itself (server-side), not just a view of it. A
+          hover-revealed OVERLAY (absolute, own backdrop), so it costs no width while tabs
+          squeeze and never reflows the strip on hover. */}
       <button
         type="button"
         title={S.terminal.killShell}
         aria-label={`${S.terminal.killShell}: ${label}`}
         data-testid="terminal-tab-kill"
         onClick={props.onKill}
-        className="mr-1 rounded p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-70 [&:hover]:opacity-100"
+        className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded bg-[#262b31] p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-100"
       >
         <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
           <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.6" strokeLinecap="round" />
@@ -249,6 +251,23 @@ export function TerminalDock({ position }: { position: DockPosition }) {
       ?.querySelector(`[data-terminal-id="${CSS.escape(currentId)}"]`)
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [currentId, paneTerminals]);
+
+  // Wheel over the strip scrolls it sideways (there is no vertical axis to scroll, and a
+  // trackpad's deltaX works too). Native non-passive listener: React's synthetic onWheel
+  // is passive, so preventDefault there cannot stop the page handling the event.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent): void => {
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0 || strip.scrollWidth <= strip.clientWidth) return;
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Adopt the shown terminal's pooled container into this pane's body.
   const bodyRef = useRef<HTMLDivElement | null>(null);
