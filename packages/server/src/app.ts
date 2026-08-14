@@ -426,6 +426,10 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (deps.desktop) {
     app.route("/api/desktop", desktopRoutes(deps));
   }
+  // Hot platform APIs authenticate themselves (local-agent Bearer token OR
+  // admin cookie session, see hot/routes.ts), so they mount outside the
+  // cookie-only authMiddleware below.
+  app.route("/api/hot", hotRoutes(deps));
 
   // Protected routes: cookie -> auth_session -> user.
   const auth = authMiddleware(deps.authService);
@@ -454,7 +458,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
-  app.route("/api/hot", hotRoutes(deps));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the

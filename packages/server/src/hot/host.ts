@@ -43,8 +43,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { AnyIface, AnyImpl, Instance } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
-import { envAuthorLlm } from "./author.js";
-import type { AuthorLlm } from "./author.js";
 import { HotResources } from "./resources.js";
 import type { PlatformApi } from "./platform-v1.js";
 import { platformV1 } from "./platform-v1.js";
@@ -106,10 +104,6 @@ const PLATFORM_ENTRIES = [
   "hot-platform.mts",
 ];
 
-/** Demo UI panel versions served to the web platform host (packages/server/hot-assets/). */
-const UI_PANEL_VERSIONS = ["v1", "v2"] as const;
-type UiPanelVersion = (typeof UI_PANEL_VERSIONS)[number];
-
 // Dev runs unbundled from src/hot/ (two levels above the package root's
 // hot-assets/), the tsup build bundles into dist/index.js (one level): probe both.
 const ASSETS_DIR = (() => {
@@ -146,15 +140,15 @@ interface LoadResult {
 export class HotHost {
   readonly resources = new HotResources();
   /**
-   * Pluggable skill-authoring model (prompt → completion). Defaults to the
-   * env-configured DeepSeek caller (null when no key); tests inject a fake,
-   * and project-model-config wiring can replace it without touching routes.
+   * Per-process credential for local agents (the hot-skill-authoring SKILL
+   * teaches agents to read it from $PENGUIN_HOME/hot/api.json): presenting it
+   * as a Bearer token is admin-equivalent for the hot APIs. File-permission
+   * gated (0600), regenerated every boot — nothing to persist or rotate.
    */
-  authorLlm: AuthorLlm | null = envAuthorLlm();
+  readonly apiToken = crypto.randomBytes(32).toString("hex");
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = platformV1.id;
-  private uiVersion: UiPanelVersion = "v1";
   private readonly hotDir: string;
   private readonly gitBin: string;
   private readonly compilerOption: string | null | undefined;
@@ -444,24 +438,18 @@ export class HotHost {
     return dir;
   }
 
-  // -- Demo UI panel (the web platform bundle in miniature) -----------------
-
-  uiManifest(): { version: string; rev: string } {
-    const content = this.readUiPanel().content;
-    return { version: this.uiVersion, rev: sha1(content).slice(0, 12) };
-  }
-
-  readUiPanel(): { content: string; rev: string } {
-    const content = fs.readFileSync(path.join(ASSETS_DIR, `panel.${this.uiVersion}.mjs`), "utf8");
-    return { content, rev: sha1(content).slice(0, 12) };
-  }
-
-  activateUiPanel(version: string): { version: string; rev: string } {
-    if (!UI_PANEL_VERSIONS.includes(version as UiPanelVersion)) {
-      throw new Error(`unknown ui panel version '${version}'`);
-    }
-    this.uiVersion = version as UiPanelVersion;
-    return this.uiManifest();
+  /**
+   * Publishes the local-agent credential file ($PENGUIN_HOME/hot/api.json,
+   * mode 0600): agents on this machine read { url, token } from it to call
+   * the hot APIs. Called once the HTTP listener is up (index.ts).
+   */
+  async writeApiFile(url: string): Promise<void> {
+    await fsp.mkdir(this.hotDir, { recursive: true });
+    await fsp.writeFile(
+      path.join(this.hotDir, "api.json"),
+      JSON.stringify({ url, token: this.apiToken }, null, 2),
+      { mode: 0o600 },
+    );
   }
 
   /** Agent modules resolve from the in-repo asset dir (the gist stand-in). */

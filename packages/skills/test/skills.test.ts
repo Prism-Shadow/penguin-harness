@@ -157,6 +157,7 @@ describe("loadSkillGroups / groupSkills", () => {
       "ollama",
       "llamafactory",
       "skill-porting",
+      "hot-skill-authoring",
     ]);
     expect(groups[2]!.title).toBe("AI App Development");
     expect(groups[2]!.titleZh).toBe("AI 应用开发");
@@ -226,6 +227,7 @@ describe("loadSkillGroups / groupSkills", () => {
           "ollama",
           "llamafactory",
           "skill-porting",
+          "hot-skill-authoring",
         ],
       },
       {
