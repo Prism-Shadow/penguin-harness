@@ -299,8 +299,18 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
     "data-pos",
     "left",
   );
+  const previewBox = await page.locator('[data-testid="dock-layout-preview"]').boundingBox();
   await page.mouse.up();
   await expect(dock(page)).toHaveAttribute("data-position", "left");
+
+  // The preview promised the real final region: the landed dock occupies (within a couple
+  // of px of border rounding) exactly the rectangle that was previewed.
+  const landedBox = await dock(page).boundingBox();
+  for (const side of ["x", "y", "width", "height"]) {
+    expect(Math.abs(landedBox[side] - previewBox[side]), `preview vs landed ${side}`).toBeLessThan(
+      3,
+    );
+  }
 
   // The moved dock reattached the same shell (restore repaints it) and stays interactive.
   await expect(ready).toBeVisible({ timeout: 20000 });

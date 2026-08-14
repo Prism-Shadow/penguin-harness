@@ -20,12 +20,47 @@ import type { DockPosition } from "./terminal-dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
 const EDGE_BAND = 0.45;
-/** Matches the dock's own sizes (h-72 / w-[26rem]) so the preview is truthful. */
-const DOCK_HEIGHT_PX = 288;
-const DOCK_WIDTH_PX = 416;
+/** The dock's rem sizes (h-72 / w-[26rem]) for the orientation it is not currently in. */
+const DOCK_HEIGHT_REM = 18;
+const DOCK_WIDTH_REM = 26;
 
 export function dockHostRect(): DOMRect | null {
   return document.querySelector("[data-dock-host]")?.getBoundingClientRect() ?? null;
+}
+
+/**
+ * Everything needed to draw the preview as the region the dock would REALLY occupy after
+ * the move — measured from the live layout, not assumed:
+ * - the dock's rem sizes resolve against the current root font size (the app has a
+ *   font-scale setting, so 26rem is not always 416px);
+ * - the exact extent for the dock's current orientation comes from its own rect;
+ * - `contentTop` excludes the host's non-dock chrome (mobile header, notice banner): a
+ *   side dock starts below it, and so does a top dock. The current dock's own strip is
+ *   *not* chrome — it re-flows away on apply — so it is subtracted back out.
+ */
+interface DockGeometry {
+  host: DOMRect;
+  contentTop: number;
+  dockHeight: number;
+  dockWidth: number;
+}
+
+function measureDockGeometry(): DockGeometry | null {
+  const host = dockHostRect();
+  if (!host) return null;
+  const rootFont = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const dockEl = document.querySelector<HTMLElement>("[data-testid='terminal-dock']");
+  const dockRect = dockEl?.getBoundingClientRect() ?? null;
+  const position = dockEl?.dataset.position;
+  const horizontal = position === "top" || position === "bottom";
+  const dockHeight = horizontal && dockRect ? dockRect.height : DOCK_HEIGHT_REM * rootFont;
+  const dockWidth = !horizontal && dockRect ? dockRect.width : DOCK_WIDTH_REM * rootFont;
+
+  const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? null;
+  const chromeTop = row
+    ? Math.max(0, row.top - host.top - (position === "top" && dockRect ? dockRect.height : 0))
+    : 0;
+  return { host, contentTop: host.top + chromeTop, dockHeight, dockWidth };
 }
 
 /** Resolves the drop candidate for a pointer position: widget rectangles first, then edge bands. */
@@ -48,18 +83,21 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
   return nearest[1] <= EDGE_BAND ? nearest[0] : null;
 }
 
-function previewStyle(rect: DOMRect, position: DockPosition): CSSProperties {
-  const height = Math.min(DOCK_HEIGHT_PX, rect.height);
-  const width = Math.min(DOCK_WIDTH_PX, rect.width);
+/** The exact region the dock would occupy after landing on `position`. */
+function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProperties {
+  const { host, contentTop } = geometry;
+  const contentHeight = host.bottom - contentTop;
+  const height = Math.min(geometry.dockHeight, contentHeight);
+  const width = Math.min(geometry.dockWidth, host.width);
   switch (position) {
     case "top":
-      return { left: rect.left, top: rect.top, width: rect.width, height };
+      return { left: host.left, top: contentTop, width: host.width, height };
     case "bottom":
-      return { left: rect.left, top: rect.bottom - height, width: rect.width, height };
+      return { left: host.left, top: host.bottom - height, width: host.width, height };
     case "left":
-      return { left: rect.left, top: rect.top, width, height: rect.height };
+      return { left: host.left, top: contentTop, width, height: contentHeight };
     case "right":
-      return { left: rect.right - width, top: rect.top, width, height: rect.height };
+      return { left: host.right - width, top: contentTop, width, height: contentHeight };
   }
 }
 
@@ -84,20 +122,22 @@ function DropTarget(props: { position: DockPosition; candidate: DockPosition | n
  * what the drag currently points at; `null` means "release changes nothing".
  */
 export function DockLayoutOverlay({ candidate }: { candidate: DockPosition | null }) {
-  const rect = dockHostRect();
-  if (!rect) return null;
+  const geometry = measureDockGeometry();
+  if (!geometry) return null;
+  const rect = geometry.host;
 
   return createPortal(
     <>
-      {/* Live preview of where the dock would land. pointer-events-none so hit-testing
-          underneath (elementFromPoint) keeps seeing the drop targets, not the preview. */}
+      {/* Live preview of the exact region the dock would occupy after the move.
+          pointer-events-none so hit-testing underneath (elementFromPoint) keeps seeing the
+          drop targets, not the preview. */}
       {candidate && (
         <div
           data-testid="dock-layout-preview"
           data-pos={candidate}
           aria-hidden
           className="pointer-events-none fixed z-[65] rounded-sm border border-sky-400/70 bg-sky-500/20"
-          style={previewStyle(rect, candidate)}
+          style={previewStyle(geometry, candidate)}
         />
       )}
 

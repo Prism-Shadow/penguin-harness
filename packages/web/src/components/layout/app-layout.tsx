@@ -304,7 +304,9 @@ export function AppLayout() {
             toolbar. Its slot follows the persisted dock position — exactly one of the four
             renders (the component itself mounts even while hidden, for the shortcut). */}
         {dockPosition === "top" && <TerminalDock />}
-        <div className="flex min-h-0 min-w-0 flex-1">
+        {/* data-dock-row: the drag preview derives the host's non-dock chrome height (mobile
+            header, banner) from this row's offset, so previews match the final layout. */}
+        <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
           {dockPosition === "left" && <TerminalDock />}
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
