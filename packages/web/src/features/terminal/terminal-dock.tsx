@@ -18,6 +18,7 @@
  * A reload restores both the dock (open state persists) and the shell (id persists).
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { S } from "../../lib/strings";
 import {
   DEFAULT_DOCK_HEIGHT_RATIO,
@@ -171,12 +172,15 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
  */
 function TerminalTab(props: {
   terminal: TerminalInfo;
+  /** Position in the strip; shown as a `1:`-style prefix (tmux convention) so tabs stay
+   * distinguishable even when several shells share a name or an identical OSC title. */
+  index: number;
   active: boolean;
   onSelect: () => void;
   onKill: () => void;
 }) {
   const { terminal, active } = props;
-  const label = terminal.title?.trim() || terminal.name;
+  const label = `${props.index + 1}: ${terminal.title?.trim() || terminal.name}`;
   return (
     <div
       data-testid="terminal-tab"
@@ -326,31 +330,45 @@ export function TerminalDock() {
   );
 
   /**
-   * Codex-style detach: hand the CURRENT terminal to its own window. With other terminals
-   * open the dock stays — it just moves to the newest remaining tab; only detaching the
-   * last terminal closes the dock. The detached shell stays in the tab strip (it is still
-   * a live terminal; the stream supports multiple attached clients).
+   * Codex-style detach of one terminal into its own window. With other terminals open the
+   * dock stays — detaching the current tab moves it to the newest remaining one; only
+   * detaching the last terminal closes the dock. The detached shell stays in the tab
+   * strip (it is still a live terminal; the stream supports multiple attached clients).
    */
+  const detachTerminal = useCallback(
+    (id: string) => {
+      window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
+      if (id !== info?.id && info !== null) return; // a background tab: nothing to switch
+      const next = terminals.filter((t) => t.id !== id).at(-1);
+      if (next) {
+        switchTo(next.id);
+      } else {
+        localStorage.removeItem(DOCK_ID_KEY);
+        setTerminalDockOpen(false);
+      }
+    },
+    [info, switchTo, terminals],
+  );
+
+  /** The header's detach button: detaches whatever terminal is currently shown. */
   const detach = useCallback(() => {
     const id = info?.id ?? localStorage.getItem(DOCK_ID_KEY);
-    if (!id) return;
-    window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
-    const next = terminals.filter((t) => t.id !== id).at(-1);
-    if (next) {
-      switchTo(next.id);
-    } else {
-      localStorage.removeItem(DOCK_ID_KEY);
-      setTerminalDockOpen(false);
-    }
-  }, [info, switchTo, terminals]);
+    if (id) detachTerminal(id);
+  }, [detachTerminal, info]);
 
   /**
-   * Tab drag-to-reorder, delegated on the strip: a pointerdown on a tab (not its kill
-   * button) arms a drag; past a small threshold, the pointer's x against the other tabs'
-   * midpoints re-inserts the dragged id and the order persists live. A press that never
-   * crosses the threshold stays a plain click (the tab's own select handler).
+   * Tab dragging, delegated on the strip. Two gestures share one drag:
+   * - sideways within the strip: reorder — the pointer's x against the other tabs'
+   *   midpoints re-inserts the dragged id and the order persists live;
+   * - pulled OUT of the strip (vertically past a slack band): detach — a floating hint
+   *   follows the pointer, and releasing opens that terminal in its own window.
+   * A press that never crosses the threshold stays a plain click (the tab's own select
+   * handler).
    */
-  const tabDrag = useRef<{ id: string; startX: number; started: boolean } | null>(null);
+  const tabDrag = useRef<{ id: string; startX: number; startY: number; started: boolean } | null>(
+    null,
+  );
+  const [dragOut, setDragOut] = useState<{ x: number; y: number } | null>(null);
 
   const onStripPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -358,17 +376,36 @@ export function TerminalDock() {
     if (target.closest("[data-testid='terminal-tab-kill']")) return;
     const tab = target.closest<HTMLElement>("[data-terminal-id]");
     if (!tab?.dataset.terminalId) return;
-    tabDrag.current = { id: tab.dataset.terminalId, startX: event.clientX, started: false };
+    tabDrag.current = {
+      id: tab.dataset.terminalId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+    };
+    // Capture immediately: a fast pull leaves the strip before any move event would have
+    // bubbled through it, and the drag would never see the pointer again. Captured, every
+    // move/up lands here — including the tap case, resolved as a select on pointerup.
+    event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
 
   const onStripPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const drag = tabDrag.current;
     if (!drag) return;
     if (!drag.started) {
-      if (Math.abs(event.clientX - drag.startX) < 6) return;
+      const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (moved < 6) return;
       drag.started = true;
-      event.currentTarget.setPointerCapture(event.pointerId);
     }
+
+    // Out of the strip (with a little slack): the gesture becomes detach, not reorder.
+    const strip = event.currentTarget.getBoundingClientRect();
+    const outside = event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20;
+    if (outside) {
+      setDragOut({ x: event.clientX, y: event.clientY });
+      return;
+    }
+    setDragOut(null);
+
     const tabEls = [
       ...event.currentTarget.querySelectorAll<HTMLElement>("[data-terminal-id]"),
     ];
@@ -388,8 +425,14 @@ export function TerminalDock() {
   }, []);
 
   const onStripPointerUp = useCallback(() => {
+    const drag = tabDrag.current;
     tabDrag.current = null;
-  }, []);
+    // Pointer capture retargets the browser's click to the strip, so the tab's own click
+    // handler never fires from a mouse press — the tap resolves here instead.
+    if (drag && !drag.started) selectTerminal(drag.id);
+    if (drag?.started && dragOut) detachTerminal(drag.id);
+    setDragOut(null);
+  }, [detachTerminal, dragOut, selectTerminal]);
 
   /**
    * Header drag-to-dock. Buttons and tabs keep their own gestures; a drag starts from any
@@ -537,10 +580,11 @@ export function TerminalDock() {
           onPointerCancel={onStripPointerUp}
           className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
         >
-          {terminals.map((terminal) => (
+          {terminals.map((terminal, index) => (
             <TerminalTab
               key={terminal.id}
               terminal={terminal}
+              index={index}
               active={terminal.id === info?.id}
               onSelect={() => selectTerminal(terminal.id)}
               onKill={() => onKillTerminal(terminal.id)}
@@ -595,6 +639,19 @@ export function TerminalDock() {
         className="min-h-0 flex-1 overflow-hidden px-2 py-1"
       />
       {drag.active && <DockLayoutOverlay candidate={drag.candidate} />}
+      {/* Floating hint while a tab is dragged out of the strip: release = own window. */}
+      {dragOut &&
+        createPortal(
+          <div
+            data-testid="tab-detach-hint"
+            aria-hidden
+            className="pointer-events-none fixed z-[70] rounded-md border border-white/20 bg-gray-900/95 px-2 py-1 text-xs text-white shadow-lg"
+            style={{ left: dragOut.x + 12, top: dragOut.y + 12 }}
+          >
+            {S.terminal.dragOutHint}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

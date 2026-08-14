@@ -516,6 +516,28 @@ describe("terminal manager lifecycle", () => {
     }
   }, 30_000);
 
+  it("auto-increments default names per user; explicit names pass through", async () => {
+    const manager = shortGraceManager(60_000);
+    try {
+      const request = (owner: string, name?: string) => ({
+        cwd: os.tmpdir(),
+        ownerUserId: owner,
+        shell: "/bin/sh",
+        ...(name !== undefined ? { name } : {}),
+      });
+      const base = path.basename(os.tmpdir());
+
+      expect((await manager.create(request("u1"))).info().name).toBe(base);
+      expect((await manager.create(request("u1"))).info().name).toBe(`${base} 2`);
+      expect((await manager.create(request("u1"))).info().name).toBe(`${base} 3`);
+      // Another user's numbering is their own, and explicit names are never rewritten.
+      expect((await manager.create(request("u2"))).info().name).toBe(base);
+      expect((await manager.create(request("u1", "custom"))).info().name).toBe("custom");
+    } finally {
+      manager.disposeAll();
+    }
+  }, 20_000);
+
   it("disposeAll kills the underlying shell processes", async () => {
     const manager = shortGraceManager();
     const session = await manager.create({

@@ -53,10 +53,20 @@ export class TerminalManager {
       );
     }
 
+    // Unnamed terminals auto-increment per user ("tmp", "tmp 2", …, Paseo-style): several
+    // shells in the same directory would otherwise be indistinguishable in every list.
+    let name = request.name;
+    if (name === undefined) {
+      const base = path.basename(cwd) || "terminal";
+      const taken = new Set(owned.map((session) => session.info().name));
+      name = base;
+      for (let n = 2; taken.has(name); n += 1) name = `${base} ${n}`;
+    }
+
     const options: CreateTerminalSessionOptions = {
       cwd,
       ownerUserId: request.ownerUserId,
-      ...(request.name !== undefined ? { name: request.name } : {}),
+      name,
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),

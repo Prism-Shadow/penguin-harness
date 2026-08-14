@@ -338,6 +338,55 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("FIRST_TAB_MARK");
 });
 
+test("tabs are numbered and drag-out detaches into a new window", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "NUM_A");
+  await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+  await waitForDockShell(page, "NUM_B");
+
+  // Index prefixes keep identical names/titles apart (and the server numbers default
+  // names too: both shells were created in the same directory).
+  const tabs = page.locator('[data-testid="terminal-tab"]');
+  await expect(tabs).toHaveCount(2, { timeout: 5000 });
+  await expect(tabs.first()).toContainText("1: ");
+  await expect(tabs.last()).toContainText("2: ");
+  const firstLabel = await tabs.first().innerText();
+  const lastLabel = await tabs.last().innerText();
+  expect(firstLabel).not.toBe(lastLabel);
+
+  // Drag the background tab (A) downward out of the strip: a hint appears; releasing
+  // opens that terminal in its own window while the dock stays as it was.
+  const draggedId = await tabs.first().getAttribute("data-terminal-id");
+  const fb = await tabs.first().boundingBox();
+  await page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(fb.x + fb.width / 2 + 10, fb.y + 120, { steps: 5 });
+  await expect(page.locator('[data-testid="tab-detach-hint"]')).toBeVisible();
+  const [popup] = await Promise.all([page.waitForEvent("popup"), page.mouse.up()]);
+  expect(popup.url()).toContain(`/terminal?id=${draggedId}`);
+  await expect(page.locator('[data-testid="tab-detach-hint"]')).toHaveCount(0);
+
+  // A background tab was detached: the dock keeps its current shell and both terminals
+  // stay listed (the detached one is still live).
+  await expect(dock(page)).toBeVisible();
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.last()).toHaveAttribute("data-active", "true");
+  // …and the popup really is terminal A, live.
+  await expect(
+    popup.locator('[data-testid="terminal-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect
+    .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 15000 })
+    .toContain("NUM_A");
+});
+
 test("dock layout: drag to an edge or onto the drop targets, preview then apply", async ({
   page,
 }) => {
