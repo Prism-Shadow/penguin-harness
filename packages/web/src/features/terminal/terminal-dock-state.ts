@@ -122,6 +122,19 @@ export function toggleTerminalDock(): void {
   setTerminalDockOpen(!isTerminalDockOpen());
 }
 
+// Ctrl+` (the Codex/VS Code binding), registered at module scope: a React-effect listener
+// leaves a window after first paint where the shortcut is silently dead — an effect runs
+// after paint, and a keypress can land in between. The store is page-global anyway; on
+// routes without the dock (login, /terminal) the toggle just flips hidden state.
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", (event) => {
+    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.key !== "`" && event.code !== "Backquote") return;
+    event.preventDefault();
+    toggleTerminalDock();
+  });
+}
+
 // --------------------------------------------------------------------------------- panes
 
 /** Open panes; stable snapshot (same reference until contents change). */
