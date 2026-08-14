@@ -527,12 +527,27 @@ describe("terminal manager lifecycle", () => {
       });
       const base = path.basename(os.tmpdir());
 
-      expect((await manager.create(request("u1"))).info().name).toBe(base);
-      expect((await manager.create(request("u1"))).info().name).toBe(`${base} 2`);
-      expect((await manager.create(request("u1"))).info().name).toBe(`${base} 3`);
+      const a = await manager.create(request("u1"));
+      const b = await manager.create(request("u1"));
+      const c = await manager.create(request("u1"));
+      expect(a.info().name).toBe(base);
+      expect(b.info().name).toBe(`${base} 2`);
+      expect(c.info().name).toBe(`${base} 3`);
+      expect([a.seq, b.seq, c.seq]).toEqual([1, 2, 3]);
       // Another user's numbering is their own, and explicit names are never rewritten.
-      expect((await manager.create(request("u2"))).info().name).toBe(base);
+      const other = await manager.create(request("u2"));
+      expect(other.info().name).toBe(base);
+      expect(other.seq).toBe(1);
       expect((await manager.create(request("u1", "custom"))).info().name).toBe("custom");
+
+      // Seqs are STABLE: a terminal keeps its number for life; ending one frees its
+      // number for the next create but never renumbers the survivors.
+      b.write("exit\n");
+      await waitUntil(() => !b.alive);
+      const d = await manager.create(request("u1"));
+      expect(d.seq).toBe(2);
+      expect(a.seq).toBe(1);
+      expect(c.seq).toBe(3);
     } finally {
       manager.disposeAll();
     }

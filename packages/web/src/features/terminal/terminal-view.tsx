@@ -20,6 +20,8 @@ import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./termin
 
 export interface TerminalInfo {
   id: string;
+  /** Stable per-user display number (assigned at creation, never renumbered). */
+  seq?: number;
   name: string;
   cwd: string;
   alive: boolean;
