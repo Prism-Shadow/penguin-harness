@@ -296,14 +296,16 @@ export function TerminalDock() {
       void killTerminal(id);
       if (id !== info?.id && info !== null) return; // a background tab: the strip just updates
       // The killed shell can still report alive for a moment (SIGHUP is async), so the
-      // reattach fallback must not run — target the survivor explicitly, or force-create.
+      // reattach fallback must not run — target the survivor explicitly.
       const remaining = terminals.filter((t) => t.id !== id);
       const survivor = remaining.at(-1);
       if (survivor) {
         switchTo(survivor.id);
       } else {
-        forceCreateRef.current = true;
-        switchTo(null);
+        // Killing the LAST terminal means "I'm done" — close the dock instead of spawning
+        // a replacement nobody asked for. Reopening creates afresh (the persistence rules).
+        localStorage.removeItem(DOCK_ID_KEY);
+        setTerminalDockOpen(false);
       }
     },
     [info, switchTo, terminals],

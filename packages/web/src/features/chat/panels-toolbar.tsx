@@ -248,6 +248,15 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                 {entry.pending && (
                   <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                 )}
+                {/* Live shell count on the terminal row, mirroring the toolbar badge. */}
+                {entry.key === "terminal" && terminalCount > 0 && (
+                  <span
+                    data-testid="panels-menu-terminal-count"
+                    className="shrink-0 rounded-full bg-gray-200 px-1.5 text-[10px] font-semibold leading-4 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                  >
+                    {terminalCount}
+                  </span>
+                )}
               </button>
               {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
               <button
