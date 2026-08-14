@@ -10,8 +10,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildAppDeps, createApp } from "../src/app.js";
 import { HotHost } from "../src/hot/host.js";
-import { apiClient, createTestApp, loginAdmin, makeTempRoot, provisionUser } from "./helpers.js";
+import {
+  apiClient,
+  createTestApp,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+  testConfig,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const HOT_ASSETS = fileURLToPath(new URL("../hot-assets/", import.meta.url));
@@ -88,7 +96,7 @@ describe("hot platform", () => {
     expect(body.impl).toBe("v1");
     expect(body.info.impl).toBe("platform-v1");
     expect(body.iface.name).toBe("platform");
-    expect(Object.keys(body.iface.children).sort()).toEqual(["agents", "terminals"]);
+    expect(Object.keys(body.iface.children).sort()).toEqual(["agents", "skills", "terminals"]);
   });
 
   it("surfaces the optional system capabilities (git, compiler)", async () => {
@@ -375,6 +383,188 @@ describe("hot host capability degradation", () => {
       }
     } finally {
       host.dispose();
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+});
+
+describe("hot skills and tools", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+
+  const COUNTER_SKILL = `
+    let count = context.state && typeof context.state.count === "number" ? context.state.count : 0;
+    return {
+      name: "counter-skill",
+      version: 1,
+      setup(ctx) {
+        ctx.registerTool({
+          name: "count",
+          description: "Increments and returns the running count.",
+          run: () => ({ count: ++count }),
+        });
+      },
+      park: () => ({ count }),
+    };
+  `;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    const admin = await loginAdmin(t.app);
+    api = apiClient(t.app, admin.cookie);
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("installs a skill (eval + context → arktype-validated object) and its tool is invocable", async () => {
+    const res = await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      skill: { name: string; version: number };
+      tools: { name: string; owner: string }[];
+    };
+    expect(body.skill).toEqual({ name: "counter-skill", version: 1 });
+    expect(body.tools).toEqual([
+      { name: "count", description: "Increments and returns the running count.", owner: "counter" },
+    ]);
+
+    const run = await api.post("/api/hot/tools/count/invoke", {});
+    expect(run.status).toBe(200);
+    expect((await run.json()) as { result: { count: number } }).toEqual({ result: { count: 1 } });
+  });
+
+  it("rejects scripts that fail eval or the arktype contract with 400", async () => {
+    // Does not parse as a function body.
+    expect((await api.post("/api/hot/skills", { id: "bad1", script: "return {" })).status).toBe(
+      400,
+    );
+    // Parses, but violates the contract (no setup function).
+    const noSetup = await api.post("/api/hot/skills", {
+      id: "bad2",
+      script: 'return { name: "x", version: 1 };',
+    });
+    expect(noSetup.status).toBe(400);
+    const body = (await noSetup.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("bad_request");
+    expect(body.error.message).toContain("setup");
+    // Nothing half-installed.
+    const list = (await (await api.get("/api/hot/skills")).json()) as { skills: unknown[] };
+    expect(list.skills).toEqual([]);
+  });
+
+  it("duplicate tool registration is loud and the half-installed skill is rolled back", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    const dup = await api.post("/api/hot/skills", { id: "copycat", script: COUNTER_SKILL });
+    expect(dup.status).toBe(400);
+    expect(((await dup.json()) as { error: { message: string } }).error.message).toContain(
+      "already registered",
+    );
+    const skills = (await (await api.get("/api/hot/skills")).json()) as {
+      skills: { id: string }[];
+    };
+    expect(skills.skills.map((s) => s.id)).toEqual(["counter"]);
+    // The original registration is untouched.
+    expect((await api.post("/api/hot/tools/count/invoke", {})).status).toBe(200);
+  });
+
+  it("reload swaps skill code while the parked state rides across", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    await api.post("/api/hot/tools/count/invoke", {});
+    await api.post("/api/hot/tools/count/invoke", {});
+
+    const v2 = COUNTER_SKILL.replace("version: 1", "version: 2").replace(
+      "run: () => ({ count: ++count })",
+      'run: () => ({ count: ++count, tag: "v2" })',
+    );
+    const reloaded = await api.post("/api/hot/skills/counter/reload", { script: v2 });
+    expect(reloaded.status).toBe(200);
+    expect(((await reloaded.json()) as { skill: { version: number } }).skill.version).toBe(2);
+
+    // New code, carried state: the count continues from 2.
+    const run = (await (await api.post("/api/hot/tools/count/invoke", {})).json()) as {
+      result: { count: number; tag: string };
+    };
+    expect(run.result).toEqual({ count: 3, tag: "v2" });
+  });
+
+  it("a bad reload leaves the running skill untouched (validated before removal)", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    const bad = await api.post("/api/hot/skills/counter/reload", { script: "return 42;" });
+    expect(bad.status).toBe(400);
+    expect((await api.post("/api/hot/tools/count/invoke", {})).status).toBe(200);
+  });
+
+  it("unloading a skill deregisters exactly its tools (self-cleaning effects)", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    expect((await api.delete("/api/hot/skills/counter")).status).toBe(200);
+    expect((await api.post("/api/hot/tools/count/invoke", {})).status).toBe(404);
+    const tools = (await (await api.get("/api/hot/tools")).json()) as { tools: unknown[] };
+    expect(tools.tools).toEqual([]);
+  });
+
+  it("skills and their tools survive a platform swap (registry reseeded from parked scripts)", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    await api.post("/api/hot/tools/count/invoke", {});
+    await api.post("/api/hot/platform/upgrade", { impl: "v2" });
+    // New platform instance, new registry, same skill: state carried, tool back.
+    const run = (await (await api.post("/api/hot/tools/count/invoke", {})).json()) as {
+      result: { count: number };
+    };
+    expect(run.result.count).toBe(2);
+  });
+
+  it("upgrading to a distro without a skills subtree is blocked while skills hold data", async () => {
+    await api.post("/api/hot/skills", { id: "counter", script: COUNTER_SKILL });
+    await api.post("/api/hot/platform/upgrade", { impl: "v2" });
+    // The v4 bundle declares no skills child: with a skill installed this is
+    // discarded data → blocked; the linear-state rule, observed end to end.
+    const res = await api.post("/api/hot/platform/upgrade", {
+      bundlePath: path.join(HOT_ASSETS, "platform-v4.bundle.mjs"),
+    });
+    const outcome = (await res.json()) as { status: string; dropped: string[] };
+    expect(outcome.status).toBe("blocked");
+    expect(outcome.dropped).toContain("$.children.skills");
+  });
+});
+
+describe("hot API network safety", () => {
+  it("defaults off on a non-loopback bind without HTTPS; https or the env override enable it", async () => {
+    const root = await makeTempRoot();
+    const config = { ...testConfig(root), host: "0.0.0.0" };
+    const deps = buildAppDeps(config, { log: () => undefined });
+    const app = createApp(deps);
+    try {
+      await deps.authService.seedAdmin();
+      const admin = await loginAdmin(app);
+
+      // Dangerous network (0.0.0.0 + plain http): 403 before anything runs.
+      const plain = await app.request("/api/hot/platform", { headers: { cookie: admin.cookie } });
+      expect(plain.status).toBe(403);
+      expect(((await plain.json()) as { error: { code: string } }).error.code).toBe(
+        "hot_api_disabled",
+      );
+
+      // HTTPS (as seen via the reverse proxy header): allowed.
+      const https = await app.request("/api/hot/platform", {
+        headers: { cookie: admin.cookie, "x-forwarded-proto": "https" },
+      });
+      expect(https.status).toBe(200);
+
+      // Explicit override: allowed even on plain http.
+      process.env.PENGUIN_HOT_API_UNSAFE = "1";
+      try {
+        const forced = await app.request("/api/hot/platform", {
+          headers: { cookie: admin.cookie },
+        });
+        expect(forced.status).toBe(200);
+      } finally {
+        delete process.env.PENGUIN_HOT_API_UNSAFE;
+      }
+    } finally {
+      deps.hot.dispose();
+      deps.channels.dispose();
+      deps.db.close();
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
