@@ -17,10 +17,15 @@
  * own handler sees itself not on top and stays; the next Escape closes the dialog. The
  * event is deliberately NOT stopped, so element-level Escape handlers inside the panel
  * (e.g. an input reverting its draft) still run on the same press.
+ *
+ * Keyboard: opening moves focus to the panel's first focusable item, Up/Down walk the
+ * items (wrapping), and closing via Escape returns focus to the trigger — without this a
+ * keyboard user could open a menu and never reach its contents, which is exactly what
+ * happened when the sidebar's row actions moved from bare buttons into these panels.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
@@ -73,6 +78,55 @@ export function Dropdown({
     maxHeight: number;
   } | null>(null);
 
+  /** The caller-rendered trigger's button element (focus target when Escape closes the menu). */
+  const triggerButton = useCallback(
+    () => ref.current?.querySelector<HTMLElement>("button") ?? null,
+    [],
+  );
+
+  /** The panel's focusable items, in DOM order (menu rows, and any input/link a panel carries). */
+  const panelItems = useCallback(
+    () =>
+      panelRef.current
+        ? [
+            ...panelRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+            ),
+          ]
+        : [],
+    [],
+  );
+
+  // Opening moves focus into the panel (first item), so the menu is operable from the
+  // keyboard at all. Runs after the panel has mounted, portal or in-flow alike.
+  useEffect(() => {
+    if (!open) return;
+    panelItems()[0]?.focus();
+  }, [open, panelItems]);
+
+  /**
+   * Up/Down walk the panel's items, wrapping at both ends (the standard menu idiom) —
+   * but only for plain menus. Two panels own their own keyboard model (model-select and
+   * the slash/skill pickers drive a highlighted-index list from an autofocused search
+   * box), so this yields whenever an inner handler already consumed the key, and
+   * whenever focus sits in a text field where the arrows belong to the caret.
+   */
+  const onPanelKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (e.defaultPrevented) return;
+    const focused = document.activeElement;
+    const tag = focused?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    const items = panelItems();
+    if (items.length === 0) return;
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    const step = e.key === "ArrowDown" ? 1 : -1;
+    const next =
+      at < 0 ? (step === 1 ? 0 : items.length - 1) : (at + step + items.length) % items.length;
+    items[next]?.focus();
+  };
+
   // Latest-callback refs: the open effect below must re-run ONLY on open/close — if it also
   // re-ran on a callback identity change, its esc-layer would pop and re-push, wrongly
   // jumping above any dialog opened in the meantime.
@@ -89,10 +143,13 @@ export function Dropdown({
       if (panelRef.current?.contains(target)) return;
       setOpenRef.current(false);
     };
-    // Escape closes only when this menu is the topmost esc layer (see the header comment).
+    // Escape closes only when this menu is the topmost esc layer (see the header comment)
+    // and hands focus back to the trigger — a keyboard user must not be stranded on a
+    // panel that just unmounted.
     const layer = pushEscLayer();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !isTopEscLayer(layer)) return;
+      triggerButton()?.focus();
       const esc = onEscapeRef.current;
       if (esc) esc();
       else setOpenRef.current(false);
@@ -181,6 +238,7 @@ export function Dropdown({
           createPortal(
             <div
               ref={panelRef}
+              onKeyDown={onPanelKeyDown}
               style={{
                 position: "fixed",
                 // Before the first measurement the panel is rendered invisibly at the
@@ -206,6 +264,7 @@ export function Dropdown({
         ) : (
           <div
             ref={panelRef}
+            onKeyDown={onPanelKeyDown}
             {...(menuStyle !== undefined ? { style: menuStyle } : {})}
             className={`absolute ${panelClass}`}
           >

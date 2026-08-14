@@ -82,6 +82,7 @@ export class SessionService {
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,
+      lastActiveAt: row.lastActiveAt,
       status: this.deps.manager.statusOf(row.sessionId),
       pendingApprovalCount: this.deps.manager.pendingApprovalCount(row.sessionId),
       pendingFollowUpCount: this.deps.manager.pendingFollowUpCount(row.sessionId),
@@ -356,6 +357,7 @@ export class SessionService {
       session.sessionId,
       isSessionMeta(metaMsg) ? (asSessionSource(metaMsg.payload.source) ?? null) : null,
     );
+    const createdAt = new Date().toISOString();
     const row: SessionRow = {
       sessionId: session.sessionId,
       projectId: args.projectId,
@@ -368,7 +370,9 @@ export class SessionService {
       // Everything created through this service is the Web App's (schedule runs included);
       // "cli" is stamped only by Trace adoption. NULL means a legacy row, treated as web.
       client: "web",
-      createdAt: new Date().toISOString(),
+      // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
+      lastActiveAt: createdAt,
+      createdAt,
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
@@ -437,6 +441,7 @@ export class SessionService {
     if (facts.provider === null || facts.modelId === null) return null;
     // Registration already narrowed the origin; record it in the registry (single source of truth).
     this.deps.sources.set(sessionId, facts.source);
+    const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
     const row: SessionRow = {
       sessionId,
       projectId,
@@ -451,7 +456,11 @@ export class SessionService {
       // (web-only) excludes these rows; the "show CLI sessions" preference includes them.
       client: "cli",
       hasTrace: true,
-      createdAt: sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString(),
+      createdAt,
+      // The CLI's own activity leaves no mark on this row (this server drives none of its
+      // runs), so an adopted Session reads as last-active at its creation time until it is
+      // resumed here; the Trace tail is not consulted (see SessionRow.lastActiveAt).
+      lastActiveAt: createdAt,
     };
     // Idempotent backfill: concurrent list calls may discover the same Session for the first time simultaneously (consistent with AgentsRepo's convention).
     this.deps.sessions.insertOrIgnore(row);

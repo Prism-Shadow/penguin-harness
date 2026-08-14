@@ -55,6 +55,17 @@ export function initialGroupMode(): GroupMode {
   return localStorage.getItem(GROUP_MODE_KEY) === "agent" ? "agent" : "workspace";
 }
 
+/**
+ * Entity the sidebar's "new" header button creates, decided by the grouping mode (the
+ * created object follows what the list is grouped by): agent mode → an Agent (the
+ * Agents page's existing create dialog), workspace mode → a Workspace (a new-chat
+ * draft — there is no Workspace entity on the server; a Workspace comes into being
+ * with the conversation created in it, chosen or auto-created on the draft card).
+ */
+export function newEntityForGroupMode(mode: GroupMode): "agent" | "workspace" {
+  return mode === "agent" ? "agent" : "workspace";
+}
+
 export function storeGroupMode(mode: GroupMode): void {
   localStorage.setItem(GROUP_MODE_KEY, mode);
 }

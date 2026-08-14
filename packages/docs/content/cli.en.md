@@ -44,6 +44,7 @@ In-REPL commands:
 | --- | --- |
 | any text while a Task runs | Mid-run steering: queued and delivered to the model between turns as a `[user_steering]` user message (a `»` acknowledgment echoes the text); rendering is held while you type so streamed output doesn't scribble over the line. If the Task finishes first, the line is sent as the next normal prompt |
 | `/compact` | Proactively compact the current context |
+| `/clear` | Start a fresh blank Session in place; the old Session stays on disk and can be resumed with `--resume` |
 | `/exit`, `/quit` | Quit |
 
 Ctrl-C is state-dependent:
