@@ -505,13 +505,9 @@ export function TerminalDock({ position }: { position: DockPosition }) {
   // ------------------------------------------------------------------------------- render
   const horizontal = isHorizontal(position);
   const ratio = paneRatio(position);
+  // No visible status indicator (the screen itself shows what the shell is doing); the
+  // machine-readable state stays on the root as data-status for tests and tooling.
   const status = viewState.status;
-  const detail = viewState.detail;
-  // The dot alone carries the status (colour-coded); words live in its tooltip only.
-  const statusTitle =
-    status === "exited" && detail
-      ? `${S.terminal.status.exited} — ${S.terminal.exitedWithCode(detail)}`
-      : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
   const overlayActive = headerDragState.active || tabDragState.active;
   const overlayCandidate = headerDragState.active
@@ -522,6 +518,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
     <div
       data-testid="terminal-dock"
       data-position={position}
+      data-status={status}
       style={horizontal ? { height: `${ratio * 100}%` } : { width: `${ratio * 100}%` }}
       className={`relative flex min-h-0 min-w-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
     >
@@ -567,6 +564,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           </svg>
         </span>
 
+
         {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
             reorder, drag out to move onto another edge. Scrolls when the shells outgrow
             the header. */}
@@ -592,29 +590,8 @@ export function TerminalDock({ position }: { position: DockPosition }) {
         </div>
         <span className="min-w-0 flex-1" />
 
-        {/* One right-hand cluster with uniform spacing: the status dot (a real circle,
-            flex-centered — a text ● sits on the font baseline and never looks centered),
-            a hairline divider, then the action buttons ending in close. */}
+        {/* Right-hand action cluster with uniform spacing, ending in close. */}
         <div className="flex shrink-0 items-center gap-1.5">
-          <span
-            data-testid="terminal-dock-status"
-            data-status={status}
-            title={statusTitle}
-            aria-label={statusTitle}
-            className="flex h-6 w-4 items-center justify-center"
-          >
-            <span
-              aria-hidden
-              className={`h-2 w-2 rounded-full ${
-                status === "ready"
-                  ? "bg-emerald-400"
-                  : status === "connecting"
-                    ? "bg-amber-400"
-                    : "bg-red-400"
-              }`}
-            />
-          </span>
-          <span aria-hidden className="h-3.5 w-px shrink-0 bg-white/10" />
           {/* Detach: box with an arrow escaping to the top right */}
           <DockButton
             label={S.terminal.detach}
