@@ -11,7 +11,7 @@
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
 #   PENGUIN_DOWNLOAD_BENCHMARK=1 enable same-version OSS/GitHub probe timing in auto mode
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
-#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
+#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
@@ -145,10 +145,12 @@ fi
 if [ -n "$DOWNLOAD_BASE_URL" ]; then
   DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL%/}"
   validate_https_url PENGUIN_DOWNLOAD_BASE_URL "$DOWNLOAD_BASE_URL"
-fi
-if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
-  DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
-  validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
+  if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
+    DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
+    validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
+  fi
+else
+  DOWNLOAD_FALLBACK_BASE_URL=""
 fi
 
 # --- Universal package precheck: system Node >= 24 (platform packages bundle the runtime, so exempt) ---

@@ -338,6 +338,14 @@ try {
   Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL
 
+  $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://example.invalid/releases/v0.0.0-test"
+  $fallbackWithoutBase = Invoke-OnlineCase "fallback-without-base" "primary-network" "" $true 3 $StampedInstaller
+  Assert-True (-not (($fallbackWithoutBase.Requests | Out-String) -match 'example\.invalid')) `
+    "fallback without base should not override auto/source fallback"
+  Assert-True (($fallbackWithoutBase.Requests | Out-String) -match 'github\.com/.*/releases/download/v0\.0\.0-test/penguin-win32-x64\.zip') `
+    "fallback without base did not keep the internal same-version GitHub fallback"
+  Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
+
   $forwarderOss = Invoke-ForwarderCase "forwarder-oss" "forwarder-oss" "auto" 2
   Assert-True ($forwarderOss.Requests[0] -like "*/latest.json") `
     "OSS forwarder did not request release metadata first"

@@ -10,7 +10,7 @@
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
 #   $env:PENGUIN_DOWNLOAD_BENCHMARK = "1" enable same-version OSS/GitHub probe timing in auto mode
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
-#   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." same-version fallback asset directory
+#   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." fallback for PENGUIN_DOWNLOAD_BASE_URL
 #
 # Each Release attaches exactly one Windows artifact: penguin-win32-x64.zip, a shallow installer
 # bundle holding install.cmd, this script, the program payload (payload.zip) and the payload's
@@ -339,6 +339,7 @@ $DownloadFallbackBaseUrl = if ($env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL) {
 } else {
   ""
 }
+if (-not $DownloadBaseUrl) { $DownloadFallbackBaseUrl = "" }
 $SourceMode = if ($env:PENGUIN_DOWNLOAD_SOURCE) {
   $env:PENGUIN_DOWNLOAD_SOURCE.ToLowerInvariant()
 } else {
@@ -378,7 +379,7 @@ $ResolvedReleaseVersion = if ($Version) {
 if ($DownloadBaseUrl) {
   Assert-HttpsUrl "PENGUIN_DOWNLOAD_BASE_URL" $DownloadBaseUrl
 }
-if ($DownloadFallbackBaseUrl) {
+if ($DownloadBaseUrl -and $DownloadFallbackBaseUrl) {
   Assert-HttpsUrl "PENGUIN_DOWNLOAD_FALLBACK_BASE_URL" $DownloadFallbackBaseUrl
 }
 

@@ -482,6 +482,12 @@ grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/d
   || fail_test "download fallback did not use the same-version GitHub source"
 ! grep -q "aliyuncs.com" "$WORK_DIR/download-fallback.output" \
   || fail_test "download fallback exposed the OSS URL in normal output"
+run_online_case fallback-without-base primary-network "" success 3 "" \
+  "https://example.invalid/releases/v0.0.0-test" "$STAMPED_INSTALLER"
+! grep -q "example.invalid" "$WORK_DIR/fallback-without-base.log" \
+  || fail_test "fallback without base should not override auto/source fallback"
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/fallback-without-base.log" \
+  || fail_test "fallback without base did not keep the internal same-version GitHub fallback"
 run_online_case outer-mismatch outer-sha-mismatch "" failure 3
 run_online_case inner-mismatch inner-sha-mismatch "" failure 3
 run_online_case latest-404 404 "" failure 2
