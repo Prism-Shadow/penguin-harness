@@ -32,7 +32,8 @@
     },
     "./kernel": {
       "types": "./dist/kernel/index.d.ts",
-      "import": "./dist/kernel/index.js"
+      "import": "./dist/kernel/index.js",
+      "default": "./dist/kernel/index.js"
     }
   },
   "main": "./dist/index.js",

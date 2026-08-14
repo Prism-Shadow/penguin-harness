@@ -5,13 +5,44 @@
  * blocked downgrades, agent code hot swap with portable state, dynamic
  * platform module loading, and the demo UI panel channel.
  */
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
+import { HotHost } from "../src/hot/host.js";
+import { apiClient, createTestApp, loginAdmin, makeTempRoot, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const HOT_ASSETS = fileURLToPath(new URL("../hot-assets/", import.meta.url));
+
+const hasGit = (() => {
+  try {
+    execFileSync("git", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Builds a two-file platform repo (entry + import) from the v3 demo source —
+ * the import proves the on-request compile really bundles to a single file.
+ * Returns the canonical upgrade descriptor: git specifier + revision.
+ */
+async function makeDistroRepo(dir: string): Promise<{ repo: string; revision: string }> {
+  await fs.mkdir(dir, { recursive: true });
+  const source = await fs.readFile(path.join(HOT_ASSETS, "platform-v3.demo.mjs"), "utf8");
+  const entry = `import { EDITION } from "./extras.mjs";\n${source.replace('"community-demo"', "EDITION")}`;
+  await fs.writeFile(path.join(dir, "hot-platform.mjs"), entry);
+  await fs.writeFile(path.join(dir, "extras.mjs"), 'export const EDITION = "community-demo";\n');
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  git("init", "--quiet");
+  git("add", "-A");
+  git("-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--quiet", "-m", "v3");
+  return { repo: pathToFileURL(dir).href, revision: git("rev-parse", "HEAD").trim() };
+}
 
 /** Polls until fn() is truthy (live child processes emit output asynchronously). */
 async function until(fn: () => Promise<boolean>, timeoutMs = 3000): Promise<void> {
@@ -72,7 +103,7 @@ describe("hot platform", () => {
     expect(upgraded.status).toBe(200);
     const outcome = (await upgraded.json()) as { status: string; mode: string; impl: string };
     // Both the platform ctx (1→2 adds theme) and each terminal (1→2 adds title) migrated.
-    expect(outcome).toEqual({ status: "ok", mode: "migrated", impl: "v2" });
+    expect(outcome).toEqual({ status: "ok", mode: "migrated", impl: "v2", warnings: [] });
 
     const info = (await (await api.get("/api/hot/platform")).json()) as {
       impl: string;
@@ -148,35 +179,59 @@ describe("hot platform", () => {
     expect(run.result.calls).toBe(2);
   });
 
-  it("loads a self-contained platform module from disk (platform.tar.gz in miniature)", async () => {
-    const created = await api.post("/api/hot/terminals", { command: "cat" });
-    const { id } = (await created.json()) as { id: string };
-    await api.post("/api/hot/platform/upgrade", { impl: "v2" });
+  it.skipIf(!hasGit)(
+    "upgrades from a git specifier + revision: checkout, compile to one file, swap",
+    async () => {
+      const created = await api.post("/api/hot/terminals", { command: "cat" });
+      const { id } = (await created.json()) as { id: string };
+      await api.post("/api/hot/platform/upgrade", { impl: "v2" });
 
-    const res = await api.post("/api/hot/platform/upgrade", {
-      modulePath: path.join(HOT_ASSETS, "platform-v3.demo.mjs"),
-    });
-    expect(res.status).toBe(200);
-    const outcome = (await res.json()) as { status: string; mode: string; impl: string };
-    expect(outcome).toEqual({ status: "ok", mode: "migrated", impl: "v3-demo" });
+      const { repo, revision } = await makeDistroRepo(path.join(t.root, "distro-repo"));
+      const res = await api.post("/api/hot/platform/upgrade", { repo, revision });
+      expect(res.status).toBe(200);
+      const outcome = (await res.json()) as { status: string; mode: string; impl: string };
+      expect(outcome).toEqual({ status: "ok", mode: "migrated", impl: "v3-demo", warnings: [] });
 
-    const info = (await (await api.get("/api/hot/platform")).json()) as {
-      info: { impl: string; edition: string };
-    };
-    expect(info.info.impl).toBe("v3-demo");
-    expect(info.info.edition).toBe("community-demo");
+      const info = (await (await api.get("/api/hot/platform")).json()) as {
+        info: { impl: string; edition: string };
+      };
+      expect(info.info.impl).toBe("v3-demo");
+      // EDITION arrives through the bundled second file: the compile really is single-file.
+      expect(info.info.edition).toBe("community-demo");
 
-    // The independently-authored distro reclaimed the same live process.
-    const term = (await (await api.get(`/api/hot/terminals/${id}`)).json()) as {
-      alive: boolean;
-      title: string | null;
-    };
-    expect(term.alive).toBe(true);
-    expect(term.title).toBe("[demo] cat");
+      // The independently-authored distro reclaimed the same live process.
+      const term = (await (await api.get(`/api/hot/terminals/${id}`)).json()) as {
+        alive: boolean;
+        title: string | null;
+      };
+      expect(term.alive).toBe(true);
+      expect(term.title).toBe("[demo] cat");
+    },
+  );
+
+  it("requests racing an upgrade are enqueued, never observably rejected", async () => {
+    const [first, second, list] = await Promise.all([
+      api.post("/api/hot/platform/upgrade", { impl: "v2" }),
+      api.post("/api/hot/platform/upgrade", { impl: "v2" }),
+      api.get("/api/hot/terminals"),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(list.status).toBe(200);
+    const outcomes = [
+      (await first.json()) as { status: string; mode: string },
+      (await second.json()) as { status: string; mode: string },
+    ];
+    expect(outcomes.every((o) => o.status === "ok")).toBe(true);
+    // Serialized on the queue: one is the real migration, the other a silent re-boot.
+    expect(outcomes.map((o) => o.mode).sort()).toEqual(["migrated", "silent"]);
   });
 
-  it("rejects unknown platform targets and unknown agent modules", async () => {
+  it("rejects unknown platform targets, malformed git upgrades, and unknown agent modules", async () => {
     expect((await api.post("/api/hot/platform/upgrade", { impl: "nope" })).status).toBe(400);
+    expect(
+      (await api.post("/api/hot/platform/upgrade", { repo: "file:///nowhere.git" })).status,
+    ).toBe(400);
     expect((await api.post("/api/hot/agents", { id: "x", module: "../etc/passwd" })).status).toBe(
       400,
     );
@@ -200,5 +255,30 @@ describe("hot platform", () => {
     };
     expect(m2.version).toBe("v2");
     expect(m2.rev).not.toBe(m1.rev);
+  });
+});
+
+describe("hot host without git", () => {
+  it("falls back to reading a working tree and surfaces a warning", async () => {
+    const root = await makeTempRoot();
+    const host = new HotHost(root, { gitBin: "penguin-missing-git-binary" });
+    try {
+      // A plain working tree (no git metadata needed for the fallback).
+      const tree = path.join(root, "tree");
+      await fs.mkdir(tree, { recursive: true });
+      const source = await fs.readFile(path.join(HOT_ASSETS, "platform-v3.demo.mjs"), "utf8");
+      await fs.writeFile(path.join(tree, "hot-platform.mjs"), source);
+
+      await host.ensure();
+      await host.upgradeTo({ impl: "v2" }); // v3's migration chain starts at 2
+      const outcome = await host.upgradeTo({ repo: tree, revision: "deadbeef" });
+      expect(outcome.status).toBe("ok");
+      expect(outcome.warnings).toHaveLength(1);
+      expect(outcome.warnings[0]).toMatch(/git is not installed/);
+      expect(outcome.warnings[0]).toMatch(/NOT verified/);
+    } finally {
+      host.dispose();
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   });
 });

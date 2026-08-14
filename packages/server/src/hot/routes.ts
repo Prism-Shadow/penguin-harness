@@ -1,17 +1,19 @@
 /**
  * /api/hot/*: the hot-platform demo surface (admin-only).
  *
- * The freeze middleware is the runtime half of the stop-the-world protocol:
- * while a swap is in flight every hot API answers 503 + Retry-After. The
- * routes themselves are runtime code — they only orchestrate through the
- * platform api and the keyed handles, so they survive impl swaps unchanged.
+ * The gate middleware is the runtime half of the stop-the-world protocol:
+ * requests arriving during a swap are ENQUEUED on the host's operation queue
+ * (awaiting waitIdle), never rejected — a client only ever observes latency,
+ * not the freeze. The routes themselves are runtime code — they only
+ * orchestrate through the platform api and the keyed handles, so they survive
+ * impl swaps unchanged.
  */
 import { Hono } from "hono";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { ifaceData } from "@prismshadow/penguin-core/kernel";
 import type { AppDeps } from "../app.js";
 import type { AppEnv } from "../auth/middleware.js";
-import { errorBody, HttpError } from "../http/errors.js";
+import { HttpError } from "../http/errors.js";
 import type { AgentSlotCtx } from "./agent-slot.js";
 import type { TerminalApiV2 } from "./terminal.js";
 import type { ShellProcResource } from "./resources.js";
@@ -24,11 +26,9 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!c.get("user").isAdmin) {
       throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
     }
-    if (hot.frozen && !c.req.path.endsWith("/platform/upgrade")) {
-      return c.json(errorBody("platform_upgrading", "Platform upgrade in progress."), 503, {
-        "Retry-After": "1",
-      });
-    }
+    // The upgrade endpoint enqueues internally; everything else waits out any
+    // in-flight swap here (unobservable freeze: latency, not errors).
+    if (!c.req.path.endsWith("/platform/upgrade")) await hot.waitIdle();
     await next();
   });
 
@@ -49,20 +49,26 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(inst.park());
   });
 
+  /**
+   * The upgrade descriptor: either a built-in demo bundle ({ impl: "v2" }) or
+   * the canonical git form ({ repo: "file:///home/abc/x.git", revision:
+   * "deadbeef" }) — checked out, compiled to a single file, and swapped in,
+   * strictly on request (nothing auto-triggers a reload).
+   */
   routes.post("/platform/upgrade", async (c) => {
-    const body = await c.req.json<{ impl?: string; modulePath?: string }>();
+    const body = await c.req.json<{ impl?: string; repo?: string; revision?: string }>();
+    if (body.repo !== undefined && body.revision === undefined) {
+      throw new HttpError(400, "bad_request", "A git upgrade needs both repo and revision.");
+    }
     let outcome;
     try {
       outcome = await hot.upgradeTo(
-        body.modulePath !== undefined ? { modulePath: body.modulePath } : (body.impl ?? "v2"),
+        body.repo !== undefined
+          ? { repo: body.repo, revision: body.revision! }
+          : { impl: body.impl ?? "v2" },
       );
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
-    }
-    if (outcome.status === "busy") {
-      return c.json(errorBody("platform_upgrading", "Another upgrade is in progress."), 503, {
-        "Retry-After": "1",
-      });
     }
     // Blocked is a first-class outcome, not an HTTP error: the body carries
     // status + the dropped/missing/invalid paths (input for the upper ladder

@@ -2,8 +2,9 @@
  * Hot-update MVP demo page (admin only, direct URL /hot — no sidebar entry).
  *
  * Three demos on one page, all driven by the same kernel:
- * - UI panel: code fetched from the server at runtime, hot-swapped on rev
- *   change (poll + manual activate), store state riding across via park/boot;
+ * - UI panel: code fetched from the server at runtime, hot-swapped strictly
+ *   on request (activate / check-for-updates buttons — nothing auto-triggers
+ *   a reload), store state riding across via park/boot;
  * - server platform: v1→v2 (migrated) and the blocked-downgrade path;
  * - terminal: created before an upgrade, provably the same process after.
  *
@@ -79,12 +80,11 @@ export function HotPage() {
     }
   }, []);
 
+  // Initial boot only — reloads are strictly request-driven (the buttons below).
   useEffect(() => {
     if (!user?.isAdmin) return;
     void syncPanel();
-    const timer = setInterval(() => void syncPanel(), 3000);
     return () => {
-      clearInterval(timer);
       panelRef.current?.dispose();
       panelRef.current = null;
     };
@@ -145,7 +145,8 @@ export function HotPage() {
         setTermOutput(r.output);
         setTermAlive(r.alive);
       } catch {
-        // Poll failures (e.g. the 503 freeze window) resolve on the next tick.
+        // Transient poll failures resolve on the next tick (upgrade windows
+        // only add latency: requests are enqueued server-side, not rejected).
       }
     };
     void poll();
@@ -197,6 +198,7 @@ export function HotPage() {
           </span>
           <Button onClick={() => void activateUi("v1")}>UI v1</Button>
           <Button onClick={() => void activateUi("v2")}>UI v2</Button>
+          <Button onClick={() => void syncPanel()}>Check for updates</Button>
         </div>
         {PanelComponent !== null && manifest !== null ? (
           <PanelComponent key={manifest.rev} />
