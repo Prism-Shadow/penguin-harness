@@ -260,10 +260,15 @@ test("dock tabs: list every shell, switch between them, kill one", async ({ page
   await expect(tabs).toHaveCount(1, { timeout: 15000 });
   expect(await dockScreenText(page)).toContain("IN_TAB_B");
 
-  // Killing the last tab (the current shell) force-creates a fresh one — the dock never
-  // strands the user without a terminal.
+  // Killing the last tab means "done with terminals": the dock closes rather than
+  // spawning a replacement nobody asked for.
   await tabs.first().hover();
   await tabs.first().locator('[data-testid="terminal-tab-kill"]').click();
+  await expect(dock(page)).toBeHidden({ timeout: 15000 });
+
+  // Reopening starts fresh — nothing left to reattach.
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
   await waitForDockShell(page, "TAB_SHELL_C");
   expect(await dockScreenText(page)).not.toContain("IN_TAB_B");
   await expect(tabs).toHaveCount(1, { timeout: 15000 });
@@ -413,6 +418,59 @@ test("dock resize: drag the boundary; the ratio survives reposition and reload",
   expect(Math.abs(resetBox.height - row.height * 0.4), "double-click reset").toBeLessThan(10);
 });
 
+test("terminal clipboard: keyboard copy/paste, right-click, focus", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "CLIP_SHELL");
+
+  // Copy: double-click selects the word, Ctrl+Shift+C puts it on the clipboard.
+  await runInDock(page, "echo COPY_ME_TOKEN");
+  await expect
+    .poll(() => dockScreenText(page), { timeout: 15000 })
+    .toMatch(/^COPY_ME_TOKEN$/m);
+  await dock(page).locator(".xterm-rows").getByText("COPY_ME_TOKEN").last().dblclick();
+  await page.keyboard.press("Control+Shift+C");
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()), { timeout: 10000 })
+    .toContain("COPY_ME_TOKEN");
+
+  // Paste via Ctrl+Shift+V (rides the browser's native paste event — exactly once).
+  await page.evaluate(() => navigator.clipboard.writeText("echo PASTE_VIA_KEYS"));
+  await dock(page).locator(".xterm-screen").click();
+  await page.keyboard.press("Control+Shift+V");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("echo PASTE_VIA_KEYS");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^PASTE_VIA_KEYS$/m);
+  // …exactly once: the command line appears a single time before its output.
+  expect((await dockScreenText(page)).match(/echo PASTE_VIA_KEYS/g)).toHaveLength(1);
+
+  // Right-click with no selection pastes (and the page context menu is suppressed —
+  // if it opened, the keystrokes below would land in the menu, not the shell). The
+  // async-clipboard read means the text lands a beat later; wait before executing.
+  await page.evaluate(() => navigator.clipboard.writeText("echo PASTE_VIA_MOUSE"));
+  await dock(page).locator(".xterm-screen").click({ button: "right" });
+  await expect
+    .poll(() => dockScreenText(page), { timeout: 15000 })
+    .toContain("echo PASTE_VIA_MOUSE");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^PASTE_VIA_MOUSE$/m);
+
+  // Focus mechanism: clicking the view's padding (outside the xterm screen itself) still
+  // routes subsequent typing into the shell.
+  const view = dock(page).locator(".xterm").locator("..");
+  const vb = await view.boundingBox();
+  await page.mouse.click(vb.x + vb.width - 4, vb.y + vb.height - 4); // bottom-right padding
+  await page.keyboard.type("echo FOCUS_BY_CLICK");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^FOCUS_BY_CLICK$/m);
+});
+
 test("terminal count badge and last-opened persistence", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
@@ -449,6 +507,11 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
   await expect(
     page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
   ).toBeVisible();
+
+  // The dropdown's terminal row carries the same live count.
+  await page.locator('[data-testid="panels-all"]').click();
+  await expect(page.locator('[data-testid="panels-menu-terminal-count"]')).toHaveText("1");
+  await page.keyboard.press("Escape");
 
   // Opening the terminal attaches the existing (last-opened) shell instead of creating a
   // second one: its marker is on the dock screen and the count stays 1.

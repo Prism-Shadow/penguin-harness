@@ -116,22 +116,85 @@ export function TerminalView({ ensure, onStatus, onInfo, className }: TerminalVi
       term.open(container);
       fit.fit();
 
-      // Ctrl+Shift+C / Ctrl+Shift+V: the terminal convention, since plain Ctrl+C has to
-      // stay SIGINT. Returning false stops xterm from also forwarding the key to the pty.
+      /** Copies the active selection and clears it — the visual ack that the copy happened. */
+      const copySelection = (): void => {
+        const selection = term.getSelection();
+        if (!selection) return;
+        void navigator.clipboard?.writeText(selection).catch(() => {});
+        term.clearSelection();
+      };
+      /** Async-clipboard paste (the paths where no native paste event exists). */
+      const pasteFromClipboard = (): void => {
+        void navigator.clipboard
+          ?.readText()
+          .then((text) => text && term.paste(text))
+          .catch(() => {}); // permission denied / insecure context: nothing to paste
+      };
+
+      /**
+       * Terminal clipboard keys (the Windows Terminal / VS Code conventions — the single
+       * Ctrl+Shift+C of the first cut was unreliable: Chrome grabs it for DevTools):
+       * - copy: Ctrl+Shift+C, Ctrl+Insert, or plain Ctrl+C while a selection exists
+       *   (SIGINT still goes through when nothing is selected);
+       * - paste: Ctrl+V, Ctrl+Shift+V and Shift+Insert all ride the browser's NATIVE paste
+       *   event into xterm's textarea (no clipboard permission involved) — the browser
+       *   fires `paste` for every one of these, so returning false (skip xterm's own key
+       *   handling, keep the browser default) is the whole implementation; calling the
+       *   async clipboard API here as well double-pastes.
+       */
       term.attachCustomKeyEventHandler((event) => {
-        if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
+        if (event.type !== "keydown") return true;
         const key = event.key.toLowerCase();
-        if (key === "c") {
-          const selection = term.getSelection();
-          if (selection) void navigator.clipboard?.writeText(selection);
+        const copyCombo =
+          (event.ctrlKey && event.shiftKey && key === "c") ||
+          (event.ctrlKey && !event.shiftKey && event.key === "Insert") ||
+          (event.ctrlKey && !event.shiftKey && !event.altKey && key === "c" && term.hasSelection());
+        if (copyCombo) {
+          copySelection();
           return false;
         }
-        if (key === "v") {
-          void navigator.clipboard?.readText().then((text) => text && term.paste(text));
-          return false;
+        const pasteCombo =
+          (event.ctrlKey && !event.altKey && key === "v") ||
+          (!event.ctrlKey && event.shiftKey && event.key === "Insert");
+        if (pasteCombo) {
+          return false; // native paste path (see above)
         }
         return true;
       });
+
+      /**
+       * Terminal mouse conventions. All of these step aside when a full-screen app (vim,
+       * htop) has turned mouse tracking on — the app owns the pointer then, and xterm
+       * forwards the events as escape codes.
+       */
+      const listenerAbort = new AbortController();
+      const { signal } = listenerAbort;
+      const appOwnsMouse = (): boolean => term.modes.mouseTrackingMode !== "none";
+      container.addEventListener(
+        "contextmenu",
+        (event) => {
+          event.preventDefault(); // a terminal never shows the page's context menu
+          if (appOwnsMouse()) return;
+          // PuTTY-style right click: copy the selection if there is one, else paste.
+          if (term.hasSelection()) copySelection();
+          else pasteFromClipboard();
+        },
+        { signal },
+      );
+      container.addEventListener(
+        "mousedown",
+        (event) => {
+          // Middle click: paste (the X11 convention; browser autoscroll is useless here).
+          if (event.button === 1 && !appOwnsMouse()) {
+            event.preventDefault();
+            pasteFromClipboard();
+          }
+        },
+        { signal },
+      );
+      // Click-to-focus anywhere in the view, padding included — finishing a selection drag
+      // also lands here, which is fine: focusing xterm's textarea keeps the selection.
+      container.addEventListener("mouseup", () => term.focus(), { signal });
 
       term.onData((data) => {
         if (socket?.readyState === WebSocket.OPEN) {
@@ -194,6 +257,7 @@ export function TerminalView({ ensure, onStatus, onInfo, className }: TerminalVi
 
       return () => {
         disposed = true;
+        listenerAbort.abort();
         observer.disconnect();
         socket?.close();
         term.dispose();
