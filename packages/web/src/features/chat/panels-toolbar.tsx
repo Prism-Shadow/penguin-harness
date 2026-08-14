@@ -11,14 +11,15 @@
  * The open/close state itself lives with each panel's own hook/store — this component only
  * renders triggers, so pinning/unpinning never touches panel state.
  */
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
-import { toggleTerminalDock } from "../terminal/terminal-dock-state";
-import { useTerminalDockOpen } from "../terminal/terminal-dock";
-import { liveTerminalCount, subscribeTerminals } from "../terminal/terminal-list";
+import { showTerminal, toggleTerminalDock } from "../terminal/terminal-dock-state";
+import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
+import { liveTerminalCount, liveTerminals, subscribeTerminals } from "../terminal/terminal-list";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -130,12 +131,106 @@ function TerminalCountBadge({ count }: { count: number }) {
   );
 }
 
+/**
+ * Hover-open disclosure: enter opens immediately, leave closes after a short grace so the
+ * pointer can travel from the trigger into the panel without the menu vanishing.
+ */
+function useHoverMenu(): {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  hoverProps: { onMouseEnter: () => void; onMouseLeave: () => void };
+} {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    },
+    [],
+  );
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  return {
+    open,
+    setOpen: (v: boolean) => {
+      cancelClose();
+      setOpen(v);
+    },
+    hoverProps: {
+      onMouseEnter: () => {
+        cancelClose();
+        setOpen(true);
+      },
+      onMouseLeave: () => {
+        cancelClose();
+        closeTimer.current = setTimeout(() => setOpen(false), 160);
+      },
+    },
+  };
+}
+
+/**
+ * Rows of live terminals; picking one brings it on screen in its pane. The pick fires on
+ * mousedown: the flyout variant lives outside the Dropdown's panel, whose outside-click
+ * dismissal would otherwise unmount the row before its click event ever dispatched.
+ */
+function TerminalListMenu({ onPick }: { onPick: (id: string) => void }) {
+  const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  if (terminals.length === 0) {
+    return (
+      <div className="px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500">
+        {S.terminal.noTerminals}
+      </div>
+    );
+  }
+  return (
+    <>
+      {terminals.map((terminal, index) => (
+        <button
+          key={terminal.id}
+          type="button"
+          data-testid="terminal-menu-item"
+          data-terminal-id={terminal.id}
+          onMouseDown={() => onPick(terminal.id)}
+          className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+        >
+          <span className="shrink-0 text-gray-500 dark:text-gray-400">
+            <PathGlyph d={NAV_ICONS.terminal} size={13} />
+          </span>
+          <span className="min-w-0 truncate">
+            {terminal.seq ?? index + 1}: {displayTitle(terminal.title) || terminal.name}
+          </span>
+        </button>
+      ))}
+    </>
+  );
+}
+
 export function PanelsToolbar(props: PanelsToolbarProps) {
   const terminalOpen = useTerminalDockOpen();
   const terminalCount = useSyncExternalStore(subscribeTerminals, liveTerminalCount);
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const createMenu = useHoverMenu();
+  const terminalMenu = useHoverMenu();
+  /** The second-level terminal list inside the create menu (row-hover scoped; the close
+   * grace lets the pointer cross the small gap between the row and the flyout). */
+  const terminalSub = useHoverMenu();
+  /** Row rect captured when the submenu opens; anchors the body-portaled flyout. */
+  const subAnchorRef = useRef<DOMRect | null>(null);
   const terminalPinned = pins.includes("terminal");
+  const menuOpen = createMenu.open;
+  const setMenuOpen = createMenu.setOpen;
+
+  const pickTerminal = (id: string): void => {
+    showTerminal(id);
+    setMenuOpen(false);
+    terminalMenu.setOpen(false);
+    terminalSub.setOpen(false);
+  };
 
   const togglePin = (key: PanelKey): void => {
     setPins((current) => {
@@ -182,57 +277,115 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
 
   return (
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
-      {/* Pinned panels: icon-only triggers in fixed order. */}
+      {/* Pinned panels: icon-only triggers in fixed order. The terminal trigger also
+          shows the terminal list on hover (first-level dropdown); its click still toggles
+          the dock. */}
       {entries
         .filter((entry) => pins.includes(entry.key))
-        .map((entry) => (
-          <button
-            key={entry.key}
-            type="button"
-            aria-expanded={entry.open}
-            onClick={entry.toggle}
-            title={entry.buttonLabel}
-            aria-label={entry.buttonLabel}
-            data-testid={`panel-btn-${entry.key}`}
-            className={triggerClass(entry.open)}
-          >
-            {entry.glyph()}
-            {entry.pending && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
-            {entry.key === "terminal" && <TerminalCountBadge count={terminalCount} />}
-          </button>
-        ))}
+        .map((entry) => {
+          const trigger = (
+            <button
+              key={entry.key}
+              type="button"
+              aria-expanded={entry.open}
+              onClick={() => {
+                entry.toggle();
+                if (entry.key === "terminal") terminalMenu.setOpen(false);
+              }}
+              title={entry.buttonLabel}
+              aria-label={entry.buttonLabel}
+              data-testid={`panel-btn-${entry.key}`}
+              className={triggerClass(entry.open)}
+            >
+              {entry.glyph()}
+              {entry.pending && (
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              )}
+              {entry.key === "terminal" && <TerminalCountBadge count={terminalCount} />}
+            </button>
+          );
+          if (entry.key !== "terminal" || terminalCount === 0) return trigger;
+          return (
+            <div key={entry.key} {...terminalMenu.hoverProps}>
+              <Dropdown
+                open={terminalMenu.open}
+                setOpen={terminalMenu.setOpen}
+                menuClass="right-0 top-full mt-1 w-56 origin-top-right"
+                button={trigger}
+              >
+                <div data-testid="terminal-hover-menu">
+                  <TerminalListMenu onPick={pickTerminal} />
+                </div>
+              </Dropdown>
+            </div>
+          );
+        })}
 
-      {/* "Create" dropdown: every panel, icon + name, with a pin toggle per row. */}
-      <Dropdown
-        open={menuOpen}
-        setOpen={setMenuOpen}
-        menuClass="right-0 top-full mt-1 w-56 origin-top-right"
-        button={
-          <button
-            type="button"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(!menuOpen)}
-            title={S.chat.panelsCreate}
-            aria-label={S.chat.panelsCreate}
-            data-testid="panels-all"
-            className={triggerClass(menuOpen)}
-          >
-            <PathGlyph d={CREATE_ICON} />
-            {!terminalPinned && <TerminalCountBadge count={terminalCount} />}
-          </button>
-        }
-      >
+      {/* "Create" menu: opens on hover (click keeps it open for touch/keyboard); every
+          panel as a row with a pin toggle, and the terminal row carries a second-level
+          terminal list on hover. */}
+      <div {...createMenu.hoverProps}>
+        <Dropdown
+          open={menuOpen}
+          setOpen={setMenuOpen}
+          menuClass="right-0 top-full mt-1 w-56 origin-top-right"
+          button={
+            <button
+              type="button"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+              title={S.chat.panelsCreate}
+              aria-label={S.chat.panelsCreate}
+              data-testid="panels-all"
+              className={triggerClass(menuOpen)}
+            >
+              <PathGlyph d={CREATE_ICON} />
+              {!terminalPinned && <TerminalCountBadge count={terminalCount} />}
+            </button>
+          }
+        >
         {entries.map((entry) => {
           const pinned = pins.includes(entry.key);
+          const hasSubmenu = entry.key === "terminal" && terminalCount > 0;
           return (
             <div
               key={entry.key}
-              className={`group mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              {...(hasSubmenu
+                ? {
+                    onMouseEnter: (event: React.MouseEvent<HTMLDivElement>) => {
+                      subAnchorRef.current = event.currentTarget.getBoundingClientRect();
+                      terminalSub.hoverProps.onMouseEnter();
+                    },
+                    onMouseLeave: terminalSub.hoverProps.onMouseLeave,
+                  }
+                : {})}
+              className={`group relative mx-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
                 entry.open
                   ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
                   : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
               }`}
             >
+              {/* Second-level terminal list, flying out beside the row on hover. Portaled
+                  to body: the Dropdown panel scrolls (overflow-y-auto), which would clip
+                  an in-panel flyout into an unclickable ghost. */}
+              {hasSubmenu &&
+                terminalSub.open &&
+                subAnchorRef.current &&
+                createPortal(
+                  <div
+                    data-testid="panels-menu-terminal-sub"
+                    {...terminalSub.hoverProps}
+                    style={{
+                      position: "fixed",
+                      top: subAnchorRef.current.top - 4,
+                      right: window.innerWidth - subAnchorRef.current.left + 4,
+                    }}
+                    className="z-[60] w-56 rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+                  >
+                    <TerminalListMenu onPick={pickTerminal} />
+                  </div>,
+                  document.body,
+                )}
               {/* The row body toggles the panel and dismisses the menu. */}
               <button
                 type="button"
@@ -292,7 +445,8 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             </div>
           );
         })}
-      </Dropdown>
+        </Dropdown>
+      </div>
     </div>
   );
 }

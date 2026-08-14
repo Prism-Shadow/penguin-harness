@@ -216,6 +216,13 @@ export function assignTerminalToPane(id: string, position: DockPosition): void {
   setPaneCurrent(position, id);
 }
 
+/** Brings a terminal on screen: its pane opens (dock and all) showing it. */
+export function showTerminal(id: string): void {
+  const position = paneOfTerminal(id);
+  ensurePaneOpen(position);
+  setPaneCurrent(position, id);
+}
+
 /** Drops assignment entries for terminals that no longer exist. */
 export function pruneAssignments(liveIds: ReadonlySet<string>): void {
   const next = Object.fromEntries(

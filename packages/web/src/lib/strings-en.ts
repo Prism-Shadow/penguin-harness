@@ -37,6 +37,8 @@ export const en: Strings = {
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
     resize: "Resize terminal panel",
+    /** Hover menu when the user has no live terminal yet. */
+    noTerminals: "No terminals",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",

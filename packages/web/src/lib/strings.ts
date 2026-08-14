@@ -39,6 +39,8 @@ export const zh = {
     killShell: "关闭此终端",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
     resize: "调整终端面板大小",
+    /** Hover menu when the user has no live terminal yet. */
+    noTerminals: "暂无终端",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
     close: "关闭",
