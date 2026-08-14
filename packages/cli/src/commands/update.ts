@@ -13,8 +13,9 @@
  *
  * Release discovery and installer download use the same environment contract as the public
  * installer entry point: an explicit PENGUIN_DOWNLOAD_BASE_URL has highest download priority;
- * otherwise auto prefers the OSS latest pointer and immutable release, then falls back to the same
- * GitHub tag, while oss and github are strict. The target-a-specific-release flag is spelled
+ * otherwise auto prefers the OSS latest pointer and immutable release when fetching the versioned
+ * installer, then lets that installer choose the large payload source for the same tag. The
+ * target-a-specific-release flag is spelled
  * `--release <tag>` rather than `--version <tag>`: commander's program-level
  * `-v, --version` intercepts a subcommand's own `--version` when it is written with a space, so
  * `penguin update --version 0.1.2` would silently print the CLI version and do nothing. A flag that
@@ -91,7 +92,7 @@ export interface InstallerCandidate {
   source: InstallerSource;
   baseUrl: string;
   url: string;
-  /** Same-tag payload fallback passed to install.sh after this candidate is selected. */
+  /** Same-tag payload fallback for an explicit configured mirror. */
   fallbackBaseUrl?: string;
 }
 
@@ -203,7 +204,9 @@ export function globalInstallCommand(
  *   the upgrade would silently relocate it;
  * - `--universal` is passed when the current install has no bundled `node/` directory, or the user
  *   would silently gain a runtime they deliberately did not install (and lose it in reverse);
- * - `PENGUIN_VERSION` pins the target when `--release` was given.
+ * - `PENGUIN_VERSION` pins the target when `--release` was given;
+ * - download base values are passed only when the caller deliberately sets them; empty strings
+ *   explicitly clear inherited values so install.sh can choose the large payload source itself.
  *
  * Pure so every combination is unit-testable; the caller supplies the two facts that need the
  * filesystem (`installDir`, `hasBundledNode`).
@@ -228,6 +231,22 @@ export function buildInstallerInvocation(opts: {
   if (opts.downloadFallbackBaseUrl !== undefined)
     env.PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = opts.downloadFallbackBaseUrl;
   return { args, env };
+}
+
+export function payloadSourceEnv(
+  candidate: InstallerCandidate,
+  explicitBase: boolean,
+): Pick<
+  Parameters<typeof buildInstallerInvocation>[0],
+  "downloadBaseUrl" | "downloadFallbackBaseUrl"
+> {
+  if (explicitBase) {
+    return {
+      downloadBaseUrl: candidate.baseUrl,
+      downloadFallbackBaseUrl: candidate.fallbackBaseUrl ?? "",
+    };
+  }
+  return { downloadBaseUrl: "", downloadFallbackBaseUrl: "" };
 }
 
 /** GitHub download URL for the installer of a given release (latest when no version is pinned). */
@@ -382,7 +401,6 @@ export function installerCandidates(
     source: "oss",
     baseUrl: ossBase,
     url: `${ossBase}/install.sh`,
-    ...(source === "auto" ? { fallbackBaseUrl: githubBase } : {}),
   };
   return source === "auto" ? [oss, github] : [oss];
 }
@@ -631,9 +649,7 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
         hasBundledNode,
         defaultInstallDir,
         version: target,
-        downloadBaseUrl: downloaded.candidate.baseUrl,
-        // Always override the inherited environment: an absent fallback must clear a stale one.
-        downloadFallbackBaseUrl: downloaded.candidate.fallbackBaseUrl ?? "",
+        ...payloadSourceEnv(downloaded.candidate, Boolean(explicitBaseValue)),
       });
       // Past this point the installer may delete the tree this process runs from. Everything below
       // is already-loaded code and already-resolved strings: no import, no file read, no re-entry.

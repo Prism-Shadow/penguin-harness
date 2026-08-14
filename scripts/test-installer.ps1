@@ -14,6 +14,7 @@ $OriginalOs = $env:OS
 $OriginalDownloadBaseUrl = $env:PENGUIN_DOWNLOAD_BASE_URL
 $OriginalDownloadFallbackBaseUrl = $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
 $OriginalDownloadSource = $env:PENGUIN_DOWNLOAD_SOURCE
+$OriginalDownloadBenchmark = $env:PENGUIN_DOWNLOAD_BENCHMARK
 $OriginalArchive = $env:PENGUIN_ARCHIVE
 $OriginalInstallDir = $env:PENGUIN_INSTALL_DIR
 $OriginalVersion = $env:PENGUIN_VERSION
@@ -24,6 +25,10 @@ $Fixture = @{
   BadInnerBundle = $null
   LegacyArchive = $null
   Installer = $Installer
+  Probe64 = $null
+  Probe64Hash = $null
+  Probe1M = $null
+  Probe1MHash = $null
 }
 $global:PenguinInstallerFixture = $Fixture
 
@@ -77,6 +82,9 @@ function global:Invoke-WebRequest {
   if ($f.Mode -eq "forwarder-auto-github" -and $Uri -like "*/latest.json") {
     throw "fixture OSS metadata failure"
   }
+  if ($f.Mode -eq "benchmark-missing-manifest" -and $Uri -like "*/release-download-manifest.tsv") {
+    throw "fixture missing release download manifest"
+  }
   switch -Wildcard ($Uri) {
     "*/latest.json" {
       if ($f.Mode -eq "forwarder-invalid-metadata") {
@@ -89,6 +97,24 @@ function global:Invoke-WebRequest {
           releaseBaseUrl = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"
         } | ConvertTo-Json | Set-Content -LiteralPath $OutFile -Encoding ascii
       }
+    }
+    "*/release-download-manifest.tsv" {
+      if ($f.Mode -eq "benchmark-small") {
+        @(
+          "penguin-release-download-manifest`t1`tv0.0.0-test"
+          "probe`tsmall`tprobe-64k.bin`t65536`t$($f.Probe64Hash)"
+          "probe`tlarge`tprobe-1m.bin`t1048576`t$($f.Probe1MHash)"
+          "asset`tpenguin-win32-x64.zip`t16777216`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $f.GoodBundle).Hash.ToLowerInvariant())"
+        ) | Set-Content -LiteralPath $OutFile -Encoding ascii
+      } else {
+        throw "unexpected manifest request: $Uri"
+      }
+    }
+    "*/probe-64k.bin" {
+      Copy-Item -LiteralPath $f.Probe64 -Destination $OutFile
+    }
+    "*/probe-1m.bin" {
+      Copy-Item -LiteralPath $f.Probe1M -Destination $OutFile
     }
     "*/install.ps1" {
       Copy-Item -LiteralPath $f.Installer -Destination $OutFile
@@ -120,7 +146,8 @@ function Invoke-OnlineCase(
   [string]$Version,
   [bool]$ShouldSucceed,
   [int]$ExpectedRequests,
-  [string]$InstallerPath = ""
+  [string]$InstallerPath = "",
+  [string]$Benchmark = "0"
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
@@ -128,10 +155,11 @@ function Invoke-OnlineCase(
   $Arguments = @{ InstallDir = $InstallDir }
   if ($Version) { $Arguments.Version = $Version }
   if (-not $InstallerPath) { $InstallerPath = $Installer }
+  $env:PENGUIN_DOWNLOAD_BENCHMARK = $Benchmark
   $Succeeded = $true
   $Output = @()
-  try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false }
-  Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result"
+  try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false; $Output += $_ }
+  Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result: $(($Output | Out-String).Trim())"
   Assert-True ($Fixture.Requests.Count -eq $ExpectedRequests) `
     "$Name made $($Fixture.Requests.Count) requests, expected $ExpectedRequests"
   [PSCustomObject]@{ InstallDir = $InstallDir; Requests = @($Fixture.Requests); Output = @($Output) }
@@ -175,7 +203,7 @@ try {
   # Keep the fixture tests away from the runner's user registry Path.
   $env:OS = "PenguinInstallerFixtureTest"
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL, Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL, `
-    Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, `
+    Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_DOWNLOAD_BENCHMARK, Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, `
     Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
   # --- Offline program archive: good install, then a failing upgrade must roll back. ---
@@ -219,6 +247,12 @@ try {
     Set-Content -LiteralPath "$($Fixture.BadInnerBundle).sha256" -Encoding ascii
 
   $Fixture.LegacyArchive = $GoodArchive
+  $Fixture.Probe64 = Join-Path $WorkDir "probe-64k.bin"
+  $Fixture.Probe1M = Join-Path $WorkDir "probe-1m.bin"
+  [IO.File]::WriteAllBytes($Fixture.Probe64, [byte[]]::new(65536))
+  [IO.File]::WriteAllBytes($Fixture.Probe1M, [byte[]]::new(1048576))
+  $Fixture.Probe64Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture.Probe64).Hash.ToLowerInvariant()
+  $Fixture.Probe1MHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture.Probe1M).Hash.ToLowerInvariant()
 
   # Model the release workflow's installer stamping without changing the source installer.
   $StampedInstaller = Join-Path $WorkDir "install-v0.0.0-test.ps1"
@@ -265,6 +299,18 @@ try {
     "stamped installer did not try its own OSS release first"
   Assert-True ($stampedFallback.Requests[1] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "stamped installer did not fall back to the same GitHub version"
+
+  $benchmarkSmall = Invoke-OnlineCase "benchmark-small" "benchmark-small" "" $true 5 $StampedInstaller "1"
+  Assert-True (($benchmarkSmall.Requests | Out-String) -match 'release-download-manifest\.tsv') `
+    "benchmark did not request the release download manifest"
+  Assert-True (($benchmarkSmall.Requests | Out-String) -match 'probe-64k\.bin') `
+    "benchmark did not request the small probe"
+  Assert-True ($benchmarkSmall.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
+    "small benchmark path did not keep the default OSS source"
+
+  $benchmarkMissing = Invoke-OnlineCase "benchmark-missing-manifest" "benchmark-missing-manifest" "" $true 4 $StampedInstaller "1"
+  Assert-True (($benchmarkMissing.Output | Out-String) -match 'Download source test was inconclusive') `
+    "missing benchmark manifest did not fall back to the compatible source policy"
 
   $env:PENGUIN_DOWNLOAD_SOURCE = "github"
   $stampedGitHub = Invoke-OnlineCase "stamped-github" "canonical" "" $true 2 $StampedInstaller
@@ -320,7 +366,7 @@ try {
     "pinned forwarder did not request the versioned installer"
   Assert-True ($pinnedForwarder.Requests[1] -like "*/releases/v0.0.0-test/penguin-win32-x64.zip") `
     "pinned installer did not keep the selected release version"
-  Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
+  Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_DOWNLOAD_BENCHMARK, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
   Invoke-OnlineCase "outer-mismatch" "outer-sha-mismatch" "" $false 3 | Out-Null
   Invoke-OnlineCase "inner-mismatch" "inner-sha-mismatch" "" $false 3 | Out-Null
@@ -348,6 +394,11 @@ try {
     Remove-Item Env:\PENGUIN_DOWNLOAD_SOURCE -ErrorAction SilentlyContinue
   } else {
     $env:PENGUIN_DOWNLOAD_SOURCE = $OriginalDownloadSource
+  }
+  if ($null -eq $OriginalDownloadBenchmark) {
+    Remove-Item Env:\PENGUIN_DOWNLOAD_BENCHMARK -ErrorAction SilentlyContinue
+  } else {
+    $env:PENGUIN_DOWNLOAD_BENCHMARK = $OriginalDownloadBenchmark
   }
   if ($null -eq $OriginalArchive) {
     Remove-Item Env:\PENGUIN_ARCHIVE -ErrorAction SilentlyContinue
