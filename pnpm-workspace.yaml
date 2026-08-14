@@ -20,6 +20,9 @@ syncInjectedDepsAfterScripts:
 allowBuilds:
   "@google/genai": true
   esbuild: true
+  # node-pty compiles its native pty binding (node-gyp) on install; without this the
+  # terminal server has no pty and every session fails to spawn.
+  node-pty: true
   protobufjs: true
   # electron's postinstall downloads the platform runtime binary; without this allow
   # entry pnpm skips it and `electron .` has nothing to launch.

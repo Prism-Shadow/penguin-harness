@@ -20,7 +20,7 @@ importers:
         version: file:packages/cli(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -56,7 +56,7 @@ importers:
         version: link:../core
       '@prismshadow/penguin-server':
         specifier: workspace:*
-        version: file:packages/server(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/server(supports-color@10.2.2)(zod@4.4.3)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -142,7 +142,7 @@ importers:
         version: file:packages/cli(supports-color@10.2.2)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: link:../server
@@ -276,10 +276,13 @@ importers:
         version: 2.0.12(hono@4.12.34)
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
+      '@xterm/headless':
+        specifier: ^5.5.0
+        version: 5.5.0
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -289,6 +292,9 @@ importers:
       hono:
         specifier: ^4.12.34
         version: 4.12.34
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
       smol-toml:
         specifier: ^1.3.0
         version: 1.6.1
@@ -298,6 +304,9 @@ importers:
       undici:
         specifier: ^7.29.0
         version: 7.29.0
+      ws:
+        specifier: ^8.18.3
+        version: 8.21.0
       yaml:
         specifier: ^2.5.0
         version: 2.9.0
@@ -305,6 +314,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -337,13 +349,22 @@ importers:
     dependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@shikijs/langs':
         specifier: ^4.3.1
         version: 4.3.1
       '@shikijs/themes':
         specifier: ^4.3.1
         version: 4.3.1
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: ^0.11.0
+        version: 0.11.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -1477,6 +1498,9 @@ packages:
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
 
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
+
   '@ungap/structured-clone@1.3.2':
     resolution: {integrity: sha512-5jsZFwgR5rTdKwidH9Qmat75RKwqfpKlWWB1frDkljN127mwqBu8K0PYo7/hFpF03IEJpfVPpCQDY/eDx3iHvA==}
 
@@ -1519,6 +1543,22 @@ packages:
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
     deprecated: this version has critical issues, please update to the latest version
+
+  '@xterm/addon-fit@0.10.0':
+    resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/addon-web-links@0.11.0':
+    resolution: {integrity: sha512-nIHQ38pQI+a5kXnRaTgwqSHnX7KE6+4SVoceompgHL26unAxdfP6IPqUTSYPQgSwM56hsElfoNrrW5V7BUED/Q==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/headless@5.5.0':
+    resolution: {integrity: sha512-5xXB7kdQlFBP82ViMJTwwEc3gKCLGKR/eoxQm4zge7GPBl86tCdI0IdPJjoKd8mUSFXz5V7i/25sfsEkP4j46g==}
+
+  '@xterm/xterm@5.5.0':
+    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -2803,6 +2843,9 @@ packages:
     resolution: {integrity: sha512-vLBWCKb+7LWsX+TbfzWOkw0W81m377tyx3hOweBTjO43CXZnRGS1/JPWs20fr0PgZyDXk6ROYrylsEycK8raDA==}
     engines: {node: '>=22.12.0'}
 
+  node-addon-api@7.1.1:
+    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
 
@@ -2822,6 +2865,9 @@ packages:
 
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
+
+  node-pty@1.1.0:
+    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
   node-releases@2.0.50:
     resolution: {integrity: sha512-J6l92tKHX6w8Jy5nO1Vuc01NoIiRGi/d6qBKVxh+IQ8Cr3b6HbVNfKiF8ZpFKufTwpwxMmce2W3iQZ861ZRyTg==}
@@ -4457,6 +4503,21 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
+  '@prismshadow/agenthub@0.4.4(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
+      '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
+      '@google/genai': 1.52.0(supports-color@10.2.2)
+      express: 4.22.2(supports-color@10.2.2)
+      openai: 6.42.0(ws@8.21.0)(zod@4.4.3)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/agenthub@0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
@@ -4475,12 +4536,44 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)
+      '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       '@prismshadow/penguin-skills': file:packages/skills
       commander: 13.1.0
       dotenv: 17.4.2
+      smol-toml: 1.6.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)':
+    dependencies:
+      '@modelcontextprotocol/client': 2.0.0
+      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      arktype: 2.2.3
+      smol-toml: 1.6.1
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@modelcontextprotocol/client': 2.0.0
+      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-skills': file:packages/skills
+      arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
     transitivePeerDependencies:
@@ -4507,24 +4600,48 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-skills': file:packages/skills
+      '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
       hono: 4.12.34
+      node-pty: 1.1.0
       smol-toml: 1.6.1
       tar: 7.5.22
       undici: 7.29.0
+      ws: 8.21.0
       yaml: 2.9.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
       - supports-color
       - utf-8-validate
-      - ws
+      - zod
+
+  '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 2.0.12(hono@4.12.34)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-skills': file:packages/skills
+      '@xterm/headless': 5.5.0
+      dotenv: 17.4.2
+      fflate: 0.8.3
+      hono: 4.12.34
+      node-pty: 1.1.0
+      smol-toml: 1.6.1
+      tar: 7.5.22
+      undici: 7.29.0
+      ws: 8.21.0
+      yaml: 2.9.0
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
       - zod
 
   '@prismshadow/penguin-skills@file:packages/skills': {}
@@ -5058,6 +5175,10 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 24.13.3
+
   '@ungap/structured-clone@1.3.2': {}
 
   '@vitejs/plugin-react@4.7.0(supports-color@10.2.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0))':
@@ -5115,6 +5236,18 @@ snapshots:
       tinyrainbow: 2.0.0
 
   '@xmldom/xmldom@0.8.13': {}
+
+  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-web-links@0.11.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/headless@5.5.0': {}
+
+  '@xterm/xterm@5.5.0': {}
 
   abbrev@4.0.0: {}
 
@@ -6752,6 +6885,8 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
+  node-addon-api@7.1.1: {}
+
   node-api-version@0.2.1:
     dependencies:
       semver: 7.8.5
@@ -6778,6 +6913,10 @@ snapshots:
       which: 6.0.1
 
   node-int64@0.4.0: {}
+
+  node-pty@1.1.0:
+    dependencies:
+      node-addon-api: 7.1.1
 
   node-releases@2.0.50: {}
 
