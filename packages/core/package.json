@@ -29,6 +29,10 @@
     "./model-catalog": {
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"
+    },
+    "./kernel": {
+      "types": "./dist/kernel/index.d.ts",
+      "import": "./dist/kernel/index.js"
     }
   },
   "main": "./dist/index.js",

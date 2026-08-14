@@ -81,6 +81,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     root,
     adminPassword,
     cleanup: async () => {
+      deps.hot.dispose();
       deps.channels.dispose();
       deps.db.close();
       // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
