@@ -11,13 +11,14 @@
  * The open/close state itself lives with each panel's own hook/store — this component only
  * renders triggers, so pinning/unpinning never touches panel state.
  */
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { toggleTerminalDock } from "../terminal/terminal-dock-state";
 import { useTerminalDockOpen } from "../terminal/terminal-dock";
+import { activeTerminalCount, subscribeTerminalCount } from "../terminal/terminal-count";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -105,16 +106,36 @@ interface PanelEntry {
 }
 
 const triggerClass = (active: boolean) =>
-  `flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
+  `relative flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
     active
       ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
       : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
   }`;
 
+/**
+ * Floating count of live terminals. It rides on the terminal's own trigger when the
+ * terminal is pinned, and on the "all panels" trigger otherwise — so the number stays
+ * visible wherever the terminal is actually reachable from. Zero renders nothing.
+ */
+function TerminalCountBadge({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      data-testid="terminal-count-badge"
+      aria-hidden
+      className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-gray-700 px-0.5 text-[9px] font-semibold leading-none text-white dark:bg-gray-300 dark:text-gray-900"
+    >
+      {count}
+    </span>
+  );
+}
+
 export function PanelsToolbar(props: PanelsToolbarProps) {
   const terminalOpen = useTerminalDockOpen();
+  const terminalCount = useSyncExternalStore(subscribeTerminalCount, activeTerminalCount);
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
   const [menuOpen, setMenuOpen] = useState(false);
+  const terminalPinned = pins.includes("terminal");
 
   const togglePin = (key: PanelKey): void => {
     setPins((current) => {
@@ -177,6 +198,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
           >
             {entry.glyph()}
             {entry.pending && <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />}
+            {entry.key === "terminal" && <TerminalCountBadge count={terminalCount} />}
           </button>
         ))}
 
@@ -196,6 +218,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             className={triggerClass(menuOpen)}
           >
             <PathGlyph d={ALL_ICON} />
+            {!terminalPinned && <TerminalCountBadge count={terminalCount} />}
           </button>
         }
       >

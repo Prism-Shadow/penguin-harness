@@ -3,15 +3,17 @@
  * main content column, toggled by Ctrl+` or the sidebar's terminal entry, present on every
  * page because it mounts in AppLayout.
  *
- * The shell is the same server-side terminal the standalone page uses, so:
- * - closing the dock only hides the view; the shell (and anything running in it) stays up,
- *   and reopening the dock reattaches to it;
- * - "Detach" hands the terminal off to its own window — it opens `/terminal?id=<id>` and
- *   forgets the id locally, so the dock's next shell is a fresh one and exactly one surface
- *   owns any given terminal (the Codex handoff behaviour);
- * - a reload restores both the dock (open state persists) and the shell (id persists).
+ * The shell is the same server-side terminal the standalone page uses, and opening the
+ * dock always lands on a live shell (the persistence rules):
+ * - the terminal opened last time (stored id) when it is still alive;
+ * - otherwise the newest of the user's live terminals — created anywhere: the /terminal
+ *   page, a detached window, the API;
+ * - otherwise a fresh shell is created (and kept: closing the dock only hides the view).
+ * "Detach" opens `/terminal?id=<id>` in its own window; the terminal stays the user's most
+ * recent one, so reopening the dock shows that same shell again (multi-client attach).
+ * A reload restores both the dock (open state persists) and the shell (id persists).
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import {
   isTerminalDockOpen,
@@ -25,6 +27,7 @@ import {
   type TerminalInfo,
   type TerminalStatus,
 } from "./terminal-view";
+import { refreshTerminalCount } from "./terminal-count";
 
 const DOCK_ID_KEY = "penguin.terminal.dock.id";
 /** The dock always opens in the home directory (project-scoped cwd can come later). */
@@ -34,13 +37,39 @@ export function useTerminalDockOpen(): boolean {
   return useSyncExternalStore(subscribeTerminalDock, isTerminalDockOpen);
 }
 
-/** Reattaches to the dock's stored terminal when it is still alive, else creates a new one. */
-async function ensureDockTerminal(cols: number, rows: number): Promise<TerminalInfo> {
-  const storedId = localStorage.getItem(DOCK_ID_KEY);
-  if (storedId) {
-    const existing = await fetchJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(() => null);
-    if (existing?.alive) return existing;
+/**
+ * Resolves the terminal the dock should show: last opened (stored id) if still alive, else
+ * the newest live terminal from anywhere, else a fresh one. Only the last case creates —
+ * unless `forceCreate` ("New shell"), which skips the reattach paths entirely (they would
+ * otherwise just hand back the shell the user asked to leave).
+ */
+async function ensureDockTerminal(
+  cols: number,
+  rows: number,
+  forceCreate: boolean,
+): Promise<TerminalInfo> {
+  if (!forceCreate) {
+    const storedId = localStorage.getItem(DOCK_ID_KEY);
+    if (storedId) {
+      const existing = await fetchJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(
+        () => null,
+      );
+      if (existing?.alive) return existing;
+    }
+
+    // No usable stored id: fall back to the newest live terminal (the list is ordered by
+    // createdAt ascending), wherever it was opened from.
+    const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(
+      () => null,
+    );
+    const alive = (listed?.terminals ?? []).filter((t) => t.alive);
+    const latest = alive.at(-1);
+    if (latest) {
+      localStorage.setItem(DOCK_ID_KEY, latest.id);
+      return latest;
+    }
   }
+
   const created = await fetchJson<TerminalInfo>("/api/terminals", {
     method: "POST",
     body: JSON.stringify({ cwd: DOCK_CWD, cols, rows }),
@@ -84,6 +113,14 @@ export function TerminalDock() {
   const [detail, setDetail] = useState("");
   const [info, setInfo] = useState<TerminalInfo | null>(null);
   const [generation, setGeneration] = useState(0);
+  /** Armed by "New shell" for exactly the next attach; consumed inside ensure. */
+  const forceCreateRef = useRef(false);
+
+  const ensure = useCallback(async (cols: number, rows: number): Promise<TerminalInfo> => {
+    const forceCreate = forceCreateRef.current;
+    forceCreateRef.current = false;
+    return ensureDockTerminal(cols, rows, forceCreate);
+  }, []);
 
   // Ctrl+` toggles the dock from anywhere in the app (the Codex/VS Code binding). Bound
   // here so it exists exactly once, dock visible or not.
@@ -101,24 +138,35 @@ export function TerminalDock() {
   const onStatus = useCallback((next: TerminalStatus, statusDetail: string) => {
     setStatus(next);
     setDetail(statusDetail);
+    // A shell exiting under the dock changes the live count the badge shows.
+    if (next === "exited") void refreshTerminalCount();
+  }, []);
+
+  const onInfo = useCallback((next: TerminalInfo) => {
+    setInfo(next);
+    // Attaching may have created a terminal; either way the badge re-syncs.
+    void refreshTerminalCount();
   }, []);
 
   /** Fresh shell for the dock; the old one (if alive) is deliberately left running. */
   const newShell = useCallback(() => {
     localStorage.removeItem(DOCK_ID_KEY);
+    forceCreateRef.current = true;
     setStatus("connecting");
     setDetail("");
     setInfo(null);
     setGeneration((n) => n + 1);
   }, []);
 
-  /** Codex-style detach: hand the terminal to its own window and let the dock forget it. */
+  /**
+   * Codex-style detach: hand the terminal to its own window. The stored id is kept — it is
+   * still the last-opened terminal, so reopening the dock shows this same shell (the
+   * stream supports multiple attached clients).
+   */
   const detach = useCallback(() => {
     const id = info?.id ?? localStorage.getItem(DOCK_ID_KEY);
     if (!id) return;
     window.open(`/terminal?id=${encodeURIComponent(id)}`, "_blank", "noopener");
-    localStorage.removeItem(DOCK_ID_KEY);
-    setInfo(null);
     setTerminalDockOpen(false);
   }, [info]);
 
@@ -176,9 +224,9 @@ export function TerminalDock() {
       </header>
       <TerminalView
         key={generation}
-        ensure={ensureDockTerminal}
+        ensure={ensure}
         onStatus={onStatus}
-        onInfo={setInfo}
+        onInfo={onInfo}
         className="min-h-0 flex-1 overflow-hidden px-2 py-1"
       />
     </div>
