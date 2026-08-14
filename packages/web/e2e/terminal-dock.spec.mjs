@@ -88,9 +88,9 @@ async function runInDock(page, command) {
  * and its output onto one DOM row, where a ^tag$ match would never fire.
  */
 async function waitForDockShell(page, tag) {
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await runInDock(page, `echo ${tag.slice(0, 2)}''${tag.slice(2)}`);
   await expect
     .poll(() => dockScreenText(page), { timeout: 30000 })
@@ -119,9 +119,9 @@ test("Ctrl+` toggles the dock; the shell survives close and reopen", async ({ pa
   // Reopen with the shortcut: same shell, same screen.
   await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("DOCK_KEEPS_RUNNING");
 });
 
@@ -146,9 +146,9 @@ test("Detach hands the terminal to /terminal?id=… and the dock lets go", async
   // The dock closed; the popup is the standalone page attached to the same terminal.
   await expect(dock(page)).toBeHidden();
   expect(popup.url()).toMatch(/\/terminal\?id=/);
-  await expect(
-    popup.locator('[data-testid="terminal-status"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(popup.locator('[data-testid="terminal-status"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect
     .poll(() => popup.locator(".xterm-rows").innerText(), { timeout: 15000 })
     .toContain("DETACH_MARKER");
@@ -165,9 +165,9 @@ test("Detach hands the terminal to /terminal?id=… and the dock lets go", async
   // now holds (the stream supports multiple attached clients), per the persistence rules.
   await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("DETACH_MARKER");
 });
 
@@ -246,17 +246,17 @@ test("dock tabs: list every shell, switch between them, kill one", async ({ page
 
   // Clicking the first tab switches back to shell A's screen (list order = creation order)…
   await tabs.first().locator("button").first().click();
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_A");
   await expect(tabs.first()).toHaveAttribute("data-active", "true");
 
   // …and the second tab brings shell B back.
   await tabs.last().locator("button").first().click();
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_B");
 
   // Killing the background tab (A) ends that shell; the current one is untouched. The
@@ -338,9 +338,9 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   await expect(tabs).toHaveCount(2, { timeout: 15000 });
   await expect(tabs.first()).toHaveAttribute("data-terminal-id", titledId);
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
 
   // Detach with another terminal open: the current shell goes to its own window and the
   // dock STAYS, switched onto the remaining tab (its screen restores).
@@ -350,13 +350,12 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
   ]);
   expect(popup.url()).toMatch(/\/terminal\?id=/);
   await expect(dock(page)).toBeVisible();
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
-  await expect(page.locator('[data-testid="terminal-tab"][data-active="true"]')).not.toHaveAttribute(
-    "data-terminal-id",
-    titledId,
-  );
+    page.locator('[data-testid="terminal-tab"][data-active="true"]'),
+  ).not.toHaveAttribute("data-terminal-id", titledId);
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("FIRST_TAB_MARK");
 });
 
@@ -423,9 +422,8 @@ test("tabs are numbered; drag-out splits the tab into a new pane", async ({ page
   expect(
     await page.evaluate(
       () =>
-        document.querySelector(
-          '[data-testid="terminal-dock"][data-position="bottom"] .xterm',
-        ) === window.__xtermB,
+        document.querySelector('[data-testid="terminal-dock"][data-position="bottom"] .xterm') ===
+        window.__xtermB,
     ),
     "bottom pane's xterm survived the split",
   ).toBe(true);
@@ -606,9 +604,7 @@ test("terminal clipboard: keyboard copy/paste, right-click, focus", async ({ pag
 
   // Copy: double-click selects the word, Ctrl+Shift+C puts it on the clipboard.
   await runInDock(page, "echo COPY_ME_TOKEN");
-  await expect
-    .poll(() => dockScreenText(page), { timeout: 15000 })
-    .toMatch(/^COPY_ME_TOKEN$/m);
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^COPY_ME_TOKEN$/m);
   await dock(page).locator(".xterm-rows").getByText("COPY_ME_TOKEN").last().dblclick();
   await page.keyboard.press("Control+Shift+C");
   await expect
@@ -619,7 +615,9 @@ test("terminal clipboard: keyboard copy/paste, right-click, focus", async ({ pag
   await page.evaluate(() => navigator.clipboard.writeText("echo PASTE_VIA_KEYS"));
   await dock(page).locator(".xterm-screen").click();
   await page.keyboard.press("Control+Shift+V");
-  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("echo PASTE_VIA_KEYS");
+  await expect
+    .poll(() => dockScreenText(page), { timeout: 15000 })
+    .toContain("echo PASTE_VIA_KEYS");
   await page.keyboard.press("Enter");
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toMatch(/^PASTE_VIA_KEYS$/m);
   // …exactly once: the command line appears a single time before its output.
@@ -668,9 +666,7 @@ test("tab strip squeezes when crowded and wheel-scrolls", async ({ page }) => {
   }
 
   // Crowded tabs squeeze browser-style instead of holding full width.
-  const widths = await tabs.evaluateAll((els) =>
-    els.map((el) => el.getBoundingClientRect().width),
-  );
+  const widths = await tabs.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
   expect(Math.max(...widths)).toBeLessThan(Math.max(soloWidth, 80));
   expect(Math.min(...widths)).toBeGreaterThanOrEqual(38); // the number stays readable
 
@@ -725,9 +721,9 @@ test("hover menus: create opens on hover; terminal lists on both levels", async 
   });
   await page.locator('[data-testid="panels-menu-terminal"]').click();
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("HOVER_PICK_MARKER");
 
   // 2. Pin the terminal: hovering ITS icon shows the terminal list; picking the seeded
@@ -793,9 +789,9 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
   await page.locator('[data-testid="panels-all"]').click();
   await page.locator('[data-testid="panels-menu-terminal"]').click();
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
-  await expect(
-    page.locator('[data-testid="terminal-dock"][data-status="ready"]'),
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("LAST_OPENED_MARKER");
   await expect(badge).toHaveText("1");
 

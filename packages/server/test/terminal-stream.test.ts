@@ -22,6 +22,14 @@ import {
 
 const TEST_TIMEOUT = 20_000;
 
+/**
+ * Real ptys only on POSIX: Windows CI runs headless, where ConPTY's console-list agent
+ * dies with "AttachConsole failed" and node-pty leaks unhandled IPC rejections. The pure
+ * suites (frames, restore, ownership, …) in terminal.test.ts still run everywhere.
+ */
+const IS_WINDOWS = process.platform === "win32";
+const describePty = describe.skipIf(IS_WINDOWS);
+
 let t: TestApp;
 let port: number;
 let server: ReturnType<typeof serve>;
@@ -29,6 +37,7 @@ let adminCookie: string;
 let api: ReturnType<typeof apiClient>;
 
 beforeAll(async () => {
+  if (IS_WINDOWS) return;
   t = await createTestApp();
   const admin = await loginAdmin(t.app);
   adminCookie = admin.cookie;
@@ -47,6 +56,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (IS_WINDOWS) return;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await t.cleanup();
 });
@@ -159,11 +169,7 @@ function attach(
 }
 
 /** Asserts the handshake is refused with the given HTTP status. */
-function expectRefused(
-  id: string,
-  headers: Record<string, string>,
-  status: number,
-): Promise<void> {
+function expectRefused(id: string, headers: Record<string, string>, status: number): Promise<void> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(streamUrl(id, 80, 24), { headers });
     ws.once("open", () => reject(new Error("handshake unexpectedly accepted")));
@@ -187,7 +193,7 @@ async function runAndWait(client: StreamClient, command: string, marker: string)
   await client.waitFor(() => client.outputText().includes(marker), `output marker ${marker}`);
 }
 
-describe("terminal stream handshake", () => {
+describePty("terminal stream handshake", () => {
   it(
     "refuses the stream without a session cookie",
     async () => {
@@ -223,7 +229,7 @@ describe("terminal stream handshake", () => {
   );
 });
 
-describe("terminal stream attach", () => {
+describePty("terminal stream attach", () => {
   it(
     "sends Restore first, then round-trips input to live output",
     async () => {
@@ -310,7 +316,7 @@ describe("terminal stream attach", () => {
   );
 });
 
-describe("terminal stream size ownership", () => {
+describePty("terminal stream size ownership", () => {
   it(
     "the latest claim owns the pty size; updates from non-owners are ignored",
     async () => {
@@ -362,7 +368,7 @@ describe("terminal stream size ownership", () => {
   );
 });
 
-describe("terminal stream robustness", () => {
+describePty("terminal stream robustness", () => {
   it(
     "survives malformed, empty and non-binary frames",
     async () => {

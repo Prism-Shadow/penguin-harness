@@ -71,7 +71,8 @@ export function terminalsRoutes(manager: TerminalManager): Hono<AppEnv> {
     const name = typeof body.name === "string" ? body.name : undefined;
     // Optional shell override (default: the user's login shell). Not an escalation — the
     // terminal already runs arbitrary commands as the server's account.
-    const shell = typeof body.shell === "string" && body.shell.trim() ? body.shell.trim() : undefined;
+    const shell =
+      typeof body.shell === "string" && body.shell.trim() ? body.shell.trim() : undefined;
     const session = await manager.create({
       cwd,
       ownerUserId: c.var.user.userId,
