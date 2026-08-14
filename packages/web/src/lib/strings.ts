@@ -35,6 +35,8 @@ export const zh = {
   terminal: {
     title: "终端",
     newShell: "新建 Shell",
+    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
+    killShell: "关闭此终端",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
     close: "关闭",

@@ -33,6 +33,8 @@ export const en: Strings = {
   terminal: {
     title: "Terminal",
     newShell: "New shell",
+    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
+    killShell: "Kill this terminal",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",

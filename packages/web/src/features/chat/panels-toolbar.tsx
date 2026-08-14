@@ -18,7 +18,7 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { toggleTerminalDock } from "../terminal/terminal-dock-state";
 import { useTerminalDockOpen } from "../terminal/terminal-dock";
-import { activeTerminalCount, subscribeTerminalCount } from "../terminal/terminal-count";
+import { liveTerminalCount, subscribeTerminals } from "../terminal/terminal-list";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -132,7 +132,7 @@ function TerminalCountBadge({ count }: { count: number }) {
 
 export function PanelsToolbar(props: PanelsToolbarProps) {
   const terminalOpen = useTerminalDockOpen();
-  const terminalCount = useSyncExternalStore(subscribeTerminalCount, activeTerminalCount);
+  const terminalCount = useSyncExternalStore(subscribeTerminals, liveTerminalCount);
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
   const [menuOpen, setMenuOpen] = useState(false);
   const terminalPinned = pins.includes("terminal");
