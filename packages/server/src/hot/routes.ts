@@ -15,14 +15,40 @@ import type { AppDeps } from "../app.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import type { AgentSlotCtx } from "./agent-slot.js";
+import { ScriptContractError, validateSkillScript } from "./script.js";
+import type { SkillSlotCtx } from "./skill-slot.js";
 import type { TerminalApiV2 } from "./terminal.js";
 import type { ShellProcResource } from "./resources.js";
+
+/** Bind addresses considered safe by default; anything else needs HTTPS or the explicit override. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
+/** Maps script/contract failures to 400 (the arktype-validation contract). */
+function asBadRequest(err: unknown): never {
+  if (err instanceof ScriptContractError) throw new HttpError(400, "bad_request", err.message);
+  throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
+}
 
 export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const hot = deps.hot;
 
   routes.use("*", async (c, next) => {
+    // Dangerous-network default-off: hot APIs load and run code, so on a
+    // non-loopback bind (e.g. 0.0.0.0) without HTTPS they answer 403 unless
+    // explicitly overridden (PENGUIN_HOT_API_UNSAFE=1).
+    if (!LOOPBACK_HOSTS.has(deps.config.host.toLowerCase())) {
+      const proto =
+        c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
+      if (proto !== "https" && process.env.PENGUIN_HOT_API_UNSAFE !== "1") {
+        throw new HttpError(
+          403,
+          "hot_api_disabled",
+          "Hot platform APIs are disabled on a non-loopback bind without HTTPS. " +
+            "Serve over HTTPS or set PENGUIN_HOT_API_UNSAFE=1 to override.",
+        );
+      }
+    }
     if (!c.get("user").isAdmin) {
       throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");
     }
@@ -223,6 +249,115 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     const inst = await hot.ensure();
     inst.api.agents().remove(c.req.param("id"));
     return c.json({ ok: true });
+  });
+
+  // -- Skills (eval + context → arktype-validated object → tools) -----------
+
+  routes.post("/skills", async (c) => {
+    const body = await c.req.json<{ id: string; script: string }>();
+    if (typeof body.id !== "string" || !/^[a-z0-9_-]+$/i.test(body.id)) {
+      throw new HttpError(400, "bad_request", "Invalid skill id.");
+    }
+    if (typeof body.script !== "string") {
+      throw new HttpError(400, "bad_request", "Missing script.");
+    }
+    const inst = await hot.ensure();
+    const skills = inst.api.skills();
+    if (skills.get(body.id) !== undefined) {
+      throw new HttpError(400, "bad_request", `Skill '${body.id}' already exists.`);
+    }
+    // Contract check BEFORE any state is touched (eval + arktype, setup not run).
+    try {
+      validateSkillScript(body.script);
+    } catch (err) {
+      asBadRequest(err);
+    }
+    try {
+      const api = await skills.add(body.id, { script: body.script, rev: 1, state: null });
+      api.setup(body.id, inst.api.tools());
+      return c.json(
+        {
+          id: body.id,
+          skill: api.describe(),
+          tools: inst.api
+            .tools()
+            .list()
+            .filter((t) => t.owner === body.id),
+        },
+        201,
+      );
+    } catch (err) {
+      // Setup failed (e.g. duplicate tool name): unload the half-installed
+      // slot — its effects deregister whatever did get registered.
+      skills.remove(body.id);
+      asBadRequest(err);
+    }
+  });
+
+  routes.get("/skills", async (c) => {
+    const inst = await hot.ensure();
+    const skills = inst.api.skills();
+    return c.json({
+      skills: skills.keys().map((id) => ({ id, skill: skills.get(id)!.describe() })),
+    });
+  });
+
+  /** Hot-swap skill code; the parked state document rides across. */
+  routes.post("/skills/:id/reload", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<{ script?: string }>().catch(() => ({}) as { script?: string });
+    const inst = await hot.ensure();
+    const skills = inst.api.skills();
+    const skill = skills.get(id);
+    if (skill === undefined) throw new HttpError(404, "not_found", "No such skill.");
+    const parked = skill.park() as SkillSlotCtx;
+    const script = body.script ?? parked.script;
+    // Validate the NEW script against the carried state before removing the
+    // old instance: a bad reload leaves the running skill untouched.
+    try {
+      validateSkillScript(script, parked.state);
+    } catch (err) {
+      asBadRequest(err);
+    }
+    skills.remove(id); // effects drain: the old tools deregister here
+    try {
+      const api = await skills.add(id, { script, rev: parked.rev + 1, state: parked.state });
+      api.setup(id, inst.api.tools());
+      return c.json({ id, skill: api.describe() });
+    } catch (err) {
+      skills.remove(id);
+      asBadRequest(err);
+    }
+  });
+
+  routes.delete("/skills/:id", async (c) => {
+    const inst = await hot.ensure();
+    inst.api.skills().remove(c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
+  // -- Tools (contributed by skills) ----------------------------------------
+
+  routes.get("/tools", async (c) => {
+    const inst = await hot.ensure();
+    return c.json({ tools: inst.api.tools().list() });
+  });
+
+  routes.post("/tools/:name/invoke", async (c) => {
+    const body = await c.req.json<{ input?: Json }>().catch(() => ({}) as { input?: Json });
+    const inst = await hot.ensure();
+    const registry = inst.api.tools();
+    const name = c.req.param("name");
+    if (!registry.has(name)) throw new HttpError(404, "not_found", "No such tool.");
+    try {
+      return c.json({ result: (await registry.invoke(name, body.input ?? null)) ?? null });
+    } catch (err) {
+      throw new HttpError(
+        400,
+        "bad_request",
+        `tool '${name}' failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   });
 
   // -- Demo UI panel (the web platform bundle in miniature) -----------------

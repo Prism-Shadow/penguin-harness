@@ -309,3 +309,39 @@ describe("kernel: upgrade ladder", () => {
     expect(result.instance.api.read()).toBe("alive");
   });
 });
+
+describe("kernel: undeclared children in the parked doc", () => {
+  // The narrower iface knows nothing about `counters`.
+  const bareIface = defineIface<RootApi, { label: string }>({
+    name: "root",
+    version: 1,
+    context: s.object<{ label: string }>({ label: s.string() }),
+    methods: ["park", "label", "counters"],
+  });
+  const bareImpl: Impl<RootApi, { label: string }> = {
+    create(_ctx, context) {
+      return {
+        park: () => ({ label: context.label }),
+        label: () => context.label,
+        counters: () => {
+          throw new Error("no counters in bare root");
+        },
+      };
+    },
+  };
+
+  it("an EMPTY undeclared keyed collection is not data: silently dropped", async () => {
+    const { inst, resources } = await bootRoot();
+    const result = await upgrade({ current: inst, impl: bareImpl, iface: bareIface, resources });
+    expect(result.status).toBe("ok");
+  });
+
+  it("a NON-EMPTY undeclared keyed collection is data: blocked", async () => {
+    const { inst, resources } = await bootRoot();
+    await inst.api.counters().add("a", { count: 1 });
+    const result = await upgrade({ current: inst, impl: bareImpl, iface: bareIface, resources });
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") return;
+    expect(result.dropped).toEqual(["$.children.counters"]);
+  });
+});

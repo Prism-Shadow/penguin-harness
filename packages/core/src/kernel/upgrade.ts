@@ -32,6 +32,15 @@ export interface UpgradeBlocked {
 export type UpgradeResult<A extends Park> =
   { status: "ok"; mode: "silent" | "migrated"; instance: Instance<A>; doc: Json } | UpgradeBlocked;
 
+/** An undeclared child that is an empty container (no data to lose). */
+function isEmptyChildDoc(doc: Json): boolean {
+  if (doc === null) return true;
+  if (isJsonObject(doc) && Object.keys(doc).length === 1 && isJsonObject(doc.items)) {
+    return Object.keys(doc.items).length === 0;
+  }
+  return false;
+}
+
 interface ReconcileState {
   dropped: string[];
   missing: string[];
@@ -92,9 +101,14 @@ function reconcileNode(iface: AnyIface, doc: Json, path: string, state: Reconcil
       children[name] = reconcileNode(decl, childDoc, childPath, state);
     }
   }
-  // Children the new iface no longer declares are discarded data — report them.
-  for (const name of Object.keys(docChildren)) {
-    if (!(name in iface.children)) state.dropped.push(`${path}.children.${name}`);
+  // Children the new iface no longer declares are discarded data — report
+  // them, UNLESS they are empty containers: an empty keyed collection (or a
+  // null slot) carries no data, so dropping it discards nothing (linear
+  // state tracks values, not shapes).
+  for (const [name, childDoc] of Object.entries(docChildren)) {
+    if (name in iface.children) continue;
+    if (isEmptyChildDoc(childDoc)) continue;
+    state.dropped.push(`${path}.children.${name}`);
   }
 
   const out: ParkedNode = { v: iface.version, self, children };
