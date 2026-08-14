@@ -129,6 +129,76 @@ export function HotPage() {
     await reloadPlatform();
   };
 
+  // -- Skills: one-sentence authoring ---------------------------------------
+  const [skills, setSkills] = useState<{ id: string; skill: { name: string } }[]>([]);
+  const [tools, setTools] = useState<{ name: string; description: string; owner: string }[]>([]);
+  const [authorRequest, setAuthorRequest] = useState("");
+  const [authoring, setAuthoring] = useState(false);
+  const [authorNote, setAuthorNote] = useState<string | null>(null);
+  const [invokeName, setInvokeName] = useState("");
+  const [invokeInput, setInvokeInput] = useState("{}");
+  const [invokeResult, setInvokeResult] = useState<string | null>(null);
+
+  const reloadSkills = useCallback(async () => {
+    try {
+      setSkills((await apiFetch<{ skills: typeof skills }>("/api/hot/skills")).skills);
+      setTools((await apiFetch<{ tools: typeof tools }>("/api/hot/tools")).tools);
+    } catch (e) {
+      setError(apiErrorText(e));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (user?.isAdmin) void reloadSkills();
+  }, [user?.isAdmin, reloadSkills]);
+
+  const authorSkill = async () => {
+    const request = authorRequest.trim();
+    if (request === "" || authoring) return;
+    setAuthoring(true);
+    setAuthorNote(null);
+    try {
+      const r = await apiFetch<{ id: string; attempts: number; tools: { name: string }[] }>(
+        "/api/hot/skills/author",
+        { method: "POST", body: { request } },
+      );
+      setAuthorNote(
+        `installed '${r.id}' in ${r.attempts} attempt(s) — tools: ${r.tools.map((t) => t.name).join(", ")}`,
+      );
+      setAuthorRequest("");
+      await reloadSkills();
+    } catch (e) {
+      setAuthorNote(apiErrorText(e));
+    } finally {
+      setAuthoring(false);
+    }
+  };
+
+  const invokeTool = async () => {
+    try {
+      const input = invokeInput.trim() === "" ? null : (JSON.parse(invokeInput) as unknown);
+      const r = await apiFetch<{ result: unknown }>(
+        `/api/hot/tools/${encodeURIComponent(invokeName)}/invoke`,
+        { method: "POST", body: { input } },
+      );
+      setInvokeResult(JSON.stringify(r.result));
+    } catch (e) {
+      setInvokeResult(
+        e instanceof SyntaxError ? `input is not JSON: ${e.message}` : apiErrorText(e),
+      );
+    }
+  };
+
+  const removeSkill = async (id: string) => {
+    try {
+      await apiFetch(`/api/hot/skills/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await reloadSkills();
+    } catch (e) {
+      setError(apiErrorText(e));
+    }
+  };
+
   // -- Terminal survival demo ----------------------------------------------
   const [termId, setTermId] = useState<string | null>(null);
   const [termOutput, setTermOutput] = useState("");
@@ -204,6 +274,71 @@ export function HotPage() {
           <PanelComponent key={manifest.rev} />
         ) : (
           <div className="text-sm opacity-60">booting panel…</div>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-medium">Skills — describe it, get a tool</h2>
+        <div className="flex items-center gap-2">
+          <Input
+            value={authorRequest}
+            onChange={(e) => setAuthorRequest(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void authorSkill();
+            }}
+            placeholder='e.g. 实现计数器功能 / "a tool converting numbers to Roman numerals"'
+          />
+          <Button onClick={() => void authorSkill()} disabled={authoring}>
+            {authoring ? "authoring…" : "Implement"}
+          </Button>
+        </div>
+        {authorNote !== null && <div className="text-sm">{authorNote}</div>}
+        {skills.length > 0 && (
+          <ul className="text-sm">
+            {skills.map((s) => (
+              <li key={s.id} className="flex items-center gap-2">
+                <span>
+                  {s.id} ({s.skill.name})
+                </span>
+                <Button size="sm" onClick={() => void removeSkill(s.id)}>
+                  unload
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {tools.length > 0 && (
+          <>
+            <div className="text-sm">
+              tools:{" "}
+              {tools.map((t) => (
+                <Button
+                  key={t.name}
+                  size="sm"
+                  onClick={() => setInvokeName(t.name)}
+                  title={t.description}
+                >
+                  {t.name}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                value={invokeName}
+                onChange={(e) => setInvokeName(e.target.value)}
+                placeholder="tool name"
+              />
+              <Input
+                value={invokeInput}
+                onChange={(e) => setInvokeInput(e.target.value)}
+                placeholder='JSON input, e.g. {"n": 1994}'
+              />
+              <Button onClick={() => void invokeTool()}>Invoke</Button>
+            </div>
+            {invokeResult !== null && (
+              <pre className="overflow-auto rounded bg-black/5 p-2 text-xs">{invokeResult}</pre>
+            )}
+          </>
         )}
       </section>
 

@@ -13,8 +13,9 @@ import type { Json } from "@prismshadow/penguin-core/kernel";
 import { ifaceData } from "@prismshadow/penguin-core/kernel";
 import type { AppDeps } from "../app.js";
 import type { AppEnv } from "../auth/middleware.js";
-import { HttpError } from "../http/errors.js";
+import { errorBody, HttpError } from "../http/errors.js";
 import type { AgentSlotCtx } from "./agent-slot.js";
+import { AuthoringFailed, authorSkillScript } from "./author.js";
 import { ScriptContractError, validateSkillScript } from "./script.js";
 import type { SkillSlotCtx } from "./skill-slot.js";
 import type { TerminalApiV2 } from "./terminal.js";
@@ -290,6 +291,73 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
       // Setup failed (e.g. duplicate tool name): unload the half-installed
       // slot — its effects deregister whatever did get registered.
       skills.remove(body.id);
+      asBadRequest(err);
+    }
+  });
+
+  /**
+   * The one-sentence path: describe the capability, the authoring model
+   * writes the script, the arktype gate judges it (failures are fed back to
+   * the model for another attempt), and a passing script is installed — the
+   * caller never touches curl or code.
+   */
+  routes.post("/skills/author", async (c) => {
+    const body = await c.req.json<{ request: string; id?: string }>();
+    if (typeof body.request !== "string" || body.request.trim() === "") {
+      throw new HttpError(400, "bad_request", "Missing request (describe the capability).");
+    }
+    const id = body.id ?? `skill_${Math.random().toString(36).slice(2, 8)}`;
+    if (!/^[a-z0-9_-]+$/i.test(id)) throw new HttpError(400, "bad_request", "Invalid skill id.");
+    const llm = hot.authorLlm;
+    if (llm === null) {
+      throw new HttpError(
+        503,
+        "no_authoring_model",
+        "No authoring model is configured (set DEEPSEEK_API_KEY, or plug one into hot.authorLlm).",
+      );
+    }
+    const inst = await hot.ensure();
+    const skills = inst.api.skills();
+    if (skills.get(id) !== undefined) {
+      throw new HttpError(400, "bad_request", `Skill '${id}' already exists.`);
+    }
+    let authored;
+    try {
+      authored = await authorSkillScript(llm, body.request.trim());
+    } catch (err) {
+      if (err instanceof AuthoringFailed) {
+        // Not a client error and not a crash: the model exhausted its
+        // attempts. The last script + validator verdict come back for a
+        // human (or a stronger model) to pick up.
+        return c.json(
+          { ...errorBody("authoring_failed", err.message), script: err.lastScript },
+          422,
+        );
+      }
+      throw new HttpError(
+        502,
+        "bad_gateway",
+        `authoring model call failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    try {
+      const api = await skills.add(id, { script: authored.script, rev: 1, state: null });
+      api.setup(id, inst.api.tools());
+      return c.json(
+        {
+          id,
+          skill: api.describe(),
+          tools: inst.api
+            .tools()
+            .list()
+            .filter((t) => t.owner === id),
+          attempts: authored.attempts,
+          script: authored.script,
+        },
+        201,
+      );
+    } catch (err) {
+      skills.remove(id);
       asBadRequest(err);
     }
   });
