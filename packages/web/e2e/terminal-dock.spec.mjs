@@ -215,6 +215,60 @@ test("panel switcher: default pins, all-panels dropdown, pin/unpin persists", as
   await expect(page.locator('[data-testid="panel-btn-agents"]')).toBeVisible();
 });
 
+test("dock tabs: list every shell, switch between them, kill one", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  const tabs = page.locator('[data-testid="terminal-tab"]');
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "TAB_SHELL_A");
+  await runInDock(page, "echo IN_TAB_A");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_A");
+  await expect(tabs).toHaveCount(1, { timeout: 15000 });
+
+  // "+" opens a second shell in a new tab; both are listed, the new one is active.
+  await page.locator('[data-testid="terminal-dock-new-shell"]').click();
+  await waitForDockShell(page, "TAB_SHELL_B");
+  await runInDock(page, "echo IN_TAB_B");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_B");
+  await expect(tabs).toHaveCount(2, { timeout: 15000 });
+  await expect(tabs.last()).toHaveAttribute("data-active", "true");
+
+  // Clicking the first tab switches back to shell A's screen (list order = creation order)…
+  await tabs.first().locator("button").first().click();
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_A");
+  await expect(tabs.first()).toHaveAttribute("data-active", "true");
+
+  // …and the second tab brings shell B back.
+  await tabs.last().locator("button").first().click();
+  await expect(
+    page.locator('[data-testid="terminal-dock-status"][data-status="ready"]'),
+  ).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("IN_TAB_B");
+
+  // Killing the background tab (A) ends that shell; the current one is untouched.
+  await tabs.first().hover();
+  await tabs.first().locator('[data-testid="terminal-tab-kill"]').click();
+  await expect(tabs).toHaveCount(1, { timeout: 15000 });
+  expect(await dockScreenText(page)).toContain("IN_TAB_B");
+
+  // Killing the last tab (the current shell) force-creates a fresh one — the dock never
+  // strands the user without a terminal.
+  await tabs.first().hover();
+  await tabs.first().locator('[data-testid="terminal-tab-kill"]').click();
+  await waitForDockShell(page, "TAB_SHELL_C");
+  expect(await dockScreenText(page)).not.toContain("IN_TAB_B");
+  await expect(tabs).toHaveCount(1, { timeout: 15000 });
+});
+
 test("terminal count badge and last-opened persistence", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);

@@ -23,6 +23,8 @@ export interface TerminalInfo {
   name: string;
   cwd: string;
   alive: boolean;
+  /** Last OSC window title the shell set (debounced server-side), if any. */
+  title?: string | null;
 }
 
 export type TerminalStatus = "connecting" | "ready" | "exited" | "error";

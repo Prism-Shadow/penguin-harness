@@ -3,14 +3,18 @@
  * main content column, toggled by Ctrl+` or the sidebar's terminal entry, present on every
  * page because it mounts in AppLayout.
  *
+ * The header carries a tab strip of every live terminal the user has — created anywhere:
+ * this dock, the /terminal page, a detached window, the API — so terminals can be seen,
+ * switched between, and closed (the × kills the shell), not just added. The strip renders
+ * the shared terminal-list store; the badge in the chat toolbar shows the same list's size.
+ *
  * The shell is the same server-side terminal the standalone page uses, and opening the
  * dock always lands on a live shell (the persistence rules):
  * - the terminal opened last time (stored id) when it is still alive;
- * - otherwise the newest of the user's live terminals — created anywhere: the /terminal
- *   page, a detached window, the API;
+ * - otherwise the newest of the user's live terminals;
  * - otherwise a fresh shell is created (and kept: closing the dock only hides the view).
- * "Detach" opens `/terminal?id=<id>` in its own window; the terminal stays the user's most
- * recent one, so reopening the dock shows that same shell again (multi-client attach).
+ * "Detach" opens `/terminal?id=<id>` in its own window; the stored id is kept, so
+ * reopening the dock shows that same shell again (multi-client attach).
  * A reload restores both the dock (open state persists) and the shell (id persists).
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -27,7 +31,12 @@ import {
   type TerminalInfo,
   type TerminalStatus,
 } from "./terminal-view";
-import { refreshTerminalCount } from "./terminal-count";
+import {
+  killTerminal,
+  liveTerminals,
+  refreshTerminals,
+  subscribeTerminals,
+} from "./terminal-list";
 
 const DOCK_ID_KEY = "penguin.terminal.dock.id";
 /** The dock always opens in the home directory (project-scoped cwd can come later). */
@@ -88,7 +97,7 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
       aria-label={props.label}
       data-testid={props.testId}
       onClick={props.onClick}
-      className="flex h-6 w-6 items-center justify-center rounded text-white/60 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-white/60 transition-colors duration-150 hover:bg-white/10 hover:text-white"
     >
       <svg
         width="14"
@@ -107,8 +116,59 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
   );
 }
 
+/**
+ * One tab in the strip: name (title once the shell sets one) + a kill ×. Two sibling
+ * buttons, not nested — a button inside a button is invalid and unclickable.
+ */
+function TerminalTab(props: {
+  terminal: TerminalInfo;
+  active: boolean;
+  onSelect: () => void;
+  onKill: () => void;
+}) {
+  const { terminal, active } = props;
+  const label = terminal.title?.trim() || terminal.name;
+  return (
+    <div
+      data-testid="terminal-tab"
+      data-terminal-id={terminal.id}
+      data-active={active}
+      className={`group flex max-w-40 shrink-0 items-center rounded-md transition-colors duration-150 ${
+        active
+          ? "bg-white/15 text-white"
+          : "text-white/50 hover:bg-white/10 hover:text-white/80"
+      }`}
+    >
+      <button
+        type="button"
+        title={`${terminal.name} — ${terminal.cwd}`}
+        onClick={props.onSelect}
+        className="min-w-0 truncate py-0.5 pl-2 pr-1 text-left"
+      >
+        {label}
+      </button>
+      {/* Kill: this ends the shell itself (server-side), not just a view of it. */}
+      <button
+        type="button"
+        title={S.terminal.killShell}
+        aria-label={`${S.terminal.killShell}: ${label}`}
+        data-testid="terminal-tab-kill"
+        onClick={props.onKill}
+        className={`mr-1 rounded p-0.5 transition-opacity duration-150 hover:bg-white/20 ${
+          active ? "opacity-70 hover:opacity-100" : "opacity-0 group-hover:opacity-70"
+        }`}
+      >
+        <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
+          <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 export function TerminalDock() {
   const open = useTerminalDockOpen();
+  const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState("");
   const [info, setInfo] = useState<TerminalInfo | null>(null);
@@ -135,28 +195,66 @@ export function TerminalDock() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const onStatus = useCallback((next: TerminalStatus, statusDetail: string) => {
-    setStatus(next);
-    setDetail(statusDetail);
-    // A shell exiting under the dock changes the live count the badge shows.
-    if (next === "exited") void refreshTerminalCount();
-  }, []);
+  // An opening dock re-reads the tab strip: terminals may have been opened or closed from
+  // other surfaces while it was hidden.
+  useEffect(() => {
+    if (open) void refreshTerminals();
+  }, [open]);
 
-  const onInfo = useCallback((next: TerminalInfo) => {
-    setInfo(next);
-    // Attaching may have created a terminal; either way the badge re-syncs.
-    void refreshTerminalCount();
-  }, []);
-
-  /** Fresh shell for the dock; the old one (if alive) is deliberately left running. */
-  const newShell = useCallback(() => {
-    localStorage.removeItem(DOCK_ID_KEY);
-    forceCreateRef.current = true;
+  /** Remounts the view onto another terminal (or a to-be-created one when id is null). */
+  const switchTo = useCallback((id: string | null) => {
+    if (id === null) localStorage.removeItem(DOCK_ID_KEY);
+    else localStorage.setItem(DOCK_ID_KEY, id);
     setStatus("connecting");
     setDetail("");
     setInfo(null);
     setGeneration((n) => n + 1);
   }, []);
+
+  const onStatus = useCallback((next: TerminalStatus, statusDetail: string) => {
+    setStatus(next);
+    setDetail(statusDetail);
+    // A shell exiting under the dock changes the tab strip and the toolbar badge.
+    if (next === "exited") void refreshTerminals();
+  }, []);
+
+  const onInfo = useCallback((next: TerminalInfo) => {
+    setInfo(next);
+    // Attaching may have created a terminal; either way the strip/badge re-sync.
+    void refreshTerminals();
+  }, []);
+
+  /** Fresh shell in a new tab; the current one keeps running. */
+  const newShell = useCallback(() => {
+    forceCreateRef.current = true;
+    switchTo(null);
+  }, [switchTo]);
+
+  const selectTerminal = useCallback(
+    (id: string) => {
+      if (id !== info?.id) switchTo(id);
+    },
+    [info, switchTo],
+  );
+
+  /** Kills the shell behind a tab; killing the current tab moves to the newest remaining. */
+  const onKillTerminal = useCallback(
+    (id: string) => {
+      void killTerminal(id);
+      if (id !== info?.id && info !== null) return; // a background tab: the strip just updates
+      // The killed shell can still report alive for a moment (SIGHUP is async), so the
+      // reattach fallback must not run — target the survivor explicitly, or force-create.
+      const remaining = terminals.filter((t) => t.id !== id);
+      const survivor = remaining.at(-1);
+      if (survivor) {
+        switchTo(survivor.id);
+      } else {
+        forceCreateRef.current = true;
+        switchTo(null);
+      }
+    },
+    [info, switchTo, terminals],
+  );
 
   /**
    * Codex-style detach: hand the terminal to its own window. The stored id is kept — it is
@@ -182,30 +280,44 @@ export function TerminalDock() {
       data-testid="terminal-dock"
       className="flex h-72 shrink-0 flex-col border-t border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800"
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-3 py-1.5 text-xs">
-        <span className="font-medium">{S.terminal.title}</span>
-        <span className="max-w-64 truncate text-white/45">{info?.cwd ?? ""}</span>
-        <span
-          data-testid="terminal-dock-status"
-          data-status={status}
-          className={
-            status === "ready"
-              ? "text-emerald-400"
-              : status === "connecting"
-                ? "text-amber-400"
-                : "text-red-400"
-          }
-        >
-          ● {statusText}
-        </span>
-        <div className="ml-auto flex items-center gap-1">
-          {/* New shell: plus */}
+      <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-1.5 text-xs">
+        <span className="shrink-0 font-medium">{S.terminal.title}</span>
+
+        {/* Tab strip: every live terminal, current one highlighted. Scrolls sideways when
+            the shells outgrow the header; the controls at both ends stay put. */}
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          {terminals.map((terminal) => (
+            <TerminalTab
+              key={terminal.id}
+              terminal={terminal}
+              active={terminal.id === info?.id}
+              onSelect={() => selectTerminal(terminal.id)}
+              onKill={() => onKillTerminal(terminal.id)}
+            />
+          ))}
+          {/* New shell: plus, at the end of the strip like a browser's new-tab button. */}
           <DockButton
             label={S.terminal.newShell}
             testId="terminal-dock-new-shell"
             onClick={newShell}
             d="M12 5v14M5 12h14"
           />
+        </div>
+
+        <span
+          data-testid="terminal-dock-status"
+          data-status={status}
+          className={`shrink-0 ${
+            status === "ready"
+              ? "text-emerald-400"
+              : status === "connecting"
+                ? "text-amber-400"
+                : "text-red-400"
+          }`}
+        >
+          ● {statusText}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
           {/* Detach: box with an arrow escaping to the top right */}
           <DockButton
             label={S.terminal.detach}
@@ -213,7 +325,7 @@ export function TerminalDock() {
             onClick={detach}
             d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
           />
-          {/* Close: X (hides the dock; the shell keeps running server-side) */}
+          {/* Close: X (hides the dock; the shells keep running server-side) */}
           <DockButton
             label={S.terminal.close}
             testId="terminal-dock-close"
