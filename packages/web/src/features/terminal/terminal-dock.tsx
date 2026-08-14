@@ -548,43 +548,35 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           </svg>
         </span>
 
-        {/* Tabs group: the strip plus its new-tab "+", packed tight (one visual unit, the
-            browser-tab convention). The strip scrolls when the shells outgrow the header —
-            which is why "+" lives OUTSIDE it, always reachable. */}
-        <div className="flex min-w-0 items-center gap-1">
-          <div
-            ref={stripRef}
-            data-testid="terminal-tab-strip"
-            onPointerDown={onStripPointerDown}
-            onPointerMove={onStripPointerMove}
-            onPointerUp={onStripPointerUp}
-            onPointerCancel={onStripPointerUp}
-            className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
-          >
-            {paneTerminals.map((terminal, index) => (
-              <TerminalTab
-                key={terminal.id}
-                terminal={terminal}
-                index={index}
-                active={terminal.id === currentId}
-                onSelect={() => selectTerminal(terminal.id)}
-                onKill={() => onKillTerminal(terminal.id)}
-              />
-            ))}
-          </div>
-          <DockButton
-            label={S.terminal.newShell}
-            testId="terminal-dock-new-shell"
-            onClick={newShell}
-            d="M12 5v14M5 12h14"
-          />
+        {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
+            reorder, drag out to move onto another edge. Scrolls when the shells outgrow
+            the header. */}
+        <div
+          ref={stripRef}
+          data-testid="terminal-tab-strip"
+          onPointerDown={onStripPointerDown}
+          onPointerMove={onStripPointerMove}
+          onPointerUp={onStripPointerUp}
+          onPointerCancel={onStripPointerUp}
+          className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
+        >
+          {paneTerminals.map((terminal, index) => (
+            <TerminalTab
+              key={terminal.id}
+              terminal={terminal}
+              index={index}
+              active={terminal.id === currentId}
+              onSelect={() => selectTerminal(terminal.id)}
+              onKill={() => onKillTerminal(terminal.id)}
+            />
+          ))}
         </div>
         <span className="min-w-0 flex-1" />
 
         {/* One right-hand cluster with uniform spacing: the status dot (a real circle,
             flex-centered — a text ● sits on the font baseline and never looks centered),
-            a hairline divider, then the action buttons. */}
-        <div className="flex shrink-0 items-center gap-1">
+            a hairline divider, then the action buttons ending in close. */}
+        <div className="flex shrink-0 items-center gap-1.5">
           <span
             data-testid="terminal-dock-status"
             data-status={status}
@@ -610,6 +602,13 @@ export function TerminalDock({ position }: { position: DockPosition }) {
             testId="terminal-dock-detach"
             onClick={detach}
             d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
+          />
+          {/* New shell: plus, beside close per the product spec. */}
+          <DockButton
+            label={S.terminal.newShell}
+            testId="terminal-dock-new-shell"
+            onClick={newShell}
+            d="M12 5v14M5 12h14"
           />
           {/* Close pane: X (its shells keep running; they fold into the primary pane) */}
           <DockButton
