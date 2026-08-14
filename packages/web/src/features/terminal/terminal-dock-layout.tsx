@@ -19,7 +19,7 @@ import type { CSSProperties } from "react";
 import type { DockPosition } from "./terminal-dock-state";
 
 /** Fraction of the host's width/height that counts as an edge band for direct drops. */
-const EDGE_BAND = 0.28;
+const EDGE_BAND = 0.45;
 /** Matches the dock's own sizes (h-72 / w-[26rem]) so the preview is truthful. */
 const DOCK_HEIGHT_PX = 288;
 const DOCK_WIDTH_PX = 416;
@@ -101,19 +101,20 @@ export function DockLayoutOverlay({ candidate }: { candidate: DockPosition | nul
         />
       )}
 
-      {/* Drop-target widget: a top/bottom container and a left/right container. */}
+      {/* Drop-target widget: a top/bottom container and a left/right container, kept a
+          comfortable margin off the host's corner. */}
       <div
         data-testid="dock-layout-widget"
-        className="fixed z-[70] flex items-center gap-2"
-        style={{ left: rect.right - 120, top: rect.bottom - 64 }}
+        className="fixed z-[70] flex items-center gap-3"
+        style={{ left: rect.right - 172, top: rect.bottom - 96 }}
       >
-        <div className="flex flex-col gap-1 rounded-md border border-white/20 bg-gray-900/90 p-1.5 shadow-lg">
-          <DropTarget position="top" candidate={candidate} shape="h-3.5 w-9" />
-          <DropTarget position="bottom" candidate={candidate} shape="h-3.5 w-9" />
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-white/20 bg-gray-900/90 p-2.5 shadow-lg">
+          <DropTarget position="top" candidate={candidate} shape="h-3.5 w-10" />
+          <DropTarget position="bottom" candidate={candidate} shape="h-3.5 w-10" />
         </div>
-        <div className="flex gap-1 rounded-md border border-white/20 bg-gray-900/90 p-1.5 shadow-lg">
-          <DropTarget position="left" candidate={candidate} shape="h-8 w-4" />
-          <DropTarget position="right" candidate={candidate} shape="h-8 w-4" />
+        <div className="flex items-center gap-1.5 rounded-lg border border-white/20 bg-gray-900/90 p-2.5 shadow-lg">
+          <DropTarget position="left" candidate={candidate} shape="h-9 w-4.5" />
+          <DropTarget position="right" candidate={candidate} shape="h-9 w-4.5" />
         </div>
       </div>
     </>,
