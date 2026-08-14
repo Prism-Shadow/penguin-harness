@@ -21,7 +21,7 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { TerminalDock } from "../../features/terminal/terminal-dock";
+import { TerminalDock, useTerminalDockPosition } from "../../features/terminal/terminal-dock";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -172,6 +172,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  const dockPosition = useTerminalDockPosition();
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
@@ -231,7 +232,9 @@ export function AppLayout() {
         )}
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* data-dock-host: the drag-to-dock overlay measures this box for its edge bands,
+          drop-target widget and landing preview (terminal-dock-layout.tsx). */}
+      <div data-dock-host className="flex min-w-0 flex-1 flex-col">
         {/* Mobile: top thin bar (hamburger + brand) */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 md:hidden dark:border-gray-800 dark:bg-gray-950">
           <button
@@ -297,13 +300,18 @@ export function AppLayout() {
           </div>
         )}
 
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-
-        {/* Integrated terminal (Codex-style): bottom panel of the content column, on every
-            page. Toggled via Ctrl+` (bound inside) or the sidebar's terminal entry. */}
-        <TerminalDock />
+        {/* Integrated terminal (Codex-style), on every page, toggled via Ctrl+` or the chat
+            toolbar. Its slot follows the persisted dock position — exactly one of the four
+            renders (the component itself mounts even while hidden, for the shortcut). */}
+        {dockPosition === "top" && <TerminalDock />}
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {dockPosition === "left" && <TerminalDock />}
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <Outlet />
+          </main>
+          {dockPosition === "right" && <TerminalDock />}
+        </div>
+        {dockPosition === "bottom" && <TerminalDock />}
       </div>
 
       <ChangePasswordDialog
