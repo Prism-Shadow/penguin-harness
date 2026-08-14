@@ -49,6 +49,7 @@ const ROW: SessionRow = {
   approvalMode: "always-ask",
   title: null,
   createdAt: "2026-07-06T00:00:00.000Z",
+  lastActiveAt: "2026-07-06T00:00:00.000Z",
 };
 
 /** A simple, scriptable fake Session: run yields one tool_call and requests approval for it. */
@@ -78,6 +79,24 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
   };
 }
 
+/**
+ * A repo whose last-active writes always throw — the realistic failure being a
+ * DatabaseSync handle closed by shutdown while a run outlived its drain window. Everything
+ * else behaves normally, so a test can assert that the run's wrap-up survives it.
+ */
+function brokenTouchRepo(repo: SessionsRepo): SessionsRepo {
+  return new Proxy(repo, {
+    get(target, prop, receiver): unknown {
+      if (prop === "markDriven" || prop === "touchLastActive") {
+        return () => {
+          throw new Error("database is not open");
+        };
+      }
+      return Reflect.get(target, prop, receiver) as unknown;
+    },
+  });
+}
+
 describe("session-manager", () => {
   let db: DatabaseSync;
   let sessions: SessionsRepo;
@@ -86,7 +105,12 @@ describe("session-manager", () => {
   let recorded: OmniMessage[];
   let recordedCtx: UsageContext[];
 
-  const makeManager = (loader: SessionLoader, errors?: ErrorSink): SessionManager =>
+  const makeManager = (
+    loader: SessionLoader,
+    errors?: ErrorSink,
+    /** Stubbed clock for persisted timestamps (see the last_active_at test). */
+    now?: () => Date,
+  ): SessionManager =>
     new SessionManager({
       sessions,
       channels,
@@ -99,6 +123,7 @@ describe("session-manager", () => {
         },
       },
       ...(errors ? { errors } : {}),
+      ...(now ? { now } : {}),
       log: () => {},
     });
 
@@ -158,6 +183,82 @@ describe("session-manager", () => {
       modelId: "m1",
       provider: "custom",
     });
+  });
+
+  it("drive stamps last_active_at twice per run — once at the start, once at the end — and leaves other rows alone", async () => {
+    sessions.insert({
+      ...ROW,
+      sessionId: "session-other",
+      createdAt: "2026-07-07T00:00:00.000Z",
+      lastActiveAt: "2026-07-07T00:00:00.000Z",
+    });
+    // A stubbed clock, one second per read, so each stamp has an exact expected value:
+    // sampling only after the run (when both stamps have landed) cannot tell the two
+    // apart, and a run-end stamp that stops happening would still look "advanced".
+    let tick = 0;
+    const at = (n: number): string => `2026-07-10T00:00:0${n}.000Z`;
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")), undefined, () => {
+      const d = new Date(at(tick));
+      tick += 1;
+      return d;
+    });
+    const lastActive = (id: string): string => sessions.findById(id)!.lastActiveAt;
+    // Insert default: last_active_at = created_at until the first driven run.
+    expect(lastActive("session-1")).toBe(ROW.createdAt);
+
+    // The session pauses mid-run on the always-ask approval — the one moment where the
+    // run-start stamp is observable on its own.
+    await manager.startTask("session-1", [userText("hello")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    const midRun = lastActive("session-1");
+    expect(midRun).toBe(at(0));
+    expect(midRun > ROW.createdAt).toBe(true);
+
+    manager.decideApproval("session-1", "tc-1", "allow");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // Strictly greater: the run END must have its own stamp, or a long Task would report
+    // the moment it began as its last activity for as long as it runs.
+    expect(lastActive("session-1")).toBe(at(1));
+    expect(lastActive("session-1") > midRun).toBe(true);
+
+    // A compaction is a driven run too, and stamps its own pair.
+    await manager.startCompact("session-1");
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(lastActive("session-1")).toBe(at(3));
+    // A session with no activity keeps its creation stamp.
+    expect(lastActive("session-other")).toBe("2026-07-07T00:00:00.000Z");
+  });
+
+  it("a failing last-active write cannot strand a run: idle is still published and queued follow-ups still start", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const logs: string[] = [];
+    const recordedErrors: ErrorRecordArgs[] = [];
+    const manager = new SessionManager({
+      sessions: brokenTouchRepo(sessions),
+      channels,
+      sources,
+      loader: loaderOf(approvalFakeSession("session-1")),
+      recorder: { record: async () => {} },
+      errors: { record: (args) => recordedErrors.push(args) },
+      log: (line) => logs.push(line),
+    });
+    const events = capture("session-1");
+    await manager.startTask("session-1", [userText("hello")]);
+    // Queue a follow-up while the first run is in flight: its auto-start lives in the same
+    // finally, AFTER the stamp — a throw there would stall it forever.
+    await manager.startTask("session-1", [userText("second")], { queueIfBusy: true });
+    await waitFor(() => manager.statusOf("session-1") === "idle" && logs.length >= 4);
+    const states = serverEvents(events)
+      .filter((e) => e.type === "task_state")
+      .map((s) => s.state);
+    // Two runs reached their wrap-up — the queued one only ever starts from inside the
+    // finally, after the failing write — and the session ends up idle, not stuck running.
+    expect(states.filter((s) => s === "idle")).toHaveLength(2);
+    expect(states.at(-1)).toBe("idle");
+    expect(manager.pendingFollowUpCount("session-1")).toBe(0);
+    // The failure is reported, not silent.
+    expect(logs.some((l) => l.includes("last-active bookkeeping failed"))).toBe(true);
+    expect(recordedErrors.map((e) => e.code)).toContain("session_touch_failed");
   });
 
   it("startTask forwards thinkingLevel into session.run options (per-turn, this Task only)", async () => {

@@ -12,9 +12,10 @@
  * up to date / downloading / failed), the same rule the Web App's check-for-updates row
  * follows — a manual action that answers with silence reads as broken.
  *
- * Release builds use Developer ID signing on macOS; unsigned dry-run macOS artifacts can
- * still find updates, but Gatekeeper will not apply them as trusted replacements.
- * Windows NSIS and Linux AppImage continue to work without code-signing for now.
+ * Release builds use Developer ID signing on macOS and Authenticode signing on Windows;
+ * unsigned dry-run artifacts can still find updates, but platform trust and release
+ * gates only apply to signed release builds. Linux AppImage continues without
+ * code-signing for now.
  */
 import { app, dialog, shell } from "electron";
 import type { BrowserWindow } from "electron";

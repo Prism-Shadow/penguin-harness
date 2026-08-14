@@ -14,6 +14,7 @@ import {
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
   aggregateWorkspaceCounts,
+  matchesSessionQuery,
   groupSessionsByWorkspace,
   isTempWorkspace,
   latestConversation,
@@ -46,6 +47,7 @@ function session(
     workspace,
     approvalMode: "allow-all",
     createdAt,
+    lastActiveAt: createdAt,
     status: "idle",
     pendingApprovalCount: 0,
     pendingFollowUpCount: 0,
@@ -346,5 +348,30 @@ describe("pinnedFirst (stable pinned-before-unpinned partition)", () => {
       "agent_b",
       "agent_a",
     ]);
+  });
+});
+
+describe("matchesSessionQuery (sidebar live title search)", () => {
+  const titled = (title: string): SessionInfo => ({
+    ...session("/w", "2026-08-13T00:00:00Z"),
+    title,
+  });
+
+  it("matches case-insensitive substrings of the title, ignoring surrounding whitespace in the query", () => {
+    const s = titled("Fix login bug");
+    expect(matchesSessionQuery(s, "login")).toBe(true);
+    expect(matchesSessionQuery(s, "FIX")).toBe(true);
+    expect(matchesSessionQuery(s, "  bug  ")).toBe(true);
+    expect(matchesSessionQuery(s, "logout")).toBe(false);
+  });
+
+  it("a blank or whitespace-only query matches everything (search inactive)", () => {
+    expect(matchesSessionQuery(titled("anything"), "")).toBe(true);
+    expect(matchesSessionQuery(titled("anything"), "   ")).toBe(true);
+    expect(matchesSessionQuery(session("/w", "2026-08-13T00:00:00Z"), "")).toBe(true);
+  });
+
+  it("untitled Sessions never match a non-empty query (no stored title to search)", () => {
+    expect(matchesSessionQuery(session("/w", "2026-08-13T00:00:00Z"), "new")).toBe(false);
   });
 });

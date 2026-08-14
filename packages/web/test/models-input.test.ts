@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  clientTypeAfterProviderChange,
   decimalOnly,
   digitsOnly,
   nextPointers,
@@ -38,6 +39,14 @@ describe("decimalOnly (price)", () => {
     expect(decimalOnly(".5")).toBe(".5");
     expect(decimalOnly("-1e3")).toBe("13");
     expect(decimalOnly("abc")).toBe("");
+  });
+});
+
+describe("clientTypeAfterProviderChange", () => {
+  it("uses openai when moving to Custom and otherwise preserves the current client", () => {
+    expect(clientTypeAfterProviderChange("custom", "")).toBe("openai");
+    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai");
+    expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
   });
 });
 

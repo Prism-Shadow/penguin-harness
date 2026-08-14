@@ -12,6 +12,7 @@ import {
   formatPercent,
   formatRelativeDate,
   formatRelativeDays,
+  formatRelativeShort,
   formatScore,
   formatTps,
   humanizeDuration,
@@ -238,6 +239,44 @@ describe("formatRelativeDays", () => {
 
   it("parse failure returns the input unchanged", () => {
     expect(formatRelativeDays("not-a-date", "zh")).toBe("not-a-date");
+  });
+});
+
+describe("formatRelativeShort", () => {
+  // Fix "now" (the sidebar row's compact last-active time is measured from it).
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 15, 12, 0, 0));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const at = (mo: number, d: number, h: number, mi: number) =>
+    new Date(2026, mo, d, h, mi).toISOString();
+
+  it("under a minute reads as just-now", () => {
+    expect(formatRelativeShort(new Date(2026, 6, 15, 11, 59, 30).toISOString(), "zh")).toBe("刚刚");
+    expect(formatRelativeShort(at(6, 15, 12, 0), "en")).toBe("now");
+  });
+
+  it("minute / hour / day steps, floored: zh dictionary wording, en ultra-short", () => {
+    expect(formatRelativeShort(at(6, 15, 11, 55), "zh")).toBe("5 分钟前");
+    expect(formatRelativeShort(at(6, 15, 11, 1), "en")).toBe("59m");
+    expect(formatRelativeShort(at(6, 15, 9, 30), "zh")).toBe("2 小时前");
+    expect(formatRelativeShort(at(6, 14, 12, 30), "en")).toBe("23h");
+    expect(formatRelativeShort(at(6, 14, 11, 0), "zh")).toBe("1 天前");
+    expect(formatRelativeShort(at(6, 9, 12, 0), "en")).toBe("6d");
+  });
+
+  it("a week or older — and future times (clock skew) — fall back to the absolute month-day", () => {
+    expect(formatRelativeShort("2026-07-01T00:00:00.000Z", "zh")).toBe("7 月 1 日");
+    expect(formatRelativeShort("2026-01-02T00:00:00.000Z", "en")).toBe("Jan 2");
+    expect(formatRelativeShort("2026-07-20T00:00:00.000Z", "en")).toBe("Jul 20");
+  });
+
+  it("unparsable input yields the empty string (the row hides the slot instead of showing garbage)", () => {
+    expect(formatRelativeShort("not-a-date", "zh")).toBe("");
+    expect(formatRelativeShort("", "en")).toBe("");
   });
 });
 

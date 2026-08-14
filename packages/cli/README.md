@@ -13,7 +13,7 @@ penguin server     # same service, headless
 penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default
 
 penguin run -m "Create hello.txt containing Hello, Penguin"    # one Task, then exit
-penguin chat                                                   # REPL: /compact, /exit, Ctrl-C interrupts
+penguin chat                                                   # REPL: /compact, /clear, /exit, Ctrl-C interrupts
 penguin chat --resume                                          # resume the latest session
 ```
 
