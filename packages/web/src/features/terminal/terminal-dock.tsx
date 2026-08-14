@@ -22,9 +22,13 @@ import { S } from "../../lib/strings";
 import {
   isTerminalDockOpen,
   setTerminalDockOpen,
+  setTerminalDockPosition,
   subscribeTerminalDock,
+  terminalDockPosition,
   toggleTerminalDock,
+  type DockPosition,
 } from "./terminal-dock-state";
+import { DockLayoutOverlay, dockDropCandidate } from "./terminal-dock-layout";
 import {
   TerminalView,
   fetchJson,
@@ -45,6 +49,19 @@ const DOCK_CWD = "~";
 export function useTerminalDockOpen(): boolean {
   return useSyncExternalStore(subscribeTerminalDock, isTerminalDockOpen);
 }
+
+/** Which edge of the content area the dock occupies — AppLayout picks the slot from this. */
+export function useTerminalDockPosition(): DockPosition {
+  return useSyncExternalStore(subscribeTerminalDock, terminalDockPosition);
+}
+
+/** Root sizing per position; the internal header+view column is the same everywhere. */
+const POSITION_CLASSES: Record<DockPosition, string> = {
+  bottom: "h-72 w-full border-t",
+  top: "h-72 w-full border-b",
+  left: "w-[26rem] border-r",
+  right: "w-[26rem] border-l",
+};
 
 /**
  * Resolves the terminal the dock should show: last opened (stored id) if still alive, else
@@ -168,6 +185,7 @@ function TerminalTab(props: {
 
 export function TerminalDock() {
   const open = useTerminalDockOpen();
+  const position = useTerminalDockPosition();
   const terminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState("");
@@ -175,6 +193,12 @@ export function TerminalDock() {
   const [generation, setGeneration] = useState(0);
   /** Armed by "New shell" for exactly the next attach; consumed inside ensure. */
   const forceCreateRef = useRef(false);
+  /** Header drag-to-dock: origin until the threshold, then the live drop candidate. */
+  const dragOrigin = useRef<{ x: number; y: number; started: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ active: boolean; candidate: DockPosition | null }>({
+    active: false,
+    candidate: null,
+  });
 
   const ensure = useCallback(async (cols: number, rows: number): Promise<TerminalInfo> => {
     const forceCreate = forceCreateRef.current;
@@ -268,6 +292,49 @@ export function TerminalDock() {
     setTerminalDockOpen(false);
   }, [info]);
 
+  /**
+   * Header drag-to-dock. Buttons and tabs keep their own gestures; a drag starts from any
+   * other point of the header once the pointer moves past a small threshold, and pointer
+   * capture keeps the move/up events coming even while the pointer crosses the overlay.
+   */
+  const onHeaderPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, [data-testid='terminal-tab']")) return;
+    dragOrigin.current = { x: event.clientX, y: event.clientY, started: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const onHeaderPointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const origin = dragOrigin.current;
+    if (!origin) return;
+    if (!origin.started) {
+      if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 5) return;
+      origin.started = true;
+    }
+    setDrag({ active: true, candidate: dockDropCandidate(event.clientX, event.clientY) });
+  }, []);
+
+  const onHeaderPointerUp = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      const origin = dragOrigin.current;
+      dragOrigin.current = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      if (!origin?.started) return;
+      const candidate = drag.candidate;
+      setDrag({ active: false, candidate: null });
+      // Applying remounts the dock in its new slot; the view reattaches and the server's
+      // restore stream repaints the screen, so the shell itself never notices the move.
+      if (candidate) setTerminalDockPosition(candidate);
+    },
+    [drag.candidate],
+  );
+
+  const onHeaderPointerCancel = useCallback(() => {
+    dragOrigin.current = null;
+    setDrag({ active: false, candidate: null });
+  }, []);
+
   if (!open) return null;
 
   const statusText =
@@ -278,9 +345,17 @@ export function TerminalDock() {
   return (
     <div
       data-testid="terminal-dock"
-      className="flex h-72 shrink-0 flex-col border-t border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800"
+      data-position={position}
+      className={`flex shrink-0 flex-col border-gray-200 bg-[#14171a] text-[#e6e6e6] dark:border-gray-800 ${POSITION_CLASSES[position]}`}
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-1.5 text-xs">
+      <header
+        data-testid="terminal-dock-header"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerCancel}
+        className="flex shrink-0 cursor-grab select-none items-center gap-2 border-b border-white/10 px-3 py-1.5 text-xs"
+      >
         <span className="shrink-0 font-medium">{S.terminal.title}</span>
 
         {/* Tab strip: every live terminal, current one highlighted. Scrolls sideways when
@@ -341,6 +416,7 @@ export function TerminalDock() {
         onInfo={onInfo}
         className="min-h-0 flex-1 overflow-hidden px-2 py-1"
       />
+      {drag.active && <DockLayoutOverlay candidate={drag.candidate} />}
     </div>
   );
 }

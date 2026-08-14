@@ -269,6 +269,74 @@ test("dock tabs: list every shell, switch between them, kill one", async ({ page
   await expect(tabs).toHaveCount(1, { timeout: 15000 });
 });
 
+test("dock layout: drag to an edge or onto the drop targets, preview then apply", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "LAYOUT_SHELL");
+  await expect(dock(page)).toHaveAttribute("data-position", "bottom"); // the default
+
+  const header = page.locator('[data-testid="terminal-dock-header"]');
+  const ready = page.locator('[data-testid="terminal-dock-status"][data-status="ready"]');
+
+  // Method 2: drag the header onto the "left" rectangle of the left/right container.
+  let hb = await header.boundingBox();
+  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x + 90, hb.y - 60, { steps: 4 }); // past the threshold → overlay
+  const leftTarget = page.locator('[data-dock-pos="left"]');
+  await expect(leftTarget).toBeVisible();
+  const lt = await leftTarget.boundingBox();
+  await page.mouse.move(lt.x + lt.width / 2, lt.y + lt.height / 2, { steps: 4 });
+  await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveAttribute(
+    "data-pos",
+    "left",
+  );
+  await page.mouse.up();
+  await expect(dock(page)).toHaveAttribute("data-position", "left");
+
+  // The moved dock reattached the same shell (restore repaints it) and stays interactive.
+  await expect(ready).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("LAYOUT_SHELL");
+  await runInDock(page, "echo AFTER_MOVE_LEFT");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("AFTER_MOVE_LEFT");
+
+  // Method 1: drag straight into the top edge band of the content area.
+  hb = await header.boundingBox();
+  const host = await page.locator("[data-dock-host]").boundingBox();
+  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(host.x + host.width / 2, host.y + 30, { steps: 6 });
+  await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveAttribute(
+    "data-pos",
+    "top",
+  );
+  await page.mouse.up();
+  await expect(dock(page)).toHaveAttribute("data-position", "top");
+  await expect(ready).toBeVisible({ timeout: 20000 });
+
+  // Releasing in the neutral middle changes nothing.
+  hb = await header.boundingBox();
+  await page.mouse.move(hb.x + 24, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(host.x + host.width / 2, host.y + host.height / 2, { steps: 4 });
+  await expect(page.locator('[data-testid="dock-layout-preview"]')).toHaveCount(0);
+  await page.mouse.up();
+  await expect(dock(page)).toHaveAttribute("data-position", "top");
+
+  // The position survives a reload.
+  await page.reload();
+  await expect(dock(page)).toBeVisible({ timeout: 20000 });
+  await expect(dock(page)).toHaveAttribute("data-position", "top");
+});
+
 test("terminal count badge and last-opened persistence", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
