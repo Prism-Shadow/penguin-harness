@@ -105,7 +105,7 @@ interface GenerativeModelConfig {
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
-  toolPermission(name: string): "r" | "rw" | undefined;   // 供前端审批模式判定
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
   dispose?(): void;                                        // 释放运行时资源,幂等
 }
 ```

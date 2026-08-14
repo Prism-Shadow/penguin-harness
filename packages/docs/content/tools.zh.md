@@ -261,6 +261,8 @@ tools:
 
 ```yaml
 tools:
+  # direct（默认）：全部原生；auto：大型 MCP 目录走网关；lazy：全部走网关。
+  toolExposure: direct
   mcpServers:
     - name: filesystem
       config:
@@ -275,7 +277,10 @@ tools:
 
 行为口径：
 
-- 连接是**懒加载**的：Session 创建即时返回，首个 `run()` 开始时才并行连接全部 Server 并做一次工具发现——连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end` 事件（前端显示连接状态；end 带总体 status 与逐 Server 结果），完成后以 `tool_list_ready` 事件下发完整工具定义（见 [OmniMessage](/omni-message)）；这三条消息在 Trace 中写在本轮输入之后，归属新轮次。运行中打断即**取消**本次连接，下次 `run()` 重新连接。发现结果是 Session 生命周期内的快照，`tools/list_changed` 通知被忽略。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
+- 三种暴露模式下，连接都采用**懒加载**：Session 创建即时返回，首个 `run()` 才并行连接全部 Server 并发现工具目录。连接期间流式发出一对 `mcp_connect_begin` / `mcp_connect_end`；中途打断会取消本次连接，下次 `run()` 重新连接。Direct 模式把首次发现结果作为 Session 生命周期内的快照；Auto 选中网关或使用 Lazy 时监听 `tools/list_changed`，只刷新私有目录。连接失败或条目非法只产生 stderr 警告并跳过该 Server，**不阻塞会话**。
+- `toolExposure: direct`（默认）在 `tool_list_ready` 和每次模型请求中携带全部内置工具及首次发现的 MCP 定义。`auto` 保留内置工具；当初始 MCP 定义估算达到 2,048 token 时，将 MCP 部分放入固定的 `search_tools` 和 `call_tool` 网关，这个选择在 Session 内不再改变。`lazy` 把内置和 MCP 工具都放入私有目录，模型只看到同一组固定网关。模型显式搜索目录、选择返回的工具契约，再把引用和符合 Schema 的参数交给执行网关。网关模式下，MCP 工具新增、删除或更新只改变私有目录；相同契约沿用原引用，Schema、权限或描述变化会使旧引用失效并返回替代契约，删除则返回 `tool_removed`。网关会解析实际权限，并沿用目标工具的超时和输出限制。这样可以减少 Schema 上下文并避免工具列表变化导致前缀失效，代价是首次发现冷工具可能多一次模型请求。
+- 同一 Session 内不会随工具目录变化切换暴露模式。工具数量不能准确代表成本，因为不同 Schema 的体积差异很大；`auto` 因此按初始序列化 Schema 的估算体积决策，并在第一次模型请求前冻结。工具较少且会频繁使用时可选 `direct`；大多数场景可选 `auto`；只有明确希望内置工具也按需加载时才使用 `lazy`。
+- Direct 模式会跳过不符合常见模型 API 函数命名限制的 MCP 工具；Lazy 模式把原生名称作为普通字符串传递，因此仍可通过网关调用这类工具。
 - 发现的工具以 `mcp__<server>__<tool>` 进入统一工具命名空间，与内置工具走同一条[执行契约](#执行契约)（超时、截断、打断）与[审批](#审批)流程。
 - 权限映射：Server 注解 `readOnlyHint: true` 的工具为 `r`（read-only 审批模式自动放行），其余一律 `rw`——注解是未受信 hint，缺省取限制方向。
 - 结果映射：text 块拼接为输出文本；image 块作为图片（data URL）随输出附带；audio 与二进制 resource 折叠为占位行；仅有 `structuredContent` 时将其序列化为 JSON；Server 报 `isError` 时落实为 `stop_reason: "failed"`，内容即 Server 给出的错误说明。

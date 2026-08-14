@@ -50,6 +50,21 @@ describe("agent config: mcpServers", () => {
     expect(yaml).toContain("https://example.com/mcp");
   });
 
+  it("defaults exposure to direct and persists an opt-in adaptive mode", async () => {
+    const initial = (await (await owner.get(configPath)).json()) as AgentConfigResponse;
+    expect(initial.config.toolExposure).toBe("direct");
+
+    const putRes = await owner.put(configPath, { config: { toolExposure: "auto" } });
+    expect(putRes.status).toBe(200);
+    const updated = (await putRes.json()) as AgentConfigResponse;
+    expect(updated.config.toolExposure).toBe("auto");
+    const yaml = await fs.readFile(systemConfigPath(t.root, projectId, "default_agent"), "utf8");
+    expect(yaml).toContain("toolExposure: auto");
+
+    const invalid = await owner.put(configPath, { config: { toolExposure: "everything" } });
+    expect(invalid.status).toBe(400);
+  });
+
   describe("POST /config/mcp-test", () => {
     // The core package's stdio fixture, reused across packages (monorepo-only path — tests
     // are not published); its @modelcontextprotocol/server import resolves from core's own

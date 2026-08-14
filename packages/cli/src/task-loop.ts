@@ -83,7 +83,7 @@ export async function runTask(
   };
   const approveByMode = makeApprove({
     mode: opts.mode ?? "allow-all",
-    toolPermission: (name) => session.toolPermission(name),
+    toolPermission: (name, rawArguments) => session.toolPermission(name, rawArguments),
     interactivePrompt,
   });
   // The auto-approval path (allow-all / deny-all / read-only approvals) has no prompt: it

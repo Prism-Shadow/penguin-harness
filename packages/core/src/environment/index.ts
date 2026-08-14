@@ -5,6 +5,8 @@ export { Environment } from "./environment.js";
 export type { BuiltinTool, ToolExecutionContext } from "./tools/types.js";
 export { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 export type { BuiltinToolFactory } from "./tools/registry.js";
+export { searchToolCatalog } from "./tool-catalog.js";
+export type { ToolCatalogEntry, ToolCatalogMatch } from "./tool-catalog.js";
 export { createReadFileTool, READ_FILE_NAME } from "./tools/read-file.js";
 export { createEditFileTool, EDIT_FILE_NAME } from "./tools/edit-file.js";
 export { createWriteFileTool, WRITE_FILE_NAME } from "./tools/write-file.js";
@@ -17,8 +19,11 @@ export type { ProcessExit, SpawnOptions } from "./tools/command/index.js";
 export { SubagentSessionManager, ManagedSubagentSession } from "./tools/subagent/index.js";
 export {
   DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+  DEFAULT_TOOL_EXPOSURE_THRESHOLD_TOKENS,
   MCP_TOOL_PREFIX,
   McpToolProvider,
+  TOOL_CALL_NAME,
+  TOOL_SEARCH_NAME,
   mcpToolName,
   resolveMCPServer,
   resolveMCPServers,

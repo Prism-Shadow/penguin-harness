@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,17 +10,46 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { z } from "zod";
 import { Environment } from "../src/environment/index.js";
-import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
+import {
+  TOOL_CALL_NAME as MCP_CALL_TOOL_NAME,
+  TOOL_SEARCH_NAME as MCP_SEARCH_TOOL_NAME,
+  McpToolProvider,
+  renderCallToolResult,
+} from "../src/environment/mcp/provider.js";
 import { Session } from "../src/session.js";
 import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
 import type { LLMInterface, LLMOutcome, MCPServerConfig } from "../src/interfaces.js";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.meta.url));
+const DYNAMIC_FIXTURE = fileURLToPath(
+  new URL("./fixtures/mcp-dynamic-catalog-server.mjs", import.meta.url),
+);
+const EXPOSURE_FIXTURE = fileURLToPath(
+  new URL("./fixtures/mcp-tool-exposure-server.mjs", import.meta.url),
+);
 
 /** A `tools.mcpServers` entry spawning the stdio fixture, with optional extra config fields. */
 function fixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
   return { name: "fx", config: { command: process.execPath, args: [FIXTURE], ...extra } };
+}
+
+function dynamicFixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
+  return {
+    name: "dynamic",
+    config: { command: process.execPath, args: [DYNAMIC_FIXTURE], ...extra },
+  };
+}
+
+function exposureFixtureEntry(toolCount: number): MCPServerConfig {
+  return {
+    name: "many",
+    config: {
+      command: process.execPath,
+      args: [EXPOSURE_FIXTURE],
+      env: { PENGUIN_TOOL_EXPOSURE_EVAL_TOOL_COUNT: String(toolCount) },
+    },
+  };
 }
 
 /**
@@ -78,6 +107,56 @@ function runTool(
 ): Promise<OmniMessage[]> {
   const call = toolCall({ name, arguments: JSON.stringify(args), toolCallId: "mcp-call-1" });
   return collect(env.executeTool({ toolCall: call, ...(signal ? { signal } : {}) }));
+}
+
+interface McpSearchMatch {
+  tool_ref: string;
+  tool_name: string;
+  permission: "r" | "rw";
+  schema_digest: string;
+  input_schema: Record<string, unknown>;
+}
+
+interface McpSearchResult {
+  catalog_generation: number;
+  matches: McpSearchMatch[];
+  note?: string;
+}
+
+async function searchCatalog(env: Environment, query: string, limit = 5): Promise<McpSearchResult> {
+  const final = finalPayload(await runTool(env, MCP_SEARCH_TOOL_NAME, { query, limit }));
+  expect(final.stop_reason).toBe("completed");
+  return JSON.parse(final.output ?? "{}") as McpSearchResult;
+}
+
+async function searchOne(env: Environment, query: string): Promise<McpSearchMatch> {
+  const result = await searchCatalog(env, query, 1);
+  expect(result.matches).toHaveLength(1);
+  return result.matches[0]!;
+}
+
+async function waitForCatalogGeneration(
+  env: Environment,
+  after: number,
+  query = "catalog control",
+): Promise<McpSearchResult> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const result = await searchCatalog(env, query);
+    if (result.catalog_generation > after) return result;
+    if (Date.now() >= deadline) {
+      throw new Error(`MCP catalog did not advance beyond generation ${after}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function dispatchArguments(match: McpSearchMatch, args: Record<string, unknown>) {
+  return {
+    tool_ref: match.tool_ref,
+    tool_name: match.tool_name,
+    arguments: args,
+  };
 }
 
 describe("renderCallToolResult", () => {
@@ -284,7 +363,7 @@ describe("Session first-run bootstrap events", () => {
   });
 
   afterAll(async () => {
-    await rm(tmp, { recursive: true, force: true });
+    await rmEventually(tmp);
   });
 
   const fakeLLM: LLMInterface = {
@@ -294,7 +373,7 @@ describe("Session first-run bootstrap events", () => {
     },
   };
 
-  function makeSession(env: Environment, written: OmniMessage[]): Session {
+  function makeSession(env: Environment, written: OmniMessage[], llm = fakeLLM): Session {
     const meta: SessionMetaPayload = {
       session_id: "s-mcp",
       provider: "custom",
@@ -308,7 +387,7 @@ describe("Session first-run bootstrap events", () => {
       meta,
       bootstrap: async () => ({
         tools: await env.listTools(),
-        llm: fakeLLM,
+        llm,
         mcp: env.mcpConnectResults(),
       }),
       mcpServers: env.mcpServerNames(),
@@ -328,6 +407,7 @@ describe("Session first-run bootstrap events", () => {
       workspaceDir: tmp,
       toolConfig: { customTools: [], mcpServers: [fixtureEntry()] },
     });
+    const listTools = vi.spyOn(env, "listTools");
     const written: OmniMessage[] = [];
     const session = makeSession(env, written);
     try {
@@ -350,7 +430,14 @@ describe("Session first-run bootstrap events", () => {
       expect(end.results).toHaveLength(1);
       expect(end.results![0]).toMatchObject({ server: "fx", status: "completed", tools: 6 });
       const toolsMsg = streamed[2]!.payload as { tools?: { name: string }[] };
-      expect(toolsMsg.tools!.map((t) => t.name)).toContain("mcp__fx__echo");
+      expect(toolsMsg.tools!.map((t) => t.name)).toEqual([
+        "mcp__fx__echo",
+        "mcp__fx__fail",
+        "mcp__fx__pic",
+        "mcp__fx__slow",
+        "mcp__fx__probe",
+        "mcp__fx__spam",
+      ]);
       // Trace ordering: the engine writes the bootstrap records AFTER the run's input, so
       // the connect phase belongs to the new turn — meta, the user text, then the pair.
       const writtenTypes = written.map(
@@ -369,6 +456,8 @@ describe("Session first-run bootstrap events", () => {
       const secondTypes = second.map((m) => (m.payload as { type?: string }).type);
       expect(secondTypes).not.toContain("mcp_connect_begin");
       expect(secondTypes).not.toContain("tool_list_ready");
+      // Direct is the compatibility default: discovery/listing happens once at bootstrap.
+      expect(listTools).toHaveBeenCalledTimes(1);
     } finally {
       session.dispose();
     }
@@ -389,6 +478,442 @@ describe("Session first-run bootstrap events", () => {
       expect(types).not.toContain("mcp_connect_begin");
     } finally {
       session.dispose();
+    }
+  });
+
+  it("lazy exposure keeps a fixed tool surface through explicit search and dispatch", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry()], toolExposure: "lazy" },
+    });
+    const written: OmniMessage[] = [];
+    let request = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(parameters): AsyncGenerator<OmniMessage, LLMOutcome> {
+        request += 1;
+        if (request === 1) {
+          yield toolCall({
+            name: MCP_SEARCH_TOOL_NAME,
+            arguments: JSON.stringify({ query: "echo input text", limit: 1 }),
+            toolCallId: "search-1",
+          });
+        } else if (request === 2) {
+          const searchResult = JSON.parse(
+            finalPayload(parameters.newMessages).output ?? "{}",
+          ) as McpSearchResult;
+          expect(searchResult.matches).toHaveLength(1);
+          yield toolCall({
+            name: MCP_CALL_TOOL_NAME,
+            arguments: JSON.stringify(
+              dispatchArguments(searchResult.matches[0]!, { text: "model selected" }),
+            ),
+            toolCallId: "dispatch-1",
+          });
+        } else {
+          expect(finalPayload(parameters.newMessages).output).toBe("echo: model selected");
+          yield assistantText("done");
+        }
+        return { status: "completed" };
+      },
+    };
+    const session = makeSession(env, written, llm);
+    try {
+      const initial = await env.listTools();
+      const signature = JSON.stringify(initial);
+      expect(initial.map((tool) => tool.name)).toEqual([MCP_SEARCH_TOOL_NAME, MCP_CALL_TOOL_NAME]);
+      expect(env.toolPermission(MCP_SEARCH_TOOL_NAME)).toBe("r");
+      expect(env.toolPermission(MCP_CALL_TOOL_NAME)).toBeUndefined();
+      expect(env.toolPermission("mcp__fx__echo")).toBeUndefined();
+      expect(finalPayload(await runTool(env, "mcp__fx__echo", { text: "too early" })).output).toBe(
+        "Unknown tool: mcp__fx__echo",
+      );
+
+      const streamed: OmniMessage[] = [];
+      for await (const msg of session.run([userText("find an echo tool")], {
+        approve: async () => "allow",
+      })) {
+        streamed.push(msg);
+      }
+
+      const toolLists = streamed.filter(
+        (msg) => (msg.payload as { type?: string }).type === "tool_list_ready",
+      );
+      expect(toolLists).toHaveLength(1);
+      expect(
+        (toolLists[0]!.payload as { tools: { name: string }[] }).tools.map((tool) => tool.name),
+      ).toEqual([MCP_SEARCH_TOOL_NAME, MCP_CALL_TOOL_NAME]);
+      expect(request).toBe(3);
+      expect(JSON.stringify(await env.listTools())).toBe(signature);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("lazy exposure routes built-in tools through the same fixed gateway", async () => {
+    await writeFile(path.join(tmp, "gateway.txt"), "gateway builtin\n", "utf8");
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [
+          {
+            name: "read_file",
+            description: "Read a text file from the workspace.",
+            permission: "r",
+            parameters: {
+              type: "object",
+              properties: { file_path: { type: "string" } },
+              required: ["file_path"],
+              additionalProperties: false,
+            },
+          },
+        ],
+        mcpServers: [],
+        toolExposure: "lazy",
+      },
+    });
+    try {
+      const initial = await env.listTools();
+      const signature = JSON.stringify(initial);
+      expect(initial.map((tool) => tool.name)).toEqual([MCP_SEARCH_TOOL_NAME, MCP_CALL_TOOL_NAME]);
+      expect(
+        finalPayload(await runTool(env, "read_file", { file_path: "gateway.txt" })).output,
+      ).toBe("Unknown tool: read_file");
+
+      const match = await searchOne(env, "read text file workspace");
+      expect(match).toMatchObject({ tool_name: "read_file", permission: "r" });
+      const args = dispatchArguments(match, { file_path: "gateway.txt" });
+      expect(env.toolPermission(MCP_CALL_TOOL_NAME, JSON.stringify(args))).toBe("r");
+      const result = finalPayload(await runTool(env, MCP_CALL_TOOL_NAME, args));
+      expect(result.stop_reason).toBe("completed");
+      expect(result.output).toContain("gateway builtin");
+      expect(JSON.stringify(await env.listTools())).toBe(signature);
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("auto exposure freezes one direct-or-gateway decision from the initial MCP schema size", async () => {
+    const builtin = {
+      name: "read_file",
+      description: "Read a text file from the workspace.",
+      permission: "r" as const,
+      parameters: {
+        type: "object",
+        properties: { file_path: { type: "string" } },
+        required: ["file_path"],
+        additionalProperties: false,
+      },
+    };
+    const compact = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [builtin],
+        mcpServers: [fixtureEntry()],
+        toolExposure: "auto",
+      },
+    });
+    const large = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [builtin],
+        mcpServers: [exposureFixtureEntry(50)],
+        toolExposure: "auto",
+      },
+    });
+    try {
+      const compactNames = (await compact.listTools()).map((tool) => tool.name);
+      expect(compactNames).toContain("read_file");
+      expect(compactNames).toContain("mcp__fx__echo");
+      expect(compactNames).not.toContain(MCP_SEARCH_TOOL_NAME);
+
+      const largeInitial = await large.listTools();
+      const largeSignature = JSON.stringify(largeInitial);
+      expect(largeInitial.map((tool) => tool.name)).toEqual([
+        "read_file",
+        MCP_SEARCH_TOOL_NAME,
+        MCP_CALL_TOOL_NAME,
+      ]);
+      const match = await searchOne(large, "create github repository issue");
+      expect(match.tool_name).toBe("mcp__many__github_create_issue");
+      expect(JSON.stringify(await large.listTools())).toBe(largeSignature);
+    } finally {
+      compact.dispose();
+      large.dispose();
+    }
+  });
+
+  it("dispatches versioned search results while preserving schema, permission, and surface", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry()], toolExposure: "lazy" },
+    });
+    try {
+      const initialSignature = JSON.stringify(await env.listTools());
+      const match = await searchOne(env, "echo input text");
+      expect(match).toMatchObject({
+        tool_name: "mcp__fx__echo",
+        permission: "r",
+        schema_digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        input_schema: expect.objectContaining({ type: "object" }),
+      });
+      expect(match.tool_ref).toMatch(/^tr_[a-f0-9]{32}$/);
+      const noMatch = await searchCatalog(env, "quantum zebra orchestration");
+      expect(noMatch.matches).toHaveLength(0);
+      expect(noMatch.note).toContain("Do not retry synonymous queries");
+
+      const dispatchArgs = dispatchArguments(match, { text: "again" });
+      expect(env.toolPermission(MCP_CALL_TOOL_NAME, JSON.stringify(dispatchArgs))).toBe("r");
+      const final = finalPayload(await runTool(env, MCP_CALL_TOOL_NAME, dispatchArgs));
+      expect(final.stop_reason).toBe("completed");
+      expect(final.output).toBe("echo: again");
+
+      const invalid = finalPayload(
+        await runTool(env, MCP_CALL_TOOL_NAME, { ...dispatchArgs, arguments: {} }),
+      );
+      expect(invalid.stop_reason).toBe("failed");
+      expect(JSON.parse(invalid.output ?? "{}")).toMatchObject({
+        error: "invalid_tool_arguments",
+        retryable: true,
+      });
+
+      const mismatched = finalPayload(
+        await runTool(env, MCP_CALL_TOOL_NAME, {
+          ...dispatchArgs,
+          tool_name: "mcp__fx__fail",
+        }),
+      );
+      expect(JSON.parse(mismatched.output ?? "{}")).toMatchObject({
+        error: "tool_reference_mismatch",
+        retryable: false,
+      });
+
+      const unknown = finalPayload(
+        await runTool(env, MCP_CALL_TOOL_NAME, {
+          ...dispatchArgs,
+          tool_ref: "tr_00000000000000000000000000000000",
+        }),
+      );
+      expect(JSON.parse(unknown.output ?? "{}")).toMatchObject({
+        error: "unknown_tool_reference",
+        retryable: false,
+      });
+      expect(
+        env.toolPermission(
+          MCP_CALL_TOOL_NAME,
+          JSON.stringify({
+            ...dispatchArgs,
+            tool_ref: "tr_00000000000000000000000000000000",
+          }),
+        ),
+      ).toBeUndefined();
+
+      const repeated = await searchOne(env, "echo input text");
+      expect(repeated.tool_ref).toBe(match.tool_ref);
+      const writeMatch = await searchOne(env, "always reports tool error");
+      expect(writeMatch).toMatchObject({ tool_name: "mcp__fx__fail", permission: "rw" });
+      expect(
+        env.toolPermission(MCP_CALL_TOOL_NAME, JSON.stringify(dispatchArguments(writeMatch, {}))),
+      ).toBe("rw");
+
+      // The native name is data in lazy mode, so MCP names rejected by provider-native
+      // function schemas remain callable through the fixed gateway.
+      const dotted = await searchOne(env, "unusable LLM tool name");
+      expect(dotted.tool_name).toBe("mcp__fx__dot.name");
+      expect(
+        finalPayload(await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(dotted, {}))).output,
+      ).toBe("never callable");
+      expect(JSON.stringify(await env.listTools())).toBe(initialSignature);
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("refreshes the private lazy catalog without changing the model tool surface", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [],
+        mcpServers: [dynamicFixtureEntry()],
+        toolExposure: "lazy",
+      },
+    });
+    try {
+      const surface = JSON.stringify(await env.listTools());
+      const initialSearch = await searchCatalog(env, "mutable text", 1);
+      const initial = initialSearch.matches[0]!;
+      const control = await searchOne(env, "changes dynamic fixture catalog");
+      expect(initial.tool_name).toBe("mcp__dynamic__mutable");
+      expect(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(initial, { text: "one" })),
+        ).output,
+      ).toBe("initial: one");
+
+      // A re-registration with the same contract keeps the reference valid while replacing
+      // the private execution binding.
+      let generation = initialSearch.catalog_generation;
+      await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(control, { action: "rebind" }));
+      generation = (await waitForCatalogGeneration(env, generation)).catalog_generation;
+      const rebound = await searchOne(env, "mutable text");
+      expect(rebound.tool_ref).toBe(initial.tool_ref);
+      expect(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(initial, { text: "two" })),
+        ).output,
+      ).toBe("rebound: two");
+
+      // Permission changes issue a new ref, so a previously read-only approval cannot be
+      // reused for a now-mutating contract.
+      await runTool(
+        env,
+        MCP_CALL_TOOL_NAME,
+        dispatchArguments(control, { action: "permission_rw" }),
+      );
+      generation = (await waitForCatalogGeneration(env, generation)).catalog_generation;
+      const writeBinding = await searchOne(env, "mutable text");
+      expect(writeBinding).toMatchObject({ permission: "rw" });
+      expect(writeBinding.tool_ref).not.toBe(initial.tool_ref);
+      const permissionStale = JSON.parse(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(initial, { text: "old" })),
+        ).output ?? "{}",
+      ) as Record<string, unknown>;
+      expect(permissionStale).toMatchObject({
+        error: "stale_tool_reference",
+        stale_reason: "permission_changed",
+        replacement: { tool_ref: writeBinding.tool_ref, permission: "rw" },
+      });
+      expect(
+        env.toolPermission(
+          MCP_CALL_TOOL_NAME,
+          JSON.stringify(dispatchArguments(writeBinding, { text: "approved again" })),
+        ),
+      ).toBe("rw");
+
+      // An incompatible schema gets a new ref. The old one is a tombstone with the exact
+      // replacement contract; it can no longer reach the server under stale validation.
+      await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(control, { action: "schema_v2" }));
+      generation = (await waitForCatalogGeneration(env, generation)).catalog_generation;
+      const changed = await searchOne(env, "mutable count");
+      expect(changed.tool_ref).not.toBe(writeBinding.tool_ref);
+      expect(
+        env.toolPermission(MCP_CALL_TOOL_NAME, JSON.stringify(dispatchArguments(writeBinding, {}))),
+      ).toBeUndefined();
+      const stale = JSON.parse(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(writeBinding, { text: "old" })),
+        ).output ?? "{}",
+      ) as Record<string, unknown>;
+      expect(stale).toMatchObject({
+        error: "stale_tool_reference",
+        retryable: true,
+        stale_reason: "schema_changed",
+        replacement: { tool_ref: changed.tool_ref, tool_name: changed.tool_name },
+      });
+      expect(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(changed, { count: 3 })),
+        ).output,
+      ).toBe("count: 3");
+
+      // Additions are searchable immediately, still behind the same fixed gateways.
+      await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(control, { action: "add" }));
+      generation = (await waitForCatalogGeneration(env, generation)).catalog_generation;
+      const added = await searchOne(env, "added after session starts");
+      expect(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(added, { value: "now" })),
+        ).output,
+      ).toBe("added: now");
+
+      // Removals invalidate the active ref explicitly instead of forwarding a doomed call.
+      await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(control, { action: "remove" }));
+      await waitForCatalogGeneration(env, generation);
+      expect((await searchCatalog(env, "mutable count", 1)).matches).toHaveLength(0);
+      const removed = JSON.parse(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(changed, { count: 4 })),
+        ).output ?? "{}",
+      ) as Record<string, unknown>;
+      expect(removed).toMatchObject({
+        error: "tool_removed",
+        retryable: false,
+        stale_reason: "tool_removed",
+      });
+      const oldest = JSON.parse(
+        finalPayload(
+          await runTool(env, MCP_CALL_TOOL_NAME, dispatchArguments(initial, { text: "very old" })),
+        ).output ?? "{}",
+      ) as Record<string, unknown>;
+      expect(oldest).toMatchObject({ error: "tool_removed", stale_reason: "tool_removed" });
+      expect(JSON.stringify(await env.listTools())).toBe(surface);
+    } finally {
+      env.dispose();
+    }
+  }, 30_000);
+
+  it("keeps direct exposure on its compatibility snapshot when the MCP catalog changes", async () => {
+    const env = new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [dynamicFixtureEntry()] },
+    });
+    try {
+      const initial = await env.listTools();
+      const surface = JSON.stringify(initial);
+      expect(initial.map((tool) => tool.name)).toEqual([
+        "mcp__dynamic__mutable",
+        "mcp__dynamic__catalog_control",
+      ]);
+      expect(
+        finalPayload(await runTool(env, "mcp__dynamic__catalog_control", { action: "add" }))
+          .stop_reason,
+      ).toBe("completed");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(JSON.stringify(await env.listTools())).toBe(surface);
+      expect(finalPayload(await runTool(env, "mcp__dynamic__added", { value: "x" })).output).toBe(
+        "Unknown tool: mcp__dynamic__added",
+      );
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("uses the referenced MCP tool's timeout and output cap through the fixed gateway", async () => {
+    const timeoutEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [],
+        mcpServers: [fixtureEntry({ timeoutMs: 300 })],
+        toolExposure: "lazy",
+      },
+    });
+    try {
+      const slow = await searchOne(timeoutEnv, "wait requested milliseconds");
+      const timedOut = finalPayload(
+        await runTool(timeoutEnv, MCP_CALL_TOOL_NAME, dispatchArguments(slow, { ms: 60_000 })),
+      );
+      expect(timedOut.stop_reason).toBe("failed");
+      expect(timedOut.output).toContain("[tool timeout: exceeded 300ms]");
+    } finally {
+      timeoutEnv.dispose();
+    }
+
+    const cappedEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: {
+        customTools: [],
+        mcpServers: [fixtureEntry({ maxOutputLength: 100 })],
+        toolExposure: "lazy",
+      },
+    });
+    try {
+      const spam = await searchOne(cappedEnv, "returns 500 characters");
+      const capped = finalPayload(
+        await runTool(cappedEnv, MCP_CALL_TOOL_NAME, dispatchArguments(spam, {})),
+      );
+      expect(capped.output).toBe("x".repeat(100) + "\n[output truncated: exceeded 100 chars]");
+    } finally {
+      cappedEnv.dispose();
     }
   });
 
