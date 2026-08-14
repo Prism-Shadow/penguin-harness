@@ -9,6 +9,7 @@
  * The vitest config is kept separate in vitest.config.ts (its embedded vite 5 types conflict with this
  * package's vite 7 plugin types, hence the separate file to avoid the clash).
  */
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -32,6 +33,20 @@ export function apiProxyTarget(env: Record<string, string | undefined> = process
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: [
+      // The hot-update kernel resolves to the workspace SOURCE, not the built
+      // package: the kernel is zero-dependency TS (vite compiles it directly),
+      // and going through node_modules is fragile here — pnpm materializes
+      // workspace packages as file: copies, so a rebuilt core dist (or an
+      // updated exports map) is invisible until the next `pnpm install`
+      // ("Missing ./kernel specifier" was exactly that staleness).
+      {
+        find: /^@prismshadow\/penguin-core\/kernel$/,
+        replacement: fileURLToPath(new URL("../core/src/kernel/index.ts", import.meta.url)),
+      },
+    ],
+  },
   server: {
     // Fixed PenguinHarness dev port (stands alone — vite configs cannot import core TS,
     // so the numbers are literals here; the allocation table lives in core's internal/ports.ts).

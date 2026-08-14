@@ -1,7 +1,7 @@
 /**
  * ToolRegistry: the shared surface skills contribute to.
  *
- * Cordis lessons applied (from the dsh study):
+ * Ownership and lifecycle rules (the kernel's effect discipline):
  * - The registry is owned by the PLATFORM INSTANCE (created in its create()),
  *   never module scope — a module-level registry would be a singleton that
  *   silently survives hot swaps and accumulates stale registrations.
