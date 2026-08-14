@@ -74,9 +74,19 @@ function commit(next: TerminalInfo[]): void {
   for (const listener of [...listeners]) listener();
 }
 
-/** Persists a user-dragged tab order and re-sorts the snapshot. */
+/**
+ * Persists a user-dragged tab order and re-sorts the snapshot. `ids` is one pane's tabs in
+ * their new relative order — but `order` is the single global ranking, so the reordered ids
+ * are spliced into the slots they already occupy globally, leaving every other pane's
+ * terminals ranked exactly where they were.
+ */
 export function setTerminalTabOrder(ids: string[]): void {
-  order = ids;
+  const moved = new Set(ids);
+  const queue = [...ids];
+  const merged = applyOrder(raw)
+    .map((t) => t.id)
+    .map((id) => (moved.has(id) ? queue.shift()! : id));
+  order = [...merged, ...queue]; // ids the raw list does not know yet keep their given order
   try {
     localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
   } catch {

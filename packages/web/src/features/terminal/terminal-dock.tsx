@@ -162,7 +162,7 @@ function TerminalTab(props: {
         aria-label={`${S.terminal.killShell}: ${label}`}
         data-testid="terminal-tab-kill"
         onClick={props.onKill}
-        className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded bg-[#262b31] p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-100"
+        className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded bg-[#262b31] p-0.5 opacity-0 transition-opacity duration-150 hover:bg-white/20 group-hover:opacity-100 focus-visible:opacity-100"
       >
         <svg
           width="10"
@@ -297,8 +297,17 @@ export function TerminalDock({ position }: { position: DockPosition }) {
     [allTerminals, position, dockStateVersion()],
   );
 
-  // First show (and whenever the pane ends up with no shown terminal): resolve one.
+  // Mount: always resolve, even with a stored id — the stored terminal can be dead or
+  // reaped (server restart), and resolvePaneCurrent is what validates it against the
+  // server. Afterwards only an EMPTIED pane re-resolves: a shell exiting while shown must
+  // keep showing its exit, never auto-respawn.
+  const resolvedOnMount = useRef(false);
   useEffect(() => {
+    if (!resolvedOnMount.current) {
+      resolvedOnMount.current = true;
+      void resolvePaneCurrent(position);
+      return;
+    }
     if (currentId === null) void resolvePaneCurrent(position);
   }, [currentId, position]);
 
@@ -400,7 +409,14 @@ export function TerminalDock({ position }: { position: DockPosition }) {
     onEnd: (_payload, dragged) => {
       const candidate = headerDragState.candidate;
       clearHeaderDrag();
-      if (dragged && candidate && candidate !== position) movePane(position, candidate);
+      if (dragged && candidate && candidate !== position)
+        movePane(
+          position,
+          candidate,
+          // The pane's live tabs: movePane cannot see implicit (unassigned-to-primary)
+          // membership on its own — without this list those tabs would not move along.
+          paneTerminals.map((t) => t.id),
+        );
     },
     onCancel: clearHeaderDrag,
   });

@@ -387,7 +387,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                   className={`shrink-0 rounded p-1 transition-colors duration-150 ${
                     pinned
                       ? "text-gray-700 dark:text-gray-200"
-                      : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+                      : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 focus-visible:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
                   }`}
                 >
                   <svg

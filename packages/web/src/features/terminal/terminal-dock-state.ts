@@ -257,13 +257,24 @@ export function setPaneCurrent(position: DockPosition, id: string | null): void 
 /**
  * Moves a whole pane to another edge: every terminal of the source pane (and its shown
  * terminal) lands on the target, merging with anything already there; the source closes.
+ *
+ * `memberIds` is the caller's live tab list for the source pane. It matters because
+ * membership can be IMPLICIT — an unassigned terminal belongs to the primary pane without
+ * an `assignments` entry — and this store does not know the live terminal list. Without
+ * it, moving the primary pane would leave its unassigned tabs behind (they would silently
+ * re-home to whichever pane becomes primary next).
  */
-export function movePane(from: DockPosition, to: DockPosition): void {
+export function movePane(from: DockPosition, to: DockPosition, memberIds: string[] = []): void {
   if (from === to) return;
   const shown = currents[from] ?? null;
-  const movedIds = Object.entries(assignments)
-    .filter(([, pane]) => pane === from)
-    .map(([id]) => id);
+  const movedIds = [
+    ...new Set([
+      ...memberIds.filter((id) => paneOfTerminal(id) === from),
+      ...Object.entries(assignments)
+        .filter(([, pane]) => pane === from)
+        .map(([id]) => id),
+    ]),
+  ];
   // A same-orientation move carries the pane's size along ("keep the ratio"): the user
   // sized THIS pane, and it is the same pane on the other edge. Cross-orientation moves
   // and merges into an existing pane keep the target's own size.

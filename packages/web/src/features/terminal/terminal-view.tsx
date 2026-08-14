@@ -218,6 +218,20 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
       // also lands here, which is fine: focusing xterm's textarea keeps the selection.
       container.addEventListener("mouseup", () => term.focus(), { signal });
 
+      // Size ownership follows the user's attention (see server size-ownership.ts): the pty
+      // is laid out for the most recent CLAIMING connection, and `update`s from anyone else
+      // are ignored. Attaching claims; refocusing this view must claim again, or after
+      // another window attaches this one could never win its geometry back.
+      container.addEventListener(
+        "focusin",
+        () => {
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(encodeResize(term.cols, term.rows, "claim"));
+          }
+        },
+        { signal },
+      );
+
       term.onData((data) => {
         if (socket?.readyState === WebSocket.OPEN) {
           socket.send(encodeFrame(TerminalOpcode.Input, data));
@@ -272,7 +286,8 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
       })();
 
       // Geometry changes are `update`s: this connection claimed the size when it attached
-      // (?cols/?rows on the stream URL) and keeps ownership until it goes away.
+      // (?cols/?rows on the stream URL, and again on focusin above); an update only
+      // applies while this connection still holds ownership.
       const observer = new ResizeObserver(() => {
         if (disposed) return;
         fit.fit();
