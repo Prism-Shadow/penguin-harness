@@ -42,6 +42,8 @@ SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
 DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
 DOWNLOAD_BENCHMARK="${PENGUIN_DOWNLOAD_BENCHMARK:-0}"
+BENCHMARK_TOTAL_TIMEOUT_SECONDS=5
+BENCHMARK_STARTED_AT=0
 PAYLOAD_NAME="payload.tar.gz"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copies sealed inside the Linux, macOS and universal bundles.
@@ -271,13 +273,48 @@ is_positive_integer() {
   esac
 }
 
+benchmark_now_seconds() {
+  date +%s 2>/dev/null || printf '%s\n' 0
+}
+
+benchmark_remaining_seconds() {
+  brs_now="$(benchmark_now_seconds)"
+  case "$brs_now:$BENCHMARK_STARTED_AT" in
+    *[!0-9:]* | :* | *:) printf '%s\n' "$BENCHMARK_TOTAL_TIMEOUT_SECONDS"; return 0 ;;
+  esac
+  brs_elapsed=$((brs_now - BENCHMARK_STARTED_AT))
+  brs_remaining=$((BENCHMARK_TOTAL_TIMEOUT_SECONDS - brs_elapsed))
+  if [ "$brs_remaining" -gt 0 ]; then
+    printf '%s\n' "$brs_remaining"
+  else
+    printf '%s\n' 0
+  fi
+}
+
+benchmark_curl_timeout() {
+  bct_cap="$1"
+  bct_remaining="$(benchmark_remaining_seconds)"
+  [ "$bct_remaining" -gt 0 ] || return 1
+  if [ "$bct_remaining" -lt "$bct_cap" ]; then
+    printf '%s\n' "$bct_remaining"
+  else
+    printf '%s\n' "$bct_cap"
+  fi
+}
+
 load_release_download_manifest() {
   lrdm_tag="$1"
   lrdm_manifest="$TMP/release-download-manifest.tsv"
   rm -f "$lrdm_manifest"
-  curl -fsSL --connect-timeout 2 --max-time 4 "$OSS_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null \
-    || curl -fsSL --connect-timeout 2 --max-time 4 "$GITHUB_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null \
-    || return 1
+  if lrdm_timeout="$(benchmark_curl_timeout 2)" \
+    && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$OSS_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
+    :
+  elif lrdm_timeout="$(benchmark_curl_timeout 2)" \
+    && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$GITHUB_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
+    :
+  else
+    return 1
+  fi
 
   lrdm_expected_header="$(printf 'penguin-release-download-manifest\t1\t%s' "$lrdm_tag")"
   [ "$(sed -n '1p' "$lrdm_manifest")" = "$lrdm_expected_header" ] || return 1
@@ -316,7 +353,11 @@ probe_download_source() {
   pds_body="$TMP/probe-$pds_label-$pds_file"
   pds_write="$pds_metrics.tmp"
   rm -f "$pds_body" "$pds_metrics" "$pds_write"
-  if curl -fsSL --connect-timeout 2 --max-time 5 -H "Accept-Encoding: identity" \
+  pds_timeout="$(benchmark_curl_timeout 2)" || {
+    printf '%s\n' "fail" > "$pds_metrics"
+    return 0
+  }
+  if curl -fsSL --connect-timeout "$pds_timeout" --max-time "$pds_timeout" -H "Accept-Encoding: identity" \
       -w '%{time_starttransfer} %{time_total} %{speed_download}' \
       "$pds_base/$pds_file" -o "$pds_body" > "$pds_write" 2>/dev/null; then
     pds_actual_size="$(wc -c < "$pds_body" | tr -d ' ')"
@@ -398,6 +439,7 @@ benchmark_release_sources() {
   BENCHMARK_FALLBACK_BASE_URL=""
   OSS_BENCHMARK_BASE_URL="$OSS_RELEASE_ROOT/$brs_tag"
   GITHUB_BENCHMARK_BASE_URL="$GITHUB_RELEASE_ROOT/$brs_tag"
+  BENCHMARK_STARTED_AT="$(benchmark_now_seconds)"
 
   load_release_download_manifest "$brs_tag" || return 1
   echo "Testing OSS mirror and GitHub download sources ..."

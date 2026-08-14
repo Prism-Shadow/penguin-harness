@@ -43,6 +43,7 @@ $OssReleaseRoot = "$OssOrigin/releases"
 $GitHubReleaseRoot = "$Repo/releases/download"
 $GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
+$BenchmarkTotalTimeoutSeconds = 5
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copy sealed inside the Windows bundle.
@@ -100,6 +101,12 @@ function Try-DownloadFile([string]$Uri, [string]$OutFile, [int]$TimeoutSec) {
   }
 }
 
+function Get-BenchmarkTimeoutSec([DateTime]$Deadline, [int]$MaxSec) {
+  $Remaining = [int][Math]::Ceiling(($Deadline - [DateTime]::UtcNow).TotalSeconds)
+  if ($Remaining -le 0) { return 0 }
+  return [Math]::Min($MaxSec, $Remaining)
+}
+
 function Get-OssLatestTag([string]$ManifestPath) {
   Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
   try {
@@ -151,10 +158,12 @@ function Test-SafeReleaseAssetName([string]$Value) {
   return $Value -match '^[A-Za-z0-9._+-]+$' -and -not $Value.Contains('..')
 }
 
-function Read-ReleaseDownloadManifest([string]$Tag, [string]$ManifestPath) {
+function Read-ReleaseDownloadManifest([string]$Tag, [string]$ManifestPath, [DateTime]$Deadline) {
   Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
-  if (-not (Try-DownloadFile "$OssReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath 4)) {
-    if (-not (Try-DownloadFile "$GitHubReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath 4)) {
+  $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+  if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$OssReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
+    $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+    if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$GitHubReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
       return $null
     }
   }
@@ -200,13 +209,18 @@ function Invoke-ProbeDownload(
   [string]$BaseUrl,
   [object]$Probe,
   [string]$Tmp,
-  [string]$Label
+  [string]$Label,
+  [DateTime]$Deadline
 ) {
   $ProbePath = Join-Path $Tmp "probe-$Label-$($Probe.Name)"
   Remove-Item -LiteralPath $ProbePath -Force -ErrorAction SilentlyContinue
+  $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+  if ($TimeoutSec -le 0) {
+    return [PSCustomObject]@{ Ok = $false; Seconds = 0.0 }
+  }
   $Succeeded = $false
   $Elapsed = Measure-Command {
-    $Succeeded = Try-DownloadFile "$BaseUrl/$($Probe.Name)" $ProbePath 5
+    $Succeeded = Try-DownloadFile "$BaseUrl/$($Probe.Name)" $ProbePath $TimeoutSec
   }
   if (-not $Succeeded) {
     return [PSCustomObject]@{ Ok = $false; Seconds = 0.0 }
@@ -246,14 +260,15 @@ function Select-FastBenchmarkSource(
 }
 
 function Select-BenchmarkDownloadSources([string]$Tag, [string]$Tmp) {
-  $Manifest = Read-ReleaseDownloadManifest $Tag (Join-Path $Tmp "release-download-manifest.tsv")
+  $Deadline = [DateTime]::UtcNow.AddSeconds($BenchmarkTotalTimeoutSeconds)
+  $Manifest = Read-ReleaseDownloadManifest $Tag (Join-Path $Tmp "release-download-manifest.tsv") $Deadline
   if (-not $Manifest) { return $null }
 
   Write-Host "Testing OSS mirror and GitHub download sources ..."
   $OssBase = "$OssReleaseRoot/$Tag"
   $GitHubBase = "$GitHubReleaseRoot/$Tag"
-  $OssSmall = Invoke-ProbeDownload $OssBase $Manifest.SmallProbe $Tmp "oss-small"
-  $GitHubSmall = Invoke-ProbeDownload $GitHubBase $Manifest.SmallProbe $Tmp "github-small"
+  $OssSmall = Invoke-ProbeDownload $OssBase $Manifest.SmallProbe $Tmp "oss-small" $Deadline
+  $GitHubSmall = Invoke-ProbeDownload $GitHubBase $Manifest.SmallProbe $Tmp "github-small" $Deadline
 
   if ($GitHubSmall.Ok -and -not $OssSmall.Ok) {
     Write-Host "Selected GitHub (OSS mirror probe unavailable)."
@@ -270,8 +285,8 @@ function Select-BenchmarkDownloadSources([string]$Tag, [string]$Tmp) {
     return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
   }
 
-  $OssLarge = Invoke-ProbeDownload $OssBase $Manifest.LargeProbe $Tmp "oss-large"
-  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large"
+  $OssLarge = Invoke-ProbeDownload $OssBase $Manifest.LargeProbe $Tmp "oss-large" $Deadline
+  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline
   $Choice = Select-FastBenchmarkSource $OssLarge $GitHubLarge $Manifest.LargeProbe.Size $Manifest.AssetSize
   if ($Choice -eq "github") {
     Write-Host "Selected GitHub (faster probe result)."
