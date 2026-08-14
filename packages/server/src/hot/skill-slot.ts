@@ -12,14 +12,14 @@
  * registry exists (and again from scratch after every platform swap — the
  * reseed pattern: tools are derived state, never parked).
  *
- * Cordis pitfalls defended against (from the dsh study):
+ * Lifecycle invariants this slot upholds (our kernel's effect discipline;
+ * these are the classic hot-reload traps, guarded explicitly):
  * - every registration rides THIS node's ctx.effect, so unloading the skill
  *   deregisters exactly its tools (self-cleaning effects invariant);
  * - once the node starts unloading, new registrations are refused instead of
- *   leaking (dsh local fix #6: no new effects during UNLOADING);
+ *   leaking past the drain;
  * - the setup context is a per-slot closure, so disposal attribution cannot
- *   land on the wrong owner (the analog of dsh's "service methods must be
- *   prototype methods, not arrow properties" trap);
+ *   land on the wrong owner;
  * - nothing lives at module level: no cross-reload singletons.
  */
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
