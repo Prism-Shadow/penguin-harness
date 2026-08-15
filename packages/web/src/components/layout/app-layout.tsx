@@ -21,6 +21,7 @@ import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
+import { DevConsole } from "../../features/dev-console/dev-console";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -312,6 +313,9 @@ export function AppLayout() {
           <Sidebar onNavigate={() => setDrawerOpen(false)} />
         </div>
       </Drawer>
+
+      {/* Ctrl+P / Cmd+P developer console: mounted once here so the shortcut works from every authenticated page. */}
+      <DevConsole />
     </div>
   );
 }
