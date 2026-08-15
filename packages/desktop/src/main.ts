@@ -24,6 +24,18 @@ import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import {
+  expandHome,
+  loadServers,
+  pickerHtml,
+  serversFilePath,
+  shouldShowPicker,
+  sshTunnelArgs,
+} from "./servers.js";
+import type { ServerEntry, SshServerEntry } from "./servers.js";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import net from "node:net";
 import { initUpdater } from "./updater.js";
 import {
   desktopLoginUrl,
@@ -46,6 +58,10 @@ let appOrigin: string | null = null;
 let quitting = false;
 let stopPromise: Promise<void> | null = null;
 let restartAttempts = 0;
+/** ssh port-forward child when connected to a remote server; null otherwise. */
+let tunnel: ChildProcess | null = null;
+/** The loaded server registry (implicit single local entry when unconfigured). */
+let serverEntries: ServerEntry[] = [];
 
 function fatal(context: string, err: unknown): void {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
@@ -114,6 +130,14 @@ function createWindow(url: string): void {
     });
   });
   win.webContents.on("will-navigate", (event, target) => {
+    // Picker choices are plain links on the shell-owned picker page (no IPC,
+    // no preload): intercept the scheme and connect to the chosen server.
+    if (target.startsWith("penguin-pick://")) {
+      event.preventDefault();
+      const id = decodeURIComponent(target.slice("penguin-pick://".length).replace(/\/+$/, ""));
+      void handlePick(id);
+      return;
+    }
     if (!isAppUrl(target, appOrigin)) {
       event.preventDefault();
       void shell.openExternal(target);
@@ -168,18 +192,122 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   }
 }
 
+/**
+ * Boot: the UI starts on its own and only then decides where a server comes
+ * from. One implicit local entry keeps today's behavior (fork/attach without a
+ * picker); a configured registry (or PENGUIN_DESKTOP_PICKER=1) shows the
+ * picker page first — the same servers model the node-side push tool reads.
+ */
 async function boot(): Promise<void> {
-  const dataRoot = process.env.PENGUIN_HOME ?? resolveRoot();
+  const file = serversFilePath(app.getPath("userData"));
+  serverEntries = loadServers(file);
+  if (shouldShowPicker(serverEntries)) {
+    showPicker(file);
+    return;
+  }
+  await connectEntry(serverEntries[0]!);
+}
+
+function loadInWindow(url: string): void {
+  if (win === null) createWindow(url);
+  else void win.loadURL(url);
+}
+
+function showPicker(file: string): void {
+  loadInWindow(
+    `data:text/html;charset=utf-8,${encodeURIComponent(pickerHtml(serverEntries, file))}`,
+  );
+}
+
+async function handlePick(id: string): Promise<void> {
+  const entry = serverEntries.find((e) => e.id === id);
+  if (entry === undefined) return;
+  try {
+    await connectEntry(entry);
+  } catch (err) {
+    fatal(`Could not connect to server '${id}'.`, err);
+  }
+}
+
+async function connectEntry(entry: ServerEntry): Promise<void> {
+  stopTunnel();
+  if (entry.type === "ssh") return connectSsh(entry);
+  const dataRoot =
+    entry.home !== undefined ? expandHome(entry.home) : (process.env.PENGUIN_HOME ?? resolveRoot());
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
     // Attach mode: the one-shot token only works against a server this shell spawned,
     // so the window goes through the normal login page of the existing instance.
     appOrigin = `http://localhost:${existing.port}`;
     process.stdout.write(`[shell] attaching to the running server at ${appOrigin}\n`);
-    createWindow(`${appOrigin}/`);
+    loadInWindow(`${appOrigin}/`);
     return;
   }
   await startServerAndWindow(dataRoot);
+}
+
+function stopTunnel(): void {
+  if (tunnel !== null) {
+    tunnel.kill();
+    tunnel = null;
+  }
+}
+
+/**
+ * ssh entry: forward a free loopback port to the remote server's loopback port
+ * and load the UI through the tunnel. The remote server stays loopback-only —
+ * nothing is exposed on any network; ssh is the transport and the credential.
+ */
+async function connectSsh(entry: SshServerEntry): Promise<void> {
+  const localPort = await freeLoopbackPort();
+  const child = spawn("ssh", sshTunnelArgs(entry, localPort), {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr?.on("data", (d: Buffer) => {
+    stderr += d.toString();
+  });
+  tunnel = child;
+  child.on("exit", (code) => {
+    if (tunnel === child) tunnel = null;
+    if (!quitting && code !== 0 && code !== null) {
+      fatal(`The ssh tunnel to ${entry.host} exited (code ${code}).`, stderr.trim());
+    }
+  });
+  await waitForPort(localPort, 15_000);
+  appOrigin = `http://127.0.0.1:${localPort}`;
+  process.stdout.write(`[shell] connected to ${entry.host} via ${appOrigin}\n`);
+  loadInWindow(`${appOrigin}/`);
+}
+
+function freeLoopbackPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const { port } = srv.address() as net.AddressInfo;
+      srv.close(() => resolve(port));
+    });
+    srv.on("error", reject);
+  });
+}
+
+function waitForPort(port: number, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const attempt = (): void => {
+      const sock = net.connect({ port, host: "127.0.0.1" }, () => {
+        sock.destroy();
+        resolve();
+      });
+      sock.on("error", () => {
+        sock.destroy();
+        if (Date.now() - start > timeoutMs) {
+          reject(new Error(`tunnel port ${port} did not open within ${timeoutMs}ms`));
+        } else setTimeout(attempt, 300);
+      });
+    };
+    attempt();
+  });
 }
 
 // --- app lifecycle ---------------------------------------------------------
@@ -207,6 +335,7 @@ if (!app.requestSingleInstanceLock()) {
   // then let the quit proceed. Attach mode has no child to stop.
   app.on("before-quit", (event) => {
     quitting = true;
+    stopTunnel();
     if (server !== null && stopPromise === null) {
       event.preventDefault();
       const running = server;
