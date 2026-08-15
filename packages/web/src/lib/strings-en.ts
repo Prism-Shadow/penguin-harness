@@ -1411,14 +1411,6 @@ Scenarios:
     colSession: "Session",
   },
 
-  commandPalette: {
-    title: "Command Palette",
-    placeholder: "Type to filter actions…",
-    noResults: "No matching actions",
-    reloadPage: "Reload page",
-    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
-  },
-
   errors: {
     networkError: "Network error, please check your connection",
     modelCredentialMissing: (modelId: string) =>

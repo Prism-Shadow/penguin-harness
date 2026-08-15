@@ -1363,15 +1363,6 @@ Benchmark：
     colSession: "Session",
   },
 
-  // Ctrl+P / Cmd+P developer console overlay (runtime info + the HMR update feed).
-  commandPalette: {
-    title: "命令面板",
-    placeholder: "输入以筛选操作…",
-    noResults: "没有匹配的操作",
-    reloadPage: "刷新页面",
-    hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
-  },
-
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
   errors: {
     networkError: "网络错误，请检查连接",
