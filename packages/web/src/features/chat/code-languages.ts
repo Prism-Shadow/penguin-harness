@@ -8,38 +8,44 @@
  * oniguruma WASM chunk and a 332-grammar registry on the first code block of a conversation (see
  * highlighter.ts). Adding a language means a loader entry plus, where the grammar declares aliases
  * of its own, the alias rows that route a fence info string to it.
+ *
+ * The tables are Maps, not objects: the keys are file extensions and fence info strings, and a
+ * plain object would resolve `constructor` or `__proto__` through Object.prototype to a function or
+ * an object where a language id is expected (React throws when that reaches a text node).
  */
 
 /** Shiki resolves these without a grammar. Unmapped file extensions land here to get the themed background. */
 const PLAIN_TEXT_IDS = new Set(["text", "plaintext", "txt"]);
 
 /** Canonical Shiki language id -> grammar chunk. */
-export const LANGUAGE_LOADERS: Record<string, () => Promise<unknown>> = {
-  c: () => import("@shikijs/langs/c"),
-  cpp: () => import("@shikijs/langs/cpp"),
-  css: () => import("@shikijs/langs/css"),
-  diff: () => import("@shikijs/langs/diff"),
-  go: () => import("@shikijs/langs/go"),
-  html: () => import("@shikijs/langs/html"),
-  ini: () => import("@shikijs/langs/ini"),
-  java: () => import("@shikijs/langs/java"),
-  javascript: () => import("@shikijs/langs/javascript"),
-  json: () => import("@shikijs/langs/json"),
-  jsx: () => import("@shikijs/langs/jsx"),
-  log: () => import("@shikijs/langs/log"),
-  markdown: () => import("@shikijs/langs/markdown"),
-  php: () => import("@shikijs/langs/php"),
-  python: () => import("@shikijs/langs/python"),
-  ruby: () => import("@shikijs/langs/ruby"),
-  rust: () => import("@shikijs/langs/rust"),
-  shellscript: () => import("@shikijs/langs/shellscript"),
-  sql: () => import("@shikijs/langs/sql"),
-  toml: () => import("@shikijs/langs/toml"),
-  tsx: () => import("@shikijs/langs/tsx"),
-  typescript: () => import("@shikijs/langs/typescript"),
-  xml: () => import("@shikijs/langs/xml"),
-  yaml: () => import("@shikijs/langs/yaml"),
-};
+export const LANGUAGE_LOADERS = new Map<string, () => Promise<unknown>>(
+  Object.entries({
+    c: () => import("@shikijs/langs/c"),
+    cpp: () => import("@shikijs/langs/cpp"),
+    css: () => import("@shikijs/langs/css"),
+    diff: () => import("@shikijs/langs/diff"),
+    go: () => import("@shikijs/langs/go"),
+    html: () => import("@shikijs/langs/html"),
+    ini: () => import("@shikijs/langs/ini"),
+    java: () => import("@shikijs/langs/java"),
+    javascript: () => import("@shikijs/langs/javascript"),
+    json: () => import("@shikijs/langs/json"),
+    jsx: () => import("@shikijs/langs/jsx"),
+    log: () => import("@shikijs/langs/log"),
+    markdown: () => import("@shikijs/langs/markdown"),
+    php: () => import("@shikijs/langs/php"),
+    python: () => import("@shikijs/langs/python"),
+    ruby: () => import("@shikijs/langs/ruby"),
+    rust: () => import("@shikijs/langs/rust"),
+    shellscript: () => import("@shikijs/langs/shellscript"),
+    sql: () => import("@shikijs/langs/sql"),
+    toml: () => import("@shikijs/langs/toml"),
+    tsx: () => import("@shikijs/langs/tsx"),
+    typescript: () => import("@shikijs/langs/typescript"),
+    xml: () => import("@shikijs/langs/xml"),
+    yaml: () => import("@shikijs/langs/yaml"),
+  }),
+);
 
 /**
  * Alias -> canonical id, mirroring the `aliases` each grammar declares. Shiki registers those
@@ -47,74 +53,70 @@ export const LANGUAGE_LOADERS: Record<string, () => Promise<unknown>> = {
  * exactly what decides which grammar to load, so the mapping has to exist beforehand. A Shiki
  * upgrade that adds an alias needs a row here, or that fence silently stops highlighting.
  */
-export const LANGUAGE_ALIASES: Record<string, string> = {
-  "c++": "cpp",
-  bash: "shellscript",
-  cjs: "javascript",
-  cts: "typescript",
-  js: "javascript",
-  md: "markdown",
-  mjs: "javascript",
-  mts: "typescript",
-  properties: "ini",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  sh: "shellscript",
-  shell: "shellscript",
-  ts: "typescript",
-  yml: "yaml",
-  zsh: "shellscript",
-};
+export const LANGUAGE_ALIASES = new Map(
+  Object.entries({
+    "c++": "cpp",
+    bash: "shellscript",
+    cjs: "javascript",
+    cts: "typescript",
+    js: "javascript",
+    md: "markdown",
+    mjs: "javascript",
+    mts: "typescript",
+    properties: "ini",
+    py: "python",
+    rb: "ruby",
+    rs: "rust",
+    sh: "shellscript",
+    shell: "shellscript",
+    ts: "typescript",
+    yml: "yaml",
+    zsh: "shellscript",
+  }),
+);
 
 /** File extension -> language id; anything unlisted is plain text with the theme's background. */
-const LANGUAGE_BY_EXTENSION: Record<string, string> = {
-  html: "html",
-  htm: "html",
-  css: "css",
-  js: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  jsx: "jsx",
-  ts: "typescript",
-  tsx: "tsx",
-  json: "json",
-  md: "markdown",
-  py: "python",
-  rb: "ruby",
-  php: "php",
-  go: "go",
-  rs: "rust",
-  java: "java",
-  c: "c",
-  h: "c",
-  cpp: "cpp",
-  hpp: "cpp",
-  sh: "shellscript",
-  bash: "shellscript",
-  yml: "yaml",
-  yaml: "yaml",
-  toml: "toml",
-  ini: "ini",
-  conf: "ini",
-  xml: "xml",
-  sql: "sql",
-  log: "log",
-};
+const LANGUAGE_BY_EXTENSION = new Map(
+  Object.entries({
+    html: "html",
+    htm: "html",
+    css: "css",
+    js: "javascript",
+    mjs: "javascript",
+    cjs: "javascript",
+    jsx: "jsx",
+    ts: "typescript",
+    tsx: "tsx",
+    json: "json",
+    md: "markdown",
+    py: "python",
+    rb: "ruby",
+    php: "php",
+    go: "go",
+    rs: "rust",
+    java: "java",
+    c: "c",
+    h: "c",
+    cpp: "cpp",
+    hpp: "cpp",
+    sh: "shellscript",
+    bash: "shellscript",
+    yml: "yaml",
+    yaml: "yaml",
+    toml: "toml",
+    ini: "ini",
+    conf: "ini",
+    xml: "xml",
+    sql: "sql",
+    log: "log",
+  }),
+);
 
 /** The id CodeBlock's `language` prop takes for an unhighlighted-but-themed block. */
 export const PLAIN_TEXT_LANGUAGE = "text";
 
-/**
- * Every lookup below is guarded by `Object.hasOwn`: the keys are file extensions and fence info
- * strings, so a file named `constructor` or `__proto__` would otherwise resolve through
- * Object.prototype to a function or an object where a language id is expected — and React throws
- * outright when that object reaches the language chip's text node.
- */
 export function languageForExtension(ext: string): string {
-  const key = ext.toLowerCase();
-  if (!Object.hasOwn(LANGUAGE_BY_EXTENSION, key)) return PLAIN_TEXT_LANGUAGE;
-  return LANGUAGE_BY_EXTENSION[key] ?? PLAIN_TEXT_LANGUAGE;
+  return LANGUAGE_BY_EXTENSION.get(ext.toLowerCase()) ?? PLAIN_TEXT_LANGUAGE;
 }
 
 /**
@@ -125,8 +127,8 @@ export function languageForExtension(ext: string): string {
 export function resolveLanguage(language: string): string | undefined {
   const id = language.trim().toLowerCase();
   if (!id || PLAIN_TEXT_IDS.has(id)) return PLAIN_TEXT_LANGUAGE;
-  const canonical = (Object.hasOwn(LANGUAGE_ALIASES, id) ? LANGUAGE_ALIASES[id] : undefined) ?? id;
-  return Object.hasOwn(LANGUAGE_LOADERS, canonical) ? canonical : undefined;
+  const canonical = LANGUAGE_ALIASES.get(id) ?? id;
+  return LANGUAGE_LOADERS.has(canonical) ? canonical : undefined;
 }
 
 /** True for ids Shiki highlights without loading a grammar. */

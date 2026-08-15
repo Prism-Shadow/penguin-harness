@@ -63,8 +63,7 @@ export async function highlightToHtml(code: string, language: string): Promise<s
   const id = resolveLanguage(language);
   if (!id) return undefined;
   const core = await getCore();
-  // resolveLanguage only returns own-property ids, plain text aside, so this index is safe.
-  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS[id];
+  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS.get(id);
   if (load) await loadGrammar(core, id, load);
   return core.codeToHtml(code, {
     lang: id,
