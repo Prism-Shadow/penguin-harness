@@ -1,10 +1,9 @@
 /**
  * Kernel currency: everything that crosses a park/boot boundary is plain JSON.
  *
- * TODO(schema): Json is deliberately crude. Once we adopt arktype (or similar),
- * context TS types will be derived from the iface schema and strict-parse /
- * defaults / migration checks move into the schema layer. The hand-written
- * Schema in ./schema.ts is shaped after that future so the swap stays local.
+ * Context typing rides on arktype (see ./schema.ts): contexts are defined as
+ * arktype types and wrapped with schema(); Json stays the wire-level currency
+ * every parked document is made of.
  */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 

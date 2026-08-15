@@ -6,7 +6,7 @@
  *   platform swap.
  */
 import type { Impl, Json, KeyedHandle, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, keyed, s } from "@prismshadow/penguin-core/kernel";
+import { defineIface, keyed, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { PlatformApi } from "./platform-v1.js";
 import type { TerminalApiV2 } from "./terminal.js";
 import { TerminalIfaceV2, terminalImplV2 } from "./terminal.js";
@@ -17,7 +17,7 @@ export type PlatformCtxV2 = { motd: string; theme: string };
 export const PlatformIfaceV2 = defineIface<PlatformApi, PlatformCtxV2>({
   name: "platform",
   version: 2,
-  context: s.object<PlatformCtxV2>({ motd: s.string(), theme: s.string() }),
+  context: schema<PlatformCtxV2>(type({ motd: "string", theme: "string" })),
   methods: ["park", "info", "createTerminal", "terminals"],
   children: {
     terminals: keyed(TerminalIfaceV2),
