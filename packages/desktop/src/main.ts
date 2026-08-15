@@ -13,8 +13,9 @@
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
  * still free, so origin-scoped localStorage preferences survive restarts), and load
  * `http://localhost:<port>/api/auth/desktop-login?token=…` — the one-shot token lands
- * the window signed in as admin. The window is a plain browser environment (no preload,
- * no node integration); every capability flows through the server's HTTP API.
+ * the window signed in as admin. The window is a plain browser environment (no node
+ * integration, and a preload that bridges exactly one capability: opening DevTools —
+ * see preload.ts); everything else flows through the server's HTTP API.
  *
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead — normal login page, deliberate degradation.
@@ -24,7 +25,8 @@
  * set) and quit through the regular quit path, exercising the graceful server stop.
  */
 import path from "node:path";
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { resolveWindowIcon } from "./app-icon.js";
@@ -72,10 +74,12 @@ function createWindow(url: string): void {
     autoHideMenuBar: true,
     ...(iconPath !== null ? { icon: iconPath } : {}),
     webPreferences: {
-      // The window is a plain browser: no Node, no preload — the minimal attack surface.
+      // The window is a plain browser: no Node, and the preload exposes exactly one
+      // capability (open DevTools — see preload.ts). Minimal attack surface, still.
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: fileURLToPath(new URL("./preload.cjs", import.meta.url)),
     },
   });
   win.once("ready-to-show", () => win?.show());
@@ -225,7 +229,14 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() =>
     (async () => {
-      // Standard menu plus native desktop-only actions; the window gets no IPC channel.
+      // The one message the preload bridge can send (see preload.ts): open DevTools on
+      // the window that asked. The sender is by construction one of this app's
+      // webContents; there is nothing else to validate on a no-argument request.
+      ipcMain.on("penguin:open-devtools", (event) => {
+        event.sender.openDevTools();
+      });
+      // Standard menu plus native desktop-only actions; the window's only IPC channel
+      // is the DevTools bridge above.
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),

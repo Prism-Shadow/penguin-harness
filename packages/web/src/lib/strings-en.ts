@@ -1420,21 +1420,6 @@ Scenarios:
     hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
   },
 
-  devConsole: {
-    title: "Developer Console",
-    runtimeHeading: "Runtime",
-    implLabel: "Implementation (impl)",
-    ifaceVersionLabel: "Interface version (iface)",
-    webRevLabel: "Web build (rev)",
-    webRevUnknown: "No update observed this session yet",
-    adminOnlyNote: "Admin only — sign in as an admin to see the implementation / interface version",
-    loadError: "Failed to load runtime info",
-    feedHeading: "Update events",
-    feedEmpty: "No update events yet",
-    feedEntry: (rev: string) => `Web updated to rev ${rev}`,
-    closeHint: "Esc to close",
-  },
-
   errors: {
     networkError: "Network error, please check your connection",
     modelCredentialMissing: (modelId: string) =>

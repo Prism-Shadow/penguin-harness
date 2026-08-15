@@ -424,6 +424,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
             rev: ev.rev,
             at: new Date().toISOString(),
           });
+          // For a console open with "preserve log"; everyone else sees the
+          // post-reload replay line (dev-tools.tsx).
+          console.info(`[hmr] web update arrived (rev ${ev.rev}) — reloading`);
           window.location.reload();
           return;
         }

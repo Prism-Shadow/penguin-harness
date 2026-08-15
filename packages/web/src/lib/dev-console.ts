@@ -1,13 +1,15 @@
 /**
- * Dev console (Ctrl+P / Cmd+P) pure logic: the shortcut matcher and the cross-reload
- * event feed. Split out from the component (dev-console.tsx) so it is testable under
- * vitest's node environment (no DOM/webStorage there — see vitest.config.ts).
+ * Command palette (Ctrl+P / Cmd+P) pure logic — the shortcut matcher and action
+ * filter — plus the cross-reload HMR event feed. Split out from the components so it
+ * is testable under vitest's node environment (no DOM/webStorage there — see
+ * vitest.config.ts).
  *
  * Cross-reload visibility: `web_updated` triggers an immediate `location.reload()`
- * (state/sessions.tsx) — there is no window where the console could catch the event
- * live. Instead, the SSE handler records it here (sessionStorage, survives the reload
- * but not a tab close) before reloading; the console reads the feed back on open, so
- * "just updated to rev X" is visible after the page comes back.
+ * (state/sessions.tsx) — a fresh page means a fresh developer console. The SSE handler
+ * records the event here (sessionStorage, survives the reload but not a tab close)
+ * before reloading, and dev-tools.tsx replays the latest entry as a console.info line
+ * on the next page load — so "just updated to rev X" is what the developer console
+ * shows after the page comes back.
  */
 
 /** One entry in the update feed. Only `web_updated` is tracked today (see the module doc). */
