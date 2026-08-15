@@ -123,3 +123,14 @@ const platformImpl = {
 };
 
 export const hotPlatform = { id: "next", iface: platformIface, impl: platformImpl };
+
+/**
+ * The unified bundle's other half: what packages/cli's thin loader dynamically
+ * imports and calls on every invocation once this version is pushed. A push must
+ * export both `hotPlatform` and `cli` — see HmrHost.importUnifiedBundle — so this
+ * fixture carries a minimal stand-in rather than only the platform half.
+ */
+export async function cli(argv) {
+  process.stdout.write(`cli-from-next-bundle:${argv.join(",")}\n`);
+  return 0;
+}

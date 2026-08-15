@@ -1,8 +1,8 @@
 /**
  * Hot-update integration tests (via app.request() injection): pushing a
- * next-build platform bundle and a web dist as inline bytes over HTTP, the
- * migrate/blocked paths, atomic persistence across a runtime restart, auth,
- * the network gate, and request queueing during a swap.
+ * next-build unified version (platform+cli bundle + web dist, ONE atomic
+ * push), the migrate/blocked paths, atomic persistence across a runtime
+ * restart, auth, the network gate, and request queueing during a swap.
  *
  * The business-platform proof (terminals surviving a swap via resource
  * claiming) lives in hmr-business-platform.test.ts, parked with
@@ -13,9 +13,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildAppDeps, createApp } from "../src/app.js";
 import { HmrHost } from "../src/hmr/host.js";
+import type { AppEnv } from "../src/auth/middleware.js";
 import {
   apiClient,
   createTestApp,
@@ -35,6 +37,43 @@ const NEXT_BUNDLE_FILE = fileURLToPath(
 const DISPATCH_BUNDLE_FILE = fileURLToPath(
   new URL("./fixtures/platform-dispatch.bundle.mjs", import.meta.url),
 );
+
+const b64 = (s: string): string => Buffer.from(s).toString("base64");
+
+/** A minimal-but-valid web dist manifest (only index.html is required). */
+function minimalWeb(marker: string): Record<string, string> {
+  return { "index.html": b64(`<html>${marker}</html>`) };
+}
+
+/**
+ * Pushes ONE atomic version (bundle + web) to POST /api/hmr/upgrade — the merged
+ * endpoint's only transport is a gzip(JSON) body, so this bypasses apiClient's
+ * JSON-only helper.
+ */
+async function pushVersion(
+  app: Hono<AppEnv>,
+  cookie: string,
+  target: {
+    bundle: string;
+    web?: Record<string, string>;
+    source?: { repo: string; revision: string };
+  },
+): Promise<Response> {
+  const gz = zlib.gzipSync(
+    Buffer.from(
+      JSON.stringify({
+        bundle: target.bundle,
+        web: { files: target.web ?? minimalWeb("web") },
+        ...(target.source ? { source: target.source } : {}),
+      }),
+    ),
+  );
+  return app.request("/api/hmr/upgrade", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/gzip" },
+    body: gz,
+  });
+}
 
 describe("hot update", () => {
   let t: TestApp;
@@ -68,10 +107,13 @@ describe("hot update", () => {
     const res = await t.app.request("/api/hmr/platform", { headers: bearer });
     expect(res.status).toBe(401);
     // A mutating call is rejected the same way.
-    const upgraded = await t.app.request("/api/hmr/platform/upgrade", {
+    const gz = zlib.gzipSync(
+      Buffer.from(JSON.stringify({ bundle: nextBundle, web: { files: minimalWeb("x") } })),
+    );
+    const upgraded = await t.app.request("/api/hmr/upgrade", {
       method: "POST",
-      headers: { ...bearer, "content-type": "application/json" },
-      body: JSON.stringify({ bundle: nextBundle }),
+      headers: { ...bearer, "content-type": "application/gzip" },
+      body: gz,
     });
     expect(upgraded.status).toBe(401);
     // The admin cookie session still works.
@@ -94,8 +136,55 @@ describe("hot update", () => {
     expect(Object.keys(body.iface.children)).toEqual([]);
   });
 
-  it("a downgrade without a migration path is blocked and the running platform keeps serving", async () => {
-    await api.post("/api/hmr/platform/upgrade", { bundle: nextBundle });
+  it("one push moves platform + web together: web reload broadcasts, static hosting flips", async () => {
+    const res = await pushVersion(t.app, adminCookie, {
+      bundle: nextBundle,
+      web: minimalWeb("pushed-v1"),
+    });
+    expect(res.status).toBe(200);
+    const outcome = (await res.json()) as { status: string; impl: string; web: { rev: string } };
+    expect(outcome.status).toBe("ok");
+    expect(outcome.impl).toBe("next");
+    expect(outcome.web.rev).toBeTruthy();
+
+    const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
+    expect(info.impl).toBe("next");
+    expect(await (await t.app.request("/")).text()).toContain("pushed-v1");
+    expect(await (await t.app.request("/deep/spa/route")).text()).toContain("pushed-v1");
+  });
+
+  it("a bundle missing `cli` is rejected outright — platform and cli ship together", async () => {
+    const noCliBundle = nextBundle.replace(/export async function cli[\s\S]*$/, "");
+    const res = await pushVersion(t.app, adminCookie, { bundle: noCliBundle });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
+      "does not export 'cli'",
+    );
+    // Untouched: still the packaged default.
+    const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
+    expect(info.impl).toBe("packaged");
+  });
+
+  it("a web manifest with no index.html is rejected outright", async () => {
+    const res = await pushVersion(t.app, adminCookie, {
+      bundle: nextBundle,
+      web: { "x.js": b64("1") },
+    });
+    expect(res.status).toBe(400);
+    const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
+    expect(info.impl).toBe("packaged");
+  });
+
+  it("path traversal in the web manifest is rejected outright", async () => {
+    const res = await pushVersion(t.app, adminCookie, {
+      bundle: nextBundle,
+      web: { "index.html": b64("<html>ok</html>"), "../escape.js": b64("1") },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("a downgrade without a migration path is blocked and the running version keeps serving", async () => {
+    await pushVersion(t.app, adminCookie, { bundle: nextBundle, web: minimalWeb("v1") });
     // Derive an OLD build from the fixture: iface v1, no theme, no migrator.
     const oldBundle = nextBundle
       .replace("version: 2,", "version: 1,")
@@ -104,105 +193,36 @@ describe("hot update", () => {
         'objectSchema({ motd: "string" })',
       )
       .replace(/migrations: \{\n    1: [^\n]*\n  \},/, "migrations: {},");
-    const res = await api.post("/api/hmr/platform/upgrade", { bundle: oldBundle });
+    const res = await pushVersion(t.app, adminCookie, { bundle: oldBundle, web: minimalWeb("v2") });
     expect(res.status).toBe(200);
     const outcome = (await res.json()) as { status: string; invalid: string[] };
     expect(outcome.status).toBe("blocked");
     expect(outcome.invalid.some((p) => p.includes("newer than iface"))).toBe(true);
-    // Untouched: still the pushed next build.
+    // Untouched: still the pushed next build, AND its web (a blocked platform must
+    // never leave web ahead of platform).
     const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
     expect(info.impl).toBe("next");
+    expect(await (await t.app.request("/")).text()).toContain("v1");
   });
 
-  it("inline web dist over HTTP: a { relPath: base64 } manifest, traversal-guarded", async () => {
-    const b64 = (s: string) => Buffer.from(s).toString("base64");
-    const res = await api.post("/api/hmr/web/upgrade", {
-      files: {
-        "index.html": b64("<html>pushed-v1</html>"),
-        "assets/app.js": b64("console.log(1)"),
-      },
+  it("a re-push swaps web in place with a new rev", async () => {
+    const first = await pushVersion(t.app, adminCookie, {
+      bundle: nextBundle,
+      web: minimalWeb("v1"),
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; rev: string };
-    expect(body.status).toBe("ok");
-
-    // Static hosting now serves the pushed dist (SPA fallback included).
-    expect(await (await t.app.request("/")).text()).toContain("pushed-v1");
-    expect(await (await t.app.request("/deep/spa/route")).text()).toContain("pushed-v1");
-
-    // A re-push swaps in place with a new rev.
-    const res2 = await api.post("/api/hmr/web/upgrade", {
-      files: { "index.html": b64("<html>pushed-v2</html>") },
+    const firstBody = (await first.json()) as { web: { rev: string } };
+    const second = await pushVersion(t.app, adminCookie, {
+      bundle: nextBundle,
+      web: minimalWeb("v2"),
     });
-    expect(((await res2.json()) as { rev: string }).rev).not.toBe(body.rev);
-    expect(await (await t.app.request("/")).text()).toContain("pushed-v2");
-
-    // No index.html → 400; path traversal → 400; serving unchanged.
-    expect((await api.post("/api/hmr/web/upgrade", { files: { "x.js": b64("1") } })).status).toBe(
-      400,
-    );
-    expect(
-      (
-        await api.post("/api/hmr/web/upgrade", {
-          files: { "index.html": b64("<html>ok</html>"), "../escape.js": b64("1") },
-        })
-      ).status,
-    ).toBe(400);
-    expect(await (await t.app.request("/")).text()).toContain("pushed-v2");
-  });
-
-  it("gzip web push: THE PRIMARY PATH, one artifact instead of one write per file", async () => {
-    const b64 = (s: string) => Buffer.from(s).toString("base64");
-    const files = {
-      "index.html": b64("<html>gzip-pushed</html>"),
-      "assets/app.js": b64("console.log(1)"),
-      "assets/app.css": b64("body{color:red}"),
-    };
-    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
-    const res = await t.app.request("/api/hmr/web/upgrade", {
-      method: "POST",
-      headers: {
-        cookie: adminCookie,
-        "content-type": "application/gzip",
-      },
-      body: gz,
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; rev: string };
-    expect(body.status).toBe("ok");
-
-    const page = await t.app.request("/");
-    expect(await page.text()).toContain("gzip-pushed");
-    expect(page.headers.get("content-type")).toContain("text/html");
-
-    const asset = await t.app.request("/assets/app.css");
-    expect(await asset.text()).toBe("body{color:red}");
-    expect(asset.headers.get("content-type")).toContain("text/css");
-
-    // A JSON push of the identical content lands on the same rev (rev is
-    // content-derived, not transport-derived) — and octet-stream is accepted
-    // as an alias for the same binary transport.
-    const jsonRepush = await api.post("/api/hmr/web/upgrade", { files });
-    expect(((await jsonRepush.json()) as { rev: string }).rev).toBe(body.rev);
-
-    const gz2 = zlib.gzipSync(
-      Buffer.from(JSON.stringify({ files: { "index.html": b64("<html>octet</html>") } })),
-    );
-    const octetRes = await t.app.request("/api/hmr/web/upgrade", {
-      method: "POST",
-      headers: {
-        cookie: adminCookie,
-        "content-type": "application/octet-stream",
-      },
-      body: gz2,
-    });
-    expect(octetRes.status).toBe(200);
-    expect(await (await t.app.request("/")).text()).toContain("octet");
+    const secondBody = (await second.json()) as { web: { rev: string } };
+    expect(secondBody.web.rev).not.toBe(firstBody.web.rev);
+    expect(await (await t.app.request("/")).text()).toContain("v2");
   });
 
   it("generic dispatch: the allow-list is the running platform's iface.methods, read live", async () => {
     const dispatchBundle = await fs.readFile(DISPATCH_BUNDLE_FILE, "utf8");
-    const upgraded = await api.post("/api/hmr/platform/upgrade", { bundle: dispatchBundle });
+    const upgraded = await pushVersion(t.app, adminCookie, { bundle: dispatchBundle });
     expect(upgraded.status).toBe(200);
 
     // A normal call: args round-trip, the result is returned as-is.
@@ -252,8 +272,8 @@ describe("hot update", () => {
 
   it("requests racing an upgrade are enqueued, never observably rejected", async () => {
     const [first, second, list] = await Promise.all([
-      api.post("/api/hmr/platform/upgrade", { bundle: nextBundle }),
-      api.post("/api/hmr/platform/upgrade", { bundle: nextBundle }),
+      pushVersion(t.app, adminCookie, { bundle: nextBundle }),
+      pushVersion(t.app, adminCookie, { bundle: nextBundle }),
       api.get("/api/hmr/platform"),
     ]);
     expect(first.status).toBe(200);
@@ -270,16 +290,15 @@ describe("hot update", () => {
 });
 
 describe("hot persistence across a runtime restart", () => {
-  it("a pushed platform + web resume after a restart (atomic manifest commit)", async () => {
+  it("a pushed version (platform + cli + web) resumes after a restart (atomic manifest commit)", async () => {
     const root = await makeTempRoot();
     try {
-      const b64 = (s: string) => Buffer.from(s).toString("base64");
+      const nextBundle = await fs.readFile(NEXT_BUNDLE_FILE, "utf8");
 
-      // Runtime #1: push the next build and an inline web dist.
+      // Runtime #1: push the next build as one atomic version.
       const h1 = new HmrHost(root);
-      const up = await h1.upgradeTo({ bundlePath: NEXT_BUNDLE_FILE });
+      const up = await h1.upgradeAll({ bundle: nextBundle, web: minimalWeb("persisted-web") });
       expect(up.status).toBe("ok");
-      await h1.installInlineWebDist({ "index.html": b64("<html>persisted-web</html>") });
       h1.dispose();
 
       // Runtime #2 on the SAME data root: a fresh process. It must resume the
@@ -302,62 +321,50 @@ describe("hot persistence across a runtime restart", () => {
     }
   });
 
-  it("a legacy { dir } web manifest still restores to disk (backward compatibility)", async () => {
+  it("a corrupt/missing persisted platform falls back to the packaged build entirely (never a platform/web mismatch)", async () => {
     const root = await makeTempRoot();
     try {
-      const legacyDir = path.join(root, "hmr", "legacy-web");
-      await fs.mkdir(legacyDir, { recursive: true });
-      await fs.writeFile(path.join(legacyDir, "index.html"), "<html>legacy-dir</html>");
       await fs.mkdir(path.join(root, "hmr"), { recursive: true });
-      await fs.writeFile(
-        path.join(root, "hmr", "harness.json"),
-        JSON.stringify({ web: { dir: "legacy-web" } }),
+      // A platform pointer to a pruned/missing bundle, paired with what LOOKS like a
+      // valid web pointer: the restore must not resume web alone — the whole version
+      // falls back together (see host.ts's restore()).
+      const webDir = path.join(root, "hmr", "store", "web");
+      await fs.mkdir(webDir, { recursive: true });
+      const gz = zlib.gzipSync(
+        Buffer.from(JSON.stringify({ files: minimalWeb("should-not-serve") })),
       );
-      const h = new HmrHost(root);
-      await h.ensure();
-      const source = h.resolveWebSource();
-      expect(source?.kind).toBe("dir");
-      expect((source as { dir: string }).dir).toBe(legacyDir);
-      h.dispose();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-    }
-  });
-
-  it("a corrupt/missing persisted platform falls back to the packaged build (never bricks)", async () => {
-    const root = await makeTempRoot();
-    try {
-      await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+      await fs.writeFile(path.join(webDir, "aaaa.webz"), gz);
       await fs.writeFile(
         path.join(root, "hmr", "harness.json"),
         JSON.stringify({
           platform: { bundle: "store/platform/gone.mjs", park: "store/platform/gone.park.json" },
+          cli: { bundle: "store/platform/gone.mjs" },
+          web: { manifest: "store/web/aaaa.webz" },
         }),
       );
       const h = new HmrHost(root);
       await h.ensure();
       expect(h.currentImplId()).toBe("packaged");
+      expect(h.resolveWebSource()).toBeNull();
       h.dispose();
     } finally {
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
-  it("the store keeps at most 2 platform bundles / web dists (current + one rollback)", async () => {
+  it("the store keeps at most 2 versions (current + one rollback)", async () => {
     const root = await makeTempRoot();
     try {
       const bundleSrc = await fs.readFile(NEXT_BUNDLE_FILE, "utf8");
-      const b64 = (s: string) => Buffer.from(s).toString("base64");
       const h = new HmrHost(root);
-      // Three distinct pushed builds (content varies via a trailing comment).
+      // Three distinct pushed versions (bundle content varies via a trailing comment;
+      // web content varies too).
       for (let i = 0; i < 3; i++) {
-        const f = path.join(root, `next-${i}.mjs`);
-        await fs.writeFile(f, `${bundleSrc}\n// push ${i}\n`);
-        const up = await h.upgradeTo({ bundlePath: f });
+        const up = await h.upgradeAll({
+          bundle: `${bundleSrc}\n// push ${i}\n`,
+          web: minimalWeb(`web-${i}`),
+        });
         expect(up.status).toBe("ok");
-      }
-      for (let i = 0; i < 3; i++) {
-        await h.installInlineWebDist({ "index.html": b64(`<html>web-${i}</html>`) });
       }
       const platforms = (await fs.readdir(path.join(root, "hmr", "store", "platform"))).filter(
         (n) => n.endsWith(".mjs"),
