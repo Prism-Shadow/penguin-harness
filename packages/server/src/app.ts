@@ -467,12 +467,17 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a
-  // freshly pushed web dist (in memory, or on disk for a dev distPath push) without a
-  // restart; when nothing has been pushed, it falls back to the configured webDist.
-  registerStaticRoutes(
-    app,
-    () => deps.hmr.resolveWebSource() ?? { kind: "dir", dir: deps.config.webDist },
-  );
+  // freshly pushed/restored web dist (in memory) without a restart; when nothing has
+  // been pushed, it falls back to the configured webDist. `hmr.ensure()` is awaited
+  // FIRST: web is only restored from harness.json as part of the platform+cli+web
+  // version's lazy first boot (see HmrHost.restore()), which nothing else here
+  // triggers — without this, a request landing right after a restart (before any
+  // /api/hmr/* call warms the host up) would miss a restored version entirely and
+  // silently fall back to the packaged webDist.
+  registerStaticRoutes(app, async () => {
+    await deps.hmr.ensure();
+    return deps.hmr.resolveWebSource() ?? { kind: "dir", dir: deps.config.webDist };
+  });
 
   return app;
 }
@@ -530,12 +535,11 @@ export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "d
 
 /**
  * Minimal static file server (avoiding an extra dependency): path traversal
- * protection + SPA fallback, over either an in-memory pushed dist (the hot
- * host's primary web-push path — no filesystem at all) or a directory on
- * disk (a dev distPath push, a restored legacy manifest, or the packaged
- * webDist).
+ * protection + SPA fallback, over either an in-memory pushed/restored dist (the
+ * hot host's primary path — no filesystem at all) or the packaged webDist
+ * directory on disk.
  */
-function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => WebSource): void {
+function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
@@ -543,7 +547,7 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => WebSource)
     }
     const rel = reqPath.replace(/^\/+/, "") || "index.html";
     // Resolved per request: the hot host may retarget it between requests.
-    const source = resolveSource();
+    const source = await resolveSource();
 
     if (source.kind === "mem") {
       // No filesystem involved, so no traversal guard is needed: an unknown

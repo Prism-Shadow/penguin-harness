@@ -2,16 +2,15 @@
 /**
  * The unified watch-and-push: ONE process, ONE atomic push cycle.
  *
- * Replaces the separate platform/web pushers. It watches both platform source
- * (packages/server/src) and the web build output (packages/web/dist, produced
- * by `vite build --watch` under dev:web), and on any change runs a single
- * indivisible push cycle — debounced and serialized, so two cycles never
- * interleave and a change arriving mid-cycle queues exactly one more:
- *
- *   1. FRONTEND FIRST: push the web dist to EVERY target (each retargets its
- *      static hosting and broadcasts a reload to its connected windows);
- *   2. then EACH BACKEND: compile the platform entry once, push the bundle to
- *      every target in turn (park → migrate → boot on each).
+ * platform = cli + platform code + web is ONE indivisible version (see
+ * packages/server/src/hmr/host.ts's module doc): this script watches platform +
+ * CLI source (packages/server/src and packages/cli/src) and the web build output
+ * (packages/web/dist, produced by `vite build --watch` under dev:web), and on any
+ * change compiles ONE unified bundle (packages/cli/src/platform-bundle.ts,
+ * exporting both `hotPlatform` and `cli`) and pushes it to EVERY target together
+ * with the web dist, in a single request to POST /api/hmr/upgrade — debounced and
+ * serialized, so two cycles never interleave and a change arriving mid-cycle
+ * queues exactly one more.
  *
  * The push is over HTTP ALONE: the compiled bundle and the web dist travel
  * INLINE in the request body (no shared filesystem, no scp). Every target is
@@ -67,11 +66,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PENGUIN_HOME = expandHome(process.env.PENGUIN_HOME ?? "~/.penguin/dev-data");
 const SERVERS_FILE =
   process.env.PENGUIN_SERVERS_FILE ?? path.join(PENGUIN_HOME, "hmr", "servers.json");
-const ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
+// The unified compile entry: exports BOTH `hotPlatform` (re-exported from
+// @prismshadow/penguin-server/platform) and `cli` (packages/cli's own run/chat/config
+// commands) — see packages/cli/src/platform-bundle.ts's module doc.
+const ENTRY = path.join(ROOT, "packages", "cli", "src", "platform-bundle.ts");
 const SERVER_SRC = path.join(ROOT, "packages", "server", "src");
+const CLI_SRC = path.join(ROOT, "packages", "cli", "src");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");
 const BUNDLE = path.join(os.tmpdir(), `penguin-dev-platform-${process.pid}.mjs`);
-// Past vite's write burst; server-source edits share the same cycle debounce.
+// Past vite's write burst; server/cli-source edits share the same cycle debounce.
 const DEBOUNCE_MS = 800;
 
 const ADMIN_PASSWORD = process.env.PENGUIN_ADMIN_PASSWORD;
@@ -259,15 +262,25 @@ async function authedRequest(target, apiPath, { method, contentType, body }) {
 }
 
 /**
- * Whether there is a platform entry to compile at all: the mechanism-only
- * MVP branch ships no business platform (packages/server/src/platform/entry.ts
- * is absent there), so the push cycle degrades to frontend-only rather than
- * failing.
+ * Compiles the unified entry to ONE self-contained file (kernel + cli deps bundled
+ * in — commander, agenthub, the MCP client, arktype, everything the run/chat/config
+ * commands pull in transitively via @prismshadow/penguin-core, so the pushed file
+ * loads and runs from an arbitrary directory with no shared node_modules).
+ *
+ * The banner works around a real esbuild footgun: several bundled CJS deps
+ * (commander's lib/command.js among them) call plain `require("node:events")` from
+ * inside their own commonjs wrapper; esbuild's ESM output normally converts that
+ * into a call to its OWN injected `__require` shim, which unconditionally THROWS
+ * ("Dynamic require of ... is not supported") rather than resolving a real Node
+ * builtin — confirmed by reproducing this exact failure pushing to a real server. A
+ * banner that defines a real top-level `require` (via node:module's createRequire)
+ * before esbuild's bundled code runs makes those nested `require()` calls resolve
+ * for real instead of hitting the shim.
  */
-const hasPlatformEntry = () => fs.existsSync(ENTRY);
-
-/** Compiles the platform entry to ONE self-contained file (kernel bundled in). */
 async function compilePlatform() {
+  if (!fs.existsSync(ENTRY)) {
+    throw new Error(`unified bundle entry missing: ${ENTRY}`);
+  }
   const esbuild = await import("esbuild");
   await esbuild.build({
     entryPoints: [ENTRY],
@@ -276,6 +289,9 @@ async function compilePlatform() {
     platform: "node",
     outfile: BUNDLE,
     logLevel: "silent",
+    banner: {
+      js: 'import { createRequire as __penguinCreateRequire } from "node:module"; const require = __penguinCreateRequire(import.meta.url);',
+    },
     alias: {
       "@prismshadow/penguin-core/kernel": require.resolve("@prismshadow/penguin-core/kernel"),
     },
@@ -297,91 +313,56 @@ async function readWebManifest() {
 }
 
 /**
- * Pushes the web dist to one target INLINE over HTTP (frontend phase).
- *
- * Primary transport: gzip(JSON.stringify({ files })) as the raw body — one
- * write on the target instead of one per file (the small-file-count
- * bottleneck this replaces: 300+ small files written serially onto a
- * Windows/Defender-scanned disk measured well under 1MB/s). Falls back to
- * the old JSON { files } body on 400/404/415 — a target running an older
- * build won't recognize the gzip Content-Type/route shape, and the push
- * must still land.
+ * Pushes ONE atomic version — the compiled unified bundle (platform + cli) AND the
+ * web dist — to one target, in a single request to POST /api/hmr/upgrade. The body
+ * is gzip(JSON.stringify({ bundle, web: { files } })): one write on the target
+ * instead of the old two-request platform-then-web sequence, and no window where a
+ * target could observe one half updated without the other.
  */
-async function pushWeb(target) {
-  const files = await readWebManifest();
-  const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
-  const res = await authedRequest(target, "/api/hmr/web/upgrade", {
+async function pushVersion(target, files) {
+  const bundle = await fsp.readFile(BUNDLE, "utf8");
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ bundle, web: { files } })));
+  const res = await authedRequest(target, "/api/hmr/upgrade", {
     method: "POST",
     contentType: "application/gzip",
     body: gz,
   });
-  if (res.status >= 200 && res.status < 300) return JSON.parse(res.body.toString("utf8"));
-  if ([400, 404, 415].includes(res.status)) {
-    log(`[${target.id}] gzip web push rejected (${res.status}); falling back to JSON`);
-    const jsonRes = await authedRequest(target, "/api/hmr/web/upgrade", {
-      method: "POST",
-      contentType: "application/json",
-      body: JSON.stringify({ files }),
-    });
-    if (jsonRes.status < 200 || jsonRes.status >= 300) {
-      throw new Error(`/api/hmr/web/upgrade → ${jsonRes.status}: ${jsonRes.body.toString("utf8")}`);
-    }
-    return JSON.parse(jsonRes.body.toString("utf8"));
-  }
-  throw new Error(`/api/hmr/web/upgrade → ${res.status}: ${res.body.toString("utf8")}`);
-}
-
-/** Pushes the compiled platform bundle to one target INLINE over HTTP (backend phase). */
-async function pushPlatform(target) {
-  const bundle = await fsp.readFile(BUNDLE, "utf8");
-  const res = await authedRequest(target, "/api/hmr/platform/upgrade", {
-    method: "POST",
-    contentType: "application/json",
-    body: JSON.stringify({ bundle }),
-  });
   const outcome = JSON.parse(res.body.toString("utf8") || "{}");
   if (res.status < 200 || res.status >= 300) {
-    throw new Error(`/api/hmr/platform/upgrade → ${res.status}: ${JSON.stringify(outcome)}`);
+    throw new Error(`/api/hmr/upgrade → ${res.status}: ${JSON.stringify(outcome)}`);
   }
   return outcome;
 }
 
 /**
- * One atomic push cycle: frontend to every target first, then each backend in
- * turn. Per-target failures are reported and do not abort the rest of the
- * fleet; the cycle itself never interleaves with another.
+ * One atomic push cycle: compile the unified bundle once, read the web dist once,
+ * then push both together to every target in turn. Per-target failures are
+ * reported and do not abort the rest of the fleet; the cycle itself never
+ * interleaves with another. A merged push needs BOTH halves, so the cycle is
+ * skipped entirely (not degraded) until the web dist has been built at least once.
  */
 async function pushCycle() {
-  const targets = readTargets();
-  if (hasWebDist()) {
-    for (const target of targets) {
-      try {
-        const out = await pushWeb(target);
-        log(`[${target.id}] web → rev ${out.rev}`);
-      } catch (err) {
-        log(`[${target.id}] web push failed: ${err instanceof Error ? err.message : err}`);
-      }
-    }
-  }
-  if (!hasPlatformEntry()) {
-    log("no platform entry (packages/server/src/platform/entry.ts); frontend-only push cycle");
+  if (!hasWebDist()) {
+    log("web dist not built yet (packages/web/dist); skipping push cycle");
     return;
   }
+  const targets = readTargets();
   await compilePlatform();
+  const files = await readWebManifest();
   for (const target of targets) {
     try {
-      const out = await pushPlatform(target);
+      const out = await pushVersion(target, files);
       if (out.status === "blocked") {
         log(
-          `[${target.id}] platform BLOCKED (data would be discarded): ` +
+          `[${target.id}] BLOCKED (data would be discarded): ` +
             `dropped=${JSON.stringify(out.dropped)} missing=${JSON.stringify(out.missing)} ` +
             `invalid=${JSON.stringify(out.invalid)} — target unchanged.`,
         );
       } else {
-        log(`[${target.id}] platform → ${out.mode} (impl ${out.impl})`);
+        log(`[${target.id}] → ${out.mode} (impl ${out.impl}, web rev ${out.web.rev})`);
       }
     } catch (err) {
-      log(`[${target.id}] platform push failed: ${err instanceof Error ? err.message : err}`);
+      log(`[${target.id}] push failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 }
@@ -430,7 +411,9 @@ async function run() {
     return;
   }
   running = true;
-  log("change detected; push cycle (web first, then each backend)...");
+  log(
+    "change detected; push cycle (compile the unified bundle, push bundle + web to each target)...",
+  );
   try {
     await pushCycle();
   } catch (err) {
@@ -443,7 +426,12 @@ async function run() {
   }
 }
 
-const watchers = [fs.watch(SERVER_SRC, { recursive: true }, schedule)];
+// Both halves of the unified bundle are watched: server/src (the hotPlatform half)
+// AND cli/src (the cli half — run/chat/config, plus platform-bundle.ts itself).
+const watchers = [
+  fs.watch(SERVER_SRC, { recursive: true }, schedule),
+  fs.watch(CLI_SRC, { recursive: true }, schedule),
+];
 if (fs.existsSync(WEB_DIST)) watchers.push(fs.watch(WEB_DIST, { recursive: true }, schedule));
 else {
   // vite build --watch creates it after its first build; attach then.
@@ -456,7 +444,9 @@ else {
   }, 1000);
   poll.unref();
 }
-log(`watching packages/server/src + packages/web/dist; targets file: ${SERVERS_FILE}`);
+log(
+  `watching packages/server/src + packages/cli/src + packages/web/dist; targets file: ${SERVERS_FILE}`,
+);
 
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
