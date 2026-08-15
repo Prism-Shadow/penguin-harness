@@ -7,6 +7,14 @@
  * and ships the migrator alongside the new schema; the previous shape lives
  * only in already-parked documents out in the world.
  *
+ * PLATFORM LAYER — WHERE POLICY BELONGS. Anything a deployment might want to
+ * change (business APIs, what an agent sees, how a capability behaves) goes
+ * here rather than in the runtime, and reaches installations by one HTTP push
+ * instead of a rebuild. Worth remembering when something looks like it must
+ * live in the shell: this code runs INSIDE the server process, so in-process
+ * effects (e.g. extending process.env for the shells agents spawn) are
+ * deliverable from boot() with no runtime change. See ../hmr/README.md.
+ *
  * This packaged default is deliberately a bare stub: the runtime (HmrHost,
  * routes.ts) is mechanism only, and carries no business methods of its own.
  * A real business platform is pushed over HTTP and dispatched through the
