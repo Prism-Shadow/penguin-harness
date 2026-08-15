@@ -1368,7 +1368,6 @@ Benchmark：
     title: "命令面板",
     placeholder: "输入以筛选操作…",
     noResults: "没有匹配的操作",
-    openDevConsole: "打开开发者控制台",
     reloadPage: "刷新页面",
     hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
   },
