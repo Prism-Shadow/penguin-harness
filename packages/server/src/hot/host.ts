@@ -32,9 +32,8 @@ import { pathToFileURL } from "node:url";
 import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
-import type { PlatformApi } from "./platform-v1.js";
-import { platformV1 } from "./platform-v1.js";
-import { platformV2 } from "./platform-v2.js";
+import type { PlatformApi } from "./platform.js";
+import { packagedPlatform } from "./platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
 export interface PlatformBundle {
@@ -49,21 +48,15 @@ export interface GitSource {
   revision: string;
 }
 
-export type UpgradeTarget =
-  /** Built-in demo bundle (tests, dev). */
-  | { impl: string }
+export type UpgradeTarget = {
   /** A prebuilt single-file JS bundle on this machine + optional provenance. */
-  | { bundlePath: string; source?: GitSource };
+  bundlePath: string;
+  source?: GitSource;
+};
 
 export type UpgradeOutcome =
   | { status: "ok"; mode: "silent" | "migrated"; impl: string; source: GitSource | null }
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
-
-/** In-repo demo bundles; real code arrives inline over HTTP. */
-const BUNDLES: Record<string, PlatformBundle> = {
-  [platformV1.id]: platformV1,
-  [platformV2.id]: platformV2,
-};
 
 /**
  * The committed on-disk state (hot/harness.json): a runtime restart boots
@@ -88,7 +81,7 @@ export class HotHost {
   readonly apiToken = crypto.randomBytes(32).toString("hex");
 
   private instance: Instance<PlatformApi> | null = null;
-  private implId = platformV1.id;
+  private implId = packagedPlatform.id;
   private readonly hotDir: string;
   private readonly storeDir: string;
   private readonly manifestPath: string;
@@ -129,7 +122,7 @@ export class HotHost {
     if (this.instance === null) {
       await this.restore();
       if (this.instance === null) {
-        const bundle = platformV1;
+        const bundle = packagedPlatform;
         this.instance = (await boot(
           bundle.impl,
           bundle.iface,
@@ -198,18 +191,8 @@ export class HotHost {
   private async doUpgrade(target: UpgradeTarget): Promise<UpgradeOutcome> {
     const current = await this.ensure();
 
-    let bundle: PlatformBundle;
-    let bundleFile: string | undefined;
-    let source: GitSource | null = null;
-    if ("impl" in target) {
-      const found = BUNDLES[target.impl];
-      if (found === undefined) throw new Error(`unknown platform impl '${target.impl}'`);
-      bundle = found;
-    } else {
-      bundle = await this.importBundleFile(target.bundlePath);
-      bundleFile = target.bundlePath;
-      source = target.source ?? null;
-    }
+    const bundle = await this.importBundleFile(target.bundlePath);
+    const source = target.source ?? null;
 
     // Park to disk before touching anything: crash-safe by construction.
     await fsp.mkdir(this.hotDir, { recursive: true });
@@ -236,7 +219,7 @@ export class HotHost {
     this.implId = bundle.id;
     await fsp.writeFile(parkPath, JSON.stringify(result.doc, null, 2));
     // Commit AFTER the live boot succeeded: a restart resumes only validated code.
-    if (bundleFile !== undefined) await this.persistPlatform(bundleFile, result.doc);
+    await this.persistPlatform(target.bundlePath, result.doc);
     return { status: "ok", mode: result.mode, impl: bundle.id, source };
   }
 

@@ -14,7 +14,6 @@ import type { AppDeps } from "../app.js";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
-import type { TerminalApiV2 } from "./terminal.js";
 import type { ShellProcResource } from "./resources.js";
 
 /** Bind addresses considered safe by default; anything else needs HTTPS or the explicit override. */
@@ -86,11 +85,9 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
    *   INLINE in the request body; works over HTTP alone (remote runtimes
    *   included). The server writes the bytes and loads them.
    * - { bundlePath, source? } — same-machine dev convenience.
-   * - { impl: "v2" } — built-in demo bundle.
    */
   routes.post("/platform/upgrade", async (c) => {
     const body = await c.req.json<{
-      impl?: string;
       bundle?: string;
       bundlePath?: string;
       source?: { repo: string; revision: string };
@@ -99,10 +96,10 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     if (typeof body.bundle === "string") {
       const bundlePath = await hot.writeInlineBundle(body.bundle);
       target = { bundlePath, ...(body.source ? { source: body.source } : {}) };
-    } else if (body.bundlePath !== undefined) {
+    } else if (typeof body.bundlePath === "string") {
       target = { bundlePath: body.bundlePath, ...(body.source ? { source: body.source } : {}) };
     } else {
-      target = { impl: body.impl ?? "v2" };
+      throw new HttpError(400, "bad_request", "provide `bundle` (inline bytes) or `bundlePath`");
     }
     let outcome;
     try {
@@ -166,12 +163,7 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       terminals: terminals.keys().map((id) => {
         const t = terminals.get(id)!;
-        return {
-          id,
-          alive: t.alive(),
-          lost: t.lost(),
-          title: (t as Partial<TerminalApiV2>).title?.() ?? null,
-        };
+        return { id, alive: t.alive(), lost: t.lost() };
       }),
     });
   });
@@ -180,12 +172,7 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     const inst = await hot.ensure();
     const t = inst.api.terminals().get(c.req.param("id"));
     if (t === undefined) throw new HttpError(404, "not_found", "No such terminal.");
-    return c.json({
-      output: t.read(),
-      alive: t.alive(),
-      lost: t.lost(),
-      title: (t as Partial<TerminalApiV2>).title?.() ?? null,
-    });
+    return c.json({ output: t.read(), alive: t.alive(), lost: t.lost() });
   });
 
   routes.post("/terminals/:id/input", async (c) => {
