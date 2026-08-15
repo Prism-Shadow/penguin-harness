@@ -4488,6 +4488,7 @@ snapshots:
       '@modelcontextprotocol/client': 2.0.0
       '@prismshadow/agenthub': 0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills': file:packages/skills
+      arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
     transitivePeerDependencies:
