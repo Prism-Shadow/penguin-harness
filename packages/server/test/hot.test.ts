@@ -235,6 +235,49 @@ describe("hot platform", () => {
     expect(run.result.calls).toBe(2);
   });
 
+  it("inline platform bundle over HTTP: no shared filesystem, no path (remote push)", async () => {
+    // The bundle bytes travel in the request body — exactly what a remote /
+    // HTTP-only runtime receives. Server writes them and loads by path.
+    const bundle = await fs.readFile(path.join(HOT_ASSETS, "platform-v4.bundle.mjs"), "utf8");
+    await api.post("/api/hot/platform/upgrade", { impl: "v2" }); // v4 migration starts at 2
+    const res = await api.post("/api/hot/platform/upgrade", { bundle });
+    expect(res.status).toBe(200);
+    const outcome = (await res.json()) as { status: string; impl: string };
+    expect(outcome.status).toBe("ok");
+    expect(outcome.impl).toBe("v4-bundle");
+    const info = (await (await api.get("/api/hot/platform")).json()) as {
+      info: { impl: string };
+    };
+    expect(info.info.impl).toBe("v4-bundle");
+  });
+
+  it("inline web dist over HTTP: a { relPath: base64 } manifest, traversal-guarded", async () => {
+    const b64 = (s: string) => Buffer.from(s).toString("base64");
+    const res = await api.post("/api/hot/web/upgrade", {
+      files: {
+        "index.html": b64("<html>inline-v1</html>"),
+        "assets/app.js": b64("console.log(1)"),
+      },
+    });
+    expect(res.status).toBe(200);
+    // Static hosting now serves the inline dist (SPA fallback included).
+    expect(await (await t.app.request("/")).text()).toContain("inline-v1");
+    expect(await (await t.app.request("/deep/spa/route")).text()).toContain("inline-v1");
+
+    // A manifest with no index.html is rejected.
+    expect((await api.post("/api/hot/web/upgrade", { files: { "x.js": b64("1") } })).status).toBe(
+      400,
+    );
+    // Path traversal is rejected, nothing written.
+    expect(
+      (
+        await api.post("/api/hot/web/upgrade", {
+          files: { "index.html": b64("<html>ok</html>"), "../escape.js": b64("1") },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
   it.skipIf(!hasGit)(
     "layer (b): TS source via git — checkout, subprocess compile to one file, then load",
     async () => {

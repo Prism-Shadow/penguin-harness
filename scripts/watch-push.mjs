@@ -13,32 +13,32 @@
  *   2. then EACH BACKEND: compile the platform entry once, push the bundle to
  *      every target in turn (park → migrate → boot on each).
  *
+ * The push is over HTTP ALONE: the compiled bundle and the web dist travel
+ * INLINE in the request body (no shared filesystem, no scp). Every target is
+ * therefore just a URL + token — a local runtime resolves both from its
+ * hot/api.json; a remote runtime is reached through a URL (an ssh tunnel, a
+ * relay, …) with its token supplied.
+ *
  * Targets come from a servers file — the SAME schema the desktop shell's
- * server picker uses (both sides of the "UI without a server" model speak it):
+ * server picker uses:
  *
  *   { "servers": [
- *     { "id": "local",  "type": "local", "home": "~/.penguin/dev-data" },
- *     { "id": "lab",    "type": "ssh",   "host": "user@box", "home": "~/.penguin/data" }
+ *     { "id": "local", "type": "local", "home": "~/.penguin/dev-data" },
+ *     { "id": "box",   "type": "remote", "url": "http://127.0.0.1:61082", "token": "…" }
  *   ] }
  *
  * Resolution: $PENGUIN_SERVERS_FILE, else $PENGUIN_HOME/hot/servers.json, else
- * an implicit single local target at $PENGUIN_HOME. A local target is reached
- * through its hot/api.json; an ssh target by scp-ing the artifacts to the
- * remote temp dir and curl-ing the upgrade endpoints over ssh (the remote
- * server stays loopback-only; nothing is exposed on the network).
+ * an implicit single local target at $PENGUIN_HOME.
  *
  * Usage: `node scripts/watch-push.mjs` (long-running; wired into `pnpm dev`).
  */
-import { execFile as execFileCb } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-const execFile = promisify(execFileCb);
 const require = createRequire(import.meta.url);
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -73,48 +73,33 @@ function readTargets() {
   return [{ id: "local", type: "local", home: PENGUIN_HOME }];
 }
 
-/** Local target: read its hot/api.json (the runtime publishes it on boot). */
-async function localApi(target) {
+/** Resolves a target to { url, token }: local reads api.json, remote is explicit. */
+async function resolveApi(target) {
+  if (target.type === "remote" || target.url !== undefined) {
+    if (typeof target.url !== "string" || typeof target.token !== "string") {
+      throw new Error(`remote target '${target.id}' needs { url, token }`);
+    }
+    return { url: target.url.replace(/\/+$/, ""), token: target.token };
+  }
   const file = path.join(expandHome(target.home ?? PENGUIN_HOME), "hot", "api.json");
   const { url, token } = JSON.parse(await fsp.readFile(file, "utf8"));
-  return { url, token };
+  return { url: url.replace(/\/+$/, ""), token };
 }
 
-async function ssh(host, args) {
-  const { stdout } = await execFile("ssh", ["-o", "BatchMode=yes", host, ...args]);
-  return stdout;
-}
-
-/** Remote target: api.json and artifacts live on the remote machine. */
-async function sshApi(target) {
-  const home = target.home ?? "~/.penguin";
-  const raw = await ssh(target.host, [`cat ${home}/hot/api.json`]);
-  const { url, token } = JSON.parse(raw);
-  return { url, token };
-}
-
-/** curl on the remote host (the server is loopback-only there by design). */
-async function sshPost(target, api, apiPath, bodyJson) {
-  const out = await ssh(target.host, [
-    "curl",
-    "-s",
-    "-X",
-    "POST",
-    "-H",
-    `'Authorization: Bearer ${api.token}'`,
-    "-H",
-    "'content-type: application/json'",
-    "-d",
-    `'${bodyJson.replaceAll("'", "'\\''")}'`,
-    `'${api.url}${apiPath}'`,
-  ]);
-  return JSON.parse(out);
-}
-
-async function localPost(api, apiPath, body) {
+/** POSTs JSON to a target's hot API over HTTP (the only channel a push uses). */
+async function post(api, apiPath, body) {
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${api.token}`,
+  };
+  // On loopback binds 127.0.0.1 is the preview host (where /api answers 401);
+  // /api is served under the App host, so address it by name. A tunnel to a
+  // remote runtime typically lands on 127.0.0.1:<port> — this is what makes
+  // pushing through it work.
+  if (new URL(api.url).hostname === "127.0.0.1") headers.host = "localhost";
   const res = await fetch(`${api.url}${apiPath}`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${api.token}` },
+    headers,
     body: JSON.stringify(body),
   });
   const outcome = await res.json().catch(() => ({}));
@@ -140,34 +125,29 @@ async function compilePlatform() {
 
 const hasWebDist = () => fs.existsSync(path.join(WEB_DIST, "index.html"));
 
-/** Pushes the web dist to one target (frontend phase). */
-async function pushWeb(target) {
-  if (target.type === "ssh") {
-    const remoteDist = `/tmp/penguin-push-web-${target.id}`;
-    await ssh(target.host, [`rm -rf ${remoteDist} && mkdir -p ${remoteDist}`]);
-    await execFile("scp", ["-q", "-r", `${WEB_DIST}/.`, `${target.host}:${remoteDist}/`]);
-    const api = await sshApi(target);
-    return sshPost(target, api, "/api/hot/web/upgrade", JSON.stringify({ distPath: remoteDist }));
+/** Reads the whole web dist into a { relPath: base64 } manifest. */
+async function readWebManifest() {
+  const files = {};
+  for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    const rel = path.relative(WEB_DIST, abs).split(path.sep).join("/");
+    files[rel] = (await fsp.readFile(abs)).toString("base64");
   }
-  const api = await localApi(target);
-  return localPost(api, "/api/hot/web/upgrade", { distPath: WEB_DIST });
+  return files;
 }
 
-/** Pushes the compiled platform bundle to one target (backend phase). */
+/** Pushes the web dist to one target INLINE over HTTP (frontend phase). */
+async function pushWeb(target) {
+  const api = await resolveApi(target);
+  return post(api, "/api/hot/web/upgrade", { files: await readWebManifest() });
+}
+
+/** Pushes the compiled platform bundle to one target INLINE over HTTP (backend phase). */
 async function pushPlatform(target) {
-  if (target.type === "ssh") {
-    const remoteBundle = `/tmp/penguin-push-platform-${target.id}.mjs`;
-    await execFile("scp", ["-q", BUNDLE, `${target.host}:${remoteBundle}`]);
-    const api = await sshApi(target);
-    return sshPost(
-      target,
-      api,
-      "/api/hot/platform/upgrade",
-      JSON.stringify({ bundlePath: remoteBundle }),
-    );
-  }
-  const api = await localApi(target);
-  return localPost(api, "/api/hot/platform/upgrade", { bundlePath: BUNDLE });
+  const api = await resolveApi(target);
+  const bundle = await fsp.readFile(BUNDLE, "utf8");
+  return post(api, "/api/hot/platform/upgrade", { bundle });
 }
 
 /**
@@ -213,8 +193,7 @@ async function waitForFirstTarget() {
     const targets = readTargets();
     for (const target of targets) {
       try {
-        if (target.type === "ssh") await sshApi(target);
-        else await localApi(target);
+        await resolveApi(target);
         return;
       } catch {
         // not up yet

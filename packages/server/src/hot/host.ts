@@ -447,6 +447,45 @@ export class HotHost {
    */
   webDistDir: string | null = null;
 
+  /**
+   * Materializes an inline platform bundle (the single-file ESM sent in the
+   * request body) to disk and returns its path. This is how a push reaches a
+   * runtime over HTTP alone — no shared filesystem, no scp: the bytes travel
+   * in the request, the server writes them, then loads by path.
+   */
+  async writeInlineBundle(content: string): Promise<string> {
+    const dir = path.join(this.hotDir, "uploads");
+    await fsp.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `platform-${sha1(content).slice(0, 16)}.mjs`);
+    await fsp.writeFile(file, content, "utf8");
+    return file;
+  }
+
+  /**
+   * Materializes an inline web dist (a { relPath: base64 } manifest sent in
+   * the request body) to a fresh directory and returns its path. Same story
+   * as writeInlineBundle: the assets travel over HTTP, not a shared disk.
+   * Paths are validated to stay within the target directory.
+   */
+  async writeInlineWebDist(files: Record<string, string>): Promise<string> {
+    const hash = crypto.createHash("sha1");
+    for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
+    const dir = path.join(this.hotDir, "web", hash.digest("hex").slice(0, 16));
+    await fsp.rm(dir, { recursive: true, force: true });
+    for (const [rel, b64] of Object.entries(files)) {
+      const target = path.resolve(dir, rel);
+      if (target !== dir && !target.startsWith(dir + path.sep)) {
+        throw new Error(`unsafe path in web dist manifest: ${rel}`);
+      }
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      await fsp.writeFile(target, Buffer.from(b64, "base64"));
+    }
+    if (!fs.existsSync(path.join(dir, "index.html"))) {
+      throw new Error("web dist manifest has no index.html");
+    }
+    return dir;
+  }
+
   /** Points static hosting at a freshly pushed web dist; returns its content rev. */
   setWebDist(distPath: string): { dist: string; rev: string } {
     const dist = path.resolve(distPath);

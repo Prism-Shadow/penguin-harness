@@ -97,24 +97,31 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
   /**
    * The upgrade descriptor, in capability order (strictly request-driven —
    * nothing auto-triggers a reload):
-   * - { bundlePath, source? } — layer (a), the fundamental interface: a
-   *   prebuilt single-file JS bundle plus an optional git specifier recorded
-   *   as provenance. Needs no git and no compiler.
-   * - { repo, revision } — layer (b): checkout + subprocess compile (TS/JS),
-   *   which internally ends in layer (a). Needs a compiler; degrades without
-   *   git (working tree + warning).
+   * - { bundle, source? } — THE PRIMARY PATH: the single-file JS bundle sent
+   *   INLINE in the request body. This is what makes a push reach a runtime
+   *   over HTTP alone — no shared filesystem, no scp. The server writes the
+   *   bytes and loads them.
+   * - { bundlePath, source? } — same-machine convenience: a path the server
+   *   can already read (dev on the same box). Never usable from a remote/
+   *   HTTP-only client.
+   * - { repo, revision } — checkout + subprocess compile (TS/JS) on the
+   *   server; needs a compiler, degrades without git.
    * - { impl: "v2" } — built-in demo bundle.
    */
   routes.post("/platform/upgrade", async (c) => {
     const body = await c.req.json<{
       impl?: string;
+      bundle?: string;
       bundlePath?: string;
       source?: { repo: string; revision: string };
       repo?: string;
       revision?: string;
     }>();
     let target;
-    if (body.bundlePath !== undefined) {
+    if (typeof body.bundle === "string") {
+      const bundlePath = await hot.writeInlineBundle(body.bundle);
+      target = { bundlePath, ...(body.source ? { source: body.source } : {}) };
+    } else if (body.bundlePath !== undefined) {
       target = { bundlePath: body.bundlePath, ...(body.source ? { source: body.source } : {}) };
     } else if (body.repo !== undefined) {
       if (body.revision === undefined) {
@@ -140,18 +147,29 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
 
   /**
    * Hot-swap the served web assets: point static hosting at a freshly built
-   * dist directory and tell every connected client to reload. This is how
-   * `pnpm dev:web` reaches a runtime desktop app — its window loads the
-   * server's static hosting, which Vite's own dev server never touches.
+   * dist and tell every connected client to reload. This is how `pnpm dev:web`
+   * reaches a runtime desktop app — its window loads the server's static
+   * hosting, which Vite's own dev server never touches.
+   *
+   * - { files } — THE PRIMARY PATH: a { relPath: base64 } manifest sent INLINE
+   *   in the request body. Works over HTTP alone (remote runtimes included).
+   * - { distPath } — same-machine convenience: a directory the server can
+   *   already read (dev on the same box).
    */
   routes.post("/web/upgrade", async (c) => {
-    const body = await c.req.json<{ distPath: string; source?: Json }>();
-    if (typeof body.distPath !== "string") {
-      throw new HttpError(400, "bad_request", "Missing distPath.");
-    }
+    const body = await c.req.json<{
+      files?: Record<string, string>;
+      distPath?: string;
+      source?: Json;
+    }>();
     let info;
     try {
-      info = deps.hot.setWebDist(body.distPath);
+      const dist =
+        body.files !== undefined ? await deps.hot.writeInlineWebDist(body.files) : body.distPath;
+      if (typeof dist !== "string") {
+        throw new Error("provide `files` (inline manifest) or `distPath`");
+      }
+      info = deps.hot.setWebDist(dist);
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
     }
