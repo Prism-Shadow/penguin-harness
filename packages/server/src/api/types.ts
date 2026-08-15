@@ -1840,22 +1840,3 @@ export interface UpdateRunResponse {
   /** True when the install changed (or was already current): restart the service to run the new version. */
   needsRestart: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// HMR (hot-update) observability
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/hmr/platform (admin only; 403 for everyone else — see hmrRoutes' gate): a
- * snapshot of the currently booted business platform. Consumed today by the web dev
- * console (Ctrl+P): only `impl` and `iface.version` are read there. `iface`/`info` mirror
- * @prismshadow/penguin-core/kernel's ifaceData()/PlatformApi.info() shapes 1:1 and are
- * deliberately loose here — this endpoint isn't part of the strict business DTO contract,
- * only its presence (for admins) is.
- */
-export interface HmrPlatformResponse {
-  /** The booted platform bundle's id (e.g. "packaged"). */
-  impl: string;
-  iface: { name: string; version: number; [key: string]: unknown };
-  info: unknown;
-}
