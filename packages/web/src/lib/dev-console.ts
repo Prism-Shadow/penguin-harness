@@ -69,12 +69,30 @@ export function recordDevConsoleEvent(
 export type ShortcutKeyEvent = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">;
 
 /**
- * Ctrl+P (Cmd+P on mac) toggles the console. `isMac` is injected (from navigator at the
- * call site) rather than read here, so the matcher stays a pure function to unit-test.
- * Browsers report the letter itself regardless of modifiers, so `key` alone (case-folded)
- * identifies the physical P key without depending on layout/shift state.
+ * Ctrl+P (Cmd+P on mac) toggles the command palette. `isMac` is injected (from navigator
+ * at the call site) rather than read here, so the matcher stays a pure function to
+ * unit-test. Browsers report the letter itself regardless of modifiers, so `key` alone
+ * (case-folded) identifies the physical P key without depending on layout/shift state.
  */
-export function isDevConsoleToggleShortcut(e: ShortcutKeyEvent, isMac: boolean): boolean {
+export function isCommandPaletteShortcut(e: ShortcutKeyEvent, isMac: boolean): boolean {
   if (e.key.toLowerCase() !== "p") return false;
   return isMac ? e.metaKey : e.ctrlKey;
+}
+
+/**
+ * Palette filtering, VSCode-style-lite: every whitespace-separated query token must
+ * appear as a case-insensitive substring of the action label (in any order); an empty
+ * query keeps everything, in registration order. Deliberately not fuzzy-per-character —
+ * with a handful of actions, substring tokens are predictable and never surprising.
+ */
+export function filterPaletteActions<A extends { label: string }>(
+  actions: readonly A[],
+  query: string,
+): A[] {
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [...actions];
+  return actions.filter((a) => {
+    const label = a.label.toLowerCase();
+    return tokens.every((t) => label.includes(t));
+  });
 }

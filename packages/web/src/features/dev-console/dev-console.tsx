@@ -1,8 +1,8 @@
 /**
- * Ctrl+P / Cmd+P developer console: a VSCode-quick-open-style panel (top-centered
- * floating overlay, portaled to body) showing the running platform's identity and the
- * HMR update feed. Mounted once at the app root (AppLayout) so the shortcut works from
- * any authenticated page.
+ * Developer console: a top-centered floating panel (portaled to body) showing the
+ * running platform's identity and the HMR update feed. Controlled by the mount point
+ * (dev-tools.tsx) — it opens through the Ctrl+P command palette's "open developer
+ * console" action, not through a shortcut of its own.
  *
  * Runtime info (impl id / iface version) comes from GET /api/hmr/platform, admin-only:
  * a non-admin (or an admin whose session expired) gets a 403, which degrades this one
@@ -22,7 +22,7 @@ import { ApiError } from "../../api/client";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "../../components/ui/modal";
 import { CloseButton } from "../../components/ui/icons";
 import { formatDateTime } from "../../lib/format";
-import { isDevConsoleToggleShortcut, readDevConsoleEvents } from "../../lib/dev-console";
+import { readDevConsoleEvents } from "../../lib/dev-console";
 import { S } from "../../lib/strings";
 import { useAuth } from "../../state/auth";
 
@@ -33,32 +33,12 @@ type PlatformState =
   | { kind: "forbidden" }
   | { kind: "error" };
 
-function isMacPlatform(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
-}
-
-export function DevConsole() {
+export function DevConsole({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
   const [platform, setPlatform] = useState<PlatformState>({ kind: "idle" });
   // sessionStorage is per-tab, so nothing else can append to the feed while this
   // component stays mounted — a plain lazy-init read is enough (see the module doc).
   const [events] = useState(() => readDevConsoleEvents(window.sessionStorage));
-
-  // Global shortcut: registered once, independent of `open` (a functional update reads
-  // the latest value without retriggering the effect). preventDefault unconditionally
-  // on a match — otherwise the browser's print dialog opens underneath the panel.
-  useEffect(() => {
-    const isMac = isMacPlatform();
-    const onKey = (e: KeyboardEvent) => {
-      if (!isDevConsoleToggleShortcut(e, isMac)) return;
-      e.preventDefault();
-      setOpen((o) => !o);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   // Escape closes it, but only when it's the topmost esc-consuming layer (shared stack
   // with Modal/Dropdown — see modal.tsx).
@@ -66,14 +46,14 @@ export function DevConsole() {
     if (!open) return;
     const id = pushEscLayer();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isTopEscLayer(id)) setOpen(false);
+      if (e.key === "Escape" && isTopEscLayer(id)) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       popEscLayer(id);
     };
-  }, [open]);
+  }, [open, onClose]);
 
   // Lazy, once-per-session fetch (same "don't fire on app load" convention as
   // use-version-info.ts): only the first time the panel opens, and only for an admin —
@@ -111,7 +91,7 @@ export function DevConsole() {
     <div
       className="anim-fade fixed inset-0 z-[70] flex justify-center bg-black/45 px-4 pt-[10vh]"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setOpen(false);
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
@@ -121,7 +101,7 @@ export function DevConsole() {
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <h2 className="text-base font-semibold">{S.devConsole.title}</h2>
-          <CloseButton onClose={() => setOpen(false)} />
+          <CloseButton onClose={onClose} />
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
@@ -182,7 +162,7 @@ export function DevConsole() {
         </div>
 
         <div className="border-t border-gray-200 px-4 py-2 text-right text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500">
-          {S.devConsole.shortcutHint}
+          {S.devConsole.closeHint}
         </div>
       </div>
     </div>,
