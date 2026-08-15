@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 /**
- * Watch-and-push: the "push changes" half of the runtime/push split.
+ * Watch-and-push for the backend platform (the server package): the "push"
+ * half of `pnpm dev:server`.
  *
- * A runtime (pnpm dev:runtime) boots the server and WAITS for hot-reload
- * requests — it never watches its own business code. This process is the
- * other half: it watches the platform source, compiles it to one
- * self-contained file on change, and pushes it to the runtime's hot-upgrade
- * API. So a code edit reloads the running platform (park → migrate → boot)
- * with no server restart.
+ * The runtime (started by `pnpm dev`) boots the server and WAITS for
+ * hot-reload requests — it never watches its own code. This process is the
+ * other half: it watches the server package's source (the server package IS
+ * the backend platform unit; the web package is the frontend one, and Vite's
+ * HMR under `pnpm dev:web` is its watch-push), compiles the platform entry to
+ * one self-contained file on change, and pushes it to the runtime's
+ * hot-upgrade API. A code edit reloads the running platform
+ * (park → migrate → boot) with no server restart.
+ *
+ * esbuild here is not a new bundler in the tree: it is the engine tsup (the
+ * server/core build tool) already runs on; Vite stays the web bundler.
  *
  * The two halves are genuinely separable: they rendezvous only through
  * $PENGUIN_HOME/hot/api.json (the runtime publishes { url, token } there on
- * boot) and an HTTP POST. Run them in one terminal (pnpm dev wires both) or on
- * different machines pointing at the same runtime.
- *
- * Compile is decoupled from load exactly as the hot host documents: here we
- * produce the single-file JS bundle (layer a) locally and POST its path; the
- * runtime just loads it.
+ * boot) and an HTTP POST — one terminal or different machines both work.
  *
  * Usage: `node scripts/watch-push-platform.mjs` (long-running).
  * Env: PENGUIN_HOME (default ~/.penguin/dev-data) locates the runtime's api.json.
@@ -34,7 +35,11 @@ const require = createRequire(import.meta.url);
 const PENGUIN_HOME = expandHome(process.env.PENGUIN_HOME ?? "~/.penguin/dev-data");
 const API_FILE = path.join(PENGUIN_HOME, "hot", "api.json");
 const ENTRY = path.join(ROOT, "packages", "server", "src", "hot", "dev-platform-entry.ts");
-const WATCH_DIR = path.join(ROOT, "packages", "server", "src", "hot");
+// The whole server package: the platform bundle only contains what the entry
+// imports, but any server-source edit may reach it — an unrelated edit costs
+// one silent re-swap (state preserved), which is cheap and keeps "watch push
+// server changes" literal.
+const WATCH_DIR = path.join(ROOT, "packages", "server", "src");
 const OUTFILE = path.join(os.tmpdir(), `penguin-dev-platform-${process.pid}.mjs`);
 const DEBOUNCE_MS = 300;
 

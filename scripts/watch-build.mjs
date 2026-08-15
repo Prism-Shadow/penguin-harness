@@ -20,7 +20,7 @@
  * then this enters the watch loop. Rebuilds are debounced and serialized; a
  * change arriving mid-build queues exactly one more build.
  *
- * Usage: `node scripts/watch-build.mjs` (long-running; Ctrl-C to stop).
+ * Runs as the "build" half of `pnpm dev:server` (long-running; Ctrl-C to stop).
  */
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";

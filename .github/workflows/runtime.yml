@@ -10,11 +10,11 @@
 # Electron runtime, not an installer — because a runtime is meant to be dropped
 # in and hot-updated, not distributed through an installer channel.
 #
-# Note: this currently still ships the full in-repo business platform (server
-# services + web) inside the runtime, because the business code is not yet
-# extracted into a pushable platform unit. The artifact is a genuine runtime in
-# MECHANISM (its platform can be hot-swapped over /api/hot), and will shrink to
-# a business-free runtime.tar.gz once the platform split lands.
+# The platform units are the existing packages (server = backend platform,
+# web = frontend platform); this artifact bakes a copy of both in so it works
+# out of the box, and its running platform is replaceable over /api/hot —
+# today that hot-swappable surface is the platform tree (the server package's
+# hot export), growing as more of the package's services move under it.
 #
 # workflow_dispatch runs it standalone on any branch; workflow_call lets other
 # workflows produce the runtime artifact as part of a larger pipeline.
@@ -66,10 +66,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm -r build
-
-      - name: Stage the app directory
-        run: node packages/desktop/scripts/stage.mjs
+      # `pnpm build` IS "build the runtime": workspace build + the staged
+      # self-contained app tree (packages/desktop/stage/app).
+      - run: pnpm build
 
       # Unpacked runtime app only (no installer): electron-builder injects the
       # Electron runtime into stage/out/<platform>-unpacked. Unsigned — a
