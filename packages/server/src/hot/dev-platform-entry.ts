@@ -11,4 +11,4 @@
  * platform tree, this entry stays the same — the watcher just recompiles a
  * bigger graph.
  */
-export { platformV2 as hotPlatform } from "./platform-v2.js";
+export { packagedPlatform as hotPlatform } from "./platform.js";
