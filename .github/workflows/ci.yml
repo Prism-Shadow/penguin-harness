@@ -153,9 +153,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # `pnpm build` IS "build the runtime": workspace build + the staged
-      # self-contained app tree (packages/desktop/stage/app).
       - run: pnpm build
+
+      # Stage the self-contained app tree (packages/desktop/stage/app) that
+      # electron-builder packages — the same explicit step desktop-build.yml runs.
+      - name: Stage the app tree
+        run: node packages/desktop/scripts/stage.mjs
 
       - name: Build unpacked runtime
         env:
