@@ -140,14 +140,18 @@ interface LoadResult {
 }
 
 /**
- * The committed on-disk state: a runtime restart boots exactly this. The whole
- * promotion is one atomic rename of current.json — so a crash mid-write leaves
- * the previous committed state intact. Paths are relative to hotDir.
+ * The committed on-disk state (hot/harness.json): a runtime restart boots
+ * exactly this. The whole promotion is one atomic rename of harness.json — so
+ * a crash mid-write leaves the previous committed state intact. Paths are
+ * relative to hotDir.
  */
 interface Manifest {
   platform?: { bundle: string; park: string };
   web?: { dir: string };
 }
+
+/** How many past platform bundles / web dists the store keeps (current + one rollback). */
+const STORE_KEEP = 2;
 
 export class HotHost {
   readonly resources = new HotResources();
@@ -177,7 +181,7 @@ export class HotHost {
   ) {
     this.hotDir = path.join(root, "hot");
     this.storeDir = path.join(this.hotDir, "store");
-    this.manifestPath = path.join(this.hotDir, "current.json");
+    this.manifestPath = path.join(this.hotDir, "harness.json");
     this.gitBin = options.gitBin ?? "git";
     this.compilerOption = options.compilerBin;
   }
@@ -228,7 +232,7 @@ export class HotHost {
   }
 
   /**
-   * Resume from current.json (once). Sets webDistDir and boots the persisted
+   * Resume from harness.json (once). Sets webDistDir and boots the persisted
    * platform bundle with its committed parked doc. Any failure (missing or
    * corrupt artifact, incompatible bundle) is non-fatal: it warns and leaves
    * the runtime to boot the packaged default — a bad persisted state must
@@ -273,7 +277,7 @@ export class HotHost {
 
   /**
    * Commit protocol: content-address the bundle + its committed parked doc
-   * into the store, then flip current.json atomically (write-temp + rename on
+   * into the store, then flip harness.json atomically (write-temp + rename on
    * the same filesystem). Called ONLY after the live boot already succeeded,
    * so a restart can never resume a bundle that failed to boot. Best-effort:
    * a read-only filesystem downgrades to in-memory-only (the live swap still
@@ -305,7 +309,7 @@ export class HotHost {
     }
   }
 
-  /** Reads, updates, and atomically replaces current.json (the single commit point). */
+  /** Reads, updates, and atomically replaces harness.json (the single commit point). */
   private async commitManifest(update: (m: Manifest) => Manifest): Promise<void> {
     await fsp.mkdir(this.hotDir, { recursive: true });
     let current: Manifest = {};
@@ -314,11 +318,73 @@ export class HotHost {
     } catch {
       // no manifest yet
     }
+    const next = update(current);
     const tmp = `${this.manifestPath}.${process.pid}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(update(current), null, 2));
+    await fsp.writeFile(tmp, JSON.stringify(next, null, 2));
     // Atomic within the same directory/filesystem (libuv maps this to
     // MoveFileEx REPLACE_EXISTING on Windows, rename(2) on POSIX).
     await fsp.rename(tmp, this.manifestPath);
+    await this.pruneStore(next);
+  }
+
+  /**
+   * Store GC: keep at most STORE_KEEP platform bundles and web dists — the
+   * committed one is always kept, the rest by recency (so there is always one
+   * rollback candidate). Best-effort; runs after the manifest flip so nothing
+   * referenced can be pruned.
+   */
+  private async pruneStore(manifest: Manifest): Promise<void> {
+    const keepNewest = async (
+      dir: string,
+      keys: (name: string) => string | null,
+      referenced: string | null,
+      remove: (key: string) => Promise<void>,
+    ): Promise<void> => {
+      let names: string[];
+      try {
+        names = await fsp.readdir(dir);
+      } catch {
+        return;
+      }
+      const byKey = new Map<string, number>();
+      for (const name of names) {
+        const key = keys(name);
+        if (key === null) continue;
+        try {
+          const mtime = (await fsp.stat(path.join(dir, name))).mtimeMs;
+          byKey.set(key, Math.max(byKey.get(key) ?? 0, mtime));
+        } catch {
+          // raced with a concurrent prune
+        }
+      }
+      const ranked = [...byKey.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+      const kept = new Set(ranked.slice(0, STORE_KEEP));
+      if (referenced !== null) kept.add(referenced);
+      for (const key of ranked) {
+        if (!kept.has(key)) await remove(key).catch(() => undefined);
+      }
+    };
+
+    const platformDir = path.join(this.storeDir, "platform");
+    const platformRef = manifest.platform?.bundle.match(/([0-9a-f]+)\.mjs$/)?.[1] ?? null;
+    await keepNewest(
+      platformDir,
+      (name) => /^([0-9a-f]+)\.mjs$/.exec(name)?.[1] ?? null,
+      platformRef,
+      async (sha) => {
+        await fsp.rm(path.join(platformDir, `${sha}.mjs`), { force: true });
+        await fsp.rm(path.join(platformDir, `${sha}.park.json`), { force: true });
+      },
+    );
+
+    const webDir = path.join(this.storeDir, "web");
+    const webRef = manifest.web?.dir.match(/([0-9a-f]+)$/)?.[1] ?? null;
+    await keepNewest(
+      webDir,
+      (name) => (/^[0-9a-f]+$/.test(name) ? name : null),
+      webRef,
+      (sha) => fsp.rm(path.join(webDir, sha), { recursive: true, force: true }),
+    );
   }
 
   /**
