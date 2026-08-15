@@ -374,6 +374,7 @@ export const en: Strings = {
     id: "Agent id",
     idHint:
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+    copyId: "Copy agent id",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,

@@ -34,6 +34,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CopyButton } from "../../components/ui/copy-button";
 import { GEAR_ICON } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -242,7 +243,8 @@ export function AgentsPage() {
                       (same line as the name); description/stats share the same left edge as the
                       avatar (the column's left edge) */}
                   <div className="min-w-[14rem] flex-1">
-                    {/* Title line: small avatar + name + agentId + version badge */}
+                    {/* Title line: small avatar + name + agentId (with the shared copy button,
+                        hidden together with the id on narrow screens) + version badge */}
                     <div className="flex items-center gap-2">
                       <AgentAvatar
                         id={a.agentId}
@@ -254,8 +256,9 @@ export function AgentsPage() {
                       <span className="min-w-0 truncate text-base font-bold">
                         {agentDisplayName(a)}
                       </span>
-                      <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
+                      <span className="hidden shrink-0 items-center gap-1 font-mono text-xs text-gray-400 md:inline-flex dark:text-gray-500">
                         {a.agentId}
+                        <CopyButton text={a.agentId} label={S.agent.copyId} />
                       </span>
                       <Badge tone="gray">v{a.version}</Badge>
                       {/* Kernel-outdated hint: minimal icon + tooltip (skills-library update

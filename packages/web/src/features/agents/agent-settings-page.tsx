@@ -243,7 +243,10 @@ export function AgentSettingsPage() {
           {S.agent.backToList}
         </Button>
         <h1 className="mb-1 text-xl font-semibold">{data.config.name ?? agentId}</h1>
-        <p className="mb-4 font-mono text-xs text-gray-400">{agentId}</p>
+        <div className="mb-4 flex items-center gap-1">
+          <p className="font-mono text-xs text-gray-400">{agentId}</p>
+          <CopyButton text={agentId} label={S.agent.copyId} />
+        </div>
         <Tabs items={TABS} active={tab} onChange={switchTab} />
         <div className="py-4">
           {tab === "overview" && (

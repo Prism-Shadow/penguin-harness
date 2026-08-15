@@ -362,6 +362,7 @@ export const zh = {
     createTitle: "创建 Agent",
     id: "Agent id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
+    copyId: "复制 Agent id",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     sessionCount: (n: number): string => `${n} 个 Session`,
