@@ -25,11 +25,11 @@ export function CodeBlock({
   code: string;
   highlight?: boolean;
 }) {
-  const [html, setHtml] = useState<string | null>(null);
+  const [html, setHtml] = useState<string>();
 
   useEffect(() => {
     if (!highlight) {
-      setHtml(null);
+      setHtml(undefined);
       return;
     }
     let alive = true;
@@ -40,7 +40,7 @@ export function CodeBlock({
       })
       .catch(() => {
         // Unknown language / failed to load: keep the unhighlighted fallback.
-        if (alive) setHtml(null);
+        if (alive) setHtml(undefined);
       });
     return () => {
       alive = false;

@@ -106,34 +106,27 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 export const PLAIN_TEXT_LANGUAGE = "text";
 
 /**
- * Own-property lookup. The keys here are file extensions and fence info strings — attacker- or at
- * least stranger-supplied — and a plain object inherits from Object.prototype, so a file named
- * `constructor` or `__proto__` would otherwise resolve to a function or an object where every
- * caller expects a language id (React throws outright when that object reaches a text node).
+ * Every lookup below is guarded by `Object.hasOwn`: the keys are file extensions and fence info
+ * strings, so a file named `constructor` or `__proto__` would otherwise resolve through
+ * Object.prototype to a function or an object where a language id is expected — and React throws
+ * outright when that object reaches the language chip's text node.
  */
-function own<T>(table: Record<string, T>, key: string): T | undefined {
-  return Object.hasOwn(table, key) ? table[key] : undefined;
-}
-
 export function languageForExtension(ext: string): string {
-  return own(LANGUAGE_BY_EXTENSION, ext.toLowerCase()) ?? PLAIN_TEXT_LANGUAGE;
+  const key = ext.toLowerCase();
+  if (!Object.hasOwn(LANGUAGE_BY_EXTENSION, key)) return PLAIN_TEXT_LANGUAGE;
+  return LANGUAGE_BY_EXTENSION[key] ?? PLAIN_TEXT_LANGUAGE;
 }
 
 /**
- * Fence info string / language prop -> the id to highlight with, or null when nothing here covers
- * it (the caller then renders the code unhighlighted). An empty language means an unannotated
- * fence, which renders as plain text rather than nothing.
+ * Fence info string / language prop -> the id to highlight with, or undefined when nothing here
+ * covers it (the caller then renders the code unhighlighted). An empty language means an
+ * unannotated fence, which renders as plain text rather than nothing.
  */
-export function resolveLanguage(language: string): string | null {
+export function resolveLanguage(language: string): string | undefined {
   const id = language.trim().toLowerCase();
   if (!id || PLAIN_TEXT_IDS.has(id)) return PLAIN_TEXT_LANGUAGE;
-  const canonical = own(LANGUAGE_ALIASES, id) ?? id;
-  return loaderFor(canonical) ? canonical : null;
-}
-
-/** The grammar loader for a canonical id, or undefined when this bundle doesn't carry it. */
-export function loaderFor(id: string): (() => Promise<unknown>) | undefined {
-  return own(LANGUAGE_LOADERS, id);
+  const canonical = (Object.hasOwn(LANGUAGE_ALIASES, id) ? LANGUAGE_ALIASES[id] : undefined) ?? id;
+  return Object.hasOwn(LANGUAGE_LOADERS, canonical) ? canonical : undefined;
 }
 
 /** True for ids Shiki highlights without loading a grammar. */

@@ -9,7 +9,7 @@
  * byte-identical to oniguruma's. Measured on this app: ~308 KB -> ~70 KB gzip for the first block.
  *
  * The trade is coverage — a fence in a language not listed in code-languages.ts renders
- * unhighlighted instead of highlighted (`highlightToHtml` returns null and CodeBlock keeps its
+ * unhighlighted instead of highlighted (`highlightToHtml` returns undefined and CodeBlock keeps its
  * plain <pre> fallback), where the full bundle would have known it.
  *
  * Both themes are baked into one pass as CSS variables (`--shiki-dark`, see styles.css), so
@@ -18,9 +18,9 @@
  */
 import { createHighlighterCore, type HighlighterCore, type LanguageInput } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import { isPlainTextLanguage, loaderFor, resolveLanguage } from "./code-languages";
+import { LANGUAGE_LOADERS, isPlainTextLanguage, resolveLanguage } from "./code-languages";
 
-let corePromise: Promise<HighlighterCore> | null = null;
+let corePromise: Promise<HighlighterCore> | undefined;
 const grammarPromises = new Map<string, Promise<void>>();
 
 function getCore(): Promise<HighlighterCore> {
@@ -55,16 +55,16 @@ function loadGrammar(
 }
 
 /**
- * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or null when the language
- * isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch, grammar
- * error); callers fall back to unhighlighted text either way.
+ * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or undefined when the
+ * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
+ * grammar error); callers fall back to unhighlighted text either way.
  */
-export async function highlightToHtml(code: string, language: string): Promise<string | null> {
+export async function highlightToHtml(code: string, language: string): Promise<string | undefined> {
   const id = resolveLanguage(language);
-  if (!id) return null;
+  if (!id) return undefined;
   const core = await getCore();
-  // resolveLanguage only returns ids with a loader, plain text aside — the lookup is what proves it.
-  const load = isPlainTextLanguage(id) ? undefined : loaderFor(id);
+  // resolveLanguage only returns own-property ids, plain text aside, so this index is safe.
+  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS[id];
   if (load) await loadGrammar(core, id, load);
   return core.codeToHtml(code, {
     lang: id,
