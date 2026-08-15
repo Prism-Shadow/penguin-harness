@@ -310,6 +310,52 @@ describe("hot platform", () => {
     expect(info.info.channel).toBe("stable"); // filled by the 2→3 migrator
   });
 
+  it("web dist hot-swap: static hosting retargets and clients are told to reload", async () => {
+    const bearer = {
+      authorization: `Bearer ${t.deps.hot.apiToken}`,
+      "content-type": "application/json",
+    };
+    // No dist configured: non-API paths 404.
+    expect((await t.app.request("/")).status).toBe(404);
+
+    const dist = path.join(t.root, "web-dist-v1");
+    await fs.mkdir(dist, { recursive: true });
+    await fs.writeFile(path.join(dist, "index.html"), "<html>pushed-v1</html>");
+
+    const res = await t.app.request("/api/hot/web/upgrade", {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify({ distPath: dist }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; rev: string };
+    expect(body.status).toBe("ok");
+
+    // Static hosting now serves the pushed dist (SPA fallback included).
+    expect(await (await t.app.request("/")).text()).toContain("pushed-v1");
+    expect(await (await t.app.request("/some/spa/route")).text()).toContain("pushed-v1");
+
+    // A rebuilt dist pushes a new rev; contents swap in place.
+    await fs.writeFile(path.join(dist, "index.html"), "<html>pushed-v2</html>");
+    const res2 = await t.app.request("/api/hot/web/upgrade", {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify({ distPath: dist }),
+    });
+    const body2 = (await res2.json()) as { rev: string };
+    expect(body2.rev).not.toBe(body.rev);
+    expect(await (await t.app.request("/")).text()).toContain("pushed-v2");
+
+    // Not a dist → 400, serving unchanged.
+    const bad = await t.app.request("/api/hot/web/upgrade", {
+      method: "POST",
+      headers: bearer,
+      body: JSON.stringify({ distPath: path.join(t.root, "nowhere") }),
+    });
+    expect(bad.status).toBe(400);
+    expect(await (await t.app.request("/")).text()).toContain("pushed-v2");
+  });
+
   it("requests racing an upgrade are enqueued, never observably rejected", async () => {
     const [first, second, list] = await Promise.all([
       api.post("/api/hot/platform/upgrade", { impl: "v2" }),

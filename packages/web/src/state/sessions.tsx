@@ -412,6 +412,12 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => {
+        // The served web assets were hot-swapped (dev watch-push / platform
+        // upgrade): reload so this window runs the new code.
+        if (ev.type === "web_updated") {
+          window.location.reload();
+          return;
+        }
         if (ev.type !== "schedule_fired") return;
         // The event carries projectId: a trigger from another Project is unrelated to the current list.
         if (ev.projectId === store.getState().projectId) void store.getState().reload();

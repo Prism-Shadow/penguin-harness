@@ -1091,6 +1091,8 @@ export type ServerEvent =
   | { type: "credentials_updated" }
   /** Placeholder handshake on the user channel (reserved for automated task notifications). */
   | { type: "hello" }
+  /** The served web assets were hot-swapped (dev watch-push or a platform upgrade): clients reload to pick them up. */
+  | { type: "web_updated"; rev: string }
   /** New session registered (pushed over the parent session's channel for subagent sessions): frontend refreshes the list in place. */
   | {
       type: "session_created";

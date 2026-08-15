@@ -136,6 +136,31 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(outcome);
   });
 
+  // -- Web platform (the frontend package's built dist) ---------------------
+
+  /**
+   * Hot-swap the served web assets: point static hosting at a freshly built
+   * dist directory and tell every connected client to reload. This is how
+   * `pnpm dev:web` reaches a runtime desktop app — its window loads the
+   * server's static hosting, which Vite's own dev server never touches.
+   */
+  routes.post("/web/upgrade", async (c) => {
+    const body = await c.req.json<{ distPath: string; source?: Json }>();
+    if (typeof body.distPath !== "string") {
+      throw new HttpError(400, "bad_request", "Missing distPath.");
+    }
+    let info;
+    try {
+      info = deps.hot.setWebDist(body.distPath);
+    } catch (err) {
+      throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
+    }
+    // Live clients (browser tabs AND the desktop window — both sit on the
+    // user event stream) reload to pick up the new assets.
+    deps.channels.broadcast("user:", { type: "web_updated", rev: info.rev }, "server_event");
+    return c.json({ status: "ok", ...info, source: body.source ?? null });
+  });
+
   // -- Terminals -----------------------------------------------------------
 
   routes.post("/terminals", async (c) => {
