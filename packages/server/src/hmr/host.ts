@@ -10,10 +10,17 @@
  * completes, so a client never observes the stop-the-world window (it only
  * sees latency). Concurrent upgrade requests serialize on the same queue.
  *
- * Code arrives as BYTES over HTTP (an inline single-file platform bundle; an
- * inline { relPath: base64 } web dist manifest) — never as a server-side
- * path a remote client could not produce. bundlePath/distPath remain as
- * same-machine dev conveniences.
+ * Code arrives as BYTES over HTTP (an inline single-file platform bundle; a
+ * web dist as ONE gzip artifact, or the equivalent { relPath: base64 } JSON
+ * manifest) — never as a server-side path a remote client could not produce.
+ * bundlePath/distPath remain as same-machine dev conveniences.
+ *
+ * Web dist pushes are held in memory (a relPath → bytes map), not written to
+ * disk file-by-file: a dist can be hundreds of small files, and syncing each
+ * one separately serializes on the destination filesystem's per-file
+ * overhead (observed as low as ~100KB/s writing 300 small files to a
+ * Windows/Defender-scanned disk). The pushed bytes are persisted as ONE
+ * artifact instead (see persistWebArtifact).
  *
  * Persistence: artifacts are content-addressed under hmr/store/ and promoted
  * by ONE atomic rename of hmr/harness.json — committed only AFTER the live
@@ -28,6 +35,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
 import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
@@ -65,7 +73,13 @@ export type UpgradeOutcome =
  */
 interface Manifest {
   platform?: { bundle: string; park: string };
-  web?: { dir: string };
+  /**
+   * `manifest` (current form): one gzip(JSON.stringify({ files })) artifact,
+   * restored straight into memory. `dir` (legacy): a plain on-disk
+   * directory from before web pushes were single-artifacted — still
+   * honored on restore so an old commit keeps serving after an upgrade.
+   */
+  web?: { manifest: string } | { dir: string };
 }
 
 /** How many past platform bundles / web dists the store keeps (current + one rollback). */
@@ -149,7 +163,16 @@ export class HmrHost {
     } catch {
       return; // nothing committed yet
     }
-    if (manifest.web?.dir !== undefined) {
+    if (manifest.web !== undefined && "manifest" in manifest.web) {
+      try {
+        const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
+        this.webMem = filesMapFromGzip(gz);
+      } catch (err) {
+        this.warn(
+          `persisted web dist missing/corrupt (${manifest.web.manifest}); using packaged assets: ${errMsg(err)}`,
+        );
+      }
+    } else if (manifest.web !== undefined && "dir" in manifest.web) {
       const dir = path.join(this.hmrDir, manifest.web.dir);
       if (fs.existsSync(path.join(dir, "index.html"))) this.webDistDir = dir;
       else this.warn(`persisted web dist missing (${manifest.web.dir}); using packaged assets`);
@@ -252,52 +275,84 @@ export class HmrHost {
   // -- Web platform (the frontend package's built dist) ---------------------
 
   /**
-   * Overrides the directory the server's static hosting serves (null → the
-   * configured webDist).
+   * Overrides the directory the server's static hosting serves when set (a
+   * dev distPath push or a restored legacy { dir } manifest); null when
+   * nothing is pushed OR a memory-resident dist (webMem) is authoritative —
+   * see resolveWebSource, which checks webMem FIRST.
    */
   webDistDir: string | null = null;
 
   /**
-   * Materializes an inline web dist (a { relPath: base64 } manifest) under
-   * the content-addressed store and returns its path. Paths are validated to
-   * stay within the target directory.
+   * The pushed web dist held in memory (relPath → bytes): the primary path
+   * for a web push, replacing per-file disk writes with one artifact (see
+   * persistWebArtifact). Null when nothing has been pushed to memory.
    */
-  async writeInlineWebDist(files: Record<string, string>): Promise<string> {
-    const hash = crypto.createHash("sha1");
-    for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
-    const dir = path.join(this.storeDir, "web", hash.digest("hex").slice(0, 16));
-    await fsp.rm(dir, { recursive: true, force: true });
-    for (const [rel, b64] of Object.entries(files)) {
-      const target = path.resolve(dir, rel);
-      if (target !== dir && !target.startsWith(dir + path.sep)) {
-        throw new Error(`unsafe path in web dist manifest: ${rel}`);
-      }
-      await fsp.mkdir(path.dirname(target), { recursive: true });
-      await fsp.writeFile(target, Buffer.from(b64, "base64"));
-    }
-    if (!fs.existsSync(path.join(dir, "index.html"))) {
+  private webMem: Map<string, Buffer> | null = null;
+
+  /**
+   * Static hosting's resolution order: an in-memory pushed dist first, then
+   * a disk override (dev distPath push, or a restored legacy manifest), then
+   * null — the caller (app.ts) falls back to the configured webDist.
+   */
+  resolveWebSource():
+    { kind: "mem"; files: Map<string, Buffer> } | { kind: "dir"; dir: string } | null {
+    if (this.webMem !== null) return { kind: "mem", files: this.webMem };
+    if (this.webDistDir !== null) return { kind: "dir", dir: this.webDistDir };
+    return null;
+  }
+
+  /**
+   * Validates a { relPath: base64 } manifest, installs it as the in-memory
+   * dist (memory always wins over a stale disk override — see
+   * resolveWebSource), and persists it as the one gzip artifact `gz`
+   * decodes/encodes to. Shared by both push transports below so they
+   * converge on identical memory state and identical persistence.
+   */
+  private async commitWebFiles(
+    files: Record<string, string>,
+    gz: Buffer,
+  ): Promise<{ rev: string }> {
+    if (typeof files["index.html"] !== "string") {
       throw new Error("web dist manifest has no index.html");
     }
-    return dir;
+    const mem = new Map<string, Buffer>();
+    for (const [rel, b64] of Object.entries(files)) {
+      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in web dist manifest: ${rel}`);
+      mem.set(rel, Buffer.from(b64, "base64"));
+    }
+    const digest = filesDigest(files);
+    this.webMem = mem;
+    this.webDistDir = null; // the fresh push wins over any stale disk override
+    await this.persistWebArtifact(gz, digest.slice(0, 16));
+    return { rev: digest.slice(0, 12) };
   }
 
-  /** Inline web push: materialize under the store, serve, and commit. */
-  async installInlineWebDist(
-    files: Record<string, string>,
-  ): Promise<{ dist: string; rev: string }> {
-    const dir = await this.writeInlineWebDist(files);
-    const info = this.setWebDist(dir);
-    await this.persistWeb(dir);
-    return info;
+  /**
+   * THE PRIMARY PATH: a raw gzip(JSON.stringify({ files })) artifact as the
+   * request body — one write on this end instead of one per file (the
+   * small-file-count bottleneck this replaces).
+   */
+  async installGzipWebDist(gz: Buffer): Promise<{ rev: string }> {
+    return this.commitWebFiles(filesFromGzip(gz), gz);
   }
 
-  /** Points static hosting at a freshly pushed web dist; returns its content rev. */
+  /**
+   * The JSON { relPath: base64 } manifest transport: re-packed into the same
+   * gzip artifact so both transports persist through the identical path.
+   */
+  async installInlineWebDist(files: Record<string, string>): Promise<{ rev: string }> {
+    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
+    return this.commitWebFiles(files, gz);
+  }
+
+  /** Points static hosting at a freshly pushed web dist on disk (dev convenience); returns its content rev. */
   setWebDist(distPath: string): { dist: string; rev: string } {
     const dist = path.resolve(distPath);
     const index = path.join(dist, "index.html");
     if (!fs.existsSync(index)) {
       throw new Error(`'${distPath}' is not a web dist (no index.html)`);
     }
+    this.webMem = null; // the disk override wins over any stale memory push
     this.webDistDir = dist;
     return { dist, rev: sha1(fs.readFileSync(index, "utf8")).slice(0, 12) };
   }
@@ -322,10 +377,13 @@ export class HmrHost {
     }
   }
 
-  private async persistWeb(distDir: string): Promise<void> {
+  /** Writes the gzip artifact once (content-addressed) and flips harness.json to point at it. */
+  private async persistWebArtifact(gz: Buffer, sha: string): Promise<void> {
     try {
-      const rel = path.relative(this.hmrDir, distDir).split(path.sep).join("/");
-      await this.commitManifest((m) => ({ ...m, web: { dir: rel } }));
+      const dir = path.join(this.storeDir, "web");
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.writeFile(path.join(dir, `${sha}.webz`), gz);
+      await this.commitManifest((m) => ({ ...m, web: { manifest: `store/web/${sha}.webz` } }));
     } catch (err) {
       this.warn(`web update not persisted (filesystem unavailable?): ${errMsg(err)}`);
     }
@@ -398,13 +456,19 @@ export class HmrHost {
       },
     );
 
+    // .webz artifacts only: a directory left over from a pre-single-artifact
+    // install (the legacy { dir } form) doesn't match `.webz` and is simply
+    // left alone — not tracked, not pruned.
     const webDir = path.join(this.storeDir, "web");
-    const webRef = manifest.web?.dir.match(/([0-9a-f]+)$/)?.[1] ?? null;
+    const webRef =
+      manifest.web !== undefined && "manifest" in manifest.web
+        ? (manifest.web.manifest.match(/([0-9a-f]+)\.webz$/)?.[1] ?? null)
+        : null;
     await keepNewest(
       webDir,
-      (name) => (/^[0-9a-f]+$/.test(name) ? name : null),
+      (name) => /^([0-9a-f]+)\.webz$/.exec(name)?.[1] ?? null,
       webRef,
-      (sha) => fsp.rm(path.join(webDir, sha), { recursive: true, force: true }),
+      (sha) => fsp.rm(path.join(webDir, `${sha}.webz`), { force: true }),
     );
   }
 
@@ -436,4 +500,42 @@ function errMsg(err: unknown): string {
 
 function sha1(content: string): string {
   return crypto.createHash("sha1").update(content).digest("hex");
+}
+
+/** Content hash over a web dist manifest: stable across re-pushes of identical content. */
+function filesDigest(files: Record<string, string>): string {
+  const hash = crypto.createHash("sha1");
+  for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
+  return hash.digest("hex");
+}
+
+/** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
+function isSafeRelPath(rel: string): boolean {
+  if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
+  return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
+}
+
+/** Decodes a gzip(JSON.stringify({ files })) artifact into its manifest. */
+function filesFromGzip(gz: Buffer): Record<string, string> {
+  let parsed: { files?: unknown };
+  try {
+    parsed = JSON.parse(zlib.gunzipSync(gz).toString("utf8")) as { files?: unknown };
+  } catch (err) {
+    throw new Error(`invalid gzip web dist artifact: ${errMsg(err)}`);
+  }
+  if (typeof parsed.files !== "object" || parsed.files === null) {
+    throw new Error("gzip web dist artifact has no `files`");
+  }
+  return parsed.files as Record<string, string>;
+}
+
+/** Decodes a gzip artifact straight into the in-memory relPath → bytes map (the restore path). */
+function filesMapFromGzip(gz: Buffer): Map<string, Buffer> {
+  const files = filesFromGzip(gz);
+  const mem = new Map<string, Buffer>();
+  for (const [rel, b64] of Object.entries(files)) {
+    if (!isSafeRelPath(rel)) throw new Error(`unsafe path in web dist manifest: ${rel}`);
+    mem.set(rel, Buffer.from(b64, "base64"));
+  }
+  return mem;
 }

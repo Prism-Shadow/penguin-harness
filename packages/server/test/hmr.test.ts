@@ -9,9 +9,9 @@
  * describe.skip until the business platform is back (feat/workflow-hmr) —
  * this file only exercises the mechanism, which carries no business methods.
  */
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildAppDeps, createApp } from "../src/app.js";
@@ -143,6 +143,55 @@ describe("hot update", () => {
     expect(await (await t.app.request("/")).text()).toContain("pushed-v2");
   });
 
+  it("gzip web push: THE PRIMARY PATH, one artifact instead of one write per file", async () => {
+    const b64 = (s: string) => Buffer.from(s).toString("base64");
+    const files = {
+      "index.html": b64("<html>gzip-pushed</html>"),
+      "assets/app.js": b64("console.log(1)"),
+      "assets/app.css": b64("body{color:red}"),
+    };
+    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
+    const res = await t.app.request("/api/hmr/web/upgrade", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${t.deps.hmr.apiToken}`,
+        "content-type": "application/gzip",
+      },
+      body: gz,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; rev: string };
+    expect(body.status).toBe("ok");
+
+    const page = await t.app.request("/");
+    expect(await page.text()).toContain("gzip-pushed");
+    expect(page.headers.get("content-type")).toContain("text/html");
+
+    const asset = await t.app.request("/assets/app.css");
+    expect(await asset.text()).toBe("body{color:red}");
+    expect(asset.headers.get("content-type")).toContain("text/css");
+
+    // A JSON push of the identical content lands on the same rev (rev is
+    // content-derived, not transport-derived) — and octet-stream is accepted
+    // as an alias for the same binary transport.
+    const jsonRepush = await api.post("/api/hmr/web/upgrade", { files });
+    expect(((await jsonRepush.json()) as { rev: string }).rev).toBe(body.rev);
+
+    const gz2 = zlib.gzipSync(
+      Buffer.from(JSON.stringify({ files: { "index.html": b64("<html>octet</html>") } })),
+    );
+    const octetRes = await t.app.request("/api/hmr/web/upgrade", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${t.deps.hmr.apiToken}`,
+        "content-type": "application/octet-stream",
+      },
+      body: gz2,
+    });
+    expect(octetRes.status).toBe(200);
+    expect(await (await t.app.request("/")).text()).toContain("octet");
+  });
+
   it("requests racing an upgrade are enqueued, never observably rejected", async () => {
     const [first, second, list] = await Promise.all([
       api.post("/api/hmr/platform/upgrade", { bundle: nextBundle }),
@@ -176,14 +225,42 @@ describe("hot persistence across a runtime restart", () => {
       h1.dispose();
 
       // Runtime #2 on the SAME data root: a fresh process. It must resume the
-      // committed platform and web, not fall back to the packaged build.
+      // committed platform and web, not fall back to the packaged build. The
+      // web dist restores straight into memory (one gzip artifact read).
       const h2 = new HmrHost(root);
       const inst = await h2.ensure();
       expect(h2.currentImplId()).toBe("next");
       expect((inst.api.info() as { impl: string }).impl).toBe("next");
-      expect(h2.webDistDir).not.toBeNull();
-      expect(existsSync(path.join(h2.webDistDir!, "index.html"))).toBe(true);
+      const source = h2.resolveWebSource();
+      expect(source?.kind).toBe("mem");
+      expect(
+        Buffer.from((source as { files: Map<string, Buffer> }).files.get("index.html")!).toString(
+          "utf8",
+        ),
+      ).toContain("persisted-web");
       h2.dispose();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("a legacy { dir } web manifest still restores to disk (backward compatibility)", async () => {
+    const root = await makeTempRoot();
+    try {
+      const legacyDir = path.join(root, "hmr", "legacy-web");
+      await fs.mkdir(legacyDir, { recursive: true });
+      await fs.writeFile(path.join(legacyDir, "index.html"), "<html>legacy-dir</html>");
+      await fs.mkdir(path.join(root, "hmr"), { recursive: true });
+      await fs.writeFile(
+        path.join(root, "hmr", "harness.json"),
+        JSON.stringify({ web: { dir: "legacy-web" } }),
+      );
+      const h = new HmrHost(root);
+      await h.ensure();
+      const source = h.resolveWebSource();
+      expect(source?.kind).toBe("dir");
+      expect((source as { dir: string }).dir).toBe(legacyDir);
+      h.dispose();
     } finally {
       await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
