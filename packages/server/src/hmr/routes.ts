@@ -116,24 +116,38 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
 
   /**
    * Hot-swap the served web assets and tell every connected client to reload.
-   * - { files } — THE PRIMARY PATH: a { relPath: base64 } manifest sent
-   *   INLINE in the request body (persisted; survives a restart).
+   * - Content-Type application/gzip or application/octet-stream — THE PRIMARY
+   *   PATH: the raw body is gzip(JSON.stringify({ files })), a
+   *   { relPath: base64 } manifest packed into ONE artifact. Pushing a dist
+   *   file-by-file serializes on the destination filesystem's per-file
+   *   overhead (hundreds of small writes on a Windows/Defender-scanned disk
+   *   measured well under 1MB/s); one gzip write sidesteps that entirely.
+   * - { files } (JSON body) — the equivalent manifest, uncompressed; kept for
+   *   older callers, persisted through the identical gzip artifact.
    * - { distPath } — same-machine dev convenience (served, not persisted).
    */
   routes.post("/web/upgrade", async (c) => {
-    const body = await c.req.json<{
-      files?: Record<string, string>;
-      distPath?: string;
-      source?: Json;
-    }>();
-    let info;
+    const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    let info: { rev: string };
+    let source: Json | null = null;
     try {
-      if (body.files !== undefined) {
-        info = await deps.hmr.installInlineWebDist(body.files);
-      } else if (typeof body.distPath === "string") {
-        info = deps.hmr.setWebDist(body.distPath);
+      if (contentType === "application/gzip" || contentType === "application/octet-stream") {
+        const gz = Buffer.from(await c.req.arrayBuffer());
+        info = await deps.hmr.installGzipWebDist(gz);
       } else {
-        throw new Error("provide `files` (inline manifest) or `distPath`");
+        const body = await c.req.json<{
+          files?: Record<string, string>;
+          distPath?: string;
+          source?: Json;
+        }>();
+        source = body.source ?? null;
+        if (body.files !== undefined) {
+          info = await deps.hmr.installInlineWebDist(body.files);
+        } else if (typeof body.distPath === "string") {
+          info = deps.hmr.setWebDist(body.distPath);
+        } else {
+          throw new Error("provide `files` (inline manifest), `distPath`, or a gzip body");
+        }
       }
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
@@ -141,7 +155,7 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     // Live clients (browser tabs AND the desktop window — both sit on the
     // user event stream) reload to pick up the new assets.
     deps.channels.broadcast("user:", { type: "web_updated", rev: info.rev }, "server_event");
-    return c.json({ status: "ok", ...info, source: body.source ?? null });
+    return c.json({ status: "ok", ...info, source });
   });
 
   return routes;

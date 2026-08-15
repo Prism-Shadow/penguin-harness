@@ -37,6 +37,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -145,10 +146,35 @@ async function readWebManifest() {
   return files;
 }
 
-/** Pushes the web dist to one target INLINE over HTTP (frontend phase). */
+/**
+ * Pushes the web dist to one target INLINE over HTTP (frontend phase).
+ *
+ * Primary transport: gzip(JSON.stringify({ files })) as the raw body — one
+ * write on the target instead of one per file (the small-file-count
+ * bottleneck this replaces: 300+ small files written serially onto a
+ * Windows/Defender-scanned disk measured well under 1MB/s). Falls back to
+ * the old JSON { files } body on 400/404/415 — a target running an older
+ * build won't recognize the gzip Content-Type/route shape, and the push
+ * must still land.
+ */
 async function pushWeb(target) {
   const api = await resolveApi(target);
-  return post(api, "/api/hmr/web/upgrade", { files: await readWebManifest() });
+  const files = await readWebManifest();
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
+  const headers = { "content-type": "application/gzip", authorization: `Bearer ${api.token}` };
+  if (new URL(api.url).hostname === "127.0.0.1") headers.host = "localhost";
+  const res = await fetch(`${api.url}/api/hmr/web/upgrade`, {
+    method: "POST",
+    headers,
+    body: gz,
+  });
+  if (res.ok) return res.json();
+  if ([400, 404, 415].includes(res.status)) {
+    log(`[${target.id}] gzip web push rejected (${res.status}); falling back to JSON`);
+    return post(api, "/api/hmr/web/upgrade", { files });
+  }
+  const outcome = await res.json().catch(() => ({}));
+  throw new Error(`/api/hmr/web/upgrade → ${res.status}: ${JSON.stringify(outcome)}`);
 }
 
 /** Pushes the compiled platform bundle to one target INLINE over HTTP (backend phase). */
