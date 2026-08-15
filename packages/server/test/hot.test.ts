@@ -460,12 +460,52 @@ describe("hot persistence across a runtime restart", () => {
     }
   });
 
+  it("the store keeps at most 2 platform bundles / web dists (current + one rollback)", async () => {
+    const root = await makeTempRoot();
+    try {
+      const bundleSrc = await fs.readFile(path.join(HOT_ASSETS, "platform-v4.bundle.mjs"), "utf8");
+      const b64 = (s: string) => Buffer.from(s).toString("base64");
+      const h = new HotHost(root);
+      await h.upgradeTo({ impl: "v2" });
+      // Three distinct platform bundles (content varies via a trailing comment).
+      for (let i = 0; i < 3; i++) {
+        const f = path.join(root, `v4-${i}.mjs`);
+        await fs.writeFile(
+          f,
+          `${bundleSrc}
+// push ${i}
+`,
+        );
+        const up = await h.upgradeTo({ bundlePath: f });
+        expect(up.status).toBe("ok");
+      }
+      // Three distinct web dists.
+      for (let i = 0; i < 3; i++) {
+        await h.installInlineWebDist({ "index.html": b64(`<html>web-${i}</html>`) });
+      }
+      const platforms = (await fs.readdir(path.join(root, "hot", "store", "platform"))).filter(
+        (n) => n.endsWith(".mjs"),
+      );
+      const webs = await fs.readdir(path.join(root, "hot", "store", "web"));
+      expect(platforms.length).toBeLessThanOrEqual(2);
+      expect(webs.length).toBeLessThanOrEqual(2);
+      // The committed one survived pruning and still restores.
+      h.dispose();
+      const h2 = new HotHost(root);
+      await h2.ensure();
+      expect(h2.currentImplId()).toBe("v4-bundle");
+      h2.dispose();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
   it("a corrupt/missing persisted platform falls back to the packaged default (never bricks)", async () => {
     const root = await makeTempRoot();
     try {
       await fs.mkdir(path.join(root, "hot"), { recursive: true });
       await fs.writeFile(
-        path.join(root, "hot", "current.json"),
+        path.join(root, "hot", "harness.json"),
         JSON.stringify({
           platform: { bundle: "store/platform/gone.mjs", park: "store/platform/gone.park.json" },
         }),
