@@ -571,10 +571,12 @@ run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
   || fail_test "pinned installer did not keep the selected release version"
 
-run_forwarder_case forwarder-speed-probe-handoff speed-probe-github-fast 8 auto v0.0.0-test success 1
+run_forwarder_case forwarder-speed-probe-handoff speed-probe-github-fast 7 auto v0.0.0-test success 1
 [ "$(sed -n '1p' "$WORK_DIR/forwarder-speed-probe-handoff.log")" = \
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/install.sh" ] \
   || fail_test "speed probe handoff forwarder did not fetch the versioned OSS installer"
+! grep -q "penguin-harness-releases.oss-cn-beijing.aliyuncs.com/.*/$HOST_ASSET\$" "$WORK_DIR/forwarder-speed-probe-handoff.log" \
+  || fail_test "forwarder locked the payload source to OSS instead of letting the installer speed probe"
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/forwarder-speed-probe-handoff.log" \
   || fail_test "forwarder locked the payload source instead of letting the installer speed probe"
 
