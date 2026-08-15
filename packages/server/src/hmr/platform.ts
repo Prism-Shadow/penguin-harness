@@ -32,6 +32,7 @@ import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
+import { ensureCliOnPath } from "./agent-cli-path.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
@@ -135,6 +136,12 @@ const DRAIN_GRACE_MS = 5000;
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    // "What PATH does the agent's shell see" is policy (see ./README.md), not mechanism:
+    // it belongs here, in-process at platform boot, rather than in the Electron shell
+    // that forks the server — that's what makes the fix reach already-deployed machines
+    // via a normal hot push instead of a rebuild. Idempotent, so re-running it on every
+    // create() (including hot swaps) is harmless.
+    ensureCliOnPath();
     // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
     // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
     // The check sits HERE, in the bundle, because the runtime that needs it is by
