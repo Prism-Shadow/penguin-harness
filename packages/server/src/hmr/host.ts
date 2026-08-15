@@ -1,6 +1,12 @@
 /**
  * HmrHost: the runtime side of the stop-the-world hot-update protocol.
  *
+ * RUNTIME LAYER — MECHANISM ONLY. Nothing here may encode what the product
+ * does; policy belongs in the platform, which ships by HTTP push in seconds
+ * while every line in this file costs a rebuild and a redeploy of every
+ * installation. Before adding anything, read ./README.md — in particular the
+ * "fix where the code is" trap, which is how this rule usually gets broken.
+ *
  * The host owns everything that must survive a platform swap: the resource
  * registry (live processes + their output buffers), the operation queue the
  * HTTP layer gates on, and the committed on-disk state.

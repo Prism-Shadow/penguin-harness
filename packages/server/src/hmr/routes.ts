@@ -6,6 +6,12 @@
  * (awaiting waitIdle), never rejected — a client only ever observes latency,
  * not the freeze. The routes are runtime code: they orchestrate through the
  * platform api, so they survive impl swaps unchanged.
+ *
+ * RUNTIME LAYER — MECHANISM ONLY (see ./README.md). A new business API must
+ * NOT become a route here: it is a method on the pushed platform, reached
+ * through the generic /platform/call dispatch below, whose allow-list is the
+ * running iface's own method set. The /terminals* routes are a legacy
+ * exception kept for compatibility, not a precedent.
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
