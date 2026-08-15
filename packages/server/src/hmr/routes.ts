@@ -95,15 +95,19 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
    * THE ONE upgrade endpoint: platform + cli + web move together, atomically —
    * there is no route that updates any of the three alone (see host.ts's module
    * doc). Content-Type application/gzip or application/octet-stream; the raw body
-   * is gzip(JSON.stringify({ bundle, web: { files }, source? })):
-   * - `bundle` — the single-file JS ESM source, inline (works over HTTP alone,
-   *   remote runtimes included); it must export both `hotPlatform` and `cli`.
+   * is gzip(JSON.stringify({ platform, cli, web: { files }, source? })):
+   * - `platform` — the platform's single-file JS ESM source, inline (works over
+   *   HTTP alone, remote runtimes included); it must export `hotPlatform`.
+   * - `cli` — the CLI's own single-file JS ESM source, inline, a SEPARATE
+   *   artifact from `platform`; the server never imports or runs it, only
+   *   content-addresses it into the store for packages/cli's own loader.
    * - `web.files` — a { relPath: base64 } manifest of the built web dist.
    * - `source?` — optional provenance (repo + revision), recorded but not run.
    * The server boots the platform AND installs the web dist in memory first;
-   * only once BOTH succeed does it persist the version (one atomic harness.json
-   * rename — see host.ts's persistVersion). A boot failure or a bad web manifest
-   * leaves the previously committed version untouched.
+   * only once BOTH succeed does it persist the version — platform, cli, and web
+   * together (one atomic harness.json rename — see host.ts's persistVersion). A
+   * boot failure or a bad web manifest leaves the previously committed version
+   * untouched.
    */
   routes.post("/upgrade", async (c) => {
     const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
@@ -111,12 +115,13 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       throw new HttpError(
         400,
         "bad_request",
-        "expected a gzip(JSON.stringify({ bundle, web })) body " +
+        "expected a gzip(JSON.stringify({ platform, cli, web })) body " +
           "(Content-Type application/gzip or application/octet-stream)",
       );
     }
     let payload: {
-      bundle?: string;
+      platform?: string;
+      cli?: string;
       web?: { files?: Record<string, string> };
       source?: { repo: string; revision: string };
     };
@@ -130,8 +135,11 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
         `invalid gzip upgrade payload: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    if (typeof payload.bundle !== "string") {
-      throw new HttpError(400, "bad_request", "payload has no `bundle` (string)");
+    if (typeof payload.platform !== "string") {
+      throw new HttpError(400, "bad_request", "payload has no `platform` (string)");
+    }
+    if (typeof payload.cli !== "string") {
+      throw new HttpError(400, "bad_request", "payload has no `cli` (string)");
     }
     if (typeof payload.web?.files !== "object" || payload.web.files === null) {
       throw new HttpError(
@@ -143,7 +151,8 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     let outcome;
     try {
       outcome = await hmr.upgradeAll({
-        bundle: payload.bundle,
+        platform: payload.platform,
+        cli: payload.cli,
         web: payload.web.files,
         ...(payload.source ? { source: payload.source } : {}),
       });

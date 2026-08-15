@@ -2,7 +2,9 @@
  * Test fixture: a minimal platform exercising the generic dispatch route
  * (POST /api/hmr/platform/call) — a normal call, a call that throws, and a
  * call whose result isn't JSON-serializable. Standalone (no kernel/arktype
- * imports), same zero-dependency style as platform-next.bundle.mjs.
+ * imports), same zero-dependency style as platform-next.bundle.mjs. Exports
+ * only `hotPlatform` — see that fixture's doc for why the cli artifact is a
+ * separate push, not part of this file.
  */
 const ok = (value) => ({ ok: true, value });
 const fail = (p) => ({
@@ -72,9 +74,3 @@ const platformImpl = {
 };
 
 export const hotPlatform = { id: "dispatch-fixture", iface: platformIface, impl: platformImpl };
-
-/** See platform-next.bundle.mjs: a push must export both `hotPlatform` and `cli`. */
-export async function cli(argv) {
-  process.stdout.write(`cli-from-dispatch-bundle:${argv.join(",")}\n`);
-  return 0;
-}

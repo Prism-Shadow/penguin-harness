@@ -16,17 +16,22 @@
  * completes, so a client never observes the stop-the-world window (it only
  * sees latency). Concurrent upgrade requests serialize on the same queue.
  *
- * ONE atomic version: platform = cli + platform code + web is a single
- * indivisible unit, pushed together to POST /api/hmr/upgrade. The pushed
- * bundle (inline ESM source, delivered as bytes over HTTP — never a
- * server-side path a remote client could not produce) exports BOTH
- * `hotPlatform` (this runtime's business unit) and `cli` (the function
- * packages/cli's thin loader dynamically imports on every invocation — see
- * hmr/manifest.ts's resolveCliBundlePath). The web dist rides along in the
- * same request as a { relPath: base64 } manifest. There is no way to update
- * platform, cli, or web independently: doUpgradeAll only commits after BOTH
- * the platform boots successfully AND the web manifest validates — a failure
- * in either leaves the previous committed version untouched.
+ * ONE atomic push, THREE independent artifacts: platform code, the CLI's
+ * command implementations, and the web dist are three separately compiled
+ * single-file products — there is no physical bundle that carries more than
+ * one of them — but they always move together in ONE request to POST
+ * /api/hmr/upgrade and land as ONE atomic version. The pushed `platform` and
+ * `cli` fields are each inline ESM source (delivered as bytes over HTTP —
+ * never a server-side path a remote client could not produce): `platform`
+ * must export `hotPlatform` (this runtime's business unit, imported and
+ * booted here); `cli` is never imported or executed by this process at all —
+ * it is only content-addressed into the store, for packages/cli's own thin
+ * loader to dynamically import later (see hmr/manifest.ts's
+ * resolveCliBundlePath). The web dist rides along in the same request as a
+ * { relPath: base64 } manifest. There is no way to update platform, cli, or
+ * web independently: doUpgradeAll only commits after the platform boots
+ * successfully AND the web manifest validates — a failure in either leaves
+ * the previous committed version untouched.
  *
  * Web dist pushes are held in memory (a relPath → bytes map), not written to
  * disk file-by-file: a dist can be hundreds of small files, and syncing each
@@ -35,14 +40,16 @@
  * Windows/Defender-scanned disk). The pushed bytes are persisted as ONE
  * artifact instead (see persistVersion).
  *
- * Persistence: artifacts are content-addressed under hmr/store/ and the whole
- * version (platform + cli + web pointers) is promoted by ONE atomic rename of
- * hmr/harness.json — committed only AFTER the live in-memory boot AND web
- * install both succeeded, so a restart can never resume a version that failed
- * to take effect. A restart resumes harness.json as one unit (see restore()):
- * any failure — of any one of the three pieces — warns and falls back to the
- * packaged default entirely (never a platform/web mismatch, never a brick).
- * The store keeps at most STORE_KEEP versions (current + one rollback).
+ * Persistence: artifacts are content-addressed under hmr/store/ (platform and
+ * cli each get their own subtree, since they are no longer the same file) and
+ * the whole version (platform + cli + web pointers) is promoted by ONE atomic
+ * rename of hmr/harness.json — committed only AFTER the live in-memory boot
+ * AND web install both succeeded, so a restart can never resume a version
+ * that failed to take effect. A restart resumes harness.json as one unit (see
+ * restore()): any failure — of any one of the three pieces, including a `cli`
+ * pointer whose file is missing — warns and falls back to the packaged
+ * default entirely (never a platform/web mismatch, never a brick). The store
+ * keeps at most STORE_KEEP versions (current + one rollback) per artifact.
  *
  * Reload is strictly request-driven: nothing watches, nothing auto-triggers.
  */
@@ -73,12 +80,14 @@ export interface GitSource {
 }
 
 /**
- * One atomic push: the platform+cli bundle (inline ESM source) plus the web dist as
- * a { relPath: base64 } manifest. Both travel in the SAME request — there is no
- * partial-target upgrade.
+ * One atomic push: the platform bundle and the cli bundle (each inline ESM source,
+ * independent single-file artifacts) plus the web dist as a { relPath: base64 }
+ * manifest. All three travel in the SAME request — there is no partial-target
+ * upgrade.
  */
 export interface UpgradeAllTarget {
-  bundle: string;
+  platform: string;
+  cli: string;
   web: Record<string, string>;
   source?: GitSource;
 }
@@ -93,7 +102,7 @@ export type UpgradeOutcome =
     }
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
 
-/** How many past versions (platform+cli bundle / web dist pairs) the store keeps (current + one rollback). */
+/** How many past versions (platform bundle / cli bundle / web dist, each independently) the store keeps (current + one rollback). */
 const STORE_KEEP = 2;
 
 export class HmrHost {
@@ -156,12 +165,15 @@ export class HmrHost {
 
   /**
    * Resume from harness.json (once), as ONE unit: the platform bundle, its parked
-   * doc, and the web artifact are all read and validated BEFORE anything is
-   * committed to `this.instance` / `this.webMem` — so a failure partway through
-   * (a pruned bundle, a corrupt park, a missing web artifact) never leaves platform
-   * and web resumed from different versions. Any failure is non-fatal: it warns and
-   * leaves the runtime to boot the packaged default — a bad persisted state must
-   * never brick the runtime.
+   * doc, the cli bundle's own existence, and the web artifact are all read and
+   * validated BEFORE anything is committed to `this.instance` / `this.webMem` — so a
+   * failure partway through (a pruned bundle, a corrupt park, a missing web
+   * artifact, a missing cli artifact) never leaves platform and web resumed from
+   * different versions. The cli bundle is never imported here (this process never
+   * runs it — only packages/cli's own loader does); its file just has to exist, so a
+   * restore can never leave `cli.bundle` pointing at nothing. Any failure is
+   * non-fatal: it warns and leaves the runtime to boot the packaged default — a bad
+   * persisted state must never brick the runtime.
    */
   private async restore(): Promise<void> {
     if (this.restored) return;
@@ -179,8 +191,15 @@ export class HmrHost {
       if (manifest.platform === undefined) {
         throw new Error("harness.json has no `platform` entry");
       }
+      if (manifest.cli === undefined) {
+        throw new Error("harness.json has no `cli` entry");
+      }
       if (manifest.web === undefined) {
         throw new Error("harness.json has no `web` entry");
+      }
+      const cliPath = path.join(this.hmrDir, manifest.cli.bundle);
+      if (!fs.existsSync(cliPath)) {
+        throw new Error(`cli bundle '${manifest.cli.bundle}' does not exist`);
       }
       const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
       const doc = JSON.parse(
@@ -230,8 +249,8 @@ export class HmrHost {
       webMem.set(rel, Buffer.from(b64, "base64"));
     }
 
-    const bundlePath = await this.writeInlineBundle(target.bundle);
-    const bundle = await this.importUnifiedBundle(bundlePath);
+    const platformPath = await this.writeInlinePlatformBundle(target.platform);
+    const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
 
     // Park to disk before touching anything: crash-safe by construction.
@@ -256,9 +275,9 @@ export class HmrHost {
       };
     }
 
-    // Boot succeeded: commit web to memory too, then persist BOTH as one atomic
-    // version — never a platform that's newer (or older) than the web it's paired
-    // with.
+    // Boot succeeded: commit web to memory too, then persist platform + cli + web
+    // as one atomic version — never a platform that's newer (or older) than the
+    // web or cli it's paired with.
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = bundle.id;
     this.webMem = webMem;
@@ -266,7 +285,7 @@ export class HmrHost {
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
-    await this.persistVersion(target.bundle, result.doc, gz, digest.slice(0, 16));
+    await this.persistVersion(target.platform, target.cli, result.doc, gz, digest.slice(0, 16));
 
     return {
       status: "ok",
@@ -290,35 +309,16 @@ export class HmrHost {
   }
 
   /**
-   * Push-time validation: the bundle must export BOTH `hotPlatform` (this
-   * runtime's business unit) and `cli` (a function — what packages/cli's thin
-   * loader will dynamically import and call). Enforces the "platform = cli +
-   * platform code + web, one indivisible version" invariant at the door, rather
-   * than discovering a CLI-less bundle only when some later `penguin` invocation
-   * fails to load it.
+   * Materializes the inline platform bundle (the single-file ESM sent in the
+   * request body) to disk and returns its path — how a push reaches a runtime
+   * over HTTP alone: the bytes travel in the request, the server writes them,
+   * then loads them via importBundleFile. Only the platform artifact needs
+   * this treatment: it is the only one of the three this process ever
+   * imports and boots. The cli artifact is never imported here (see
+   * persistVersion) — it goes straight from request body to content-addressed
+   * store.
    */
-  private async importUnifiedBundle(file: string): Promise<PlatformBundle> {
-    const resolved = path.resolve(file);
-    if (!fs.existsSync(resolved)) throw new Error(`bundle file '${file}' does not exist`);
-    const url = `${pathToFileURL(resolved).href}?v=${Date.now()}`;
-    const mod = (await import(url)) as { hotPlatform?: PlatformBundle; cli?: unknown };
-    if (mod.hotPlatform === undefined) {
-      throw new Error(`${file} does not export 'hotPlatform'`);
-    }
-    if (typeof mod.cli !== "function") {
-      throw new Error(
-        `${file} does not export 'cli' (a function) — platform and cli ship together`,
-      );
-    }
-    return mod.hotPlatform;
-  }
-
-  /**
-   * Materializes an inline bundle (the single-file ESM sent in the request body)
-   * to disk and returns its path — how a push reaches a runtime over HTTP alone:
-   * the bytes travel in the request, the server writes them, then loads them.
-   */
-  private async writeInlineBundle(content: string): Promise<string> {
+  private async writeInlinePlatformBundle(content: string): Promise<string> {
     const dir = path.join(this.hmrDir, "uploads");
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, `platform-${sha1(content).slice(0, 16)}.mjs`);
@@ -330,7 +330,7 @@ export class HmrHost {
 
   /**
    * The pushed web dist held in memory (relPath → bytes) — always installed
-   * together with a platform+cli version (see doUpgradeAll); never written or
+   * together with a platform + cli version (see doUpgradeAll); never written or
    * read file-by-file (see persistVersion). Null before anything has ever been
    * pushed or restored.
    */
@@ -344,32 +344,44 @@ export class HmrHost {
   // -- Persistence ----------------------------------------------------------
 
   /**
-   * Content-addresses the bundle + its committed parked doc + the web gzip
-   * artifact, then flips harness.json ONCE — `platform`, `cli` (same file as
-   * `platform`, since one bundle exports both), and `web` all land in the SAME
-   * atomic rename, never three separate commits that could leave one pointer
-   * ahead of the others.
+   * Content-addresses the platform bundle + its committed parked doc, the cli
+   * bundle (never imported — just stored, for packages/cli's own loader to
+   * pick up), and the web gzip artifact, then flips harness.json ONCE —
+   * `platform`, `cli`, and `web` all land in the SAME atomic rename, never
+   * three separate commits that could leave one pointer ahead of the others.
+   * `platform.bundle` and `cli.bundle` are now genuinely independent files
+   * (distinct content, distinct sha) rather than the same physical bundle
+   * under two manifest keys.
    */
   private async persistVersion(
-    bundleContent: string,
+    platformContent: string,
+    cliContent: string,
     doc: Json,
     webGz: Buffer,
     webSha: string,
   ): Promise<void> {
     try {
-      const sha = sha1(bundleContent).slice(0, 16);
+      const platformSha = sha1(platformContent).slice(0, 16);
       const platformDir = path.join(this.storeDir, "platform");
       await fsp.mkdir(platformDir, { recursive: true });
-      await fsp.writeFile(path.join(platformDir, `${sha}.mjs`), bundleContent, "utf8");
-      await fsp.writeFile(path.join(platformDir, `${sha}.park.json`), JSON.stringify(doc));
+      await fsp.writeFile(path.join(platformDir, `${platformSha}.mjs`), platformContent, "utf8");
+      await fsp.writeFile(path.join(platformDir, `${platformSha}.park.json`), JSON.stringify(doc));
+
+      const cliSha = sha1(cliContent).slice(0, 16);
+      const cliDir = path.join(this.storeDir, "cli");
+      await fsp.mkdir(cliDir, { recursive: true });
+      await fsp.writeFile(path.join(cliDir, `${cliSha}.mjs`), cliContent, "utf8");
 
       const webDir = path.join(this.storeDir, "web");
       await fsp.mkdir(webDir, { recursive: true });
       await fsp.writeFile(path.join(webDir, `${webSha}.webz`), webGz);
 
       await this.commitManifest(() => ({
-        platform: { bundle: `store/platform/${sha}.mjs`, park: `store/platform/${sha}.park.json` },
-        cli: { bundle: `store/platform/${sha}.mjs` },
+        platform: {
+          bundle: `store/platform/${platformSha}.mjs`,
+          park: `store/platform/${platformSha}.park.json`,
+        },
+        cli: { bundle: `store/cli/${cliSha}.mjs` },
         web: { manifest: `store/web/${webSha}.webz` },
       }));
     } catch (err) {
@@ -392,8 +404,9 @@ export class HmrHost {
   /**
    * Store GC: keep at most STORE_KEEP versions — the committed one is always
    * kept, the rest by recency. Best-effort; ordered after the manifest flip so
-   * nothing referenced can be pruned. `cli` shares the platform bundle's file, so
-   * only `platform` and `web` need their own sweep.
+   * nothing referenced can be pruned. `platform`, `cli`, and `web` are three
+   * independent subtrees now (no shared file to piggyback a sweep on), so each
+   * gets its own pass.
    */
   private async pruneStore(manifest: Manifest): Promise<void> {
     const keepNewest = async (
@@ -437,6 +450,15 @@ export class HmrHost {
         await fsp.rm(path.join(platformDir, `${sha}.mjs`), { force: true });
         await fsp.rm(path.join(platformDir, `${sha}.park.json`), { force: true });
       },
+    );
+
+    const cliDir = path.join(this.storeDir, "cli");
+    const cliRef = manifest.cli?.bundle.match(/([0-9a-f]+)\.mjs$/)?.[1] ?? null;
+    await keepNewest(
+      cliDir,
+      (name) => /^([0-9a-f]+)\.mjs$/.exec(name)?.[1] ?? null,
+      cliRef,
+      (sha) => fsp.rm(path.join(cliDir, `${sha}.mjs`), { force: true }),
     );
 
     const webDir = path.join(this.storeDir, "web");

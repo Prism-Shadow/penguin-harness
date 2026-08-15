@@ -1,23 +1,27 @@
 /**
  * The non-bootstrap CLI surface: `penguin run|chat|config`, as a plain function — not
- * a platform instance. `cli()` never boots the HMR platform (see
- * @prismshadow/penguin-server/platform's PlatformIface/platformImpl, and
- * HmrHost.ensure()'s boot() call) and never touches HotResources; it just organizes
+ * a platform instance. `cli()` never boots the HMR platform (see the server package's
+ * own src/platform/platform.ts for PlatformIface/platformImpl, and HmrHost.ensure()'s
+ * boot() call) and never touches HotResources; it just organizes
  * commander commands over @prismshadow/penguin-core and returns an exit code. "Loading
  * the platform bundle" and "starting a platform" are deliberately different
  * operations — the CLI needs only the former.
  *
- * This module is exported from TWO places, always in lockstep:
- * - platform-bundle.ts re-exports it as `cli` — esbuild's compile target for
- *   scripts/watch-push.mjs, the self-contained bundle pushed to POST /api/hmr/upgrade.
- *   packages/cli/src/index.ts's thin loader dynamically imports THAT compiled bundle
- *   from the data root's HMR store on every invocation and calls its `cli(argv)` — so
- *   pushing a new version hot-updates the CLI's command implementations too, with no
- *   rebuild or reinstall of the `penguin` binary itself.
- * - index.ts imports this module directly (statically) as the packaged fallback for
- *   when nothing has been pushed yet or the hot-loaded bundle is unusable — identical
- *   function, just resolved the ordinary way instead of dynamically imported from the
- *   HMR store.
+ * This module is USED from two places, always in lockstep:
+ * - It is itself esbuild's compile target for the CLI artifact in
+ *   scripts/watch-push.mjs — a self-contained bundle pushed alongside (but
+ *   independently of) the platform bundle to POST /api/hmr/upgrade. See
+ *   packages/server/src/hmr/host.ts's module doc for why platform, cli, and web
+ *   are three independent artifacts rather than one physical file.
+ *   packages/cli/src/index.ts's thin loader dynamically imports THAT compiled
+ *   bundle from the data root's HMR store on every invocation and calls its
+ *   `cli(argv)` — so pushing a new version hot-updates the CLI's command
+ *   implementations too, with no rebuild or reinstall of the `penguin` binary
+ *   itself.
+ * - index.ts also imports this module directly (statically) as the packaged
+ *   fallback for when nothing has been pushed yet or the hot-loaded bundle is
+ *   unusable — identical function, just resolved the ordinary way instead of
+ *   dynamically imported from the HMR store.
  *
  * `web` / `server` / `update` stay OUT of this file entirely: they start or replace
  * the runtime that carries this very bundle (`update` replaces the CLI installation
