@@ -22,8 +22,9 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const hmr = deps.hmr;
   // Mounted BEFORE the global cookie-auth middleware (see app.ts): this gate
-  // does its own two-credential auth so local tools can call in with the
-  // file-permission-gated Bearer token instead of a browser session.
+  // does its own auth (admin cookie only — see the network gate above for the
+  // other half) rather than relying on the generic middleware being mounted
+  // later.
   const cookieAuth = authMiddleware(deps.authService);
 
   routes.use("*", async (c, next) => {
@@ -48,11 +49,16 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       if (!c.req.path.endsWith("/platform/upgrade")) await hmr.waitIdle();
       await next();
     };
-    // Local credential: the per-boot token from $PENGUIN_HOME/hmr/api.json.
-    if (c.req.header("authorization") === `Bearer ${hmr.apiToken}`) {
-      return gated();
-    }
-    // Browser credential: the standard cookie session, admins only.
+    // Admin cookie session only. There used to be a second credential here — a
+    // per-boot Bearer token published to $PENGUIN_HOME/hmr/api.json — for local
+    // tools to call in without a browser session. It was removed: it ran as
+    // plaintext on disk, readable by anything running as the same OS user
+    // (including an agent's own shell/exec tools, which inherit that user and
+    // PENGUIN_HOME), and it was admin-equivalent — making it the single
+    // plaintext admin-equivalent secret on disk, i.e. the vulnerability itself.
+    // Session tokens and passwords are hashed at rest (auth/service.ts); a local
+    // caller now authenticates the same way an operator does: log in with the
+    // admin password and present the resulting cookie.
     return cookieAuth(c, async () => {
       if (!c.get("user").isAdmin) {
         throw new HttpError(403, "forbidden", "Hot platform APIs are admin-only.");

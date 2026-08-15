@@ -87,12 +87,6 @@ const STORE_KEEP = 2;
 
 export class HmrHost {
   readonly resources = new HotResources();
-  /**
-   * Per-process credential for local tools (published to
-   * $PENGUIN_HOME/hmr/api.json, mode 0600): presenting it as a Bearer token
-   * is admin-equivalent for the hot APIs. Regenerated every boot.
-   */
-  readonly apiToken = crypto.randomBytes(32).toString("hex");
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
@@ -469,20 +463,6 @@ export class HmrHost {
       (name) => /^([0-9a-f]+)\.webz$/.exec(name)?.[1] ?? null,
       webRef,
       (sha) => fsp.rm(path.join(webDir, `${sha}.webz`), { force: true }),
-    );
-  }
-
-  /**
-   * Publishes the local credential file ($PENGUIN_HOME/hmr/api.json, mode
-   * 0600): local tools read { url, token } from it to call the hot APIs.
-   * Called once the HTTP listener is up (index.ts).
-   */
-  async writeApiFile(url: string): Promise<void> {
-    await fsp.mkdir(this.hmrDir, { recursive: true });
-    await fsp.writeFile(
-      path.join(this.hmrDir, "api.json"),
-      JSON.stringify({ url, token: this.apiToken }, null, 2),
-      { mode: 0o600 },
     );
   }
 
