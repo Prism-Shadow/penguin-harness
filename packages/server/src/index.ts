@@ -149,8 +149,11 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
   });
   if (config.portFile !== null) writePortFile(config.portFile, info.port);
   // Local-agent credential for the hot platform APIs ($PENGUIN_HOME/hot/api.json,
-  // 0600): written once the port is known, consumed by the hot-skill-authoring SKILL.
-  void deps.hot.writeApiFile(`http://127.0.0.1:${info.port}`);
+  // 0600): written once the port is known, consumed by the hot-skill-authoring SKILL
+  // and the dev watch-push loop. Uses the canonical App host (not a hardcoded
+  // 127.0.0.1): on loopback binds the counterpart name is the preview host, where
+  // /api answers 401 — so the token must target the App host.
+  void deps.hot.writeApiFile(`http://${appHost}:${info.port}`);
   if (config.host === "127.0.0.1" || config.host === "localhost") {
     ipv6Loopback = serve({ fetch: app.fetch, hostname: "::1", port: info.port });
     ipv6Loopback.on("error", (err: NodeJS.ErrnoException) => {
