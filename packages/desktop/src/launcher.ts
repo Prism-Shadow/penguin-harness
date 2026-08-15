@@ -11,7 +11,7 @@
  */
 
 /** CLI entry inside the staged app directory (pnpm-deploy layout, asar off). */
-export const CLI_ENTRY_RELPATH = "node_modules/@prismshadow/penguin-cli/dist/index.js";
+export const CLI_ENTRY_RELPATH = "node_modules/@prismshadow/penguin-cli/dist/penguin.js";
 
 /**
  * Platform executable names, fixed by electron-builder.yml: productName PenguinHarness

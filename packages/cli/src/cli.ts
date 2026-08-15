@@ -1,54 +1,24 @@
 /**
- * The non-bootstrap CLI surface: `penguin run|chat|config`, as a plain function — not
- * a platform instance. `cli()` never boots the HMR platform (see the server package's
- * own src/platform/platform.ts for PlatformIface/platformImpl, and HmrHost.ensure()'s
- * boot() call) and never touches HotResources; it just organizes
- * commander commands over @prismshadow/penguin-core and returns an exit code. "Loading
- * the platform bundle" and "starting a platform" are deliberately different
- * operations — the CLI needs only the former.
+ * The whole CLI as a plain function: commander commands over
+ * @prismshadow/penguin-core, returning an exit code.
  *
- * This module is USED from two places, always in lockstep:
- * - It is itself esbuild's compile target for the CLI artifact in
- *   scripts/watch-push.mjs — a self-contained bundle pushed alongside (but
- *   independently of) the platform bundle to POST /api/hmr/upgrade. See
- *   packages/server/src/hmr/host.ts's module doc for why platform, cli, and web
- *   are three independent artifacts rather than one physical file.
- *   packages/cli/src/index.ts's thin loader dynamically imports THAT compiled
- *   bundle from the data root's HMR store on every invocation and calls its
- *   `cli(argv)` — so pushing a new version hot-updates the CLI's command
- *   implementations too, with no rebuild or reinstall of the `penguin` binary
- *   itself.
- * - index.ts also imports this module directly (statically) as the packaged
- *   fallback for when nothing has been pushed yet or the hot-loaded bundle is
- *   unusable — identical function, just resolved the ordinary way instead of
- *   dynamically imported from the HMR store.
- *
- * `web` / `server` / `update` stay OUT of this file entirely: they start or replace
- * the runtime that carries this very bundle (`update` replaces the CLI installation
- * itself, and documents its own "never resolves anything dynamically" safety
- * invariant — see commands/update.ts's module doc), so hot-loading them would be
- * circular or unsafe. They live in commands/{serve,update}.ts, registered directly by
- * the thin loader (index.ts's runLocal).
+ * Built twice: into this package's `penguin` binary (penguin.ts), and by
+ * scripts/watch-push.mjs into the CLI artifact pushed to POST /api/hmr/upgrade,
+ * which `penguin-hmr` loads from the HMR store instead.
  */
 import { Command, CommanderError } from "commander";
 import { VERSION } from "@prismshadow/penguin-core";
 import { registerConfigCommand } from "./commands/config.js";
 import { registerRunCommand } from "./commands/run.js";
 import { registerChatCommand } from "./commands/chat.js";
+import { registerServeCommands } from "./commands/serve.js";
+import { registerUpdateCommand } from "./commands/update.js";
 import { defaultMessages } from "./i18n.js";
 
 /**
- * Runs one CLI invocation and returns its exit code. Never calls `process.exit`
- * itself: commander's default exit-on-error/--help/--version behavior is disabled via
- * `exitOverride()`, so lifetime stays with the caller — the thin `penguin` loader in
- * the ordinary case, or a test importing `cli` directly. `argv` is the bare user
- * argument list (no node executable, no script path — i.e. `process.argv.slice(2)`).
- *
- * Command actions communicate failure the existing way, via `process.exitCode`; this
- * function reads that back as its return value and restores whatever
- * `process.exitCode` was before the call, so a `cli()` call has no side effect on
- * ambient process state beyond its return value — safe to call more than once in the
- * same process (as tests, and a long-running loader process, do).
+ * Runs one invocation (`argv` = process.argv.slice(2)) and returns its exit code.
+ * `exitOverride()` keeps commander from calling process.exit, and process.exitCode is
+ * read back then restored, so calling this more than once in a process is safe.
  */
 export async function cli(argv: string[]): Promise<number> {
   const t = defaultMessages();
@@ -62,6 +32,8 @@ export async function cli(argv: string[]): Promise<number> {
   registerConfigCommand(program, t);
   registerRunCommand(program, t);
   registerChatCommand(program, t);
+  registerServeCommands(program, t);
+  registerUpdateCommand(program, t);
 
   // Show help only when no subcommand is given (empty input); do not error.
   program.action(() => {
