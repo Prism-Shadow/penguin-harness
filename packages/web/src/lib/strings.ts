@@ -1364,6 +1364,15 @@ Benchmark：
   },
 
   // Ctrl+P / Cmd+P developer console overlay (runtime info + the HMR update feed).
+  commandPalette: {
+    title: "命令面板",
+    placeholder: "输入以筛选操作…",
+    noResults: "没有匹配的操作",
+    openDevConsole: "打开开发者控制台",
+    reloadPage: "刷新页面",
+    hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
+  },
+
   devConsole: {
     title: "开发者控制台",
     runtimeHeading: "运行时",
@@ -1378,7 +1387,7 @@ Benchmark：
     feedEmpty: "暂无更新事件",
     /** rev shown inline with each feed entry's timestamp. */
     feedEntry: (rev: string) => `Web 更新到 rev ${rev}`,
-    shortcutHint: "Ctrl+P / ⌘P 切换",
+    closeHint: "Esc 关闭",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

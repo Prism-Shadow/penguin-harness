@@ -1,5 +1,5 @@
 /**
- * Dev console pure-logic tests: the Ctrl+P/Cmd+P shortcut matcher, and the
+ * Dev console pure-logic tests: the Ctrl+P/Cmd+P palette shortcut matcher, the action filter, and the
  * sessionStorage-backed event feed that carries a web_updated notice across the
  * reload it triggers (see src/lib/dev-console.ts's module doc for why the feed has
  * to be storage-backed instead of live).
@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 import type { DevConsoleEvent, StorageLike } from "../src/lib/dev-console";
 import {
-  isDevConsoleToggleShortcut,
+  filterPaletteActions,
+  isCommandPaletteShortcut,
   readDevConsoleEvents,
   recordDevConsoleEvent,
 } from "../src/lib/dev-console";
@@ -23,47 +24,65 @@ function fakeStorage(): StorageLike {
   };
 }
 
-describe("isDevConsoleToggleShortcut", () => {
+describe("isCommandPaletteShortcut", () => {
   it("matches Ctrl+P on non-mac", () => {
-    expect(isDevConsoleToggleShortcut({ key: "p", ctrlKey: true, metaKey: false }, false)).toBe(
-      true,
-    );
+    expect(isCommandPaletteShortcut({ key: "p", ctrlKey: true, metaKey: false }, false)).toBe(true);
   });
 
   it("matches Cmd+P on mac", () => {
-    expect(isDevConsoleToggleShortcut({ key: "p", ctrlKey: false, metaKey: true }, true)).toBe(
-      true,
-    );
+    expect(isCommandPaletteShortcut({ key: "p", ctrlKey: false, metaKey: true }, true)).toBe(true);
   });
 
   it("ignores Ctrl+P on mac (that's Cmd+P there)", () => {
-    expect(isDevConsoleToggleShortcut({ key: "p", ctrlKey: true, metaKey: false }, true)).toBe(
-      false,
-    );
+    expect(isCommandPaletteShortcut({ key: "p", ctrlKey: true, metaKey: false }, true)).toBe(false);
   });
 
   it("ignores Cmd+P on non-mac", () => {
-    expect(isDevConsoleToggleShortcut({ key: "p", ctrlKey: false, metaKey: true }, false)).toBe(
+    expect(isCommandPaletteShortcut({ key: "p", ctrlKey: false, metaKey: true }, false)).toBe(
       false,
     );
   });
 
   it("ignores an unmodified P (would just type the letter)", () => {
-    expect(isDevConsoleToggleShortcut({ key: "p", ctrlKey: false, metaKey: false }, false)).toBe(
+    expect(isCommandPaletteShortcut({ key: "p", ctrlKey: false, metaKey: false }, false)).toBe(
       false,
     );
   });
 
   it("ignores other keys even with Ctrl held", () => {
-    expect(isDevConsoleToggleShortcut({ key: "s", ctrlKey: true, metaKey: false }, false)).toBe(
+    expect(isCommandPaletteShortcut({ key: "s", ctrlKey: true, metaKey: false }, false)).toBe(
       false,
     );
   });
 
   it("is case-insensitive on the key (browsers don't fold it themselves)", () => {
-    expect(isDevConsoleToggleShortcut({ key: "P", ctrlKey: true, metaKey: false }, false)).toBe(
-      true,
-    );
+    expect(isCommandPaletteShortcut({ key: "P", ctrlKey: true, metaKey: false }, false)).toBe(true);
+  });
+});
+
+describe("filterPaletteActions", () => {
+  const actions = [
+    { id: "console", label: "Open Developer Console" },
+    { id: "reload", label: "Reload page" },
+  ];
+
+  it("returns everything, in registration order, for an empty or whitespace query", () => {
+    expect(filterPaletteActions(actions, "")).toEqual(actions);
+    expect(filterPaletteActions(actions, "   ")).toEqual(actions);
+  });
+
+  it("matches case-insensitive substrings", () => {
+    expect(filterPaletteActions(actions, "conso").map((a) => a.id)).toEqual(["console"]);
+    expect(filterPaletteActions(actions, "RELOAD").map((a) => a.id)).toEqual(["reload"]);
+  });
+
+  it("requires every token to match, in any order", () => {
+    expect(filterPaletteActions(actions, "console open").map((a) => a.id)).toEqual(["console"]);
+    expect(filterPaletteActions(actions, "open page")).toEqual([]);
+  });
+
+  it("returns empty for a query nothing matches", () => {
+    expect(filterPaletteActions(actions, "zzz")).toEqual([]);
   });
 });
 

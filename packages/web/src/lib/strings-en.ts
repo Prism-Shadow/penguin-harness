@@ -1411,6 +1411,15 @@ Scenarios:
     colSession: "Session",
   },
 
+  commandPalette: {
+    title: "Command Palette",
+    placeholder: "Type to filter actions…",
+    noResults: "No matching actions",
+    openDevConsole: "Open Developer Console",
+    reloadPage: "Reload page",
+    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
+  },
+
   devConsole: {
     title: "Developer Console",
     runtimeHeading: "Runtime",
@@ -1423,7 +1432,7 @@ Scenarios:
     feedHeading: "Update events",
     feedEmpty: "No update events yet",
     feedEntry: (rev: string) => `Web updated to rev ${rev}`,
-    shortcutHint: "Ctrl+P / ⌘P to toggle",
+    closeHint: "Esc to close",
   },
 
   errors: {
