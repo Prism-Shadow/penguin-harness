@@ -98,7 +98,7 @@ describe("runHot", () => {
   it("no store entry (fresh root): falls back to the packaged default cli()", async () => {
     // A fresh root has no hmr/harness.json at all — resolveCliBundlePath returns
     // null and runHot must fall back rather than throw. --version is a safe probe:
-    // the packaged cli() never calls process.exit (see cli-impl.ts's
+    // the packaged cli() never calls process.exit (see cli.ts's
     // exitOverride), so this can't kill the test worker.
     const code = await runHot(["--version"], root);
     expect(code).toBe(0);

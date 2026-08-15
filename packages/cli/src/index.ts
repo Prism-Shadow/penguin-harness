@@ -8,18 +8,19 @@
  * statically (see commands/update.ts's module doc).
  *
  * Every other command (`run`, `chat`, `config`, and top-level `--help`/`--version`/
- * no-args) lives in cli-impl.ts, exported as `cli` — and is loaded fresh on every
+ * no-args) lives in cli.ts, exported as `cli` — and is loaded fresh on every
  * invocation from the data root's HMR store when a version has been pushed there
  * (the same content-addressed store the HMR host boots the running server from —
  * see packages/server/src/hmr/host.ts). Hot-pushing a version therefore hot-updates
  * the CLI too: no rebuild, no reinstall — `node scripts/watch-push.mjs` (or a direct
  * POST /api/hmr/upgrade) landing new command code that the very next `penguin <cmd>`
- * picks up, read straight off `<root>/hmr/harness.json`'s `cli` entry (see
+ * picks up, read straight off `<root>/hmr/harness.json`'s `cli` entry — its own
+ * independent artifact, a different file from the platform bundle (see
  * @prismshadow/penguin-server/hmr/manifest's resolveCliBundlePath — a plain disk
  * read; this process is short-lived and never runs an HmrHost). When nothing has
  * been pushed yet (fresh data root, or the store/manifest is missing/corrupt/
  * pruned), or the hot-loaded bundle fails to import or doesn't export `cli`, this
- * falls back to the packaged default: cli-impl.ts, statically imported into this
+ * falls back to the packaged default: cli.ts, statically imported into this
  * very package — same function, just resolved the ordinary way instead of
  * dynamically imported from the HMR store. A broken push must never brick the CLI.
  *
@@ -35,7 +36,7 @@
  *
  * Known gap (deferred — see the workflow-hmr design doc): `penguin` / `penguin
  * --help` with NO subcommand routes through the hot path (argv[0] is undefined, not
- * a boot command) and only shows cli-impl.ts's help (run/chat/config), not
+ * a boot command) and only shows cli.ts's help (run/chat/config), not
  * web/server/update — unifying top-level help across the boot/hot split is left for
  * later polish.
  *
@@ -49,7 +50,7 @@ import { VERSION, resolveRoot } from "@prismshadow/penguin-core";
 import { resolveCliBundlePath } from "@prismshadow/penguin-server/hmr/manifest";
 import { registerServeCommands } from "./commands/serve.js";
 import { registerUpdateCommand } from "./commands/update.js";
-import { cli as packagedCli } from "./cli-impl.js";
+import { cli as packagedCli } from "./cli.js";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 

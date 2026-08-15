@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 /**
- * The unified watch-and-push: ONE process, ONE atomic push cycle.
+ * The watch-and-push: ONE process, ONE atomic push cycle, THREE independent
+ * compiled artifacts.
  *
- * platform = cli + platform code + web is ONE indivisible version (see
+ * platform, cli, and web are three separately compiled single-file products —
+ * there is no physical bundle that carries more than one of them — but they
+ * always move together as ONE atomic version (see
  * packages/server/src/hmr/host.ts's module doc): this script watches platform +
  * CLI source (packages/server/src and packages/cli/src) and the web build output
  * (packages/web/dist, produced by `vite build --watch` under dev:web), and on any
- * change compiles ONE unified bundle (packages/cli/src/platform-bundle.ts,
- * exporting both `hotPlatform` and `cli`) and pushes it to EVERY target together
- * with the web dist, in a single request to POST /api/hmr/upgrade — debounced and
- * serialized, so two cycles never interleave and a change arriving mid-cycle
- * queues exactly one more.
+ * change compiles the platform entry (packages/server/src/platform/entry.ts,
+ * exporting `hotPlatform`) and the cli entry (packages/cli/src/cli.ts, exporting
+ * `cli`) separately, then pushes both together with the web dist to EVERY target
+ * in a single request to POST /api/hmr/upgrade — debounced and serialized, so two
+ * cycles never interleave and a change arriving mid-cycle queues exactly one
+ * more.
  *
- * The push is over HTTP ALONE: the compiled bundle and the web dist travel
- * INLINE in the request body (no shared filesystem, no scp). Every target is
- * a URL, reached as the admin: this script logs in (POST /api/auth/login)
+ * The push is over HTTP ALONE: the compiled platform bundle, the compiled cli
+ * bundle, and the web dist all travel INLINE in the request body (no shared
+ * filesystem, no scp). Every target is a URL, reached as the admin: this
+ * script logs in (POST /api/auth/login)
  * with PENGUIN_ADMIN_PASSWORD and carries the resulting session cookie on
  * every request, exactly like an operator would from a browser. There used to
  * be a per-boot Bearer token instead, published in plaintext to
@@ -66,14 +71,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PENGUIN_HOME = expandHome(process.env.PENGUIN_HOME ?? "~/.penguin/dev-data");
 const SERVERS_FILE =
   process.env.PENGUIN_SERVERS_FILE ?? path.join(PENGUIN_HOME, "hmr", "servers.json");
-// The unified compile entry: exports BOTH `hotPlatform` (re-exported from
-// @prismshadow/penguin-server/platform) and `cli` (packages/cli's own run/chat/config
-// commands) — see packages/cli/src/platform-bundle.ts's module doc.
-const ENTRY = path.join(ROOT, "packages", "cli", "src", "platform-bundle.ts");
+// Two independent compile entries — see their own module docs:
+// - PLATFORM_ENTRY exports `hotPlatform` (packages/server/src/platform/entry.ts).
+// - CLI_ENTRY exports `cli` (packages/cli's own run/chat/config commands, cli.ts).
+const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
+const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "cli.ts");
 const SERVER_SRC = path.join(ROOT, "packages", "server", "src");
 const CLI_SRC = path.join(ROOT, "packages", "cli", "src");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");
-const BUNDLE = path.join(os.tmpdir(), `penguin-dev-platform-${process.pid}.mjs`);
+const PLATFORM_BUNDLE = path.join(os.tmpdir(), `penguin-dev-platform-${process.pid}.mjs`);
+const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-dev-cli-${process.pid}.mjs`);
 // Past vite's write burst; server/cli-source edits share the same cycle debounce.
 const DEBOUNCE_MS = 800;
 
@@ -262,10 +269,11 @@ async function authedRequest(target, apiPath, { method, contentType, body }) {
 }
 
 /**
- * Compiles the unified entry to ONE self-contained file (kernel + cli deps bundled
- * in — commander, agenthub, the MCP client, arktype, everything the run/chat/config
- * commands pull in transitively via @prismshadow/penguin-core, so the pushed file
- * loads and runs from an arbitrary directory with no shared node_modules).
+ * Compiles one entry to ONE self-contained file (kernel + deps bundled in —
+ * commander, agenthub, the MCP client, arktype, everything the entry pulls in
+ * transitively via @prismshadow/penguin-core, so the pushed file loads and runs
+ * from an arbitrary directory with no shared node_modules). Used for both the
+ * platform entry and the cli entry — they compile independently, but identically.
  *
  * The banner works around a real esbuild footgun: several bundled CJS deps
  * (commander's lib/command.js among them) call plain `require("node:events")` from
@@ -277,17 +285,17 @@ async function authedRequest(target, apiPath, { method, contentType, body }) {
  * before esbuild's bundled code runs makes those nested `require()` calls resolve
  * for real instead of hitting the shim.
  */
-async function compilePlatform() {
-  if (!fs.existsSync(ENTRY)) {
-    throw new Error(`unified bundle entry missing: ${ENTRY}`);
+async function compileEntry(entry, outfile) {
+  if (!fs.existsSync(entry)) {
+    throw new Error(`compile entry missing: ${entry}`);
   }
   const esbuild = await import("esbuild");
   await esbuild.build({
-    entryPoints: [ENTRY],
+    entryPoints: [entry],
     bundle: true,
     format: "esm",
     platform: "node",
-    outfile: BUNDLE,
+    outfile,
     logLevel: "silent",
     banner: {
       js: 'import { createRequire as __penguinCreateRequire } from "node:module"; const require = __penguinCreateRequire(import.meta.url);',
@@ -297,6 +305,9 @@ async function compilePlatform() {
     },
   });
 }
+
+const compilePlatform = () => compileEntry(PLATFORM_ENTRY, PLATFORM_BUNDLE);
+const compileCli = () => compileEntry(CLI_ENTRY, CLI_BUNDLE);
 
 const hasWebDist = () => fs.existsSync(path.join(WEB_DIST, "index.html"));
 
@@ -313,15 +324,15 @@ async function readWebManifest() {
 }
 
 /**
- * Pushes ONE atomic version — the compiled unified bundle (platform + cli) AND the
- * web dist — to one target, in a single request to POST /api/hmr/upgrade. The body
- * is gzip(JSON.stringify({ bundle, web: { files } })): one write on the target
- * instead of the old two-request platform-then-web sequence, and no window where a
- * target could observe one half updated without the other.
+ * Pushes ONE atomic version — the compiled platform bundle, the compiled cli
+ * bundle, AND the web dist, three independent artifacts — to one target, in a
+ * single request to POST /api/hmr/upgrade. The body is
+ * gzip(JSON.stringify({ platform, cli, web: { files } })): one write on the target
+ * instead of separate per-artifact requests, and no window where a target could
+ * observe one piece updated without the others.
  */
-async function pushVersion(target, files) {
-  const bundle = await fsp.readFile(BUNDLE, "utf8");
-  const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ bundle, web: { files } })));
+async function pushVersion(target, platform, cli, files) {
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ platform, cli, web: { files } })));
   const res = await authedRequest(target, "/api/hmr/upgrade", {
     method: "POST",
     contentType: "application/gzip",
@@ -335,11 +346,12 @@ async function pushVersion(target, files) {
 }
 
 /**
- * One atomic push cycle: compile the unified bundle once, read the web dist once,
- * then push both together to every target in turn. Per-target failures are
- * reported and do not abort the rest of the fleet; the cycle itself never
- * interleaves with another. A merged push needs BOTH halves, so the cycle is
- * skipped entirely (not degraded) until the web dist has been built at least once.
+ * One atomic push cycle: compile the platform bundle and the cli bundle once
+ * each, read the web dist once, then push all three together to every target in
+ * turn. Per-target failures are reported and do not abort the rest of the fleet;
+ * the cycle itself never interleaves with another. A push needs all three
+ * pieces, so the cycle is skipped entirely (not degraded) until the web dist has
+ * been built at least once.
  */
 async function pushCycle() {
   if (!hasWebDist()) {
@@ -348,10 +360,15 @@ async function pushCycle() {
   }
   const targets = readTargets();
   await compilePlatform();
+  await compileCli();
+  const [platform, cli] = await Promise.all([
+    fsp.readFile(PLATFORM_BUNDLE, "utf8"),
+    fsp.readFile(CLI_BUNDLE, "utf8"),
+  ]);
   const files = await readWebManifest();
   for (const target of targets) {
     try {
-      const out = await pushVersion(target, files);
+      const out = await pushVersion(target, platform, cli, files);
       if (out.status === "blocked") {
         log(
           `[${target.id}] BLOCKED (data would be discarded): ` +
@@ -411,9 +428,7 @@ async function run() {
     return;
   }
   running = true;
-  log(
-    "change detected; push cycle (compile the unified bundle, push bundle + web to each target)...",
-  );
+  log("change detected; push cycle (compile platform + cli, push both + web to each target)...");
   try {
     await pushCycle();
   } catch (err) {
@@ -426,8 +441,8 @@ async function run() {
   }
 }
 
-// Both halves of the unified bundle are watched: server/src (the hotPlatform half)
-// AND cli/src (the cli half — run/chat/config, plus platform-bundle.ts itself).
+// Both compile entries' source trees are watched: server/src (platform/entry.ts's
+// half) AND cli/src (cli.ts's half — run/chat/config, plus cli.ts itself).
 const watchers = [
   fs.watch(SERVER_SRC, { recursive: true }, schedule),
   fs.watch(CLI_SRC, { recursive: true }, schedule),
@@ -451,7 +466,8 @@ log(
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
     for (const w of watchers) w.close();
-    fs.rmSync(BUNDLE, { force: true });
+    fs.rmSync(PLATFORM_BUNDLE, { force: true });
+    fs.rmSync(CLI_BUNDLE, { force: true });
     process.exit(0);
   });
 }

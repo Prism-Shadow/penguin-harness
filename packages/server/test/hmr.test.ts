@@ -1,8 +1,9 @@
 /**
  * Hot-update integration tests (via app.request() injection): pushing a
- * next-build unified version (platform+cli bundle + web dist, ONE atomic
- * push), the migrate/blocked paths, atomic persistence across a runtime
- * restart, auth, the network gate, and request queueing during a swap.
+ * next-build version (platform bundle + cli bundle + web dist, THREE
+ * independent artifacts in ONE atomic push), the migrate/blocked paths,
+ * atomic persistence across a runtime restart, auth, the network gate, and
+ * request queueing during a swap.
  *
  * The business-platform proof (terminals surviving a swap via resource
  * claiming) lives in hmr-business-platform.test.ts, parked with
@@ -46,15 +47,23 @@ function minimalWeb(marker: string): Record<string, string> {
 }
 
 /**
- * Pushes ONE atomic version (bundle + web) to POST /api/hmr/upgrade — the merged
- * endpoint's only transport is a gzip(JSON) body, so this bypasses apiClient's
- * JSON-only helper.
+ * A stand-in cli artifact: the server never imports or runs `cli` (see
+ * host.ts's persistVersion) — it is only content-addressed into the store — so
+ * tests that don't care about its content can reuse this constant.
+ */
+const MINIMAL_CLI = "export async function cli(argv) { return 0; }\n";
+
+/**
+ * Pushes ONE atomic version (platform bundle + cli bundle + web) to POST
+ * /api/hmr/upgrade — the merged endpoint's only transport is a gzip(JSON) body,
+ * so this bypasses apiClient's JSON-only helper.
  */
 async function pushVersion(
   app: Hono<AppEnv>,
   cookie: string,
   target: {
-    bundle: string;
+    platform: string;
+    cli?: string;
     web?: Record<string, string>;
     source?: { repo: string; revision: string };
   },
@@ -62,7 +71,8 @@ async function pushVersion(
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
-        bundle: target.bundle,
+        platform: target.platform,
+        cli: target.cli ?? MINIMAL_CLI,
         web: { files: target.web ?? minimalWeb("web") },
         ...(target.source ? { source: target.source } : {}),
       }),
@@ -108,7 +118,9 @@ describe("hot update", () => {
     expect(res.status).toBe(401);
     // A mutating call is rejected the same way.
     const gz = zlib.gzipSync(
-      Buffer.from(JSON.stringify({ bundle: nextBundle, web: { files: minimalWeb("x") } })),
+      Buffer.from(
+        JSON.stringify({ platform: nextBundle, cli: MINIMAL_CLI, web: { files: minimalWeb("x") } }),
+      ),
     );
     const upgraded = await t.app.request("/api/hmr/upgrade", {
       method: "POST",
@@ -136,9 +148,9 @@ describe("hot update", () => {
     expect(Object.keys(body.iface.children)).toEqual([]);
   });
 
-  it("one push moves platform + web together: web reload broadcasts, static hosting flips", async () => {
+  it("one push moves platform + cli + web together: web reload broadcasts, static hosting flips", async () => {
     const res = await pushVersion(t.app, adminCookie, {
-      bundle: nextBundle,
+      platform: nextBundle,
       web: minimalWeb("pushed-v1"),
     });
     expect(res.status).toBe(200);
@@ -153,12 +165,30 @@ describe("hot update", () => {
     expect(await (await t.app.request("/deep/spa/route")).text()).toContain("pushed-v1");
   });
 
-  it("a bundle missing `cli` is rejected outright — platform and cli ship together", async () => {
-    const noCliBundle = nextBundle.replace(/export async function cli[\s\S]*$/, "");
-    const res = await pushVersion(t.app, adminCookie, { bundle: noCliBundle });
+  it("a platform bundle not exporting `hotPlatform` is rejected outright", async () => {
+    const noHotPlatform = nextBundle.replace(/export const hotPlatform[\s\S]*$/, "");
+    const res = await pushVersion(t.app, adminCookie, { platform: noHotPlatform });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
-      "does not export 'cli'",
+      "does not export 'hotPlatform'",
+    );
+    // Untouched: still the packaged default.
+    const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
+    expect(info.impl).toBe("packaged");
+  });
+
+  it("a push with no `cli` field is rejected outright — platform and cli are independent artifacts but both required", async () => {
+    const gz = zlib.gzipSync(
+      Buffer.from(JSON.stringify({ platform: nextBundle, web: { files: minimalWeb("x") } })),
+    );
+    const res = await t.app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie: adminCookie, "content-type": "application/gzip" },
+      body: gz,
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain(
+      "payload has no `cli`",
     );
     // Untouched: still the packaged default.
     const info = (await (await api.get("/api/hmr/platform")).json()) as { impl: string };
@@ -167,7 +197,7 @@ describe("hot update", () => {
 
   it("a web manifest with no index.html is rejected outright", async () => {
     const res = await pushVersion(t.app, adminCookie, {
-      bundle: nextBundle,
+      platform: nextBundle,
       web: { "x.js": b64("1") },
     });
     expect(res.status).toBe(400);
@@ -177,14 +207,14 @@ describe("hot update", () => {
 
   it("path traversal in the web manifest is rejected outright", async () => {
     const res = await pushVersion(t.app, adminCookie, {
-      bundle: nextBundle,
+      platform: nextBundle,
       web: { "index.html": b64("<html>ok</html>"), "../escape.js": b64("1") },
     });
     expect(res.status).toBe(400);
   });
 
   it("a downgrade without a migration path is blocked and the running version keeps serving", async () => {
-    await pushVersion(t.app, adminCookie, { bundle: nextBundle, web: minimalWeb("v1") });
+    await pushVersion(t.app, adminCookie, { platform: nextBundle, web: minimalWeb("v1") });
     // Derive an OLD build from the fixture: iface v1, no theme, no migrator.
     const oldBundle = nextBundle
       .replace("version: 2,", "version: 1,")
@@ -193,7 +223,10 @@ describe("hot update", () => {
         'objectSchema({ motd: "string" })',
       )
       .replace(/migrations: \{\n    1: [^\n]*\n  \},/, "migrations: {},");
-    const res = await pushVersion(t.app, adminCookie, { bundle: oldBundle, web: minimalWeb("v2") });
+    const res = await pushVersion(t.app, adminCookie, {
+      platform: oldBundle,
+      web: minimalWeb("v2"),
+    });
     expect(res.status).toBe(200);
     const outcome = (await res.json()) as { status: string; invalid: string[] };
     expect(outcome.status).toBe("blocked");
@@ -207,12 +240,12 @@ describe("hot update", () => {
 
   it("a re-push swaps web in place with a new rev", async () => {
     const first = await pushVersion(t.app, adminCookie, {
-      bundle: nextBundle,
+      platform: nextBundle,
       web: minimalWeb("v1"),
     });
     const firstBody = (await first.json()) as { web: { rev: string } };
     const second = await pushVersion(t.app, adminCookie, {
-      bundle: nextBundle,
+      platform: nextBundle,
       web: minimalWeb("v2"),
     });
     const secondBody = (await second.json()) as { web: { rev: string } };
@@ -222,7 +255,7 @@ describe("hot update", () => {
 
   it("generic dispatch: the allow-list is the running platform's iface.methods, read live", async () => {
     const dispatchBundle = await fs.readFile(DISPATCH_BUNDLE_FILE, "utf8");
-    const upgraded = await pushVersion(t.app, adminCookie, { bundle: dispatchBundle });
+    const upgraded = await pushVersion(t.app, adminCookie, { platform: dispatchBundle });
     expect(upgraded.status).toBe(200);
 
     // A normal call: args round-trip, the result is returned as-is.
@@ -272,8 +305,8 @@ describe("hot update", () => {
 
   it("requests racing an upgrade are enqueued, never observably rejected", async () => {
     const [first, second, list] = await Promise.all([
-      pushVersion(t.app, adminCookie, { bundle: nextBundle }),
-      pushVersion(t.app, adminCookie, { bundle: nextBundle }),
+      pushVersion(t.app, adminCookie, { platform: nextBundle }),
+      pushVersion(t.app, adminCookie, { platform: nextBundle }),
       api.get("/api/hmr/platform"),
     ]);
     expect(first.status).toBe(200);
@@ -297,7 +330,11 @@ describe("hot persistence across a runtime restart", () => {
 
       // Runtime #1: push the next build as one atomic version.
       const h1 = new HmrHost(root);
-      const up = await h1.upgradeAll({ bundle: nextBundle, web: minimalWeb("persisted-web") });
+      const up = await h1.upgradeAll({
+        platform: nextBundle,
+        cli: MINIMAL_CLI,
+        web: minimalWeb("persisted-web"),
+      });
       expect(up.status).toBe("ok");
       h1.dispose();
 
@@ -338,7 +375,7 @@ describe("hot persistence across a runtime restart", () => {
         path.join(root, "hmr", "harness.json"),
         JSON.stringify({
           platform: { bundle: "store/platform/gone.mjs", park: "store/platform/gone.park.json" },
-          cli: { bundle: "store/platform/gone.mjs" },
+          cli: { bundle: "store/cli/gone.mjs" },
           web: { manifest: "store/web/aaaa.webz" },
         }),
       );
@@ -357,11 +394,12 @@ describe("hot persistence across a runtime restart", () => {
     try {
       const bundleSrc = await fs.readFile(NEXT_BUNDLE_FILE, "utf8");
       const h = new HmrHost(root);
-      // Three distinct pushed versions (bundle content varies via a trailing comment;
-      // web content varies too).
+      // Three distinct pushed versions (platform + cli content each vary via a
+      // trailing comment; web content varies too).
       for (let i = 0; i < 3; i++) {
         const up = await h.upgradeAll({
-          bundle: `${bundleSrc}\n// push ${i}\n`,
+          platform: `${bundleSrc}\n// push ${i}\n`,
+          cli: `${MINIMAL_CLI}\n// push ${i}\n`,
           web: minimalWeb(`web-${i}`),
         });
         expect(up.status).toBe("ok");
@@ -369,8 +407,10 @@ describe("hot persistence across a runtime restart", () => {
       const platforms = (await fs.readdir(path.join(root, "hmr", "store", "platform"))).filter(
         (n) => n.endsWith(".mjs"),
       );
+      const clis = await fs.readdir(path.join(root, "hmr", "store", "cli"));
       const webs = await fs.readdir(path.join(root, "hmr", "store", "web"));
       expect(platforms.length).toBeLessThanOrEqual(2);
+      expect(clis.length).toBeLessThanOrEqual(2);
       expect(webs.length).toBeLessThanOrEqual(2);
       // The committed one survived pruning and still restores.
       h.dispose();
