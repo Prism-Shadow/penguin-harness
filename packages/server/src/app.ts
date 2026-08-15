@@ -83,8 +83,8 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HotHost } from "./hot/host.js";
-import { hotRoutes } from "./hot/routes.js";
+import { HmrHost } from "./hmr/host.js";
+import { hmrRoutes } from "./hmr/routes.js";
 import {
   createPreviewTokenSigner,
   hostOnly,
@@ -135,8 +135,8 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
-  /** Hot-updatable platform host (park/boot kernel; MVP demo tree: terminals + agents). */
-  hot: HotHost;
+  /** HMR host: loads/swaps/persists the platform and web bundles (park/boot kernel). */
+  hmr: HmrHost;
   /** Request log output (minimal one-liner); tests inject a noop. */
   log: (line: string) => void;
 }
@@ -341,7 +341,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
-    hot: new HotHost(config.root),
+    hmr: new HmrHost(config.root),
     log,
   };
 }
@@ -429,7 +429,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // Hot platform APIs authenticate themselves (local-agent Bearer token OR
   // admin cookie session, see hot/routes.ts), so they mount outside the
   // cookie-only authMiddleware below.
-  app.route("/api/hot", hotRoutes(deps));
+  app.route("/api/hmr", hmrRoutes(deps));
 
   // Protected routes: cookie -> auth_session -> user.
   const auth = authMiddleware(deps.authService);
@@ -469,7 +469,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // index.html. The directory resolves per request — the hot host can point it at a
   // freshly pushed web dist (the frontend platform's hot-swap channel) without a restart;
   // when neither the override nor the configured webDist exists, non-API paths 404.
-  registerStaticRoutes(app, () => deps.hot.webDistDir ?? deps.config.webDist);
+  registerStaticRoutes(app, () => deps.hmr.webDistDir ?? deps.config.webDist);
 
   return app;
 }

@@ -16,7 +16,7 @@
  * The push is over HTTP ALONE: the compiled bundle and the web dist travel
  * INLINE in the request body (no shared filesystem, no scp). Every target is
  * therefore just a URL + token — a local runtime resolves both from its
- * hot/api.json; a remote runtime is reached through a URL (an ssh tunnel, a
+ * hmr/api.json; a remote runtime is reached through a URL (an ssh tunnel, a
  * relay, …) with its token supplied.
  *
  * Targets come from a servers file — the SAME schema the desktop shell's
@@ -27,7 +27,7 @@
  *     { "id": "box",   "type": "remote", "url": "http://127.0.0.1:61082", "token": "…" }
  *   ] }
  *
- * Resolution: $PENGUIN_SERVERS_FILE, else $PENGUIN_HOME/hot/servers.json, else
+ * Resolution: $PENGUIN_SERVERS_FILE, else $PENGUIN_HOME/hmr/servers.json, else
  * an implicit single local target at $PENGUIN_HOME.
  *
  * Usage: `node scripts/watch-push.mjs` (long-running; wired into `pnpm dev`).
@@ -44,8 +44,8 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PENGUIN_HOME = expandHome(process.env.PENGUIN_HOME ?? "~/.penguin/dev-data");
 const SERVERS_FILE =
-  process.env.PENGUIN_SERVERS_FILE ?? path.join(PENGUIN_HOME, "hot", "servers.json");
-const ENTRY = path.join(ROOT, "packages", "server", "src", "hot", "dev-platform-entry.ts");
+  process.env.PENGUIN_SERVERS_FILE ?? path.join(PENGUIN_HOME, "hmr", "servers.json");
+const ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
 const SERVER_SRC = path.join(ROOT, "packages", "server", "src");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");
 const BUNDLE = path.join(os.tmpdir(), `penguin-dev-platform-${process.pid}.mjs`);
@@ -81,7 +81,7 @@ async function resolveApi(target) {
     }
     return { url: target.url.replace(/\/+$/, ""), token: target.token };
   }
-  const file = path.join(expandHome(target.home ?? PENGUIN_HOME), "hot", "api.json");
+  const file = path.join(expandHome(target.home ?? PENGUIN_HOME), "hmr", "api.json");
   const { url, token } = JSON.parse(await fsp.readFile(file, "utf8"));
   return { url: url.replace(/\/+$/, ""), token };
 }
@@ -140,14 +140,14 @@ async function readWebManifest() {
 /** Pushes the web dist to one target INLINE over HTTP (frontend phase). */
 async function pushWeb(target) {
   const api = await resolveApi(target);
-  return post(api, "/api/hot/web/upgrade", { files: await readWebManifest() });
+  return post(api, "/api/hmr/web/upgrade", { files: await readWebManifest() });
 }
 
 /** Pushes the compiled platform bundle to one target INLINE over HTTP (backend phase). */
 async function pushPlatform(target) {
   const api = await resolveApi(target);
   const bundle = await fsp.readFile(BUNDLE, "utf8");
-  return post(api, "/api/hot/platform/upgrade", { bundle });
+  return post(api, "/api/hmr/platform/upgrade", { bundle });
 }
 
 /**

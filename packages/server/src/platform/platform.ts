@@ -14,7 +14,7 @@ import type { Impl, Json, KeyedHandle, Park } from "@prismshadow/penguin-core/ke
 import { defineIface, keyed, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { TerminalApi } from "./terminal.js";
 import { TerminalIface, terminalImpl } from "./terminal.js";
-import { spawnShellResource } from "./resources.js";
+import { spawnShellResource } from "../hmr/resources.js";
 
 export interface PlatformApi extends Park {
   info(): Json;

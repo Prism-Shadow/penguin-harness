@@ -1,5 +1,5 @@
 /**
- * HotHost: the runtime side of the stop-the-world hot-update protocol.
+ * HmrHost: the runtime side of the stop-the-world hot-update protocol.
  *
  * The host owns everything that must survive a platform swap: the resource
  * registry (live processes + their output buffers), the operation queue the
@@ -15,8 +15,8 @@
  * path a remote client could not produce. bundlePath/distPath remain as
  * same-machine dev conveniences.
  *
- * Persistence: artifacts are content-addressed under hot/store/ and promoted
- * by ONE atomic rename of hot/harness.json — committed only AFTER the live
+ * Persistence: artifacts are content-addressed under hmr/store/ and promoted
+ * by ONE atomic rename of hmr/harness.json — committed only AFTER the live
  * in-memory boot succeeded, so a restart can never resume a bundle that
  * failed to boot. A restart resumes harness.json; any restore failure warns
  * and falls back to the packaged default (never bricks). The store keeps at
@@ -32,8 +32,8 @@ import { pathToFileURL } from "node:url";
 import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
-import type { PlatformApi } from "./platform.js";
-import { packagedPlatform } from "./platform.js";
+import type { PlatformApi } from "../platform/platform.js";
+import { packagedPlatform } from "../platform/platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
 export interface PlatformBundle {
@@ -59,7 +59,7 @@ export type UpgradeOutcome =
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
 
 /**
- * The committed on-disk state (hot/harness.json): a runtime restart boots
+ * The committed on-disk state (hmr/harness.json): a runtime restart boots
  * exactly this. The whole promotion is one atomic rename — a crash mid-write
  * leaves the previous committed state intact. Paths are relative to hotDir.
  */
@@ -71,18 +71,18 @@ interface Manifest {
 /** How many past platform bundles / web dists the store keeps (current + one rollback). */
 const STORE_KEEP = 2;
 
-export class HotHost {
+export class HmrHost {
   readonly resources = new HotResources();
   /**
    * Per-process credential for local tools (published to
-   * $PENGUIN_HOME/hot/api.json, mode 0600): presenting it as a Bearer token
+   * $PENGUIN_HOME/hmr/api.json, mode 0600): presenting it as a Bearer token
    * is admin-equivalent for the hot APIs. Regenerated every boot.
    */
   readonly apiToken = crypto.randomBytes(32).toString("hex");
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
-  private readonly hotDir: string;
+  private readonly hmrDir: string;
   private readonly storeDir: string;
   private readonly manifestPath: string;
   private restored = false;
@@ -90,13 +90,13 @@ export class HotHost {
   private opQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly root: string) {
-    this.hotDir = path.join(root, "hot");
-    this.storeDir = path.join(this.hotDir, "store");
-    this.manifestPath = path.join(this.hotDir, "harness.json");
+    this.hmrDir = path.join(root, "hmr");
+    this.storeDir = path.join(this.hmrDir, "store");
+    this.manifestPath = path.join(this.hmrDir, "harness.json");
   }
 
   private warn(msg: string): void {
-    process.stderr.write(`[hot] ${msg}\n`);
+    process.stderr.write(`[hmr] ${msg}\n`);
   }
 
   currentImplId(): string {
@@ -150,17 +150,17 @@ export class HotHost {
       return; // nothing committed yet
     }
     if (manifest.web?.dir !== undefined) {
-      const dir = path.join(this.hotDir, manifest.web.dir);
+      const dir = path.join(this.hmrDir, manifest.web.dir);
       if (fs.existsSync(path.join(dir, "index.html"))) this.webDistDir = dir;
       else this.warn(`persisted web dist missing (${manifest.web.dir}); using packaged assets`);
     }
     if (manifest.platform !== undefined) {
       try {
         const bundle = await this.importBundleFile(
-          path.join(this.hotDir, manifest.platform.bundle),
+          path.join(this.hmrDir, manifest.platform.bundle),
         );
         const doc = JSON.parse(
-          await fsp.readFile(path.join(this.hotDir, manifest.platform.park), "utf8"),
+          await fsp.readFile(path.join(this.hmrDir, manifest.platform.park), "utf8"),
         ) as Json;
         this.instance = (await boot(
           bundle.impl,
@@ -195,8 +195,8 @@ export class HotHost {
     const source = target.source ?? null;
 
     // Park to disk before touching anything: crash-safe by construction.
-    await fsp.mkdir(this.hotDir, { recursive: true });
-    const parkPath = path.join(this.hotDir, "platform.park.json");
+    await fsp.mkdir(this.hmrDir, { recursive: true });
+    const parkPath = path.join(this.hmrDir, "platform.park.json");
     await fsp.writeFile(parkPath, JSON.stringify(current.park(), null, 2));
 
     const result = await upgrade({
@@ -242,7 +242,7 @@ export class HotHost {
    * then loads by path.
    */
   async writeInlineBundle(content: string): Promise<string> {
-    const dir = path.join(this.hotDir, "uploads");
+    const dir = path.join(this.hmrDir, "uploads");
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, `platform-${sha1(content).slice(0, 16)}.mjs`);
     await fsp.writeFile(file, content, "utf8");
@@ -324,7 +324,7 @@ export class HotHost {
 
   private async persistWeb(distDir: string): Promise<void> {
     try {
-      const rel = path.relative(this.hotDir, distDir).split(path.sep).join("/");
+      const rel = path.relative(this.hmrDir, distDir).split(path.sep).join("/");
       await this.commitManifest((m) => ({ ...m, web: { dir: rel } }));
     } catch (err) {
       this.warn(`web update not persisted (filesystem unavailable?): ${errMsg(err)}`);
@@ -333,7 +333,7 @@ export class HotHost {
 
   /** Reads, updates, and atomically replaces harness.json (the single commit point). */
   private async commitManifest(update: (m: Manifest) => Manifest): Promise<void> {
-    await fsp.mkdir(this.hotDir, { recursive: true });
+    await fsp.mkdir(this.hmrDir, { recursive: true });
     let current: Manifest = {};
     try {
       current = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
@@ -409,14 +409,14 @@ export class HotHost {
   }
 
   /**
-   * Publishes the local credential file ($PENGUIN_HOME/hot/api.json, mode
+   * Publishes the local credential file ($PENGUIN_HOME/hmr/api.json, mode
    * 0600): local tools read { url, token } from it to call the hot APIs.
    * Called once the HTTP listener is up (index.ts).
    */
   async writeApiFile(url: string): Promise<void> {
-    await fsp.mkdir(this.hotDir, { recursive: true });
+    await fsp.mkdir(this.hmrDir, { recursive: true });
     await fsp.writeFile(
-      path.join(this.hotDir, "api.json"),
+      path.join(this.hmrDir, "api.json"),
       JSON.stringify({ url, token: this.apiToken }, null, 2),
       { mode: 0o600 },
     );
