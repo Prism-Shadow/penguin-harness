@@ -119,13 +119,7 @@ async function main() {
   const rows = [["penguin-release-download-manifest", "1", tag]];
   for (const probe of PROBES) {
     const info = filePath(outputDir, probe.file);
-    rows.push([
-      "probe",
-      probe.label,
-      probe.file,
-      String(info.size),
-      await sha256File(info.path),
-    ]);
+    rows.push(["probe", probe.label, probe.file, String(info.size), await sha256File(info.path)]);
   }
 
   for (const file of CLI_BUNDLES) await addRecord(rows, "asset", cliDir, file);

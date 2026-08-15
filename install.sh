@@ -9,7 +9,7 @@
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
-#   PENGUIN_DOWNLOAD_BENCHMARK=1 enable same-version OSS/GitHub probe timing in auto mode
+#   PENGUIN_DOWNLOAD_SPEED_PROBE=1 enable same-version OSS/GitHub probe timing in auto mode
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
@@ -41,9 +41,10 @@ ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
 DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
-DOWNLOAD_BENCHMARK="${PENGUIN_DOWNLOAD_BENCHMARK:-0}"
-BENCHMARK_TOTAL_TIMEOUT_SECONDS=5
-BENCHMARK_STARTED_AT=0
+DOWNLOAD_SPEED_PROBE="${PENGUIN_DOWNLOAD_SPEED_PROBE:-0}"
+SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=8
+SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND=262144
+SPEED_PROBE_STARTED_AT=0
 PAYLOAD_NAME="payload.tar.gz"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copies sealed inside the Linux, macOS and universal bundles.
@@ -134,9 +135,9 @@ case "$SOURCE_MODE" in
   auto | oss | github) ;;
   *) fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github" ;;
 esac
-case "$DOWNLOAD_BENCHMARK" in
+case "$DOWNLOAD_SPEED_PROBE" in
   0 | 1) ;;
-  *) fail "PENGUIN_DOWNLOAD_BENCHMARK must be 0 or 1" ;;
+  *) fail "PENGUIN_DOWNLOAD_SPEED_PROBE must be 0 or 1" ;;
 esac
 RESOLVED_RELEASE_VERSION="$VERSION"
 if [ -z "$RESOLVED_RELEASE_VERSION" ] && is_release_tag "$EMBEDDED_RELEASE_VERSION"; then
@@ -275,17 +276,17 @@ is_positive_integer() {
   esac
 }
 
-benchmark_now_seconds() {
+speed_probe_now_seconds() {
   date +%s 2>/dev/null || printf '%s\n' 0
 }
 
-benchmark_remaining_seconds() {
-  brs_now="$(benchmark_now_seconds)"
-  case "$brs_now:$BENCHMARK_STARTED_AT" in
-    *[!0-9:]* | :* | *:) printf '%s\n' "$BENCHMARK_TOTAL_TIMEOUT_SECONDS"; return 0 ;;
+speed_probe_remaining_seconds() {
+  brs_now="$(speed_probe_now_seconds)"
+  case "$brs_now:$SPEED_PROBE_STARTED_AT" in
+    *[!0-9:]* | :* | *:) printf '%s\n' "$SPEED_PROBE_TOTAL_TIMEOUT_SECONDS"; return 0 ;;
   esac
-  brs_elapsed=$((brs_now - BENCHMARK_STARTED_AT))
-  brs_remaining=$((BENCHMARK_TOTAL_TIMEOUT_SECONDS - brs_elapsed))
+  brs_elapsed=$((brs_now - SPEED_PROBE_STARTED_AT))
+  brs_remaining=$((SPEED_PROBE_TOTAL_TIMEOUT_SECONDS - brs_elapsed))
   if [ "$brs_remaining" -gt 0 ]; then
     printf '%s\n' "$brs_remaining"
   else
@@ -293,9 +294,9 @@ benchmark_remaining_seconds() {
   fi
 }
 
-benchmark_curl_timeout() {
+speed_probe_curl_timeout() {
   bct_cap="$1"
-  bct_remaining="$(benchmark_remaining_seconds)"
+  bct_remaining="$(speed_probe_remaining_seconds)"
   [ "$bct_remaining" -gt 0 ] || return 1
   if [ "$bct_remaining" -lt "$bct_cap" ]; then
     printf '%s\n' "$bct_remaining"
@@ -308,10 +309,10 @@ load_release_download_manifest() {
   lrdm_tag="$1"
   lrdm_manifest="$TMP/release-download-manifest.tsv"
   rm -f "$lrdm_manifest"
-  if lrdm_timeout="$(benchmark_curl_timeout 2)" \
+  if lrdm_timeout="$(speed_probe_curl_timeout 2)" \
     && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$OSS_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
     :
-  elif lrdm_timeout="$(benchmark_curl_timeout 2)" \
+  elif lrdm_timeout="$(speed_probe_curl_timeout 2)" \
     && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$GITHUB_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
     :
   else
@@ -321,27 +322,27 @@ load_release_download_manifest() {
   lrdm_expected_header="$(printf 'penguin-release-download-manifest\t1\t%s' "$lrdm_tag")"
   [ "$(sed -n '1p' "$lrdm_manifest")" = "$lrdm_expected_header" ] || return 1
 
-  BENCHMARK_SMALL_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $3; exit }' "$lrdm_manifest")"
-  BENCHMARK_SMALL_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $4; exit }' "$lrdm_manifest")"
-  BENCHMARK_SMALL_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $5; exit }' "$lrdm_manifest")"
-  BENCHMARK_LARGE_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $3; exit }' "$lrdm_manifest")"
-  BENCHMARK_LARGE_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $4; exit }' "$lrdm_manifest")"
-  BENCHMARK_LARGE_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $5; exit }' "$lrdm_manifest")"
-  BENCHMARK_ASSET_SIZE="$(awk -F '\t' -v asset="$ASSET" '$1 == "asset" && $2 == asset { print $3; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_SMALL_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $3; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_SMALL_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $4; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_SMALL_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $5; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $3; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $4; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $5; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_ASSET_SIZE="$(awk -F '\t' -v asset="$ASSET" '$1 == "asset" && $2 == asset { print $3; exit }' "$lrdm_manifest")"
 
-  for lrdm_file in "$BENCHMARK_SMALL_PROBE" "$BENCHMARK_LARGE_PROBE"; do
+  for lrdm_file in "$SPEED_PROBE_SMALL_PROBE" "$SPEED_PROBE_LARGE_PROBE"; do
     case "$lrdm_file" in
       *[!A-Za-z0-9._+-]* | *..* | '') return 1 ;;
     esac
   done
-  is_positive_integer "$BENCHMARK_SMALL_SIZE" || return 1
-  is_positive_integer "$BENCHMARK_LARGE_SIZE" || return 1
-  is_positive_integer "$BENCHMARK_ASSET_SIZE" || return 1
-  case "$BENCHMARK_SMALL_HASH:$BENCHMARK_LARGE_HASH" in
+  is_positive_integer "$SPEED_PROBE_SMALL_SIZE" || return 1
+  is_positive_integer "$SPEED_PROBE_LARGE_SIZE" || return 1
+  is_positive_integer "$SPEED_PROBE_ASSET_SIZE" || return 1
+  case "$SPEED_PROBE_SMALL_HASH:$SPEED_PROBE_LARGE_HASH" in
     *[!0-9a-f:]* | *::* | :* | *:) return 1 ;;
   esac
-  [ "${#BENCHMARK_SMALL_HASH}" -eq 64 ] || return 1
-  [ "${#BENCHMARK_LARGE_HASH}" -eq 64 ] || return 1
+  [ "${#SPEED_PROBE_SMALL_HASH}" -eq 64 ] || return 1
+  [ "${#SPEED_PROBE_LARGE_HASH}" -eq 64 ] || return 1
   return 0
 }
 
@@ -352,10 +353,11 @@ probe_download_source() {
   pds_size="$4"
   pds_hash="$5"
   pds_metrics="$6"
+  pds_timeout_cap="${7:-2}"
   pds_body="$TMP/probe-$pds_label-$pds_file"
   pds_write="$pds_metrics.tmp"
   rm -f "$pds_body" "$pds_metrics" "$pds_write"
-  pds_timeout="$(benchmark_curl_timeout 2)" || {
+  pds_timeout="$(speed_probe_curl_timeout "$pds_timeout_cap")" || {
     printf '%s\n' "fail" > "$pds_metrics"
     return 0
   }
@@ -384,9 +386,9 @@ run_probe_pair() {
   rpp_hash="$3"
   OSS_PROBE_METRICS="$TMP/probe-oss-$rpp_file.metrics"
   GITHUB_PROBE_METRICS="$TMP/probe-github-$rpp_file.metrics"
-  probe_download_source oss "$OSS_BENCHMARK_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$OSS_PROBE_METRICS" &
+  probe_download_source oss "$OSS_SPEED_PROBE_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$OSS_PROBE_METRICS" &
   rpp_oss_pid=$!
-  probe_download_source github "$GITHUB_BENCHMARK_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$GITHUB_PROBE_METRICS" &
+  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$GITHUB_PROBE_METRICS" &
   rpp_github_pid=$!
   wait "$rpp_oss_pid" 2>/dev/null || :
   wait "$rpp_github_pid" 2>/dev/null || :
@@ -401,12 +403,9 @@ probe_status() {
   fi
 }
 
-select_fast_source_from_metrics() {
-  sfm_oss_metrics="$1"
-  sfm_github_metrics="$2"
-  sfm_probe_size="$3"
-  sfm_asset_size="$4"
-  awk -v probe="$sfm_probe_size" -v asset="$sfm_asset_size" '
+select_speed_probe_source_from_metrics() {
+  sfm_github_metrics="$1"
+  awk -v github_min="$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" '
     function read_metrics(path, out, line, fields) {
       if ((getline line < path) <= 0) return 0
       close(path)
@@ -414,51 +413,42 @@ select_fast_source_from_metrics() {
       if (fields[1] != "ok") return 0
       out["start"] = fields[2] + 0
       out["total"] = fields[3] + 0
+      out["speed"] = fields[4] + 0
       return 1
     }
     BEGIN {
-      oss_ok = read_metrics(ARGV[1], oss)
-      github_ok = read_metrics(ARGV[2], github)
-      ARGV[1] = ""; ARGV[2] = ""
-      if (github_ok && !oss_ok) { print "github"; exit }
-      if (oss_ok && !github_ok) { print "oss"; exit }
-      if (!oss_ok && !github_ok) { print "oss"; exit }
-      oss_body = oss["total"] - oss["start"]
-      github_body = github["total"] - github["start"]
-      if (oss_body < 0.001) oss_body = 0.001
-      if (github_body < 0.001) github_body = 0.001
-      oss_est = oss["start"] + asset / (probe / oss_body)
-      github_est = github["start"] + asset / (probe / github_body)
-      if (github_est < oss_est) print "github"
-      else print "oss"
+      github_ok = read_metrics(ARGV[1], github)
+      ARGV[1] = ""
+      if (github_ok && github["speed"] >= github_min) { print "github"; exit }
+      print "oss"
     }
-  ' "$sfm_oss_metrics" "$sfm_github_metrics"
+  ' "$sfm_github_metrics"
 }
 
-benchmark_release_sources() {
+speed_probe_release_sources() {
   brs_tag="$1"
-  BENCHMARK_BASE_URL=""
-  BENCHMARK_FALLBACK_BASE_URL=""
-  OSS_BENCHMARK_BASE_URL="$OSS_RELEASE_ROOT/$brs_tag"
-  GITHUB_BENCHMARK_BASE_URL="$GITHUB_RELEASE_ROOT/$brs_tag"
-  BENCHMARK_STARTED_AT="$(benchmark_now_seconds)"
+  SPEED_PROBE_BASE_URL=""
+  SPEED_PROBE_FALLBACK_BASE_URL=""
+  OSS_SPEED_PROBE_BASE_URL="$OSS_RELEASE_ROOT/$brs_tag"
+  GITHUB_SPEED_PROBE_BASE_URL="$GITHUB_RELEASE_ROOT/$brs_tag"
+  SPEED_PROBE_STARTED_AT="$(speed_probe_now_seconds)"
 
   load_release_download_manifest "$brs_tag" || return 1
   echo "Testing OSS mirror and GitHub download sources ..."
 
-  run_probe_pair "$BENCHMARK_SMALL_PROBE" "$BENCHMARK_SMALL_SIZE" "$BENCHMARK_SMALL_HASH"
+  run_probe_pair "$SPEED_PROBE_SMALL_PROBE" "$SPEED_PROBE_SMALL_SIZE" "$SPEED_PROBE_SMALL_HASH"
   brs_oss_small="$(probe_status "$OSS_PROBE_METRICS")"
   brs_github_small="$(probe_status "$GITHUB_PROBE_METRICS")"
 
   if [ "$brs_oss_small" != "ok" ] && [ "$brs_github_small" = "ok" ]; then
-    BENCHMARK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
-    BENCHMARK_FALLBACK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
+    SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
     echo "Selected GitHub (OSS mirror probe unavailable)."
     return 0
   fi
   if [ "$brs_oss_small" = "ok" ] && [ "$brs_github_small" != "ok" ]; then
-    BENCHMARK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
-    BENCHMARK_FALLBACK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
     echo "Selected OSS mirror (GitHub probe unavailable)."
     return 0
   fi
@@ -466,23 +456,26 @@ benchmark_release_sources() {
     return 1
   fi
 
-  if [ "$BENCHMARK_ASSET_SIZE" -lt 33554432 ]; then
-    BENCHMARK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
-    BENCHMARK_FALLBACK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
+  if [ "$SPEED_PROBE_ASSET_SIZE" -lt 33554432 ]; then
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
     echo "Selected OSS mirror (download source test did not need throughput probing)."
     return 0
   fi
 
-  run_probe_pair "$BENCHMARK_LARGE_PROBE" "$BENCHMARK_LARGE_SIZE" "$BENCHMARK_LARGE_HASH"
-  brs_choice="$(select_fast_source_from_metrics "$OSS_PROBE_METRICS" "$GITHUB_PROBE_METRICS" "$BENCHMARK_LARGE_SIZE" "$BENCHMARK_ASSET_SIZE")"
+  GITHUB_PROBE_METRICS="$TMP/probe-github-$SPEED_PROBE_LARGE_PROBE.metrics"
+  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$GITHUB_PROBE_METRICS" 5
+  brs_choice="$(select_speed_probe_source_from_metrics "$GITHUB_PROBE_METRICS")"
   if [ "$brs_choice" = "github" ]; then
-    BENCHMARK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
-    BENCHMARK_FALLBACK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
-    echo "Selected GitHub (shorter estimated download time)."
+    SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    echo "Selected GitHub (meets minimum download speed)."
+  elif [ "$brs_choice" = "oss" ]; then
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    echo "Selected OSS mirror (GitHub did not meet minimum download speed)."
   else
-    BENCHMARK_BASE_URL="$OSS_BENCHMARK_BASE_URL"
-    BENCHMARK_FALLBACK_BASE_URL="$GITHUB_BENCHMARK_BASE_URL"
-    echo "Selected OSS mirror (shorter or equal estimated download time)."
+    return 1
   fi
   return 0
 }
@@ -588,10 +581,10 @@ else
       if [ "$SOURCE_MODE" = "auto" ] && [ -z "$FALLBACK_BASE_URL" ]; then
         FALLBACK_BASE_URL="$GITHUB_RELEASE_ROOT/$SELECTED_TAG"
       fi
-      if [ "$SOURCE_MODE" = "auto" ] && [ "$DOWNLOAD_BENCHMARK" = "1" ] && [ -z "$DOWNLOAD_BASE_URL" ]; then
-        if benchmark_release_sources "$SELECTED_TAG"; then
-          BASE_URL="$BENCHMARK_BASE_URL"
-          FALLBACK_BASE_URL="$BENCHMARK_FALLBACK_BASE_URL"
+      if [ "$SOURCE_MODE" = "auto" ] && [ "$DOWNLOAD_SPEED_PROBE" = "1" ] && [ -z "$DOWNLOAD_BASE_URL" ]; then
+        if speed_probe_release_sources "$SELECTED_TAG"; then
+          BASE_URL="$SPEED_PROBE_BASE_URL"
+          FALLBACK_BASE_URL="$SPEED_PROBE_FALLBACK_BASE_URL"
         else
           echo "Download source test was inconclusive; using OSS with same-version GitHub fallback."
         fi

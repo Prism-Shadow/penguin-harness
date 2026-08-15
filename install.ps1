@@ -8,7 +8,7 @@
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
-#   $env:PENGUIN_DOWNLOAD_BENCHMARK = "1" enable same-version OSS/GitHub probe timing in auto mode
+#   $env:PENGUIN_DOWNLOAD_SPEED_PROBE = "1" enable same-version OSS/GitHub probe timing in auto mode
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
 #   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." fallback for PENGUIN_DOWNLOAD_BASE_URL
 #
@@ -43,7 +43,8 @@ $OssReleaseRoot = "$OssOrigin/releases"
 $GitHubReleaseRoot = "$Repo/releases/download"
 $GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
-$BenchmarkTotalTimeoutSeconds = 5
+$SpeedProbeTotalTimeoutSeconds = 8
+$SpeedProbeGitHubMinBytesPerSecond = 262144
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copy sealed inside the Windows bundle.
@@ -101,7 +102,7 @@ function Try-DownloadFile([string]$Uri, [string]$OutFile, [int]$TimeoutSec) {
   }
 }
 
-function Get-BenchmarkTimeoutSec([DateTime]$Deadline, [int]$MaxSec) {
+function Get-SpeedProbeTimeoutSec([DateTime]$Deadline, [int]$MaxSec) {
   $Remaining = [int][Math]::Ceiling(($Deadline - [DateTime]::UtcNow).TotalSeconds)
   if ($Remaining -le 0) { return 0 }
   return [Math]::Min($MaxSec, $Remaining)
@@ -160,9 +161,9 @@ function Test-SafeReleaseAssetName([string]$Value) {
 
 function Read-ReleaseDownloadManifest([string]$Tag, [string]$ManifestPath, [DateTime]$Deadline) {
   Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
-  $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+  $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline 2
   if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$OssReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
-    $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+    $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline 2
     if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$GitHubReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
       return $null
     }
@@ -210,11 +211,12 @@ function Invoke-ProbeDownload(
   [object]$Probe,
   [string]$Tmp,
   [string]$Label,
-  [DateTime]$Deadline
+  [DateTime]$Deadline,
+  [int]$MaxTimeoutSec = 2
 ) {
   $ProbePath = Join-Path $Tmp "probe-$Label-$($Probe.Name)"
   Remove-Item -LiteralPath $ProbePath -Force -ErrorAction SilentlyContinue
-  $TimeoutSec = Get-BenchmarkTimeoutSec $Deadline 2
+  $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline $MaxTimeoutSec
   if ($TimeoutSec -le 0) {
     return [PSCustomObject]@{ Ok = $false; Seconds = 0.0 }
   }
@@ -241,26 +243,19 @@ function Invoke-ProbeDownload(
   [PSCustomObject]@{ Ok = $true; Seconds = $Seconds }
 }
 
-function Select-FastBenchmarkSource(
-  [object]$OssProbe,
+function Select-SpeedProbeSource(
   [object]$GitHubProbe,
-  [Int64]$ProbeSize,
-  [Int64]$AssetSize
+  [Int64]$ProbeSize
 ) {
-  if ($GitHubProbe.Ok -and -not $OssProbe.Ok) { return "github" }
-  if ($OssProbe.Ok -and -not $GitHubProbe.Ok) { return "oss" }
-  if (-not $OssProbe.Ok -and -not $GitHubProbe.Ok) { return "" }
-
-  $OssEstimate = [double]$AssetSize / ([double]$ProbeSize / [Math]::Max([double]$OssProbe.Seconds, 0.001))
-  $GitHubEstimate = [double]$AssetSize / ([double]$ProbeSize / [Math]::Max([double]$GitHubProbe.Seconds, 0.001))
-  if ($GitHubEstimate -lt $OssEstimate) {
-    return "github"
+  if ($GitHubProbe.Ok) {
+    $GitHubBytesPerSecond = [double]$ProbeSize / [Math]::Max([double]$GitHubProbe.Seconds, 0.001)
+    if ($GitHubBytesPerSecond -ge $SpeedProbeGitHubMinBytesPerSecond) { return "github" }
   }
   return "oss"
 }
 
-function Select-BenchmarkDownloadSources([string]$Tag, [string]$Tmp) {
-  $Deadline = [DateTime]::UtcNow.AddSeconds($BenchmarkTotalTimeoutSeconds)
+function Select-SpeedProbeDownloadSources([string]$Tag, [string]$Tmp) {
+  $Deadline = [DateTime]::UtcNow.AddSeconds($SpeedProbeTotalTimeoutSeconds)
   $Manifest = Read-ReleaseDownloadManifest $Tag (Join-Path $Tmp "release-download-manifest.tsv") $Deadline
   if (-not $Manifest) { return $null }
 
@@ -285,15 +280,14 @@ function Select-BenchmarkDownloadSources([string]$Tag, [string]$Tmp) {
     return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
   }
 
-  $OssLarge = Invoke-ProbeDownload $OssBase $Manifest.LargeProbe $Tmp "oss-large" $Deadline
-  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline
-  $Choice = Select-FastBenchmarkSource $OssLarge $GitHubLarge $Manifest.LargeProbe.Size $Manifest.AssetSize
+  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline 5
+  $Choice = Select-SpeedProbeSource $GitHubLarge $Manifest.LargeProbe.Size
   if ($Choice -eq "github") {
-    Write-Host "Selected GitHub (shorter estimated download time)."
+    Write-Host "Selected GitHub (meets minimum download speed)."
     return [PSCustomObject]@{ BaseUrl = $GitHubBase; FallbackBaseUrl = $OssBase }
   }
   if ($Choice -eq "oss") {
-    Write-Host "Selected OSS mirror (shorter or equal estimated download time)."
+    Write-Host "Selected OSS mirror (GitHub did not meet minimum download speed)."
     return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
   }
   return $null
@@ -345,8 +339,8 @@ $SourceMode = if ($env:PENGUIN_DOWNLOAD_SOURCE) {
 } else {
   "auto"
 }
-$DownloadBenchmark = if ($env:PENGUIN_DOWNLOAD_BENCHMARK) {
-  $env:PENGUIN_DOWNLOAD_BENCHMARK
+$DownloadSpeedProbe = if ($env:PENGUIN_DOWNLOAD_SPEED_PROBE) {
+  $env:PENGUIN_DOWNLOAD_SPEED_PROBE
 } else {
   "0"
 }
@@ -366,8 +360,8 @@ if ($Version -and -not (Test-ReleaseTag $Version)) {
 if ($SourceMode -notin @("auto", "oss", "github")) {
   Fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github"
 }
-if ($DownloadBenchmark -notin @("0", "1")) {
-  Fail "PENGUIN_DOWNLOAD_BENCHMARK must be 0 or 1"
+if ($DownloadSpeedProbe -notin @("0", "1")) {
+  Fail "PENGUIN_DOWNLOAD_SPEED_PROBE must be 0 or 1"
 }
 $ResolvedReleaseVersion = if ($Version) {
   $Version
@@ -441,11 +435,11 @@ try {
         if ($SourceMode -eq "auto" -and -not $FallbackBaseUrl) {
           $FallbackBaseUrl = "$GitHubReleaseRoot/$SelectedTag"
         }
-        if ($SourceMode -eq "auto" -and $DownloadBenchmark -eq "1" -and -not $DownloadBaseUrl) {
-          $BenchmarkSources = Select-BenchmarkDownloadSources $SelectedTag $Tmp
-          if ($BenchmarkSources) {
-            $BaseUrl = $BenchmarkSources.BaseUrl
-            $FallbackBaseUrl = $BenchmarkSources.FallbackBaseUrl
+        if ($SourceMode -eq "auto" -and $DownloadSpeedProbe -eq "1" -and -not $DownloadBaseUrl) {
+          $SpeedProbeSources = Select-SpeedProbeDownloadSources $SelectedTag $Tmp
+          if ($SpeedProbeSources) {
+            $BaseUrl = $SpeedProbeSources.BaseUrl
+            $FallbackBaseUrl = $SpeedProbeSources.FallbackBaseUrl
           } else {
             Write-Host "Download source test was inconclusive; using OSS with same-version GitHub fallback."
           }

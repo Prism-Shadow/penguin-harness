@@ -325,7 +325,7 @@ dd if=/dev/zero of="$PROBE1M" bs=1048576 count=1 2>/dev/null
 PROBE64_HASH="$(sha256sum "$PROBE64" | awk '{ print $1 }')"
 PROBE1M_HASH="$(sha256sum "$PROBE1M" | awk '{ print $1 }')"
 HOST_ASSET_HASH="$(sha256sum "$ARTIFACT_DIR/$HOST_ASSET" | awk '{ print $1 }')"
-BENCHMARK_ASSET_SIZE=104857600
+SPEED_PROBE_ASSET_SIZE=104857600
 
 cat > "$STUB_BIN/curl" <<'EOF'
 #!/bin/sh
@@ -356,26 +356,26 @@ case "$MODE:$base" in
   canonical:latest.json | outer-sha-mismatch:latest.json | inner-sha-mismatch:latest.json | forwarder-oss:latest.json | forced-oss-payload:latest.json)
     printf '%s\n' '{"schemaVersion":1,"tag":"v0.0.0-test","releaseBaseUrl":"https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"}' > "$output"
     ;;
-  benchmark-missing-manifest:release-download-manifest.tsv) exit 22 ;;
-  benchmark-github-fast:release-download-manifest.tsv | benchmark-github-slightly-fast:release-download-manifest.tsv | benchmark-missing-manifest-github:release-download-manifest.tsv)
+  speed-probe-missing-manifest:release-download-manifest.tsv) exit 22 ;;
+  speed-probe-github-fast:release-download-manifest.tsv | speed-probe-github-below-threshold:release-download-manifest.tsv | speed-probe-missing-manifest-github:release-download-manifest.tsv)
     {
       printf 'penguin-release-download-manifest\t1\tv0.0.0-test\n'
       printf 'probe\tsmall\tprobe-64k.bin\t65536\t%s\n' "$PROBE64_HASH"
       printf 'probe\tlarge\tprobe-1m.bin\t1048576\t%s\n' "$PROBE1M_HASH"
-      printf 'asset\t%s\t%s\t%s\n' "$HOST_ASSET" "$BENCHMARK_ASSET_SIZE" "$HOST_ASSET_HASH"
+      printf 'asset\t%s\t%s\t%s\n' "$HOST_ASSET" "$SPEED_PROBE_ASSET_SIZE" "$HOST_ASSET_HASH"
     } > "$output"
     ;;
-  benchmark-github-fast:probe-64k.bin | benchmark-github-slightly-fast:probe-64k.bin) cp "$PROBE64" "$output" ;;
-  benchmark-github-fast:probe-1m.bin | benchmark-github-slightly-fast:probe-1m.bin) cp "$PROBE1M" "$output" ;;
-  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | benchmark-github-fast:install.sh | benchmark-github-slightly-fast:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
+  speed-probe-github-fast:probe-64k.bin | speed-probe-github-below-threshold:probe-64k.bin) cp "$PROBE64" "$output" ;;
+  speed-probe-github-fast:probe-1m.bin | speed-probe-github-below-threshold:probe-1m.bin) cp "$PROBE1M" "$output" ;;
+  forwarder-oss:install.sh | forced-oss-payload:install.sh | forwarder-auto-github:install.sh | forwarder-invalid-metadata:install.sh | canonical:install.sh | speed-probe-github-fast:install.sh | speed-probe-github-below-threshold:install.sh) cp "$ROOT_DIR/install.sh" "$output" ;;
   404:penguin-*) exit 22 ;;
   network:penguin-*) exit 7 ;;
   outer-sha-mismatch:penguin-*.sha256) printf '%064d  %s\n' 0 "${base%.sha256}" > "$output" ;;
   outer-sha-mismatch:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   inner-sha-mismatch:penguin-*.sha256) cp "$BAD_BUNDLE.sha256" "$output" ;;
   inner-sha-mismatch:penguin-*) cp "$BAD_BUNDLE" "$output" ;;
-  benchmark-github-fast:penguin-*.sha256 | benchmark-github-slightly-fast:penguin-*.sha256 | benchmark-missing-manifest:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
-  benchmark-github-fast:penguin-* | benchmark-github-slightly-fast:penguin-* | benchmark-missing-manifest:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  speed-probe-github-fast:penguin-*.sha256 | speed-probe-github-below-threshold:penguin-*.sha256 | speed-probe-missing-manifest:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
+  speed-probe-github-fast:penguin-* | speed-probe-github-below-threshold:penguin-* | speed-probe-missing-manifest:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
   primary-network:penguin-*) cp "$ARTIFACT_DIR/$base" "$output" ;;
   forced-oss-payload:penguin-*.sha256) cp "$ARTIFACT_DIR/$base" "$output" ;;
@@ -388,17 +388,17 @@ case "$MODE:$base" in
 esac
 if [ -n "$writeout" ]; then
   case "$MODE:$url" in
-    benchmark-github-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
-    benchmark-github-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.100 2.100 499321' ;;
-    benchmark-github-slightly-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.115 9118052' ;;
-    benchmark-github-slightly-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
-    benchmark-github-fast:*) printf '%s' '0.020 0.060 1092266' ;;
+    speed-probe-github-fast:https://github.com/*/probe-1m.bin) printf '%s' '0.020 0.120 8738133' ;;
+    speed-probe-github-fast:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.100 2.100 499321' ;;
+    speed-probe-github-below-threshold:https://github.com/*/probe-1m.bin) printf '%s' '0.020 4.287 245760' ;;
+    speed-probe-github-below-threshold:*aliyuncs.com*/probe-1m.bin) printf '%s' '0.020 5.140 204800' ;;
+    speed-probe-github-fast:*) printf '%s' '0.020 0.060 1092266' ;;
     *) printf '%s' '0.010 0.020 3276800' ;;
   esac
 fi
 EOF
 chmod +x "$STUB_BIN/curl"
-export ARTIFACT_DIR BAD_BUNDLE LEGACY_ARCHIVE ROOT_DIR PROBE64 PROBE1M PROBE64_HASH PROBE1M_HASH HOST_ASSET HOST_ASSET_HASH BENCHMARK_ASSET_SIZE
+export ARTIFACT_DIR BAD_BUNDLE LEGACY_ARCHIVE ROOT_DIR PROBE64 PROBE1M PROBE64_HASH PROBE1M_HASH HOST_ASSET HOST_ASSET_HASH SPEED_PROBE_ASSET_SIZE
 
 run_online_case() {
   name="$1"
@@ -410,7 +410,7 @@ run_online_case() {
   download_fallback_base_url="${7:-}"
   installer_path="${8:-$ROOT_DIR/install.sh}"
   source_mode="${9:-auto}"
-  benchmark="${10:-0}"
+  speed_probe="${10:-0}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
@@ -420,7 +420,7 @@ run_online_case() {
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
     PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
-    PENGUIN_DOWNLOAD_SOURCE="$source_mode" PENGUIN_DOWNLOAD_BENCHMARK="$benchmark" \
+    PENGUIN_DOWNLOAD_SOURCE="$source_mode" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
     sh "$installer_path" >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
@@ -455,18 +455,18 @@ run_online_case stamped-fallback primary-network "" success 3 "" "" "$STAMPED_IN
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/stamped-fallback.log" \
   || fail_test "stamped installer did not fall back to the same GitHub version"
 
-run_online_case benchmark-github-fast benchmark-github-fast "" success 7 "" "" "$STAMPED_INSTALLER" auto 1
-[ "$(grep -c "/$HOST_ASSET\$" "$WORK_DIR/benchmark-github-fast.log" | tr -d ' ')" -eq 1 ] \
-  || fail_test "benchmark selected more than one primary bundle download"
-grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/benchmark-github-fast.log" \
-  || fail_test "benchmark did not select the faster GitHub source"
-run_online_case benchmark-github-slightly-fast benchmark-github-slightly-fast "" success 7 "" "" "$STAMPED_INSTALLER" auto 1
-grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/benchmark-github-slightly-fast.log" \
-  || fail_test "benchmark did not select the shorter estimated GitHub source"
+run_online_case speed-probe-github-fast speed-probe-github-fast "" success 6 "" "" "$STAMPED_INSTALLER" auto 1
+[ "$(grep -c "/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-fast.log" | tr -d ' ')" -eq 1 ] \
+  || fail_test "speed probe selected more than one primary bundle download"
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-fast.log" \
+  || fail_test "speed probe did not select GitHub when it met the minimum speed"
+run_online_case speed-probe-github-below-threshold speed-probe-github-below-threshold "" success 6 "" "" "$STAMPED_INSTALLER" auto 1
+grep -q "penguin-harness-releases.oss-cn-beijing.aliyuncs.com/.*/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-below-threshold.log" \
+  || fail_test "speed probe did not keep OSS when GitHub was below the minimum speed"
 
-run_online_case benchmark-missing-manifest benchmark-missing-manifest "" success 4 "" "" "$STAMPED_INSTALLER" auto 1
-grep -q "Download source test was inconclusive" "$WORK_DIR/benchmark-missing-manifest.output" \
-  || fail_test "missing benchmark manifest did not fall back to the compatible source policy"
+run_online_case speed-probe-missing-manifest speed-probe-missing-manifest "" success 4 "" "" "$STAMPED_INSTALLER" auto 1
+grep -q "Download source test was inconclusive" "$WORK_DIR/speed-probe-missing-manifest.output" \
+  || fail_test "missing speed probe manifest did not fall back to the compatible source policy"
 
 run_online_case stamped-github canonical "" success 2 "" "" "$STAMPED_INSTALLER" github
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/stamped-github.log" \
@@ -511,7 +511,7 @@ run_forwarder_case() {
   source="${4:-auto}"
   version="${5:-}"
   expected="${6:-success}"
-  benchmark="${7:-0}"
+  speed_probe="${7:-0}"
   CASE_LOG="$WORK_DIR/$name.log"
   CASE_OUTPUT="$WORK_DIR/$name.output"
   CASE_INSTALL="$WORK_DIR/$name-install"
@@ -526,7 +526,7 @@ run_forwarder_case() {
     HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
     PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
     PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
-    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" PENGUIN_DOWNLOAD_BENCHMARK="$benchmark" \
+    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
     sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
   status=$?
   set -e
@@ -571,11 +571,11 @@ run_forwarder_case forwarder-pinned canonical 3 auto v0.0.0-test
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/$HOST_ASSET" ] \
   || fail_test "pinned installer did not keep the selected release version"
 
-run_forwarder_case forwarder-benchmark-handoff benchmark-github-fast 8 auto v0.0.0-test success 1
-[ "$(sed -n '1p' "$WORK_DIR/forwarder-benchmark-handoff.log")" = \
+run_forwarder_case forwarder-speed-probe-handoff speed-probe-github-fast 8 auto v0.0.0-test success 1
+[ "$(sed -n '1p' "$WORK_DIR/forwarder-speed-probe-handoff.log")" = \
   "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test/install.sh" ] \
-  || fail_test "benchmark handoff forwarder did not fetch the versioned OSS installer"
-grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/forwarder-benchmark-handoff.log" \
-  || fail_test "forwarder locked the payload source instead of letting the installer benchmark"
+  || fail_test "speed probe handoff forwarder did not fetch the versioned OSS installer"
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/forwarder-speed-probe-handoff.log" \
+  || fail_test "forwarder locked the payload source instead of letting the installer speed probe"
 
 echo "Installer bundle, offline, rollback and online tests passed."
