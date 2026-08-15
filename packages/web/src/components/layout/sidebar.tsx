@@ -832,6 +832,10 @@ export function Sidebar({
         <div className="-mx-2 mt-3 flex items-center justify-between border-t border-gray-200 px-3 pt-2 dark:border-gray-800">
           <span className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             {S.chat.sessionList}
+            {/* Hot-update marker: pushed over HTTP to a running runtime, no restart. */}
+            <span className="ml-2 font-medium normal-case text-emerald-600 dark:text-emerald-400">
+              ⚡热更新已到达
+            </span>
           </span>
           <GroupModeToggle value={groupMode} onChange={setGroupMode} />
         </div>

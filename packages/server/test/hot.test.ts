@@ -6,6 +6,7 @@
  * platform module loading, and the demo UI panel channel.
  */
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -425,6 +426,73 @@ describe("hot platform", () => {
     expect((await api.post("/api/hot/agents", { id: "x", module: "../etc/passwd" })).status).toBe(
       400,
     );
+  });
+});
+
+describe("hot persistence across a runtime restart", () => {
+  it("a pushed platform + web resume after a restart (atomic manifest commit)", async () => {
+    const root = await makeTempRoot();
+    try {
+      const bundleSrc = await fs.readFile(path.join(HOT_ASSETS, "platform-v4.bundle.mjs"), "utf8");
+      const bundleFile = path.join(root, "v4.mjs");
+      await fs.writeFile(bundleFile, bundleSrc);
+      const b64 = (s: string) => Buffer.from(s).toString("base64");
+
+      // Runtime #1: push a platform bundle (v1→v2→v4) and an inline web dist.
+      const h1 = new HotHost(root);
+      await h1.upgradeTo({ impl: "v2" }); // v4's migration chain starts at 2
+      const up = await h1.upgradeTo({ bundlePath: bundleFile });
+      expect(up.status).toBe("ok");
+      await h1.installInlineWebDist({ "index.html": b64("<html>persisted-web</html>") });
+      h1.dispose();
+
+      // Runtime #2 on the SAME data root: a fresh process. It must resume the
+      // committed platform and web, not fall back to the packaged v1.
+      const h2 = new HotHost(root);
+      const inst = await h2.ensure();
+      expect(h2.currentImplId()).toBe("v4-bundle");
+      expect((inst.api.info() as { impl: string }).impl).toBe("v4-bundle");
+      expect(h2.webDistDir).not.toBeNull();
+      expect(existsSync(path.join(h2.webDistDir!, "index.html"))).toBe(true);
+      h2.dispose();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("a corrupt/missing persisted platform falls back to the packaged default (never bricks)", async () => {
+    const root = await makeTempRoot();
+    try {
+      await fs.mkdir(path.join(root, "hot"), { recursive: true });
+      await fs.writeFile(
+        path.join(root, "hot", "current.json"),
+        JSON.stringify({
+          platform: { bundle: "store/platform/gone.mjs", park: "store/platform/gone.park.json" },
+        }),
+      );
+      const h = new HotHost(root);
+      await h.ensure();
+      expect(h.currentImplId()).toBe("v1"); // resumed nothing; packaged default
+      h.dispose();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it("built-in impl upgrades are not persisted (only real bundles are)", async () => {
+    const root = await makeTempRoot();
+    try {
+      const h1 = new HotHost(root);
+      await h1.upgradeTo({ impl: "v2" });
+      h1.dispose();
+      // No bundle was committed, so a restart boots the packaged v1.
+      const h2 = new HotHost(root);
+      await h2.ensure();
+      expect(h2.currentImplId()).toBe("v1");
+      h2.dispose();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
   });
 });
 

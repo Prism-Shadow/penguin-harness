@@ -84,11 +84,7 @@ export function LoginPage() {
       <div className="anim-rise relative w-full max-w-sm">
         {/* Brand penguin logo (part of the form area, not background graphics, so it doesn't clash with the trace animation) */}
         <PenguinLogo className="mx-auto mb-3 h-16 w-16 rounded-2xl" />
-        <h1 className="mb-2 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
-        {/* Hot-update marker: pushed over HTTP to a running runtime, no restart. */}
-        <p className="mb-6 text-center text-sm font-medium text-emerald-600 dark:text-emerald-400">
-          ⚡ hot-updated over HTTP
-        </p>
+        <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <form

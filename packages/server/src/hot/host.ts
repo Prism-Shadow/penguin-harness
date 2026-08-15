@@ -41,7 +41,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import type { AnyIface, AnyImpl, Instance } from "@prismshadow/penguin-core/kernel";
+import type { AnyIface, AnyImpl, Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { PlatformApi } from "./platform-v1.js";
@@ -135,6 +135,18 @@ interface LoadResult {
   warnings: string[];
   compile: CompileMode;
   source: GitSource | null;
+  /** The single-file bundle on disk (for persistence); absent for built-in impls. */
+  bundleFile?: string;
+}
+
+/**
+ * The committed on-disk state: a runtime restart boots exactly this. The whole
+ * promotion is one atomic rename of current.json — so a crash mid-write leaves
+ * the previous committed state intact. Paths are relative to hotDir.
+ */
+interface Manifest {
+  platform?: { bundle: string; park: string };
+  web?: { dir: string };
 }
 
 export class HotHost {
@@ -150,6 +162,9 @@ export class HotHost {
   private instance: Instance<PlatformApi> | null = null;
   private implId = platformV1.id;
   private readonly hotDir: string;
+  private readonly storeDir: string;
+  private readonly manifestPath: string;
+  private restored = false;
   private readonly gitBin: string;
   private readonly compilerOption: string | null | undefined;
   private compilerMemo: Compiler | null | undefined;
@@ -161,8 +176,14 @@ export class HotHost {
     options: HotHostOptions = {},
   ) {
     this.hotDir = path.join(root, "hot");
+    this.storeDir = path.join(this.hotDir, "store");
+    this.manifestPath = path.join(this.hotDir, "current.json");
     this.gitBin = options.gitBin ?? "git";
     this.compilerOption = options.compilerBin;
+  }
+
+  private warn(msg: string): void {
+    process.stderr.write(`[hot] ${msg}\n`);
   }
 
   currentImplId(): string {
@@ -185,18 +206,119 @@ export class HotHost {
     );
   }
 
-  /** Lazy first boot: platform v1 with a fresh document. */
+  /**
+   * Lazy first boot. Resumes the last committed platform + web from disk when
+   * present (a restart continues the pushed code and its parked state);
+   * otherwise boots the packaged platform v1 with a fresh document.
+   */
   async ensure(): Promise<Instance<PlatformApi>> {
     if (this.instance === null) {
-      const bundle = platformV1;
-      this.instance = (await boot(
-        bundle.impl,
-        bundle.iface,
-        initialDoc(bundle.iface, { motd: "hello from the penguin hot platform" }),
-        this.resources,
-      )) as Instance<PlatformApi>;
+      await this.restore();
+      if (this.instance === null) {
+        const bundle = platformV1;
+        this.instance = (await boot(
+          bundle.impl,
+          bundle.iface,
+          initialDoc(bundle.iface, { motd: "hello from the penguin hot platform" }),
+          this.resources,
+        )) as Instance<PlatformApi>;
+      }
     }
     return this.instance;
+  }
+
+  /**
+   * Resume from current.json (once). Sets webDistDir and boots the persisted
+   * platform bundle with its committed parked doc. Any failure (missing or
+   * corrupt artifact, incompatible bundle) is non-fatal: it warns and leaves
+   * the runtime to boot the packaged default — a bad persisted state must
+   * never brick the runtime.
+   */
+  private async restore(): Promise<void> {
+    if (this.restored) return;
+    this.restored = true;
+    let manifest: Manifest;
+    try {
+      manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
+    } catch {
+      return; // nothing committed yet
+    }
+    if (manifest.web?.dir !== undefined) {
+      const dir = path.join(this.hotDir, manifest.web.dir);
+      if (fs.existsSync(path.join(dir, "index.html"))) this.webDistDir = dir;
+      else this.warn(`persisted web dist missing (${manifest.web.dir}); using packaged assets`);
+    }
+    if (manifest.platform !== undefined) {
+      try {
+        const bundle = await this.importBundleFile(
+          path.join(this.hotDir, manifest.platform.bundle),
+        );
+        const doc = JSON.parse(
+          await fsp.readFile(path.join(this.hotDir, manifest.platform.park), "utf8"),
+        ) as Json;
+        this.instance = (await boot(
+          bundle.impl,
+          bundle.iface,
+          doc,
+          this.resources,
+        )) as Instance<PlatformApi>;
+        this.implId = bundle.id;
+      } catch (err) {
+        this.warn(
+          `persisted platform failed to restore; using the packaged default: ${errMsg(err)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Commit protocol: content-address the bundle + its committed parked doc
+   * into the store, then flip current.json atomically (write-temp + rename on
+   * the same filesystem). Called ONLY after the live boot already succeeded,
+   * so a restart can never resume a bundle that failed to boot. Best-effort:
+   * a read-only filesystem downgrades to in-memory-only (the live swap still
+   * happened) with a warning.
+   */
+  private async persistPlatform(bundleFile: string, doc: Json): Promise<void> {
+    try {
+      const content = await fsp.readFile(bundleFile);
+      const sha = sha1(content.toString("utf8")).slice(0, 16);
+      const dir = path.join(this.storeDir, "platform");
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.writeFile(path.join(dir, `${sha}.mjs`), content);
+      await fsp.writeFile(path.join(dir, `${sha}.park.json`), JSON.stringify(doc));
+      await this.commitManifest((m) => ({
+        ...m,
+        platform: { bundle: `store/platform/${sha}.mjs`, park: `store/platform/${sha}.park.json` },
+      }));
+    } catch (err) {
+      this.warn(`platform update not persisted (filesystem unavailable?): ${errMsg(err)}`);
+    }
+  }
+
+  private async persistWeb(distDir: string): Promise<void> {
+    try {
+      const rel = path.relative(this.hotDir, distDir).split(path.sep).join("/");
+      await this.commitManifest((m) => ({ ...m, web: { dir: rel } }));
+    } catch (err) {
+      this.warn(`web update not persisted (filesystem unavailable?): ${errMsg(err)}`);
+    }
+  }
+
+  /** Reads, updates, and atomically replaces current.json (the single commit point). */
+  private async commitManifest(update: (m: Manifest) => Manifest): Promise<void> {
+    await fsp.mkdir(this.hotDir, { recursive: true });
+    let current: Manifest = {};
+    try {
+      current = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
+    } catch {
+      // no manifest yet
+    }
+    const tmp = `${this.manifestPath}.${process.pid}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(update(current), null, 2));
+    // Atomic within the same directory/filesystem (libuv maps this to
+    // MoveFileEx REPLACE_EXISTING on Windows, rename(2) on POSIX).
+    await fsp.rename(tmp, this.manifestPath);
   }
 
   /**
@@ -257,6 +379,8 @@ export class HotHost {
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = loaded.bundle.id;
     await fsp.writeFile(parkPath, JSON.stringify(result.doc, null, 2));
+    // Commit AFTER the live boot succeeded: a restart resumes only validated code.
+    if (loaded.bundleFile !== undefined) await this.persistPlatform(loaded.bundleFile, result.doc);
     return {
       status: "ok",
       mode: result.mode,
@@ -281,6 +405,7 @@ export class HotHost {
         warnings: [],
         compile: "none",
         source: target.source ?? null,
+        bundleFile: target.bundlePath,
       };
     }
     return this.loadFromSource(target.repo, target.revision);
@@ -338,6 +463,7 @@ export class HotHost {
       warnings,
       compile,
       source: { repo, revision: exactSha ?? revision },
+      bundleFile: outfile,
     };
   }
 
@@ -470,7 +596,9 @@ export class HotHost {
   async writeInlineWebDist(files: Record<string, string>): Promise<string> {
     const hash = crypto.createHash("sha1");
     for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
-    const dir = path.join(this.hotDir, "web", hash.digest("hex").slice(0, 16));
+    // Under the store (content-addressed): the committed dir is persisted in
+    // place, so restore just points webDistDir back at it.
+    const dir = path.join(this.storeDir, "web", hash.digest("hex").slice(0, 16));
     await fsp.rm(dir, { recursive: true, force: true });
     for (const [rel, b64] of Object.entries(files)) {
       const target = path.resolve(dir, rel);
@@ -484,6 +612,20 @@ export class HotHost {
       throw new Error("web dist manifest has no index.html");
     }
     return dir;
+  }
+
+  /**
+   * Inline web push: materialize the manifest under the store, serve it, and
+   * commit it (so a restart resumes it). The commit is the same atomic
+   * manifest flip as the platform side.
+   */
+  async installInlineWebDist(
+    files: Record<string, string>,
+  ): Promise<{ dist: string; rev: string }> {
+    const dir = await this.writeInlineWebDist(files);
+    const info = this.setWebDist(dir);
+    await this.persistWeb(dir);
+    return info;
   }
 
   /** Points static hosting at a freshly pushed web dist; returns its content rev. */
@@ -555,6 +697,10 @@ function findPlatformEntry(dir: string): string {
 
 function sanitize(revision: string): string {
   return /^[0-9A-Za-z._-]+$/.test(revision) ? revision : sha1(revision).slice(0, 12);
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function sha1(content: string): string {
