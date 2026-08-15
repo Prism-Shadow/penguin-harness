@@ -37,14 +37,12 @@
     "start": "node --disable-warning=ExperimentalWarning dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "tsup",
-    "test:benchmark": "node ../../scripts/run-with-env.mjs PENGUIN_BENCHMARK=1 -- vitest run test/hot-benchmark.e2e.test.ts"
+    "build": "tsup"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-skills": "workspace:*",
-    "arktype": "^2.2.3",
     "dotenv": "^17.0.0",
     "fflate": "^0.8.3",
     "hono": "^4.12.34",
@@ -55,7 +53,6 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "esbuild": "^0.25.12",
     "tsup": "^8.3.0",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",
