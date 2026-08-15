@@ -10,24 +10,33 @@
  * completes, so a client never observes the stop-the-world window (it only
  * sees latency). Concurrent upgrade requests serialize on the same queue.
  *
- * Code arrives as BYTES over HTTP (an inline single-file platform bundle; a
- * web dist as ONE gzip artifact, or the equivalent { relPath: base64 } JSON
- * manifest) — never as a server-side path a remote client could not produce.
- * bundlePath/distPath remain as same-machine dev conveniences.
+ * ONE atomic version: platform = cli + platform code + web is a single
+ * indivisible unit, pushed together to POST /api/hmr/upgrade. The pushed
+ * bundle (inline ESM source, delivered as bytes over HTTP — never a
+ * server-side path a remote client could not produce) exports BOTH
+ * `hotPlatform` (this runtime's business unit) and `cli` (the function
+ * packages/cli's thin loader dynamically imports on every invocation — see
+ * hmr/manifest.ts's resolveCliBundlePath). The web dist rides along in the
+ * same request as a { relPath: base64 } manifest. There is no way to update
+ * platform, cli, or web independently: doUpgradeAll only commits after BOTH
+ * the platform boots successfully AND the web manifest validates — a failure
+ * in either leaves the previous committed version untouched.
  *
  * Web dist pushes are held in memory (a relPath → bytes map), not written to
  * disk file-by-file: a dist can be hundreds of small files, and syncing each
  * one separately serializes on the destination filesystem's per-file
  * overhead (observed as low as ~100KB/s writing 300 small files to a
  * Windows/Defender-scanned disk). The pushed bytes are persisted as ONE
- * artifact instead (see persistWebArtifact).
+ * artifact instead (see persistVersion).
  *
- * Persistence: artifacts are content-addressed under hmr/store/ and promoted
- * by ONE atomic rename of hmr/harness.json — committed only AFTER the live
- * in-memory boot succeeded, so a restart can never resume a bundle that
- * failed to boot. A restart resumes harness.json; any restore failure warns
- * and falls back to the packaged default (never bricks). The store keeps at
- * most STORE_KEEP platform bundles / web dists (current + one rollback).
+ * Persistence: artifacts are content-addressed under hmr/store/ and the whole
+ * version (platform + cli + web pointers) is promoted by ONE atomic rename of
+ * hmr/harness.json — committed only AFTER the live in-memory boot AND web
+ * install both succeeded, so a restart can never resume a version that failed
+ * to take effect. A restart resumes harness.json as one unit (see restore()):
+ * any failure — of any one of the three pieces — warns and falls back to the
+ * packaged default entirely (never a platform/web mismatch, never a brick).
+ * The store keeps at most STORE_KEEP versions (current + one rollback).
  *
  * Reload is strictly request-driven: nothing watches, nothing auto-triggers.
  */
@@ -40,6 +49,7 @@ import { pathToFileURL } from "node:url";
 import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
+import type { Manifest } from "./manifest.js";
 import type { PlatformApi } from "../platform/platform.js";
 import { packagedPlatform } from "../platform/platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
@@ -50,39 +60,34 @@ export interface PlatformBundle {
   impl: AnyImpl;
 }
 
-/** Optional provenance recorded with a pushed bundle (never executed here). */
+/** Optional provenance recorded with a pushed version (never executed here). */
 export interface GitSource {
   repo: string;
   revision: string;
 }
 
-export type UpgradeTarget = {
-  /** A prebuilt single-file JS bundle on this machine + optional provenance. */
-  bundlePath: string;
-  source?: GitSource;
-};
-
-export type UpgradeOutcome =
-  | { status: "ok"; mode: "silent" | "migrated"; impl: string; source: GitSource | null }
-  | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
-
 /**
- * The committed on-disk state (hmr/harness.json): a runtime restart boots
- * exactly this. The whole promotion is one atomic rename — a crash mid-write
- * leaves the previous committed state intact. Paths are relative to hotDir.
+ * One atomic push: the platform+cli bundle (inline ESM source) plus the web dist as
+ * a { relPath: base64 } manifest. Both travel in the SAME request — there is no
+ * partial-target upgrade.
  */
-interface Manifest {
-  platform?: { bundle: string; park: string };
-  /**
-   * `manifest` (current form): one gzip(JSON.stringify({ files })) artifact,
-   * restored straight into memory. `dir` (legacy): a plain on-disk
-   * directory from before web pushes were single-artifacted — still
-   * honored on restore so an old commit keeps serving after an upgrade.
-   */
-  web?: { manifest: string } | { dir: string };
+export interface UpgradeAllTarget {
+  bundle: string;
+  web: Record<string, string>;
+  source?: GitSource;
 }
 
-/** How many past platform bundles / web dists the store keeps (current + one rollback). */
+export type UpgradeOutcome =
+  | {
+      status: "ok";
+      mode: "silent" | "migrated";
+      impl: string;
+      source: GitSource | null;
+      web: { rev: string };
+    }
+  | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
+
+/** How many past versions (platform+cli bundle / web dist pairs) the store keeps (current + one rollback). */
 const STORE_KEEP = 2;
 
 export class HmrHost {
@@ -123,8 +128,9 @@ export class HmrHost {
   }
 
   /**
-   * Lazy first boot. Resumes the last committed platform + web from disk when
-   * present; otherwise boots the packaged platform v1 with a fresh document.
+   * Lazy first boot. Resumes the last committed version (platform + cli + web)
+   * from disk when present; otherwise boots the packaged platform v1 with a
+   * fresh document.
    */
   async ensure(): Promise<Instance<PlatformApi>> {
     if (this.instance === null) {
@@ -143,10 +149,13 @@ export class HmrHost {
   }
 
   /**
-   * Resume from harness.json (once). Any failure (missing or corrupt
-   * artifact, incompatible bundle) is non-fatal: it warns and leaves the
-   * runtime to boot the packaged default — a bad persisted state must never
-   * brick the runtime.
+   * Resume from harness.json (once), as ONE unit: the platform bundle, its parked
+   * doc, and the web artifact are all read and validated BEFORE anything is
+   * committed to `this.instance` / `this.webMem` — so a failure partway through
+   * (a pruned bundle, a corrupt park, a missing web artifact) never leaves platform
+   * and web resumed from different versions. Any failure is non-fatal: it warns and
+   * leaves the runtime to boot the packaged default — a bad persisted state must
+   * never brick the runtime.
    */
   private async restore(): Promise<void> {
     if (this.restored) return;
@@ -157,46 +166,44 @@ export class HmrHost {
     } catch {
       return; // nothing committed yet
     }
-    if (manifest.web !== undefined && "manifest" in manifest.web) {
-      try {
-        const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
-        this.webMem = filesMapFromGzip(gz);
-      } catch (err) {
-        this.warn(
-          `persisted web dist missing/corrupt (${manifest.web.manifest}); using packaged assets: ${errMsg(err)}`,
-        );
-      }
-    } else if (manifest.web !== undefined && "dir" in manifest.web) {
-      const dir = path.join(this.hmrDir, manifest.web.dir);
-      if (fs.existsSync(path.join(dir, "index.html"))) this.webDistDir = dir;
-      else this.warn(`persisted web dist missing (${manifest.web.dir}); using packaged assets`);
+    if (manifest.platform === undefined && manifest.web === undefined) {
+      return; // nothing committed yet
     }
-    if (manifest.platform !== undefined) {
-      try {
-        const bundle = await this.importBundleFile(
-          path.join(this.hmrDir, manifest.platform.bundle),
-        );
-        const doc = JSON.parse(
-          await fsp.readFile(path.join(this.hmrDir, manifest.platform.park), "utf8"),
-        ) as Json;
-        this.instance = (await boot(
-          bundle.impl,
-          bundle.iface,
-          doc,
-          this.resources,
-        )) as Instance<PlatformApi>;
-        this.implId = bundle.id;
-      } catch (err) {
-        this.warn(
-          `persisted platform failed to restore; using the packaged default: ${errMsg(err)}`,
-        );
+    try {
+      if (manifest.platform === undefined) {
+        throw new Error("harness.json has no `platform` entry");
       }
+      if (manifest.web === undefined) {
+        throw new Error("harness.json has no `web` entry");
+      }
+      const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
+      const doc = JSON.parse(
+        await fsp.readFile(path.join(this.hmrDir, manifest.platform.park), "utf8"),
+      ) as Json;
+      const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
+      const webMem = filesMapFromGzip(gz);
+      // Everything validated: commit together. boot() runs last so a boot failure
+      // (e.g. an incompatible parked doc) leaves nothing partially applied either.
+      const instance = (await boot(
+        bundle.impl,
+        bundle.iface,
+        doc,
+        this.resources,
+      )) as Instance<PlatformApi>;
+      this.instance = instance;
+      this.implId = bundle.id;
+      this.webMem = webMem;
+    } catch (err) {
+      this.warn(
+        `persisted version failed to restore (platform+cli+web are committed as one unit); ` +
+          `using the packaged default: ${errMsg(err)}`,
+      );
     }
   }
 
   /** Strictly request-driven; serialized on the op queue (never auto-triggered). */
-  upgradeTo(target: UpgradeTarget): Promise<UpgradeOutcome> {
-    const run = this.opQueue.then(() => this.doUpgrade(target));
+  upgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
+    const run = this.opQueue.then(() => this.doUpgradeAll(target));
     // The queue must survive a failed upgrade: swallow for chaining only.
     this.opQueue = run.then(
       () => undefined,
@@ -205,10 +212,20 @@ export class HmrHost {
     return run;
   }
 
-  private async doUpgrade(target: UpgradeTarget): Promise<UpgradeOutcome> {
+  private async doUpgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
     const current = await this.ensure();
 
-    const bundle = await this.importBundleFile(target.bundlePath);
+    if (typeof target.web["index.html"] !== "string") {
+      throw new Error("web dist manifest has no index.html");
+    }
+    const webMem = new Map<string, Buffer>();
+    for (const [rel, b64] of Object.entries(target.web)) {
+      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in web dist manifest: ${rel}`);
+      webMem.set(rel, Buffer.from(b64, "base64"));
+    }
+
+    const bundlePath = await this.writeInlineBundle(target.bundle);
+    const bundle = await this.importUnifiedBundle(bundlePath);
     const source = target.source ?? null;
 
     // Park to disk before touching anything: crash-safe by construction.
@@ -223,7 +240,7 @@ export class HmrHost {
       resources: this.resources,
     });
     if (result.status === "blocked") {
-      // Old instance untouched; the doc + path lists are the input for the
+      // Old instance + web untouched; the doc + path lists are the input for the
       // upper upgrade-ladder rungs (auto-upgrader / agent / human).
       return {
         status: "blocked",
@@ -232,12 +249,26 @@ export class HmrHost {
         invalid: result.invalid,
       };
     }
+
+    // Boot succeeded: commit web to memory too, then persist BOTH as one atomic
+    // version — never a platform that's newer (or older) than the web it's paired
+    // with.
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = bundle.id;
+    this.webMem = webMem;
     await fsp.writeFile(parkPath, JSON.stringify(result.doc, null, 2));
-    // Commit AFTER the live boot succeeded: a restart resumes only validated code.
-    await this.persistPlatform(target.bundlePath, result.doc);
-    return { status: "ok", mode: result.mode, impl: bundle.id, source };
+
+    const digest = filesDigest(target.web);
+    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
+    await this.persistVersion(target.bundle, result.doc, gz, digest.slice(0, 16));
+
+    return {
+      status: "ok",
+      mode: result.mode,
+      impl: bundle.id,
+      source,
+      web: { rev: digest.slice(0, 12) },
+    };
   }
 
   /** Layer (a) core: import one JS file, cache-busted so re-imports load fresh code. */
@@ -253,12 +284,35 @@ export class HmrHost {
   }
 
   /**
-   * Materializes an inline platform bundle (the single-file ESM sent in the
-   * request body) to disk and returns its path — how a push reaches a runtime
-   * over HTTP alone: the bytes travel in the request, the server writes them,
-   * then loads by path.
+   * Push-time validation: the bundle must export BOTH `hotPlatform` (this
+   * runtime's business unit) and `cli` (a function — what packages/cli's thin
+   * loader will dynamically import and call). Enforces the "platform = cli +
+   * platform code + web, one indivisible version" invariant at the door, rather
+   * than discovering a CLI-less bundle only when some later `penguin` invocation
+   * fails to load it.
    */
-  async writeInlineBundle(content: string): Promise<string> {
+  private async importUnifiedBundle(file: string): Promise<PlatformBundle> {
+    const resolved = path.resolve(file);
+    if (!fs.existsSync(resolved)) throw new Error(`bundle file '${file}' does not exist`);
+    const url = `${pathToFileURL(resolved).href}?v=${Date.now()}`;
+    const mod = (await import(url)) as { hotPlatform?: PlatformBundle; cli?: unknown };
+    if (mod.hotPlatform === undefined) {
+      throw new Error(`${file} does not export 'hotPlatform'`);
+    }
+    if (typeof mod.cli !== "function") {
+      throw new Error(
+        `${file} does not export 'cli' (a function) — platform and cli ship together`,
+      );
+    }
+    return mod.hotPlatform;
+  }
+
+  /**
+   * Materializes an inline bundle (the single-file ESM sent in the request body)
+   * to disk and returns its path — how a push reaches a runtime over HTTP alone:
+   * the bytes travel in the request, the server writes them, then loads them.
+   */
+  private async writeInlineBundle(content: string): Promise<string> {
     const dir = path.join(this.hmrDir, "uploads");
     await fsp.mkdir(dir, { recursive: true });
     const file = path.join(dir, `platform-${sha1(content).slice(0, 16)}.mjs`);
@@ -269,142 +323,71 @@ export class HmrHost {
   // -- Web platform (the frontend package's built dist) ---------------------
 
   /**
-   * Overrides the directory the server's static hosting serves when set (a
-   * dev distPath push or a restored legacy { dir } manifest); null when
-   * nothing is pushed OR a memory-resident dist (webMem) is authoritative —
-   * see resolveWebSource, which checks webMem FIRST.
-   */
-  webDistDir: string | null = null;
-
-  /**
-   * The pushed web dist held in memory (relPath → bytes): the primary path
-   * for a web push, replacing per-file disk writes with one artifact (see
-   * persistWebArtifact). Null when nothing has been pushed to memory.
+   * The pushed web dist held in memory (relPath → bytes) — always installed
+   * together with a platform+cli version (see doUpgradeAll); never written or
+   * read file-by-file (see persistVersion). Null before anything has ever been
+   * pushed or restored.
    */
   private webMem: Map<string, Buffer> | null = null;
 
-  /**
-   * Static hosting's resolution order: an in-memory pushed dist first, then
-   * a disk override (dev distPath push, or a restored legacy manifest), then
-   * null — the caller (app.ts) falls back to the configured webDist.
-   */
-  resolveWebSource():
-    { kind: "mem"; files: Map<string, Buffer> } | { kind: "dir"; dir: string } | null {
-    if (this.webMem !== null) return { kind: "mem", files: this.webMem };
-    if (this.webDistDir !== null) return { kind: "dir", dir: this.webDistDir };
-    return null;
-  }
-
-  /**
-   * Validates a { relPath: base64 } manifest, installs it as the in-memory
-   * dist (memory always wins over a stale disk override — see
-   * resolveWebSource), and persists it as the one gzip artifact `gz`
-   * decodes/encodes to. Shared by both push transports below so they
-   * converge on identical memory state and identical persistence.
-   */
-  private async commitWebFiles(
-    files: Record<string, string>,
-    gz: Buffer,
-  ): Promise<{ rev: string }> {
-    if (typeof files["index.html"] !== "string") {
-      throw new Error("web dist manifest has no index.html");
-    }
-    const mem = new Map<string, Buffer>();
-    for (const [rel, b64] of Object.entries(files)) {
-      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in web dist manifest: ${rel}`);
-      mem.set(rel, Buffer.from(b64, "base64"));
-    }
-    const digest = filesDigest(files);
-    this.webMem = mem;
-    this.webDistDir = null; // the fresh push wins over any stale disk override
-    await this.persistWebArtifact(gz, digest.slice(0, 16));
-    return { rev: digest.slice(0, 12) };
-  }
-
-  /**
-   * THE PRIMARY PATH: a raw gzip(JSON.stringify({ files })) artifact as the
-   * request body — one write on this end instead of one per file (the
-   * small-file-count bottleneck this replaces).
-   */
-  async installGzipWebDist(gz: Buffer): Promise<{ rev: string }> {
-    return this.commitWebFiles(filesFromGzip(gz), gz);
-  }
-
-  /**
-   * The JSON { relPath: base64 } manifest transport: re-packed into the same
-   * gzip artifact so both transports persist through the identical path.
-   */
-  async installInlineWebDist(files: Record<string, string>): Promise<{ rev: string }> {
-    const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files })));
-    return this.commitWebFiles(files, gz);
-  }
-
-  /** Points static hosting at a freshly pushed web dist on disk (dev convenience); returns its content rev. */
-  setWebDist(distPath: string): { dist: string; rev: string } {
-    const dist = path.resolve(distPath);
-    const index = path.join(dist, "index.html");
-    if (!fs.existsSync(index)) {
-      throw new Error(`'${distPath}' is not a web dist (no index.html)`);
-    }
-    this.webMem = null; // the disk override wins over any stale memory push
-    this.webDistDir = dist;
-    return { dist, rev: sha1(fs.readFileSync(index, "utf8")).slice(0, 12) };
+  /** Static hosting's resolution: an in-memory pushed/restored dist, or null (the caller falls back to the configured webDist). */
+  resolveWebSource(): { kind: "mem"; files: Map<string, Buffer> } | null {
+    return this.webMem !== null ? { kind: "mem", files: this.webMem } : null;
   }
 
   // -- Persistence ----------------------------------------------------------
 
-  /** Content-address the bundle + its committed parked doc, then flip harness.json. */
-  private async persistPlatform(bundleFile: string, doc: Json): Promise<void> {
+  /**
+   * Content-addresses the bundle + its committed parked doc + the web gzip
+   * artifact, then flips harness.json ONCE — `platform`, `cli` (same file as
+   * `platform`, since one bundle exports both), and `web` all land in the SAME
+   * atomic rename, never three separate commits that could leave one pointer
+   * ahead of the others.
+   */
+  private async persistVersion(
+    bundleContent: string,
+    doc: Json,
+    webGz: Buffer,
+    webSha: string,
+  ): Promise<void> {
     try {
-      const content = await fsp.readFile(bundleFile);
-      const sha = sha1(content.toString("utf8")).slice(0, 16);
-      const dir = path.join(this.storeDir, "platform");
-      await fsp.mkdir(dir, { recursive: true });
-      await fsp.writeFile(path.join(dir, `${sha}.mjs`), content);
-      await fsp.writeFile(path.join(dir, `${sha}.park.json`), JSON.stringify(doc));
-      await this.commitManifest((m) => ({
-        ...m,
+      const sha = sha1(bundleContent).slice(0, 16);
+      const platformDir = path.join(this.storeDir, "platform");
+      await fsp.mkdir(platformDir, { recursive: true });
+      await fsp.writeFile(path.join(platformDir, `${sha}.mjs`), bundleContent, "utf8");
+      await fsp.writeFile(path.join(platformDir, `${sha}.park.json`), JSON.stringify(doc));
+
+      const webDir = path.join(this.storeDir, "web");
+      await fsp.mkdir(webDir, { recursive: true });
+      await fsp.writeFile(path.join(webDir, `${webSha}.webz`), webGz);
+
+      await this.commitManifest(() => ({
         platform: { bundle: `store/platform/${sha}.mjs`, park: `store/platform/${sha}.park.json` },
+        cli: { bundle: `store/platform/${sha}.mjs` },
+        web: { manifest: `store/web/${webSha}.webz` },
       }));
     } catch (err) {
-      this.warn(`platform update not persisted (filesystem unavailable?): ${errMsg(err)}`);
+      this.warn(`update not persisted (filesystem unavailable?): ${errMsg(err)}`);
     }
   }
 
-  /** Writes the gzip artifact once (content-addressed) and flips harness.json to point at it. */
-  private async persistWebArtifact(gz: Buffer, sha: string): Promise<void> {
-    try {
-      const dir = path.join(this.storeDir, "web");
-      await fsp.mkdir(dir, { recursive: true });
-      await fsp.writeFile(path.join(dir, `${sha}.webz`), gz);
-      await this.commitManifest((m) => ({ ...m, web: { manifest: `store/web/${sha}.webz` } }));
-    } catch (err) {
-      this.warn(`web update not persisted (filesystem unavailable?): ${errMsg(err)}`);
-    }
-  }
-
-  /** Reads, updates, and atomically replaces harness.json (the single commit point). */
-  private async commitManifest(update: (m: Manifest) => Manifest): Promise<void> {
+  /** Writes and atomically replaces harness.json (the single commit point for a whole version). */
+  private async commitManifest(next: () => Manifest): Promise<void> {
     await fsp.mkdir(this.hmrDir, { recursive: true });
-    let current: Manifest = {};
-    try {
-      current = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-    } catch {
-      // no manifest yet
-    }
-    const next = update(current);
+    const manifest = next();
     const tmp = `${this.manifestPath}.${process.pid}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(next, null, 2));
+    await fsp.writeFile(tmp, JSON.stringify(manifest, null, 2));
     // Atomic within the same directory/filesystem (libuv maps this to
     // MoveFileEx REPLACE_EXISTING on Windows, rename(2) on POSIX).
     await fsp.rename(tmp, this.manifestPath);
-    await this.pruneStore(next);
+    await this.pruneStore(manifest);
   }
 
   /**
-   * Store GC: keep at most STORE_KEEP platform bundles and web dists — the
-   * committed one is always kept, the rest by recency. Best-effort; ordered
-   * after the manifest flip so nothing referenced can be pruned.
+   * Store GC: keep at most STORE_KEEP versions — the committed one is always
+   * kept, the rest by recency. Best-effort; ordered after the manifest flip so
+   * nothing referenced can be pruned. `cli` shares the platform bundle's file, so
+   * only `platform` and `web` need their own sweep.
    */
   private async pruneStore(manifest: Manifest): Promise<void> {
     const keepNewest = async (
@@ -450,14 +433,8 @@ export class HmrHost {
       },
     );
 
-    // .webz artifacts only: a directory left over from a pre-single-artifact
-    // install (the legacy { dir } form) doesn't match `.webz` and is simply
-    // left alone — not tracked, not pruned.
     const webDir = path.join(this.storeDir, "web");
-    const webRef =
-      manifest.web !== undefined && "manifest" in manifest.web
-        ? (manifest.web.manifest.match(/([0-9a-f]+)\.webz$/)?.[1] ?? null)
-        : null;
+    const webRef = manifest.web?.manifest.match(/([0-9a-f]+)\.webz$/)?.[1] ?? null;
     await keepNewest(
       webDir,
       (name) => /^([0-9a-f]+)\.webz$/.exec(name)?.[1] ?? null,

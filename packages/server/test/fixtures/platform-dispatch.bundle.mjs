@@ -72,3 +72,9 @@ const platformImpl = {
 };
 
 export const hotPlatform = { id: "dispatch-fixture", iface: platformIface, impl: platformImpl };
+
+/** See platform-next.bundle.mjs: a push must export both `hotPlatform` and `cli`. */
+export async function cli(argv) {
+  process.stdout.write(`cli-from-dispatch-bundle:${argv.join(",")}\n`);
+  return 0;
+}

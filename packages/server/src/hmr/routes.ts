@@ -7,6 +7,7 @@
  * not the freeze. The routes are runtime code: they orchestrate through the
  * platform api, so they survive impl swaps unchanged.
  */
+import zlib from "node:zlib";
 import { Hono } from "hono";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { ifaceData } from "@prismshadow/penguin-core/kernel";
@@ -46,7 +47,7 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     const gated = async (): Promise<void> => {
       // The upgrade endpoint enqueues internally; everything else waits out
       // any in-flight swap here (unobservable freeze: latency, not errors).
-      if (!c.req.path.endsWith("/platform/upgrade")) await hmr.waitIdle();
+      if (!c.req.path.endsWith("/upgrade")) await hmr.waitIdle();
       await next();
     };
     // Admin cookie session only. There used to be a second credential here — a
@@ -85,32 +86,72 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * The upgrade descriptor (strictly request-driven — nothing auto-triggers):
-   * - { bundle, source? } — THE PRIMARY PATH: the single-file JS bundle sent
-   *   INLINE in the request body; works over HTTP alone (remote runtimes
-   *   included). The server writes the bytes and loads them.
-   * - { bundlePath, source? } — same-machine dev convenience.
+   * THE ONE upgrade endpoint: platform + cli + web move together, atomically —
+   * there is no route that updates any of the three alone (see host.ts's module
+   * doc). Content-Type application/gzip or application/octet-stream; the raw body
+   * is gzip(JSON.stringify({ bundle, web: { files }, source? })):
+   * - `bundle` — the single-file JS ESM source, inline (works over HTTP alone,
+   *   remote runtimes included); it must export both `hotPlatform` and `cli`.
+   * - `web.files` — a { relPath: base64 } manifest of the built web dist.
+   * - `source?` — optional provenance (repo + revision), recorded but not run.
+   * The server boots the platform AND installs the web dist in memory first;
+   * only once BOTH succeed does it persist the version (one atomic harness.json
+   * rename — see host.ts's persistVersion). A boot failure or a bad web manifest
+   * leaves the previously committed version untouched.
    */
-  routes.post("/platform/upgrade", async (c) => {
-    const body = await c.req.json<{
+  routes.post("/upgrade", async (c) => {
+    const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    if (contentType !== "application/gzip" && contentType !== "application/octet-stream") {
+      throw new HttpError(
+        400,
+        "bad_request",
+        "expected a gzip(JSON.stringify({ bundle, web })) body " +
+          "(Content-Type application/gzip or application/octet-stream)",
+      );
+    }
+    let payload: {
       bundle?: string;
-      bundlePath?: string;
+      web?: { files?: Record<string, string> };
       source?: { repo: string; revision: string };
-    }>();
-    let target;
-    if (typeof body.bundle === "string") {
-      const bundlePath = await hmr.writeInlineBundle(body.bundle);
-      target = { bundlePath, ...(body.source ? { source: body.source } : {}) };
-    } else if (typeof body.bundlePath === "string") {
-      target = { bundlePath: body.bundlePath, ...(body.source ? { source: body.source } : {}) };
-    } else {
-      throw new HttpError(400, "bad_request", "provide `bundle` (inline bytes) or `bundlePath`");
+    };
+    try {
+      const gz = Buffer.from(await c.req.arrayBuffer());
+      payload = JSON.parse(zlib.gunzipSync(gz).toString("utf8"));
+    } catch (err) {
+      throw new HttpError(
+        400,
+        "bad_request",
+        `invalid gzip upgrade payload: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (typeof payload.bundle !== "string") {
+      throw new HttpError(400, "bad_request", "payload has no `bundle` (string)");
+    }
+    if (typeof payload.web?.files !== "object" || payload.web.files === null) {
+      throw new HttpError(
+        400,
+        "bad_request",
+        "payload has no `web.files` (a { relPath: base64 } map)",
+      );
     }
     let outcome;
     try {
-      outcome = await hmr.upgradeTo(target);
+      outcome = await hmr.upgradeAll({
+        bundle: payload.bundle,
+        web: payload.web.files,
+        ...(payload.source ? { source: payload.source } : {}),
+      });
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
+    }
+    // Live clients (browser tabs AND the desktop window) reload to pick up the
+    // new web assets once a version actually lands.
+    if (outcome.status === "ok") {
+      deps.channels.broadcast(
+        "user:",
+        { type: "web_updated", rev: outcome.web.rev },
+        "server_event",
+      );
     }
     // Blocked is a first-class outcome, not an HTTP error: the body carries
     // status + the dropped/missing/invalid paths (input for the upper
@@ -169,52 +210,6 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       );
     }
     return c.json({ ok: true, result: json });
-  });
-
-  // -- Web platform (the frontend package's built dist) ---------------------
-
-  /**
-   * Hot-swap the served web assets and tell every connected client to reload.
-   * - Content-Type application/gzip or application/octet-stream — THE PRIMARY
-   *   PATH: the raw body is gzip(JSON.stringify({ files })), a
-   *   { relPath: base64 } manifest packed into ONE artifact. Pushing a dist
-   *   file-by-file serializes on the destination filesystem's per-file
-   *   overhead (hundreds of small writes on a Windows/Defender-scanned disk
-   *   measured well under 1MB/s); one gzip write sidesteps that entirely.
-   * - { files } (JSON body) — the equivalent manifest, uncompressed; kept for
-   *   older callers, persisted through the identical gzip artifact.
-   * - { distPath } — same-machine dev convenience (served, not persisted).
-   */
-  routes.post("/web/upgrade", async (c) => {
-    const contentType = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-    let info: { rev: string };
-    let source: Json | null = null;
-    try {
-      if (contentType === "application/gzip" || contentType === "application/octet-stream") {
-        const gz = Buffer.from(await c.req.arrayBuffer());
-        info = await deps.hmr.installGzipWebDist(gz);
-      } else {
-        const body = await c.req.json<{
-          files?: Record<string, string>;
-          distPath?: string;
-          source?: Json;
-        }>();
-        source = body.source ?? null;
-        if (body.files !== undefined) {
-          info = await deps.hmr.installInlineWebDist(body.files);
-        } else if (typeof body.distPath === "string") {
-          info = deps.hmr.setWebDist(body.distPath);
-        } else {
-          throw new Error("provide `files` (inline manifest), `distPath`, or a gzip body");
-        }
-      }
-    } catch (err) {
-      throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
-    }
-    // Live clients (browser tabs AND the desktop window — both sit on the
-    // user event stream) reload to pick up the new assets.
-    deps.channels.broadcast("user:", { type: "web_updated", rev: info.rev }, "server_event");
-    return c.json({ status: "ok", ...info, source });
   });
 
   return routes;
