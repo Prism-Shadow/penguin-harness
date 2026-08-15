@@ -18,7 +18,7 @@
  */
 import { createHighlighterCore, type HighlighterCore, type LanguageInput } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import { LANGUAGE_LOADERS, isPlainTextLanguage, resolveLanguage } from "./code-languages";
+import { isPlainTextLanguage, loaderFor, resolveLanguage } from "./code-languages";
 
 let corePromise: Promise<HighlighterCore> | null = null;
 const grammarPromises = new Map<string, Promise<void>>();
@@ -64,7 +64,7 @@ export async function highlightToHtml(code: string, language: string): Promise<s
   if (!id) return null;
   const core = await getCore();
   // resolveLanguage only returns ids with a loader, plain text aside — the lookup is what proves it.
-  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS[id];
+  const load = isPlainTextLanguage(id) ? undefined : loaderFor(id);
   if (load) await loadGrammar(core, id, load);
   return core.codeToHtml(code, {
     lang: id,

@@ -105,8 +105,18 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 /** The id CodeBlock's `language` prop takes for an unhighlighted-but-themed block. */
 export const PLAIN_TEXT_LANGUAGE = "text";
 
+/**
+ * Own-property lookup. The keys here are file extensions and fence info strings — attacker- or at
+ * least stranger-supplied — and a plain object inherits from Object.prototype, so a file named
+ * `constructor` or `__proto__` would otherwise resolve to a function or an object where every
+ * caller expects a language id (React throws outright when that object reaches a text node).
+ */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
 export function languageForExtension(ext: string): string {
-  return LANGUAGE_BY_EXTENSION[ext.toLowerCase()] ?? PLAIN_TEXT_LANGUAGE;
+  return own(LANGUAGE_BY_EXTENSION, ext.toLowerCase()) ?? PLAIN_TEXT_LANGUAGE;
 }
 
 /**
@@ -117,8 +127,13 @@ export function languageForExtension(ext: string): string {
 export function resolveLanguage(language: string): string | null {
   const id = language.trim().toLowerCase();
   if (!id || PLAIN_TEXT_IDS.has(id)) return PLAIN_TEXT_LANGUAGE;
-  const canonical = LANGUAGE_ALIASES[id] ?? id;
-  return canonical in LANGUAGE_LOADERS ? canonical : null;
+  const canonical = own(LANGUAGE_ALIASES, id) ?? id;
+  return loaderFor(canonical) ? canonical : null;
+}
+
+/** The grammar loader for a canonical id, or undefined when this bundle doesn't carry it. */
+export function loaderFor(id: string): (() => Promise<unknown>) | undefined {
+  return own(LANGUAGE_LOADERS, id);
 }
 
 /** True for ids Shiki highlights without loading a grammar. */
