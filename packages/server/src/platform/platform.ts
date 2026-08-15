@@ -24,6 +24,7 @@
  */
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
 import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
+import { ensureCliOnPath } from "./agent-cli-path.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -40,6 +41,12 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   create(_ctx, context) {
+    // "What PATH does the agent's shell see" is policy (see ../hmr/README.md), not
+    // mechanism: it belongs here, in-process at platform boot, rather than in the
+    // Electron shell that forks the server — that's what makes the fix reach
+    // already-deployed machines via a normal hot push instead of a rebuild. Idempotent,
+    // so re-running it on every create() (including hot swaps) is harmless.
+    ensureCliOnPath();
     return {
       park: () => ({ motd: context.motd }),
       info: () => ({
