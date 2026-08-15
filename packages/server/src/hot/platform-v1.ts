@@ -3,7 +3,7 @@
  * keyed(terminal@1) }.
  */
 import type { Impl, Json, KeyedHandle, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, keyed, s } from "@prismshadow/penguin-core/kernel";
+import { defineIface, keyed, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { TerminalApi } from "./terminal.js";
 import { TerminalIfaceV1, terminalImplV1 } from "./terminal.js";
 import { spawnShellResource } from "./resources.js";
@@ -19,7 +19,7 @@ export type PlatformCtxV1 = { motd: string };
 export const PlatformIfaceV1 = defineIface<PlatformApi, PlatformCtxV1>({
   name: "platform",
   version: 1,
-  context: s.object<PlatformCtxV1>({ motd: s.string() }),
+  context: schema<PlatformCtxV1>(type({ motd: "string" })),
   methods: ["park", "info", "createTerminal", "terminals"],
   children: {
     terminals: keyed(TerminalIfaceV1),

@@ -12,7 +12,8 @@ import {
   ifaceData,
   initialDoc,
   keyed,
-  s,
+  schema,
+  type,
   upgrade,
 } from "../src/kernel/index.js";
 
@@ -36,7 +37,7 @@ interface CounterApi extends Park {
 const CounterIface = defineIface<CounterApi, { count: number }>({
   name: "counter",
   version: 1,
-  context: s.object<{ count: number }>({ count: s.number() }),
+  context: schema<{ count: number }>(type({ count: "number" })),
   methods: ["park", "incr", "value"],
 });
 
@@ -60,7 +61,7 @@ function makeRootIface(version: number, migrations: Record<number, (old: Json) =
   return defineIface<RootApi, { label: string }>({
     name: "root",
     version,
-    context: s.object<{ label: string }>({ label: s.string() }),
+    context: schema<{ label: string }>(type({ label: "string" })),
     methods: ["park", "label", "counters"],
     children: { counters: keyed(CounterIface) },
     migrations,
@@ -135,7 +136,7 @@ describe("kernel: boot", () => {
     const leafIface = defineIface<LeafApi, null>({
       name: "leaf",
       version: 1,
-      context: s.json() as never,
+      context: schema<Json>(type("unknown") as never) as never,
       methods: ["park", "poke"],
     });
     const leafImpl: Impl<LeafApi, Json> = {
@@ -147,7 +148,7 @@ describe("kernel: boot", () => {
     const parentIface = defineIface<Park, Json>({
       name: "parent",
       version: 1,
-      context: s.json(),
+      context: schema<Json>(type("unknown") as never),
       methods: ["park"],
       children: { leaf: leafIface },
     });
@@ -207,7 +208,7 @@ describe("kernel: upgrade ladder", () => {
     const v3Iface = defineIface<RootV3Api, { title: string }>({
       name: "root",
       version: 3,
-      context: s.object<{ title: string }>({ title: s.string() }),
+      context: schema<{ title: string }>(type({ title: "string" })),
       methods: ["park", "title"],
       children: { counters: keyed(CounterIface) },
       migrations: {
@@ -234,7 +235,7 @@ describe("kernel: upgrade ladder", () => {
     const narrowIface = defineIface<Park, Record<string, never>>({
       name: "root",
       version: 1,
-      context: s.object<Record<string, never>>({}),
+      context: schema<Record<string, never>>(type({}) as never),
       methods: ["park"],
       children: { counters: keyed(CounterIface) },
     });
@@ -280,7 +281,7 @@ describe("kernel: upgrade ladder", () => {
     const holderIface = defineIface<HolderApi, { resourceId: string }>({
       name: "holder",
       version: 1,
-      context: s.object<{ resourceId: string }>({ resourceId: s.string() }),
+      context: schema<{ resourceId: string }>(type({ resourceId: "string" })),
       methods: ["park", "read"],
     });
     const holderImpl: Impl<HolderApi, { resourceId: string }> = {
@@ -315,7 +316,7 @@ describe("kernel: undeclared children in the parked doc", () => {
   const bareIface = defineIface<RootApi, { label: string }>({
     name: "root",
     version: 1,
-    context: s.object<{ label: string }>({ label: s.string() }),
+    context: schema<{ label: string }>(type({ label: "string" })),
     methods: ["park", "label", "counters"],
   });
   const bareImpl: Impl<RootApi, { label: string }> = {

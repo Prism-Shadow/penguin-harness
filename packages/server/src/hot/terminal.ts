@@ -7,7 +7,7 @@
  * reports itself lost instead of blocking the whole platform swap).
  */
 import type { Impl, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, s } from "@prismshadow/penguin-core/kernel";
+import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { ShellProcResource } from "./resources.js";
 
 export interface TerminalApi extends Park {
@@ -23,7 +23,7 @@ export type TerminalCtxV1 = { procId: string; command: string; cwd: string };
 export const TerminalIfaceV1 = defineIface<TerminalApi, TerminalCtxV1>({
   name: "terminal",
   version: 1,
-  context: s.object<TerminalCtxV1>({ procId: s.string(), command: s.string(), cwd: s.string() }),
+  context: schema<TerminalCtxV1>(type({ procId: "string", command: "string", cwd: "string" })),
   methods: ["park", "write", "read", "alive", "lost"],
 });
 
@@ -37,12 +37,9 @@ export type TerminalCtxV2 = TerminalCtxV1 & { title: string };
 export const TerminalIfaceV2 = defineIface<TerminalApiV2, TerminalCtxV2>({
   name: "terminal",
   version: 2,
-  context: s.object<TerminalCtxV2>({
-    procId: s.string(),
-    command: s.string(),
-    cwd: s.string(),
-    title: s.string(),
-  }),
+  context: schema<TerminalCtxV2>(
+    type({ procId: "string", command: "string", cwd: "string", title: "string" }),
+  ),
   methods: ["park", "write", "read", "alive", "lost", "title"],
   migrations: {
     1: (old) => ({ ...(old as TerminalCtxV1), title: (old as TerminalCtxV1).command }),
