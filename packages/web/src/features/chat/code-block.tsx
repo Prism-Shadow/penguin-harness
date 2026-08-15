@@ -3,8 +3,9 @@
  * button, body highlighted via Shiki — inline CSS variables for both the github-light /
  * github-dark themes, with dark mode switched via style overrides under html.dark (see
  * styles.css), so theme switching doesn't require re-highlighting.
- * Shiki is dynamically imported (its own chunk, loaded only once the first code block appears);
- * before loading completes and for unknown languages, it falls back to an unhighlighted <pre>.
+ * The highlighter is dynamically imported (its own chunk, loaded only once the first code block
+ * appears; see highlighter.ts); before loading completes, and for languages that chunk doesn't
+ * carry, it falls back to an unhighlighted <pre>.
  *
  * highlight=false (while a message is streaming) skips highlighting and falls back to plain
  * text: every streaming frame re-renders the full code with a growing length, and re-tokenizing
@@ -32,13 +33,8 @@ export function CodeBlock({
       return;
     }
     let alive = true;
-    void import("shiki")
-      .then((shiki) =>
-        shiki.codeToHtml(code, {
-          lang: language || "text",
-          themes: { light: "github-light", dark: "github-dark" },
-        }),
-      )
+    void import("./highlighter")
+      .then((mod) => mod.highlightToHtml(code, language))
       .then((out) => {
         if (alive) setHtml(out);
       })

@@ -336,6 +336,12 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@shikijs/langs':
+        specifier: ^4.3.1
+        version: 4.3.1
+      '@shikijs/themes':
+        specifier: ^4.3.1
+        version: 4.3.1
       react:
         specifier: ^19.1.0
         version: 19.2.7
