@@ -466,10 +466,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // SPA fallback cannot swallow it.
   app.route("/preview", previewRoutes(deps));
 
-  // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.
-  if (fs.existsSync(deps.config.webDist)) {
-    registerStaticRoutes(app, deps.config.webDist);
-  }
+  // Static hosting (production): serves the frontend build output with SPA fallback to
+  // index.html. The directory resolves per request — the hot host can point it at a
+  // freshly pushed web dist (the frontend platform's hot-swap channel) without a restart;
+  // when neither the override nor the configured webDist exists, non-API paths 404.
+  registerStaticRoutes(app, () => deps.hot.webDistDir ?? deps.config.webDist);
 
   return app;
 }
@@ -523,11 +524,16 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /** Minimal static file server (avoiding an extra dependency): path traversal protection + SPA fallback. */
-function registerStaticRoutes(app: Hono<AppEnv>, webDist: string): void {
+function registerStaticRoutes(app: Hono<AppEnv>, getWebDist: () => string): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
       return c.json(errorBody("not_found", "Endpoint does not exist."), 404);
+    }
+    // Resolved per request: the hot host may retarget it between requests.
+    const webDist = getWebDist();
+    if (!fs.existsSync(webDist)) {
+      return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
     const rel = reqPath.replace(/^\/+/, "");
     const resolved = path.resolve(webDist, rel === "" ? "index.html" : rel);

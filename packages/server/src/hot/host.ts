@@ -438,6 +438,26 @@ export class HotHost {
     return dir;
   }
 
+  // -- Web platform (the frontend package's built dist) ---------------------
+
+  /**
+   * Overrides the directory the server's static hosting serves (null → the
+   * configured webDist). Runtime-level pointer, not parked: the pushed dist
+   * lives on disk, and a restart falls back to the packaged assets.
+   */
+  webDistDir: string | null = null;
+
+  /** Points static hosting at a freshly pushed web dist; returns its content rev. */
+  setWebDist(distPath: string): { dist: string; rev: string } {
+    const dist = path.resolve(distPath);
+    const index = path.join(dist, "index.html");
+    if (!fs.existsSync(index)) {
+      throw new Error(`'${distPath}' is not a web dist (no index.html)`);
+    }
+    this.webDistDir = dist;
+    return { dist, rev: sha1(fs.readFileSync(index, "utf8")).slice(0, 12) };
+  }
+
   /**
    * Publishes the local-agent credential file ($PENGUIN_HOME/hot/api.json,
    * mode 0600): agents on this machine read { url, token } from it to call

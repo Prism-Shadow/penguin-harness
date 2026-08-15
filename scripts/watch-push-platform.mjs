@@ -6,8 +6,8 @@
  * The runtime (started by `pnpm dev`) boots the server and WAITS for
  * hot-reload requests — it never watches its own code. This process is the
  * other half: it watches the server package's source (the server package IS
- * the backend platform unit; the web package is the frontend one, and Vite's
- * HMR under `pnpm dev:web` is its watch-push), compiles the platform entry to
+ * the backend platform unit; the web package is the frontend one, pushed by
+ * scripts/watch-push-web.mjs under `pnpm dev:web`), compiles the platform entry to
  * one self-contained file on change, and pushes it to the runtime's
  * hot-upgrade API. A code edit reloads the running platform
  * (park → migrate → boot) with no server restart.

@@ -18,7 +18,7 @@
     "penguin": "node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7369 -- tsx packages/cli/src/index.ts",
     "dev": "concurrently -n runtime,server,web -c cyan,yellow,magenta \"node scripts/dev-prebuild.mjs && node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7368 -- tsx packages/server/src/index.ts\" \"pnpm dev:server\" \"pnpm dev:web\"",
     "dev:server": "concurrently -n build,push -c gray,yellow \"node scripts/watch-build.mjs\" \"node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data -- node scripts/watch-push-platform.mjs\"",
-    "dev:web": "node scripts/dev-prebuild.mjs && pnpm --filter @prismshadow/penguin-web dev",
+    "dev:web": "node scripts/dev-prebuild.mjs && concurrently -n build,push -c magenta,yellow \"pnpm --filter @prismshadow/penguin-web exec vite build --watch\" \"node scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data -- node scripts/watch-push-web.mjs\"",
     "dev:docs": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-docs dev",
     "dev:landing": "node scripts/dev-prebuild.mjs --install-only && pnpm --filter @prismshadow/penguin-landing dev",
     "build:site": "node scripts/build-site.mjs",
