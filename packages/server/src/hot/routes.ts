@@ -164,12 +164,17 @@ export function hotRoutes(deps: AppDeps): Hono<AppEnv> {
     }>();
     let info;
     try {
-      const dist =
-        body.files !== undefined ? await deps.hot.writeInlineWebDist(body.files) : body.distPath;
-      if (typeof dist !== "string") {
+      if (body.files !== undefined) {
+        // Inline push: materialized under the store, served, and committed
+        // (persists across a runtime restart).
+        info = await deps.hot.installInlineWebDist(body.files);
+      } else if (typeof body.distPath === "string") {
+        // Same-machine dev convenience: an external dir, served but not
+        // persisted (a dev restart rebuilds it anyway).
+        info = deps.hot.setWebDist(body.distPath);
+      } else {
         throw new Error("provide `files` (inline manifest) or `distPath`");
       }
-      info = deps.hot.setWebDist(dist);
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
     }

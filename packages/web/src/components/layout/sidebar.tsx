@@ -1336,6 +1336,10 @@ export function Sidebar({
             }`}
           >
             {S.chat.sessionList}
+            {/* Hot-update marker: pushed over HTTP to a running runtime, no restart. */}
+            <span className="ml-2 font-medium normal-case text-emerald-600 dark:text-emerald-400">
+              ⚡热更新已到达
+            </span>
           </span>
           <div className="flex min-w-0 items-center justify-end gap-0.5">
             {searchOpen ? (
