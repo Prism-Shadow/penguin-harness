@@ -2,18 +2,17 @@
  * The app-root mount point for developer tooling: the Ctrl+P command palette, and the
  * console.info replay that surfaces HMR update notifications in the developer console.
  *
- * "Developer console" here means the real one — Electron DevTools in the desktop shell
- * (opened through the preload bridge; a renderer cannot open DevTools on itself), the
- * browser's own DevTools in a tab (F12 — a page cannot open those, so the palette
- * action only appears under the shell). Update notifications reach it as console.info
- * lines: the SSE handler records `web_updated` to sessionStorage before the reload it
- * triggers (see lib/dev-console.ts), and this component replays the latest entry once
- * per page load — so after the auto-reload, opening the console shows what just landed.
+ * "Developer console" means the real one — Electron DevTools in the desktop shell
+ * (Ctrl+Shift+I via the standard View menu), the browser's own in a tab (F12). The
+ * app deliberately has no way to open it (the shell keeps a zero-preload window);
+ * notifications reach it as console.info lines instead: the SSE handler records
+ * `web_updated` to sessionStorage before the reload it triggers (see
+ * lib/dev-console.ts), and this component replays the latest entry once per page
+ * load — so after the auto-reload, opening the console shows what just landed.
  */
 import { useEffect, useMemo } from "react";
 import { CommandPalette } from "./command-palette";
 import type { PaletteAction } from "./command-palette";
-import { desktopBridge } from "../../lib/desktop-bridge";
 import { readDevConsoleEvents } from "../../lib/dev-console";
 import { S } from "../../lib/strings";
 
@@ -30,25 +29,16 @@ export function DevTools() {
     }
   }, []);
 
-  const actions = useMemo<PaletteAction[]>(() => {
-    const bridge = desktopBridge();
-    return [
-      ...(bridge !== null
-        ? [
-            {
-              id: "open-dev-console",
-              label: S.commandPalette.openDevConsole,
-              run: () => bridge.openDevTools(),
-            },
-          ]
-        : []),
+  const actions = useMemo<PaletteAction[]>(
+    () => [
       {
         id: "reload-page",
         label: S.commandPalette.reloadPage,
         run: () => window.location.reload(),
       },
-    ];
-  }, []);
+    ],
+    [],
+  );
 
   return <CommandPalette actions={actions} />;
 }

@@ -1415,7 +1415,6 @@ Scenarios:
     title: "Command Palette",
     placeholder: "Type to filter actions…",
     noResults: "No matching actions",
-    openDevConsole: "Open Developer Console",
     reloadPage: "Reload page",
     hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
   },
