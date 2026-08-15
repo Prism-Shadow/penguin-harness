@@ -35,6 +35,7 @@ import type {
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
+  HmrPlatformResponse,
   McpServerTestResponse,
   MeResponse,
   MemberAddRequest,
@@ -792,3 +793,8 @@ export const checkUpdate = (force = false) =>
 /** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
 export const runUpdate = () =>
   apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+
+// HMR (hot-update) observability ---------------------------------------------------------
+
+/** Admin only (403 otherwise — see the dev console, which degrades gracefully on that). */
+export const getHmrPlatform = () => apiFetch<HmrPlatformResponse>("/api/hmr/platform");

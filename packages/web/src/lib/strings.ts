@@ -1363,6 +1363,24 @@ Benchmark：
     colSession: "Session",
   },
 
+  // Ctrl+P / Cmd+P developer console overlay (runtime info + the HMR update feed).
+  devConsole: {
+    title: "开发者控制台",
+    runtimeHeading: "运行时",
+    implLabel: "实现 (impl)",
+    ifaceVersionLabel: "接口版本 (iface)",
+    webRevLabel: "Web 版本 (rev)",
+    webRevUnknown: "本会话尚未观测到更新",
+    /** 403 from GET /api/hmr/platform (non-admin): the rest of the panel still renders — only this row degrades. */
+    adminOnlyNote: "仅管理员可见：登录管理员账号后可查看实现 / 接口版本",
+    loadError: "运行时信息加载失败",
+    feedHeading: "更新事件",
+    feedEmpty: "暂无更新事件",
+    /** rev shown inline with each feed entry's timestamp. */
+    feedEntry: (rev: string) => `Web 更新到 rev ${rev}`,
+    shortcutHint: "Ctrl+P / ⌘P 切换",
+  },
+
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).
   errors: {
     networkError: "网络错误，请检查连接",

@@ -35,6 +35,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
+import { recordDevConsoleEvent } from "../lib/dev-console";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -413,8 +414,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       onOmniMessage: () => undefined,
       onServerEvent: (ev) => {
         // The served web assets were hot-swapped (dev watch-push / platform
-        // upgrade): reload so this window runs the new code.
+        // upgrade): record it for the dev console (Ctrl+P) BEFORE reloading — the
+        // reload happens immediately, so sessionStorage is the only way the console
+        // can ever show "just updated to rev X" (see lib/dev-console.ts's module
+        // doc). Then reload so this window runs the new code, unchanged as before.
         if (ev.type === "web_updated") {
+          recordDevConsoleEvent(window.sessionStorage, {
+            type: "web_updated",
+            rev: ev.rev,
+            at: new Date().toISOString(),
+          });
           window.location.reload();
           return;
         }
