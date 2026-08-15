@@ -39,11 +39,13 @@ const DISPATCH_BUNDLE_FILE = fileURLToPath(
 describe("hot update", () => {
   let t: TestApp;
   let api: ReturnType<typeof apiClient>;
+  let adminCookie: string;
   let nextBundle: string;
 
   beforeEach(async () => {
     t = await createTestApp();
     const admin = await loginAdmin(t.app);
+    adminCookie = admin.cookie;
     api = apiClient(t.app, admin.cookie);
     nextBundle = await fs.readFile(NEXT_BUNDLE_FILE, "utf8");
   });
@@ -57,23 +59,24 @@ describe("hot update", () => {
     expect(res.status).toBe(403);
   });
 
-  it("the local Bearer token is admin-equivalent for hot APIs (no cookie needed)", async () => {
-    const bearer = { authorization: `Bearer ${t.deps.hmr.apiToken}` };
-    // No cookie at all: the file-permission-gated token authenticates by itself.
+  it("a Bearer token is not accepted for hot APIs (admin cookie only)", async () => {
+    // The local per-boot Bearer-token credential (formerly published to
+    // $PENGUIN_HOME/hmr/api.json) is gone: it was a plaintext admin-equivalent secret
+    // readable by anything running as the same OS user, so no authorization header of
+    // any shape authenticates here anymore — only the admin cookie session does.
+    const bearer = { authorization: "Bearer whatever-looks-like-a-token" };
     const res = await t.app.request("/api/hmr/platform", { headers: bearer });
-    expect(res.status).toBe(200);
-    // A wrong token falls through to cookie auth and fails as unauthenticated.
-    const bad = await t.app.request("/api/hmr/platform", {
-      headers: { authorization: "Bearer not-the-token" },
-    });
-    expect(bad.status).toBe(401);
-    // A mutating call works over the token too.
+    expect(res.status).toBe(401);
+    // A mutating call is rejected the same way.
     const upgraded = await t.app.request("/api/hmr/platform/upgrade", {
       method: "POST",
       headers: { ...bearer, "content-type": "application/json" },
       body: JSON.stringify({ bundle: nextBundle }),
     });
-    expect(upgraded.status).toBe(200);
+    expect(upgraded.status).toBe(401);
+    // The admin cookie session still works.
+    const ok = await t.app.request("/api/hmr/platform", { headers: { cookie: adminCookie } });
+    expect(ok.status).toBe(200);
   });
 
   it("boots the packaged platform lazily and reports its serialized iface", async () => {
@@ -159,7 +162,7 @@ describe("hot update", () => {
     const res = await t.app.request("/api/hmr/web/upgrade", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${t.deps.hmr.apiToken}`,
+        cookie: adminCookie,
         "content-type": "application/gzip",
       },
       body: gz,
@@ -188,7 +191,7 @@ describe("hot update", () => {
     const octetRes = await t.app.request("/api/hmr/web/upgrade", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${t.deps.hmr.apiToken}`,
+        cookie: adminCookie,
         "content-type": "application/octet-stream",
       },
       body: gz2,

@@ -54,6 +54,21 @@ if (existingLock) {
   process.exit(EXIT_ALREADY_RUNNING);
 }
 
+// Migration cleanup: older builds published a per-boot local-agent credential to
+// $PENGUIN_HOME/hmr/api.json ({ url, token }, mode 0600) so local tools could call the
+// hot platform APIs with a Bearer token instead of a cookie session. That file was a
+// plaintext admin-equivalent secret readable by anything running as this OS user —
+// including an agent's own shell/exec tools, which inherit both the user and
+// PENGUIN_HOME — making the file itself the vulnerability, not a mitigation for one.
+// The hot APIs now accept only the admin cookie session (see hmr/routes.ts); remove any
+// leftover copy unconditionally on every boot so a stale file can never linger as an
+// attack surface, regardless of which build last wrote it or how it exited.
+try {
+  fs.rmSync(path.join(config.root, "hmr", "api.json"), { force: true });
+} catch {
+  // Best-effort: nothing reads this file anymore either way.
+}
+
 const deps = buildAppDeps(config);
 // The database is open now: bring the dispatcher in line with the persisted proxy
 // settings (absent rows read as the defaults: app switch on, no explicit address)
@@ -148,12 +163,6 @@ const server = serve({ fetch: app.fetch, hostname: config.host, port: config.por
     startedAt: new Date().toISOString(),
   });
   if (config.portFile !== null) writePortFile(config.portFile, info.port);
-  // Local-agent credential for the hot platform APIs ($PENGUIN_HOME/hmr/api.json,
-  // 0600): written once the port is known, consumed by the hot-skill-authoring SKILL
-  // and the dev watch-push loop. Uses the canonical App host (not a hardcoded
-  // 127.0.0.1): on loopback binds the counterpart name is the preview host, where
-  // /api answers 401 — so the token must target the App host.
-  void deps.hmr.writeApiFile(`http://${appHost}:${info.port}`);
   if (config.host === "127.0.0.1" || config.host === "localhost") {
     ipv6Loopback = serve({ fetch: app.fetch, hostname: "::1", port: info.port });
     ipv6Loopback.on("error", (err: NodeJS.ErrnoException) => {
@@ -184,12 +193,6 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.hmr.dispose();
-  // Best-effort: retire the per-boot local-agent credential with the process.
-  try {
-    fs.rmSync(path.join(config.root, "hmr", "api.json"), { force: true });
-  } catch {
-    // A stale file only holds a dead token; the next boot overwrites it.
-  }
   deps.channels.dispose();
   ipv6Loopback?.close();
   server.close(() => {
