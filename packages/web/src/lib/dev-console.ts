@@ -1,15 +1,14 @@
 /**
- * Command palette (Ctrl+P / Cmd+P) pure logic — the shortcut matcher and action
- * filter — plus the cross-reload HMR event feed. Split out from the components so it
- * is testable under vitest's node environment (no DOM/webStorage there — see
- * vitest.config.ts).
+ * The cross-reload HMR event feed: sessionStorage-backed, so it survives the reload
+ * `web_updated` triggers but not a tab close. Split out from its one caller
+ * (dev-tools.ts) so it is testable under vitest's node environment (no DOM/webStorage
+ * there — see vitest.config.ts).
  *
  * Cross-reload visibility: `web_updated` triggers an immediate `location.reload()`
  * (state/sessions.tsx) — a fresh page means a fresh developer console. The SSE handler
- * records the event here (sessionStorage, survives the reload but not a tab close)
- * before reloading, and dev-tools.tsx replays the latest entry as a console.info line
- * on the next page load — so "just updated to rev X" is what the developer console
- * shows after the page comes back.
+ * records the event here before reloading, and dev-tools.ts replays the latest entry
+ * as a console.info line on the next page load — so "just updated to rev X" is what
+ * the developer console shows after the page comes back.
  */
 
 /** One entry in the update feed. Only `web_updated` is tracked today (see the module doc). */
@@ -65,36 +64,4 @@ export function recordDevConsoleEvent(
     // `next` back for this render; only cross-reload persistence is lost.
   }
   return next;
-}
-
-/** Keyboard-event shape the matcher needs (a subset of KeyboardEvent, for easy testing). */
-export type ShortcutKeyEvent = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">;
-
-/**
- * Ctrl+P (Cmd+P on mac) toggles the command palette. `isMac` is injected (from navigator
- * at the call site) rather than read here, so the matcher stays a pure function to
- * unit-test. Browsers report the letter itself regardless of modifiers, so `key` alone
- * (case-folded) identifies the physical P key without depending on layout/shift state.
- */
-export function isCommandPaletteShortcut(e: ShortcutKeyEvent, isMac: boolean): boolean {
-  if (e.key.toLowerCase() !== "p") return false;
-  return isMac ? e.metaKey : e.ctrlKey;
-}
-
-/**
- * Palette filtering, VSCode-style-lite: every whitespace-separated query token must
- * appear as a case-insensitive substring of the action label (in any order); an empty
- * query keeps everything, in registration order. Deliberately not fuzzy-per-character —
- * with a handful of actions, substring tokens are predictable and never surprising.
- */
-export function filterPaletteActions<A extends { label: string }>(
-  actions: readonly A[],
-  query: string,
-): A[] {
-  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return [...actions];
-  return actions.filter((a) => {
-    const label = a.label.toLowerCase();
-    return tokens.every((t) => label.includes(t));
-  });
 }
