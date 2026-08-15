@@ -1,9 +1,13 @@
 /**
  * Hot-update integration tests (via app.request() injection): pushing a
- * next-build platform bundle and a web dist as inline bytes over HTTP,
- * terminals surviving the swap via resource claiming, the migrate/blocked
- * paths, atomic persistence across a runtime restart, auth, the network
- * gate, and request queueing during a swap.
+ * next-build platform bundle and a web dist as inline bytes over HTTP, the
+ * migrate/blocked paths, atomic persistence across a runtime restart, auth,
+ * the network gate, and request queueing during a swap.
+ *
+ * The business-platform proof (terminals surviving a swap via resource
+ * claiming) lives in hmr-business-platform.test.ts, parked with
+ * describe.skip until the business platform is back (feat/workflow-hmr) —
+ * this file only exercises the mechanism, which carries no business methods.
  */
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -26,16 +30,6 @@ import type { TestApp } from "./helpers.js";
 const NEXT_BUNDLE_FILE = fileURLToPath(
   new URL("./fixtures/platform-next.bundle.mjs", import.meta.url),
 );
-
-/** Polls until fn() is truthy (live child processes emit output asynchronously). */
-async function until(fn: () => Promise<boolean>, timeoutMs = 3000): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    if (await fn()) return;
-    if (Date.now() - start > timeoutMs) throw new Error("condition not reached in time");
-    await new Promise((r) => setTimeout(r, 25));
-  }
-}
 
 describe("hot update", () => {
   let t: TestApp;
@@ -61,20 +55,20 @@ describe("hot update", () => {
   it("the local Bearer token is admin-equivalent for hot APIs (no cookie needed)", async () => {
     const bearer = { authorization: `Bearer ${t.deps.hmr.apiToken}` };
     // No cookie at all: the file-permission-gated token authenticates by itself.
-    const res = await t.app.request("/api/hmr/terminals", { headers: bearer });
+    const res = await t.app.request("/api/hmr/platform", { headers: bearer });
     expect(res.status).toBe(200);
     // A wrong token falls through to cookie auth and fails as unauthenticated.
-    const bad = await t.app.request("/api/hmr/terminals", {
+    const bad = await t.app.request("/api/hmr/platform", {
       headers: { authorization: "Bearer not-the-token" },
     });
     expect(bad.status).toBe(401);
     // A mutating call works over the token too.
-    const created = await t.app.request("/api/hmr/terminals", {
+    const upgraded = await t.app.request("/api/hmr/platform/upgrade", {
       method: "POST",
       headers: { ...bearer, "content-type": "application/json" },
-      body: JSON.stringify({ command: "cat" }),
+      body: JSON.stringify({ bundle: nextBundle }),
     });
-    expect(created.status).toBe(201);
+    expect(upgraded.status).toBe(200);
   });
 
   it("boots the packaged platform lazily and reports its serialized iface", async () => {
@@ -88,52 +82,8 @@ describe("hot update", () => {
     expect(body.impl).toBe("packaged");
     expect(body.info.impl).toBe("packaged");
     expect(body.iface.name).toBe("platform");
-    expect(Object.keys(body.iface.children)).toEqual(["terminals"]);
-  });
-
-  it("pushing the next build as inline bytes migrates the platform; terminals survive", async () => {
-    // A `cat` terminal echoes stdin: live proof the same process spans the swap.
-    const created = await api.post("/api/hmr/terminals", { command: "cat" });
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-
-    await api.post(`/api/hmr/terminals/${id}/input`, { data: "before-upgrade\n" });
-    await until(async () => {
-      const r = await api.get(`/api/hmr/terminals/${id}`);
-      return ((await r.json()) as { output: string }).output.includes("before-upgrade");
-    });
-
-    // The bundle bytes travel in the request body — exactly what a remote /
-    // HTTP-only runtime receives; the optional git specifier is provenance
-    // only (echoed, never executed).
-    const source = { repo: "file:///builds/penguin.git", revision: "deadbeef" };
-    const upgraded = await api.post("/api/hmr/platform/upgrade", { bundle: nextBundle, source });
-    expect(upgraded.status).toBe(200);
-    // The packaged doc is v1; the pushed build is v2 with a 1→2 migrator.
-    expect(await upgraded.json()).toEqual({ status: "ok", mode: "migrated", impl: "next", source });
-
-    const info = (await (await api.get("/api/hmr/platform")).json()) as {
-      impl: string;
-      info: { impl: string; theme: string };
-    };
-    expect(info.info.impl).toBe("next");
-    expect(info.info.theme).toBe("classic"); // filled by the migrator
-
-    // Same process, buffer intact, still responsive.
-    const after = (await (await api.get(`/api/hmr/terminals/${id}`)).json()) as {
-      output: string;
-      alive: boolean;
-      lost: boolean;
-    };
-    expect(after.alive).toBe(true);
-    expect(after.lost).toBe(false);
-    expect(after.output).toContain("before-upgrade");
-
-    await api.post(`/api/hmr/terminals/${id}/input`, { data: "after-upgrade\n" });
-    await until(async () => {
-      const r = await api.get(`/api/hmr/terminals/${id}`);
-      return ((await r.json()) as { output: string }).output.includes("after-upgrade");
-    });
+    // The packaged default is a bare mechanism-only stub: no business children.
+    expect(Object.keys(body.iface.children)).toEqual([]);
   });
 
   it("a downgrade without a migration path is blocked and the running platform keeps serving", async () => {
@@ -197,7 +147,7 @@ describe("hot update", () => {
     const [first, second, list] = await Promise.all([
       api.post("/api/hmr/platform/upgrade", { bundle: nextBundle }),
       api.post("/api/hmr/platform/upgrade", { bundle: nextBundle }),
-      api.get("/api/hmr/terminals"),
+      api.get("/api/hmr/platform"),
     ]);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);

@@ -107,6 +107,14 @@ async function post(api, apiPath, body) {
   return outcome;
 }
 
+/**
+ * Whether there is a platform entry to compile at all: the mechanism-only
+ * MVP branch ships no business platform (packages/server/src/platform/entry.ts
+ * is absent there), so the push cycle degrades to frontend-only rather than
+ * failing.
+ */
+const hasPlatformEntry = () => fs.existsSync(ENTRY);
+
 /** Compiles the platform entry to ONE self-contained file (kernel bundled in). */
 async function compilePlatform() {
   const esbuild = await import("esbuild");
@@ -166,6 +174,10 @@ async function pushCycle() {
         log(`[${target.id}] web push failed: ${err instanceof Error ? err.message : err}`);
       }
     }
+  }
+  if (!hasPlatformEntry()) {
+    log("no platform entry (packages/server/src/platform/entry.ts); frontend-only push cycle");
+    return;
   }
   await compilePlatform();
   for (const target of targets) {

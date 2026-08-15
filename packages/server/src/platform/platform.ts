@@ -7,19 +7,17 @@
  * and ships the migrator alongside the new schema; the previous shape lives
  * only in already-parked documents out in the world.
  *
- * Tree: platform { terminals: keyed(terminal) } — terminals are the
- * live-state proof (their processes are runtime-owned and survive swaps).
+ * This packaged default is deliberately a bare stub: the runtime (HmrHost,
+ * routes.ts) is mechanism only, and carries no business methods of its own.
+ * A real business platform is pushed over HTTP and dispatched through the
+ * generic /api/hmr/platform/call route — the method set is data read off the
+ * running iface, so adding or removing an API needs no runtime change.
  */
-import type { Impl, Json, KeyedHandle, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, keyed, schema, type } from "@prismshadow/penguin-core/kernel";
-import type { TerminalApi } from "./terminal.js";
-import { TerminalIface, terminalImpl } from "./terminal.js";
-import { spawnShellResource } from "../hmr/resources.js";
+import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
+import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 
 export interface PlatformApi extends Park {
   info(): Json;
-  createTerminal(command: string, cwd: string): Promise<{ id: string }>;
-  terminals(): KeyedHandle<TerminalApi>;
 }
 
 export type PlatformCtx = { motd: string };
@@ -28,31 +26,18 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   name: "platform",
   version: 1,
   context: schema<PlatformCtx>(type({ motd: "string" })),
-  methods: ["park", "info", "createTerminal", "terminals"],
-  children: { terminals: keyed(TerminalIface) },
+  methods: ["park", "info"],
 });
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
-  children: { terminals: terminalImpl },
-  create(ctx, context, children) {
-    const terminals = children.terminals as KeyedHandle<TerminalApi>;
+  create(_ctx, context) {
     return {
       park: () => ({ motd: context.motd }),
       info: () => ({
         impl: "packaged",
         ifaceVersion: PlatformIface.version,
         motd: context.motd,
-        terminals: terminals.keys(),
       }),
-      async createTerminal(command, cwd) {
-        const id = `term_${Math.random().toString(36).slice(2, 10)}`;
-        // Spawn the live resource on the runtime side first; the node only
-        // carries its handle id (linear state).
-        spawnShellResource(ctx.resources, `proc_${id}`, command, cwd);
-        await terminals.add(id, { procId: `proc_${id}`, command, cwd });
-        return { id };
-      },
-      terminals: () => terminals,
     };
   },
 };
