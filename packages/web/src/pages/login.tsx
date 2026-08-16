@@ -149,6 +149,16 @@ export function LoginPage() {
   const [connectLine, setConnectLine] = useState<string | null>(null);
   const [restartMachine, setRestartMachine] = useState<MachineTargetInfo | null>(null);
   /**
+   * A fresh install's seeded sign-in, shown BEFORE leaving for that origin: once the
+   * page navigates away this dialog is gone, and the remote's login page has no way to
+   * tell the user its own initial password.
+   */
+  const [initialAdmin, setInitialAdmin] = useState<{
+    origin: string;
+    userId: string;
+    password: string;
+  } | null>(null);
+  /**
    * The search box's text. An ssh config can declare hundreds of hosts, so the block never
    * lists them all: the server orders live-first then by recency, the query narrows by
    * substring, and only the first MAX_VISIBLE_MACHINES rows render — a counter names how
@@ -198,6 +208,11 @@ export function LoginPage() {
     try {
       const result = await runConnect(machine.id, { allowRestart, onLog: setConnectLine });
       if (result.ok) {
+        if (result.initialAdmin !== undefined) {
+          // Don't leave yet: the seeded password must be read (or noted) first.
+          setInitialAdmin({ origin: result.origin, ...result.initialAdmin });
+          return;
+        }
         setConnectLine(S.auth.machineConnected(machine.alias));
         window.location.assign(switchUrl(result.origin));
         return;
@@ -525,6 +540,29 @@ export function LoginPage() {
           </p>
         </div>
       </div>
+
+      {/* Fresh install connected: show the remote's seeded admin sign-in BEFORE leaving —
+          after the navigation this page is gone, and the remote's own login page cannot
+          tell the user its initial password. Closing without going keeps the tunnel up
+          (the machine shows a green dot; entering later is instant). */}
+      <ConfirmModal
+        open={initialAdmin !== null}
+        title={S.auth.machineInitialTitle}
+        confirmLabel={S.auth.machineGo}
+        onClose={() => setInitialAdmin(null)}
+        onConfirm={() => {
+          const target = initialAdmin;
+          setInitialAdmin(null);
+          if (target !== null) window.location.assign(switchUrl(target.origin));
+        }}
+      >
+        <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+          <p>{S.auth.machineInitialNote}</p>
+          <p className="rounded-md bg-gray-100 px-3 py-2 font-mono text-sm dark:bg-gray-800">
+            {initialAdmin?.userId} / {initialAdmin?.password}
+          </p>
+        </div>
+      </ConfirmModal>
 
       {/* Port conflict: the only way through restarts the REMOTE server, which ends
           whatever runs there — never done without this explicit stop. */}

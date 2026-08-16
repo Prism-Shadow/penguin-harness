@@ -16,7 +16,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { listHostAliases, resolveTarget } from "./targets.js";
+import { readInitialPasswordCommand, sshArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
+import { run } from "./exec.js";
 import { detectRemote, installOnRemote, resolvePayloadImage } from "./install-server.js";
 import { remoteServerState, startRemoteServer, stopRemoteServer } from "./server-control.js";
 import { localPortBusy, openTunnel, waitForTunneledHttp } from "./tunnel.js";
@@ -43,10 +45,25 @@ export type ConnectFailureCode = "port-conflict" | "not-supported" | "no-image";
 export interface ConnectJobState {
   machineId: string;
   running: boolean;
-  /** Progress lines, oldest first — the far side's own words where possible. */
+  /**
+   * Progress lines, oldest first — the far side's own words where possible, each
+   * prefixed with its step (`[2/4] …`) so the wait has a visible shape: 1 probe,
+   * 2 install, 3 server, 4 tunnel. A step that turns out unnecessary says so and passes.
+   */
   log: string[];
   result:
-    null | { ok: true; origin: string } | { ok: false; code?: ConnectFailureCode; message: string };
+    | null
+    | {
+        ok: true;
+        origin: string;
+        /**
+         * A fresh install's seeded admin sign-in, read back from the remote's own
+         * initial-password store — without it the first landing on that login page is a
+         * locked door. Absent once the password has been changed over there.
+         */
+        initialAdmin?: { userId: string; password: string };
+      }
+    | { ok: false; code?: ConnectFailureCode; message: string };
 }
 
 const originFor = (port: number) => `http://localhost:${port}`;
@@ -131,7 +148,15 @@ export class MachinesService {
     opts: { allowRestart?: boolean },
     job: ConnectJobState,
   ): Promise<ConnectJobState["result"]> {
-    const say = (line: string) => job.log.push(line);
+    // Four steps, numbered so the wait has a visible shape; a step that turns out
+    // unnecessary still reports itself and passes.
+    const STEPS = 4;
+    let step = 0;
+    const say = (line: string) => job.log.push(`[${Math.max(step, 1)}/${STEPS}] ${line}`);
+    const phase = (n: number, line: string) => {
+      step = n;
+      say(line);
+    };
     const machines = await this.list();
     const machine = machines.find((m) => m.id === id);
     if (machine === undefined) return { ok: false, message: `unknown machine ${id}` };
@@ -145,6 +170,7 @@ export class MachinesService {
 
     // The one `ssh -G` of the whole flow: the picked alias resolves (login user, Match,
     // Include, wildcard inheritance) only now — the LIST never resolves anything.
+    phase(1, `Resolving ${alias}…`);
     const resolved = await resolveTarget(alias);
     if (resolved === null) {
       return { ok: false, message: `ssh could not resolve "${alias}" (check ~/.ssh/config)` };
@@ -177,8 +203,12 @@ export class MachinesService {
     // from the image includes a remote NEWER one; the database only migrates forward, so
     // the log says which way the replacement went.
     let replacedInstall = false;
+    if (identity.installedVersion === image.version) {
+      phase(2, `PenguinHarness is already current on ${alias}.`);
+    }
     if (identity.installedVersion !== image.version) {
-      say(
+      phase(
+        2,
         identity.installedVersion === null
           ? `Installing PenguinHarness ${image.version} on ${alias}…`
           : `Replacing PenguinHarness ${identity.installedVersion} with ${image.version} on ${alias}…`,
@@ -197,7 +227,7 @@ export class MachinesService {
       identity = outcome.identity;
     }
 
-    say("Looking for its server…");
+    phase(3, "Looking for its server…");
     let state = await remoteServerState(target);
     // A server that predates a replace still runs the OLD build in memory: restart it.
     if (state.alive && state.lock !== null && replacedInstall) {
@@ -238,7 +268,7 @@ export class MachinesService {
       }
     }
 
-    say(`Opening the tunnel on port ${port}…`);
+    phase(4, `Opening the tunnel on port ${port}…`);
     const tunnel = openTunnel({
       target,
       port,
@@ -266,6 +296,21 @@ export class MachinesService {
       lastConnectedAt: new Date().toISOString(),
     });
     say("Connected.");
+
+    // A fresh install seeds its admin with a random password kept in the remote's data
+    // root until changed; without handing it over, the login page this connect lands on
+    // is a locked door. One quiet read — absent means "already changed", say nothing.
+    const seeded = await run("ssh", sshArgs(target, readInitialPasswordCommand()), {
+      timeoutMs: 15_000,
+    });
+    const initialPassword = seeded.code === 0 ? seeded.stdout.trim() : "";
+    if (initialPassword !== "") {
+      return {
+        ok: true,
+        origin,
+        initialAdmin: { userId: "admin", password: initialPassword },
+      };
+    }
     return { ok: true, origin };
   }
 

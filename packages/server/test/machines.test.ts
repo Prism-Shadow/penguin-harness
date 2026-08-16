@@ -452,23 +452,39 @@ describe("hmrPayloadImage", () => {
 
   it("assembles a complete image from the pushed version, sha-stamped", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    // The skill library resolves through the PROCESS ENTRY's resolver; under vitest
+    // argv[1] is the test runner, which resolves nothing — stand in a file of this
+    // package, the same resolution context every real entry shape has.
+    const originalArgv1 = process.argv[1];
+    process.argv[1] = new URL(import.meta.url).pathname;
     try {
       seedStore(work);
       const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
       expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
       const dest = path.join(work, "unpacked");
       const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      // The pushed bundle is a LIBRARY (it exports cli() and does nothing when executed),
+      // so the image carries it as cli.mjs and ships a bin shim as the entry.
+      expect(entries).toContain("penguin/lib/dist/cli.mjs");
       expect(entries).toContain("penguin/lib/dist/penguin.js");
       expect(entries).toContain("penguin/lib/package.json");
       expect(entries).toContain("penguin/lib/web/index.html");
+      // The skill library rides along: the bundle reads it from lib/skills beside itself.
+      expect(entries.some((e) => /^penguin\/lib\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
+      expect(
+        fs.readFileSync(path.join(dest, "penguin", "lib", "dist", "penguin.js"), "utf8"),
+      ).toContain('import { cli } from "./cli.mjs"');
       expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
         "<html>",
       );
       const manifest = JSON.parse(
         fs.readFileSync(path.join(dest, "penguin", "lib", "package.json"), "utf8"),
-      ) as { version: string };
+      ) as { version: string; type?: string };
       expect(manifest.version).toBe(image!.version);
+      // ESM on both files, and no per-run re-parse of a 10 MB bundle.
+      expect(manifest.type).toBe("module");
     } finally {
+      if (originalArgv1 !== undefined) process.argv[1] = originalArgv1;
       fs.rmSync(work, { recursive: true, force: true });
     }
   });

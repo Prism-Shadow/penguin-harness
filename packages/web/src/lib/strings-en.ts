@@ -275,6 +275,10 @@ export const en: Strings = {
     machineSearch: "Search machines…",
     machineMore: (n: number): string => `${n} more — type to filter`,
     machineNoMatch: "No matching machines",
+    machineInitialTitle: "First sign-in password for the remote",
+    machineInitialNote:
+      "Fresh install: sign in as the built-in admin below, then change the password soon:",
+    machineGo: "Go to sign in",
     machineBack: (host: string): string => `Back to ${host}`,
     machineConnecting: (machine: string): string => `Connecting to ${machine}…`,
     machineConnected: (machine: string): string => `Connected to ${machine}, switching…`,

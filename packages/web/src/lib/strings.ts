@@ -277,6 +277,10 @@ export const zh = {
     machineSearch: "搜索机器…",
     machineMore: (n: number): string => `还有 ${n} 台，输入名称筛选`,
     machineNoMatch: "没有匹配的机器",
+    /** 首次安装的远端:内置管理员的初始密码在跳转前展示一次,否则登录页无从进入。 */
+    machineInitialTitle: "远端的首次登录密码",
+    machineInitialNote: "这台机器是首次安装，用下面的内置管理员账号登录，登录后请尽快修改密码：",
+    machineGo: "前往登录",
     /** 从别的机器切过来时,回到来源机器的入口。 */
     machineBack: (host: string): string => `返回 ${host}`,
     /** 连接进行中的提示（探测/安装/起服务/开隧道都会走一遍）。 */

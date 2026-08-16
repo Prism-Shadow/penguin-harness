@@ -170,6 +170,16 @@ export function serverLogTailCommand(lines = 20): string {
 }
 
 /**
+ * The remote's stored initial admin password (the server keeps the seed plaintext at
+ * `<data root>/initial-admin-password` until the password is changed — see the server's
+ * initial-password module). Empty when already changed or never stored: a fresh install's
+ * first sign-in needs this told to the user, or the remote is a locked door.
+ */
+export function readInitialPasswordCommand(): string {
+  return `cat "$HOME/.penguin/data/initial-admin-password" 2>/dev/null || true`;
+}
+
+/**
  * `ssh -N -L <port>:127.0.0.1:<port> <alias>` — the tunnel that makes the remote server a
  * loopback origin here. Local and remote port are the SAME number by design: preview URLs are
  * built from the server's own bound port (preview-token.ts), so the two must stay equal.

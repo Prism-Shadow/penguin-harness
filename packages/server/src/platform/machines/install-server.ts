@@ -67,11 +67,76 @@ function versionOfManifest(manifestPath: string): string | null {
 }
 
 /**
+ * The bin shim the assembled image ships as `lib/dist/penguin.js`. The pushed CLI bundle
+ * is a LIBRARY — the compile entry is index.ts, which exports `cli()` and has no side
+ * effects, so executing the bundle directly loads it and exits 0 having done nothing
+ * (found the hard way: a remote install whose `penguin server` "started" silently). This
+ * shim is the packaged `dist/penguin.js` bin (penguin.ts) in miniature: run cli(), report
+ * the code.
+ */
+const CLI_BIN_SHIM = `// penguin bin shim (written by the machines image): the pushed CLI
+// bundle beside this file is a library exporting cli(); this file is the bin the
+// launchers exec.
+import { cli } from "./cli.mjs";
+cli(process.argv.slice(2))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((err) => {
+    process.stderr.write(\`\${err instanceof Error ? err.message : String(err)}\\n\`);
+    process.exitCode = 1;
+  });
+`;
+
+/**
+ * The skill library's content directory on THIS machine. The bundle inlines the skills
+ * CODE, but the library is markdown on disk, resolved relative to the running module —
+ * which for the assembled image means `lib/skills` beside the bundle, so the files must
+ * ride along. They are found here through the PROCESS ENTRY's resolver (argv[1] is the
+ * real dist file sitting next to a real node_modules in every install shape — tarball,
+ * desktop, dev checkout), never through this bundle's own location: a hot-pushed bundle
+ * lives in the hmr store, where no packages resolve.
+ */
+function skillsContentRoot(argv1: string | undefined = process.argv[1]): string | null {
+  if (!argv1) return null;
+  // A plain upward walk, not require.resolve: the package's exports map carries only an
+  // `import` condition, so both CJS resolution and a manifest-subpath lookup throw — and
+  // any copy of the content directory is the right bytes anyway. The workspace arm
+  // covers dev runs, where the entry sits in packages/* above a pnpm-workspace.yaml.
+  let dir = path.dirname(path.resolve(argv1));
+  for (;;) {
+    const viaModules = path.join(dir, "node_modules", "@prismshadow", "penguin-skills", "skills");
+    if (fs.existsSync(viaModules)) return viaModules;
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
+      const viaWorkspace = path.join(dir, "packages", "skills", "skills");
+      if (fs.existsSync(viaWorkspace)) return viaWorkspace;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** Every file under a directory as pack files below `prefix`, preserving modes. */
+function packFilesUnder(root: string, prefix: string): PackFile[] {
+  const out: PackFile[] = [];
+  for (const entry of fs.readdirSync(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    const rel = path.relative(root, abs).split(path.sep).join("/");
+    out.push({ path: `${prefix}/${rel}`, data: fs.readFileSync(abs) });
+  }
+  return out;
+}
+
+/**
  * The image assembled from the data root's OWN hot-pushed version — the FIRST choice: it
  * is literally what this server runs. The pushed CLI bundle is a self-contained esbuild
  * artifact carrying the whole program (server, platform, seam), and the web artifact is
- * the dist the server serves from memory — so `lib/dist/penguin.js` + `lib/web/*` + a
- * synthesized manifest IS a complete universal install, with no node_modules tree at all.
+ * the dist the server serves from memory — so the bundle as `lib/dist/cli.mjs`, the bin
+ * shim above as `lib/dist/penguin.js`, `lib/web/*` and a synthesized manifest (with
+ * `"type": "module"` — both files are ESM, and without it Node re-parses the 10 MB bundle
+ * per run) make a complete universal install with no node_modules tree at all.
  *
  * The version is minted from the two artifacts' content shas (`0.0.0-hmr.<cli>.<web>`):
  * the remote's installed manifest then equals ours exactly when it runs this pushed
@@ -97,10 +162,13 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
       version,
       pack: () => {
         const files: PackFile[] = [
-          { path: "penguin/lib/dist/penguin.js", data: fs.readFileSync(cliPath) },
+          { path: "penguin/lib/dist/cli.mjs", data: fs.readFileSync(cliPath) },
+          { path: "penguin/lib/dist/penguin.js", data: Buffer.from(CLI_BIN_SHIM) },
           {
             path: "penguin/lib/package.json",
-            data: Buffer.from(JSON.stringify({ name: "@prismshadow/penguin-cli", version }) + "\n"),
+            data: Buffer.from(
+              JSON.stringify({ name: "@prismshadow/penguin-cli", version, type: "module" }) + "\n",
+            ),
           },
         ];
         // The web artifact is gzip(JSON.stringify({ files: { relPath: base64 } })) — the
@@ -111,6 +179,9 @@ export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
         for (const [rel, base64] of Object.entries(webz.files)) {
           files.push({ path: `penguin/lib/web/${rel}`, data: Buffer.from(base64, "base64") });
         }
+        // The skill library: content the bundle reads from `lib/skills` beside itself.
+        const skills = skillsContentRoot();
+        if (skills !== null) files.push(...packFilesUnder(skills, "penguin/lib/skills"));
         return packFiles(files);
       },
     };

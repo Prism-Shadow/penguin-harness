@@ -107,10 +107,16 @@ export function highlightSegments(
 export interface ConnectJobState {
   machineId: string;
   running: boolean;
+  /** Step-prefixed progress lines (`[2/4] …`) — the wait has a visible shape. */
   log: string[];
   result:
     | null
-    | { ok: true; origin: string }
+    | {
+        ok: true;
+        origin: string;
+        /** A fresh install's seeded admin sign-in — shown before leaving, or the remote's login page is a locked door. */
+        initialAdmin?: { userId: string; password: string };
+      }
     | { ok: false; code?: "port-conflict" | "not-supported" | "no-image"; message: string };
 }
 
