@@ -57,7 +57,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // auto-install, tunnel) reaches deployed machines by push; tunnels it spawned before
     // a swap are re-adopted through the state file, not held objects.
     const machines = new MachinesService(process.env.PENGUIN_HOME ?? resolveRoot());
-    const machinesRoutes = machinesHttp(machines, process.env.PENGUIN_HOME ?? resolveRoot());
+    const machinesRoutes = machinesHttp(machines, process.env.PENGUIN_HOME ?? resolveRoot(), {
+      // The env var is how the shell marks the server it spawned; env is stable for the
+      // process's lifetime, so a hot-pushed bundle reads the same answer as the packaged one.
+      desktopMode: process.env.PENGUIN_DESKTOP_TOKEN !== undefined,
+    });
     // `http` rides beside the iface methods (not IN them: a Request/Response pair is not
     // Json) — the seam calls it in-process on the booted object. See ../hmr/http-seam.ts.
     return {

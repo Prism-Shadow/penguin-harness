@@ -36,8 +36,6 @@ import type {
   SessionInfo,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { getMachines, homeOrigin, runConnect, switchUrl } from "../../lib/machines";
-import type { MachineTargetInfo } from "../../lib/machines";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
 import { sessionRowActivity } from "../../lib/session-activity";
@@ -409,65 +407,6 @@ export function Sidebar({
     }
   };
 
-  /**
-   * Machines this server can point the window at — the PLATFORM's /api/machines surface
-   * (hot-pushed; the shell only permits the navigation). Fetched on menu open, admins
-   * only; a server without the capability (403/404) reads as an empty list and the
-   * section stays hidden. `homeOrigin` is the origin a switch arrived FROM (captured off
-   * ?penguinHome= at app start) — the way back that this origin's own list cannot know.
-   */
-  const [machines, setMachines] = useState<MachineTargetInfo[]>([]);
-  const [connectingMachine, setConnectingMachine] = useState<string | null>(null);
-  const [restartMachine, setRestartMachine] = useState<MachineTargetInfo | null>(null);
-  const machinesHome = homeOrigin();
-  useEffect(() => {
-    if (!userOpen || user?.isAdmin !== true) return;
-    let cancelled = false;
-    void getMachines()
-      .then((res) => {
-        if (!cancelled) setMachines(res.machines);
-      })
-      .catch(() => {
-        if (!cancelled) setMachines([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [userOpen, user?.isAdmin]);
-
-  /**
-   * The connect flow: the server does everything (probe, auto-install or update, start its
-   * server, tunnel) while this side polls and narrates; success is a full document load
-   * onto the other server's origin, which is the only way into another origin's world.
-   * A "port-conflict" answer pauses for explicit consent — resolving it restarts the
-   * remote server — and retries with allowRestart.
-   */
-  const connectToMachine = async (machine: MachineTargetInfo, allowRestart = false) => {
-    setUserOpen(false);
-    if (machine.origin !== null && !allowRestart) {
-      window.location.assign(switchUrl(machine.origin));
-      return;
-    }
-    setConnectingMachine(machine.id);
-    toastInfo(S.auth.machineConnecting(machine.machine));
-    try {
-      const result = await runConnect(machine.id, { allowRestart });
-      if (result.ok) {
-        toastSuccess(S.auth.machineConnected(machine.machine));
-        window.location.assign(switchUrl(result.origin));
-        return;
-      }
-      if (result.code === "port-conflict") {
-        setRestartMachine(machine);
-        return;
-      }
-      toastError(result.message);
-    } catch (err) {
-      toastError(apiErrorText(err));
-    } finally {
-      setConnectingMachine(null);
-    }
-  };
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -2092,55 +2031,6 @@ export function Sidebar({
             >
               {S.auth.switchAccount}
             </button>
-            {/* Machines (admin only): which machine's server this window shows. The rows
-                come from THIS server's /api/machines — platform-served, so the list and
-                the whole connect flow update by hot push. Picking one makes the server
-                probe the host, install or update itself there if needed, start its server
-                and open the tunnel; the page then full-loads onto that server's origin
-                (its own login page the first time, the parked jar afterwards). Agents,
-                shells, files and previews all follow the server, so switching here is what
-                "run agents remotely" means. The "back to" row is the origin a switch
-                arrived from — this origin's own list cannot contain it. */}
-            {(machines.length > 0 || machinesHome !== null) && user?.isAdmin === true && (
-              <>
-                <p className="px-3.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                  {S.auth.machines}
-                </p>
-                {machinesHome !== null && (
-                  <button
-                    type="button"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setUserOpen(false);
-                      window.location.assign(`${machinesHome}/`);
-                    }}
-                  >
-                    {S.auth.machineBack(new URL(machinesHome).host)}
-                  </button>
-                )}
-                {machines.map((machine) => (
-                  <button
-                    key={machine.id}
-                    type="button"
-                    disabled={connectingMachine !== null}
-                    className={`${menuItemClass} flex items-center gap-2 disabled:cursor-default disabled:opacity-60`}
-                    onClick={() => void connectToMachine(machine)}
-                  >
-                    {connectingMachine === machine.id && (
-                      <span
-                        aria-hidden
-                        className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                      />
-                    )}
-                    {connectingMachine !== machine.id && machine.origin !== null && (
-                      /* A live tunnel already reaches this machine: switching is instant. */
-                      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-                    )}
-                    <span className="min-w-0 truncate">{machine.machine}</span>
-                  </button>
-                ))}
-              </>
-            )}
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown.
                 Total by design, and the opposite of the switch above: the server destroys
@@ -2278,24 +2168,6 @@ export function Sidebar({
           }}
         />
       </Modal>
-      {/* Machine connect hit a port conflict: resolving it restarts the REMOTE server,
-          which ends whatever runs there — never done without this explicit stop. */}
-      <ConfirmModal
-        open={restartMachine !== null}
-        title={S.auth.machineRestartTitle}
-        confirmLabel={S.auth.machineRestart}
-        onClose={() => setRestartMachine(null)}
-        onConfirm={() => {
-          const machine = restartMachine;
-          setRestartMachine(null);
-          if (machine !== null) void connectToMachine(machine, true);
-        }}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {restartMachine ? S.auth.machineRestartConfirm(restartMachine.machine) : ""}
-        </p>
-      </ConfirmModal>
-
       {/* Delete chat confirmation (shared ConfirmModal) */}
       <ConfirmModal
         open={deletingSession !== null}

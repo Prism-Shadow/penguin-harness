@@ -12,8 +12,18 @@
  * request's Host header: Host is caller-controlled, and following it would let a local
  * process point the check at a listener of its own.
  *
- * Admin-only: connecting spawns ssh with this account's keys and can install software on
- * other machines. That is an owner's capability, not a member's.
+ * Who may use it: an ADMIN session — or anyone on the loopback when this is the desktop
+ * app's embedded server (`desktopMode`). The machines block lives on the LOGIN page, where
+ * no session exists yet; on a personal desktop the human at the keyboard IS the owner, and
+ * the server already binds loopback only. A multi-user server keeps the admin gate: its
+ * login page simply shows no machine list, because connecting spawns ssh with the server
+ * account's keys and installs software — an owner's capability, not a visitor's.
+ *
+ * Every POST additionally requires `content-type: application/json`. The desktop-mode
+ * exemption would otherwise be CSRF-reachable: any website can fire a form or text/plain
+ * fetch at http://localhost:7376 with a JSON-shaped body, and the seam runs before the
+ * runtime's jsonOnlyWrites middleware — so the rule is enforced here. A cross-origin fetch
+ * carrying this content type triggers a preflight, which no server here answers for.
  */
 import http from "node:http";
 import { readServerLock } from "../../lock.js";
@@ -87,12 +97,13 @@ function isAdminRequest(request: Request, dataRoot: string): Promise<boolean> {
 export function machinesHttp(
   service: MachinesService,
   dataRoot: string,
+  opts: { desktopMode: boolean },
 ): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const url = new URL(request.url);
     if (url.pathname !== PREFIX && !url.pathname.startsWith(`${PREFIX}/`)) return null;
 
-    if (!(await isAdminRequest(request, dataRoot))) {
+    if (!opts.desktopMode && !(await isAdminRequest(request, dataRoot))) {
       return json(403, { error: { code: "admin_only", message: "Admin session required." } });
     }
 
@@ -101,6 +112,14 @@ export function machinesHttp(
     }
 
     if (request.method === "POST" && url.pathname === `${PREFIX}/connect`) {
+      // The CSRF gate (see the module doc): a browser can send this cross-origin only
+      // with a content type that forces a preflight.
+      const contentType = request.headers.get("content-type") ?? "";
+      if (!/^application\/json\b/i.test(contentType.trim())) {
+        return json(415, {
+          error: { code: "json_only", message: "content-type: application/json required." },
+        });
+      }
       let body: { id?: unknown; allowRestart?: unknown };
       try {
         body = (await request.json()) as typeof body;

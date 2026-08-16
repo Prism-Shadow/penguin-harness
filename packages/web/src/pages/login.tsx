@@ -12,6 +12,13 @@
  * - REMEMBERED accounts (known-accounts.ts): ids seen on this machine with no live session left. One
  *   click fills the username and focuses the password box; each row is removable on the spot.
  * Both blocks are absent until this browser has seen a sign-in, so a fresh install opens on the plain form.
+ *
+ * Below the form sits the MACHINE dimension: this page is the account chooser, and picking which
+ * machine's server to sign into belongs to the same decision — machine first, then account, then
+ * password. The rows come from this server's /api/machines (platform-served; pre-auth only on a
+ * desktop-mode server, so a multi-user server's login page shows none), plus the "back to" origin a
+ * switch arrived from. Picking one runs the whole connect server-side (probe, auto-install, tunnel)
+ * and lands on THAT server's own login page, where its accounts take over.
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -19,6 +26,8 @@ import * as api from "../api/endpoints";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { accountsForMachine, currentMachine, forgetAccount } from "../lib/known-accounts";
+import { getMachines, homeOrigin, runConnect, switchUrl } from "../lib/machines";
+import type { MachineTargetInfo } from "../lib/machines";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
 import { useLocale } from "../state/locale";
@@ -28,6 +37,7 @@ import type { ThemeMode } from "../state/theme";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
+import { ConfirmModal } from "../components/ui/confirm-modal";
 import { PenguinLogo } from "../components/ui/penguin-logo";
 import { Segmented } from "../components/ui/segmented";
 import { LoginCircuit } from "./login-circuit";
@@ -115,6 +125,66 @@ export function LoginPage() {
    * rows for one account with different meanings.
    */
   const remembered = accounts.filter((a) => !parked.includes(a.userId));
+
+  /**
+   * Machines this server can reach (see the module doc). A 403 — a multi-user server
+   * guarding the capability behind an admin session — or an older server without the
+   * route reads as an empty list, and the block collapses to the "back to" row or nothing.
+   */
+  const [machines, setMachines] = useState<MachineTargetInfo[]>([]);
+  const [connectingMachine, setConnectingMachine] = useState<string | null>(null);
+  /** Latest progress line of the running connect, shown in place under the rows. */
+  const [connectLine, setConnectLine] = useState<string | null>(null);
+  const [restartMachine, setRestartMachine] = useState<MachineTargetInfo | null>(null);
+  const home = homeOrigin();
+  useEffect(() => {
+    let cancelled = false;
+    void getMachines()
+      .then((res) => {
+        if (!cancelled) setMachines(res.machines);
+      })
+      .catch(() => {
+        if (!cancelled) setMachines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * The connect flow: the server does everything (probe, auto-install or update, start its
+   * server, tunnel) while this page polls and shows the latest log line; success is a full
+   * document load onto the other server's origin — the only way into another origin's
+   * world. A "port-conflict" answer stops for explicit consent (resolving it restarts the
+   * remote server) and retries with allowRestart.
+   */
+  const connectToMachine = async (machine: MachineTargetInfo, allowRestart = false) => {
+    if (machine.origin !== null && !allowRestart) {
+      window.location.assign(switchUrl(machine.origin));
+      return;
+    }
+    setConnectingMachine(machine.id);
+    setConnectLine(S.auth.machineConnecting(machine.machine));
+    clearErrors();
+    try {
+      const result = await runConnect(machine.id, { allowRestart, onLog: setConnectLine });
+      if (result.ok) {
+        setConnectLine(S.auth.machineConnected(machine.machine));
+        window.location.assign(switchUrl(result.origin));
+        return;
+      }
+      if (result.code === "port-conflict") {
+        setRestartMachine(machine);
+        return;
+      }
+      setErrors({ form: result.message });
+    } catch (err) {
+      setErrors({ form: apiErrorText(err) });
+    } finally {
+      setConnectingMachine(null);
+      setConnectLine(null);
+    }
+  };
 
   /** Per-row remove: drops the account from this browser's memory (the typed username is left alone). */
   const forget = (id: string) => {
@@ -305,6 +375,61 @@ export function LoginPage() {
             </Button>
           </form>
 
+          {/* Machines: sign into another machine's server instead. Below the form because
+              the form is this server's primary path; picking a row leaves for that
+              server's own login page (or straight into it, where a session cookie is
+              still live). A green dot marks a machine whose tunnel is already up —
+              switching there is instant. */}
+          {(machines.length > 0 || home !== null) && (
+            <div className="mt-5 border-t border-gray-100 pt-5 dark:border-gray-800">
+              <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                {S.auth.machines}
+              </p>
+              <ul className="space-y-0.5">
+                {home !== null && (
+                  <li>
+                    <button
+                      type="button"
+                      disabled={busy || connectingMachine !== null}
+                      onClick={() => window.location.assign(`${home}/`)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {S.auth.machineBack(new URL(home).host)}
+                      </span>
+                    </button>
+                  </li>
+                )}
+                {machines.map((machine) => (
+                  <li key={machine.id}>
+                    <button
+                      type="button"
+                      disabled={busy || connectingMachine !== null}
+                      onClick={() => void connectToMachine(machine)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                    >
+                      {connectingMachine === machine.id && (
+                        <span
+                          aria-hidden
+                          className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                        />
+                      )}
+                      {connectingMachine !== machine.id && machine.origin !== null && (
+                        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{machine.machine}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {connectLine !== null && (
+                <p className="mt-2 truncate px-2 text-xs text-gray-500 dark:text-gray-400">
+                  {connectLine}
+                </p>
+              )}
+            </div>
+          )}
+
           <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
             {S.auth.defaultAdminNote}
           </p>
@@ -313,6 +438,24 @@ export function LoginPage() {
           </p>
         </div>
       </div>
+
+      {/* Port conflict: the only way through restarts the REMOTE server, which ends
+          whatever runs there — never done without this explicit stop. */}
+      <ConfirmModal
+        open={restartMachine !== null}
+        title={S.auth.machineRestartTitle}
+        confirmLabel={S.auth.machineRestart}
+        onClose={() => setRestartMachine(null)}
+        onConfirm={() => {
+          const machine = restartMachine;
+          setRestartMachine(null);
+          if (machine !== null) void connectToMachine(machine, true);
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {restartMachine ? S.auth.machineRestartConfirm(restartMachine.machine) : ""}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }
