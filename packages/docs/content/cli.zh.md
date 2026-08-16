@@ -186,7 +186,7 @@ penguin update             # 确认后升级到最新版
 
 | 安装方式 | 升级方式 |
 | --- | --- |
-| tarball（`install.sh`，默认 `~/.penguin`） | 重新执行官方安装脚本，并保持原安装目录以及是否内置 Node 运行时 |
+| tarball（`install.sh`，默认 `~/.local/share/penguin`） | 重新执行官方安装脚本，并保持原安装目录以及是否内置 Node 运行时 |
 | npm/pnpm/yarn/bun 全局安装 | 用该包管理器全局安装 `@prismshadow/penguin-cli@<目标版本>`；无法确定包管理器时，只打印命令而不猜测 |
 | 源码检出 | 拒绝执行——请用 `git pull` 更新并重新构建 |
 

@@ -1,4 +1,6 @@
 # Unreleased
+
+- [2026-08-15] Installs put the program in the platform's data directory (`~/.local/share/penguin`, `%LOCALAPPDATA%\penguin`) instead of `~/.penguin`, migrating an existing install on the next run; the data root stays at `~/.penguin/data`. ([details](2026-08-15-install-layout.md))
 - [2026-08-15] The server, CLI and desktop shell share one well-known port, 7376 (was 7364, and the shell used an ephemeral one): a client finds this user's server by probing a single known address, at the cost of one server per user per machine by default. ([details](2026-08-15-server-port.md))
 
 - [2026-08-18] Core & Web App: an official `MiniMax-M3` preset (1M context, vision) pins AgentHub's `minimax-m3` Responses client and direct endpoint, uses `MINIMAX_*` credential fallback, prices at the standard pay-as-you-go tier (≤512K input), and adds the MiniMax provider glyph plus bilingual docs (requires AgentHub >= 0.4.2). ([details](2026-08-18-minimax-m3-preset.md))
