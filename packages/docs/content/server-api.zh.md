@@ -42,7 +42,7 @@ packages/server/src
 # 密码用首次启动时打印的初始密码（或改过之后的密码）。
 curl -c cookies.txt -H "Content-Type: application/json" \
   -d '{"userId":"admin","password":"penguin-1234"}' \
-  http://127.0.0.1:7364/api/auth/login
+  http://127.0.0.1:7376/api/auth/login
 ```
 
 ## 路由参考
@@ -257,7 +257,7 @@ Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `
 
 ```text
 GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
-302  Location: http://localhost:7364/preview/<token>/index.html
+302  Location: http://localhost:7376/preview/<token>/index.html
 GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证）
 ```
 

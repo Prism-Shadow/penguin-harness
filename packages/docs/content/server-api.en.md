@@ -42,7 +42,7 @@ packages/server/src
 # Use the initial password printed at first start (or your changed one).
 curl -c cookies.txt -H "Content-Type: application/json" \
   -d '{"userId":"admin","password":"penguin-1234"}' \
-  http://127.0.0.1:7364/api/auth/login
+  http://127.0.0.1:7376/api/auth/login
 ```
 
 ## Route Reference
@@ -258,7 +258,7 @@ Both the Files panel's rendered HTML view (an iframe) and "open in a new tab" go
 
 ```text
 GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
-302  Location: http://localhost:7364/preview/<token>/index.html
+302  Location: http://localhost:7376/preview/<token>/index.html
 GET  /preview/<token>/<relative path>          (unauthenticated; the token is the credential)
 ```
 
