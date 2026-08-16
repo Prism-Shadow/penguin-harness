@@ -94,7 +94,9 @@ export function appImageBootstrapJs(): string {
   return (
     'const path=require("path");' +
     'const cli=path.join(path.dirname(process.execPath),"resources","app",' +
-    '"node_modules","@prismshadow","penguin-cli","dist","index.js");' +
+    // Same entry CLI_ENTRY_RELPATH names — "index.js" here was left behind by b77ddea
+    // ("two bins, no router"), which renamed the CLI entry to penguin.js.
+    '"node_modules","@prismshadow","penguin-cli","dist","penguin.js");' +
     "process.argv.splice(1,0,cli);" +
     "import(cli).catch((err)=>{console.error(err);process.exit(1);});"
   );

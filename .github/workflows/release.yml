@@ -199,9 +199,9 @@ jobs:
           DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
           export PENGUIN_WEB_DIST="${PENGUIN_WEB_DIST:-$DIR/web}"
           if [ -x "$DIR/node/bin/node" ]; then
-            exec "$DIR/node/bin/node" "$DIR/lib/dist/index.js" "$@"
+            exec "$DIR/node/bin/node" "$DIR/lib/dist/penguin.js" "$@"
           fi
-          exec node "$DIR/lib/dist/index.js" "$@"
+          exec node "$DIR/lib/dist/penguin.js" "$@"
           EOF
           chmod +x out/penguin/bin/penguin
 
@@ -277,9 +277,9 @@ jobs:
           if not defined PENGUIN_WEB_DIST set "PENGUIN_WEB_DIST=%DIR%\web"
           if exist "%DIR%\git\usr\bin\sh.exe" set "PENGUIN_BUNDLED_SHELL=%DIR%\git\usr\bin\sh.exe"
           if exist "%DIR%\node\node.exe" (
-            "%DIR%\node\node.exe" "%DIR%\lib\dist\index.js" %*
+            "%DIR%\node\node.exe" "%DIR%\lib\dist\penguin.js" %*
           ) else (
-            node "%DIR%\lib\dist\index.js" %*
+            node "%DIR%\lib\dist\penguin.js" %*
           )
           exit /b %ERRORLEVEL%
           EOF
