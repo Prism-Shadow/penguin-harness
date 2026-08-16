@@ -874,6 +874,57 @@ function providerSignals(level: object): string[] {
 }
 
 /**
+ * Provider message texts at one level of an error: the error's own `message` (the OpenAI SDK
+ * already folds the response body's message into it) plus the parsed body's message in both
+ * the OpenAI (`err.error.message`) and Anthropic (`err.error.error.message`) shapes — the same
+ * nesting `providerSignals` walks for codes. Relays reword and re-wrap freely, so a verdict is
+ * read from whichever level actually carries text.
+ */
+function providerMessages(level: object): string[] {
+  const err = level as {
+    message?: unknown;
+    error?: { message?: unknown; error?: { message?: unknown } };
+  };
+  const body = typeof err.error === "object" && err.error !== null ? err.error : undefined;
+  const inner = typeof body?.error === "object" && body.error !== null ? body.error : undefined;
+  return [err.message, body?.message, inner?.message].filter(
+    (v): v is string => typeof v === "string",
+  );
+}
+
+/**
+ * Determines whether an error is the provider rejecting a **thinking-mode** request because
+ * the history replayed with it carries assistant turns that don't bring their reasoning back
+ * ("The `reasoning_content` in the thinking mode must be passed back to the API." — DeepSeek
+ * and the OpenAI-compatible relays in front of it; 400 `invalid_request_error`).
+ *
+ * The rejection is about the model context, not this turn: the thinking level is a per-turn
+ * parameter while the history is shared by the whole context, so a context can hold assistant
+ * turns produced without reasoning — a turn run at `none`, a Session resumed at a level its
+ * recorded turns never ran with (session_meta deliberately records no thinking level), or a
+ * provider that returned no reasoning for one turn. Every later thinking-mode request over
+ * that history is then rejected identically, so retrying it unchanged can only fail: the
+ * caller reacts by taking thinking off the wire for this context (see
+ * `GenerativeModel.disableThinkingForContext`), which the same history is always valid for.
+ *
+ * Matched by message text (no provider gives this a code), verified against the DeepSeek
+ * wording above: the `reasoning_content` token — which essentially only appears in this class
+ * of verdict — plus a requirement word, in English or Chinese, so a relay's own phrasing or
+ * translation still lands. Deliberately does NOT match the neighbouring "reasoning_content is
+ * not supported" rejection: that one is not fixed by disabling thinking. The caller checks
+ * whether the failed attempt could have been in thinking mode at all before acting on this.
+ */
+export function isThinkingReplayRejection(error: unknown): boolean {
+  if (error == null) return false;
+  return anyInCauseChain(error, (level) =>
+    providerMessages(level).some(
+      (m) =>
+        /reasoning[_ ]content/i.test(m) && /must|requir|need|missing|必须|必需|需要|缺少/i.test(m),
+    ),
+  );
+}
+
+/**
  * Determines whether an error is a credentials/authentication failure — the one class an
  * in-run retry can never fix: the request keeps going out with the same dead credential.
  * Only the model REFERENCE is fixed at Session creation; the credential is read from the
@@ -1048,6 +1099,15 @@ export class GenerativeModel implements LLMInterface {
   private lastRequestTotal: number;
   /** Last hard-clamped cap already warned about on stderr (dedupe: retries reuse the same estimate and would repeat the identical line). */
   private lastWarnedCap: number | undefined;
+  /**
+   * Set once the provider has rejected a thinking-mode request over **this context's**
+   * history for not bringing its reasoning back (see `isThinkingReplayRejection`): from then
+   * on every request from this object goes out with thinking explicitly off, which the same
+   * history is always valid for. Sticky and per-object by design — the state being described
+   * is the history AgentHub holds, so it dies with it: a new context (compaction rebuilds the
+   * LLM via `createLLM`, or a new Session) starts from the configured level again.
+   */
+  private thinkingReplayRejected = false;
 
   /** Cumulative session tokens. */
   sessionTokens: TokenCounts = emptyTokenCounts();
@@ -1083,12 +1143,20 @@ export class GenerativeModel implements LLMInterface {
    * key stays off the wire, preserving the provider default) and this request's effective
    * output cap (the window-derived clamp below; equal to the configured cap for big-window
    * models, so the frozen value goes out unchanged).
+   *
+   * One override outranks both levels: a context the provider has already rejected a
+   * thinking-mode request for (`thinkingReplayRejected`) sends an explicit `none` — including
+   * where no level was configured at all, since leaving the key off would hand the decision
+   * back to a provider default that is thinking-ON for exactly the reasoning models this
+   * rejection comes from.
    */
   private requestConfig(
     override: ThinkingLevelName | undefined,
     newMessages: OmniMessage[],
   ): UniConfig {
-    const thinking = mapThinkingLevel(override ?? this.defaultThinkingLevel);
+    const thinking = this.thinkingReplayRejected
+      ? ThinkingLevel.NONE
+      : mapThinkingLevel(override ?? this.defaultThinkingLevel);
     const maxTokens = this.effectiveMaxTokens(newMessages);
     let cfg = this.uniConfig;
     if (thinking !== undefined) cfg = { ...cfg, thinking_level: thinking };
@@ -1242,12 +1310,14 @@ export class GenerativeModel implements LLMInterface {
     // Terminal-state classification: timeout (timed out/network drop) / malformed (response
     // parse error) / aborted (user) / failed (other). null means it ended normally.
     let outcome: LLMOutcome | null = null;
+    // Resolved before the request so the classifier below can read what this attempt actually
+    // asked for: an explicit `none` is the only level that definitely took thinking off (an
+    // absent level leaves the provider's own default, thinking-ON for the reasoning models a
+    // replay rejection comes from), so anything else keeps that rejection actionable.
+    const config = this.requestConfig(params.thinkingLevel, params.newMessages);
+    const thinkingPossible = config.thinking_level !== ThinkingLevel.NONE;
     try {
-      const it = this.openStream(
-        uniMessage,
-        ac.signal,
-        this.requestConfig(params.thinkingLevel, params.newMessages),
-      )[Symbol.asyncIterator]();
+      const it = this.openStream(uniMessage, ac.signal, config)[Symbol.asyncIterator]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
         // interrupt while this generator is suspended at the `yield` below (the typical case —
@@ -1322,6 +1392,17 @@ export class GenerativeModel implements LLMInterface {
           permanent: true,
           errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
         };
+      } else if (thinkingPossible && isThinkingReplayRejection(error)) {
+        // The provider rejected the request over the history behind it, not over anything
+        // this turn did (see isThinkingReplayRejection): resending it unchanged would be
+        // rejected the same way until the reconnect budget runs out and the Session is left
+        // dead — every request in this context carries that history. Take thinking off the
+        // wire for the context first, then report the rejection honestly as `failed`; the
+        // engine's own retry re-issues the identical input with thinking disabled, which the
+        // same history is valid for, and the run continues from there.
+        const detail = describeError(error);
+        this.disableThinkingForContext(detail);
+        outcome = { status: "failed", errorMessage: detail };
       } else if (isRetryableError(error)) {
         // Transport-shaped failure (network drop, 429/5xx) -> labeled timeout. The detail
         // rides on the outcome so observability (request_end -> the Cost center's errors
@@ -1369,6 +1450,29 @@ export class GenerativeModel implements LLMInterface {
     this.sessionTokens = addTokenCounts(this.sessionTokens, requestTokens);
     yield tokenUsage(this.sessionTokens, requestTokens);
     return { status: "completed" };
+  }
+
+  /**
+   * Takes thinking off the wire for the rest of this model context, after the provider
+   * rejected a thinking-mode request over its history (see `isThinkingReplayRejection`).
+   *
+   * The history itself is deliberately left untouched: rewriting committed turns to carry a
+   * synthesized reasoning would forge model output and invalidate the provider's prompt cache
+   * for everything that follows (the same reason compaction corrects forward instead of
+   * rewriting a bad attempt, issue #84) — turning the request parameter down is the one lever
+   * that fixes the request without touching what the model actually said. Announced once on
+   * stderr (dedupe: every subsequent request in the context takes the same path), so a session
+   * that quietly stopped thinking is diagnosable from the log.
+   */
+  private disableThinkingForContext(detail: string): void {
+    if (this.thinkingReplayRejected) return;
+    this.thinkingReplayRejected = true;
+    process.stderr.write(
+      `[penguin] thinking disabled for this context: the provider requires every assistant turn ` +
+        `to carry its reasoning back, and this context holds turns that don't (${detail}). ` +
+        `The retry goes out with thinking off; a new context (compaction, or a new session) ` +
+        `starts from the configured level again.\n`,
+    );
   }
 
   /**
