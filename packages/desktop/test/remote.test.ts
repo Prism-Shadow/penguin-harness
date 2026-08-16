@@ -1,24 +1,34 @@
 /**
  * The pure half of "install a server on that machine": reading ~/.ssh/config and `ssh -G`,
- * reading the probe's answer, deciding what to do with it, and the exact ssh/scp commands
- * that decision turns into. No network, no ssh binary, no Electron.
+ * reading what the identity probe answered, choosing the Node runtime to send, the container
+ * the image travels in, and the exact ssh/scp commands all of that turns into. No network, no
+ * ssh binary, no Electron.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/remote/ssh-config.js";
+import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/remote/detect.js";
 import {
-  MIN_REMOTE_NODE_MAJOR,
-  parseProbe,
-  planRemoteInstall,
-  PROBE_COMMAND,
-} from "../src/remote/probe.js";
-import { payloadSourcesReady, resolvePayloadSources } from "../src/remote/install-server.js";
+  checksumFor,
+  ensureRuntimeArchive,
+  NODE_RUNTIME_VERSION,
+  runtimeArtifact,
+  sha256Of,
+} from "../src/remote/runtime.js";
+import { packDirectory, unpackTo } from "../src/remote/pack.js";
 import {
   cleanupCommand,
-  installCommand,
+  cmdQuote,
+  extractRuntimeCommand,
+  makeScratchCommand,
+  runInstallerCommand,
   scpArgs,
   shQuote,
   sshArgs,
 } from "../src/remote/commands.js";
+import { payloadSourcesReady, resolvePayloadSources } from "../src/remote/install-server.js";
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];
@@ -77,7 +87,6 @@ describe("parseSshSettings", () => {
         "identityfile ~/.ssh/id_ed25519",
         "identityfile ~/.ssh/id_rsa",
         "proxyjump bastion",
-        "forwardagent no",
       ].join("\n"),
       "build-box",
     );
@@ -95,7 +104,6 @@ describe("parseSshSettings", () => {
     expect(settings.hostname).toBe("gpu-1"); // the alias stands in
     expect(settings.port).toBe(22);
     expect(settings.user).toBe("");
-    expect(settings.identityFiles).toEqual([]);
     expect(settings.proxyJump).toBeNull();
   });
 });
@@ -106,93 +114,144 @@ describe("machineIdentity", () => {
     // own server and its own user table.
     expect(machineIdentity("build-box", "deploy")).toBe("deploy@build-box");
     expect(machineIdentity("build-box", "root")).toBe("root@build-box");
-    // No resolved user (ssh will pick): the alias alone names it.
     expect(machineIdentity("build-box", "")).toBe("build-box");
   });
 });
 
-describe("PROBE_COMMAND", () => {
-  it("uses absolute paths only — a non-login shell has neither ~/.local/bin nor a PATH for it", () => {
-    expect(PROBE_COMMAND).toContain('"${XDG_DATA_HOME:-$HOME/.local/share}"/penguin/bin/penguin');
-    expect(PROBE_COMMAND).toContain('"$HOME"/.penguin/data/server.lock');
-    expect(PROBE_COMMAND).not.toMatch(/(^|[^/\w])penguin --version/);
+describe("identity probe", () => {
+  it("asks in each shell's own dialect — sh cannot read the Windows one and vice versa", () => {
+    // POSIX: `;` chains, $VAR expands, `cat` reads. Windows cmd: `&` chains, %VAR% expands,
+    // `type` reads. One command cannot do both, which is why there are two.
+    expect(POSIX_PROBE).toContain("uname -s -m");
+    expect(POSIX_PROBE).toContain("${XDG_DATA_HOME:-$HOME/.local/share}");
+    expect(WINDOWS_PROBE).toContain("%PROCESSOR_ARCHITECTURE%");
+    expect(WINDOWS_PROBE).toContain("%LOCALAPPDATA%");
+    expect(WINDOWS_PROBE).not.toContain(";");
   });
 
-  it("guards every line so a bare machine still answers instead of failing the ssh", () => {
-    for (const fragment of ["2>/dev/null", "||"]) expect(PROBE_COMMAND).toContain(fragment);
+  it("reads a POSIX answer, including the installed version out of the manifest", () => {
+    expect(
+      parseProbeOutput('Linux x86_64\n---penguin---\n{"name":"x","version":"0.2.2"}\n'),
+    ).toEqual({ platform: "linux", arch: "x64", installedVersion: "0.2.2" });
+  });
+
+  it("reads a Windows answer and normalizes its names onto Node's", () => {
+    expect(parseProbeOutput("Windows_NT AMD64\n---penguin---\n")).toEqual({
+      platform: "win32",
+      arch: "x64",
+      installedVersion: null,
+    });
+    expect(parseProbeOutput("Darwin arm64\n---penguin---\n")).toMatchObject({
+      platform: "darwin",
+      arch: "arm64",
+    });
+    expect(parseProbeOutput("Linux aarch64\n---penguin---\n")).toMatchObject({ arch: "arm64" });
+  });
+
+  it("returns null when the shell did not understand the probe", () => {
+    // What cmd.exe says to the POSIX probe — the signal to try the other dialect.
+    expect(
+      parseProbeOutput("'uname' is not recognized as an internal or external command"),
+    ).toBeNull();
+    expect(parseProbeOutput("")).toBeNull();
+  });
+
+  it("treats an unreadable manifest as 'nothing installed' rather than failing", () => {
+    expect(parseProbeOutput("Linux x86_64\n---penguin---\nnot json at all")).toMatchObject({
+      installedVersion: null,
+    });
   });
 });
 
-describe("parseProbe", () => {
-  it("reads the key=value answer of a machine that has everything", () => {
-    expect(
-      parseProbe('penguin=0.2.2\nuname=Linux x86_64\nnode=v24.3.0\nlock={"pid":12}\n'),
-    ).toEqual({
-      version: "0.2.2",
-      uname: "Linux x86_64",
-      nodeVersion: "v24.3.0",
-      lock: '{"pid":12}',
+describe("runtime selection", () => {
+  it("picks the official build for the remote's shape, gzip on POSIX and zip on Windows", () => {
+    // .tar.gz rather than the smaller .tar.xz: xz is a separate binary minimal images lack,
+    // and the far side has no runtime of ours yet to fall back on.
+    expect(runtimeArtifact("linux", "x64")).toMatchObject({
+      fileName: `node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
+      rootDirName: `node-${NODE_RUNTIME_VERSION}-linux-x64`,
+      url: `https://nodejs.org/dist/${NODE_RUNTIME_VERSION}/node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
     });
+    expect(runtimeArtifact("darwin", "arm64").fileName).toBe(
+      `node-${NODE_RUNTIME_VERSION}-darwin-arm64.tar.gz`,
+    );
+    expect(runtimeArtifact("win32", "x64").fileName).toBe(
+      `node-${NODE_RUNTIME_VERSION}-win-x64.zip`,
+    );
   });
 
-  it("empty values become null, and stray output is ignored", () => {
-    expect(parseProbe("warning: something\npenguin=\nuname=Linux x86_64\nnode=\nlock=")).toEqual({
-      version: null,
-      uname: "Linux x86_64",
-      nodeVersion: null,
-      lock: null,
-    });
+  it("reads the published checksum for exactly the file it is going to send", () => {
+    const shasums = [
+      `${"a".repeat(64)}  node-${NODE_RUNTIME_VERSION}-linux-arm64.tar.gz`,
+      `${"b".repeat(64)}  node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`,
+    ].join("\n");
+    expect(checksumFor(shasums, `node-${NODE_RUNTIME_VERSION}-linux-x64.tar.gz`)).toBe(
+      "b".repeat(64),
+    );
+    expect(checksumFor(shasums, "node-v1.0.0-linux-x64.tar.gz")).toBeNull();
+  });
+
+  it("verifies what it downloads and refuses to cache a runtime it cannot vouch for", async () => {
+    const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-runtime-cache-"));
+    try {
+      const artifact = runtimeArtifact("linux", "x64");
+      const good = Buffer.from("pretend runtime");
+      const shasums = Buffer.from(`${sha256Of(good)}  ${artifact.fileName}\n`);
+      const tampering = async (url: string) =>
+        url.endsWith("SHASUMS256.txt") ? shasums : Buffer.from("tampered");
+      await expect(
+        ensureRuntimeArchive({ platform: "linux", arch: "x64", cacheDir, fetchBuffer: tampering }),
+      ).rejects.toThrow(/checksum mismatch/);
+      expect(fs.existsSync(path.join(cacheDir, artifact.fileName))).toBe(false);
+
+      // The honest download lands, and a second call serves it from the cache without fetching.
+      let fetches = 0;
+      const honest = async (url: string) => {
+        fetches += 1;
+        return url.endsWith("SHASUMS256.txt") ? shasums : good;
+      };
+      const first = await ensureRuntimeArchive({
+        platform: "linux",
+        arch: "x64",
+        cacheDir,
+        fetchBuffer: honest,
+      });
+      expect(fs.readFileSync(first.archivePath)).toEqual(good);
+      const before = fetches;
+      await ensureRuntimeArchive({ platform: "linux", arch: "x64", cacheDir, fetchBuffer: honest });
+      expect(fetches).toBe(before);
+    } finally {
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+    }
   });
 });
 
-describe("planRemoteInstall", () => {
-  const base = { version: null, uname: "Linux x86_64", nodeVersion: "v24.3.0", lock: null };
+describe("the image container", () => {
+  it("round-trips a tree, keeping relative paths and the executable bit", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-pack-"));
+    try {
+      const src = path.join(work, "src");
+      fs.mkdirSync(path.join(src, "penguin", "bin"), { recursive: true });
+      fs.mkdirSync(path.join(src, "penguin", "lib", "web"), { recursive: true });
+      fs.writeFileSync(path.join(src, "penguin", "bin", "penguin"), "#!/bin/sh\n", { mode: 0o755 });
+      fs.writeFileSync(path.join(src, "penguin", "lib", "web", "index.html"), "<html>");
 
-  it("installs onto a bare machine", () => {
-    expect(planRemoteInstall(base, "0.2.2")).toEqual({ action: "install", reason: "absent" });
-  });
+      const dest = path.join(work, "dest");
+      const entries = unpackTo(packDirectory(src), dest);
 
-  it("uses an install that already matches this build exactly", () => {
-    expect(planRemoteInstall({ ...base, version: "0.2.2" }, "0.2.2")).toEqual({
-      action: "use",
-      remoteVersion: "0.2.2",
-    });
-  });
-
-  it("replaces any other version — the program is one build, not three parts to reconcile", () => {
-    // Newer as well as older: CLI, server and web ship together, so "different" is enough.
-    expect(planRemoteInstall({ ...base, version: "0.2.1" }, "0.2.2")).toEqual({
-      action: "install",
-      reason: "version-mismatch",
-      remoteVersion: "0.2.1",
-    });
-    expect(planRemoteInstall({ ...base, version: "0.3.0" }, "0.2.2")).toMatchObject({
-      action: "install",
-      reason: "version-mismatch",
-    });
-  });
-
-  it("refuses up front when the remote's Node cannot run the payload", () => {
-    expect(planRemoteInstall({ ...base, nodeVersion: null }, "0.2.2")).toMatchObject({
-      action: "blocked",
-      reason: "no-node",
-    });
-    expect(planRemoteInstall({ ...base, nodeVersion: "v20.11.0" }, "0.2.2")).toMatchObject({
-      action: "blocked",
-      reason: "node-too-old",
-    });
-    // …but a matching install is used without asking about Node at all: it already runs.
-    expect(
-      planRemoteInstall({ ...base, version: "0.2.2", nodeVersion: null }, "0.2.2"),
-    ).toMatchObject({ action: "use" });
-    expect(MIN_REMOTE_NODE_MAJOR).toBe(24);
-  });
-
-  it("treats a silent probe as unreachable rather than as an empty machine", () => {
-    expect(planRemoteInstall({ ...base, uname: null }, "0.2.2")).toMatchObject({
-      action: "blocked",
-      reason: "unreachable",
-    });
+      expect(entries.map((e) => e.path)).toEqual([
+        "penguin/bin/penguin",
+        "penguin/lib/web/index.html",
+      ]);
+      expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
+        "<html>",
+      );
+      if (process.platform !== "win32") {
+        expect(fs.statSync(path.join(dest, "penguin", "bin", "penguin")).mode & 0o111).not.toBe(0);
+      }
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 });
 
@@ -208,42 +267,55 @@ describe("ssh / scp invocations", () => {
 
   it("selects the account on the command line, never by writing the ssh config", () => {
     expect(sshArgs(target, "true")).toContain("User=deploy");
-    // No resolved user: ssh decides, and we add no override.
     expect(sshArgs({ alias: "build-box", user: "" }, "true").join(" ")).not.toContain("User=");
   });
 
-  it("puts the alias and the remote command last, in that order", () => {
-    const args = sshArgs(target, "mktemp -d");
-    expect(args.slice(-2)).toEqual(["build-box", "mktemp -d"]);
+  it("leaves the scp destination unquoted — modern scp transfers over SFTP, taking it literally", () => {
+    const args = scpArgs(target, ["/local/image.pack"], "/tmp/penguin-abc123");
+    expect(args.at(-1)).toBe("build-box:/tmp/penguin-abc123");
   });
 
-  it("scp copies to the target directory on the far side", () => {
-    const args = scpArgs(target, ["/local/payload.tar.gz", "/local/install.sh"], "/tmp/x y");
-    expect(args.slice(-3)).toEqual([
-      "/local/payload.tar.gz",
-      "/local/install.sh",
-      "build-box:'/tmp/x y'/",
-    ]);
-  });
-
-  it("quotes for the remote shell, including embedded quotes", () => {
-    expect(shQuote("/tmp/plain")).toBe("'/tmp/plain'");
+  it("quotes per shell: single quotes for sh, double for cmd.exe", () => {
     expect(shQuote("/tmp/it's here")).toBe(`'/tmp/it'\\''s here'`);
+    expect(cmdQuote("C:\\Users\\First Last\\tmp")).toBe('"C:\\Users\\First Last\\tmp"');
+    // cmd.exe has no escape for a quote inside a quoted string: refuse rather than mangle.
+    expect(() => cmdQuote('C:\\weird"path')).toThrow();
   });
 
-  it("runs the installer with --universal, which the pushed payload requires", () => {
-    // Without it install.sh validates the manifest against the host's own target and
-    // refuses: "package target mismatch: expected linux-x64, found universal".
-    const command = installCommand("/tmp/penguin.XXXX", "payload.tar.gz");
-    expect(command).toBe(
-      "sh '/tmp/penguin.XXXX/install.sh' --universal --archive '/tmp/penguin.XXXX/payload.tar.gz'",
+  it("creates the scratch directory the way each shell can", () => {
+    expect(makeScratchCommand("linux", "penguin-abc")).toContain("mktemp -d");
+    const windows = makeScratchCommand("win32", "penguin-abc");
+    expect(windows).toContain('mkdir "%TEMP%\\penguin-abc"');
+    expect(windows).toContain("&"); // cmd chains with &, not ;
+  });
+
+  it("unpacks the runtime with tar on both sides — bsdtar reads the Windows zip", () => {
+    expect(extractRuntimeCommand("linux", "/tmp/s/node.tar.gz", "/tmp/s")).toBe(
+      "tar -xf '/tmp/s/node.tar.gz' -C '/tmp/s'",
     );
-    expect(cleanupCommand("/tmp/penguin.XXXX")).toBe("rm -rf '/tmp/penguin.XXXX'");
+    expect(extractRuntimeCommand("win32", "C:\\t\\node.zip", "C:\\t")).toBe(
+      'tar -xf "C:\\t\\node.zip" -C "C:\\t"',
+    );
+  });
+
+  it("starts the installer on the runtime it just unpacked, with no arguments to quote", () => {
+    // The installer reads job.json from its own directory instead of taking parameters.
+    expect(runInstallerCommand("linux", "/tmp/s", "node-v24.18.0-linux-x64")).toBe(
+      "'/tmp/s/node-v24.18.0-linux-x64/bin/node' '/tmp/s/remote-installer.cjs'",
+    );
+    expect(runInstallerCommand("win32", "C:\\t", "node-v24.18.0-win-x64")).toBe(
+      '"C:\\t\\node-v24.18.0-win-x64\\node.exe" "C:\\t\\remote-installer.cjs"',
+    );
+  });
+
+  it("cleans up with each platform's own command", () => {
+    expect(cleanupCommand("linux", "/tmp/s")).toBe("rm -rf '/tmp/s'");
+    expect(cleanupCommand("win32", "C:\\t")).toBe('rmdir /s /q "C:\\t"');
   });
 });
 
 describe("resolvePayloadSources", () => {
-  it("packaged: the image and the installer ride as app resources", () => {
+  it("packaged: the image and the Node installer ride as app resources", () => {
     expect(
       resolvePayloadSources({
         packaged: true,
@@ -252,7 +324,7 @@ describe("resolvePayloadSources", () => {
       }),
     ).toEqual({
       payloadRoot: "/Applications/PenguinHarness.app/Contents/Resources/payload",
-      installerPath: "/Applications/PenguinHarness.app/Contents/Resources/install.sh",
+      installerScript: "/Applications/PenguinHarness.app/Contents/Resources/remote-installer.cjs",
     });
   });
 
@@ -261,13 +333,13 @@ describe("resolvePayloadSources", () => {
       resolvePayloadSources({ packaged: false, resourcesPath: "/ignored", repoRoot: "/repo" }),
     ).toEqual({
       payloadRoot: "/repo/packages/desktop/stage/payload",
-      installerPath: "/repo/install.sh",
+      installerScript: "/repo/packages/desktop/resources/remote-installer.cjs",
     });
   });
 
   it("reports sources that are not actually there (a dev run that never staged)", () => {
     expect(
-      payloadSourcesReady({ payloadRoot: "/nope/payload", installerPath: "/nope/install.sh" }),
+      payloadSourcesReady({ payloadRoot: "/nope/payload", installerScript: "/nope/installer.cjs" }),
     ).toBe(false);
   });
 });
