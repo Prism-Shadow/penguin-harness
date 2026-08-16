@@ -3,10 +3,11 @@
  *
  * Until this existed, the route table was a runtime asset — every new or changed endpoint cost
  * a rebuild and a redeploy of every installation, which is the thing the hot channel exists to
- * avoid. These tests push a platform that serves HTTP and check the four properties that make
- * the seam usable and safe: a new route appears, an existing one can be replaced, the upgrade
+ * avoid. These tests push a platform that serves HTTP and check the properties that make the
+ * seam usable and safe: a new route appears, an existing one can be replaced, the upgrade
  * channel cannot be claimed, and a platform that throws does not silently fall through to a
- * different implementation.
+ * different implementation. The last block walks a whole lifecycle — the set of reachable
+ * endpoints following the pushes that add and remove them.
  */
 import zlib from "node:zlib";
 import fs from "node:fs/promises";
@@ -103,5 +104,124 @@ describe("platform HTTP seam", () => {
     // state an older pushed bundle stays in.
     expect((await api.get("/api/me")).status).toBe(200);
     expect((await api.get("/api/demo/ping")).status).toBe(404);
+  });
+});
+
+/**
+ * A platform bundle that serves exactly `paths` and declines everything else. Built inline
+ * rather than read from a fixture file so the ONLY difference between the versions pushed
+ * below is the route list — which is the thing under test.
+ */
+function platformServing(paths: string[], id = "route-set"): string {
+  return `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const SERVED = ${JSON.stringify(paths)};
+const impl = {
+  create(_ctx, context) {
+    return {
+      park: () => context,
+      info: () => ({ impl: ${JSON.stringify(id)} }),
+      http(request) {
+        const { pathname } = new URL(request.url);
+        if (!SERVED.includes(pathname)) return null;
+        return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)}, pathname }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  },
+};
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl };
+`;
+}
+
+describe("platform HTTP seam: the reachable API changes with each push", () => {
+  let t: TestApp;
+  let cookie: string;
+  let api: ReturnType<typeof apiClient>;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    const admin = await loginAdmin(t.app);
+    cookie = admin.cookie;
+    api = apiClient(t.app, cookie);
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  /** Which of the probed endpoints answer, and who answered them. */
+  const reachable = async (paths: string[]): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {};
+    for (const path of paths) {
+      const res = await api.get(path);
+      out[path] =
+        res.status === 404
+          ? "404"
+          : `${res.status} ${((await res.json()) as { servedBy?: string }).servedBy ?? "runtime"}`;
+    }
+    return out;
+  };
+
+  const PROBED = ["/api/demo/ping", "/api/demo/pong", "/api/me"];
+
+  it("adding, swapping and removing routes changes what the server answers", async () => {
+    // Baseline: the runtime knows /api/me and nothing about the demo endpoints.
+    expect(await reachable(PROBED)).toEqual({
+      "/api/demo/ping": "404",
+      "/api/demo/pong": "404",
+      "/api/me": "200 runtime",
+    });
+
+    // Push #1 ADDS one endpoint.
+    expect(
+      (await pushPlatform(t.app, cookie, platformServing(["/api/demo/ping"], "v1"))).status,
+    ).toBe(200);
+    expect(await reachable(PROBED)).toEqual({
+      "/api/demo/ping": "200 v1",
+      "/api/demo/pong": "404",
+      "/api/me": "200 runtime",
+    });
+
+    // Push #2 SWAPS the route set: the first endpoint is gone, a different one appears.
+    expect(
+      (await pushPlatform(t.app, cookie, platformServing(["/api/demo/pong"], "v2"))).status,
+    ).toBe(200);
+    expect(await reachable(PROBED)).toEqual({
+      "/api/demo/ping": "404",
+      "/api/demo/pong": "200 v2",
+      "/api/me": "200 runtime",
+    });
+
+    // Push #3 REMOVES both: the API is back to exactly what the runtime serves.
+    expect((await pushPlatform(t.app, cookie, platformServing([], "v3"))).status).toBe(200);
+    expect(await reachable(PROBED)).toEqual({
+      "/api/demo/ping": "404",
+      "/api/demo/pong": "404",
+      "/api/me": "200 runtime",
+    });
+  });
+
+  it("a route the platform takes over goes back to the runtime's own when it stops serving it", async () => {
+    const runtimeVersion = (await (await api.get("/api/version")).json()) as { version: string };
+
+    await pushPlatform(t.app, cookie, platformServing(["/api/version"], "takeover"));
+    expect(await (await api.get("/api/version")).json()).toMatchObject({ servedBy: "takeover" });
+
+    await pushPlatform(t.app, cookie, platformServing([], "released"));
+    expect(await (await api.get("/api/version")).json()).toEqual(runtimeVersion);
   });
 });
