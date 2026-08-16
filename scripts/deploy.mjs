@@ -1,14 +1,15 @@
 /**
  * One-shot build-and-deploy to a running runtime: `node scripts/deploy.mjs <port>`.
  *
- * The same push scripts/watch-push.mjs performs on every file change, but aimed at one
- * ad-hoc target and run once — for deploying to a machine reached through an ssh tunnel
- * (`ssh -L <port>:127.0.0.1:<remote port> …`) rather than a dev loop.
+ * Aimed at one ad-hoc target and run once — for deploying to a machine reached through an
+ * ssh tunnel (`ssh -L <port>:127.0.0.1:<remote port> …`) as much as to a local runtime.
  *
- * Builds the web dist, compiles the platform and cli entries, and pushes all three as
- * ONE atomic version to POST /api/hmr/upgrade. Authentication is an admin session:
- * PENGUIN_ADMIN_PASSWORD is required (see watch-push.mjs's header for why no credential
- * is left readable on disk).
+ * Builds the web dist, compiles the platform and cli entries, and pushes all three as ONE
+ * atomic version to POST /api/hmr/upgrade. Authentication is an admin session established
+ * per run: PENGUIN_ADMIN_PASSWORD is read from the environment and exchanged for a cookie,
+ * so no credential of any kind is written to disk — a file holding an admin-equivalent
+ * secret is readable by everything running as this user, agent shells included, which makes
+ * the file itself the vulnerability.
  *
  * Usage:
  *   PENGUIN_ADMIN_PASSWORD=… node scripts/deploy.mjs 53531
@@ -30,7 +31,7 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");
 const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
-const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "cli.ts");
+const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "index.ts");
 const PLATFORM_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-platform-${process.pid}.mjs`);
 const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-cli-${process.pid}.mjs`);
 
@@ -115,7 +116,7 @@ async function login() {
 /**
  * Compiles one entry to a self-contained ESM file. The banner is load-bearing: several
  * bundled CJS deps call plain `require(...)` inside their own wrapper, and esbuild's ESM
- * output otherwise routes those to a shim that always throws — see watch-push.mjs.
+ * output otherwise routes those to a shim that always throws.
  */
 async function compileEntry(entry, outfile) {
   if (!fs.existsSync(entry)) throw new Error(`compile entry missing: ${entry}`);
