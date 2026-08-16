@@ -23,17 +23,85 @@ export interface MachineTargetInfo {
 }
 
 /**
- * How many rows the machines block shows at once. An ssh config can declare hundreds of
+ * How many rows the machines picker shows at once. An ssh config can declare hundreds of
  * hosts; the server orders them live-first, then by recency, so the visible few are the
  * useful few — the search box reaches the rest.
  */
 export const MAX_VISIBLE_MACHINES = 6;
 
-/** Case-insensitive substring filter over aliases; an empty query keeps the server's order. */
-export function filterMachines(machines: MachineTargetInfo[], query: string): MachineTargetInfo[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return machines;
-  return machines.filter((m) => m.alias.toLowerCase().includes(q));
+/** One machine that survived the query, with the character positions the query hit. */
+export interface MachineMatch {
+  machine: MachineTargetInfo;
+  /** Indices into `machine.alias` to highlight; empty for the empty query. */
+  positions: number[];
+}
+
+/** True when the alias character at `index` starts a word (`gpu-01` → g, 0). */
+const isWordStart = (alias: string, index: number) =>
+  index === 0 || /[-_./ ]/.test(alias[index - 1]!);
+
+/**
+ * Fuzzy match of `query` against one alias: every query character must appear, in order,
+ * but not adjacently — `gpu1` hits `gpu-01`. Greedy left-to-right with a small score:
+ * +3 for a character adjacent to the previous hit, +2 for one starting a word, +1
+ * otherwise — so contiguous runs rank above initial-letter matches, which rank above
+ * scattered ones. Null when the query does not fit at all.
+ */
+export function fuzzyMatch(
+  alias: string,
+  query: string,
+): { positions: number[]; score: number } | null {
+  const haystack = alias.toLowerCase();
+  const needle = query.toLowerCase();
+  const positions: number[] = [];
+  let score = 0;
+  let at = 0;
+  for (const ch of needle) {
+    const found = haystack.indexOf(ch, at);
+    if (found === -1) return null;
+    const previous = positions[positions.length - 1];
+    score +=
+      previous !== undefined && found === previous + 1 ? 3 : isWordStart(alias, found) ? 2 : 1;
+    positions.push(found);
+    at = found + 1;
+  }
+  return { positions, score };
+}
+
+/**
+ * The machines a query keeps, best first. An empty query keeps every machine in the
+ * server's order (live tunnels, then recency); otherwise matches sort by score with the
+ * server's order as the tiebreak, so among equal hits the connected and recent still win.
+ */
+export function matchMachines(machines: MachineTargetInfo[], query: string): MachineMatch[] {
+  const q = query.trim();
+  if (q === "") return machines.map((machine) => ({ machine, positions: [] }));
+  return machines
+    .map((machine, index) => {
+      const match = fuzzyMatch(machine.alias, q);
+      return match === null
+        ? null
+        : { machine, positions: match.positions, score: match.score, index };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort((a, b) => (a.score !== b.score ? b.score - a.score : a.index - b.index))
+    .map(({ machine, positions }) => ({ machine, positions }));
+}
+
+/** The alias split into contiguous runs for rendering: `hit` runs carry the highlight. */
+export function highlightSegments(
+  alias: string,
+  positions: number[],
+): Array<{ text: string; hit: boolean }> {
+  const hits = new Set(positions);
+  const out: Array<{ text: string; hit: boolean }> = [];
+  for (let i = 0; i < alias.length; i++) {
+    const hit = hits.has(i);
+    const last = out[out.length - 1];
+    if (last !== undefined && last.hit === hit) last.text += alias[i]!;
+    else out.push({ text: alias[i]!, hit });
+  }
+  return out;
 }
 
 export interface ConnectJobState {

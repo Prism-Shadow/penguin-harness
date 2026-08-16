@@ -29,9 +29,10 @@ import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { accountsForMachine, currentMachine, forgetAccount } from "../lib/known-accounts";
 import {
-  filterMachines,
   getMachines,
+  highlightSegments,
   homeOrigin,
+  matchMachines,
   MAX_VISIBLE_MACHINES,
   runConnect,
   switchUrl,
@@ -44,6 +45,8 @@ import type { LangPref } from "../state/locale";
 import { useTheme } from "../state/theme";
 import type { ThemeMode } from "../state/theme";
 import { Button } from "../components/ui/button";
+import { Dropdown } from "../components/ui/dropdown";
+import { ChevronDown } from "../components/ui/icons";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
 import { ConfirmModal } from "../components/ui/confirm-modal";
@@ -152,9 +155,15 @@ export function LoginPage() {
    * many the current view leaves out.
    */
   const [machineQuery, setMachineQuery] = useState("");
-  const filteredMachines = filterMachines(machines, machineQuery);
-  const visibleMachines = filteredMachines.slice(0, MAX_VISIBLE_MACHINES);
-  const hiddenMachineCount = filteredMachines.length - visibleMachines.length;
+  /** The picker panel; closing it always clears the query, so it reopens unfiltered. */
+  const [machineOpen, setMachineOpenState] = useState(false);
+  const setMachineOpen = (open: boolean) => {
+    setMachineOpenState(open);
+    if (!open) setMachineQuery("");
+  };
+  const matchedMachines = matchMachines(machines, machineQuery);
+  const visibleMachines = matchedMachines.slice(0, MAX_VISIBLE_MACHINES);
+  const hiddenMachineCount = matchedMachines.length - visibleMachines.length;
   const home = homeOrigin();
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +187,7 @@ export function LoginPage() {
    * remote server) and retries with allowRestart.
    */
   const connectToMachine = async (machine: MachineTargetInfo, allowRestart = false) => {
+    setMachineOpen(false);
     if (machine.origin !== null && !allowRestart) {
       window.location.assign(switchUrl(machine.origin));
       return;
@@ -263,68 +273,113 @@ export function LoginPage() {
         <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          {/* Machines first: which machine's server to sign into (see the module doc). A
-              green dot marks a live tunnel — switching there is instant; the spinner row
-              is the running connect, narrated by the line under the list. */}
+          {/* Machine picker: which machine's server to sign into (see the module doc).
+              One select-shaped control — the panel holds the fuzzy search and the
+              candidates (matched characters bright, the rest dimmed; green dot = live
+              tunnel, switching there is instant). While a connect runs the control is
+              held by a spinner and the line below narrates the server's progress. */}
           {(machines.length > 0 || home !== null) && (
             <div className="mb-5 border-b border-gray-100 pb-5 dark:border-gray-800">
               <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                 {S.auth.machines}
               </p>
-              {machines.length > MAX_VISIBLE_MACHINES && (
-                <input
-                  type="search"
-                  value={machineQuery}
-                  onChange={(e) => setMachineQuery(e.target.value)}
-                  placeholder={S.auth.machineSearch}
-                  aria-label={S.auth.machineSearch}
-                  className="mb-2 w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
-                />
-              )}
-              <ul className="space-y-0.5">
-                {home !== null && machineQuery.trim() === "" && (
-                  <li>
-                    <button
-                      type="button"
-                      disabled={busy || connectingMachine !== null}
-                      onClick={() => window.location.assign(`${home}/`)}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {S.auth.machineBack(new URL(home).host)}
-                      </span>
-                    </button>
-                  </li>
+              <Dropdown
+                open={machineOpen}
+                setOpen={setMachineOpen}
+                menuClass="left-0 right-0 top-full mt-1 origin-top"
+                button={
+                  <button
+                    type="button"
+                    disabled={busy || connectingMachine !== null}
+                    onClick={() => setMachineOpen(!machineOpen)}
+                    aria-haspopup="listbox"
+                    aria-expanded={machineOpen}
+                    className="flex w-full items-center gap-2 rounded-md border border-gray-200 px-2.5 py-1.5 text-left text-sm transition-colors hover:border-gray-300 disabled:opacity-60 dark:border-gray-700 dark:hover:border-gray-600"
+                  >
+                    {connectingMachine !== null && (
+                      <span
+                        aria-hidden
+                        className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                      />
+                    )}
+                    <span className="min-w-0 flex-1 truncate">
+                      {connectingMachine !== null
+                        ? (machines.find((m) => m.id === connectingMachine)?.alias ??
+                          window.location.host)
+                        : window.location.host}
+                    </span>
+                    <ChevronDown className="shrink-0 text-gray-400" />
+                  </button>
+                }
+              >
+                {machines.length > MAX_VISIBLE_MACHINES && (
+                  <div className="px-2 pb-1 pt-1">
+                    <input
+                      type="search"
+                      autoFocus
+                      value={machineQuery}
+                      onChange={(e) => setMachineQuery(e.target.value)}
+                      placeholder={S.auth.machineSearch}
+                      aria-label={S.auth.machineSearch}
+                      className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+                    />
+                  </div>
                 )}
-                {visibleMachines.map((m) => (
-                  <li key={m.id}>
-                    <button
-                      type="button"
-                      disabled={busy || connectingMachine !== null}
-                      onClick={() => void connectToMachine(m)}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                {home !== null && machineQuery.trim() === "" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMachineOpen(false);
+                      window.location.assign(`${home}/`);
+                    }}
+                    className="block w-full truncate px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {S.auth.machineBack(new URL(home).host)}
+                  </button>
+                )}
+                {visibleMachines.map(({ machine: m, positions }) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => void connectToMachine(m)}
+                    className="flex w-full min-w-0 items-center gap-2 px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {m.origin !== null && (
+                      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                    )}
+                    <span
+                      className={`min-w-0 flex-1 truncate ${positions.length > 0 ? "text-gray-400 dark:text-gray-500" : ""}`}
                     >
-                      {connectingMachine === m.id && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                        />
-                      )}
-                      {connectingMachine !== m.id && m.origin !== null && (
-                        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{m.alias}</span>
-                    </button>
-                  </li>
+                      {positions.length === 0
+                        ? m.alias
+                        : highlightSegments(m.alias, positions).map((segment, i) => (
+                            <span
+                              key={i}
+                              className={
+                                segment.hit
+                                  ? "font-semibold text-gray-900 dark:text-white"
+                                  : undefined
+                              }
+                            >
+                              {segment.text}
+                            </span>
+                          ))}
+                    </span>
+                  </button>
                 ))}
-              </ul>
-              {hiddenMachineCount > 0 && (
-                <p className="mt-1.5 px-2 text-xs text-gray-400 dark:text-gray-500">
-                  {S.auth.machineMore(hiddenMachineCount)}
-                </p>
-              )}
+                {visibleMachines.length === 0 && machineQuery.trim() !== "" && (
+                  <p className="px-3.5 py-2 text-sm text-gray-400 dark:text-gray-500">
+                    {S.auth.machineNoMatch}
+                  </p>
+                )}
+                {hiddenMachineCount > 0 && (
+                  <p className="px-3.5 pb-1.5 pt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.auth.machineMore(hiddenMachineCount)}
+                  </p>
+                )}
+              </Dropdown>
               {connectLine !== null && (
-                <p className="mt-2 truncate px-2 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-2 truncate px-1 text-xs text-gray-500 dark:text-gray-400">
                   {connectLine}
                 </p>
               )}

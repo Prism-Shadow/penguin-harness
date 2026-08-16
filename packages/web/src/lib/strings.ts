@@ -276,6 +276,7 @@ export const zh = {
     /** 机器搜索框：ssh config 可能有几百台,默认只显示已连接/最近连接的几台。 */
     machineSearch: "搜索机器…",
     machineMore: (n: number): string => `还有 ${n} 台，输入名称筛选`,
+    machineNoMatch: "没有匹配的机器",
     /** 从别的机器切过来时,回到来源机器的入口。 */
     machineBack: (host: string): string => `返回 ${host}`,
     /** 连接进行中的提示（探测/安装/起服务/开隧道都会走一遍）。 */

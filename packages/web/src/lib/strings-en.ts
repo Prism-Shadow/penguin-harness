@@ -274,6 +274,7 @@ export const en: Strings = {
     machines: "Machines",
     machineSearch: "Search machines…",
     machineMore: (n: number): string => `${n} more — type to filter`,
+    machineNoMatch: "No matching machines",
     machineBack: (host: string): string => `Back to ${host}`,
     machineConnecting: (machine: string): string => `Connecting to ${machine}…`,
     machineConnected: (machine: string): string => `Connected to ${machine}, switching…`,
