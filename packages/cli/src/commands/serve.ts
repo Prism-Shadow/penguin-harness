@@ -9,7 +9,7 @@
  * dynamically imports `@prismshadow/penguin-server` (whose entry point handles dotenv
  * loading and graceful shutdown on its own), so the two never listen on separate ports
  * in parallel. Port/host priority: command-line option > existing environment variable
- * (including .env) > default 7364 / 127.0.0.1. `penguin web` additionally polls until the
+ * (including .env) > default 7376 / 127.0.0.1. `penguin web` additionally polls until the
  * service is ready, prints the URL, and opens a browser per-platform (`--no-open`
  * disables this). Before the import, PENGUIN_CLI_ENTRY is exported (when node can re-run
  * this entry) so the server's admin self-update endpoint can invoke `penguin update`.
@@ -36,14 +36,14 @@ export interface ReadinessFailure {
 /** Result of `waitForReady`: ready, or timed out with the retained last probe failure. */
 export type ReadinessResult = { ready: true } | { ready: false; failure: ReadinessFailure };
 
-/** Default service port — core's DEFAULT_SERVER_PORT (7364), the single source of truth. */
+/** Default service port — core's DEFAULT_SERVER_PORT (7376), the single source of truth. */
 export const DEFAULT_PORT = DEFAULT_SERVER_PORT;
 /** Default service listen host. */
 export const DEFAULT_HOST = "127.0.0.1";
 
 /**
  * Resolves the listen port: command-line option takes priority, then the PORT
- * environment variable, defaulting to 7364; throws if not an integer or out of the
+ * environment variable, defaulting to 7376; throws if not an integer or out of the
  * 0-65535 range. Exported for unit tests.
  */
 export function resolvePort(option: string | undefined, env: string | undefined): number {
