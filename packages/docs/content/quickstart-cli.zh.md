@@ -126,7 +126,7 @@ pnpm install && pnpm build
 
 | 项目 | 说明 |
 | --- | --- |
-| 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
+| 安装目录 | 默认 `$XDG_DATA_HOME/penguin`（`~/.local/share/penguin`），可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖。数据始终留在 `~/.penguin/data`——v0.2.2 及更早的安装把程序放在它旁边，重跑安装器会把程序搬走 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本选择 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；稳定入口默认安装最新 Release，版本化 Release 安装器默认安装自身 tag |
 | 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式对测速文件计时，除非 OSS 镜像明显更快，否则保持免费的 GitHub 下载，并按同一版本回退到另一个源（`PENGUIN_DOWNLOAD_SPEED_PROBE=0` 可跳过测速） |
@@ -140,8 +140,8 @@ pnpm install && pnpm build
 
 | 项目 | 说明 |
 | --- | --- |
-| 安装目录 | 默认 `%USERPROFILE%\.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
-| 命令入口 | `bin\penguin.cmd` 启动器（特意不带 `.ps1` 启动器——批处理不受 PowerShell 执行策略限制，默认 Restricted 策略下 `penguin` 也能直接运行）；安装器会把 `%USERPROFILE%\.penguin\bin` 加入**用户** Path 并广播变更——请**新开一个终端窗口**（已开终端的新标签页仍沿用旧 Path） |
+| 安装目录 | 默认 `%LOCALAPPDATA%\penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖。数据始终留在 `%USERPROFILE%\.penguin\data`——v0.2.2 及更早的安装把程序放在它旁边，重跑安装器会把程序搬走 |
+| 命令入口 | `bin\penguin.cmd` 启动器（特意不带 `.ps1` 启动器——批处理不受 PowerShell 执行策略限制，默认 Restricted 策略下 `penguin` 也能直接运行）；安装器会把 `%LOCALAPPDATA%\penguin\bin` 加入**用户** Path 并广播变更——请**新开一个终端窗口**（已开终端的新标签页仍沿用旧 Path） |
 | 版本固定 | 运行安装器前设置 `$env:PENGUIN_VERSION = "vX.Y.Z"` |
 | 本地压缩包 | `$env:PENGUIN_ARCHIVE = "<file>"` 或 `-ArchivePath <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版 zip（重命名的旧版文件可用 `penguin-win32-x64.zip.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |

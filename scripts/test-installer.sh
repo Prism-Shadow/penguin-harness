@@ -300,6 +300,35 @@ status=$?
 set -e
 [ "$status" -ne 0 ] || fail_test "corrupted offline payload was not rejected"
 
+# --- Default layout + one-time migration: with no PENGUIN_INSTALL_DIR, the program lands in the
+#     XDG data dir, and a legacy ~/.penguin program tree (installs up to v0.2.2) is cleared out
+#     while its data/ survives untouched. ---
+XDG_HOME="$WORK_DIR/xdg-home"
+mkdir -p "$XDG_HOME/.penguin/bin" "$XDG_HOME/.penguin/lib" "$XDG_HOME/.penguin/data/keep"
+echo "stale" > "$XDG_HOME/.penguin/bin/penguin"
+echo "mine" > "$XDG_HOME/.penguin/data/keep/session.json"
+default_archive="$WORK_DIR/default-layout.tar.gz"
+make_posix_payload "$HOST_TARGET" "$default_archive"
+write_sha256 "$default_archive"
+HOME="$XDG_HOME" sh "$ROOT_DIR/install.sh" --archive "$default_archive" >/dev/null \
+  || fail_test "install with the default (XDG) install dir failed"
+[ -x "$XDG_HOME/.local/share/penguin/bin/penguin" ] \
+  || fail_test "default install did not land in the XDG data dir"
+[ ! -e "$XDG_HOME/.penguin/bin" ] && [ ! -e "$XDG_HOME/.penguin/lib" ] \
+  || fail_test "legacy program tree was not migrated away"
+[ "$(cat "$XDG_HOME/.penguin/data/keep/session.json")" = "mine" ] \
+  || fail_test "migration touched the data directory"
+
+# An explicit install dir opts out of the migration: the legacy tree is left exactly as it is.
+OPTOUT_HOME="$WORK_DIR/optout-home"
+mkdir -p "$OPTOUT_HOME/.penguin/bin"
+echo "stale" > "$OPTOUT_HOME/.penguin/bin/penguin"
+HOME="$OPTOUT_HOME" PENGUIN_INSTALL_DIR="$OPTOUT_HOME/custom" \
+  sh "$ROOT_DIR/install.sh" --archive "$default_archive" >/dev/null \
+  || fail_test "install with an explicit install dir failed"
+[ -f "$OPTOUT_HOME/.penguin/bin/penguin" ] \
+  || fail_test "an explicit install dir must not migrate the legacy tree"
+
 # --- Local archives: the canonical bundle and a bare payload both install; a failing upgrade
 #     rolls back to the previous installation. ---
 LOCAL_INSTALL="$TEST_HOME/.penguin"
