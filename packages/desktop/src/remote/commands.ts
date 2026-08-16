@@ -99,15 +99,17 @@ export function extractRuntimeCommand(
 export function runInstallerCommand(
   platform: RemotePlatform,
   scratchDir: string,
-  runtimeDirName: string,
+  /** The unpacked runtime to run it with, or null when the remote's own node is new enough. */
+  runtimeDirName: string | null,
 ): string {
   const sep = platform === "win32" ? "\\" : "/";
+  const script = [scratchDir, "remote-installer.cjs"].join(sep);
+  if (runtimeDirName === null) return `node ${quoteFor(platform, script)}`;
   const nodeBin = [
     scratchDir,
     runtimeDirName,
     ...(platform === "win32" ? ["node.exe"] : ["bin", "node"]),
   ].join(sep);
-  const script = [scratchDir, "remote-installer.cjs"].join(sep);
   return `${quoteFor(platform, nodeBin)} ${quoteFor(platform, script)}`;
 }
 

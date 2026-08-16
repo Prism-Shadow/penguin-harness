@@ -31,7 +31,7 @@ import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
 import { packDirectory } from "./pack.js";
-import { ensureRuntimeArchive } from "./runtime.js";
+import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
 
 /** Name the pack travels under, inside the scratch directory. */
 const PACK_NAME = "penguin-image.pack";
@@ -145,21 +145,30 @@ export async function installOnRemote(opts: {
   let scratch = "";
   try {
     say("Packing this build…");
+    /**
+     * A remote with a new enough Node of its own keeps it: no download, no ~30 MB on the
+     * wire, and no second runtime installed on a machine that already has one. Only a
+     * machine with no node, or one too old to run the program, gets one pushed.
+     */
+    const useRemoteNode = remoteNodeIsUsable(identity.nodeVersion);
     let packPath: string;
-    let archivePath: string;
-    let artifact: Awaited<ReturnType<typeof ensureRuntimeArchive>>["artifact"];
+    let runtime: Awaited<ReturnType<typeof ensureRuntimeArchive>> | null = null;
     try {
       packPath = path.join(localTmp, PACK_NAME);
       fs.writeFileSync(packPath, packDirectory(sources.payloadRoot));
-      // A runtime that fails verification throws here — before anything has been sent, which
-      // is the point: an unverified runtime must never reach someone else's machine.
-      ({ archivePath, artifact } = await ensureRuntimeArchive({
-        platform: identity.platform,
-        arch: identity.arch,
-        cacheDir: opts.runtimeCacheDir,
-        fetchBuffer: opts.fetchBuffer,
-        ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
-      }));
+      if (useRemoteNode) {
+        say(`Using the Node ${identity.nodeVersion} already on that machine.`);
+      } else {
+        // A runtime that fails verification throws here — before anything has been sent,
+        // which is the point: an unverified runtime must never reach someone else's machine.
+        runtime = await ensureRuntimeArchive({
+          platform: identity.platform,
+          arch: identity.arch,
+          cacheDir: opts.runtimeCacheDir,
+          fetchBuffer: opts.fetchBuffer,
+          ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+        });
+      }
     } catch (err) {
       return {
         kind: "failed",
@@ -172,7 +181,11 @@ export async function installOnRemote(opts: {
     const jobPath = path.join(localTmp, "job.json");
     fs.writeFileSync(
       jobPath,
-      JSON.stringify({ packName: PACK_NAME, runtimeDirName: artifact.rootDirName }) + "\n",
+      JSON.stringify({
+        packName: PACK_NAME,
+        // null tells the installer to leave the machine's own node in charge.
+        runtimeDirName: runtime?.artifact.rootDirName ?? null,
+      }) + "\n",
     );
 
     // A scratch name of our own making: hex only, so it needs no quoting on either side.
@@ -193,33 +206,42 @@ export async function installOnRemote(opts: {
       };
     }
 
-    say("Copying the build and the runtime…");
+    say(runtime ? "Copying the build and the runtime…" : "Copying the build…");
     const copy = await run(
       "scp",
-      scpArgs(target, [packPath, jobPath, sources.installerScript, archivePath], scratch),
+      scpArgs(
+        target,
+        [packPath, jobPath, sources.installerScript, ...(runtime ? [runtime.archivePath] : [])],
+        scratch,
+      ),
     );
     if (copy.code !== 0) {
       return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
     }
 
-    say("Unpacking the runtime…");
-    const remoteArchive = joinRemote(identity.platform, scratch, artifact.fileName);
-    const extract = await run(
-      "ssh",
-      sshArgs(target, extractRuntimeCommand(identity.platform, remoteArchive, scratch)),
-    );
-    if (extract.code !== 0) {
-      return {
-        kind: "failed",
-        step: "unpack the runtime",
-        detail: extract.stderr.trim() || `tar exited ${extract.code}`,
-      };
+    if (runtime) {
+      say("Unpacking the runtime…");
+      const remoteArchive = joinRemote(identity.platform, scratch, runtime.artifact.fileName);
+      const extract = await run(
+        "ssh",
+        sshArgs(target, extractRuntimeCommand(identity.platform, remoteArchive, scratch)),
+      );
+      if (extract.code !== 0) {
+        return {
+          kind: "failed",
+          step: "unpack the runtime",
+          detail: extract.stderr.trim() || `tar exited ${extract.code}`,
+        };
+      }
     }
 
     say("Installing…");
     const install = await run(
       "ssh",
-      sshArgs(target, runInstallerCommand(identity.platform, scratch, artifact.rootDirName)),
+      sshArgs(
+        target,
+        runInstallerCommand(identity.platform, scratch, runtime?.artifact.rootDirName ?? null),
+      ),
     );
     if (install.code !== 0) {
       return {

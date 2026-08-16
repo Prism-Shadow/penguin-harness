@@ -21,6 +21,9 @@ const SECTION = "---penguin---";
  */
 export const POSIX_PROBE = [
   "uname -s -m",
+  // The remote's own node, if it has one: a recent enough version means the push can skip
+  // sending a runtime entirely. Guarded, because most machines have none.
+  "node -v 2>/dev/null || echo none",
   `echo ${SECTION}`,
   `cat "\${XDG_DATA_HOME:-$HOME/.local/share}"/penguin/lib/package.json 2>/dev/null || true`,
 ].join("; ");
@@ -32,6 +35,7 @@ export const POSIX_PROBE = [
  */
 export const WINDOWS_PROBE = [
   "echo %OS% %PROCESSOR_ARCHITECTURE%",
+  "node -v 2>nul || echo none",
   `echo ${SECTION}`,
   'type "%LOCALAPPDATA%\\penguin\\lib\\package.json" 2>nul',
 ].join("&");
@@ -45,6 +49,8 @@ export interface RemoteIdentity {
   arch: RemoteArch;
   /** Version of the PenguinHarness installed there, or null when there is none. */
   installedVersion: string | null;
+  /** The remote's own `node -v`, or null when it has none — decides whether a runtime is sent. */
+  nodeVersion: string | null;
 }
 
 /** Maps what `uname -m` / `%PROCESSOR_ARCHITECTURE%` say onto Node's arch names. */
@@ -85,16 +91,29 @@ function versionOf(manifestText: string): string | null {
  */
 export function parseProbeOutput(stdout: string): RemoteIdentity | null {
   const [identityPart, manifestPart = ""] = stdout.split(SECTION);
-  const identityLine = (identityPart ?? "")
+  const lines = (identityPart ?? "")
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line !== "")
-    .at(-1);
-  if (identityLine === undefined) return null;
-  const words = identityLine.split(/\s+/);
-  if (words.length < 2) return null;
-  const platform = normalizePlatform(words[0]!);
-  const arch = normalizeArch(words[words.length - 1]!);
-  if (!platform || !arch) return null;
-  return { platform, arch, installedVersion: versionOf(manifestPart) };
+    .filter((line) => line !== "");
+  // The identity is the FIRST line; the node answer follows it. Anything before them is the
+  // shell's own noise (a banner, a warning), which is why the search is anchored on a line
+  // that parses as a machine rather than on a position.
+  const identity = lines
+    .map((line) => {
+      const words = line.split(/\s+/);
+      if (words.length < 2) return null;
+      const platform = normalizePlatform(words[0]!);
+      const arch = normalizeArch(words[words.length - 1]!);
+      return platform && arch ? { platform, arch, index: lines.indexOf(line) } : null;
+    })
+    .find((entry) => entry !== null);
+  if (!identity) return null;
+  const nodeLine = lines[identity.index + 1] ?? "";
+  const nodeVersion = /^v\d+\./.test(nodeLine) ? nodeLine : null;
+  return {
+    platform: identity.platform,
+    arch: identity.arch,
+    installedVersion: versionOf(manifestPart),
+    nodeVersion,
+  };
 }
