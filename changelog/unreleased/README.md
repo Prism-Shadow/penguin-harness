@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-15] The desktop app can install this build's server on a machine reachable over SSH (**Install Server on Remote Host**), reading targets from `~/.ssh/config` and pushing the staged install image; no CLI counterpart. ([details](2026-08-15-desktop-remote-install.md))
+- [2026-08-15] The desktop build also stages an install image (`stage/payload/penguin/{bin,lib,lib/web}`), so a machine with PenguinHarness can install its own build onto one without. ([details](2026-08-15-desktop-payload.md))
 - [2026-08-15] Installs put the program in the platform's data directory (`~/.local/share/penguin`, `%LOCALAPPDATA%\penguin`) instead of `~/.penguin`, migrating an existing install on the next run; the data root stays at `~/.penguin/data`. ([details](2026-08-15-install-layout.md))
 - [2026-08-15] The server, CLI and desktop shell share one well-known port, 7376 (was 7364, and the shell used an ephemeral one): a client finds this user's server by probing a single known address, at the cost of one server per user per machine by default. ([details](2026-08-15-server-port.md))
 
