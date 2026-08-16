@@ -198,7 +198,11 @@ export function markdownToSearchText(markdown: string): string {
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/<(https?:\/\/[^>]+)>/g, "$1")
-    .replace(/^\s{0,3}(?:#{1,6}|>|[-+*]|\d+[.)])\s+/gm, "");
+    .replace(/^\s{0,3}(?:#{1,6}|>|[-+*]|\d+[.)])\s+/gm, "")
+    // Callout marker (remark-callout): the type and collapse flag are chrome, but the
+    // title following them is prose and stays indexed. Runs after the blockquote marker
+    // above has already been peeled off the line.
+    .replace(/^\[!\w+\][-+]?[ \t]*/gm, "");
 
   return stripMarkdownTableSyntax(stripMarkdownFormatting(visibleText))
     .replace(/\s+/g, " ")

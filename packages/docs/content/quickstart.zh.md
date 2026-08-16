@@ -1,76 +1,32 @@
 ---
 title: 快速开始
-description: 安装 PenguinHarness、配置模型并运行第一个 Task。
+description: 桌面端、命令行、SDK 三条路线，挑一条装好 PenguinHarness 并跑通第一个 Task。
 ---
 
-## 安装
+PenguinHarness 有三条入口，背后是同一个引擎，区别只在你以什么方式接触它。先挑一条适合自己的，各自的页面会把你一路带到第一个 Task：
 
-Linux / macOS 一键安装：
+| 路线 | 适合 | 需要用终端吗 |
+| --- | --- | --- |
+| [桌面端应用](/quickstart-desktop) | 想直接把 PenguinHarness 当成一个应用来用 | 不需要 |
+| [命令行与 Web 应用](/quickstart-cli) | 装到服务器或远程机器，或想要 `penguin` 命令 | 安装时用一次 |
+| [SDK](/quickstart-sdk) | 把引擎嵌进自己的 TypeScript 程序 | 需要 |
 
-```bash
-curl -fsSL https://penguin.ooo/install.sh | sh
-```
+拿不准就选[桌面端应用](/quickstart-desktop)：它步骤最少，而且换到另一条路线不用重来。
 
-其他方式（npm、源码）见[安装](/installation)。
+## 三条路线共用什么
 
-## 配置模型
+- **同一个数据目录**：`~/.penguin/data`（Windows 为 `%USERPROFILE%\.penguin\data`）。Agent、模型配置与历史会话互通，所以三条路线可以随时混用——桌面端配好的模型，CLI 与 SDK 立刻就能用。
+- **同一时刻只有一个服务端**：一个数据目录只跑一个服务端进程。命令行已经用 `penguin web` 启动过实例时，桌面端应用会直接接入它，而不是再起一个。
+- **同一套界面**：桌面端应用与 `penguin web` 打开的是同一个 Web App，只是前者内嵌了服务端、免去登录。
 
-PenguinHarness 不内置任何模型凭据，使用前需要先配置一个模型。可以在 Web UI 的 Models 页面完成，也可以用 CLI：
+## 开始之前
 
-```bash
-penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
-```
+PenguinHarness 不内置任何模型凭据，跑第一个 Task 之前必须先配置一个模型，准备好一个 Provider 的 API Key 即可。三条路线各自的页面都包含这一步。
 
-- 模型引用始终是 `(provider, model_id)` 二元组，因此 `--provider` 与 `--model-id` 均为必填——Provider 绝不由模型 id 推断。内置分组见[模型与 Provider](/models)。
-- API Key 也可以来自环境变量：当模型条目没有内联 api_key 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等变量；工作目录下的 `.env` 会被自动加载。
-
-## 启动 Web App
-
-```bash
-penguin web
-```
-
-服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在改掉之前每次启动服务端都会以边框提示打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
-
-## 单次运行
-
-```bash
-penguin run -m "创建 hello.txt，内容为 Hello, Penguin"
-```
-
-Workspace 默认为当前目录，可用 `--workspace /path` 指定；目标目录必须已存在。
-
-## 交互式对话
-
-```bash
-penguin chat
-```
-
-- 每输入一行即发起一个 Task。
-- `/compact` 压缩上下文；`/clear` 开启全新 Session（原会话仍可恢复）；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
-- 退出时会打印 `penguin chat --resume <sessionId>` 提示，用于恢复本次 Session；`--resume` 不带 id 时恢复该 Agent 最近的 Session。
-
-## SDK 示例
-
-安装 `@prismshadow/penguin-core` 后：
-
-```ts
-import { createAgent, isCompleteModelMessage, userText } from "@prismshadow/penguin-core";
-
-const agent = await createAgent({ agentId: "default_agent" });
-const session = await agent.createSession({ workspaceDir: process.cwd() });
-
-for await (const output of session.run([userText("Create hello.txt containing hi")], {
-  approve: async () => "allow",
-})) {
-  if (isCompleteModelMessage(output) && output.payload.type === "text") {
-    console.log(output.payload.text);
-  }
-}
-```
+模型引用始终是 `(provider, model_id)` 二元组，Provider 绝不由模型 id 推断；内置分组见[模型与 Provider](/models)。
 
 ## 下一步
 
-- [Web App 指南](/web-app)：在浏览器中使用 PenguinHarness。
-- [CLI 参考](/cli)：完整命令与选项。
-- [架构总览](/architecture)：了解整体设计。
+- [桌面端应用](/quickstart-desktop)：双击安装，打开即已登录。
+- [命令行与 Web 应用](/quickstart-cli)：一行安装 `penguin`，含完整的安装参考。
+- [SDK](/quickstart-sdk)：在自己的程序里创建 Agent 与 Session。
