@@ -25,12 +25,15 @@ import { parseMachinesState, pickTunnelPort, withMachineState } from "./state.js
 import type { MachineState } from "./state.js";
 
 export interface MachineTargetInfo {
-  /** `ssh:<user>@<alias>` — what the connect route is asked for. */
+  /** `ssh:<alias>` — what the connect route is asked for. */
   id: string;
-  /** SSH identity (`user@alias`): the label, the state key, the web app's machine tag. */
-  machine: string;
+  /**
+   * The alias as written in ~/.ssh/config — the label and the state key. A config can
+   * declare hundreds of these, so the list is nothing but the config text re-read: no
+   * `ssh -G`, no processes. The alias resolves (user, hostname, …) only when it is
+   * actually connected to.
+   */
   alias: string;
-  user: string;
   /** Origin of a live adopted tunnel, when one is already up. */
   origin: string | null;
 }
@@ -60,36 +63,39 @@ function pidAlive(pid: number): boolean {
 export class MachinesService {
   private job: ConnectJobState | null = null;
   private tunnels = new Map<string, Tunnel>();
-  private resolved: MachineTargetInfo[] | null = null;
   private readonly stateFile: string;
 
   constructor(private readonly dataRoot: string) {
     this.stateFile = path.join(dataRoot, "machines-state.json");
   }
 
-  /** Hosts from ~/.ssh/config, resolved once per platform boot (`ssh -G` each). */
+  /**
+   * Hosts from ~/.ssh/config — the config text alone, re-read on every call (an edit shows
+   * up without a restart), ordered for a picker: live tunnels first, then most recently
+   * connected, then config order. Only aliases WITH state are probed for adoption; a
+   * config with hundreds of hosts costs hundreds of string compares, not processes.
+   */
   async list(): Promise<MachineTargetInfo[]> {
-    if (this.resolved === null) {
-      const resolved = await Promise.all(listHostAliases().map((alias) => resolveTarget(alias)));
-      this.resolved = resolved
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-        .map((entry) => ({
-          id: `ssh:${entry.machine}`,
-          machine: entry.machine,
-          alias: entry.alias,
-          user: entry.settings.user,
-          origin: null,
-        }));
-    }
-    // Live-tunnel adoption is re-checked on every list: it is what lets the menu mark a
-    // machine as already reachable after a swap or restart neither side remembers.
     const state = this.readState();
-    return await Promise.all(
-      this.resolved.map(async (machine) => ({
-        ...machine,
-        origin: await this.adoptedOrigin(machine.machine, state[machine.machine]),
+    const machines = await Promise.all(
+      listHostAliases().map(async (alias, index) => ({
+        id: `ssh:${alias}`,
+        alias,
+        origin: await this.adoptedOrigin(alias, state[alias]),
+        last: state[alias]?.lastConnectedAt ?? "",
+        index,
       })),
     );
+    return machines
+      .sort((a, b) => {
+        const liveA = a.origin !== null ? 1 : 0;
+        const liveB = b.origin !== null ? 1 : 0;
+        if (liveA !== liveB) return liveB - liveA;
+        // ISO timestamps order lexically; "" (never connected) sorts last.
+        if (a.last !== b.last) return a.last < b.last ? 1 : -1;
+        return a.index - b.index;
+      })
+      .map(({ id, alias, origin }) => ({ id, alias, origin }));
   }
 
   state(): { job: ConnectJobState | null } {
@@ -129,15 +135,23 @@ export class MachinesService {
     const machines = await this.list();
     const machine = machines.find((m) => m.id === id);
     if (machine === undefined) return { ok: false, message: `unknown machine ${id}` };
-    const target: RemoteTarget = { alias: machine.alias, user: machine.user };
+    const alias = machine.alias;
 
     // Adoption: a live tunnel from an earlier platform or server run IS the connection.
     if (machine.origin !== null) {
-      say(`A tunnel to ${machine.machine} is already up.`);
+      say(`A tunnel to ${alias} is already up.`);
       return { ok: true, origin: machine.origin };
     }
 
-    say(`Asking what ${machine.machine} is…`);
+    // The one `ssh -G` of the whole flow: the picked alias resolves (login user, Match,
+    // Include, wildcard inheritance) only now — the LIST never resolves anything.
+    const resolved = await resolveTarget(alias);
+    if (resolved === null) {
+      return { ok: false, message: `ssh could not resolve "${alias}" (check ~/.ssh/config)` };
+    }
+    const target: RemoteTarget = { alias, user: resolved.settings.user };
+
+    say(`Asking what ${alias} is…`);
     const detected = await detectRemote(target);
     if ("error" in detected) return { ok: false, message: detected.error };
     let identity = detected.identity;
@@ -145,7 +159,7 @@ export class MachinesService {
       return {
         ok: false,
         code: "not-supported",
-        message: `${machine.machine} is a Windows machine; starting a detached server from a cmd.exe ssh session is not supported yet.`,
+        message: `${alias} is a Windows machine; starting a detached server from a cmd.exe ssh session is not supported yet.`,
       };
     }
 
@@ -166,8 +180,8 @@ export class MachinesService {
     if (identity.installedVersion !== image.version) {
       say(
         identity.installedVersion === null
-          ? `Installing PenguinHarness ${image.version} on ${machine.machine}…`
-          : `Replacing PenguinHarness ${identity.installedVersion} with ${image.version} on ${machine.machine}…`,
+          ? `Installing PenguinHarness ${image.version} on ${alias}…`
+          : `Replacing PenguinHarness ${identity.installedVersion} with ${image.version} on ${alias}…`,
       );
       const outcome = await installOnRemote({
         target,
@@ -205,13 +219,13 @@ export class MachinesService {
           return {
             ok: false,
             code: "port-conflict",
-            message: `The server on ${machine.machine} uses port ${state.lock.port}, which is taken on this machine; restarting it onto a free port would interrupt whatever runs there.`,
+            message: `The server on ${alias} uses port ${state.lock.port}, which is taken on this machine; restarting it onto a free port would interrupt whatever runs there.`,
           };
         }
         say(`Stopping its server on the conflicting port ${state.lock.port}…`);
         await stopRemoteServer(target, state.lock.pid);
       }
-      const remembered = this.readState()[machine.machine]?.port;
+      const remembered = this.readState()[alias]?.port;
       const picked = await pickTunnelPort({ remembered, busy: localPortBusy });
       if (picked === null) {
         return { ok: false, message: "no free port for the tunnel on this machine" };
@@ -230,8 +244,10 @@ export class MachinesService {
       port,
       onExit: () => {
         // The pid is stale the moment ssh exits; the next list()/connect re-discovers.
-        this.tunnels.delete(machine.machine);
-        this.writeState(machine.machine, { port });
+        // The port and the recency stay — they are what orders and re-numbers the next
+        // connect to this machine.
+        this.tunnels.delete(alias);
+        this.writeState(alias, { port, lastConnectedAt: new Date().toISOString() });
       },
     });
     const origin = originFor(port);
@@ -242,11 +258,12 @@ export class MachinesService {
       return { ok: false, message: [ready.detail, stderr].filter((s) => s !== "").join("\n") };
     }
 
-    this.tunnels.get(machine.machine)?.close();
-    this.tunnels.set(machine.machine, tunnel);
-    this.writeState(machine.machine, {
+    this.tunnels.get(alias)?.close();
+    this.tunnels.set(alias, tunnel);
+    this.writeState(alias, {
       port,
       ...(tunnel.pid !== null ? { tunnelPid: tunnel.pid } : {}),
+      lastConnectedAt: new Date().toISOString(),
     });
     say("Connected.");
     return { ok: true, origin };

@@ -25,6 +25,8 @@ export interface MachineState {
   port: number;
   /** ssh child holding the tunnel, when one was started and not seen exiting. */
   tunnelPid?: number;
+  /** ISO timestamp of the last successful connect — the recency the list is ordered by. */
+  lastConnectedAt?: string;
 }
 
 /** Parses the state file's text: machine identity → state. Damage reads as empty. */
@@ -43,6 +45,9 @@ export function parseMachinesState(raw: string | null): Record<string, MachineSt
       const entry: MachineState = { port: o.port };
       if (typeof o.tunnelPid === "number" && Number.isInteger(o.tunnelPid) && o.tunnelPid > 0) {
         entry.tunnelPid = o.tunnelPid;
+      }
+      if (typeof o.lastConnectedAt === "string" && o.lastConnectedAt !== "") {
+        entry.lastConnectedAt = o.lastConnectedAt;
       }
       out[machine] = entry;
     }

@@ -13,12 +13,14 @@
  *   click fills the username and focuses the password box; each row is removable on the spot.
  * Both blocks are absent until this browser has seen a sign-in, so a fresh install opens on the plain form.
  *
- * Below the form sits the MACHINE dimension: this page is the account chooser, and picking which
- * machine's server to sign into belongs to the same decision — machine first, then account, then
- * password. The rows come from this server's /api/machines (platform-served; pre-auth only on a
- * desktop-mode server, so a multi-user server's login page shows none), plus the "back to" origin a
- * switch arrived from. Picking one runs the whole connect server-side (probe, auto-install, tunnel)
- * and lands on THAT server's own login page, where its accounts take over.
+ * At the TOP of the card sits the MACHINE dimension: this page is the account chooser, and picking
+ * which machine's server to sign into comes first — machine, then account, then password. The rows
+ * come from this server's /api/machines (platform-served; pre-auth only on a desktop-mode server,
+ * so a multi-user server's login page shows none), plus the "back to" origin a switch arrived
+ * from. An ssh config can declare hundreds of hosts, so only a handful show (live tunnels first,
+ * then most recently connected — the server's order) and a search box reaches the rest. Picking
+ * one runs the whole connect server-side (probe, auto-install, tunnel) and lands on THAT server's
+ * own login page, where its accounts take over.
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -26,7 +28,14 @@ import * as api from "../api/endpoints";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { accountsForMachine, currentMachine, forgetAccount } from "../lib/known-accounts";
-import { getMachines, homeOrigin, runConnect, switchUrl } from "../lib/machines";
+import {
+  filterMachines,
+  getMachines,
+  homeOrigin,
+  MAX_VISIBLE_MACHINES,
+  runConnect,
+  switchUrl,
+} from "../lib/machines";
 import type { MachineTargetInfo } from "../lib/machines";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
@@ -136,6 +145,16 @@ export function LoginPage() {
   /** Latest progress line of the running connect, shown in place under the rows. */
   const [connectLine, setConnectLine] = useState<string | null>(null);
   const [restartMachine, setRestartMachine] = useState<MachineTargetInfo | null>(null);
+  /**
+   * The search box's text. An ssh config can declare hundreds of hosts, so the block never
+   * lists them all: the server orders live-first then by recency, the query narrows by
+   * substring, and only the first MAX_VISIBLE_MACHINES rows render — a counter names how
+   * many the current view leaves out.
+   */
+  const [machineQuery, setMachineQuery] = useState("");
+  const filteredMachines = filterMachines(machines, machineQuery);
+  const visibleMachines = filteredMachines.slice(0, MAX_VISIBLE_MACHINES);
+  const hiddenMachineCount = filteredMachines.length - visibleMachines.length;
   const home = homeOrigin();
   useEffect(() => {
     let cancelled = false;
@@ -164,12 +183,12 @@ export function LoginPage() {
       return;
     }
     setConnectingMachine(machine.id);
-    setConnectLine(S.auth.machineConnecting(machine.machine));
+    setConnectLine(S.auth.machineConnecting(machine.alias));
     clearErrors();
     try {
       const result = await runConnect(machine.id, { allowRestart, onLog: setConnectLine });
       if (result.ok) {
-        setConnectLine(S.auth.machineConnected(machine.machine));
+        setConnectLine(S.auth.machineConnected(machine.alias));
         window.location.assign(switchUrl(result.origin));
         return;
       }
@@ -244,6 +263,74 @@ export function LoginPage() {
         <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          {/* Machines first: which machine's server to sign into (see the module doc). A
+              green dot marks a live tunnel — switching there is instant; the spinner row
+              is the running connect, narrated by the line under the list. */}
+          {(machines.length > 0 || home !== null) && (
+            <div className="mb-5 border-b border-gray-100 pb-5 dark:border-gray-800">
+              <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                {S.auth.machines}
+              </p>
+              {machines.length > MAX_VISIBLE_MACHINES && (
+                <input
+                  type="search"
+                  value={machineQuery}
+                  onChange={(e) => setMachineQuery(e.target.value)}
+                  placeholder={S.auth.machineSearch}
+                  aria-label={S.auth.machineSearch}
+                  className="mb-2 w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+                />
+              )}
+              <ul className="space-y-0.5">
+                {home !== null && machineQuery.trim() === "" && (
+                  <li>
+                    <button
+                      type="button"
+                      disabled={busy || connectingMachine !== null}
+                      onClick={() => window.location.assign(`${home}/`)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {S.auth.machineBack(new URL(home).host)}
+                      </span>
+                    </button>
+                  </li>
+                )}
+                {visibleMachines.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      disabled={busy || connectingMachine !== null}
+                      onClick={() => void connectToMachine(m)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                    >
+                      {connectingMachine === m.id && (
+                        <span
+                          aria-hidden
+                          className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                        />
+                      )}
+                      {connectingMachine !== m.id && m.origin !== null && (
+                        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{m.alias}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {hiddenMachineCount > 0 && (
+                <p className="mt-1.5 px-2 text-xs text-gray-400 dark:text-gray-500">
+                  {S.auth.machineMore(hiddenMachineCount)}
+                </p>
+              )}
+              {connectLine !== null && (
+                <p className="mt-2 truncate px-2 text-xs text-gray-500 dark:text-gray-400">
+                  {connectLine}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Still signed in: one click and you are in, because the server is holding that
               account's session token — no password, nothing typed. Rendered above the
               remembered ids so the cheap path comes first, and visually distinct (accent
@@ -375,61 +462,6 @@ export function LoginPage() {
             </Button>
           </form>
 
-          {/* Machines: sign into another machine's server instead. Below the form because
-              the form is this server's primary path; picking a row leaves for that
-              server's own login page (or straight into it, where a session cookie is
-              still live). A green dot marks a machine whose tunnel is already up —
-              switching there is instant. */}
-          {(machines.length > 0 || home !== null) && (
-            <div className="mt-5 border-t border-gray-100 pt-5 dark:border-gray-800">
-              <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                {S.auth.machines}
-              </p>
-              <ul className="space-y-0.5">
-                {home !== null && (
-                  <li>
-                    <button
-                      type="button"
-                      disabled={busy || connectingMachine !== null}
-                      onClick={() => window.location.assign(`${home}/`)}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {S.auth.machineBack(new URL(home).host)}
-                      </span>
-                    </button>
-                  </li>
-                )}
-                {machines.map((machine) => (
-                  <li key={machine.id}>
-                    <button
-                      type="button"
-                      disabled={busy || connectingMachine !== null}
-                      onClick={() => void connectToMachine(machine)}
-                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
-                    >
-                      {connectingMachine === machine.id && (
-                        <span
-                          aria-hidden
-                          className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                        />
-                      )}
-                      {connectingMachine !== machine.id && machine.origin !== null && (
-                        <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-green-500" />
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{machine.machine}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              {connectLine !== null && (
-                <p className="mt-2 truncate px-2 text-xs text-gray-500 dark:text-gray-400">
-                  {connectLine}
-                </p>
-              )}
-            </div>
-          )}
-
           <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
             {S.auth.defaultAdminNote}
           </p>
@@ -453,7 +485,7 @@ export function LoginPage() {
         }}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          {restartMachine ? S.auth.machineRestartConfirm(restartMachine.machine) : ""}
+          {restartMachine ? S.auth.machineRestartConfirm(restartMachine.alias) : ""}
         </p>
       </ConfirmModal>
     </div>

@@ -16,12 +16,24 @@ import { apiFetch } from "../api/client";
 
 export interface MachineTargetInfo {
   id: string;
-  /** SSH identity, `user@alias` — also the label. */
-  machine: string;
+  /** The alias as written in ~/.ssh/config — the label. Resolution happens at connect time. */
   alias: string;
-  user: string;
   /** Origin of an already-live tunnel, when the server has one up for this machine. */
   origin: string | null;
+}
+
+/**
+ * How many rows the machines block shows at once. An ssh config can declare hundreds of
+ * hosts; the server orders them live-first, then by recency, so the visible few are the
+ * useful few — the search box reaches the rest.
+ */
+export const MAX_VISIBLE_MACHINES = 6;
+
+/** Case-insensitive substring filter over aliases; an empty query keeps the server's order. */
+export function filterMachines(machines: MachineTargetInfo[], query: string): MachineTargetInfo[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return machines;
+  return machines.filter((m) => m.alias.toLowerCase().includes(q));
 }
 
 export interface ConnectJobState {
