@@ -99,6 +99,7 @@ interface GenerativeModelConfig {
 - 网关**有状态**地维护会话历史，每轮只接收新消息；恢复 Session 时经一次性的 `setHistory` 重放已提交历史；
 - 内部的 `EventTranslator` 把网关流式事件翻译为 `partial_*` 分片 + 完整消息，逐条原样保留不透明的 `fidelity` 保真负载；分段与网关自身的聚合一致——thinking 块由其 fidelity 负载闭合，连续相同的 fidelity 归为同一块(OpenAI 兼容客户端给每条增量盖同一个 `{ reasoning_field }`，不能因此切块)，text 段遇到不同的 `fidelity.phase` 即切分、遇到 `fidelity.signature` 即闭合，合并时 fidelity 键累积；完整消息按 thinking → text → tool_call 顺序落盘；
 - `ToolCallIdAllocator` 处理个别 Provider 用函数名充当调用 id 的情况(入站追加 `#n`、出站剥离)，作用域覆盖整个 Session;
+- Provider 因历史没有回传 `reasoning_content` 而拒绝思考模式请求，这是对**上下文**而非对该轮的判决：原样重试只会以同样方式失败，因此该上下文之后不再下发思考(显式 `none`，其优先级高于逐请求覆盖与构造默认值)，同时该次拒绝仍如实上报为 `failed` 交由引擎重试——已提交的历史绝不会被改写去合成缺失的思考内容。见[模型与 Provider](/models);
 - Provider 协议差异(工具调用格式、思考内容、流式事件)全部在网关内抹平，见[模型与 Provider](/models)。
 
 ## EnvironmentInterface

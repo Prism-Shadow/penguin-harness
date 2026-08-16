@@ -142,6 +142,8 @@ DeepSeek V4 只接受 `low`/`high`/`max`，服务端会把 `medium` 与 `xhigh` 
 
 连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`describe_image` 代读）不携带快速模式——只有会话自身的请求携带。
 
+有一条 Provider 约束的优先级高于所选档位。经 OpenAI 兼容接口访问的推理模型（DeepSeek 及其前面的中转）要求：思考模式的请求里，历史中每条 assistant 消息都必须把自己的 `reasoning_content` 回传，否则整个请求以 400 被拒——`The reasoning_content in the thinking mode must be passed back to the API.`。而档位是逐轮的、历史却由整个上下文共享，因此上下文中可能存在完全没有思考内容的轮次：以 `none` 跑过的轮次、以其记录轮次从未使用过的档位恢复的 Session（思考等级刻意不作为 Session 不变量，见 [Session 与 Trace](/sessions-and-traces)），或某一轮 Provider 没有返回思考内容。首次遇到这类拒绝，**该上下文**即不再下发思考：该次请求如实上报为 `failed`，引擎自身的重试以关闭思考重新发出——原样的历史对它始终合法——run 继续进行，并在 stderr 打印一行说明原因。已提交的历史绝不会被改写去伪造缺失的思考内容。新上下文开始（压缩之后，或新会话）时，配置的档位自动恢复。
+
 ## 模型与 Agent 解耦
 
 Agent 从不绑定模型：模型在创建 Session 时选定，并在该 Session 内锁定不变；同一个 Agent 可以在不同 Session 用不同模型运行。会话内的 `/model` 命令按 handoff 方式换模型：在同一 Agent 下新建一个使用新模型、沿用当前 Workspace 的会话，首条消息携带 `[model_switch_from]` 源块（源会话 id 与其 Trace 文件路径）——历史不注入新上下文（部分模型回放历史时必须携带 thinking 与 `fidelity`，不能跨模型），模型需要时按路径自行读取；原会话保持不变。`pricing` 三档价格供用量/成本中心按 Token 计费。

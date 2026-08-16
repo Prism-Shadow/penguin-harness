@@ -18,6 +18,7 @@ export {
   isAuthenticationError,
   isFastModeUnsupportedError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
+  isThinkingReplayRejection,
   mapThinkingLevel,
   toolDefinitionsToSchemas,
   buildUniConfig,

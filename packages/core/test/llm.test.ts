@@ -31,6 +31,7 @@ import {
   isMalformedJsonParseError,
   isRetryableError,
   FAST_MODE_UNSUPPORTED_GUIDANCE,
+  isThinkingReplayRejection,
   mapThinkingLevel,
   mergeOmniToUniMessage,
   stripToolCallIdSuffix,
@@ -1404,6 +1405,153 @@ describe("GenerativeModel per-request thinking level", () => {
     await drainAll(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "xhigh" }));
     expect(configs[0] !== undefined && "thinking_level" in configs[0]).toBe(false);
     expect(configs[1]?.thinking_level).toBe(ThinkingLevel.XHIGH);
+  });
+});
+
+describe("thinking-mode replay rejection (the provider wants reasoning_content back)", () => {
+  // The verdict as DeepSeek words it, reaching the harness through an OpenAI-compatible relay.
+  const DEEPSEEK_REJECTION =
+    "Upstream request failed: [invalid_request_error] The `reasoning_content` in the " +
+    "thinking mode must be passed back to the API.";
+
+  it("recognizes the rejection on the error itself, in a parsed body, and down the cause chain", () => {
+    expect(isThinkingReplayRejection(new Error(DEEPSEEK_REJECTION))).toBe(true);
+    // OpenAI SDK shape: the parsed body hangs off `error`.
+    expect(
+      isThinkingReplayRejection(
+        Object.assign(new Error("400 status code (no body)"), {
+          status: 400,
+          error: { message: DEEPSEEK_REJECTION, type: "invalid_request_error" },
+        }),
+      ),
+    ).toBe(true);
+    // Anthropic SDK shape: `error` holds the whole response body, the verdict one level deeper.
+    expect(
+      isThinkingReplayRejection(
+        Object.assign(new Error("400"), { error: { error: { message: DEEPSEEK_REJECTION } } }),
+      ),
+    ).toBe(true);
+    // Wrapped by a higher layer (Node fetch puts the real failure on `cause`).
+    expect(
+      isThinkingReplayRejection(
+        new Error("request failed", { cause: new Error(DEEPSEEK_REJECTION) }),
+      ),
+    ).toBe(true);
+    // A relay that translates the same verdict still lands.
+    expect(isThinkingReplayRejection(new Error("思考模式下必须回传 reasoning_content"))).toBe(true);
+  });
+
+  it("does not match neighbouring rejections that disabling thinking cannot fix", () => {
+    expect(isThinkingReplayRejection(null)).toBe(false);
+    expect(isThinkingReplayRejection(undefined)).toBe(false);
+    expect(isThinkingReplayRejection(new Error("max_tokens must be a positive integer"))).toBe(
+      false,
+    );
+    // Thinking is named, but nothing says reasoning has to come back.
+    expect(isThinkingReplayRejection(new Error("thinking is not supported by this model"))).toBe(
+      false,
+    );
+    // reasoning_content is named, but as unsupported — thinking off would still send it.
+    expect(
+      isThinkingReplayRejection(new Error("`reasoning_content` is not supported by this model")),
+    ).toBe(false);
+  });
+
+  // A model whose first request is rejected by the provider and whose later requests stream
+  // normally, capturing the UniConfig each one goes out with (same seam as the thinking-level
+  // suite above).
+  function rejectingModel(
+    error: unknown,
+    defaultLevel?: ThinkingLevelName,
+  ): { model: GenerativeModel; configs: (UniConfig | undefined)[] } {
+    const configs: (UniConfig | undefined)[] = [];
+    class RejectingModel extends GenerativeModel {
+      protected override openStream(
+        _uni: UniMessage,
+        _signal: AbortSignal,
+        config?: UniConfig,
+      ): AsyncIterable<UniEvent> {
+        configs.push(config);
+        const first = configs.length === 1;
+        return (async function* () {
+          if (first) throw error;
+          yield ev({
+            content_items: [{ type: "text", text: "ok" }],
+            finish_reason: "stop",
+            usage_metadata: {
+              cached_tokens: 0,
+              prompt_tokens: 1,
+              thoughts_tokens: 0,
+              response_tokens: 1,
+            },
+          });
+        })();
+      }
+    }
+    const model = new RejectingModel({
+      // The provider family this verdict comes from; its SDK wants a key at construction,
+      // and the seam below means none of these tests ever open a socket.
+      modelId: "deepseek-v4-flash",
+      apiKey: "test-key",
+      tools: [],
+      ...(defaultLevel !== undefined ? { thinkingLevel: defaultLevel } : {}),
+    });
+    return { model, configs };
+  }
+
+  async function outcomeOf(gen: AsyncGenerator<OmniMessage, LLMOutcome>): Promise<LLMOutcome> {
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+    return res.value;
+  }
+
+  it("reports the rejection as failed and takes thinking off the wire for every later request", async () => {
+    const { model, configs } = rejectingModel(
+      Object.assign(new Error(DEEPSEEK_REJECTION), { status: 400 }),
+      "medium",
+    );
+    const outcome = await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    // Reported honestly (a provider rejection), which the engine retries like any `failed`.
+    expect(outcome.status).toBe("failed");
+    expect(outcome.errorMessage).toContain("reasoning_content");
+    // The retry — and everything after it — goes out with thinking explicitly off, which the
+    // unchanged history is valid for; a per-turn override no longer outranks that.
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "high" }));
+    expect(configs[0]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.NONE);
+    expect(configs[2]?.thinking_level).toBe(ThinkingLevel.NONE);
+  });
+
+  it("sends an explicit none even where no level was configured (the provider default is thinking-on)", async () => {
+    const { model, configs } = rejectingModel(new Error(DEEPSEEK_REJECTION));
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    expect(configs[0] !== undefined && "thinking_level" in configs[0]).toBe(false);
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.NONE);
+  });
+
+  it("leaves the level alone for an unrelated provider rejection", async () => {
+    const { model, configs } = rejectingModel(
+      Object.assign(new Error("400 max_tokens must be a positive integer"), { status: 400 }),
+      "medium",
+    );
+    const outcome = await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    expect(outcome.status).toBe("failed");
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("a")] }));
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.MEDIUM);
+  });
+
+  it("leaves the level alone when the rejected attempt had thinking explicitly off", async () => {
+    const { model, configs } = rejectingModel(new Error(DEEPSEEK_REJECTION), "none");
+    const outcome = await outcomeOf(
+      model.streamGenerate({ newMessages: [userText("a")], thinkingLevel: "none" }),
+    );
+    // Nothing to turn down — the request already ran with thinking off, so this verdict is
+    // about something else and must not be silently absorbed as "thinking disabled".
+    expect(outcome.status).toBe("failed");
+    await outcomeOf(model.streamGenerate({ newMessages: [userText("b")], thinkingLevel: "high" }));
+    expect(configs[1]?.thinking_level).toBe(ThinkingLevel.HIGH);
   });
 });
 
