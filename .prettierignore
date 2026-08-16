@@ -2,6 +2,8 @@
 node_modules/
 dist/
 pnpm-lock.yaml
+# the desktop app dir + install image electron-builder packs (scripts/stage.mjs)
+packages/desktop/stage/
 
 # desktop build output: the installers electron-builder writes, and the assets
 # scripts/build-assets.mjs copies in beside them (formatted in their own packages)
