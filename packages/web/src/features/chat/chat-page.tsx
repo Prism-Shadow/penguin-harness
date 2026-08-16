@@ -40,6 +40,7 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
+import { sessionActivity } from "../../lib/session-activity";
 import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
@@ -55,6 +56,7 @@ import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
+import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -263,6 +265,7 @@ export function ChatPage() {
     add: addSession,
     replace,
     setStatus,
+    recentlyCompleted,
     setTitle,
   } = useSessions();
 
@@ -1263,17 +1266,32 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here.
-                Below sm only the pulsing dot remains (title carries the wording) — the text would eat the title's room on phones. */}
-            {stream.taskState === "running" && (
-              <span
-                title={S.chat.statusRunning}
-                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-              >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                <span className="hidden sm:inline">{S.chat.statusRunning}</span>
-              </span>
-            )}
+            {/* Session-level state: neutral motion while active, then a green completion dot
+                for the observed active→idle transition. Seen idle Sessions stay quiet. The
+                compacting state remains in the stream banner instead of being repeated here.
+                Below sm only the glyph remains so the title keeps its room. */}
+            {selectedSessionId !== null &&
+              sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId)) ===
+                "running" && (
+                <span
+                  title={S.chat.statusRunning}
+                  className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+                >
+                  <SessionActivityIcon activity="running" label={S.chat.statusRunning} />
+                  <span className="hidden sm:inline">{S.chat.statusRunning}</span>
+                </span>
+              )}
+            {selectedSessionId !== null &&
+              sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId)) ===
+                "completed" && (
+                <span
+                  title={S.chat.statusCompleted}
+                  className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+                >
+                  <SessionActivityIcon activity="completed" label={S.chat.statusCompleted} />
+                  <span className="hidden sm:inline">{S.chat.statusCompleted}</span>
+                </span>
+              )}
           </div>
 
           {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}

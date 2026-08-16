@@ -982,6 +982,7 @@ Benchmark：
     } as Record<string, string>,
     statusRunning: "运行中",
     statusCompacting: "压缩中",
+    statusCompleted: "运行完毕",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

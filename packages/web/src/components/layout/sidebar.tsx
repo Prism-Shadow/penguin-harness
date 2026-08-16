@@ -31,6 +31,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay, formatRelativeShort } from "../../lib/format";
+import { sessionActivity } from "../../lib/session-activity";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -103,6 +104,7 @@ import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
+import { SessionActivityIcon } from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -269,25 +271,17 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
-/** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
-function StatusDot({ session }: { session: SessionInfo }) {
-  if (session.status === "running") {
-    return (
-      <span
-        title={S.chat.statusRunning}
-        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500"
-      />
-    );
-  }
-  if (session.status === "compacting") {
-    return (
-      <span
-        title={S.chat.statusCompacting}
-        className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-      />
-    );
-  }
-  return null;
+/** Session status: neutral motion while active, color only for a state that needs attention. */
+function StatusDot({ session, completed }: { session: SessionInfo; completed: boolean }) {
+  const activity = sessionActivity(session.status, completed);
+  if (activity === null) return null;
+  const label =
+    activity === "running"
+      ? S.chat.statusRunning
+      : activity === "compacting"
+        ? S.chat.statusCompacting
+        : S.chat.statusCompleted;
+  return <SessionActivityIcon activity={activity} label={label} />;
 }
 
 export function Sidebar({
@@ -322,6 +316,8 @@ export function Sidebar({
     loading,
     remove,
     replace,
+    recentlyCompleted,
+    dismissCompletion,
     showCliSessions,
     setShowCliSessions,
   } = useSessions();
@@ -838,6 +834,7 @@ export function Sidebar({
   };
 
   const openSession = (s: SessionInfo) => {
+    dismissCompletion(s.sessionId);
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
     go(`/chat/${s.sessionId}`);
@@ -929,6 +926,7 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
+            completed={recentlyCompleted.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -937,8 +935,8 @@ export function Sidebar({
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
-            // (it recedes while the run continues — the pulsing status dot beside it is
-            // what says "active right now"). CLI-adopted and subagent rows are not
+            // (it recedes while the run continues — the spinner beside it is what says
+            // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
@@ -2119,6 +2117,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 function SessionRow({
   s,
   active,
+  completed,
   pinned,
   canPin = false,
   lastActive,
@@ -2138,6 +2137,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
+  /** Whether this idle Session completed since the user last opened it. */
+  completed: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2226,7 +2227,7 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusDot session={s} />
+          <StatusDot session={s} completed={completed} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

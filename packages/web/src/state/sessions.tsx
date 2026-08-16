@@ -42,6 +42,7 @@ import {
   sessionCategory,
   splitPage,
 } from "../lib/session-grouping";
+import { advanceCompletionHighlights, dismissCompletionHighlight } from "../lib/session-activity";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -69,6 +70,10 @@ interface SessionsContextValue {
   replace: (session: SessionInfo) => void;
   /** Live stream task_state → list badge. */
   setStatus: (sessionId: string, status: SessionStatus) => void;
+  /** Active→idle transitions observed in this app lifetime, kept highlighted until reopened. */
+  recentlyCompleted: ReadonlySet<string>;
+  /** Opening a Session acknowledges and clears its transient completion highlight. */
+  dismissCompletion: (sessionId: string) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
   /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
@@ -103,6 +108,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [recentlyCompleted, setRecentlyCompleted] = useState<ReadonlySet<string>>(new Set());
   /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
   const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
   const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
@@ -221,6 +227,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setSessions([]);
+    setRecentlyCompleted(new Set());
     // reload() reads the ref synchronously to pick the categories to refetch — reset it
     // in place so a Project switch can't carry folder page state across via shared Agent
     // ids (default_agent exists in every Project).
@@ -382,6 +389,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       const row = sessionsRef.current.find((s) => s.sessionId === sessionId);
       if (row) adjustCount(row, sessionCategory(row), -1);
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
+      setRecentlyCompleted((prev) => dismissCompletionHighlight(prev, sessionId));
     },
     [adjustCount],
   );
@@ -400,11 +408,23 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   );
 
   const setStatus = useCallback((sessionId: string, status: SessionStatus) => {
-    setSessions((prev) => {
-      const target = prev.find((s) => s.sessionId === sessionId);
-      if (!target || target.status === status) return prev;
-      return prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s));
-    });
+    const target = sessionsRef.current.find((s) => s.sessionId === sessionId);
+    if (!target || target.status === status) return;
+
+    // Advance the ref synchronously so a fast running→idle pair cannot read the old status
+    // before React has rendered the first update. Keep completion state outside the Sessions
+    // updater: React may replay functional updaters in development Strict Mode.
+    sessionsRef.current = sessionsRef.current.map((s) =>
+      s.sessionId === sessionId ? { ...s, status } : s,
+    );
+    setRecentlyCompleted((completed) =>
+      advanceCompletionHighlights(completed, sessionId, target.status, status),
+    );
+    setSessions((prev) => prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s)));
+  }, []);
+
+  const dismissCompletion = useCallback((sessionId: string) => {
+    setRecentlyCompleted((prev) => dismissCompletionHighlight(prev, sessionId));
   }, []);
 
   const setTitle = useCallback((sessionId: string, title: string) => {
@@ -440,6 +460,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       remove,
       replace,
       setStatus,
+      recentlyCompleted,
+      dismissCompletion,
       setTitle,
       showCliSessions,
       setShowCliSessions,
@@ -457,6 +479,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     remove,
     replace,
     setStatus,
+    recentlyCompleted,
+    dismissCompletion,
     setTitle,
     showCliSessions,
     setShowCliSessions,
