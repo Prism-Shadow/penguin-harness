@@ -1919,6 +1919,24 @@ export function Sidebar({
                 }}
               />
             )}
+            {/* Switch account: ends this session and returns to the login page, where the
+                accounts that have signed in on this browser are one click away (ids only —
+                known-accounts.ts) and only the password is left to type. Sits right above
+                Sign out: same exit, different intent, and it reads as the softer of the two
+                (plain row vs. the red one). Hidden in desktop mode for the same reason as
+                Sign out below. */}
+            {!desktopMode && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  void logout().then(() => navigate("/login"));
+                }}
+              >
+                {S.auth.switchAccount}
+              </button>
+            )}
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown. */}
             {!desktopMode && (

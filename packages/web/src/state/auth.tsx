@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
+import { rememberAccount } from "../lib/known-accounts";
 
 /**
  * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
@@ -100,6 +101,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // Remember every account that signs in on this browser (ids only, no credentials —
+  // known-accounts.ts): after "switch account" the login page offers them as one-click
+  // prefills. Hooked to the resolved user rather than to login(), so all three ways a
+  // session materializes are covered at once — the mount-time /api/me, a fresh login,
+  // and refresh() — and a repeat of the same account writes nothing.
+  useEffect(() => {
+    if (user) rememberAccount(user.userId);
+  }, [user]);
 
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });

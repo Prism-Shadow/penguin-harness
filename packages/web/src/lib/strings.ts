@@ -262,6 +262,11 @@ export const zh = {
     hidePassword: "隐藏密码",
     login: "登录",
     logout: "登出",
+    /** 左下角账户菜单：结束当前会话并回到登录页，换一个账号登录。 */
+    switchAccount: "切换账号",
+    /** 登录页上本机记住过的账号列表（只有用户名，没有密码）。 */
+    recentAccounts: "最近登录的账号",
+    forgetAccount: (userId: string): string => `不再记住 ${userId}`,
     admin: "管理员",
     defaultAdminNote:
       "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",

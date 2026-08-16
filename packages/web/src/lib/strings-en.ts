@@ -265,6 +265,9 @@ export const en: Strings = {
     hidePassword: "Hide password",
     login: "Sign in",
     logout: "Sign out",
+    switchAccount: "Switch account",
+    recentAccounts: "Recent accounts",
+    forgetAccount: (userId: string): string => `Stop remembering ${userId}`,
     admin: "Admin",
     defaultAdminNote:
       "First run: sign in as the built-in admin “admin” with the initial password printed in the server startup output (looks like penguin-1234), then change it soon",
