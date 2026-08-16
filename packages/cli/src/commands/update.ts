@@ -222,6 +222,12 @@ export function buildInstallerInvocation(opts: {
   installDir: string;
   hasBundledNode: boolean;
   defaultInstallDir: string;
+  /**
+   * Where installs up to v0.2.2 put the program (`~/.penguin`). Treated as a default, not as a
+   * choice: pinning it with PENGUIN_INSTALL_DIR would opt the installer out of its one-time move
+   * to the XDG data dir, freezing those users on the old layout for good.
+   */
+  legacyInstallDir?: string;
   version?: string;
   downloadBaseUrl?: string;
   downloadFallbackBaseUrl?: string;
@@ -229,7 +235,11 @@ export function buildInstallerInvocation(opts: {
   const args = [opts.scriptPath];
   if (!opts.hasBundledNode) args.push("--universal");
   const env: Record<string, string> = {};
-  if (path.resolve(opts.installDir) !== path.resolve(opts.defaultInstallDir)) {
+  const unpinned = [
+    opts.defaultInstallDir,
+    ...(opts.legacyInstallDir ? [opts.legacyInstallDir] : []),
+  ];
+  if (!unpinned.some((dir) => path.resolve(opts.installDir) === path.resolve(dir))) {
     env.PENGUIN_INSTALL_DIR = opts.installDir;
   }
   if (opts.version) env.PENGUIN_VERSION = `v${normalizeVersion(opts.version)}`;
@@ -506,7 +516,7 @@ export function planUpdate(input: {
   install: InstallInfo;
   modulePath: string;
   platform: string;
-  /** `~/.penguin`, passed in rather than read, so the tarball branch stays pure. */
+  /** The installer's default program dir (XDG), passed in rather than read, so the tarball branch stays pure. */
   defaultInstallDir: string;
 }): UpdatePlan {
   const { current, target, install } = input;
@@ -570,7 +580,14 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
       const release = await resolveRelease(source, opts.release, t);
       const target = release.version;
       const modulePath = selfPath();
-      const defaultInstallDir = path.join(homedir(), ".penguin");
+      // Where install.sh puts the program with nothing set (the XDG data dir), plus where it
+      // used to put it: passing either back as PENGUIN_INSTALL_DIR would pin the layout and
+      // block the installer's one-time move, so both count as "unset".
+      const defaultInstallDir = path.join(
+        process.env.XDG_DATA_HOME || path.join(homedir(), ".local", "share"),
+        "penguin",
+      );
+      const legacyInstallDir = path.join(homedir(), ".penguin");
       const plan = planUpdate({
         current,
         target,
@@ -658,6 +675,7 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
         installDir,
         hasBundledNode,
         defaultInstallDir,
+        legacyInstallDir,
         version: target,
         ...payloadSourceEnv(downloaded.candidate, Boolean(explicitBaseValue)),
       });
