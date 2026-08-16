@@ -187,8 +187,10 @@ export const en: Strings = {
     login: "Sign in",
     logout: "Sign out",
     switchAccount: "Switch account",
+    signedInAccounts: "Signed in",
     recentAccounts: "Recent accounts",
     forgetAccount: (userId: string): string => `Stop remembering ${userId}`,
+    switchFailed: "That account's sign-in has expired. Please sign in again.",
     admin: "Admin",
     defaultAdminNote:
       "First run: sign in as the built-in admin “admin” with the initial password printed in the server startup output (looks like penguin-1234), then change it soon",

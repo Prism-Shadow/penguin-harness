@@ -65,6 +65,15 @@ export interface AuthResponse {
   user: UserInfo;
 }
 
+/**
+ * Accounts signed in on the calling browser (GET /api/auth/sessions): the active one first,
+ * then the parked ones — each reachable with POST /api/auth/switch and no password, since
+ * their session tokens are already in the caller's cookie jar. Empty when nothing is signed in.
+ */
+export interface AuthSessionsResponse {
+  sessions: Array<{ userId: string; active: boolean }>;
+}
+
 export interface MeResponse {
   user: UserInfo;
   /**

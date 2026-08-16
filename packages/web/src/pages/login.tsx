@@ -5,16 +5,20 @@
  * global preferences, defaults to following the device). No open registration: accounts are created by
  * admins in the user backend; first use logs in with the built-in admin account (hinted in the footer).
  *
- * Above the form sits the "switch account" half of the flow: the accounts that have signed in on this
- * browser (known-accounts.ts — userIds only), each one click away from a filled username and a focused
- * password box, each removable on the spot. The block is absent until this browser has seen a sign-in,
- * so a fresh install still opens on the plain form.
+ * Above the form sits the "switch account" half of the flow, in two tiers that must not be confused:
+ * - PARKED sessions (/api/auth/sessions): accounts still signed in on this browser, whose tokens the
+ *   server holds in an HttpOnly jar. One click enters them, no password — that is the credential
+ *   stash, and it never leaves the cookie.
+ * - REMEMBERED accounts (known-accounts.ts): ids seen on this machine with no live session left. One
+ *   click fills the username and focuses the password box; each row is removable on the spot.
+ * Both blocks are absent until this browser has seen a sign-in, so a fresh install opens on the plain form.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import * as api from "../api/endpoints";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
-import { forgetAccount, loadKnownAccounts } from "../lib/known-accounts";
+import { accountsForMachine, currentMachine, forgetAccount } from "../lib/known-accounts";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
 import { useLocale } from "../state/locale";
@@ -41,12 +45,36 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const clearErrors = () => setErrors((p) => (p.userId || p.password || p.form ? {} : p));
   /**
-   * Accounts remembered on this browser, newest first — read once on mount and kept in state
-   * so a removal updates the list without a reload. Nothing is prefilled on its own: the page
-   * cannot tell "switch account" (where the account you just left is the one you do NOT want)
-   * from a plain visit, so choosing stays an explicit click.
+   * Accounts remembered for THIS machine, newest first — read once on mount and kept in
+   * state so a removal updates the list without a reload. Other machines' accounts are not
+   * offered: their passwords belong to a different host, and this form only signs in here.
+   * Nothing is prefilled on its own: the page cannot tell "switch account" (where the
+   * account you just left is the one you do NOT want) from a plain visit, so choosing stays
+   * an explicit click.
    */
-  const [accounts, setAccounts] = useState<string[]>(() => loadKnownAccounts());
+  const machine = currentMachine();
+  const [accounts, setAccounts] = useState(() => accountsForMachine(machine));
+
+  /**
+   * Accounts still signed in on this browser (parked session tokens, held server-side).
+   * Entering one costs a click; the password path below is for everything else. An
+   * unreachable server just leaves the block out.
+   */
+  const [parked, setParked] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getAuthSessions()
+      .then((res) => {
+        if (!cancelled) setParked(res.sessions.filter((s) => !s.active).map((s) => s.userId));
+      })
+      .catch(() => {
+        if (!cancelled) setParked([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * The password box's id. Input is not a forwardRef component, so picking an account moves
@@ -62,10 +90,36 @@ export function LoginPage() {
     document.getElementById(PASSWORD_FIELD_ID)?.focus();
   };
 
+  /**
+   * Enter a parked account: the server activates the token it already holds and the app is
+   * loaded fresh onto it (a full document load, like every other account switch, so nothing
+   * of the previous account survives in this tab). A session that died in the meantime
+   * falls back to the form, with the id prefilled.
+   */
+  const enterParked = async (id: string) => {
+    setBusy(true);
+    try {
+      await api.switchAccount(id);
+      window.location.assign("/");
+    } catch {
+      setParked((prev) => prev.filter((p) => p !== id));
+      setErrors({ form: S.auth.switchFailed });
+      pickAccount(id);
+      setBusy(false);
+    }
+  };
+
+  /**
+   * The remembered ids worth showing: an account that is still signed in is already offered
+   * above as a one-click entry, so listing it again under "type your password" would be two
+   * rows for one account with different meanings.
+   */
+  const remembered = accounts.filter((a) => !parked.includes(a.userId));
+
   /** Per-row remove: drops the account from this browser's memory (the typed username is left alone). */
   const forget = (id: string) => {
-    forgetAccount(id);
-    setAccounts(loadKnownAccounts());
+    forgetAccount({ machine, userId: id });
+    setAccounts(accountsForMachine(machine));
   };
 
   const submit = async () => {
@@ -120,18 +174,51 @@ export function LoginPage() {
         <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">{S.appName}</h1>
 
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          {/* Still signed in: one click and you are in, because the server is holding that
+              account's session token — no password, nothing typed. Rendered above the
+              remembered ids so the cheap path comes first, and visually distinct (accent
+              dot) from rows that will ask for a password. */}
+          {parked.length > 0 && (
+            <div className="mb-5 border-b border-gray-100 pb-5 dark:border-gray-800">
+              <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                {S.auth.signedInAccounts}
+              </p>
+              <ul className="space-y-0.5">
+                {parked.map((id) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void enterParked(id)}
+                      className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 disabled:opacity-60 dark:hover:bg-gray-800"
+                    >
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[10px] font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+                        {id.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{id}</span>
+                      <span
+                        aria-hidden
+                        className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
+                      />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Accounts remembered on this browser: avatar initial + id (the same avatar the
               sidebar's account row uses, so the switch reads as the same object), plus a
               hover-weight remove for a shared machine. The separator below hands the eye
               over to the form, which stays the primary path — an unlisted account is still
               just typed in. */}
-          {accounts.length > 0 && (
+          {remembered.length > 0 && (
             <div className="mb-5 border-b border-gray-100 pb-5 dark:border-gray-800">
               <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                 {S.auth.recentAccounts}
               </p>
               <ul className="space-y-0.5">
-                {accounts.map((id) => (
+                {remembered.map(({ userId: id }) => (
                   <li key={id} className="flex items-center gap-1">
                     <button
                       type="button"

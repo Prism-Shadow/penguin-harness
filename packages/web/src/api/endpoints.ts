@@ -25,6 +25,7 @@ import type {
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
+  AuthSessionsResponse,
   BenchmarkCasesResponse,
   BenchmarksResponse,
   CaseMaterial,
@@ -106,6 +107,16 @@ export const login = (body: AuthLoginRequest) =>
   apiFetch<AuthResponse>("/api/auth/login", { method: "POST", body });
 
 export const logout = () => apiFetch<void>("/api/auth/logout", { method: "POST", body: {} });
+
+/** Accounts signed in on this browser (active first) — the passwordless switch targets. */
+export const getAuthSessions = () => apiFetch<AuthSessionsResponse>("/api/auth/sessions");
+
+/** Activate another account already in this browser's session jar (no password). */
+export const switchAccount = (userId: string) =>
+  apiFetch<AuthResponse>("/api/auth/switch", { method: "POST", body: { userId } });
+
+/** Park the current session (stays valid and switchable) and sign this browser out of it. */
+export const parkSession = () => apiFetch<void>("/api/auth/park", { method: "POST", body: {} });
 
 export const getMe = () => apiFetch<MeResponse>("/api/me");
 
