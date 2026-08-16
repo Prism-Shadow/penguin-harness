@@ -350,10 +350,23 @@ describe("release source selection", () => {
 describe("buildInstallerInvocation (preserves the shape of the install being upgraded)", () => {
   const base = {
     scriptPath: "/tmp/penguin-install-1.sh",
-    defaultInstallDir: "/home/me/.penguin",
+    defaultInstallDir: "/home/me/.local/share/penguin",
+    legacyInstallDir: "/home/me/.penguin",
   };
 
   it("default dir + bundled runtime: no flags, no env", () => {
+    expect(
+      buildInstallerInvocation({
+        ...base,
+        installDir: "/home/me/.local/share/penguin",
+        hasBundledNode: true,
+      }),
+    ).toEqual({ args: ["/tmp/penguin-install-1.sh"], env: {} });
+  });
+
+  it("an install still at the legacy ~/.penguin is left unpinned so the installer can move it", () => {
+    // Passing PENGUIN_INSTALL_DIR here would opt out of the one-time migration and freeze the
+    // old layout in place; the installer must see an unset install dir.
     expect(
       buildInstallerInvocation({
         ...base,
@@ -367,7 +380,7 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
     expect(
       buildInstallerInvocation({
         ...base,
-        installDir: "/home/me/.penguin",
+        installDir: "/home/me/.local/share/penguin",
         hasBundledNode: false,
       }),
     ).toEqual({ args: ["/tmp/penguin-install-1.sh", "--universal"], env: {} });

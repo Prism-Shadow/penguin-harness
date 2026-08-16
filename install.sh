@@ -6,7 +6,7 @@
 # Options:
 #   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
 #                              installer defaults to its own version, an unstamped source copy to latest
-#   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
+#   PENGUIN_INSTALL_DIR=<dir> install dir; default $XDG_DATA_HOME/penguin (~/.local/share/penguin)
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (speed-probed,
 #                              with the same-version other source as fallback)
@@ -24,7 +24,11 @@
 # v0.1.5 shipped the program tree directly (top-level penguin/); such archives are still
 # accepted, from --version pins and --archive files alike.
 #
-# The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
+# The program (bin/lib/web/node) and the data are separate trees: the program goes to the XDG
+# data dir, while the data root stays at ~/.penguin/data (core's PENGUIN_HOME default) and is
+# never touched by install, reinstall or upgrade. Installs up to v0.2.2 put the program under
+# ~/.penguin next to the data; a run of this installer moves that layout over — see the
+# one-time cleanup after the swap — and an explicit PENGUIN_INSTALL_DIR opts out of it.
 #
 # Docs: https://penguin.ooo/docs/quickstart-cli
 set -eu
@@ -35,7 +39,11 @@ OSS_RELEASE_ROOT="$OSS_ORIGIN/releases"
 GITHUB_RELEASE_ROOT="$REPO/releases/download"
 GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
-INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
+# Program tree: XDG data dir by default. LEGACY_INSTALL_DIR is where installs up to v0.2.2
+# put it (beside the data root, which does not move).
+DEFAULT_INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/penguin"
+LEGACY_INSTALL_DIR="$HOME/.penguin"
+INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
 BIN_DIR="$HOME/.local/bin"
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
@@ -757,6 +765,26 @@ OLD_DIR=""
 rm -rf "$STAGING"
 STAGING=""
 
+# --- One-time move out of ~/.penguin (installs up to v0.2.2 kept the program beside the data).
+#     The new tree is already installed and verified above, so the legacy PROGRAM directories are
+#     just removed; data/ is never touched, and an explicit PENGUIN_INSTALL_DIR opts out. A
+#     failure here is a warning, not an install failure: the new install already works, and all
+#     that is left behind is a stale copy. ---
+MIGRATED_LEGACY=0
+if [ -z "${PENGUIN_INSTALL_DIR:-}" ] && [ "$INSTALL_DIR" != "$LEGACY_INSTALL_DIR" ]; then
+  for d in bin lib web node; do
+    if [ -e "$LEGACY_INSTALL_DIR/$d" ]; then
+      if rm -rf "$LEGACY_INSTALL_DIR/$d"; then
+        MIGRATED_LEGACY=1
+      else
+        echo "warning: could not remove the previous program directory $LEGACY_INSTALL_DIR/$d" >&2
+      fi
+    fi
+  done
+  # Only when nothing of ours (notably data/) is left: an empty husk in $HOME is just litter.
+  [ -d "$LEGACY_INSTALL_DIR" ] && rmdir "$LEGACY_INSTALL_DIR" 2>/dev/null || :
+fi
+
 # --- Symlink into ~/.local/bin and check PATH only after the install is known to work. ---
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
@@ -768,6 +796,9 @@ esac
 
 echo ""
 echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
+if [ "$MIGRATED_LEGACY" -eq 1 ]; then
+  echo "moved the program out of $LEGACY_INSTALL_DIR; your data stays in $LEGACY_INSTALL_DIR/data"
+fi
 if [ "$PATH_MISSING" -eq 1 ]; then
   echo ""
   echo "note: installation succeeded, but $BIN_DIR is not on your PATH. Add it to your shell profile:"
@@ -781,5 +812,5 @@ fi
 echo ""
 echo "Get started:"
 echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
+echo "  penguin web       # start the Web UI at http://127.0.0.1:7376 (a first-login link is printed on first start)"
 echo "  penguin server    # headless server (PORT / HOST to override)"
