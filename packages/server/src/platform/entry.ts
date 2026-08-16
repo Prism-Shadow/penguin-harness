@@ -1,6 +1,6 @@
 /**
  * The server package's platform export: the entry the dev watch-and-push loop
- * (`scripts/watch-push.mjs`) compiles to one file and pushes to a waiting
+ * (`scripts/deploy.mjs`) compiles to one file and pushes to a waiting
  * runtime as this build's business platform.
  *
  * `platform`, `cli` (packages/cli/src/index.ts), and the web dist are three
@@ -13,7 +13,7 @@
  *
  * It is NOT a tsup entry point (tsup only bundles this package's own dist
  * surface: index/api/lock/initial-password/hmr/manifest), so it adds nothing
- * to the shipped server build; only esbuild (in watch-push.mjs) compiles it,
+ * to the shipped server build; only esbuild (in deploy.mjs) compiles it,
  * straight from source, never through the published dist. As more of the
  * package's services move under the platform tree, this entry stays the
  * same — the watcher just recompiles a bigger graph.

@@ -7,7 +7,7 @@ export default defineConfig({
   // loader resolves the current cli bundle through. There is deliberately no
   // "./platform" subpath: src/platform/entry.ts (this package's platform artifact
   // compile target — see its own module doc) is compiled straight from source by
-  // esbuild in scripts/watch-push.mjs, never through this package's published dist,
+  // esbuild in scripts/deploy.mjs, never through this package's published dist,
   // so it has no reason to be a tsup entry or a subpath export.
   entry: {
     index: "src/index.ts",
