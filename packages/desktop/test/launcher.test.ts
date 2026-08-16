@@ -89,7 +89,15 @@ describe("appImageBootstrapJs", () => {
   it("resolves the CLI entry relative to process.execPath and fixes argv", () => {
     expect(js).toContain("process.execPath");
     expect(js).toContain('"resources","app"');
-    expect(js).toContain('"penguin-cli","dist","index.js"');
+    // Derived from CLI_ENTRY_RELPATH rather than spelled out: this assertion used to pin
+    // "index.js", which is what let the AppImage wrapper keep pointing at an entry
+    // b77ddea ("two bins, no router") had already renamed.
+    expect(js).toContain(
+      CLI_ENTRY_RELPATH.split("/")
+        .slice(1)
+        .map((seg) => `"${seg}"`)
+        .join(","),
+    );
     // node -e argv is [execPath, ...args]; the CLI slices argv from index 2, so the
     // entry path must be spliced in at index 1.
     expect(js).toContain("process.argv.splice(1,0,cli)");
