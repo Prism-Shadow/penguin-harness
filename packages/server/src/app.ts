@@ -85,6 +85,7 @@ import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost } from "./hmr/host.js";
 import { hmrRoutes } from "./hmr/routes.js";
+import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
   createPreviewTokenSigner,
   hostOnly,
@@ -431,6 +432,13 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // admin cookie session, see hot/routes.ts), so they mount outside the
   // cookie-only authMiddleware below.
   app.route("/api/hmr", hmrRoutes(deps));
+
+  // THE seam: from here down, every route is one the platform may take over by push. Mounted
+  // after /api/hmr (which stays runtime-owned — see http-seam.ts) and before both the auth
+  // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
+  // ones, and decide its own authentication. Declining costs one property read and lands on
+  // the runtime's own routes below, which is what a platform without an `http` handler does.
+  app.use("*", platformHttpSeam(deps.hmr));
 
   // Protected routes: cookie -> auth_session -> user.
   const auth = authMiddleware(deps.authService);

@@ -53,6 +53,27 @@ deliverable by a hot push, with zero runtime change — including effects that l
 belong to the shell, e.g. extending `process.env.PATH` so the agent's spawned shells inherit it.
 Before touching the runtime, ask whether a platform `boot()` could do the same thing.
 
+## The route table is not a runtime asset
+
+The runtime mounts ONE seam (`http-seam.ts`) before its own routes: the running platform gets
+first refusal on every request and answers `null` for the ones it does not own. A pushed
+platform can therefore add an endpoint, replace an existing one, or serve something else
+entirely — with no rebuild. Before that seam existed, `/api/hmr/platform/call` made *methods*
+pushable, which is not the same thing: a method has no path, no verb and no status code, and
+every client would have had to speak that RPC instead of the API it already speaks.
+
+Two boundaries keep it safe, and both are load-bearing:
+
+- **`/api/hmr/*` is never offered to the platform.** It is the channel a broken platform gets
+  replaced through; if a push could claim it, one bad push would lock the installation out for
+  good.
+- **A platform that throws does not fall through.** It claimed the request; running the
+  runtime's older handler instead would answer with semantics the caller was not promised. The
+  error surfaces as a 500.
+
+Streaming responses (SSE, long downloads) stay runtime-side: the handler returns a whole
+Response. That is a limit of today's seam, not a layer boundary.
+
 ## Worked examples (all real, all from review)
 
 - **Opening DevTools from the web UI** — a preload bridge was added to the Electron shell so the
