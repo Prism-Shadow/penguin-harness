@@ -347,6 +347,48 @@ export function Sidebar({
    * spinner must still be there when the menu is reopened mid-flight.
    */
   const [updateChecking, setUpdateChecking] = useState(false);
+  /**
+   * Other accounts signed in on this browser — the passwordless switch targets. Their
+   * session tokens sit parked in an HttpOnly cookie (server-side jar, /api/auth/sessions),
+   * so this list holds ids only and switching costs no password. Re-read on every menu
+   * open: another tab may have signed one in or out since the last look. Failure leaves
+   * the list empty — the menu simply offers no shortcut, and the login page still works.
+   */
+  const [parkedAccounts, setParkedAccounts] = useState<string[]>([]);
+  useEffect(() => {
+    if (!userOpen) return;
+    let cancelled = false;
+    void api
+      .getAuthSessions()
+      .then((res) => {
+        if (!cancelled) {
+          setParkedAccounts(res.sessions.filter((s) => !s.active).map((s) => s.userId));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setParkedAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userOpen]);
+
+  /**
+   * Activate another signed-in account: the server swaps the active token for the parked
+   * one it already holds, then the whole document reloads onto it (same reason the switch
+   * row reloads — nothing of the previous account's state may survive). A session that
+   * expired since the menu was opened answers 404: say so and drop the stale row.
+   */
+  const switchToAccount = async (userId: string) => {
+    setUserOpen(false);
+    try {
+      await api.switchAccount(userId);
+      window.location.assign("/");
+    } catch {
+      toastError(S.auth.switchFailed);
+      setParkedAccounts((prev) => prev.filter((id) => id !== userId));
+    }
+  };
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -1929,26 +1971,63 @@ export function Sidebar({
                 way back does not depend on knowing a password. Every launch of the shell
                 starts its server with a fresh one-shot token and points the window at
                 /api/auth/desktop-login (packages/desktop/src/main.ts), so quitting and
-                reopening the app signs the desktop admin straight back in. */}
+                reopening the app signs the desktop admin straight back in.
+                Above it sit the accounts already signed in on this browser: their sessions
+                are parked server-side (HttpOnly, /api/auth/sessions), so those are one
+                click with no password, while this row is the way to an account that is not
+                in the jar — it parks the current session (kept alive, listed up there on
+                the way back) and hands the login page over.
+                The landing is a full document load, not a client-side navigation: the
+                reload drops every per-account store this tab is holding — Project / Agent /
+                Session state, model lists, the draft caches' in-memory mirrors — instead of
+                letting them live on under the next account. It is also the shape the switch
+                keeps once a target can be another machine, whose origin can only be entered
+                by loading it. */}
+            {parkedAccounts.length > 0 && (
+              <>
+                <p className="px-3.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  {S.auth.signedInAccounts}
+                </p>
+                {parkedAccounts.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`${menuItemClass} flex items-center gap-2`}
+                    onClick={() => void switchToAccount(id)}
+                  >
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[10px] font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+                      {id.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 truncate">{id}</span>
+                  </button>
+                ))}
+              </>
+            )}
             <button
               type="button"
               className={menuItemClass}
               onClick={() => {
                 setUserOpen(false);
-                void logout().then(() => navigate("/login"));
+                // Park, not log out: the current session stays valid so it can be switched
+                // back into without a password. finally, not then — if the request fails,
+                // the login page must not be skipped over.
+                void api.parkSession().finally(() => window.location.assign("/login"));
               }}
             >
               {S.auth.switchAccount}
             </button>
             {/* Hidden in desktop mode: the window IS the session — logging out would
-                strand the user on a login page whose password was never shown. */}
+                strand the user on a login page whose password was never shown.
+                Total by design, and the opposite of the switch above: the server destroys
+                every session in this browser's jar, so nothing can be re-entered here
+                without a password. Reloads for the same reason the switch does. */}
             {!desktopMode && (
               <button
                 type="button"
                 className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                 onClick={() => {
                   setUserOpen(false);
-                  void logout().then(() => navigate("/login"));
+                  void logout().finally(() => window.location.assign("/login"));
                 }}
               >
                 {S.auth.logout}

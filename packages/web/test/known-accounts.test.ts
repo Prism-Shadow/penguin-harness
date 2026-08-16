@@ -1,14 +1,20 @@
 /**
  * Accounts remembered on this browser (known-accounts.ts), the memory behind "switch
- * account": sign-ins move to the front without duplicating, the list is capped, removals
- * are idempotent and clear the key when the list empties, repeat sign-ins of the current
- * account write nothing (the effect behind it runs on every resolved /api/me), and
- * corrupted storage degrades to an empty list instead of crashing the login page.
+ * account". Entries are (machine, userId) tuples, where machine is the SSH identity of a
+ * server (`root@gpu-1` — Linux account included) and userId is an account inside it; the
+ * fixtures below keep the two deliberately unrelated, since neither implies the other.
+ * Sign-ins move to the front without duplicating, one machine's list never leaks into
+ * another's — the case that matters once two SSH targets reach the same local origin,
+ * sharing one localStorage bucket — removals are idempotent and clear the key
+ * when the list empties, repeat sign-ins of the current account write nothing (the effect
+ * behind it runs on every resolved /api/me), and corrupted storage degrades to an empty
+ * list instead of crashing the login page.
  */
 import { describe, expect, it } from "vitest";
 import {
   KNOWN_ACCOUNTS_KEY,
   MAX_KNOWN_ACCOUNTS,
+  accountsForMachine,
   forgetAccount,
   loadKnownAccounts,
   rememberAccount,
@@ -34,61 +40,92 @@ function memStorage(): AccountStorage & { map: Map<string, string>; writes: numb
   return s;
 }
 
+/** The userIds of one machine's remembered accounts, newest first. */
+const idsOn = (machine: string, s: AccountStorage) =>
+  accountsForMachine(machine, s).map((a) => a.userId);
+
 describe("rememberAccount", () => {
   it("keeps the most recent sign-in first, without duplicating an earlier one", () => {
     const s = memStorage();
-    rememberAccount("alice", s);
-    rememberAccount("bob", s);
-    expect(loadKnownAccounts(s)).toEqual(["bob", "alice"]);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    rememberAccount({ machine: "deploy@build-box", userId: "bob" }, s);
+    expect(idsOn("deploy@build-box", s)).toEqual(["bob", "alice"]);
     // A returning account moves back to the front instead of being appended again.
-    rememberAccount("alice", s);
-    expect(loadKnownAccounts(s)).toEqual(["alice", "bob"]);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    expect(idsOn("deploy@build-box", s)).toEqual(["alice", "bob"]);
   });
 
   it("writes nothing when the account is already the most recent one", () => {
     const s = memStorage();
-    rememberAccount("alice", s);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
     const writes = s.writes;
-    rememberAccount("alice", s);
-    rememberAccount("alice", s);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
     expect(s.writes).toBe(writes);
   });
 
   it("caps the list, dropping the least recently used account", () => {
     const s = memStorage();
-    for (let i = 0; i <= MAX_KNOWN_ACCOUNTS; i += 1) rememberAccount(`user${i}`, s);
-    const accounts = loadKnownAccounts(s);
-    expect(accounts).toHaveLength(MAX_KNOWN_ACCOUNTS);
-    expect(accounts[0]).toBe(`user${MAX_KNOWN_ACCOUNTS}`);
-    expect(accounts).not.toContain("user0"); // the oldest fell off the end
+    for (let i = 0; i <= MAX_KNOWN_ACCOUNTS; i += 1) {
+      rememberAccount({ machine: "deploy@build-box", userId: `user${i}` }, s);
+    }
+    const ids = idsOn("deploy@build-box", s);
+    expect(ids).toHaveLength(MAX_KNOWN_ACCOUNTS);
+    expect(ids[0]).toBe(`user${MAX_KNOWN_ACCOUNTS}`);
+    expect(ids).not.toContain("user0"); // the oldest fell off the end
   });
 
   it("ignores a blank id", () => {
     const s = memStorage();
-    rememberAccount("", s);
-    rememberAccount("   ", s);
+    rememberAccount({ machine: "deploy@build-box", userId: "" }, s);
+    rememberAccount({ machine: "deploy@build-box", userId: "   " }, s);
     expect(loadKnownAccounts(s)).toEqual([]);
     expect(s.map.has(KNOWN_ACCOUNTS_KEY)).toBe(false);
+  });
+});
+
+describe("machine scoping", () => {
+  it("keeps two machines' accounts apart in one storage bucket", () => {
+    // The tunnel case: both targets are http://localhost:<same port>, so they share a
+    // localStorage bucket and only the machine tag tells their accounts apart.
+    const s = memStorage();
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    rememberAccount({ machine: "root@gpu-1", userId: "admin" }, s);
+    rememberAccount({ machine: "deploy@build-box", userId: "bob" }, s);
+    expect(idsOn("deploy@build-box", s)).toEqual(["bob", "alice"]);
+    expect(idsOn("root@gpu-1", s)).toEqual(["admin"]);
+    expect(idsOn("deploy@laptop", s)).toEqual([]);
+  });
+
+  it("treats the same id on two machines as two accounts", () => {
+    const s = memStorage();
+    rememberAccount({ machine: "deploy@build-box", userId: "admin" }, s);
+    rememberAccount({ machine: "root@gpu-1", userId: "admin" }, s);
+    expect(loadKnownAccounts(s)).toHaveLength(2);
+    // Forgetting one leaves the other machine's entry untouched.
+    forgetAccount({ machine: "root@gpu-1", userId: "admin" }, s);
+    expect(idsOn("root@gpu-1", s)).toEqual([]);
+    expect(idsOn("deploy@build-box", s)).toEqual(["admin"]);
   });
 });
 
 describe("forgetAccount", () => {
   it("removes one account, leaves the rest ordered, and is idempotent", () => {
     const s = memStorage();
-    rememberAccount("alice", s);
-    rememberAccount("bob", s);
-    rememberAccount("carol", s);
-    forgetAccount("bob", s);
-    expect(loadKnownAccounts(s)).toEqual(["carol", "alice"]);
+    for (const userId of ["alice", "bob", "carol"]) {
+      rememberAccount({ machine: "deploy@build-box", userId }, s);
+    }
+    forgetAccount({ machine: "deploy@build-box", userId: "bob" }, s);
+    expect(idsOn("deploy@build-box", s)).toEqual(["carol", "alice"]);
     const writes = s.writes;
-    forgetAccount("bob", s); // already gone: no throw, no write
+    forgetAccount({ machine: "deploy@build-box", userId: "bob" }, s); // already gone: no throw, no write
     expect(s.writes).toBe(writes);
   });
 
   it("clears the storage key when the last account is removed", () => {
     const s = memStorage();
-    rememberAccount("alice", s);
-    forgetAccount("alice", s);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    forgetAccount({ machine: "deploy@build-box", userId: "alice" }, s);
     expect(loadKnownAccounts(s)).toEqual([]);
     expect(s.map.has(KNOWN_ACCOUNTS_KEY)).toBe(false);
   });
@@ -104,29 +141,37 @@ describe("stored-list validation", () => {
     expect(loadKnownAccounts(s2)).toEqual([]);
   });
 
-  it("drops non-string, blank and duplicate entries and applies the cap on read", () => {
+  it("drops malformed, blank and duplicate entries and applies the cap on read", () => {
     const s = memStorage();
     s.map.set(
       KNOWN_ACCOUNTS_KEY,
       JSON.stringify([
-        "alice",
+        { machine: "deploy@build-box", userId: "alice" },
+        "alice", // pre-tuple entry: dropped, not adopted by the current machine
         42,
-        "  ",
-        "alice",
-        " bob ",
+        { machine: "deploy@build-box", userId: "  " },
+        { machine: "deploy@build-box", userId: "alice" },
+        { machine: " deploy@build-box ", userId: " bob " },
+        { userId: "no-machine" },
         null,
-        ...Array.from({ length: MAX_KNOWN_ACCOUNTS }, (_, i) => `extra${i}`),
+        ...Array.from({ length: MAX_KNOWN_ACCOUNTS }, (_, i) => ({
+          machine: "deploy@build-box",
+          userId: `extra${i}`,
+        })),
       ]),
     );
-    const accounts = loadKnownAccounts(s);
-    expect(accounts.slice(0, 2)).toEqual(["alice", "bob"]); // trimmed, deduped, order kept
-    expect(accounts).toHaveLength(MAX_KNOWN_ACCOUNTS);
+    const all = loadKnownAccounts(s);
+    expect(all.slice(0, 2)).toEqual([
+      { machine: "deploy@build-box", userId: "alice" },
+      { machine: "deploy@build-box", userId: "bob" }, // trimmed, deduped, order kept
+    ]);
+    expect(all).toHaveLength(MAX_KNOWN_ACCOUNTS);
   });
 
   it("a remember on top of corrupted storage starts a clean list", () => {
     const s = memStorage();
     s.map.set(KNOWN_ACCOUNTS_KEY, "{not json");
-    rememberAccount("alice", s);
-    expect(loadKnownAccounts(s)).toEqual(["alice"]);
+    rememberAccount({ machine: "deploy@build-box", userId: "alice" }, s);
+    expect(loadKnownAccounts(s)).toEqual([{ machine: "deploy@build-box", userId: "alice" }]);
   });
 });

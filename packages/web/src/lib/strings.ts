@@ -262,11 +262,14 @@ export const zh = {
     hidePassword: "隐藏密码",
     login: "登录",
     logout: "登出",
-    /** 左下角账户菜单：结束当前会话并回到登录页，换一个账号登录。 */
+    /** 左下角账户菜单：换一个账号登录（当前会话暂存，可随时切回）。 */
     switchAccount: "切换账号",
-    /** 登录页上本机记住过的账号列表（只有用户名，没有密码）。 */
+    /** 菜单/登录页上"已登录、点一下即可切过去"的账号分组（凭证在服务端暂存，免密）。 */
+    signedInAccounts: "已登录的账号",
+    /** 登录页上本机记住过、但当前没有会话的账号（只有用户名，没有密码）。 */
     recentAccounts: "最近登录的账号",
     forgetAccount: (userId: string): string => `不再记住 ${userId}`,
+    switchFailed: "该账号的登录状态已失效，请重新登录",
     admin: "管理员",
     defaultAdminNote:
       "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",

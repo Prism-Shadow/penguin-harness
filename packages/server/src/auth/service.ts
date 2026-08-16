@@ -249,6 +249,26 @@ export class AuthService {
     this.deps.authSessions.delete(sha256Hex(token));
   }
 
+  /**
+   * Who a token belongs to, WITHOUT the sliding renewal authenticateWithMeta performs:
+   * the parked-session jar (routes/auth.ts) reads every token it holds on each listing,
+   * and a read is not use — a parked session must age out on its own schedule rather
+   * than being kept alive forever by the menu that lists it. Expired or unknown tokens
+   * answer null (the expired row is dropped, as in authenticateWithMeta).
+   */
+  peekSession(token: string): { user: UserInfo; via: SessionVia } | null {
+    const tokenHash = sha256Hex(token);
+    const session = this.deps.authSessions.findByTokenHash(tokenHash);
+    if (!session) return null;
+    if (!(Date.parse(session.expiresAt) > this.now().getTime())) {
+      this.deps.authSessions.delete(tokenHash);
+      return null;
+    }
+    const row = this.deps.users.findById(session.userId);
+    if (!row) return null;
+    return { user: toUserInfo(row), via: session.via === "desktop" ? "desktop" : "password" };
+  }
+
   /** Validates the cookie token: returns null if expired/unknown; sliding renewal once less than 6 days remain. */
   authenticateWithMeta(token: string): { user: UserRow; via: SessionVia } | null {
     const tokenHash = sha256Hex(token);

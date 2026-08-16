@@ -13,8 +13,17 @@ import { HttpError } from "../http/errors.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { AuthService, SessionVia } from "./service.js";
 
-/** Session cookie name. */
+/** Session cookie name (the ACTIVE account's token — the only one this middleware reads). */
 export const SESSION_COOKIE = "penguin_session";
+
+/**
+ * Parked-session cookie: the tokens of accounts that are signed in on this browser but
+ * not currently active, newline-free and separated by ".", so switching accounts costs a
+ * pointer swap instead of a password (routes/auth.ts owns the jar). Like the active
+ * cookie it is HttpOnly — no script ever sees a token, which is the whole reason the
+ * stash lives in a cookie rather than in localStorage.
+ */
+export const PARKED_SESSIONS_COOKIE = "penguin_parked_sessions";
 
 /** Hono env: variables injected by the auth middleware. */
 export type AppEnv = {
