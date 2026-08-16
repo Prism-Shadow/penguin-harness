@@ -61,16 +61,16 @@ asar: false
 npmRebuild: false
 nodeGypRebuild: false
 
-# The install image and the installer that consumes it, shipped so the app can put this
-# build's server on a machine over SSH (Install Server on Remote Host). stage/payload is
-# produced by scripts/stage.mjs alongside stage/app; install.sh is the repository's own.
-# Every platform carries them: the payload is the universal, runtime-free shape, and what
-# it targets is decided by the far side, not by the machine sending it.
+# The install image and the Node installer that unpacks it on the far side, shipped so the
+# app can put this build's server on a machine over SSH (Install Server on Remote Host).
+# stage/payload is produced by scripts/stage.mjs alongside stage/app. Deliberately NOT
+# install.sh: that is a POSIX script and the target may be Windows — the installer here is
+# plain Node and runs on the runtime the push carries with it.
 extraResources:
   - from: stage/payload
     to: payload
-  - from: ../../install.sh
-    to: install.sh
+  - from: resources/remote-installer.cjs
+    to: remote-installer.cjs
 
 mac:
   category: public.app-category.developer-tools
