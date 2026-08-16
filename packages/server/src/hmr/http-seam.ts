@@ -3,8 +3,9 @@
  *
  * Without this, the route table is a runtime asset: adding or fixing an endpoint means
  * rebuilding and redeploying every installation, which is exactly what the hot channel exists
- * to avoid. `/api/hmr/platform/call` only made METHODS pushable; a method is not a route (no
- * path, no verb, no status, no headers), and every client would have to speak that RPC instead
+ * to avoid. The RPC dispatch route that used to stand in for this (`/api/hmr/platform/call`,
+ * removed with the seam) only made METHODS pushable; a method is not a route — no path, no
+ * verb, no status, no headers — and every client would have had to speak that envelope instead
  * of the API it already speaks.
  *
  * So: the running platform gets first refusal on every request, and answers `null` for the ones

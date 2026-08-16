@@ -58,9 +58,10 @@ Before touching the runtime, ask whether a platform `boot()` could do the same t
 The runtime mounts ONE seam (`http-seam.ts`) before its own routes: the running platform gets
 first refusal on every request and answers `null` for the ones it does not own. A pushed
 platform can therefore add an endpoint, replace an existing one, or serve something else
-entirely — with no rebuild. Before that seam existed, `/api/hmr/platform/call` made *methods*
-pushable, which is not the same thing: a method has no path, no verb and no status code, and
-every client would have had to speak that RPC instead of the API it already speaks.
+entirely — with no rebuild. The RPC dispatch route that used to stand in for this
+(`POST /api/hmr/platform/call`) is gone with it: it made *methods* pushable, which is not the
+same thing — a method has no path, no verb and no status code, and every client would have had
+to speak that envelope instead of the API it already speaks.
 
 Two boundaries keep it safe, and both are load-bearing:
 
@@ -83,10 +84,10 @@ Response. That is a limit of today's seam, not a layer boundary.
 - **The agent could not find the `penguin` CLI** — the first fix injected `PATH` when the Electron
   shell forked the server. Rejected: "what environment the agent sees" is policy. It belongs in
   the platform's `boot()`, where it also reaches already-deployed machines through a normal push.
-- **New business APIs** — `POST /api/hmr/platform/call` dispatches any method on the booted
-  platform, with `iface.methods` as the allow-list. This is the mechanism that keeps business
-  APIs out of the runtime permanently: a pushed bundle adds or removes callable methods with no
-  route change here. Adding a route per business API is the anti-pattern it exists to prevent.
+- **New business APIs** — the HTTP seam offers every request to the booted platform, which
+  serves the ones it owns. This is the mechanism that keeps business APIs out of the runtime
+  permanently: a pushed bundle adds, changes or drops endpoints with no route change here.
+  Adding a route per business API is the anti-pattern it exists to prevent.
 
 ## What does legitimately justify a runtime change
 

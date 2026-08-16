@@ -34,11 +34,6 @@ const NEXT_BUNDLE_FILE = fileURLToPath(
   new URL("./fixtures/platform-next.bundle.mjs", import.meta.url),
 );
 
-/** A minimal platform exercising the generic dispatch route (/api/hmr/platform/call). */
-const DISPATCH_BUNDLE_FILE = fileURLToPath(
-  new URL("./fixtures/platform-dispatch.bundle.mjs", import.meta.url),
-);
-
 const b64 = (s: string): string => Buffer.from(s).toString("base64");
 
 /** A minimal-but-valid web dist manifest (only index.html is required). */
@@ -251,56 +246,6 @@ describe("hot update", () => {
     const secondBody = (await second.json()) as { web: { rev: string } };
     expect(secondBody.web.rev).not.toBe(firstBody.web.rev);
     expect(await (await t.app.request("/")).text()).toContain("v2");
-  });
-
-  it("generic dispatch: the allow-list is the running platform's iface.methods, read live", async () => {
-    const dispatchBundle = await fs.readFile(DISPATCH_BUNDLE_FILE, "utf8");
-    const upgraded = await pushVersion(t.app, adminCookie, { platform: dispatchBundle });
-    expect(upgraded.status).toBe(200);
-
-    // A normal call: args round-trip, the result is returned as-is.
-    const echoed = await api.post("/api/hmr/platform/call", { method: "echo", args: ["hi"] });
-    expect(echoed.status).toBe(200);
-    expect(await echoed.json()).toEqual({ ok: true, result: { got: "hi" } });
-
-    // No args at all is fine too (defaults to an empty argument list).
-    const info = await api.post("/api/hmr/platform/call", { method: "info" });
-    expect(info.status).toBe(200);
-    expect(((await info.json()) as { result: { impl: string } }).result.impl).toBe(
-      "dispatch-fixture",
-    );
-
-    // A method not on the current iface (new, or since removed by a push) 404s.
-    const missing = await api.post("/api/hmr/platform/call", { method: "nope" });
-    expect(missing.status).toBe(404);
-    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe(
-      "method_not_found",
-    );
-
-    // `args` must be an array when present.
-    const badArgs = await api.post("/api/hmr/platform/call", { method: "echo", args: "hi" });
-    expect(badArgs.status).toBe(400);
-
-    // A thrown error surfaces as a call failure carrying the message, not a crash.
-    const threw = await api.post("/api/hmr/platform/call", { method: "boom" });
-    expect(threw.status).toBe(500);
-    expect(((await threw.json()) as { error: { code: string; message: string } }).error).toEqual({
-      code: "call_failed",
-      message: "boom",
-    });
-
-    // A void method is a successful call with no result: null, not an error
-    // (the side effect already happened).
-    const voidCall = await api.post("/api/hmr/platform/call", { method: "fireAndForget" });
-    expect(voidCall.status).toBe(200);
-    expect(await voidCall.json()).toEqual({ ok: true, result: null });
-
-    // A genuinely non-JSON-serializable result (a function) is rejected, not coerced.
-    const unserializable = await api.post("/api/hmr/platform/call", { method: "notJson" });
-    expect(unserializable.status).toBe(422);
-    expect(((await unserializable.json()) as { error: { code: string } }).error.code).toBe(
-      "unserializable_result",
-    );
   });
 
   it("requests racing an upgrade are enqueued, never observably rejected", async () => {

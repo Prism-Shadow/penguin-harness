@@ -7,15 +7,18 @@
  * not the freeze. The routes are runtime code: they orchestrate through the
  * platform api, so they survive impl swaps unchanged.
  *
- * RUNTIME LAYER — MECHANISM ONLY (see ./README.md). A new business API must
- * NOT become a route here: it is a method on the pushed platform, reached
- * through the generic /platform/call dispatch below, whose allow-list is the
- * running iface's own method set. The /terminals* routes are a legacy
- * exception kept for compatibility, not a precedent.
+ * RUNTIME LAYER — MECHANISM ONLY (see ./README.md). A new business API must NOT
+ * become a route here. It is served by the platform itself, through the HTTP
+ * seam (../hmr/http-seam.ts) that offers every request to the booted platform
+ * before the runtime's own routes see it — a real route with its own path,
+ * verb and status, rather than an RPC envelope clients would have to learn.
+ *
+ * What remains here is the upgrade channel and the status it needs, which is
+ * the one thing the platform is never offered: it is how a broken platform
+ * gets replaced.
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
-import type { Json } from "@prismshadow/penguin-core/kernel";
 import { ifaceData } from "@prismshadow/penguin-core/kernel";
 import type { AppDeps } from "../app.js";
 import { authMiddleware } from "../auth/middleware.js";
@@ -174,74 +177,5 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(outcome);
   });
 
-  /**
-   * Generic method dispatch: the runtime stays mechanism-only and never
-   * grows a route per business API. The allow-list is inst.iface.methods —
-   * data read off the currently booted platform, not a compiled-in list —
-   * so a bundle pushed via /platform/upgrade adds or removes callable
-   * methods immediately, with no runtime change: the new API is callable
-   * the moment it boots, and a removed one 404s the moment it's gone.
-   */
-  routes.post("/platform/call", async (c) => {
-    const body = await c.req.json<{ method?: string; args?: Json[] }>();
-    if (typeof body.method !== "string") {
-      throw new HttpError(400, "bad_request", "provide `method` (string)");
-    }
-    if (body.args !== undefined && !Array.isArray(body.args)) {
-      throw new HttpError(400, "bad_request", "`args` must be an array");
-    }
-    const inst = await hmr.ensure();
-    if (!inst.iface.methods.includes(body.method)) {
-      throw new HttpError(
-        404,
-        "method_not_found",
-        `No method '${body.method}' on the current platform.`,
-      );
-    }
-    const fn = (inst.api as unknown as Record<string, unknown>)[body.method];
-    if (typeof fn !== "function") {
-      // Unreachable given boot()'s method-set check, but never trust a
-      // dynamic call site over the type system.
-      throw new HttpError(
-        404,
-        "method_not_found",
-        `No method '${body.method}' on the current platform.`,
-      );
-    }
-    let result: unknown;
-    try {
-      result = await (fn as (...args: unknown[]) => unknown).apply(inst.api, body.args ?? []);
-    } catch (err) {
-      throw new HttpError(500, "call_failed", err instanceof Error ? err.message : String(err));
-    }
-    let json: Json;
-    try {
-      json = toJson(result);
-    } catch (err) {
-      throw new HttpError(
-        422,
-        "unserializable_result",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    return c.json({ ok: true, result: json });
-  });
-
   return routes;
-}
-
-/**
- * JSON.stringify's own notion of "not representable" (function, symbol, a
- * cycle) surfaces as a thrown error, not a silent `undefined` — with one
- * carve-out: a void return (undefined) is a SUCCESSFUL call with no result
- * and maps to null, since the side effect already happened and reporting an
- * error would misread it.
- */
-function toJson(value: unknown): Json {
-  if (value === undefined) return null;
-  const text = JSON.stringify(value);
-  if (text === undefined) {
-    throw new Error("result is not JSON-serializable (a function or a symbol)");
-  }
-  return JSON.parse(text) as Json;
 }
