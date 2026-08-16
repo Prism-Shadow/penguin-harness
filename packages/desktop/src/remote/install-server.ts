@@ -1,47 +1,51 @@
 /**
- * Installing this build's server onto another machine, VS Code Remote style: probe the host,
- * decide, push the install image, run the installer there. No CLI surface — this is the
- * desktop app's own capability, driven from the menu (see menu.ts).
+ * Installing this build's server onto another machine, VS Code Remote style: ask the machine
+ * what it is, fetch the matching Node runtime, push both it and the install image, and let a
+ * Node installer do the rest. No CLI surface — this is the desktop app's own capability,
+ * driven from the menu (see menu.ts).
  *
- * What travels is the tree stage.mjs stages next to the packaged app (`{bin,lib,lib/web}`,
- * the universal shape) plus the repository's own install.sh, which already knows how to
- * stage, swap, smoke-test and roll back an install and never touches the data directory.
- * Nothing is assembled by hand on the far side: the payload is a tarball, and install.sh
- * does the rest.
+ * Nothing here assumes anything about the far side except an sshd and, for four commands, a
+ * shell of some kind. In particular it does NOT use install.sh: that is a POSIX script, and a
+ * Windows host cannot run it. The remote gets a runtime of ours at `lib/runtime`, so it does
+ * not need Node installed either — which is also why the runtime has to be fetched per
+ * platform and arch, and why the identity probe comes first.
  *
- * The remote is left with exactly what an ordinary install leaves: `~/.local/share/penguin`
- * plus the `~/.local/bin/penguin` symlink. No sudo, no systemd unit, no profile edits — the
- * boundary the design draws around "we do not maintain that machine".
+ * The remote is left with exactly what a local install leaves: the program directory
+ * (`~/.local/share/penguin`, `%LOCALAPPDATA%\penguin`) and, on POSIX, the `~/.local/bin/penguin`
+ * symlink. No sudo, no service units, no profile edits, and the data directory is untouched.
  */
-import { createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
   cleanupCommand,
-  installCommand,
-  MAKE_TEMP_DIR_COMMAND,
+  extractRuntimeCommand,
+  makeScratchCommand,
+  runInstallerCommand,
   scpArgs,
   sshArgs,
 } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
+import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
+import type { RemoteIdentity } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
-import { parseProbe, planRemoteInstall, PROBE_COMMAND } from "./probe.js";
-import type { InstallAction, RemoteProbe } from "./probe.js";
+import { packDirectory } from "./pack.js";
+import { ensureRuntimeArchive } from "./runtime.js";
 
-/** The archive name install.sh recognizes as a payload. */
-const PAYLOAD_ARCHIVE = "payload.tar.gz";
+/** Name the pack travels under, inside the scratch directory. */
+const PACK_NAME = "penguin-image.pack";
 
 export interface PayloadSources {
   /** Directory holding the `penguin/` tree (stage/payload, or resources/payload when packaged). */
   payloadRoot: string;
-  /** The installer script that is copied over and run on the far side. */
-  installerPath: string;
+  /** The Node installer that is copied over and run on the far side. */
+  installerScript: string;
 }
 
 /**
- * Where this app's install image and installer live. Packaged builds carry both as extra
- * resources; a dev run reads them out of the repository, so the feature works from
+ * Where this app's install image and remote installer live. Packaged builds carry both as
+ * extra resources; a dev run reads them out of the repository, so the feature works from
  * `pnpm desktop` without packaging first.
  */
 export function resolvePayloadSources(opts: {
@@ -49,127 +53,174 @@ export function resolvePayloadSources(opts: {
   resourcesPath: string;
   repoRoot: string;
 }): PayloadSources {
-  if (opts.packaged) {
-    return {
-      payloadRoot: path.join(opts.resourcesPath, "payload"),
-      installerPath: path.join(opts.resourcesPath, "install.sh"),
-    };
-  }
-  return {
-    payloadRoot: path.join(opts.repoRoot, "packages", "desktop", "stage", "payload"),
-    installerPath: path.join(opts.repoRoot, "install.sh"),
-  };
+  return opts.packaged
+    ? {
+        payloadRoot: path.join(opts.resourcesPath, "payload"),
+        installerScript: path.join(opts.resourcesPath, "remote-installer.cjs"),
+      }
+    : {
+        payloadRoot: path.join(opts.repoRoot, "packages", "desktop", "stage", "payload"),
+        installerScript: path.join(
+          opts.repoRoot,
+          "packages",
+          "desktop",
+          "resources",
+          "remote-installer.cjs",
+        ),
+      };
 }
 
-/** Whether the sources are actually present — a dev run that never staged has neither. */
+/** Whether the sources are actually present — a dev run that never staged has no image. */
 export function payloadSourcesReady(sources: PayloadSources): boolean {
   return (
-    fs.existsSync(path.join(sources.payloadRoot, "penguin", "bin", "penguin")) &&
-    fs.existsSync(sources.installerPath)
+    fs.existsSync(path.join(sources.payloadRoot, "penguin", "lib", "dist", "penguin.js")) &&
+    fs.existsSync(sources.installerScript)
   );
 }
 
 /**
- * Packs `<payloadRoot>/penguin` into a tarball plus the `.sha256` install.sh verifies. Uses
- * the system tar (present on macOS, Linux and Windows 10+) rather than a bundled
- * implementation: it is one call, and the format has to match what install.sh untars.
+ * Asks the machine what it is. POSIX first; a cmd.exe host answers that with an error, which
+ * parses as "not a machine I recognize", and the Windows form is tried next. Two round trips
+ * at worst, once per install.
  */
-export async function packPayload(
-  sources: PayloadSources,
-  outDir: string,
-): Promise<{ archivePath: string; checksumPath: string }> {
-  const archivePath = path.join(outDir, PAYLOAD_ARCHIVE);
-  const tar = await run("tar", ["-czf", archivePath, "-C", sources.payloadRoot, "penguin"]);
-  if (tar.code !== 0) {
-    throw new Error(
-      `could not pack the install image: ${tar.stderr.trim() || `tar exited ${tar.code}`}`,
-    );
+export async function detectRemote(
+  target: RemoteTarget,
+): Promise<{ identity: RemoteIdentity } | { error: string }> {
+  for (const probe of [POSIX_PROBE, WINDOWS_PROBE]) {
+    const result = await run("ssh", sshArgs(target, probe), { timeoutMs: 30_000 });
+    const identity = parseProbeOutput(result.stdout);
+    if (identity) return { identity };
+    if (result.code !== 0 && looksLikeAuthFailure(result)) {
+      return {
+        error: `${result.stderr.trim()}\n\nThis app connects with BatchMode: set up key or agent authentication for that host first.`,
+      };
+    }
+    // A connection-level failure is fatal for both probes; only an unrecognized ANSWER is
+    // worth retrying in the other shell's dialect.
+    if (result.code !== 0 && result.stdout.trim() === "" && result.stderr.trim() !== "") {
+      const stderr = result.stderr.trim();
+      if (!/not recognized|command not found|is not recognized/i.test(stderr)) {
+        return { error: stderr };
+      }
+    }
   }
-  const hash = createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
-  const checksumPath = `${archivePath}.sha256`;
-  // The format shasum/sha256sum print, which is what install.sh's verifier reads.
-  fs.writeFileSync(checksumPath, `${hash}  ${PAYLOAD_ARCHIVE}\n`);
-  return { archivePath, checksumPath };
+  return {
+    error: "Could not tell what that machine is: neither the POSIX nor the Windows probe answered.",
+  };
 }
 
 export type RemoteInstallOutcome =
-  | { kind: "already-installed"; version: string }
-  | { kind: "installed"; output: string }
-  | { kind: "blocked"; detail: string }
+  | { kind: "already-installed"; version: string; identity: RemoteIdentity }
+  | { kind: "installed"; output: string; identity: RemoteIdentity }
   | { kind: "failed"; step: string; detail: string };
-
-/** Probes a target and reports both the raw answer and the decision it implies. */
-export async function probeRemote(
-  target: RemoteTarget,
-  localVersion: string,
-): Promise<{ probe: RemoteProbe; plan: InstallAction } | { error: string }> {
-  const result = await run("ssh", sshArgs(target, PROBE_COMMAND), { timeoutMs: 30_000 });
-  if (result.code !== 0 && result.stdout.trim() === "") {
-    const hint = looksLikeAuthFailure(result)
-      ? "\n\nThis app connects with BatchMode: set up key or agent authentication for that host first."
-      : "";
-    return { error: `${result.stderr.trim() || `ssh exited ${result.code}`}${hint}` };
-  }
-  const probe = parseProbe(result.stdout);
-  return { probe, plan: planRemoteInstall(probe, localVersion) };
-}
 
 /**
  * Pushes and installs. Steps are sequential and each failure stops the run with the far
  * side's own message; the scratch directory is removed on the way out either way, since a
- * leftover tarball in someone's /tmp is litter we created.
+ * leftover image in someone's temp directory is litter we created.
  */
 export async function installOnRemote(opts: {
   target: RemoteTarget;
   sources: PayloadSources;
   localVersion: string;
-  /** Progress for the UI; each line is already user-readable. */
+  /** Where verified Node runtimes are kept between installs (app userData). */
+  runtimeCacheDir: string;
+  fetchBuffer: (url: string) => Promise<Buffer>;
   onProgress?: (line: string) => void;
 }): Promise<RemoteInstallOutcome> {
   const { target, sources } = opts;
   const say = opts.onProgress ?? (() => {});
 
-  const probed = await probeRemote(target, opts.localVersion);
-  if ("error" in probed) return { kind: "failed", step: "probe", detail: probed.error };
-  if (probed.plan.action === "blocked") {
-    return { kind: "blocked", detail: probed.plan.detail };
+  say("Asking what that machine is…");
+  const detected = await detectRemote(target);
+  if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
+  const { identity } = detected;
+  say(`${identity.platform}-${identity.arch}.`);
+
+  if (identity.installedVersion !== null && identity.installedVersion === opts.localVersion) {
+    return { kind: "already-installed", version: identity.installedVersion, identity };
   }
-  if (probed.plan.action === "use") {
-    return { kind: "already-installed", version: probed.plan.remoteVersion };
-  }
-  say(
-    probed.plan.reason === "absent"
-      ? "No PenguinHarness there yet — installing."
-      : `Replacing PenguinHarness ${probed.plan.remoteVersion} with ${opts.localVersion}.`,
-  );
 
   const localTmp = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-push-"));
-  let remoteTmp = "";
+  let scratch = "";
   try {
     say("Packing this build…");
-    const { archivePath, checksumPath } = await packPayload(sources, localTmp);
-
-    const temp = await run("ssh", sshArgs(target, MAKE_TEMP_DIR_COMMAND), { timeoutMs: 30_000 });
-    remoteTmp = temp.stdout.trim();
-    if (temp.code !== 0 || remoteTmp === "") {
+    let packPath: string;
+    let archivePath: string;
+    let artifact: Awaited<ReturnType<typeof ensureRuntimeArchive>>["artifact"];
+    try {
+      packPath = path.join(localTmp, PACK_NAME);
+      fs.writeFileSync(packPath, packDirectory(sources.payloadRoot));
+      // A runtime that fails verification throws here — before anything has been sent, which
+      // is the point: an unverified runtime must never reach someone else's machine.
+      ({ archivePath, artifact } = await ensureRuntimeArchive({
+        platform: identity.platform,
+        arch: identity.arch,
+        cacheDir: opts.runtimeCacheDir,
+        fetchBuffer: opts.fetchBuffer,
+        ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
+      }));
+    } catch (err) {
       return {
         kind: "failed",
-        step: "prepare",
-        detail: temp.stderr.trim() || "could not create a scratch directory on the remote",
+        step: "prepare the runtime",
+        detail: err instanceof Error ? err.message : String(err),
       };
     }
 
-    say("Copying…");
+    // The job the installer reads instead of taking arguments — no second round of quoting.
+    const jobPath = path.join(localTmp, "job.json");
+    fs.writeFileSync(
+      jobPath,
+      JSON.stringify({ packName: PACK_NAME, runtimeDirName: artifact.rootDirName }) + "\n",
+    );
+
+    // A scratch name of our own making: hex only, so it needs no quoting on either side.
+    const scratchName = `penguin-${randomBytes(6).toString("hex")}`;
+    const made = await run(
+      "ssh",
+      sshArgs(target, makeScratchCommand(identity.platform, scratchName)),
+      {
+        timeoutMs: 30_000,
+      },
+    );
+    scratch = made.stdout.trim().split("\n").at(-1)?.trim() ?? "";
+    if (made.code !== 0 || scratch === "") {
+      return {
+        kind: "failed",
+        step: "prepare",
+        detail: made.stderr.trim() || "could not create a scratch directory on the remote",
+      };
+    }
+
+    say("Copying the build and the runtime…");
     const copy = await run(
       "scp",
-      scpArgs(target, [archivePath, checksumPath, sources.installerPath], remoteTmp),
+      scpArgs(target, [packPath, jobPath, sources.installerScript, archivePath], scratch),
     );
     if (copy.code !== 0) {
       return { kind: "failed", step: "copy", detail: copy.stderr.trim() || "scp failed" };
     }
 
+    say("Unpacking the runtime…");
+    const remoteArchive = joinRemote(identity.platform, scratch, artifact.fileName);
+    const extract = await run(
+      "ssh",
+      sshArgs(target, extractRuntimeCommand(identity.platform, remoteArchive, scratch)),
+    );
+    if (extract.code !== 0) {
+      return {
+        kind: "failed",
+        step: "unpack the runtime",
+        detail: extract.stderr.trim() || `tar exited ${extract.code}`,
+      };
+    }
+
     say("Installing…");
-    const install = await run("ssh", sshArgs(target, installCommand(remoteTmp, PAYLOAD_ARCHIVE)));
+    const install = await run(
+      "ssh",
+      sshArgs(target, runInstallerCommand(identity.platform, scratch, artifact.rootDirName)),
+    );
     if (install.code !== 0) {
       return {
         kind: "failed",
@@ -177,12 +228,18 @@ export async function installOnRemote(opts: {
         detail: `${install.stdout.trim()}\n${install.stderr.trim()}`.trim(),
       };
     }
-    return { kind: "installed", output: install.stdout.trim() };
+    return { kind: "installed", output: install.stdout.trim(), identity };
   } finally {
     fs.rmSync(localTmp, { recursive: true, force: true });
-    if (remoteTmp !== "") {
-      // Best effort: the install already succeeded or failed on its own terms.
-      await run("ssh", sshArgs(target, cleanupCommand(remoteTmp)), { timeoutMs: 30_000 });
+    if (scratch !== "") {
+      await run("ssh", sshArgs(target, cleanupCommand(identity.platform, scratch)), {
+        timeoutMs: 30_000,
+      });
     }
   }
+}
+
+/** Joins a path the way the REMOTE would, which is not necessarily how this machine would. */
+function joinRemote(platform: RemoteIdentity["platform"], ...parts: string[]): string {
+  return parts.join(platform === "win32" ? "\\" : "/");
 }

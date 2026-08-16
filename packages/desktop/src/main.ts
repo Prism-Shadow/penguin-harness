@@ -256,8 +256,10 @@ async function installServerOnRemote(alias: string): Promise<void> {
     message: `Install PenguinHarness ${app.getVersion()} on ${target.machine}?`,
     detail: [
       `Host: ${target.settings.hostname}:${target.settings.port}`,
-      "It goes to ~/.local/share/penguin on that machine; nothing else there is touched,",
-      "and your data directory is left alone. Node 24+ must already be installed there.",
+      "The program and a matching Node runtime are installed into that machine's own data",
+      "directory (~/.local/share/penguin, or %LOCALAPPDATA%\\penguin on Windows). Nothing",
+      "else there is touched, no Node installation is required, and the data directory of",
+      "an existing install is left alone.",
     ].join("\n"),
   });
   if (confirm.response !== 0) return;
@@ -266,6 +268,14 @@ async function installServerOnRemote(alias: string): Promise<void> {
     target: { alias, user: target.settings.user },
     sources,
     localVersion: app.getVersion(),
+    // Verified Node runtimes are kept per platform-arch: the same download serves every
+    // host of that shape, and re-pushing to a second machine skips the fetch.
+    runtimeCacheDir: path.join(app.getPath("userData"), "runtime-cache"),
+    fetchBuffer: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`GET ${url} -> ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    },
     onProgress: (line) => process.stdout.write(`[remote ${target.machine}] ${line}\n`),
   });
 
@@ -285,12 +295,11 @@ async function installServerOnRemote(alias: string): Promise<void> {
     });
     return;
   }
+  // "blocked" is gone from the outcomes: the push brings its own Node runtime, so there is
+  // nothing left to be missing on the far side that would stop it before it starts.
   await dialog.showMessageBox({
     type: "error",
-    message:
-      outcome.kind === "blocked"
-        ? `Cannot install on ${target.machine}.`
-        : `Installing on ${target.machine} failed while trying to ${outcome.step}.`,
+    message: `Installing on ${target.machine} failed while trying to ${outcome.step}.`,
     detail: outcome.detail,
   });
 }
