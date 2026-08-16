@@ -10,7 +10,7 @@
  * CLI source (packages/server/src and packages/cli/src) and the web build output
  * (packages/web/dist, produced by `vite build --watch` under dev:web), and on any
  * change compiles the platform entry (packages/server/src/platform/entry.ts,
- * exporting `hotPlatform`) and the cli entry (packages/cli/src/cli.ts, exporting
+ * exporting `hotPlatform`) and the cli entry (packages/cli/src/index.ts, exporting
  * `cli`) separately, then pushes both together with the web dist to EVERY target
  * in a single request to POST /api/hmr/upgrade — debounced and serialized, so two
  * cycles never interleave and a change arriving mid-cycle queues exactly one
@@ -75,7 +75,7 @@ const SERVERS_FILE =
 // - PLATFORM_ENTRY exports `hotPlatform` (packages/server/src/platform/entry.ts).
 // - CLI_ENTRY exports `cli` (packages/cli's own run/chat/config commands, cli.ts).
 const PLATFORM_ENTRY = path.join(ROOT, "packages", "server", "src", "platform", "entry.ts");
-const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "cli.ts");
+const CLI_ENTRY = path.join(ROOT, "packages", "cli", "src", "index.ts");
 const SERVER_SRC = path.join(ROOT, "packages", "server", "src");
 const CLI_SRC = path.join(ROOT, "packages", "cli", "src");
 const WEB_DIST = path.join(ROOT, "packages", "web", "dist");

@@ -1,6 +1,6 @@
 /** `penguin`: the CLI built into this binary. */
 import "dotenv/config";
-import { cli } from "./cli.js";
+import { cli } from "./index.js";
 
 cli(process.argv.slice(2))
   .then((code) => {
