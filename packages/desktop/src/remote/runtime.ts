@@ -30,10 +30,13 @@ const DIST_BASE = "https://nodejs.org/dist";
  * no download, no ~30 MB transfer, no second copy of a runtime on that machine — which is the
  * common case for a developer box and the whole reason the probe asks.
  *
- * Deliberately BELOW the `engines.node: ">=24"` the packages declare: on 22 and 23 the server
- * needs `node:sqlite`, which those versions expose only behind `--experimental-sqlite`
- * (unflagged in 23.4). `penguin --version` still runs, so such an install passes its smoke
- * test and only trips when the server starts.
+ * Deliberately BELOW the `engines.node: ">=24"` the packages declare, because 22 and 23 can
+ * run the program with one flag: the server reaches SQLite through
+ * `process.getBuiltinModule("node:sqlite")`, which those versions expose only behind
+ * `--experimental-sqlite` (unflagged from 23.4). The remote installer bakes that flag into the
+ * launchers when it keeps such a Node, and proves the module is actually reachable before it
+ * swaps the install in — so a machine that cannot provide it fails the install rather than the
+ * first server start.
  */
 export const MIN_REMOTE_NODE_MAJOR = 22;
 

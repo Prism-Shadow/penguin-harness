@@ -183,8 +183,11 @@ export async function installOnRemote(opts: {
       jobPath,
       JSON.stringify({
         packName: PACK_NAME,
-        // null tells the installer to leave the machine's own node in charge.
+        // null tells the installer to leave the machine's own node in charge…
         runtimeDirName: runtime?.artifact.rootDirName ?? null,
+        // …and this is the version it will be, so the installer can decide about
+        // --experimental-sqlite without asking the machine a second time.
+        nodeVersion: runtime ? null : identity.nodeVersion,
       }) + "\n",
     );
 
