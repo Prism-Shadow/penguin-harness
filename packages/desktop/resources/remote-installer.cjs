@@ -48,9 +48,29 @@ function unpack(packPath, destDir) {
   }
 }
 
+// --- which node runs this install, and on what terms ---------------------------------------
+/**
+ * A pushed runtime is always the pinned v24 build, so it needs nothing. A machine's OWN node
+ * is whatever it is: on 22 and 23 the server's `node:sqlite` exists only behind
+ * `--experimental-sqlite` (unflagged from 23.4, harmless to pass on 24), so the flag is baked
+ * into the launchers and used for the checks below. The version comes from the job — the
+ * push already probed it — falling back to the node executing this script, which is the same
+ * one in that case anyway.
+ */
+const usingBundledRuntime = Boolean(job.runtimeDirName);
+const runningNodeVersion = usingBundledRuntime ? null : job.nodeVersion || process.versions.node;
+const runningNodeMajor = runningNodeVersion
+  ? Number(/^v?(\d+)\./.exec(String(runningNodeVersion))?.[1])
+  : NaN;
+const nodeFlags =
+  !usingBundledRuntime && Number.isFinite(runningNodeMajor) && runningNodeMajor < 24
+    ? ["--experimental-sqlite"]
+    : [];
+
 // --- launchers ------------------------------------------------------------------------------
 // They resolve their own directory, prefer the bundled runtime at lib/runtime, and fall back
-// to a system node — so an install stays usable if the runtime is ever removed.
+// to a system node — so an install stays usable if the runtime is ever removed. The flags
+// above ride the system-node branch only: the bundled runtime never needs them.
 function posixLauncher() {
   return `#!/bin/sh
 # penguin launcher (written by the PenguinHarness remote installer).
@@ -68,7 +88,7 @@ export PENGUIN_WEB_DIST="\${PENGUIN_WEB_DIST:-$DIR/lib/web}"
 if [ -x "$DIR/lib/runtime/bin/node" ]; then
   exec "$DIR/lib/runtime/bin/node" "$DIR/lib/dist/penguin.js" "$@"
 fi
-exec node "$DIR/lib/dist/penguin.js" "$@"
+exec node ${nodeFlags.join(" ")}${nodeFlags.length > 0 ? " " : ""}"$DIR/lib/dist/penguin.js" "$@"
 `;
 }
 
@@ -82,7 +102,7 @@ function windowsLauncher() {
     'if exist "%DIR%\\lib\\runtime\\node.exe" (',
     '  "%DIR%\\lib\\runtime\\node.exe" "%DIR%\\lib\\dist\\penguin.js" %*',
     ") else (",
-    '  node "%DIR%\\lib\\dist\\penguin.js" %*',
+    `  node ${nodeFlags.join(" ")}${nodeFlags.length > 0 ? " " : ""}"%DIR%\\lib\\dist\\penguin.js" %*`,
     ")",
     "exit /b %ERRORLEVEL%",
     "",
@@ -154,12 +174,25 @@ try {
   const nodeBin = job.runtimeDirName
     ? path.join(staging, "lib", "runtime", ...(isWindows ? ["node.exe"] : ["bin", "node"]))
     : process.execPath;
+  // The server opens its database through process.getBuiltinModule("node:sqlite"), which an
+  // older Node only provides with the flag above — and some builds not at all. Prove it here,
+  // where the answer is still "this install did not happen", rather than at first server start.
+  const sqlite = cp.spawnSync(
+    nodeBin,
+    [...nodeFlags, "-e", 'if (!process.getBuiltinModule("node:sqlite")) process.exit(9);'],
+    { encoding: "utf8" },
+  );
+  if (sqlite.status !== 0) {
+    throw new Error(
+      `this machine's Node (${runningNodeVersion || "unknown"}) cannot provide node:sqlite, ` +
+        `which the server needs: ${(sqlite.stderr || sqlite.error?.message || "").trim()}`,
+    );
+  }
+
   const check = cp.spawnSync(
     nodeBin,
-    [path.join(staging, "lib", "dist", "penguin.js"), "--version"],
-    {
-      encoding: "utf8",
-    },
+    [...nodeFlags, path.join(staging, "lib", "dist", "penguin.js"), "--version"],
+    { encoding: "utf8" },
   );
   if (check.status !== 0) {
     throw new Error(
@@ -194,7 +227,10 @@ try {
 
   log(
     `PenguinHarness ${version} installed to ${programDir}` +
-      (job.runtimeDirName ? " (with its own Node runtime)" : " (using this machine's Node)"),
+      (usingBundledRuntime
+        ? " (with its own Node runtime)"
+        : ` (using this machine's Node ${runningNodeVersion}` +
+          `${nodeFlags.length > 0 ? " with --experimental-sqlite" : ""})`),
   );
   process.exit(0);
 } catch (err) {
