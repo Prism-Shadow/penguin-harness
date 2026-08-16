@@ -26,7 +26,7 @@ posixOnly("remote-installer.cjs", () => {
   let scratch: string;
 
   /** A scratch directory shaped exactly like the one the push leaves on the remote. */
-  const prepareScratch = (opts: { cliBody: string }) => {
+  const prepareScratch = (opts: { cliBody: string; withRuntime?: boolean }) => {
     // The image: penguin/{bin,lib}. Only lib/dist/penguin.js has to be real — the installer
     // smoke-tests it and copies everything else verbatim.
     const image = path.join(work, "image");
@@ -41,9 +41,14 @@ posixOnly("remote-installer.cjs", () => {
 
     fs.mkdirSync(scratch, { recursive: true });
     fs.writeFileSync(path.join(scratch, "penguin-image.pack"), packDirectory(image));
+    const withRuntime = opts.withRuntime ?? true;
     fs.writeFileSync(
       path.join(scratch, "job.json"),
-      JSON.stringify({ packName: "penguin-image.pack", runtimeDirName: RUNTIME_DIR_NAME }),
+      JSON.stringify({
+        packName: "penguin-image.pack",
+        // null = the machine had a usable node of its own, so none was sent.
+        runtimeDirName: withRuntime ? RUNTIME_DIR_NAME : null,
+      }),
     );
     // The "runtime" the bootstrap would have unpacked: a node stand-in that forwards to the
     // real one, so the installer's smoke test runs the staged CLI for real.
@@ -102,6 +107,19 @@ posixOnly("remote-installer.cjs", () => {
     // Nothing is left behind next to the program directory.
     const siblings = fs.readdirSync(path.dirname(programDir()));
     expect(siblings.filter((name) => name.startsWith("penguin."))).toEqual([]);
+  });
+
+  it("installs without a runtime when the machine's own node is used", () => {
+    prepareScratch({ cliBody: "console.log('9.9.9');\n", withRuntime: false });
+    const result = runInstaller();
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("using this machine's Node");
+    // No runtime inside the install, and the launcher's fallback path is what will run it.
+    expect(fs.existsSync(path.join(programDir(), "lib", "runtime"))).toBe(false);
+    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
+      'exec node "$DIR/lib/dist/penguin.js"',
+    );
   });
 
   it("upgrades over an existing install and leaves the data directory alone", () => {
