@@ -6,14 +6,15 @@
  * rather than described.
  *
  * POSIX-only: the stubs are shell scripts. The Windows command forms they would carry are
- * asserted as pure strings in remote.test.ts.
+ * asserted as pure strings in machines.test.ts.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { installOnRemote } from "../src/remote/install-server.js";
-import { runtimeArtifact, sha256Of } from "../src/remote/runtime.js";
+import { installOnRemote } from "../src/platform/machines/install-server.js";
+import { packDirectory } from "../src/platform/machines/pack.js";
+import { runtimeArtifact, sha256Of } from "../src/platform/machines/runtime.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 
@@ -23,14 +24,12 @@ posixOnly("installOnRemote", () => {
   let logFile: string;
   let originalPath: string | undefined;
 
-  /** An install image just real enough to pack, plus the installer the push copies over. */
-  const sources = () => {
+  /** An install image just real enough to pack (the installer now travels embedded). */
+  const image = () => {
     const payloadRoot = path.join(work, "payload");
     fs.mkdirSync(path.join(payloadRoot, "penguin", "lib", "dist"), { recursive: true });
     fs.writeFileSync(path.join(payloadRoot, "penguin", "lib", "dist", "penguin.js"), "//\n");
-    const installerScript = path.join(work, "remote-installer.cjs");
-    fs.writeFileSync(installerScript, "//\n");
-    return { payloadRoot, installerScript };
+    return { version: "9.9.9", pack: () => packDirectory(payloadRoot) };
   };
 
   /** A runtime archive already in the cache, so no test ever reaches the network. */
@@ -52,7 +51,9 @@ posixOnly("installOnRemote", () => {
       [
         "#!/bin/sh",
         `printf 'ssh %s\\n' "$*" >> ${JSON.stringify(logFile)}`,
-        "last=$(eval echo \\$$#)",
+        // NOT the `eval echo` idiom: some of these commands carry `&&`-joined mktemp/tar,
+        // which eval would EXECUTE on the test machine instead of merely naming.
+        'for a in "$@"; do last=$a; done',
         'case "$last" in',
         // The POSIX probe; a Windows host would not understand it.
         opts.posixUnknown
@@ -100,8 +101,7 @@ posixOnly("installOnRemote", () => {
     const progress: string[] = [];
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
       onProgress: (line) => progress.push(line),
@@ -129,8 +129,7 @@ posixOnly("installOnRemote", () => {
     writeStubs({ probe: "Windows_NT AMD64\\n---penguin---\\n", posixUnknown: true });
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       runtimeCacheDir: (() => {
         const dir = path.join(work, "runtime-cache");
         fs.mkdirSync(dir, { recursive: true });
@@ -156,8 +155,7 @@ posixOnly("installOnRemote", () => {
     const progress: string[] = [];
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       // Empty cache and a fetcher that would throw: proving the download never happens.
       runtimeCacheDir: path.join(work, "empty-cache"),
       fetchBuffer: noFetch,
@@ -178,8 +176,7 @@ posixOnly("installOnRemote", () => {
     writeStubs({ probe: 'Linux x86_64\\n---penguin---\\n{"version":"9.9.9"}\\n' });
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
     });
@@ -191,8 +188,7 @@ posixOnly("installOnRemote", () => {
     writeStubs({ probe: 'Linux x86_64\\n---penguin---\\n{"version":"0.0.1"}\\n', installExit: 3 });
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       runtimeCacheDir: seedRuntimeCache(),
       fetchBuffer: noFetch,
     });
@@ -206,8 +202,7 @@ posixOnly("installOnRemote", () => {
     const cacheDir = path.join(work, "empty-cache");
     const outcome = await installOnRemote({
       target,
-      sources: sources(),
-      localVersion: "9.9.9",
+      image: image(),
       runtimeCacheDir: cacheDir,
       // Serves a checksum file that does not match the "runtime" it then hands over.
       fetchBuffer: async (url) =>

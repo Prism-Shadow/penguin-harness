@@ -37,19 +37,13 @@ import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
-import {
-  installOnRemote,
-  payloadSourcesReady,
-  resolvePayloadSources,
-} from "./remote/install-server.js";
-import { listHostAliases, resolveTarget } from "./remote/targets.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
   desktopLoginUrl,
-  isAppUrl,
+  isLoopbackAppUrl,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
   restartDelayMs,
@@ -69,8 +63,15 @@ if (process.platform === "win32") app.setAppUserModelId(identity.appUserModelId)
 
 let win: BrowserWindow | null = null;
 let server: EmbeddedServer | null = null;
-/** App origin (embedded or attached); null until boot resolves. */
+/**
+ * The origin the window currently lives on — the local server's, or another machine's
+ * server through a tunnel after the web app navigated there (machine switching is platform
+ * behavior; the shell only follows, via did-navigate below). Scopes the preview/window-open
+ * policy to the CURRENT server's loopback surface.
+ */
 let appOrigin: string | null = null;
+/** The LOCAL server's origin (embedded or attached) — what a restart is allowed to reclaim. */
+let localOrigin: string | null = null;
 let quitting = false;
 let stopPromise: Promise<void> | null = null;
 let restartAttempts = 0;
@@ -144,9 +145,22 @@ function createWindow(url: string): void {
     });
   });
   win.webContents.on("will-navigate", (event, target) => {
-    if (!isAppUrl(target, appOrigin)) {
+    // Loopback penguin origins are all navigable — that one permission is the shell's
+    // whole contribution to machine switching (the capability lives in the platform).
+    if (!isLoopbackAppUrl(target)) {
       event.preventDefault();
       void shell.openExternal(target);
+    }
+  });
+  // Follow the window: after a switch, previews and "open in a new tab" must be judged
+  // against the CURRENT server's surface, not the one the shell booted with.
+  win.webContents.on("did-navigate", (_event, target) => {
+    if (isLoopbackAppUrl(target)) {
+      try {
+        appOrigin = new URL(target).origin;
+      } catch {
+        // Not a URL (never expected from did-navigate); keep the previous origin.
+      }
     }
   });
   win.webContents.on("render-process-gone", () => win?.webContents.reload());
@@ -170,7 +184,12 @@ function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
   child.postMessage(updaterStatusMessage(getUpdaterStatus()));
 }
 
-/** Starts (or restarts) the embedded server and points the window at desktop-login. */
+/**
+ * Starts (or restarts) the embedded server and points the window at desktop-login — unless
+ * the window has navigated onto another machine's server, in which case the restart stays
+ * silent: the local server is kept alive in the background, but the window in front of the
+ * user is somebody else's and must not be yanked.
+ */
 async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
     dataRoot,
@@ -178,7 +197,8 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
     log: (chunk) => process.stdout.write(`[server] ${chunk}`),
   });
   server = started;
-  appOrigin = started.origin;
+  const windowElsewhere = appOrigin !== null && appOrigin !== localOrigin;
+  localOrigin = started.origin;
   wireUpdaterRelay(started.child);
   // A run that stays up for a minute is healthy: reset the restart budget so a crash
   // days later starts a fresh 1s/2s/4s ladder instead of hitting the cap immediately.
@@ -189,6 +209,8 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
     clearTimeout(healthyTimer);
     void handleServerExit(dataRoot, code);
   });
+  if (windowElsewhere) return;
+  appOrigin = started.origin;
   const url = desktopLoginUrl(started.origin, started.token);
   if (win === null) createWindow(url);
   else void win.loadURL(url);
@@ -199,6 +221,13 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   if (quitting) return;
   server = null;
   if (restartAttempts >= MAX_SERVER_RESTARTS) {
+    // Ending the app is only right while the window depends on the local server; on
+    // another machine's origin the session in front of the user is fine — note the
+    // give-up and keep going.
+    if (appOrigin !== null && appOrigin !== localOrigin) {
+      process.stdout.write(`[shell] embedded server keeps exiting (code ${code}); giving up\n`);
+      return;
+    }
     fatal(`The embedded server keeps exiting (last exit code ${code}).`, "Giving up.");
     return;
   }
@@ -212,96 +241,6 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
   } catch (err) {
     fatal("The embedded server could not be restarted.", err);
   }
-}
-
-/**
- * "Install Server on Remote Host ▸ <alias>": probe that machine, ask, push this build.
- *
- * Every answer goes through a modal — there is no progress surface in the shell, and the
- * whole point is that the user is deciding to write to another machine. Failures show the
- * far side's own words: ssh's diagnostics and install.sh's output say more about a refused
- * key or a missing Node than anything this app could paraphrase.
- */
-async function installServerOnRemote(alias: string): Promise<void> {
-  const sources = resolvePayloadSources({
-    packaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    // Dev run: the repo root is three levels up from packages/desktop/dist.
-    repoRoot: path.resolve(app.getAppPath(), "..", ".."),
-  });
-  if (!payloadSourcesReady(sources)) {
-    await dialog.showMessageBox({
-      type: "error",
-      message: "This build carries no install image.",
-      detail: `Expected it at ${sources.payloadRoot}. In a dev run, build it first: pnpm --filter @prismshadow/penguin-desktop build:install-image`,
-    });
-    return;
-  }
-
-  const target = await resolveTarget(alias);
-  if (!target) {
-    await dialog.showMessageBox({
-      type: "error",
-      message: `ssh could not resolve "${alias}".`,
-      detail: "Check ~/.ssh/config, or that ssh is on PATH.",
-    });
-    return;
-  }
-
-  const confirm = await dialog.showMessageBox({
-    type: "question",
-    buttons: ["Install", "Cancel"],
-    defaultId: 0,
-    cancelId: 1,
-    message: `Install PenguinHarness ${app.getVersion()} on ${target.machine}?`,
-    detail: [
-      `Host: ${target.settings.hostname}:${target.settings.port}`,
-      "The program and a matching Node runtime are installed into that machine's own data",
-      "directory (~/.local/share/penguin, or %LOCALAPPDATA%\\penguin on Windows). Nothing",
-      "else there is touched, no Node installation is required, and the data directory of",
-      "an existing install is left alone.",
-    ].join("\n"),
-  });
-  if (confirm.response !== 0) return;
-
-  const outcome = await installOnRemote({
-    target: { alias, user: target.settings.user },
-    sources,
-    localVersion: app.getVersion(),
-    // Verified Node runtimes are kept per platform-arch: the same download serves every
-    // host of that shape, and re-pushing to a second machine skips the fetch.
-    runtimeCacheDir: path.join(app.getPath("userData"), "runtime-cache"),
-    fetchBuffer: async (url) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`GET ${url} -> ${response.status}`);
-      return Buffer.from(await response.arrayBuffer());
-    },
-    onProgress: (line) => process.stdout.write(`[remote ${target.machine}] ${line}\n`),
-  });
-
-  if (outcome.kind === "installed") {
-    await dialog.showMessageBox({
-      type: "info",
-      message: `PenguinHarness is installed on ${target.machine}.`,
-      detail: outcome.output || undefined,
-    });
-    return;
-  }
-  if (outcome.kind === "already-installed") {
-    await dialog.showMessageBox({
-      type: "info",
-      message: `${target.machine} already runs PenguinHarness ${outcome.version}.`,
-      detail: "Nothing to install — it matches this build.",
-    });
-    return;
-  }
-  // "blocked" is gone from the outcomes: the push brings its own Node runtime, so there is
-  // nothing left to be missing on the far side that would stop it before it starts.
-  await dialog.showMessageBox({
-    type: "error",
-    message: `Installing on ${target.machine} failed while trying to ${outcome.step}.`,
-    detail: outcome.detail,
-  });
 }
 
 async function boot(): Promise<void> {
@@ -321,6 +260,7 @@ async function boot(): Promise<void> {
     // Attach mode: the one-shot token only works against a server this shell spawned,
     // so the window goes through the normal login page of the existing instance.
     appOrigin = `http://localhost:${existing.port}`;
+    localOrigin = appOrigin;
     process.stdout.write(`[shell] attaching to the running server at ${appOrigin}\n`);
     createWindow(`${appOrigin}/`);
     return;
@@ -377,10 +317,6 @@ if (!app.requestSingleInstanceLock()) {
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),
-        // Read once, at menu build time: the menu is static, and an ssh config that
-        // changes mid-session is a restart away from being picked up.
-        remoteHosts: listHostAliases(),
-        onInstallRemote: (alias) => void installServerOnRemote(alias),
       });
       initUpdater(() => win);
       await boot();

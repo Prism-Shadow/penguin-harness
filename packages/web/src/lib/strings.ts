@@ -271,6 +271,18 @@ export const zh = {
     forgetAccount: (userId: string): string => `不再记住 ${userId}`,
     switchFailed: "该账号的登录状态已失效，请重新登录",
     admin: "管理员",
+    /** 左下角菜单的机器分组（管理员可见,列表来自 server 端 /api/machines）。 */
+    machines: "机器",
+    /** 从别的机器切过来时,回到来源机器的入口。 */
+    machineBack: (host: string): string => `返回 ${host}`,
+    /** 连接进行中的提示（探测/安装/起服务/开隧道都会走一遍）。 */
+    machineConnecting: (machine: string): string => `正在连接 ${machine}…`,
+    machineConnected: (machine: string): string => `已连接 ${machine}，正在跳转…`,
+    /** 远端 server 的端口在本机被占用,重启它才能连（会打断那边正在跑的东西）。 */
+    machineRestartTitle: "需要重启远端服务",
+    machineRestartConfirm: (machine: string): string =>
+      `${machine} 上的服务所用端口在本机被占用。重启它换到空闲端口才能连接,那台机器上正在运行的任务会被打断。`,
+    machineRestart: "重启并连接",
     defaultAdminNote:
       "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */

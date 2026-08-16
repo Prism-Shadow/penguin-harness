@@ -1,14 +1,17 @@
 /**
- * Installing this build's server onto another machine, VS Code Remote style: ask the machine
- * what it is, fetch the matching Node runtime, push both it and the install image, and let a
- * Node installer do the rest. No CLI surface — this is the desktop app's own capability,
- * driven from the menu (see menu.ts).
+ * Installing THIS server's build onto another machine, from inside the server process —
+ * platform code, so the whole capability travels by hot push (see ../../hmr/README.md).
+ *
+ * What gets pushed is the running install itself: a server always sits inside a universal
+ * image — the tarball layout (`…/penguin/{bin,lib}`) or the desktop app's staged payload —
+ * so the payload is packed straight from disk, version-stamped by its own lib/package.json.
+ * That is what makes "the two ends must match" trivially true: the far side receives the
+ * bytes this side runs.
  *
  * Nothing here assumes anything about the far side except an sshd and, for four commands, a
- * shell of some kind. In particular it does NOT use install.sh: that is a POSIX script, and a
- * Windows host cannot run it. The remote gets a runtime of ours at `lib/runtime`, so it does
- * not need Node installed either — which is also why the runtime has to be fetched per
- * platform and arch, and why the identity probe comes first.
+ * shell of some kind. The installer that does the real work is embedded as text
+ * (installer-script.ts) and runs over there on a Node runtime that is either the remote's
+ * own (new enough) or fetched, verified and pushed alongside.
  *
  * The remote is left with exactly what a local install leaves: the program directory
  * (`~/.local/share/penguin`, `%LOCALAPPDATA%\penguin`) and, on POSIX, the `~/.local/bin/penguin`
@@ -30,58 +33,93 @@ import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity } from "./detect.js";
 import { looksLikeAuthFailure, run } from "./exec.js";
+import { REMOTE_INSTALLER_SCRIPT } from "./installer-script.js";
 import { packDirectory } from "./pack.js";
 import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
 
 /** Name the pack travels under, inside the scratch directory. */
 const PACK_NAME = "penguin-image.pack";
 
-export interface PayloadSources {
-  /** Directory holding the `penguin/` tree (install-image/, or resources/payload when packaged). */
-  payloadRoot: string;
-  /** The Node installer that is copied over and run on the far side. */
-  installerScript: string;
+/**
+ * Where this running server's pushable image is, and how to pack it. `version` is read from
+ * the image's own lib/package.json — the thing actually sent, not what any package here
+ * believes about itself.
+ */
+export interface PayloadImage {
+  version: string;
+  pack: () => Buffer;
+}
+
+/** The version out of a lib/package.json path, or null when it is not a manifest. */
+function versionOfManifest(manifestPath: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (typeof parsed === "object" && parsed !== null) {
+      const version = (parsed as { version?: unknown }).version;
+      if (typeof version === "string" && version !== "") return version;
+    }
+  } catch {
+    /* absent or damaged: not an image */
+  }
+  return null;
 }
 
 /**
- * Where this app's install image and remote installer live. Packaged builds carry both as
- * extra resources; a dev run reads them out of the repository, so the feature works from
- * `pnpm desktop` without packaging first.
+ * Finds the install image around the running process. Two real shapes, probed in order:
+ *
+ * 1. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
+ *    program directory itself; pack it under a `penguin/` prefix, leaving out `lib/runtime`
+ *    (this machine's Node must not ride along in a universal image) and `bin` (the installer
+ *    writes fresh launchers).
+ * 2. **Desktop app** — the server entry is
+ *    `<resources>/app/node_modules/@prismshadow/penguin-server/dist/index.js` and the staged
+ *    universal image sits beside it at `<resources>/payload/penguin`.
+ *
+ * A dev checkout has neither and answers null: `node packages/desktop/scripts/stage.mjs`
+ * plus a desktop run, or an installed build, are the shapes that can push themselves.
  */
-export function resolvePayloadSources(opts: {
-  packaged: boolean;
-  resourcesPath: string;
-  repoRoot: string;
-}): PayloadSources {
-  return opts.packaged
-    ? {
-        payloadRoot: path.join(opts.resourcesPath, "payload"),
-        installerScript: path.join(opts.resourcesPath, "remote-installer.cjs"),
-      }
-    : {
-        payloadRoot: path.join(opts.repoRoot, "packages", "desktop", "install-image"),
-        installerScript: path.join(
-          opts.repoRoot,
-          "packages",
-          "desktop",
-          "resources",
-          "remote-installer.cjs",
-        ),
-      };
-}
+export function resolvePayloadImage(
+  argv1: string | undefined = process.argv[1],
+): PayloadImage | null {
+  if (!argv1) return null;
 
-/** Whether the sources are actually present — a dev run that never staged has no image. */
-export function payloadSourcesReady(sources: PayloadSources): boolean {
-  return (
-    fs.existsSync(path.join(sources.payloadRoot, "penguin", "lib", "dist", "penguin.js")) &&
-    fs.existsSync(sources.installerScript)
-  );
+  // Tarball shape: <root>/lib/dist/<entry>.js
+  const libDir = path.dirname(path.dirname(argv1));
+  const root = path.dirname(libDir);
+  if (path.basename(libDir) === "lib" && path.basename(path.dirname(argv1)) === "dist") {
+    const version = versionOfManifest(path.join(libDir, "package.json"));
+    if (version !== null) {
+      return {
+        version,
+        pack: () => packDirectory(root, { prefix: "penguin", exclude: ["lib/runtime", "bin"] }),
+      };
+    }
+  }
+
+  // Desktop shape: walk up to node_modules/@prismshadow/penguin-server, then to resources/.
+  let dir = path.dirname(argv1);
+  for (;;) {
+    if (
+      path.basename(dir) === "penguin-server" &&
+      path.basename(path.dirname(dir)) === "@prismshadow" &&
+      path.basename(path.dirname(path.dirname(dir))) === "node_modules"
+    ) {
+      const appDir = path.dirname(path.dirname(path.dirname(dir)));
+      const payloadRoot = path.join(path.dirname(appDir), "payload");
+      const version = versionOfManifest(path.join(payloadRoot, "penguin", "lib", "package.json"));
+      if (version === null) return null;
+      return { version, pack: () => packDirectory(payloadRoot) };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 /**
  * Asks the machine what it is. POSIX first; a cmd.exe host answers that with an error, which
  * parses as "not a machine I recognize", and the Windows form is tried next. Two round trips
- * at worst, once per install.
+ * at worst, once per connect.
  */
 export async function detectRemote(
   target: RemoteTarget,
@@ -92,7 +130,7 @@ export async function detectRemote(
     if (identity) return { identity };
     if (result.code !== 0 && looksLikeAuthFailure(result)) {
       return {
-        error: `${result.stderr.trim()}\n\nThis app connects with BatchMode: set up key or agent authentication for that host first.`,
+        error: `${result.stderr.trim()}\n\nConnections use BatchMode: set up key or agent authentication for that host first.`,
       };
     }
     // A connection-level failure is fatal for both probes; only an unrecognized ANSWER is
@@ -121,23 +159,34 @@ export type RemoteInstallOutcome =
  */
 export async function installOnRemote(opts: {
   target: RemoteTarget;
-  sources: PayloadSources;
-  localVersion: string;
-  /** Where verified Node runtimes are kept between installs (app userData). */
+  image: PayloadImage;
+  /** Where verified Node runtimes are kept between installs (under the data root). */
   runtimeCacheDir: string;
-  fetchBuffer: (url: string) => Promise<Buffer>;
+  fetchBuffer?: (url: string) => Promise<Buffer>;
   onProgress?: (line: string) => void;
+  /** Identity from an earlier probe in the same flow, to save the round trips. */
+  identity?: RemoteIdentity;
 }): Promise<RemoteInstallOutcome> {
-  const { target, sources } = opts;
+  const { target, image } = opts;
   const say = opts.onProgress ?? (() => {});
+  const fetchBuffer =
+    opts.fetchBuffer ??
+    (async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`GET ${url} -> ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    });
 
-  say("Asking what that machine is…");
-  const detected = await detectRemote(target);
-  if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
-  const { identity } = detected;
-  say(`${identity.platform}-${identity.arch}.`);
+  let identity = opts.identity;
+  if (identity === undefined) {
+    say("Asking what that machine is…");
+    const detected = await detectRemote(target);
+    if ("error" in detected) return { kind: "failed", step: "connect", detail: detected.error };
+    identity = detected.identity;
+    say(`${identity.platform}-${identity.arch}.`);
+  }
 
-  if (identity.installedVersion !== null && identity.installedVersion === opts.localVersion) {
+  if (identity.installedVersion !== null && identity.installedVersion === image.version) {
     return { kind: "already-installed", version: identity.installedVersion, identity };
   }
 
@@ -155,7 +204,7 @@ export async function installOnRemote(opts: {
     let runtime: Awaited<ReturnType<typeof ensureRuntimeArchive>> | null = null;
     try {
       packPath = path.join(localTmp, PACK_NAME);
-      fs.writeFileSync(packPath, packDirectory(sources.payloadRoot));
+      fs.writeFileSync(packPath, image.pack());
       if (useRemoteNode) {
         say(`Using the Node ${identity.nodeVersion} already on that machine.`);
       } else {
@@ -165,7 +214,7 @@ export async function installOnRemote(opts: {
           platform: identity.platform,
           arch: identity.arch,
           cacheDir: opts.runtimeCacheDir,
-          fetchBuffer: opts.fetchBuffer,
+          fetchBuffer,
           ...(opts.onProgress ? { onProgress: opts.onProgress } : {}),
         });
       }
@@ -176,6 +225,10 @@ export async function installOnRemote(opts: {
         detail: err instanceof Error ? err.message : String(err),
       };
     }
+
+    // The installer travels as text in this bundle; it becomes a file only to ride scp.
+    const installerPath = path.join(localTmp, "remote-installer.cjs");
+    fs.writeFileSync(installerPath, REMOTE_INSTALLER_SCRIPT);
 
     // The job the installer reads instead of taking arguments — no second round of quoting.
     const jobPath = path.join(localTmp, "job.json");
@@ -214,7 +267,7 @@ export async function installOnRemote(opts: {
       "scp",
       scpArgs(
         target,
-        [packPath, jobPath, sources.installerScript, ...(runtime ? [runtime.archivePath] : [])],
+        [packPath, jobPath, installerPath, ...(runtime ? [runtime.archivePath] : [])],
         scratch,
       ),
     );

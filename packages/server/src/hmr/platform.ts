@@ -251,16 +251,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // would construct a fresh service on defaults and silently un-confine a deployment
     // that had confinement on.
     if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
-    // Claimed here rather than at deps-build time below: the workflow store is anchored at
-    // the runtime's own root, and a runtime publishing no business capabilities has no
-    // root to anchor at - the same degradation that leaves this App terminals-only.
-    const caps = claimRuntimeCapabilities(ctx.resources);
+    // The workflow store is anchored at the runtime's own root; a declared bare kernel has
+    // no root to anchor at — the same absence that leaves this App terminals-only.
     // Installed workflows register into the very map plugins just wrote, so both kinds are
     // one thing downstream. Only the refs parked in this document are reloaded: an
     // installation is remembered, never discovered by sweeping agent folders.
-    const runWorkflowAgent = ctx.resources.claim<BuildDepsOverrides>(
-      RUNTIME_OVERRIDES_RESOURCE_ID,
-    )?.runWorkflowAgent;
+    const runWorkflowAgent = caps?.overrides.runWorkflowAgent;
     const workflows = new WorkflowRegistry(pluginIface.workflow, (ref) => ({
       runAgent: async (prompt) => {
         if (runWorkflowAgent === undefined) {

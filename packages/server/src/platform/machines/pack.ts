@@ -13,7 +13,7 @@
  *     [header]              JSON: { schemaVersion, entries: [{ path, size, mode }] }
  *     [bytes]               each entry's contents, in header order
  *
- * `packages/desktop/resources/remote-installer.cjs` carries the reader; keep the two in step.
+ * The embedded remote installer (installer-script.ts) carries the reader; keep the two in step.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -54,9 +54,24 @@ function walk(root: string, prefix = ""): PackEntry[] {
   return out;
 }
 
-/** Packs a directory tree into one gzip buffer. */
-export function packDirectory(root: string): Buffer {
-  const entries = walk(root);
+/**
+ * Packs a directory tree into one gzip buffer.
+ *
+ * `prefix` puts every entry under one top-level directory in the pack — packing a server's
+ * own install root (`…/penguin/{bin,lib}`) into the `penguin/…` shape the installer expects,
+ * without copying the tree first. `exclude` drops subtrees by pack-relative path (before the
+ * prefix): `lib/runtime` keeps this machine's own Node out of a universal image.
+ */
+export function packDirectory(
+  root: string,
+  opts: { prefix?: string; exclude?: string[] } = {},
+): Buffer {
+  const excluded = opts.exclude ?? [];
+  const entries = walk(root)
+    .filter((entry) => !excluded.some((ex) => entry.path === ex || entry.path.startsWith(`${ex}/`)))
+    .map((entry) =>
+      opts.prefix === undefined ? entry : { ...entry, path: `${opts.prefix}/${entry.path}` },
+    );
   const header = Buffer.from(
     JSON.stringify({ schemaVersion: PACK_SCHEMA_VERSION, entries } satisfies PackHeader),
     "utf8",
@@ -64,7 +79,10 @@ export function packDirectory(root: string): Buffer {
   const length = Buffer.alloc(4);
   length.writeUInt32BE(header.byteLength);
   const parts: Buffer[] = [length, header];
-  for (const entry of entries) parts.push(fs.readFileSync(path.join(root, entry.path)));
+  const stripPrefix = opts.prefix === undefined ? 0 : opts.prefix.length + 1;
+  for (const entry of entries) {
+    parts.push(fs.readFileSync(path.join(root, entry.path.slice(stripPrefix))));
+  }
   return zlib.gzipSync(Buffer.concat(parts), { level: 6 });
 }
 

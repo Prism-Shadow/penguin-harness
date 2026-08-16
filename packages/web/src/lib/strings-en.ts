@@ -271,6 +271,14 @@ export const en: Strings = {
     forgetAccount: (userId: string): string => `Stop remembering ${userId}`,
     switchFailed: "That account's sign-in has expired. Please sign in again.",
     admin: "Admin",
+    machines: "Machines",
+    machineBack: (host: string): string => `Back to ${host}`,
+    machineConnecting: (machine: string): string => `Connecting to ${machine}…`,
+    machineConnected: (machine: string): string => `Connected to ${machine}, switching…`,
+    machineRestartTitle: "Restart the remote server?",
+    machineRestartConfirm: (machine: string): string =>
+      `The server on ${machine} uses a port that is taken on this machine. Connecting means restarting it onto a free port, which interrupts whatever is running there.`,
+    machineRestart: "Restart and connect",
     defaultAdminNote:
       "First run: sign in as the built-in admin “admin” with the initial password printed in the server startup output (looks like penguin-1234), then change it soon",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */

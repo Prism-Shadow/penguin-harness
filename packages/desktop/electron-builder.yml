@@ -68,8 +68,6 @@ nodeGypRebuild: false
 extraResources:
   - from: install-image
     to: payload
-  - from: resources/remote-installer.cjs
-    to: remote-installer.cjs
 
 mac:
   category: public.app-category.developer-tools

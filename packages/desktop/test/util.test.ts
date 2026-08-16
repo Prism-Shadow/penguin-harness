@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   appOriginFor,
   desktopLoginUrl,
-  isAppUrl,
   isLocalSurfaceUrl,
+  isLoopbackAppUrl,
   parsePortFile,
   restartDelayMs,
 } from "../src/util.js";
@@ -31,15 +31,17 @@ describe("app origin and login URL", () => {
   });
 });
 
-describe("isAppUrl", () => {
-  const origin = "http://localhost:7364";
-  it("accepts only the app origin", () => {
-    expect(isAppUrl("http://localhost:7364/chat", origin)).toBe(true);
-    expect(isAppUrl("http://localhost:7365/", origin)).toBe(false);
-    expect(isAppUrl("http://127.0.0.1:7364/preview/x", origin)).toBe(false);
-    expect(isAppUrl("https://example.com", origin)).toBe(false);
-    expect(isAppUrl("not a url", origin)).toBe(false);
-    expect(isAppUrl("http://localhost:7364/", null)).toBe(false);
+describe("isLoopbackAppUrl", () => {
+  it("accepts any localhost http origin — the local server, or a tunneled one", () => {
+    expect(isLoopbackAppUrl("http://localhost:7376/chat")).toBe(true);
+    expect(isLoopbackAppUrl("http://localhost:7377/")).toBe(true);
+  });
+  it("rejects the preview host, https, external sites, and garbage", () => {
+    // 127.0.0.1 is the preview surface: it belongs in preview windows, never the main one.
+    expect(isLoopbackAppUrl("http://127.0.0.1:7376/preview/x")).toBe(false);
+    expect(isLoopbackAppUrl("https://localhost:7376/")).toBe(false);
+    expect(isLoopbackAppUrl("https://example.com")).toBe(false);
+    expect(isLoopbackAppUrl("not a url")).toBe(false);
   });
 });
 

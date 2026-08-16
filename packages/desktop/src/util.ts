@@ -25,14 +25,19 @@ export function desktopLoginUrl(origin: string, token: string): string {
 }
 
 /**
- * Whether a navigation target stays inside the app window. Only the app origin itself
- * qualifies; everything else (external sites, and Workspace previews on the 127.0.0.1
- * counterpart host) opens in the system browser.
+ * Whether a top-level navigation stays inside the app window: any `http://localhost:<port>`
+ * origin — this machine's server, or another machine's server through a local tunnel.
+ *
+ * This is the ONE mechanism the shell contributes to machine switching (the capability
+ * itself — host list, install, tunnel — is platform code reached over /api/machines): the
+ * window may move between loopback penguin origins, and everything else still goes to the
+ * system browser. `localhost` only, not 127.0.0.1: that host is the preview surface, which
+ * belongs in preview windows (isLocalSurfaceUrl), never in the main window.
  */
-export function isAppUrl(url: string, origin: string | null): boolean {
-  if (origin === null) return false;
+export function isLoopbackAppUrl(url: string): boolean {
   try {
-    return new URL(url).origin === origin;
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" && parsed.hostname === "localhost";
   } catch {
     return false;
   }
