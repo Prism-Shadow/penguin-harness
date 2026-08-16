@@ -61,6 +61,17 @@ asar: false
 npmRebuild: false
 nodeGypRebuild: false
 
+# The install image and the installer that consumes it, shipped so the app can put this
+# build's server on a machine over SSH (Install Server on Remote Host). stage/payload is
+# produced by scripts/stage.mjs alongside stage/app; install.sh is the repository's own.
+# Every platform carries them: the payload is the universal, runtime-free shape, and what
+# it targets is decided by the far side, not by the machine sending it.
+extraResources:
+  - from: stage/payload
+    to: payload
+  - from: ../../install.sh
+    to: install.sh
+
 mac:
   category: public.app-category.developer-tools
   # macOS-specific 1024px master: scripts/render-icon.mjs centres the brand artwork in
