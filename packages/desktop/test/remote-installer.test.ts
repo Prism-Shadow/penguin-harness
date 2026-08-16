@@ -26,7 +26,12 @@ posixOnly("remote-installer.cjs", () => {
   let scratch: string;
 
   /** A scratch directory shaped exactly like the one the push leaves on the remote. */
-  const prepareScratch = (opts: { cliBody: string; withRuntime?: boolean }) => {
+  const prepareScratch = (opts: {
+    cliBody: string;
+    withRuntime?: boolean;
+    /** What the push probed on that machine; drives the --experimental-sqlite decision. */
+    nodeVersion?: string;
+  }) => {
     // The image: penguin/{bin,lib}. Only lib/dist/penguin.js has to be real — the installer
     // smoke-tests it and copies everything else verbatim.
     const image = path.join(work, "image");
@@ -48,6 +53,7 @@ posixOnly("remote-installer.cjs", () => {
         packName: "penguin-image.pack",
         // null = the machine had a usable node of its own, so none was sent.
         runtimeDirName: withRuntime ? RUNTIME_DIR_NAME : null,
+        nodeVersion: withRuntime ? null : (opts.nodeVersion ?? process.version),
       }),
     );
     // The "runtime" the bootstrap would have unpacked: a node stand-in that forwards to the
@@ -120,6 +126,61 @@ posixOnly("remote-installer.cjs", () => {
     expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
       'exec node "$DIR/lib/dist/penguin.js"',
     );
+  });
+
+  it("flags an older Node into the launcher, since node:sqlite is gated there", () => {
+    // 22 and 23 have node:sqlite only behind --experimental-sqlite. The decision is made
+    // once, at install time, from the version the push probed.
+    prepareScratch({
+      cliBody: "console.log('9.9.9');\n",
+      withRuntime: false,
+      nodeVersion: "v22.11.0",
+    });
+    const result = runInstaller();
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("with --experimental-sqlite");
+    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
+      'exec node --experimental-sqlite "$DIR/lib/dist/penguin.js"',
+    );
+    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin.cmd"), "utf8")).toContain(
+      'node --experimental-sqlite "%DIR%\\lib\\dist\\penguin.js"',
+    );
+  });
+
+  it("does not flag a current Node, and never flags the bundled runtime", () => {
+    prepareScratch({
+      cliBody: "console.log('9.9.9');\n",
+      withRuntime: false,
+      nodeVersion: "v24.3.0",
+    });
+    expect(runInstaller().status).toBe(0);
+    expect(fs.readFileSync(path.join(programDir(), "bin", "penguin"), "utf8")).toContain(
+      'exec node "$DIR/lib/dist/penguin.js"',
+    );
+  });
+
+  it("refuses a machine whose Node cannot provide node:sqlite", () => {
+    prepareScratch({ cliBody: "console.log('9.9.9');\n", withRuntime: true });
+    // A runtime that runs, but whose node has no node:sqlite — the shape of an old or
+    // stripped build. The check must catch it here, not at first server start.
+    const fakeNode = path.join(scratch, RUNTIME_DIR_NAME, "bin", "node");
+    fs.writeFileSync(
+      fakeNode,
+      [
+        "#!/bin/sh",
+        // The capability probe is the only call with -e; fail it, pass everything else.
+        'case "$*" in *getBuiltinModule*) exit 9 ;; esac',
+        `exec ${process.execPath} "$@"`,
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = runInstaller();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("cannot provide node:sqlite");
+    expect(fs.existsSync(programDir())).toBe(false);
   });
 
   it("upgrades over an existing install and leaves the data directory alone", () => {
