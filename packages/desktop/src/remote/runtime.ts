@@ -26,11 +26,16 @@ export const NODE_RUNTIME_VERSION = "v24.18.0";
 const DIST_BASE = "https://nodejs.org/dist";
 
 /**
- * The oldest Node the program runs on. A remote whose own node clears this bar is used as
- * is — no download, no ~30 MB transfer, no second copy of a runtime on that machine —
- * which is the common case for a developer box and the whole reason the probe asks.
+ * The oldest Node a remote may keep. A machine whose own node clears this bar is used as is —
+ * no download, no ~30 MB transfer, no second copy of a runtime on that machine — which is the
+ * common case for a developer box and the whole reason the probe asks.
+ *
+ * Deliberately BELOW the `engines.node: ">=24"` the packages declare: on 22 and 23 the server
+ * needs `node:sqlite`, which those versions expose only behind `--experimental-sqlite`
+ * (unflagged in 23.4). `penguin --version` still runs, so such an install passes its smoke
+ * test and only trips when the server starts.
  */
-export const MIN_REMOTE_NODE_MAJOR = 24;
+export const MIN_REMOTE_NODE_MAJOR = 22;
 
 /** True when the remote's `node -v` is recent enough to run the image without a pushed runtime. */
 export function remoteNodeIsUsable(nodeVersion: string | null): boolean {

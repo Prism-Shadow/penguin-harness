@@ -189,9 +189,10 @@ describe("runtime selection", () => {
   it("skips the whole download when the remote's own node is new enough", () => {
     // The common case for a developer box: no 30 MB transfer, and no second runtime
     // installed on a machine that already has one.
-    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR}.3.0`)).toBe(true);
-    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR + 4}.0.0`)).toBe(true);
-    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR - 4}.11.0`)).toBe(false);
+    expect(MIN_REMOTE_NODE_MAJOR).toBe(22);
+    expect(remoteNodeIsUsable("v22.11.0")).toBe(true);
+    expect(remoteNodeIsUsable("v24.3.0")).toBe(true);
+    expect(remoteNodeIsUsable("v20.11.0")).toBe(false);
     expect(remoteNodeIsUsable(null)).toBe(false);
     expect(remoteNodeIsUsable("not a version")).toBe(false);
   });
