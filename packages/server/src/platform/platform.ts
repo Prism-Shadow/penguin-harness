@@ -17,9 +17,10 @@
  *
  * This packaged default is deliberately a bare stub: the runtime (HmrHost,
  * routes.ts) is mechanism only, and carries no business methods of its own.
- * A real business platform is pushed over HTTP and dispatched through the
- * generic /api/hmr/platform/call route — the method set is data read off the
- * running iface, so adding or removing an API needs no runtime change.
+ * A real business platform is pushed over HTTP and serves its own HTTP through
+ * the seam in ../hmr/http-seam.ts: it sees every request before the runtime's
+ * own routes do and answers null for the ones it does not own, so adding or
+ * changing an endpoint needs no runtime change.
  */
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
 import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
