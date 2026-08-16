@@ -13,7 +13,9 @@ import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/remote/dete
 import {
   checksumFor,
   ensureRuntimeArchive,
+  MIN_REMOTE_NODE_MAJOR,
   NODE_RUNTIME_VERSION,
+  remoteNodeIsUsable,
   runtimeArtifact,
   sha256Of,
 } from "../src/remote/runtime.js";
@@ -129,23 +131,43 @@ describe("identity probe", () => {
     expect(WINDOWS_PROBE).not.toContain(";");
   });
 
-  it("reads a POSIX answer, including the installed version out of the manifest", () => {
+  it("reads a POSIX answer: identity, the machine's own node, and the installed version", () => {
     expect(
-      parseProbeOutput('Linux x86_64\n---penguin---\n{"name":"x","version":"0.2.2"}\n'),
-    ).toEqual({ platform: "linux", arch: "x64", installedVersion: "0.2.2" });
+      parseProbeOutput('Linux x86_64\nv24.3.0\n---penguin---\n{"name":"x","version":"0.2.2"}\n'),
+    ).toEqual({
+      platform: "linux",
+      arch: "x64",
+      nodeVersion: "v24.3.0",
+      installedVersion: "0.2.2",
+    });
+  });
+
+  it("a machine with no node answers 'none', which reads as no node at all", () => {
+    expect(parseProbeOutput("Linux x86_64\nnone\n---penguin---\n")).toMatchObject({
+      nodeVersion: null,
+    });
+  });
+
+  it("finds the identity past a shell banner instead of trusting the first line", () => {
+    expect(
+      parseProbeOutput("Welcome to build-box!\nLinux x86_64\nv24.3.0\n---penguin---\n"),
+    ).toMatchObject({ platform: "linux", arch: "x64", nodeVersion: "v24.3.0" });
   });
 
   it("reads a Windows answer and normalizes its names onto Node's", () => {
-    expect(parseProbeOutput("Windows_NT AMD64\n---penguin---\n")).toEqual({
+    expect(parseProbeOutput("Windows_NT AMD64\nnone\n---penguin---\n")).toEqual({
       platform: "win32",
       arch: "x64",
+      nodeVersion: null,
       installedVersion: null,
     });
-    expect(parseProbeOutput("Darwin arm64\n---penguin---\n")).toMatchObject({
+    expect(parseProbeOutput("Darwin arm64\nnone\n---penguin---\n")).toMatchObject({
       platform: "darwin",
       arch: "arm64",
     });
-    expect(parseProbeOutput("Linux aarch64\n---penguin---\n")).toMatchObject({ arch: "arm64" });
+    expect(parseProbeOutput("Linux aarch64\nnone\n---penguin---\n")).toMatchObject({
+      arch: "arm64",
+    });
   });
 
   it("returns null when the shell did not understand the probe", () => {
@@ -157,13 +179,23 @@ describe("identity probe", () => {
   });
 
   it("treats an unreadable manifest as 'nothing installed' rather than failing", () => {
-    expect(parseProbeOutput("Linux x86_64\n---penguin---\nnot json at all")).toMatchObject({
+    expect(parseProbeOutput("Linux x86_64\nnone\n---penguin---\nnot json at all")).toMatchObject({
       installedVersion: null,
     });
   });
 });
 
 describe("runtime selection", () => {
+  it("skips the whole download when the remote's own node is new enough", () => {
+    // The common case for a developer box: no 30 MB transfer, and no second runtime
+    // installed on a machine that already has one.
+    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR}.3.0`)).toBe(true);
+    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR + 4}.0.0`)).toBe(true);
+    expect(remoteNodeIsUsable(`v${MIN_REMOTE_NODE_MAJOR - 4}.11.0`)).toBe(false);
+    expect(remoteNodeIsUsable(null)).toBe(false);
+    expect(remoteNodeIsUsable("not a version")).toBe(false);
+  });
+
   it("picks the official build for the remote's shape, gzip on POSIX and zip on Windows", () => {
     // .tar.gz rather than the smaller .tar.xz: xz is a separate binary minimal images lack,
     // and the far side has no runtime of ours yet to fall back on.
@@ -306,6 +338,11 @@ describe("ssh / scp invocations", () => {
     expect(runInstallerCommand("win32", "C:\\t", "node-v24.18.0-win-x64")).toBe(
       '"C:\\t\\node-v24.18.0-win-x64\\node.exe" "C:\\t\\remote-installer.cjs"',
     );
+  });
+
+  it("uses the remote's own node when no runtime was sent", () => {
+    expect(runInstallerCommand("linux", "/tmp/s", null)).toBe("node '/tmp/s/remote-installer.cjs'");
+    expect(runInstallerCommand("win32", "C:\\t", null)).toBe('node "C:\\t\\remote-installer.cjs"');
   });
 
   it("cleans up with each platform's own command", () => {

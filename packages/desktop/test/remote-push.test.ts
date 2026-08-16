@@ -151,6 +151,29 @@ posixOnly("installOnRemote", () => {
     expect(log.some((line) => line.includes("-win-x64.zip"))).toBe(true);
   });
 
+  it("sends no runtime when the remote's own node is new enough", async () => {
+    writeStubs({ probe: "Linux x86_64\\nv24.3.0\\n---penguin---\\n" });
+    const progress: string[] = [];
+    const outcome = await installOnRemote({
+      target,
+      sources: sources(),
+      localVersion: "9.9.9",
+      // Empty cache and a fetcher that would throw: proving the download never happens.
+      runtimeCacheDir: path.join(work, "empty-cache"),
+      fetchBuffer: noFetch,
+      onProgress: (line) => progress.push(line),
+    });
+
+    expect(outcome).toMatchObject({ kind: "installed" });
+    const log = calls();
+    expect(log.some((line) => line.includes("node-v"))).toBe(false); // nothing runtime-shaped
+    expect(log.some((line) => line.includes("tar -xf"))).toBe(false); // nothing to unpack
+    expect(
+      log.some((line) => line.includes("node '/tmp/remote-scratch/remote-installer.cjs'")),
+    ).toBe(true);
+    expect(progress).toContain("Using the Node v24.3.0 already on that machine.");
+  });
+
   it("does nothing when the remote already runs this exact build", async () => {
     writeStubs({ probe: 'Linux x86_64\\n---penguin---\\n{"version":"9.9.9"}\\n' });
     const outcome = await installOnRemote({
