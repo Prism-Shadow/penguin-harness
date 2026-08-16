@@ -3,7 +3,7 @@
  * (`scripts/watch-push.mjs`) compiles to one file and pushes to a waiting
  * runtime as this build's business platform.
  *
- * `platform`, `cli` (packages/cli/src/cli.ts), and the web dist are three
+ * `platform`, `cli` (packages/cli/src/index.ts), and the web dist are three
  * independently compiled artifacts pushed together in ONE atomic request to
  * POST /api/hmr/upgrade — see packages/server/src/hmr/host.ts's module doc for
  * why "one atomic push" does not mean "one physical bundle". This file's only
