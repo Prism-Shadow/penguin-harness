@@ -25,6 +25,20 @@ export const NODE_RUNTIME_VERSION = "v24.18.0";
 
 const DIST_BASE = "https://nodejs.org/dist";
 
+/**
+ * The oldest Node the program runs on. A remote whose own node clears this bar is used as
+ * is — no download, no ~30 MB transfer, no second copy of a runtime on that machine —
+ * which is the common case for a developer box and the whole reason the probe asks.
+ */
+export const MIN_REMOTE_NODE_MAJOR = 24;
+
+/** True when the remote's `node -v` is recent enough to run the image without a pushed runtime. */
+export function remoteNodeIsUsable(nodeVersion: string | null): boolean {
+  if (nodeVersion === null) return false;
+  const match = /^v?(\d+)\./.exec(nodeVersion.trim());
+  return match !== null && Number(match[1]) >= MIN_REMOTE_NODE_MAJOR;
+}
+
 export interface RuntimeArtifact {
   /** File name as published, which is also the cache key and the SHASUMS256 entry. */
   fileName: string;

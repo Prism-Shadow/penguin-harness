@@ -131,11 +131,16 @@ try {
   }
   fs.rmSync(path.join(staging, "__image"), { recursive: true, force: true });
 
-  log("Placing the runtime…");
-  // The runtime was unpacked beside this script by the bootstrap; move it under lib/ so the
-  // install owns it and nothing else on that machine is involved in running penguin.
-  fs.mkdirSync(path.join(staging, "lib"), { recursive: true });
-  fs.renameSync(path.join(here, job.runtimeDirName), path.join(staging, "lib", "runtime"));
+  // A runtime only travelled if this machine had no usable Node of its own; when it did,
+  // job.runtimeDirName is null and the install simply uses it (the launchers fall back to a
+  // system `node`, and the smoke test below runs on the one executing this script).
+  if (job.runtimeDirName) {
+    log("Placing the runtime…");
+    // Unpacked beside this script by the bootstrap; move it under lib/ so the install owns
+    // it and nothing else on that machine is involved in running penguin.
+    fs.mkdirSync(path.join(staging, "lib"), { recursive: true });
+    fs.renameSync(path.join(here, job.runtimeDirName), path.join(staging, "lib", "runtime"));
+  }
 
   const binDir = path.join(staging, "bin");
   fs.mkdirSync(binDir, { recursive: true });
@@ -144,12 +149,11 @@ try {
   if (!isWindows) fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 
   log("Checking the staged install…");
-  const nodeBin = path.join(
-    staging,
-    "lib",
-    "runtime",
-    ...(isWindows ? ["node.exe"] : ["bin", "node"]),
-  );
+  // The bundled runtime when there is one, otherwise the node already running this script —
+  // which is exactly the node the launcher will fall back to.
+  const nodeBin = job.runtimeDirName
+    ? path.join(staging, "lib", "runtime", ...(isWindows ? ["node.exe"] : ["bin", "node"]))
+    : process.execPath;
   const check = cp.spawnSync(
     nodeBin,
     [path.join(staging, "lib", "dist", "penguin.js"), "--version"],
@@ -188,7 +192,10 @@ try {
     }
   }
 
-  log(`PenguinHarness ${version} installed to ${programDir}`);
+  log(
+    `PenguinHarness ${version} installed to ${programDir}` +
+      (job.runtimeDirName ? " (with its own Node runtime)" : " (using this machine's Node)"),
+  );
   process.exit(0);
 } catch (err) {
   if (swapped && fs.existsSync(previous)) {
