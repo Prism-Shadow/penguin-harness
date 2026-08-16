@@ -54,21 +54,6 @@ if (existingLock) {
   process.exit(EXIT_ALREADY_RUNNING);
 }
 
-// Migration cleanup: older builds published a per-boot local-agent credential to
-// $PENGUIN_HOME/hmr/api.json ({ url, token }, mode 0600) so local tools could call the
-// hot platform APIs with a Bearer token instead of a cookie session. That file was a
-// plaintext admin-equivalent secret readable by anything running as this OS user —
-// including an agent's own shell/exec tools, which inherit both the user and
-// PENGUIN_HOME — making the file itself the vulnerability, not a mitigation for one.
-// The hot APIs now accept only the admin cookie session (see hmr/routes.ts); remove any
-// leftover copy unconditionally on every boot so a stale file can never linger as an
-// attack surface, regardless of which build last wrote it or how it exited.
-try {
-  fs.rmSync(path.join(config.root, "hmr", "api.json"), { force: true });
-} catch {
-  // Best-effort: nothing reads this file anymore either way.
-}
-
 const deps = buildAppDeps(config);
 // The database is open now: bring the dispatcher in line with the persisted proxy
 // settings (absent rows read as the defaults: app switch on, no explicit address)
