@@ -6,6 +6,7 @@
  * No network, no ssh binary.
  */
 import fs from "node:fs";
+import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -372,7 +373,7 @@ describe("resolvePayloadImage", () => {
       fs.writeFileSync(path.join(root, "lib", "runtime", "bin", "node"), "elf");
       fs.writeFileSync(path.join(root, "bin", "penguin"), "#!/bin/sh\n");
 
-      const image = resolvePayloadImage(path.join(root, "lib", "dist", "penguin.js"));
+      const image = resolvePayloadImage(null, path.join(root, "lib", "dist", "penguin.js"));
       expect(image?.version).toBe("9.9.9");
       const dest = path.join(work, "unpacked");
       const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
@@ -404,7 +405,7 @@ describe("resolvePayloadImage", () => {
       fs.writeFileSync(path.join(payload, "dist", "penguin.js"), "//\n");
       fs.writeFileSync(path.join(payload, "package.json"), manifest);
 
-      const image = resolvePayloadImage(path.join(serverDist, "index.js"));
+      const image = resolvePayloadImage(null, path.join(serverDist, "index.js"));
       expect(image?.version).toBe("9.9.9");
       const dest = path.join(work, "unpacked");
       const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
@@ -415,7 +416,88 @@ describe("resolvePayloadImage", () => {
   });
 
   it("a dev checkout has no pushable image", () => {
-    expect(resolvePayloadImage("/repo/packages/server/src/index.ts")).toBeNull();
-    expect(resolvePayloadImage(undefined)).toBeNull();
+    expect(resolvePayloadImage(null, "/repo/packages/server/src/index.ts")).toBeNull();
+    expect(resolvePayloadImage(null, undefined)).toBeNull();
+  });
+});
+
+describe("hmrPayloadImage", () => {
+  const seedStore = (work: string) => {
+    const hmrDir = path.join(work, "hmr");
+    fs.mkdirSync(path.join(hmrDir, "store", "cli"), { recursive: true });
+    fs.mkdirSync(path.join(hmrDir, "store", "web"), { recursive: true });
+    fs.writeFileSync(
+      path.join(hmrDir, "store", "cli", "cafe0123456789ab.mjs"),
+      "console.log('penguin');\n",
+    );
+    fs.writeFileSync(
+      path.join(hmrDir, "store", "web", "beef0123456789ab.webz"),
+      zlib.gzipSync(
+        Buffer.from(
+          JSON.stringify({
+            files: { "index.html": Buffer.from("<html>").toString("base64") },
+          }),
+        ),
+      ),
+    );
+    fs.writeFileSync(
+      path.join(hmrDir, "harness.json"),
+      JSON.stringify({
+        platform: { bundle: "store/platform/x.mjs", park: "store/platform/x.park.json" },
+        cli: { bundle: "store/cli/cafe0123456789ab.mjs" },
+        web: { manifest: "store/web/beef0123456789ab.webz" },
+      }),
+    );
+  };
+
+  it("assembles a complete image from the pushed version, sha-stamped", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    try {
+      seedStore(work);
+      const image = resolvePayloadImage(work, "/repo/packages/server/src/index.ts");
+      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
+      const dest = path.join(work, "unpacked");
+      const entries = unpackTo(image!.pack(), dest).map((entry) => entry.path);
+      expect(entries).toContain("penguin/lib/dist/penguin.js");
+      expect(entries).toContain("penguin/lib/package.json");
+      expect(entries).toContain("penguin/lib/web/index.html");
+      expect(fs.readFileSync(path.join(dest, "penguin", "lib", "web", "index.html"), "utf8")).toBe(
+        "<html>",
+      );
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(dest, "penguin", "lib", "package.json"), "utf8"),
+      ) as { version: string };
+      expect(manifest.version).toBe(image!.version);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("outranks the disk shapes — the pushed version is what this server runs", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    try {
+      seedStore(work);
+      // A valid tarball shape is offered too; the pushed version still wins.
+      const root = path.join(work, "penguin");
+      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(
+        path.join(root, "lib", "package.json"),
+        JSON.stringify({ name: "@prismshadow/penguin-cli", version: "9.9.9" }),
+      );
+      const image = resolvePayloadImage(work, path.join(root, "lib", "dist", "penguin.js"));
+      expect(image?.version).toBe("0.0.0-hmr.cafe01234567.beef01234567");
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it("a root without pushes answers null and the disk shapes take over", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-hmr-image-"));
+    try {
+      expect(resolvePayloadImage(work, undefined)).toBeNull();
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 });

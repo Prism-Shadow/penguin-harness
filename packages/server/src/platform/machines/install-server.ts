@@ -32,9 +32,11 @@ import {
 import type { RemoteTarget } from "./commands.js";
 import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "./detect.js";
 import type { RemoteIdentity } from "./detect.js";
+import zlib from "node:zlib";
 import { looksLikeAuthFailure, run } from "./exec.js";
 import { REMOTE_INSTALLER_SCRIPT } from "./installer-script.js";
-import { packDirectory } from "./pack.js";
+import { packDirectory, packFiles } from "./pack.js";
+import type { PackFile } from "./pack.js";
 import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
 
 /** Name the pack travels under, inside the scratch directory. */
@@ -65,22 +67,80 @@ function versionOfManifest(manifestPath: string): string | null {
 }
 
 /**
- * Finds the install image around the running process. Two real shapes, probed in order:
+ * The image assembled from the data root's OWN hot-pushed version — the FIRST choice: it
+ * is literally what this server runs. The pushed CLI bundle is a self-contained esbuild
+ * artifact carrying the whole program (server, platform, seam), and the web artifact is
+ * the dist the server serves from memory — so `lib/dist/penguin.js` + `lib/web/*` + a
+ * synthesized manifest IS a complete universal install, with no node_modules tree at all.
  *
- * 1. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
+ * The version is minted from the two artifacts' content shas (`0.0.0-hmr.<cli>.<web>`):
+ * the remote's installed manifest then equals ours exactly when it runs this pushed
+ * version, and the existing "different → replace" decision keeps remotes in step with
+ * every new push.
+ */
+export function hmrPayloadImage(dataRoot: string): PayloadImage | null {
+  try {
+    const hmrDir = path.join(dataRoot, "hmr");
+    const manifest = JSON.parse(fs.readFileSync(path.join(hmrDir, "harness.json"), "utf8")) as {
+      cli?: { bundle?: string };
+      web?: { manifest?: string };
+    };
+    if (typeof manifest.cli?.bundle !== "string" || typeof manifest.web?.manifest !== "string") {
+      return null;
+    }
+    const cliPath = path.join(hmrDir, manifest.cli.bundle);
+    const webzPath = path.join(hmrDir, manifest.web.manifest);
+    if (!fs.existsSync(cliPath) || !fs.existsSync(webzPath)) return null;
+    const sha = (p: string) => path.basename(p).split(".")[0]!.slice(0, 12);
+    const version = `0.0.0-hmr.${sha(cliPath)}.${sha(webzPath)}`;
+    return {
+      version,
+      pack: () => {
+        const files: PackFile[] = [
+          { path: "penguin/lib/dist/penguin.js", data: fs.readFileSync(cliPath) },
+          {
+            path: "penguin/lib/package.json",
+            data: Buffer.from(JSON.stringify({ name: "@prismshadow/penguin-cli", version }) + "\n"),
+          },
+        ];
+        // The web artifact is gzip(JSON.stringify({ files: { relPath: base64 } })) — the
+        // same bytes the push carried and the server serves from memory.
+        const webz = JSON.parse(zlib.gunzipSync(fs.readFileSync(webzPath)).toString("utf8")) as {
+          files: Record<string, string>;
+        };
+        for (const [rel, base64] of Object.entries(webz.files)) {
+          files.push({ path: `penguin/lib/web/${rel}`, data: Buffer.from(base64, "base64") });
+        }
+        return packFiles(files);
+      },
+    };
+  } catch {
+    return null; // No pushes yet, or a damaged store: the disk shapes below take over.
+  }
+}
+
+/**
+ * Finds the install image around the running server. Three real shapes, probed in order:
+ *
+ * 1. **The hot-pushed version** (hmrPayloadImage above) — what this server actually runs.
+ * 2. **Tarball install** — the CLI entry is `<root>/lib/dist/penguin.js` and `<root>` is the
  *    program directory itself; pack it under a `penguin/` prefix, leaving out `lib/runtime`
  *    (this machine's Node must not ride along in a universal image) and `bin` (the installer
  *    writes fresh launchers).
- * 2. **Desktop app** — the server entry is
+ * 3. **Desktop app** — the server entry is
  *    `<resources>/app/node_modules/@prismshadow/penguin-server/dist/index.js` and the staged
  *    universal image sits beside it at `<resources>/payload/penguin`.
  *
- * A dev checkout has neither and answers null: `node packages/desktop/scripts/stage.mjs`
- * plus a desktop run, or an installed build, are the shapes that can push themselves.
+ * Only a dev checkout that has never been pushed to has none of the three.
  */
 export function resolvePayloadImage(
+  dataRoot: string | null,
   argv1: string | undefined = process.argv[1],
 ): PayloadImage | null {
+  if (dataRoot !== null) {
+    const pushed = hmrPayloadImage(dataRoot);
+    if (pushed !== null) return pushed;
+  }
   if (!argv1) return null;
 
   // Tarball shape: <root>/lib/dist/<entry>.js

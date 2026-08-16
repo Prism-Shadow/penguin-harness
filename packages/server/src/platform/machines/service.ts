@@ -163,13 +163,13 @@ export class MachinesService {
       };
     }
 
-    const image = resolvePayloadImage();
+    const image = resolvePayloadImage(this.dataRoot);
     if (image === null) {
       return {
         ok: false,
         code: "no-image",
         message:
-          "This server carries no pushable install image (a dev checkout does not); connect from an installed build.",
+          "This server has nothing pushable: no hot-pushed version in its store, and no installed image on disk (a fresh dev checkout). Push once with scripts/deploy.mjs, or run an installed build.",
       };
     }
 
