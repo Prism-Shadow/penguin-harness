@@ -374,6 +374,23 @@ export function Sidebar({
   }, [userOpen]);
 
   /**
+   * Leave the current account for the login page. Parking keeps the session alive so it can
+   * be re-entered without a password — but only if the server can park it: an older build
+   * has no such endpoint, and landing on the login page with a live session would bounce
+   * straight back here (RequireAuth sees a user and redirects), which reads as "the menu
+   * item does nothing". So a failed park falls back to a real logout, and the reload happens
+   * either way.
+   */
+  const leaveForLoginPage = async () => {
+    try {
+      await api.parkSession();
+    } catch {
+      await logout().catch(() => undefined);
+    }
+    window.location.assign("/login");
+  };
+
+  /**
    * Activate another signed-in account: the server swaps the active token for the parked
    * one it already holds, then the whole document reloads onto it (same reason the switch
    * row reloads — nothing of the previous account's state may survive). A session that
@@ -2008,10 +2025,7 @@ export function Sidebar({
               className={menuItemClass}
               onClick={() => {
                 setUserOpen(false);
-                // Park, not log out: the current session stays valid so it can be switched
-                // back into without a password. finally, not then — if the request fails,
-                // the login page must not be skipped over.
-                void api.parkSession().finally(() => window.location.assign("/login"));
+                void leaveForLoginPage();
               }}
             >
               {S.auth.switchAccount}
