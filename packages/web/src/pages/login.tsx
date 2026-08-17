@@ -13,14 +13,15 @@
  *   click fills the username and focuses the password box; each row is removable on the spot.
  * Both blocks are absent until this browser has seen a sign-in, so a fresh install opens on the plain form.
  *
- * At the TOP of the card sits the MACHINE dimension: this page is the account chooser, and picking
+ * At the TOP of the card sits the SERVER dimension: this page is the account chooser, and picking
  * which machine's server to sign into comes first — machine, then account, then password. The rows
- * come from this server's /api/machines (platform-served; pre-auth only on a desktop-mode server,
- * so a multi-user server's login page shows none), plus the "back to" origin a switch arrived
- * from. An ssh config can declare hundreds of hosts, so only a handful show (live tunnels first,
- * then most recently connected — the server's order) and a search box reaches the rest. Picking
- * one runs the whole connect server-side (probe, auto-install, tunnel) and lands on THAT server's
- * own login page, where its accounts take over.
+ * come from the LOCAL server's /api/machines (platform-served; pre-auth only on a desktop-mode
+ * server). An ssh config can declare hundreds of hosts, so only a handful show (live tunnels
+ * first, then most recently connected — the server's order) and a search box reaches the rest.
+ * Picking one runs the whole connect server-side (probe, auto-install, tunnel) and then flips the
+ * ACTIVE SERVER (lib/server-context.ts): the window stays on this origin, this same page reloads,
+ * and every auth call — the parked jar, the password form — now speaks to THAT server through the
+ * local proxy. The "back to" row clears the active server.
  */
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
@@ -31,12 +32,11 @@ import { accountsForMachine, currentMachine, forgetAccount } from "../lib/known-
 import {
   getMachines,
   highlightSegments,
-  homeOrigin,
   matchMachines,
   MAX_VISIBLE_MACHINES,
   runConnect,
-  switchUrl,
 } from "../lib/machines";
+import { activeServerId, setActiveServer } from "../lib/server-context";
 import type { MachineTargetInfo } from "../lib/machines";
 import { useDocumentTitle } from "../lib/use-document-title";
 import { useAuth } from "../state/auth";
@@ -154,7 +154,7 @@ export function LoginPage() {
    * tell the user its own initial password.
    */
   const [initialAdmin, setInitialAdmin] = useState<{
-    origin: string;
+    alias: string;
     userId: string;
     password: string;
   } | null>(null);
@@ -172,9 +172,10 @@ export function LoginPage() {
     if (!open) setMachineQuery("");
   };
   const matchedMachines = matchMachines(machines, machineQuery);
+  /** The server this window currently looks at (null = the local one). */
+  const activeServer = activeServerId();
   const visibleMachines = matchedMachines.slice(0, MAX_VISIBLE_MACHINES);
   const hiddenMachineCount = matchedMachines.length - visibleMachines.length;
-  const home = homeOrigin();
   useEffect(() => {
     let cancelled = false;
     void getMachines()
@@ -196,10 +197,16 @@ export function LoginPage() {
    * world. A "port-conflict" answer stops for explicit consent (resolving it restarts the
    * remote server) and retries with allowRestart.
    */
+  /** Enter a server: flip the active-server state and reload — same shape as switching accounts. */
+  const enterServer = (id: string | null) => {
+    setActiveServer(id);
+    window.location.assign("/");
+  };
+
   const connectToMachine = async (machine: MachineTargetInfo, allowRestart = false) => {
     setMachineOpen(false);
     if (machine.origin !== null && !allowRestart) {
-      window.location.assign(switchUrl(machine.origin));
+      enterServer(machine.alias);
       return;
     }
     setConnectingMachine(machine.id);
@@ -209,12 +216,12 @@ export function LoginPage() {
       const result = await runConnect(machine.id, { allowRestart, onLog: setConnectLine });
       if (result.ok) {
         if (result.initialAdmin !== undefined) {
-          // Don't leave yet: the seeded password must be read (or noted) first.
-          setInitialAdmin({ origin: result.origin, ...result.initialAdmin });
+          // Don't switch yet: the seeded password must be read (or noted) first.
+          setInitialAdmin({ alias: machine.alias, ...result.initialAdmin });
           return;
         }
         setConnectLine(S.auth.machineConnected(machine.alias));
-        window.location.assign(switchUrl(result.origin));
+        enterServer(machine.alias);
         return;
       }
       if (result.code === "port-conflict") {
@@ -293,7 +300,7 @@ export function LoginPage() {
               candidates (matched characters bright, the rest dimmed; green dot = live
               tunnel, switching there is instant). While a connect runs the control is
               held by a spinner and the line below narrates the server's progress. */}
-          {(machines.length > 0 || home !== null) && (
+          {(machines.length > 0 || activeServer !== null) && (
             <div className="mb-5 border-b border-gray-100 pb-5 dark:border-gray-800">
               <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                 {S.auth.machines}
@@ -321,7 +328,7 @@ export function LoginPage() {
                       {connectingMachine !== null
                         ? (machines.find((m) => m.id === connectingMachine)?.alias ??
                           window.location.host)
-                        : window.location.host}
+                        : (activeServer ?? window.location.host)}
                     </span>
                     <ChevronDown className="shrink-0 text-gray-400" />
                   </button>
@@ -340,16 +347,16 @@ export function LoginPage() {
                     />
                   </div>
                 )}
-                {home !== null && machineQuery.trim() === "" && (
+                {activeServer !== null && machineQuery.trim() === "" && (
                   <button
                     type="button"
                     onClick={() => {
                       setMachineOpen(false);
-                      window.location.assign(`${home}/`);
+                      enterServer(null);
                     }}
                     className="block w-full truncate px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
-                    {S.auth.machineBack(new URL(home).host)}
+                    {S.auth.machineBack(window.location.host)}
                   </button>
                 )}
                 {visibleMachines.map(({ machine: m, positions }) => (
@@ -553,7 +560,7 @@ export function LoginPage() {
         onConfirm={() => {
           const target = initialAdmin;
           setInitialAdmin(null);
-          if (target !== null) window.location.assign(switchUrl(target.origin));
+          if (target !== null) enterServer(target.alias);
         }}
       >
         <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">

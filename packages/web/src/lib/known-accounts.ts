@@ -32,6 +32,8 @@
  * corrupted externally, so bad entries are dropped rather than crashing the login page.
  */
 
+import { activeServerId } from "./server-context";
+
 /** Minimal storage interface (the subset of localStorage this module uses). */
 export interface AccountStorage {
   getItem(key: string): string | null;
@@ -76,6 +78,10 @@ export const MAX_KNOWN_ACCOUNTS = 8;
 export function currentMachine(): string {
   const injected = typeof window === "undefined" ? undefined : window.__PENGUIN_MACHINE__;
   if (typeof injected === "string" && injected.trim() !== "") return injected.trim();
+  // Same-origin proxying means one origin hosts MANY servers' accounts: the active
+  // server's id is the machine, and only the local server falls back to the host.
+  const active = activeServerId();
+  if (active !== null) return active;
   return typeof location === "undefined" ? "" : location.host;
 }
 

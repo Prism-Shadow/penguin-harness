@@ -155,6 +155,20 @@ export class MachinesService {
     return { job: this.job };
   }
 
+  /**
+   * The live tunnel port for one machine — the proxy's per-request lookup, so it stays
+   * cheap: the in-memory tunnel first, else the state file's pid checked with one signal
+   * (no HTTP probe here — a stale port surfaces as the proxied request's own 502, which
+   * is both rarer and more honest than probing every request).
+   */
+  async tunnelPortFor(alias: string): Promise<number | null> {
+    const inMemory = this.tunnels.get(alias);
+    if (inMemory !== undefined) return inMemory.port;
+    const state = this.readState()[alias];
+    if (state?.tunnelPid === undefined || !pidAlive(state.tunnelPid)) return null;
+    return state.port;
+  }
+
   /** Starts a connect job; refuses while one runs. */
   startConnect(
     id: string,

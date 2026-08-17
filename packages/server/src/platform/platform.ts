@@ -28,6 +28,7 @@ import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { PlatformBundle } from "../hmr/host.js";
 import { ensureCliOnPath } from "./agent-cli-path.js";
 import { machinesHttp } from "./machines/http.js";
+import { machinesProxy } from "./machines/proxy.js";
 import { MachinesService } from "./machines/service.js";
 
 export interface PlatformApi extends Park {
@@ -62,10 +63,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // process's lifetime, so a hot-pushed bundle reads the same answer as the packaged one.
       desktopMode: process.env.PENGUIN_DESKTOP_TOKEN !== undefined,
     });
+    // `/server/<id>/api/…` — the same-origin proxy onto a connected machine's tunnel.
+    const serverProxy = machinesProxy((id) => machines.tunnelPortFor(id));
     // `http` rides beside the iface methods (not IN them: a Request/Response pair is not
     // Json) — the seam calls it in-process on the booted object. See ../hmr/http-seam.ts.
     return {
-      http: (request: Request) => machinesRoutes(request),
+      http: async (request: Request) =>
+        (await machinesRoutes(request)) ?? (await serverProxy(request)),
       park: () => ({ motd: context.motd }),
       info: () => ({
         impl: "packaged",

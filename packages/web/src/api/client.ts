@@ -7,6 +7,7 @@
  * notifies AuthProvider to clear the current user, letting the route guard redirect to the
  * login page — instead of each page popping its own "unauthorized" error.
  */
+import { apiUrl } from "../lib/server-context";
 import { S } from "../lib/strings";
 
 /** Unified API error: carries the HTTP status code and server error code (server error body {error:{code,message}}). */
@@ -40,6 +41,12 @@ export interface ApiFetchOptions {
   body?: unknown;
   /** Query parameters (undefined values are skipped). */
   query?: Record<string, string | number | undefined>;
+  /**
+   * Address the LOCAL server even when an active server is set. For the surfaces that are
+   * the local server's own by nature — the machines list and connect orchestration live
+   * where the tunnels do, whichever server the rest of the app is looking at.
+   */
+  local?: boolean;
 }
 
 /** Response metadata a caller may need alongside the parsed body. */
@@ -65,7 +72,9 @@ export async function apiFetchWithMeta<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<{ data: T } & ApiFetchMeta> {
-  let url = path;
+  // The one routing rule: an active server re-roots every /api call onto its proxy
+  // prefix (see lib/server-context.ts); `local: true` opts a call out.
+  let url = options.local === true ? path : apiUrl(path);
   if (options.query) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(options.query)) {

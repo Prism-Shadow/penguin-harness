@@ -1,16 +1,18 @@
 /**
- * The machines menu's client side: which machines this server can point the window at, and
- * the connect flow against the PLATFORM's `/api/machines` routes (served through the HTTP
- * seam, so the whole capability — list, probe, auto-install, tunnel — ships by hot push;
- * the shell contributes nothing but permission to navigate between loopback origins).
+ * The machines picker's client side: which machines the LOCAL server can reach, and the
+ * connect flow against its `/api/machines` routes (platform-served through the HTTP seam,
+ * so the whole capability — list, probe, auto-install, tunnel, proxy — ships by hot push;
+ * the shell contributes nothing at all).
+ *
+ * Every call here is `local: true`: the machines surface belongs to the local server —
+ * where the ssh config, the tunnels and the proxy live — whichever server the rest of the
+ * app is looking at. Switching is not a navigation any more: picking a machine sets the
+ * ACTIVE SERVER (lib/server-context.ts) and reloads the document; all API and SSE traffic
+ * then rides `/server/<id>/api/…` through the local proxy, and the window never leaves
+ * this origin.
  *
  * A server without the capability (an older platform, a non-admin session) answers 404 or
- * 403 — both read as "no machines to offer" and the menu section simply does not render.
- *
- * Switching lands on ANOTHER origin, so the page cannot come back by memory of its own —
- * localStorage is bucketed per origin. The navigation therefore carries `?penguinHome=`,
- * the origin it came from; the destination stores it (captureHomeOrigin, called once at
- * app start) and offers it as the way back.
+ * 403 — both read as "no machines to offer" and the picker simply does not render.
  */
 import { apiFetch } from "../api/client";
 
@@ -129,12 +131,13 @@ export interface MachinesResponse {
   job: ConnectJobState | null;
 }
 
-export const getMachines = () => apiFetch<MachinesResponse>("/api/machines");
+export const getMachines = () => apiFetch<MachinesResponse>("/api/machines", { local: true });
 
 export const connectMachine = (id: string, allowRestart = false) =>
   apiFetch<{ started: boolean }>("/api/machines/connect", {
     method: "POST",
     body: { id, allowRestart },
+    local: true,
   });
 
 /**
@@ -161,42 +164,4 @@ export async function runConnect(
     for (; seen < job.log.length; seen++) opts.onLog?.(job.log[seen]!);
     if (!job.running && job.result !== null) return job.result;
   }
-}
-
-/** localStorage key of the origin this window arrived FROM (per-origin, like all storage). */
-export const HOME_ORIGIN_KEY = "penguin.homeOrigin";
-
-/**
- * Captures `?penguinHome=` into localStorage and strips it from the address bar. Call once
- * at app start, before the router runs: the login redirect would otherwise drop the query
- * and with it the only way this origin learns where "back" is.
- */
-export function captureHomeOrigin(): void {
-  try {
-    const url = new URL(window.location.href);
-    const home = url.searchParams.get("penguinHome");
-    if (home === null) return;
-    if (/^https?:\/\//.test(home) && home !== window.location.origin) {
-      localStorage.setItem(HOME_ORIGIN_KEY, home);
-    }
-    url.searchParams.delete("penguinHome");
-    window.history.replaceState(null, "", url.toString());
-  } catch {
-    // Storage or URL trouble: the breadcrumb is a convenience, never a failure.
-  }
-}
-
-/** The origin to offer as "back", or null (not arrived from anywhere, or that IS here). */
-export function homeOrigin(): string | null {
-  try {
-    const stored = localStorage.getItem(HOME_ORIGIN_KEY);
-    return stored !== null && stored !== window.location.origin ? stored : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The URL a switch navigates to: the target origin, telling it where it came from. */
-export function switchUrl(targetOrigin: string): string {
-  return `${targetOrigin}/?penguinHome=${encodeURIComponent(window.location.origin)}`;
 }
