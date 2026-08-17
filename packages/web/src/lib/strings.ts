@@ -277,6 +277,8 @@ export const zh = {
     machineSearch: "搜索机器…",
     machineMore: (n: number): string => `还有 ${n} 台，输入名称筛选`,
     machineNoMatch: "没有匹配的机器",
+    /** 自连守卫:选中的 alias 解析到当前 server 所在的机器和账户。 */
+    machineSelf: "这个地址就是当前服务器所在的机器和账户，无需连接",
     /** 首次安装的远端:内置管理员的初始密码在跳转前展示一次,否则登录页无从进入。 */
     machineInitialTitle: "远端的首次登录密码",
     machineInitialNote: "这台机器是首次安装，用下面的内置管理员账号登录，登录后请尽快修改密码：",

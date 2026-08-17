@@ -117,7 +117,11 @@ export interface ConnectJobState {
         /** A fresh install's seeded admin sign-in — shown before leaving, or the remote's login page is a locked door. */
         initialAdmin?: { userId: string; password: string };
       }
-    | { ok: false; code?: "port-conflict" | "not-supported" | "no-image"; message: string };
+    | {
+        ok: false;
+        code?: "port-conflict" | "not-supported" | "no-image" | "self";
+        message: string;
+      };
 }
 
 export interface MachinesResponse {

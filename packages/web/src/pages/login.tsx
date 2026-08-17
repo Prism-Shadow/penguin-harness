@@ -221,7 +221,7 @@ export function LoginPage() {
         setRestartMachine(machine);
         return;
       }
-      setErrors({ form: result.message });
+      setErrors({ form: result.code === "self" ? S.auth.machineSelf : result.message });
     } catch (err) {
       setErrors({ form: apiErrorText(err) });
     } finally {

@@ -180,6 +180,17 @@ export function readInitialPasswordCommand(): string {
 }
 
 /**
+ * The remote's identity as `<machine>:<account>` — machine-id where the OS keeps one,
+ * hostname otherwise. Compared with this server's own fingerprint to refuse SELF-connects:
+ * an alias that resolves to the machine and account this server already runs on would
+ * install over its own program directory, and the port-conflict path could kill the very
+ * server serving the request.
+ */
+export function identityFingerprintCommand(): string {
+  return `mid=$(cat /etc/machine-id 2>/dev/null || hostname 2>/dev/null); echo "$mid:$(id -un 2>/dev/null)"`;
+}
+
+/**
  * `ssh -N -L <port>:127.0.0.1:<port> <alias>` — the tunnel that makes the remote server a
  * loopback origin here. Local and remote port are the SAME number by design: preview URLs are
  * built from the server's own bound port (preview-token.ts), so the two must stay equal.

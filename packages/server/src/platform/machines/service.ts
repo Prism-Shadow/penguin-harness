@@ -14,9 +14,10 @@
  * surfaces on the next connect attempt rather than through a watchdog.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { listHostAliases, resolveTarget } from "./targets.js";
-import { readInitialPasswordCommand, sshArgs } from "./commands.js";
+import { identityFingerprintCommand, readInitialPasswordCommand, sshArgs } from "./commands.js";
 import type { RemoteTarget } from "./commands.js";
 import { run } from "./exec.js";
 import { detectRemote, installOnRemote, resolvePayloadImage } from "./install-server.js";
@@ -40,7 +41,42 @@ export interface MachineTargetInfo {
   origin: string | null;
 }
 
-export type ConnectFailureCode = "port-conflict" | "not-supported" | "no-image";
+export type ConnectFailureCode = "port-conflict" | "not-supported" | "no-image" | "self";
+
+/**
+ * This machine-and-account's fingerprint, in the same `<machine>:<account>` shape the
+ * remote prints (identityFingerprintCommand). Machine-id where the OS keeps one, hostname
+ * otherwise; empty machine part when neither exists.
+ */
+export function localIdentityFingerprint(): string {
+  let machine = "";
+  try {
+    machine = fs.readFileSync("/etc/machine-id", "utf8").trim();
+  } catch {
+    machine = os.hostname();
+  }
+  let user = "";
+  try {
+    user = os.userInfo().username;
+  } catch {
+    // Leave empty: an unknown local user can never equal a concrete remote one.
+  }
+  return `${machine}:${user}`;
+}
+
+/**
+ * True when the two fingerprints name the same machine AND account. A fingerprint with an
+ * empty machine or account part matches nothing — better to let an exotic host through
+ * than to refuse a real remote on a blank answer. Same machine with a DIFFERENT account
+ * is a legitimate target by design: each account has its own ~/.penguin, hence its own
+ * server.
+ */
+export function isSelfFingerprint(remote: string, local: string): boolean {
+  const [remoteMachine, remoteUser] = remote.split(":");
+  const [localMachine, localUser] = local.split(":");
+  if (!remoteMachine || !remoteUser || !localMachine || !localUser) return false;
+  return remoteMachine === localMachine && remoteUser === localUser;
+}
 
 export interface ConnectJobState {
   machineId: string;
@@ -186,6 +222,24 @@ export class MachinesService {
         ok: false,
         code: "not-supported",
         message: `${alias} is a Windows machine; starting a detached server from a cmd.exe ssh session is not supported yet.`,
+      };
+    }
+
+    // The self-guard: an alias resolving to the machine and account this server already
+    // runs on would install over its own program directory, and the port-conflict path
+    // could kill the very server serving this request. One extra round trip, only on
+    // connect. Same machine + different account passes — that IS another target.
+    const fingerprint = await run("ssh", sshArgs(target, identityFingerprintCommand()), {
+      timeoutMs: 30_000,
+    });
+    if (
+      fingerprint.code === 0 &&
+      isSelfFingerprint(fingerprint.stdout.trim(), localIdentityFingerprint())
+    ) {
+      return {
+        ok: false,
+        code: "self",
+        message: `"${alias}" resolves to the machine and account this server already runs on — you are already here.`,
       };
     }
 

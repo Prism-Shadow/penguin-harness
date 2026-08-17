@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  identityFingerprintCommand,
   readServerStateCommand,
   SERVER_ALIVE_MARK,
   serverLogTailCommand,
@@ -17,6 +18,7 @@ import {
   stopServerCommand,
   tunnelArgs,
 } from "../src/platform/machines/commands.js";
+import { isSelfFingerprint, localIdentityFingerprint } from "../src/platform/machines/service.js";
 import {
   parseRemoteServerState,
   remoteServerState,
@@ -73,6 +75,31 @@ describe("server-control commands", () => {
   it("tails the log without failing when there is none", () => {
     expect(serverLogTailCommand()).toContain("server.log");
     expect(serverLogTailCommand()).toContain("|| true");
+  });
+
+  it("fingerprints machine and account, machine-id first, hostname as the fallback", () => {
+    expect(identityFingerprintCommand()).toContain("/etc/machine-id");
+    expect(identityFingerprintCommand()).toContain("hostname");
+    expect(identityFingerprintCommand()).toContain("id -un");
+  });
+});
+
+describe("self-connect guard", () => {
+  it("refuses only the same machine AND account", () => {
+    expect(isSelfFingerprint("abc123:kamiyoru", "abc123:kamiyoru")).toBe(true);
+    // Another account on the same machine IS another target: its own ~/.penguin.
+    expect(isSelfFingerprint("abc123:deploy", "abc123:kamiyoru")).toBe(false);
+    expect(isSelfFingerprint("other456:kamiyoru", "abc123:kamiyoru")).toBe(false);
+  });
+
+  it("a blank machine or account part matches nothing", () => {
+    expect(isSelfFingerprint(":kamiyoru", ":kamiyoru")).toBe(false);
+    expect(isSelfFingerprint("abc123:", "abc123:")).toBe(false);
+    expect(isSelfFingerprint("", "")).toBe(false);
+  });
+
+  it("the local fingerprint has the same shape the remote prints", () => {
+    expect(localIdentityFingerprint()).toMatch(/^.*:.+$/);
   });
 });
 
