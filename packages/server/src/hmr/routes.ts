@@ -25,7 +25,7 @@ import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 
-/** Bind addresses considered safe by default; anything else needs HTTPS or the explicit override. */
+/** Bind addresses considered safe by default; anything else needs HTTPS. */
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -38,18 +38,17 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
   const cookieAuth = authMiddleware(deps.authService);
 
   routes.use("*", async (c, next) => {
-    // Dangerous-network default-off: hot APIs load and run code, so on a
-    // non-loopback bind (e.g. 0.0.0.0) without HTTPS they answer 403 unless
-    // explicitly overridden (PENGUIN_HMR_API_UNSAFE=1).
+    // Dangerous-network off: hot APIs load and run code, so on a non-loopback
+    // bind (e.g. 0.0.0.0) without HTTPS they answer 403. There is no override.
     if (!LOOPBACK_HOSTS.has(deps.config.host.toLowerCase())) {
       const proto =
         c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
-      if (proto !== "https" && process.env.PENGUIN_HMR_API_UNSAFE !== "1") {
+      if (proto !== "https") {
         throw new HttpError(
           403,
           "hmr_disabled",
           "Hot platform APIs are disabled on a non-loopback bind without HTTPS. " +
-            "Serve over HTTPS or set PENGUIN_HMR_API_UNSAFE=1 to override.",
+            "Serve over HTTPS to enable them.",
         );
       }
     }
