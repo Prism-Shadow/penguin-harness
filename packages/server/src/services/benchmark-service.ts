@@ -22,6 +22,8 @@ import type {
   BenchmarkCaseSummary,
   BenchmarkCasesResponse,
   BenchmarkEvaluation,
+  BenchmarkProvenance,
+  BenchmarkProvenanceSkill,
   BenchmarkRunScore,
   BenchmarkSummary,
   BenchmarksResponse,
@@ -138,6 +140,51 @@ function toCase(v: unknown): BenchmarkCaseScore | null {
   };
 }
 
+/** Shapes a single skill fingerprint entry; a bad entry (missing name/sha) returns null and is dropped. */
+function toProvenanceSkill(v: unknown): BenchmarkProvenanceSkill | null {
+  const r = asRecord(v);
+  const name = stringOr(r.name);
+  const sha = stringOr(r.sha256);
+  if (name === undefined || sha === undefined) return null;
+  const version = numberOr(r.version) ?? 1;
+  return { name, version, sha256: sha };
+}
+
+/**
+ * Shapes the provenance block (scoreboard stores it snake_case; the DTO is camelCase). The
+ * top-level `agent_sha256` is the minimum requirement — without it the block carries no
+ * reproducibility value, so the whole block is dropped (undefined) rather than partially kept.
+ * Every other field tolerates being absent.
+ */
+function toProvenance(v: unknown): BenchmarkProvenance | undefined {
+  const r = asRecord(v);
+  const agentSha256 = stringOr(r.agent_sha256);
+  if (agentSha256 === undefined) return undefined;
+  const skills: BenchmarkProvenanceSkill[] = Array.isArray(r.skills)
+    ? r.skills.map(toProvenanceSkill).filter((s): s is BenchmarkProvenanceSkill => s !== null)
+    : [];
+  const modelRec = asRecord(r.model);
+  const modelProvider = stringOr(modelRec.provider);
+  const modelId = stringOr(modelRec.model_id);
+  const model =
+    modelProvider !== undefined && modelId !== undefined
+      ? { provider: modelProvider, modelId }
+      : undefined;
+  const thinkingLevel = stringOr(r.thinking_level);
+  return {
+    provenanceVersion: numberOr(r.provenance_version) ?? 1,
+    version: numberOr(r.version) ?? 1,
+    systemPromptSha256: stringOr(r.system_prompt_sha256) ?? "",
+    agentsMdSha256: stringOr(r.agents_md_sha256) ?? "",
+    toolsSha256: stringOr(r.tools_sha256) ?? "",
+    skills,
+    skillsSha256: stringOr(r.skills_sha256) ?? "",
+    ...(model !== undefined ? { model } : {}),
+    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+    agentSha256,
+  };
+}
+
 /** Shapes one current-format Evaluation and trusts its stored aggregate metrics. */
 function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const r = asRecord(v);
@@ -153,6 +200,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const provider = stringOr(r.provider);
   const thinkingLevel = stringOr(r.thinking_level);
   const version = nonNegativeIntegerOr(r.version);
+  const provenance = toProvenance(r.provenance);
   if (
     typeof time !== "string" ||
     time === "" ||
@@ -183,6 +231,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
     version,
     cost,
     durationMs,
+    ...(provenance !== undefined ? { provenance } : {}),
     cases,
   };
 }

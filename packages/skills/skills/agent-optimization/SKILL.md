@@ -3,7 +3,7 @@ name: agent-optimization
 description: Improve an Agent State through versioned scores and score-linked Traces from a frozen Benchmark.
 short_description: Improve an Agent from measured Benchmark results.
 short_description_zh: 根据 Benchmark 结果改进 Agent。
-version: 9
+version: 10
 updated: 2026-08-04T00:00:00Z
 ---
 
@@ -113,6 +113,7 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
   score: <average of the Case scores>
   cost: <average of known Case costs, or null when every Case cost is null>
   duration_ms: <average of the Case durations>
+  provenance: <block captured with `penguin provenance`, see below>
   cases:
     - case: <case_id>
       score: <average of the Run scores>
@@ -124,6 +125,15 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
           duration_ms: <Run duration>
           session_id: <Test Session id>
 ```
+
+The `provenance` block is a content-derived reproducibility fingerprint of the tested Candidate State. Never hand-compute or invent its hashes — `version` alone is a human-assigned counter, so two rounds that forget to bump it look identical, whereas the fingerprint's `agent_sha256` distinguishes them and its per-part hashes (`system_prompt_sha256` / `agents_md_sha256` / `tools_sha256` / `skills_sha256`) localize what changed. Before appending, with the accepted Candidate State still active, capture it deterministically:
+
+```bash
+penguin provenance --agent-id <test_agent_id> --project-id "$PROJECT_ID" \
+  --provider <provider> --model-id <model_id> --format yaml
+```
+
+Nest the returned block under `provenance:` verbatim (do not edit its hashes). Its `version` must equal the Candidate version you evaluated; if it does not, the State changed under you — stop without appending. Capture the no-edit Reference Evaluation the same way at its own version.
 
 After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation before reporting success or continuing.
 

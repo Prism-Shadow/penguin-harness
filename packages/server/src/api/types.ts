@@ -1690,6 +1690,31 @@ export interface BenchmarkCaseScore {
   runs: BenchmarkRunScore[];
 }
 
+/** A single installed skill's fingerprint (part of provenance). */
+export interface BenchmarkProvenanceSkill {
+  name: string;
+  version: number;
+  sha256: string;
+}
+
+/**
+ * Content-derived provenance fingerprint attached to an evaluation (the camelCase DTO of core's
+ * AgentProvenance; on disk the scoreboard stores it snake_case). `agentSha256` answers "did the
+ * Agent config change between rounds?"; the per-part hashes localize what changed.
+ */
+export interface BenchmarkProvenance {
+  provenanceVersion: number;
+  version: number;
+  systemPromptSha256: string;
+  agentsMdSha256: string;
+  toolsSha256: string;
+  skills: BenchmarkProvenanceSkill[];
+  skillsSha256: string;
+  model?: { provider: string; modelId: string };
+  thinkingLevel?: string;
+  agentSha256: string;
+}
+
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
@@ -1711,6 +1736,8 @@ export interface BenchmarkEvaluation {
   cost: number | null;
   /** Model-written average of Case durations, rounded to an integer. */
   durationMs: number;
+  /** Content-derived reproducibility fingerprint of the Agent under test (optional; legacy records lack it). */
+  provenance?: BenchmarkProvenance;
   cases: BenchmarkCaseScore[];
 }
 

@@ -77,6 +77,12 @@ export interface Messages {
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
   };
+  provenance: {
+    desc: string;
+    format: string;
+    provider: string;
+    modelId: string;
+  };
   chat: { desc: string; resume: string };
   serve: {
     serverDesc: string;
@@ -342,6 +348,12 @@ const en: Messages = {
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
   },
+  provenance: {
+    desc: "Print the Agent's content-derived reproducibility fingerprint (for scoreboard records)",
+    format: "Output format: yaml (default) or json",
+    provider: "Provider group of the evaluation model (folded into the fingerprint; pairs with --model-id)",
+    modelId: "Upstream model id of the evaluation model (pairs with --provider)",
+  },
   chat: {
     desc: "Open the interactive REPL",
     resume:
@@ -583,6 +595,12 @@ const zh: Messages = {
     desc: "单次运行一个 Task",
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
+  },
+  provenance: {
+    desc: "打印 Agent 的内容派生可复现指纹（用于 scoreboard 记录）",
+    format: "输出格式：yaml（缺省）或 json",
+    provider: "评测模型的 provider 分组（并入指纹；与 --model-id 配对）",
+    modelId: "评测模型的上游 model id（与 --provider 配对）",
   },
   chat: {
     desc: "打开交互式 REPL",
