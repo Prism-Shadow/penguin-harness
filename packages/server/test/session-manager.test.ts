@@ -350,7 +350,7 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     const steerErr = (text: string): unknown => {
       try {
-        manager.steer("session-1", [userText(text)], { text, images: 0, files: 0 });
+        manager.steer("session-1", [userText(text)], { text, images: [], files: [] });
         return null;
       } catch (e) {
         return e;
@@ -402,11 +402,18 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     // Two queued steering messages: the mirror keeps both, in queue order.
-    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: 0, files: 0 });
-    manager.steer("session-1", [userText("b")], { text: "later", images: 1, files: 2 });
+    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: [], files: [] });
+    manager.steer("session-1", [userText("b")], {
+      text: "later",
+      images: ["data:image/png;base64,aa"],
+      files: [
+        { fileName: "a.txt", path: "/tmp/a.txt", mime: "text/plain" },
+        { fileName: "b.txt", path: "/tmp/b.txt", mime: "text/plain" },
+      ],
+    });
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "focus on tests", images: 0, files: 0 },
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "focus on tests", images: 0, files: 0 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // First delivery observed on the stream: the mirror shifts while the run is still going.
@@ -414,7 +421,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingSteeringOf("session-1").length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // Run end: core discards undelivered steering, and the mirror goes with it.

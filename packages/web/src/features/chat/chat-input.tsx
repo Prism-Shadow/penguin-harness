@@ -69,7 +69,9 @@ import type {
   ApprovalMode,
   ModelInfo,
   ModelRefDto,
+  PendingFollowUpInfo,
   PendingSteeringInfo,
+  RecalledMessageResponse,
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
@@ -817,14 +819,53 @@ function readDataUrl(file: File): Promise<string | null> {
  * One place, because every send path submits the same draft: the normal send, the follow-up
  * queue, the @ handoff and the `/model` switch.
  */
+/** Approximate decoded byte size of a base64 data URL (for the recalled attachment's chip; display only). */
+function dataUrlBytes(dataUrl: string): number {
+  const body = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[=\s]+/g, "");
+  return Math.floor((body.length * 3) / 4);
+}
+
 /** One-line summary of a queued steering message: its text, then image/file counts for what the text cannot show. */
-function steeringSummary(p: PendingSteeringInfo): string {
+function steeringSummary(p: { text: string; images: number; files: number }): string {
   const parts: string[] = [];
   const line = p.text.replace(/\s+/g, " ").trim();
   if (line) parts.push(line);
   if (p.images > 0) parts.push(S.chat.imagesInMessage(p.images));
   if (p.files > 0) parts.push(S.chat.filesInMessage(p.files));
   return parts.join(" \u00b7 ");
+}
+
+/**
+ * One queued-message hint line (undelivered steering / queued follow-up) with its recall
+ * button (#287): the button withdraws the message server-side and puts its content back into
+ * the input box for editing and resending. No button when the channel offers no recall
+ * (old server: entries without ids, or no handler supplied).
+ */
+function QueuedMessageLine({
+  label,
+  onRecall,
+  disabled,
+}: {
+  label: string;
+  onRecall?: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-baseline gap-1.5">
+      <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onRecall && (
+        <button
+          type="button"
+          title={S.chat.recallQueuedTitle}
+          disabled={disabled}
+          onClick={onRecall}
+          className="shrink-0 text-xs text-gray-400 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:underline disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-200"
+        >
+          {S.chat.recallQueued}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function appendAttachmentParts(
@@ -844,8 +885,11 @@ export function ChatInput({
   onSteer,
   steeringDeliveredCount,
   pendingSteering = [],
+  onRecallSteering,
   onQueueFollowUp,
   queuedFollowUps = 0,
+  pendingFollowUps = [],
+  onRecallFollowUp,
   onStop,
   onCompact,
   modelRef,
@@ -917,6 +961,13 @@ export function ChatInput({
    */
   pendingSteering?: PendingSteeringInfo[];
   /**
+   * Recall an undelivered steering message (#287): resolves to its original content, which
+   * this component restores into the draft (text / images / files), or null when the recall
+   * failed (already delivered — the parent toasts). Renders the recall button on each
+   * pending-steering line when supplied.
+   */
+  onRecallSteering?: (steerId: string) => Promise<RecalledMessageResponse | null>;
+  /**
    * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
    * session holds it server-side and auto-sends it as an ordinary next task once the current
    * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
@@ -925,6 +976,14 @@ export function ChatInput({
   onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
   /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
   queuedFollowUps?: number;
+  /**
+   * Queued follow-up tasks with per-entry content (from task_state): renders one line each —
+   * with a recall button — instead of the bare count; empty on old servers (the count hint
+   * stays as the fallback).
+   */
+  pendingFollowUps?: PendingFollowUpInfo[];
+  /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
+  onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -1288,6 +1347,56 @@ export function ChatInput({
       setSteerPending(false);
     }
   }, [steerPending, running, steeringDeliveredCount]);
+
+  // Recall a queued message back into the draft (#287): the server withdraws the entry and
+  // returns its original content. One recall at a time; the id doubles as the busy flag so
+  // every recall button disables while one is in flight.
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+  /** Restores recalled content into the draft: its text goes in FRONT of whatever is currently typed (it was composed first), attachments likewise; caret parked at the end, applyHistory-style. */
+  const applyRecalled = (r: RecalledMessageResponse) => {
+    const merged = text.trim() ? (r.text ? `${r.text}\n${text}` : text) : r.text;
+    setText(merged);
+    onTextChange?.(merged);
+    setCaret(merged.length);
+    if (r.images.length > 0) setImages((prev) => [...r.images, ...prev]);
+    if (r.files.length > 0) {
+      setAttachments((prev) => [
+        ...r.files.map((f) => ({
+          name: f.fileName,
+          size: dataUrlBytes(f.dataUrl),
+          dataUrl: f.dataUrl,
+        })),
+        ...prev,
+      ]);
+    }
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+  };
+  const recallQueued = async (
+    id: string,
+    recall: (id: string) => Promise<RecalledMessageResponse | null>,
+  ) => {
+    // `busy` too: a send in flight is about to clear the draft, which would wipe the
+    // restored content if the recall slid in between.
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      const r = await recall(id);
+      if (r) {
+        // The mirror entry is gone server-side; drop the local post-202 bridge flag with it,
+        // or the bare "steering queued" hint would resurrect once pendingSteering empties.
+        setSteerPending(false);
+        applyRecalled(r);
+      }
+    } finally {
+      setRecallingId(null);
+    }
+  };
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -2066,14 +2175,20 @@ export function ChatInput({
 
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
-          #140). The local steerPending flag only bridges the gap between the 202 and the
-          first task_state that carries the mirror. */}
+          #140) — plus a recall button that takes the message back into this input for
+          editing and resending (#287). The local steerPending flag only bridges the gap
+          between the 202 and the first task_state that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
-            <p key={i} className="truncate text-xs text-gray-400 dark:text-gray-500">
-              {S.chat.steerQueuedItem(steeringSummary(p))}
-            </p>
+            <QueuedMessageLine
+              key={p.id ?? i}
+              label={S.chat.steerQueuedItem(steeringSummary(p))}
+              disabled={recallingId !== null}
+              {...(onRecallSteering && p.id
+                ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+            />
           ))}
         </div>
       ) : (
@@ -2084,12 +2199,29 @@ export function ChatInput({
         )
       )}
 
-      {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
-          task_state — survives reloads because the queue lives on the server. */}
-      {queuedFollowUps > 0 && (
-        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
-          {S.chat.followUpQueuedChip(queuedFollowUps)}
-        </p>
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
+          queued message with its content and a recall button (#287) — task_state-fed, so it
+          survives reloads; the bare count stays as the fallback for a server that predates
+          the per-entry list. */}
+      {pendingFollowUps.length > 0 ? (
+        <div className="anim-fade mb-1">
+          {pendingFollowUps.map((p) => (
+            <QueuedMessageLine
+              key={p.id}
+              label={S.chat.followUpQueuedItem(steeringSummary(p))}
+              disabled={recallingId !== null}
+              {...(onRecallFollowUp
+                ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+            />
+          ))}
+        </div>
+      ) : (
+        queuedFollowUps > 0 && (
+          <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.followUpQueuedChip(queuedFollowUps)}
+          </p>
+        )
       )}
 
       {/* Auth-dead session (model credentials failed): slim notice above the composer, same

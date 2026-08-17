@@ -1035,6 +1035,40 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  // Recall a queued message back into the composer (#287): the DELETE returns the original
+  // content (text / images / files) and the input area restores it as the draft. A 409
+  // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
+  // the queued hint retires on its own via the re-broadcast task_state.
+  const onRecallSteering = useCallback(
+    async (steerId: string) => {
+      if (!selected) return null;
+      try {
+        return await api.recallSteer(selected.sessionId, steerId);
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected],
+  );
+
+  const onRecallFollowUp = useCallback(
+    async (followUpId: string) => {
+      if (!selected) return null;
+      try {
+        const res = await api.recallFollowUp(selected.sessionId, followUpId);
+        // The follow-up was queued with a per-turn thinking level: restore it with the draft,
+        // so an unedited resend goes out exactly as it was queued.
+        if (res.thinkingLevel) setTurnThinkingLevel(res.thinkingLevel);
+        return res;
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected],
+  );
+
   const onApprove = useCallback(
     async (toolCallId: string, decision: "allow" | "deny", origin: string[]) => {
       if (!selected) return;
@@ -1212,8 +1246,11 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
+      pendingFollowUps={stream.pendingFollowUps}
+      onRecallFollowUp={onRecallFollowUp}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}

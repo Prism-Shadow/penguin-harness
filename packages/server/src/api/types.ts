@@ -1033,12 +1033,50 @@ export interface SteerRequest {
  * stream, and the whole list drops when the run exits (core discards undelivered steering).
  */
 export interface PendingSteeringInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
+  id: string;
   /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
   text: string;
   /** Number of images that rode along. */
   images: number;
   /** Number of file attachments that rode along. */
   files: number;
+}
+
+/**
+ * One follow-up task queued with `queueIfBusy` but not yet auto-started. Carried on
+ * `task_state` events and the SSE subscribe snapshot (like `pendingSteering`) so the
+ * composer can show each queued message's content with a recall affordance; entries leave
+ * the list when they auto-start on idle — or when DELETE /follow-ups/:followUpId recalls one.
+ */
+export interface PendingFollowUpInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
+  id: string;
+  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images in the queued input. */
+  images: number;
+  /** Number of file attachments in the queued input. */
+  files: number;
+}
+
+/**
+ * Response of the two recall endpoints — DELETE /api/sessions/:id/steer/:steerId and
+ * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
+ * for the composer to restore into the input box for editing and resending (#287). File
+ * attachments are read back from the Session scratchpad (then deleted from it); one that
+ * disappeared meanwhile is omitted rather than failing the recall. 409 `not_pending` when
+ * the entry is no longer queued — steering already delivered to the model, or a follow-up
+ * already auto-started (or unknown id either way).
+ */
+export interface RecalledMessageResponse {
+  text: string;
+  /** The images as submitted (`data:` / http(s) URLs). */
+  images: string[];
+  /** The file attachments, re-encoded as base64 data URLs (the shape the composer submits them in). */
+  files: { fileName: string; dataUrl: string }[];
+  /** Follow-up recall only: the per-turn thinking level the entry was queued with, when one was. */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export interface ApprovalDecisionRequest {
@@ -1092,6 +1130,8 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
+      pendingFollowUps?: PendingFollowUpInfo[];
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }

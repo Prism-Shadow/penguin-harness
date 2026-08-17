@@ -99,4 +99,53 @@ describe("follow-up queue route", () => {
     t.deps.manager.decideApproval(SID, "tc-fu", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
+
+  it("recall (#287): DELETE withdraws a queued follow-up with its content and thinking level; the rest auto-start", async () => {
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const png = "data:image/png;base64,AAAA";
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        { type: "text", text: "follow-up 1" },
+        { type: "image_url", imageUrl: png },
+      ],
+      queueIfBusy: true,
+      thinkingLevel: "high",
+    });
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "follow-up 2" }],
+      queueIfBusy: true,
+    });
+    const pending = t.deps.manager.pendingFollowUpsOf(SID);
+    expect(pending).toEqual([
+      { id: expect.any(String), text: "follow-up 1", images: 1, files: 0 },
+      { id: expect.any(String), text: "follow-up 2", images: 0, files: 0 },
+    ]);
+
+    // The recall returns the original content plus the per-turn level it was queued with.
+    const res = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      text: "follow-up 1",
+      images: [png],
+      files: [],
+      thinkingLevel: "high",
+    });
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(1);
+
+    // Recalled means never started: only the remaining follow-up auto-starts.
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => runs.length === 2);
+    expect(runs[1]).toEqual(["follow-up 2"]);
+
+    // Gone (recalled or auto-started) → 409 not_pending.
+    const again = await api.delete(`/api/sessions/${SID}/follow-ups/${pending[0]!.id}`);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
 });
