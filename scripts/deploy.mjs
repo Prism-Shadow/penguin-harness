@@ -266,6 +266,15 @@ async function main() {
         "It is live now but will REVERT on the target's next restart — check the target's disk/permissions.",
     );
   }
+  // The fingerprint an open page can be checked against: Vite stamps the entry with a
+  // content hash, so "is my window running THIS push?" is one console line away —
+  //   document.querySelector('script[src*="assets/index-"]').src
+  // A runtime older than the SPA caching contract (no-cache + ETag on index.html) may
+  // keep serving a stale page to an already-open window; the hard refresh clears it.
+  const entry = /assets\/index-[\w-]+\.js/.exec(
+    Buffer.from(files["index.html"], "base64").toString("utf8"),
+  )?.[0];
+  if (entry) log(`this push's web entry: ${entry} — hard-refresh open windows to pick it up`);
 }
 
 main()
