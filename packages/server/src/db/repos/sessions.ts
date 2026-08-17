@@ -74,6 +74,35 @@ export class SessionsRepo {
   }
 
   /**
+   * Allocate the source Session's next persistent fork number and insert its fork atomically.
+   * Keeping both writes in one transaction prevents concurrent requests from sharing a number,
+   * while retaining `fork_count` on the source means deleting an older fork never reuses it.
+   */
+  insertFork(sourceSessionId: string, row: SessionRow): SessionRow {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const source = this.db
+        .prepare(
+          `UPDATE sessions SET fork_count = fork_count + 1 WHERE session_id = ?
+           RETURNING title, fork_count`,
+        )
+        .get(sourceSessionId) as { title: string | null; fork_count: number } | undefined;
+      if (!source) throw new Error(`Source Session not found: ${sourceSessionId}`);
+
+      const forkTitle = source.title
+        ? `${source.title} ·分支(${source.fork_count})`
+        : `分支(${source.fork_count})`;
+      const forkRow = { ...row, title: forkTitle };
+      this.runInsert("INSERT", forkRow);
+      this.db.exec("COMMIT");
+      return forkRow;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
    * The two inserts' shared column list and binding order (they differ only in conflict
    * handling). `last_active_at` defaults **in SQL** (`COALESCE(?, ?)` over the row's own
    * created_at, bound twice — SQLite forbids referencing a sibling column inside VALUES,

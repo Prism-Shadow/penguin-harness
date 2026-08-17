@@ -11,7 +11,10 @@ proves it.
 - [x] Streaming replies, user messages, nested subagent replies, and turns without a completed
       assistant reply do not expose the action.
 - [x] Clicking **Fork** creates a new Session for the same Project and Agent.
-- [x] The fork keeps the source Session's model reference, Workspace, approval mode, and title.
+- [x] The fork keeps the source Session's model reference, Workspace, and approval mode. Its title
+      is the current source title plus ` ·分支(n)` (`分支(n)` when the source has no stored title).
+- [x] All forks made directly from the same source Session share one increasing sequence, even when
+      they are cut at different replies: `·分支(1)`, `·分支(2)`, `·分支(3)`, and so on.
 - [x] The forked transcript contains the source transcript through the selected completed turn,
       including its tool calls/results, and excludes every later turn.
 - [ ] The source and fork can receive different follow-up Tasks without changing one another's
@@ -61,6 +64,8 @@ proves it.
 - [x] The fork is not archived even when the source is archived.
 - [x] Source deletion, fork creation, and concurrent fork requests cannot overwrite an existing
       Trace or Session id.
+- [x] Fork numbers are allocated atomically, persist across server restarts, and are not reused when
+      an earlier fork is deleted; concurrent forks from one source receive distinct numbers.
 - [x] Chinese and English labels/tooltips/error messages are present, keyboard focus works, and the
       action remains available on touch layouts where hover does not exist.
 
@@ -74,12 +79,14 @@ proves it.
    compaction or user input.
 3. Allocate a collision-resistant Session id, clone Trace shards through the cut, rewrite each
    shard's source `session_meta` with the new id and paths, clear scheduled/subagent provenance,
-   rewrite only recognized source-scratchpad attachment markers, and register the new row/Trace
-   with cleanup on failure.
+   and rewrite only recognized source-scratchpad attachment markers.
 4. Snapshot the source scratchpad under the new id before exposing the Session. Do not create an
    in-memory runtime: the fork follows the ordinary load-and-resume path on its first Task.
-5. Add the footer action, pending state, localized copy, Session-list insertion, and navigation.
-6. Cover the checklist with focused core/server/web tests plus one browser flow. Store review
+5. In one database transaction, increment the source row's persistent `fork_count`, derive the
+   numbered title, and insert the new Session row. Roll the counter back if insertion fails and
+   clean up the cloned Trace/scratchpad on any caught failure.
+6. Add the footer action, pending state, localized copy, Session-list insertion, and navigation.
+7. Cover the checklist with focused core/server/web tests plus one browser flow. Store review
    screenshots under `pr-assets/issue-293/` and link them from the Draft PR.
 
 ## Review evidence
@@ -87,15 +94,19 @@ proves it.
 - Automated checks:
   - `pnpm typecheck`
   - `pnpm test` (all workspace packages)
-  - `packages/server/test/session-fork.test.ts` (8 integration scenarios)
+  - `packages/server/test/session-fork.test.ts` (10 integration scenarios, including cross-position,
+    deletion, no-title, and concurrent numbering)
   - `packages/web/test/stream-model.test.ts` (history-coordinate propagation and SSE dedup)
 - Browser scenario: a deterministic two-turn Session with one image and one file was forked after
   the first reply. The fork opened immediately, excluded the second turn, retained both
-  attachments, and still rendered the copied image after the source Session was deleted.
+  attachments, and still rendered the copied image after the source Session was deleted. A second
+  browser pass forked the first reply, then the second reply, then the first reply again and observed
+  the shared title sequence `·分支(1)`, `·分支(2)`, `·分支(3)`.
 - Screenshots:
   - [`01-source-fork-action.jpg`](../../../pr-assets/issue-293/01-source-fork-action.jpg)
   - [`02-forked-transcript.jpg`](../../../pr-assets/issue-293/02-forked-transcript.jpg)
   - [`03-fork-survives-source-delete.jpg`](../../../pr-assets/issue-293/03-fork-survives-source-delete.jpg)
+  - [`04-numbered-forks.png`](../../../pr-assets/issue-293/04-numbered-forks.png)
 - Known limitations / remaining verification:
   - Forking intentionally duplicates the retained scratchpad and therefore its disk usage.
   - The UI does not display parent/child lineage; both Sessions are ordinary independent entries.

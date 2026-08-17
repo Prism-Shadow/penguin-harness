@@ -509,17 +509,20 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
-      title: row.title,
+      // insertFork replaces this with the source's current title plus its persistent number.
+      title: null,
       client: "web",
       hasTrace: true,
       lastActiveAt: fork.createdAt,
       createdAt: fork.createdAt,
     };
     try {
-      deps.sessionsRepo.insert(forkRow);
+      const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
       deps.sessionSources.set(fork.sessionId, null);
       return c.json(
-        { session: await deps.sessionService.toInfo(forkRow, true) } satisfies SessionForkResponse,
+        {
+          session: await deps.sessionService.toInfo(insertedForkRow, true),
+        } satisfies SessionForkResponse,
         201,
       );
     } catch (err) {
