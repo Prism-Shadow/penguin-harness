@@ -16,6 +16,7 @@
  * than with this build. Swap semantics for anything they hold that is not parked is a
  * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -460,10 +461,57 @@ const CONTENT_TYPES: Record<string, string> = {
 export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "dir"; dir: string };
 
 /**
+ * The SPA's caching contract, without which a hot-pushed web is invisible to returning
+ * clients until they happen to hard-refresh:
+ *
+ * - Vite's `assets/*` files are content-hashed, so their bytes can never change under
+ *   their name → cache forever, never revalidate.
+ * - Everything else — `index.html` above all, including every SPA-fallback answer — must
+ *   revalidate on each navigation (`no-cache` means "store, but ask first"), and the ETag
+ *   makes that ask a 304 instead of a re-download. A web push changes the ETag, so the
+ *   very next load anywhere picks the new app up.
+ */
+function cacheControlFor(servedPath: string): string {
+  return servedPath.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
+}
+
+/** Content ETags for the in-memory dist, computed once per Buffer (pushes swap the Buffers). */
+const memEtags = new WeakMap<Buffer, string>();
+
+function etagOfBuffer(content: Buffer): string {
+  let etag = memEtags.get(content);
+  if (etag === undefined) {
+    etag = `"${createHash("sha256").update(content).digest("base64url").slice(0, 16)}"`;
+    memEtags.set(content, etag);
+  }
+  return etag;
+}
+
+/** The static response for one resolved file: 304 on an ETag match, the bytes otherwise. */
+function staticResponse(
+  c: Context<AppEnv>,
+  content: Buffer,
+  servedPath: string,
+  etag: string,
+): Response {
+  const headers: Record<string, string> = {
+    "Cache-Control": cacheControlFor(servedPath),
+    ETag: etag,
+  };
+  if (c.req.header("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers });
+  }
+  headers["Content-Type"] =
+    CONTENT_TYPES[path.extname(servedPath).toLowerCase()] ?? "application/octet-stream";
+  return new Response(new Uint8Array(content), { status: 200, headers });
+}
+
+/**
  * Minimal static file server (avoiding an extra dependency): path traversal
  * protection + SPA fallback, over either an in-memory pushed/restored dist (the
  * hot host's primary path — no filesystem at all) or the packaged webDist
- * directory on disk.
+ * directory on disk. Serves the caching contract above, so pushes take effect
+ * on the next navigation and hashed assets stop re-downloading.
  */
 function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
   app.get("*", async (c) => {
@@ -483,12 +531,7 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       if (content === undefined) {
         return c.json(errorBody("not_found", "Resource does not exist."), 404);
       }
-      const type =
-        CONTENT_TYPES[path.extname(servedPath).toLowerCase()] ?? "application/octet-stream";
-      return new Response(new Uint8Array(content), {
-        status: 200,
-        headers: { "Content-Type": type },
-      });
+      return staticResponse(c, content, servedPath, etagOfBuffer(content));
     }
 
     const webDist = source.dir;
@@ -511,16 +554,17 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       file = path.join(base, "index.html"); // SPA fallback
     }
     let content: Buffer;
+    let mtimeMs = 0;
     try {
       content = await fsp.readFile(file);
+      mtimeMs = (await fsp.stat(file)).mtimeMs;
     } catch {
       return c.json(errorBody("not_found", "Resource does not exist."), 404);
     }
-    const type = CONTENT_TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream";
-    return new Response(new Uint8Array(content), {
-      status: 200,
-      headers: { "Content-Type": type },
-    });
+    // A weak size+mtime validator, the classic disk-file shape — hashing every
+    // response would cost more than the 304s save.
+    const etag = `W/"${content.byteLength}-${Math.round(mtimeMs)}"`;
+    return staticResponse(c, content, path.relative(base, file).split(path.sep).join("/"), etag);
   });
 }
 
