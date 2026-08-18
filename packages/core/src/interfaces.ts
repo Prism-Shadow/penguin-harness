@@ -361,6 +361,15 @@ export interface EnvironmentConfig {
    * for SDK/CLI standalone use).
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /**
+   * Sandbox-confinement seam for exec_command / input_command subprocesses (see
+   * {@link SpawnConfiner}). Like {@link EnvironmentConfig.proxyEnv} it is a getter
+   * re-read at every spawn, so the hosting server can change the active confiner at
+   * runtime (e.g. via a platform hot push) and reach Sessions that are already
+   * running. Absent, or a getter returning null = commands spawn unconfined (the
+   * default for SDK/CLI standalone use).
+   */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 /**
@@ -379,6 +388,28 @@ export interface EnvironmentConfig {
  * explicit variable outranks the host-level policy.
  */
 export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
+
+/**
+ * Rewrites the exact argv a command session is about to spawn so it executes
+ * confined — typically the original invocation wrapped in a sandbox runner
+ * (`[runner, ...profileArgs, "--", ...argv]`). Mechanism only: which confinement
+ * policy applies, and which backend enforces it, is decided by whoever supplies
+ * the confiner (the hosting server's platform layer); this seam never interprets
+ * the argv. Fail-closed by contract: a confiner that cannot enforce its policy
+ * must THROW — the error surfaces as the command's spawn failure instead of the
+ * command running unconfined. Returning the argv unchanged is reserved for
+ * policies that genuinely mean "unconfined".
+ * @param argv - the exact argv about to be spawned (`[shellCommand, ...shellArgs, cmd]`), not a shell string.
+ * @param opts - spawn context: `cwd` is the working directory of THIS command (per-call,
+ *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
+ *   directory a workspace-scoped confinement policy should treat as writable, never
+ *   inferred from `cwd` (a command may run in a workdir outside the Workspace).
+ * @returns the argv to spawn instead.
+ */
+export type SpawnConfiner = (
+  argv: readonly string[],
+  opts: { cwd: string; workspaceDir: string },
+) => readonly string[];
 
 /**
  * An approved tool-call execution request.
