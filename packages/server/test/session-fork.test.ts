@@ -163,7 +163,7 @@ describe("session fork", () => {
       modelId: "fork-model",
       workspace,
       approvalMode: "always-ask",
-      title: "Attachment discussion ·分支(1)",
+      title: "Attachment discussion (1)",
       archived: false,
       hasTrace: true,
     });
@@ -218,7 +218,7 @@ describe("session fork", () => {
     });
     expect(disposableResponse.status).toBe(201);
     const disposable = (await disposableResponse.json()) as SessionForkResponse;
-    expect(disposable.session.title).toBe("Attachment discussion ·分支(2)");
+    expect(disposable.session.title).toBe("Attachment discussion (2)");
     expect((await api.delete(`/api/sessions/${disposable.session.sessionId}`)).status).toBe(204);
     expect(
       await fs.readFile(
@@ -251,8 +251,8 @@ describe("session fork", () => {
         position: { fileIndex: 1, ordinal: 9 },
       })
     ).json()) as SessionForkResponse;
-    expect(first.session.title).toBe("Attachment discussion ·分支(1)");
-    expect(second.session.title).toBe("Attachment discussion ·分支(2)");
+    expect(first.session.title).toBe("Attachment discussion (1)");
+    expect(second.session.title).toBe("Attachment discussion (2)");
 
     expect((await api.delete(`/api/sessions/${first.session.sessionId}`)).status).toBe(204);
     const third = (await (
@@ -260,7 +260,7 @@ describe("session fork", () => {
         position: { fileIndex: 1, ordinal: 4 },
       })
     ).json()) as SessionForkResponse;
-    expect(third.session.title).toBe("Attachment discussion ·分支(3)");
+    expect(third.session.title).toBe("Attachment discussion (3)");
   });
 
   it("uses a readable numbered fallback when the source has no title", async () => {
@@ -272,7 +272,7 @@ describe("session fork", () => {
     });
     expect(response.status).toBe(201);
     const { session } = (await response.json()) as SessionForkResponse;
-    expect(session.title).toBe("分支(1)");
+    expect(session.title).toBe("(1)");
   });
 
   it("rejects a user-message coordinate rather than cutting an unsafe prefix", async () => {
@@ -486,10 +486,10 @@ describe("session fork", () => {
     const ids = sessions.map((session) => session.sessionId);
     expect(new Set(ids).size).toBe(ids.length);
     expect(sessions.map((session) => session.title).sort()).toEqual([
-      "Attachment discussion ·分支(1)",
-      "Attachment discussion ·分支(2)",
-      "Attachment discussion ·分支(3)",
-      "Attachment discussion ·分支(4)",
+      "Attachment discussion (1)",
+      "Attachment discussion (2)",
+      "Attachment discussion (3)",
+      "Attachment discussion (4)",
     ]);
     expect((await api.get(`/api/sessions/${SID}`)).status).toBe(200);
   });

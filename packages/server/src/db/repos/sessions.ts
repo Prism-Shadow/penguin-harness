@@ -90,8 +90,8 @@ export class SessionsRepo {
       if (!source) throw new Error(`Source Session not found: ${sourceSessionId}`);
 
       const forkTitle = source.title
-        ? `${source.title} ·分支(${source.fork_count})`
-        : `分支(${source.fork_count})`;
+        ? `${source.title} (${source.fork_count})`
+        : `(${source.fork_count})`;
       const forkRow = { ...row, title: forkTitle };
       this.runInsert("INSERT", forkRow);
       this.db.exec("COMMIT");

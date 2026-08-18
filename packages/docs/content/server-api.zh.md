@@ -223,7 +223,7 @@ interface MessagesResponse {
 
 `cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
 
-`tracePosition` 只是历史响应元数据，不进入持久化 OmniMessage。Web App 将一轮最后一条模型文本的不可变坐标提交给 `/fork`，服务端再校验它确实闭合了一个完整 Task。分叉会克隆保留范围内的 Trace 分片，并把源 Session 的 scratchpad 快照到新 Session id 下；系统生成的本地附件路径同步改写，因此以后删除任一 Session 都不会破坏另一方。同一源 Session 在任意回复位置产生的分支共用持久编号，标题依次为 `原标题 ·分支(1)`、`原标题 ·分支(2)`；删除旧分支不会复用编号。源 Session 正在运行或压缩时返回 409。
+`tracePosition` 只是历史响应元数据，不进入持久化 OmniMessage。Web App 将一轮最后一条模型文本的不可变坐标提交给 `/fork`，服务端再校验它确实闭合了一个完整 Task。分叉会克隆保留范围内的 Trace 分片，并把源 Session 的 scratchpad 快照到新 Session id 下；系统生成的本地附件路径同步改写，因此以后删除任一 Session 都不会破坏另一方。同一源 Session 在任意回复位置产生的分支共用持久编号，标题使用不依赖界面语言的后缀，依次为 `原标题 (1)`、`原标题 (2)`；删除旧分支不会复用编号。源 Session 正在运行或压缩时返回 409。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 

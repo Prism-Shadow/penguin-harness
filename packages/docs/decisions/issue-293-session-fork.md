@@ -12,9 +12,10 @@ proves it.
       assistant reply do not expose the action.
 - [x] Clicking **Fork** creates a new Session for the same Project and Agent.
 - [x] The fork keeps the source Session's model reference, Workspace, and approval mode. Its title
-      is the current source title plus ` ·分支(n)` (`分支(n)` when the source has no stored title).
+      is the current source title plus the language-neutral suffix ` (n)` (`(n)` when the source
+      has no stored title).
 - [x] All forks made directly from the same source Session share one increasing sequence, even when
-      they are cut at different replies: `·分支(1)`, `·分支(2)`, `·分支(3)`, and so on.
+      they are cut at different replies: `(1)`, `(2)`, `(3)`, and so on.
 - [x] The forked transcript contains the source transcript through the selected completed turn,
       including its tool calls/results, and excludes every later turn.
 - [ ] The source and fork can receive different follow-up Tasks without changing one another's
@@ -101,7 +102,7 @@ proves it.
   the first reply. The fork opened immediately, excluded the second turn, retained both
   attachments, and still rendered the copied image after the source Session was deleted. A second
   browser pass forked the first reply, then the second reply, then the first reply again and observed
-  the shared title sequence `·分支(1)`, `·分支(2)`, `·分支(3)`.
+  the shared, language-neutral title sequence `(1)`, `(2)`, `(3)`.
 - Screenshots:
   - [`01-source-fork-action.jpg`](../../../pr-assets/issue-293/01-source-fork-action.jpg)
   - [`02-forked-transcript.jpg`](../../../pr-assets/issue-293/02-forked-transcript.jpg)
