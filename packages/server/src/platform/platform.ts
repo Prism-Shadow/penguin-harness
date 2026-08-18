@@ -24,6 +24,7 @@
  */
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
 import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
+import type { PlatformBundle } from "../hmr/host.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -51,5 +52,14 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   },
 };
 
-/** The packaged bundle the runtime boots when nothing has been pushed yet. */
-export const packagedPlatform = { id: "packaged", iface: PlatformIface, impl: platformImpl };
+/**
+ * The packaged bundle the runtime boots when nothing has been pushed yet — code AND its
+ * initial context together, so the runtime never hardcodes a business value of its own
+ * (see hmr/host.ts's PlatformBundle: every bundle, packaged or pushed, carries `context`).
+ */
+export const packagedPlatform: PlatformBundle = {
+  id: "packaged",
+  iface: PlatformIface,
+  impl: platformImpl,
+  context: { motd: "hello from the penguin hot platform" } satisfies PlatformCtx,
+};

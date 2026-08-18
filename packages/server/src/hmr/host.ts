@@ -51,6 +51,17 @@
  * default entirely (never a platform/web mismatch, never a brick). The store
  * keeps at most STORE_KEEP versions (current + one rollback) per artifact.
  *
+ * CODE persists; STATE does not. Only platform code, the CLI bundle, and the web
+ * dist are written to disk — never the parked context document a swap produces.
+ * A restart therefore always resumes the pushed CODE, but boots it against a
+ * FRESH initial context (bundle.context — see PlatformBundle below), not
+ * whatever state was live when the process last exited. This is deliberate: the
+ * live resources a parked doc's handles would reference (child processes, etc.)
+ * die with the process anyway, so a restored doc could only ever resume as
+ * "handles that fail to reclaim, nodes stuck degraded" — worse than a clean
+ * boot. State DOES survive a hot swap (park → migrate → boot, entirely
+ * in-memory, see kernel/upgrade.ts) — it just never survives a process restart.
+ *
  * Reload is strictly request-driven: nothing watches, nothing auto-triggers.
  */
 import crypto from "node:crypto";
@@ -67,10 +78,17 @@ import type { PlatformApi } from "../platform/platform.js";
 import { packagedPlatform } from "../platform/platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
+/**
+ * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
+ * initial context a fresh boot creates the tree with (see initialDoc): the runtime never
+ * hardcodes a business value of its own, so this is where a business platform's own
+ * starting state belongs (see platform/platform.ts's packagedPlatform).
+ */
 export interface PlatformBundle {
   id: string;
   iface: AnyIface;
   impl: AnyImpl;
+  context: Json;
 }
 
 /** Optional provenance recorded with a pushed version (never executed here). */
@@ -179,7 +197,7 @@ export class HmrHost {
         this.instance = (await boot(
           bundle.impl,
           bundle.iface,
-          initialDoc(bundle.iface, { motd: "hello from the penguin hot platform" }),
+          initialDoc(bundle.iface, bundle.context),
           this.resources,
         )) as Instance<PlatformApi>;
       }
@@ -193,17 +211,21 @@ export class HmrHost {
   }
 
   /**
-   * Resume from harness.json, as ONE unit: the platform bundle, its parked
-   * doc, the cli bundle's own existence, and the web artifact are all read and
-   * validated BEFORE anything is committed to `this.instance` / `this.webMem` — so a
-   * failure partway through (a pruned bundle, a corrupt park, a missing web
-   * artifact, a missing cli artifact) never leaves platform and web resumed from
-   * different versions. The cli bundle is never imported here (this process never
-   * runs it — only packages/cli's own loader does); its file just has to exist, so a
-   * restore can never leave `cli.bundle` pointing at nothing. Any failure is
-   * non-fatal: it warns and leaves the runtime to boot the packaged default — a bad
-   * persisted state must never brick the runtime. Only ever called once (from
-   * initialize(), itself single-flighted by ensure()'s `initPromise`).
+   * Resume from harness.json, as ONE unit: the platform bundle, the cli bundle's own
+   * existence, and the web artifact are all read and validated BEFORE anything is
+   * committed to `this.instance` / `this.webMem` — so a failure partway through (a
+   * pruned bundle, a missing web artifact, a missing cli artifact) never leaves
+   * platform and web resumed from different versions. The cli bundle is never
+   * imported here (this process never runs it — only packages/cli's own loader
+   * does); its file just has to exist, so a restore can never leave `cli.bundle`
+   * pointing at nothing. Any failure is non-fatal: it warns and leaves the runtime
+   * to boot the packaged default — a bad persisted version must never brick the
+   * runtime. Only ever called once (from initialize(), itself single-flighted by
+   * ensure()'s `initPromise`).
+   *
+   * Boots the restored bundle against its OWN fresh initial context (bundle.context),
+   * not a resumed state — state is never written to disk (see the module doc), so a
+   * restart always resumes the pushed CODE with a clean slate, never last run's doc.
    */
   private async restore(): Promise<void> {
     let manifest: Manifest;
@@ -230,17 +252,14 @@ export class HmrHost {
         throw new Error(`cli bundle '${manifest.cli.bundle}' does not exist`);
       }
       const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
-      const doc = JSON.parse(
-        await fsp.readFile(path.join(this.hmrDir, manifest.platform.park), "utf8"),
-      ) as Json;
       const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
       const webMem = filesMapFromGzip(gz);
       // Everything validated: commit together. boot() runs last so a boot failure
-      // (e.g. an incompatible parked doc) leaves nothing partially applied either.
+      // leaves nothing partially applied either.
       const instance = (await boot(
         bundle.impl,
         bundle.iface,
-        doc,
+        initialDoc(bundle.iface, bundle.context),
         this.resources,
       )) as Instance<PlatformApi>;
       this.instance = instance;
@@ -281,11 +300,6 @@ export class HmrHost {
     const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
 
-    // Park to disk before touching anything: crash-safe by construction.
-    await fsp.mkdir(this.hmrDir, { recursive: true });
-    const parkPath = path.join(this.hmrDir, "platform.park.json");
-    await fsp.writeFile(parkPath, JSON.stringify(current.park(), null, 2));
-
     const result = await upgrade({
       current,
       impl: bundle.impl,
@@ -305,18 +319,17 @@ export class HmrHost {
 
     // Boot succeeded: commit web to memory too, then persist platform + cli + web
     // as one atomic version — never a platform that's newer (or older) than the
-    // web or cli it's paired with.
+    // web or cli it's paired with. `result.doc` (the swap's parked+migrated state)
+    // is never written to disk — see the module doc: code persists, state does not.
     this.instance = result.instance as Instance<PlatformApi>;
     this.implId = bundle.id;
     this.webMem = webMem;
-    await fsp.writeFile(parkPath, JSON.stringify(result.doc, null, 2));
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
     const persisted = await this.persistVersion(
       target.platform,
       target.cli,
-      result.doc,
       gz,
       digest.slice(0, 16),
     );
@@ -339,6 +352,13 @@ export class HmrHost {
     const mod = (await import(url)) as { hotPlatform?: PlatformBundle };
     if (mod.hotPlatform === undefined) {
       throw new Error(`${file} does not export 'hotPlatform'`);
+    }
+    if (mod.hotPlatform.context === undefined) {
+      // Every bundle carries its own initial context now (see PlatformBundle above):
+      // state is never persisted, so a boot with no context to fall back on would have
+      // nothing to boot a fresh tree with — reject it the same way a missing
+      // `hotPlatform` export is rejected, rather than booting with `undefined`.
+      throw new Error(`${file}'s 'hotPlatform' has no 'context'`);
     }
     return mod.hotPlatform;
   }
@@ -379,24 +399,14 @@ export class HmrHost {
   // -- Persistence ----------------------------------------------------------
 
   /**
-   * Content-addresses the platform bundle + its committed parked doc, the cli
-   * bundle (never imported — just stored, for packages/cli's own loader to
-   * pick up), and the web gzip artifact, then flips harness.json ONCE —
-   * `platform`, `cli`, and `web` all land in the SAME atomic rename, never
-   * three separate commits that could leave one pointer ahead of the others.
-   * `platform.bundle` and `cli.bundle` are now genuinely independent files
-   * (distinct content, distinct sha) rather than the same physical bundle
-   * under two manifest keys.
-   *
-   * The park filename is content-addressed on BOTH the platform code and the parked
-   * doc (`${platformSha}-${docSha}.park.json`), not the code alone: two pushes of the
-   * SAME platform source with a DIFFERENT parked state used to collide on one
-   * `${platformSha}.park.json` file, so the second push overwrote the first commit's
-   * park file in place — if the process crashed between that overwrite and the
-   * harness.json rename, the already-committed version (still referenced by the
-   * on-disk manifest) would resume with the wrong parked doc. Suffixing by doc hash
-   * makes every write go to a NEW file; the currently-committed park file is never
-   * touched again until it is pruned (see pruneStore).
+   * Content-addresses the platform bundle (its CODE only — see the module doc: state
+   * is never persisted), the cli bundle (never imported — just stored, for
+   * packages/cli's own loader to pick up), and the web gzip artifact, then flips
+   * harness.json ONCE — `platform`, `cli`, and `web` all land in the SAME atomic
+   * rename, never three separate commits that could leave one pointer ahead of the
+   * others. `platform.bundle` and `cli.bundle` are genuinely independent files
+   * (distinct content, distinct sha) rather than the same physical bundle under two
+   * manifest keys.
    *
    * Returns whether the commit succeeded — the caller surfaces this to clients
    * (`persisted` in UpgradeOutcome) so a live swap that could not be written to disk
@@ -405,20 +415,14 @@ export class HmrHost {
   private async persistVersion(
     platformContent: string,
     cliContent: string,
-    doc: Json,
     webGz: Buffer,
     webSha: string,
   ): Promise<boolean> {
     try {
       const platformSha = sha1(platformContent).slice(0, 16);
-      const docSha = sha1(JSON.stringify(doc)).slice(0, 16);
       const platformDir = path.join(this.storeDir, "platform");
       await fsp.mkdir(platformDir, { recursive: true });
       await fsp.writeFile(path.join(platformDir, `${platformSha}.mjs`), platformContent, "utf8");
-      await fsp.writeFile(
-        path.join(platformDir, `${platformSha}-${docSha}.park.json`),
-        JSON.stringify(doc),
-      );
 
       const cliSha = sha1(cliContent).slice(0, 16);
       const cliDir = path.join(this.storeDir, "cli");
@@ -430,10 +434,7 @@ export class HmrHost {
       await fsp.writeFile(path.join(webDir, `${webSha}.webz`), webGz);
 
       await this.commitManifest(() => ({
-        platform: {
-          bundle: `store/platform/${platformSha}.mjs`,
-          park: `store/platform/${platformSha}-${docSha}.park.json`,
-        },
+        platform: { bundle: `store/platform/${platformSha}.mjs` },
         cli: { bundle: `store/cli/${cliSha}.mjs` },
         web: { manifest: `store/web/${webSha}.webz` },
       }));
@@ -495,15 +496,6 @@ export class HmrHost {
       }
     };
 
-    // Platform code (`*.mjs`) and parked docs (`*.park.json`) are pruned as two
-    // INDEPENDENT passes over the same directory now that a park file is keyed on
-    // code+state (`${platformSha}-${docSha}.park.json`, see persistVersion): the same
-    // `.mjs` can be the target of several park files (same code re-pushed with a
-    // different parked state), so grouping "newest N" by platform sha alone would keep
-    // an `.mjs` while pruning the very park file the current manifest still points at
-    // (or vice versa). Each pass keeps its own newest STORE_KEEP + whatever the manifest
-    // currently references; an orphan under the old `${sha}.park.json` naming has no
-    // special standing and ages out like any other unreferenced entry.
     const platformDir = path.join(this.storeDir, "platform");
     const platformBundleRef = manifest.platform?.bundle.match(/([0-9a-f]+)\.mjs$/)?.[1] ?? null;
     await keepNewest(
@@ -511,13 +503,6 @@ export class HmrHost {
       (name) => /^([0-9a-f]+)\.mjs$/.exec(name)?.[1] ?? null,
       platformBundleRef,
       (sha) => fsp.rm(path.join(platformDir, `${sha}.mjs`), { force: true }),
-    );
-    const platformParkRef = manifest.platform?.park.match(/([^/]+)\.park\.json$/)?.[1] ?? null;
-    await keepNewest(
-      platformDir,
-      (name) => /^(.+)\.park\.json$/.exec(name)?.[1] ?? null,
-      platformParkRef,
-      (key) => fsp.rm(path.join(platformDir, `${key}.park.json`), { force: true }),
     );
 
     const cliDir = path.join(this.storeDir, "cli");

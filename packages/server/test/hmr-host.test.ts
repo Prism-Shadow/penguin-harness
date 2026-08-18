@@ -1,7 +1,8 @@
 /**
  * HmrHost mechanism tests that don't fit the seam's own file: the single-flight first
- * boot, the park file's crash-safety under a code+state collision, and the durability
- * flag an upgrade's HTTP response carries.
+ * boot, "code persists across a restart, state does not" (see host.ts's module doc),
+ * a bundle missing `context` being rejected the same way a missing `hotPlatform` is,
+ * and the durability flag an upgrade's HTTP response carries.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -10,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { HmrHost } from "../src/hmr/host.js";
-import { apiClient, createTestApp, loginAdmin, makeTempRoot } from "./helpers.js";
+import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** Minimal but content-distinguishable platform bundle, inline (see hmr-http-seam.test.ts). */
@@ -44,6 +45,81 @@ const impl = {
         });
       },
     };
+  },
+};
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl, context: {} };
+`;
+}
+
+/**
+ * A platform whose context carries one number, mutable at runtime through
+ * `POST /api/demo/bump` (in memory only — nothing here ever touches disk itself). Used
+ * to tell "the swap's live (migrated-forward) state" apart from "the bundle's own
+ * initial context": a live push carries the PRIOR instance's doc forward through
+ * migration (kernel/upgrade.ts) — it never resets to this bundle's `context` — so the
+ * schema below marks any doc that didn't already look like this shape with a sentinel
+ * (-1), distinguishable from both the bundle's declared initial value and anything a
+ * live mutation could produce. A restart, never a live push, is what boots fresh
+ * against `context`.
+ */
+function platformWithState(id: string, initialN: number): string {
+  return `
+const anySchema = {
+  strictParse: (doc) => ({
+    ok: true,
+    value: doc && typeof doc.n === "number" ? doc : { n: -1 },
+  }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create(_ctx, context) {
+    return {
+      park: () => context,
+      info: () => ({ impl: ${JSON.stringify(id)}, n: context.n }),
+      http(request) {
+        const { pathname } = new URL(request.url);
+        if (pathname !== "/api/demo/bump") return null;
+        context.n += 1;
+        return new Response(JSON.stringify({ n: context.n }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  },
+};
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl, context: { n: ${initialN} } };
+`;
+}
+
+/** Same shape as platformServing, except its export has no `context` at all. */
+function platformMissingContext(id: string): string {
+  return `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create(_ctx, context) {
+    return { park: () => context, info: () => ({ impl: ${JSON.stringify(id)} }) };
   },
 };
 export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl };
@@ -106,55 +182,86 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
   });
 });
 
-describe("HmrHost.persistVersion(): park file crash-safety", () => {
-  let root: string | undefined;
+describe("HmrHost: code persists across a restart, state does not", () => {
+  let t: TestApp | undefined;
+  let freshRoot: string | undefined;
 
   afterEach(async () => {
-    if (root) await fs.rm(root, { recursive: true, force: true });
-    root = undefined;
+    if (t) await t.cleanup();
+    if (freshRoot) await fs.rm(freshRoot, { recursive: true, force: true });
+    t = undefined;
+    freshRoot = undefined;
   });
 
-  it("never overwrites a park file already referenced by a committed manifest", async () => {
-    root = await makeTempRoot();
-    const host = new HmrHost(root) as unknown as {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      persistVersion(
-        platform: string,
-        cli: string,
-        doc: any,
-        webGz: Buffer,
-        webSha: string,
-      ): Promise<boolean>;
-    };
-    const platformContent = "export const hotPlatform = { id: 'x' };\n";
-    const cliContent = MINIMAL_CLI;
-    const webGz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: {} })));
+  it("a pushed version's harness.json platform entry carries no `park`, and the store writes no .park.json", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const push = await pushPlatform(t.app, cookie, platformWithState("stateful", 5));
+    expect(push.status).toBe(200);
+    expect(((await push.json()) as { persisted: boolean }).persisted).toBe(true);
 
-    const doc1 = { v: 1, self: { n: 1 }, children: {} };
-    const ok1 = await host.persistVersion(platformContent, cliContent, doc1, webGz, "web1");
-    expect(ok1).toBe(true);
-    const manifest1 = JSON.parse(
-      await fs.readFile(path.join(root, "hmr", "harness.json"), "utf8"),
-    ) as { platform: { park: string } };
-    const parkPath1 = path.join(root, "hmr", manifest1.platform.park);
-    const parkContent1 = await fs.readFile(parkPath1, "utf8");
-    expect(JSON.parse(parkContent1)).toEqual(doc1);
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(t.root, "hmr", "harness.json"), "utf8"),
+    ) as { platform: Record<string, unknown> };
+    expect(Object.keys(manifest.platform)).toEqual(["bundle"]);
 
-    // SAME platform code, DIFFERENT parked state — this is the collision case: the old
-    // naming (`${platformSha}.park.json`) would land on the exact same file as above.
-    const doc2 = { v: 1, self: { n: 2 }, children: {} };
-    const ok2 = await host.persistVersion(platformContent, cliContent, doc2, webGz, "web2");
-    expect(ok2).toBe(true);
-    const manifest2 = JSON.parse(
-      await fs.readFile(path.join(root, "hmr", "harness.json"), "utf8"),
-    ) as { platform: { park: string } };
-    const parkPath2 = path.join(root, "hmr", manifest2.platform.park);
+    const storeFiles = await fs.readdir(path.join(t.root, "hmr", "store", "platform"));
+    expect(storeFiles.some((name) => name.endsWith(".park.json"))).toBe(false);
+  });
 
-    expect(parkPath2).not.toBe(parkPath1);
-    // The FIRST commit's park file is untouched — never overwritten in place.
-    expect(await fs.readFile(parkPath1, "utf8")).toBe(parkContent1);
-    expect(JSON.parse(parkContent1)).toEqual(doc1);
-    expect(JSON.parse(await fs.readFile(parkPath2, "utf8"))).toEqual(doc2);
+  it("a restart resumes the pushed CODE against a FRESH initial context, not the live-mutated state", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const api = apiClient(t.app, cookie);
+    const push = await pushPlatform(t.app, cookie, platformWithState("stateful", 5));
+    expect(push.status).toBe(200);
+
+    // The live push migrated FORWARD from whatever was already running (the packaged
+    // default, which has no `n`) — never reset to the pushed bundle's `context` — so it
+    // starts at the schema's sentinel (-1), not 5. Bumping it twice makes doubly sure a
+    // restore couldn't accidentally land on either the sentinel or the bumped value.
+    const live = await t.deps.hmr.ensure();
+    expect((live.api as unknown as { info(): { n: number } }).info().n).toBe(-1);
+    expect((await api.post("/api/demo/bump")).status).toBe(200);
+    expect((await api.post("/api/demo/bump")).status).toBe(200);
+    expect((live.api as unknown as { info(): { n: number } }).info().n).toBe(1);
+
+    const root = t.root;
+    freshRoot = root;
+    t.deps.hmr.dispose();
+    t.deps.channels.dispose();
+    t.deps.db.close();
+    t = undefined; // torn down by hand; skip cleanup() (it would rm(root))
+
+    const fresh = new HmrHost(root);
+    try {
+      const instance = await fresh.ensure();
+      const restored = (instance.api as unknown as { info(): { impl: string; n: number } }).info();
+      // CODE resumed (the pushed impl id)...
+      expect(restored.impl).toBe("stateful");
+      // ...but state did not: it's the bundle's fresh initial context (5), never the
+      // migrated-forward-then-bumped live value (1) that was running when the process
+      // "exited".
+      expect(restored.n).toBe(5);
+    } finally {
+      fresh.dispose();
+    }
+  });
+});
+
+describe("upgrade: a bundle missing `context` is rejected", () => {
+  let t: TestApp;
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("400s with a message naming `context`, the same rejection path as a missing `hotPlatform`", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const res = await pushPlatform(t.app, cookie, platformMissingContext("no-context"));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("context");
   });
 });
 

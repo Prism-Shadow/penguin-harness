@@ -77,4 +77,4 @@ const impl = {
   },
 };
 
-export const hotPlatform = { id: "http-fixture", iface, impl };
+export const hotPlatform = { id: "http-fixture", iface, impl, context: {} };

@@ -21,16 +21,21 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 /**
- * The committed on-disk state: a runtime restart boots exactly this. Paths are
- * relative to hmrDir (`<root>/hmr`).
+ * The committed on-disk record: a runtime restart resumes exactly this CODE (platform,
+ * cli, web). It carries no STATE — a restart always boots the resumed platform bundle
+ * against its own fresh initial context (bundle.context, see host.ts's PlatformBundle),
+ * never a document parked from a previous run (see host.ts's module doc for why: a
+ * parked doc's live-resource handles die with the process anyway, so resuming one could
+ * only ever produce handles that fail to reclaim). Paths are relative to hmrDir
+ * (`<root>/hmr`).
  */
 export interface Manifest {
-  platform?: { bundle: string; park: string };
+  platform?: { bundle: string };
   /**
    * The CLI's own bundle pointer — its own independent file (a different sha from
    * `platform.bundle`; the two are separately compiled artifacts), kept as its own
    * field so a reader that only wants "which bundle does the CLI load right now"
-   * never has to know about parked documents.
+   * never has to reach into `platform` at all.
    */
   cli?: { bundle: string };
   /** One gzip(JSON.stringify({ files })) artifact, restored straight into memory. */

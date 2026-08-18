@@ -11,7 +11,7 @@ and hot-swaps everything else. Read this before changing anything here (or in
 | **runtime**  | `hmr/`, `packages/desktop/`, server transport   | Rebuild + redeploy every install  |
 | **platform** | `packages/server/src/platform/`                 | One HTTP push, seconds, no restart|
 | **workflow** | An agent's own folder                           | Installed/reloaded per agent      |
-| **state**    | Parked context documents / runtime resources    | Rides across swaps                |
+| **state**    | Parked context documents / runtime resources    | Rides across swaps, not restarts  |
 
 ## The rule
 

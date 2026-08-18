@@ -146,7 +146,7 @@ const impl = {
     };
   },
 };
-export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl };
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl, context: {} };
 `;
 }
 
@@ -266,7 +266,7 @@ const impl = {
     };
   },
 };
-export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl };
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl, context: {} };
 `;
 }
 
