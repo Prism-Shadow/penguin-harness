@@ -46,18 +46,33 @@ export function authMiddleware(auth: AuthService): MiddlewareHandler<AppEnv> {
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
+ * Content-Types write requests may carry. application/json is the default
+ * for the whole API; application/gzip and application/octet-stream are the
+ * hot-update web push's binary artifact transport (packages/server/src/hmr) —
+ * like application/json, neither is one of the three Content-Types an HTML
+ * form can forge (application/x-www-form-urlencoded, multipart/form-data,
+ * text/plain), so allowing them here does not reopen the CSRF gap below.
+ */
+const ALLOWED_WRITE_CONTENT_TYPES = [
+  "application/json",
+  "application/gzip",
+  "application/octet-stream",
+];
+
+/**
  * Content-Type defense for write requests: a write request with a Content-Type
- * other than application/json is rejected (a request with no Content-Type and an
- * empty body is let through — an HTML form always carries a form-type Content-Type).
+ * other than one of ALLOWED_WRITE_CONTENT_TYPES is rejected (a request with no
+ * Content-Type and an empty body is let through — an HTML form always carries
+ * a form-type Content-Type).
  */
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
   if (WRITE_METHODS.has(c.req.method)) {
-    const contentType = c.req.header("content-type");
-    if (contentType && !contentType.toLowerCase().startsWith("application/json")) {
+    const contentType = c.req.header("content-type")?.toLowerCase();
+    if (contentType && !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t))) {
       throw new HttpError(
         415,
         "unsupported_media_type",
-        "Write requests only accept application/json.",
+        "Write requests only accept application/json (or, for the hot-update web push, a gzip artifact).",
       );
     }
   }

@@ -25,6 +25,10 @@
     "./initial-password": {
       "types": "./dist/initial-password.d.ts",
       "import": "./dist/initial-password.js"
+    },
+    "./hmr/manifest": {
+      "types": "./dist/hmr/manifest.d.ts",
+      "import": "./dist/hmr/manifest.js"
     }
   },
   "main": "./dist/index.js",
