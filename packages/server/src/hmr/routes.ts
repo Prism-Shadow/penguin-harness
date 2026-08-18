@@ -19,7 +19,6 @@
  */
 import zlib from "node:zlib";
 import { Hono } from "hono";
-import { ifaceData } from "@prismshadow/penguin-core/kernel";
 import type { AppDeps } from "../app.js";
 import { authMiddleware } from "../auth/middleware.js";
 import type { AppEnv } from "../auth/middleware.js";
@@ -74,23 +73,6 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       }
       await gated();
     });
-  });
-
-  // -- Platform ------------------------------------------------------------
-
-  routes.get("/platform", async (c) => {
-    const inst = await hmr.ensure();
-    return c.json({
-      impl: hmr.currentImplId(),
-      iface: ifaceData(inst.iface),
-      info: inst.api.info(),
-    });
-  });
-
-  /** Observability: the current parked document (what an upgrade would carry). */
-  routes.get("/platform/park", async (c) => {
-    const inst = await hmr.ensure();
-    return c.json(inst.park());
   });
 
   /**

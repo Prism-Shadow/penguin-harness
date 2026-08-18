@@ -82,10 +82,12 @@ describe("platform HTTP seam", () => {
 
   it("cannot claim the upgrade channel — one bad push must not lock the box out", async () => {
     await pushPlatform(t.app, cookie, bundle);
-    // The fixture answers 418 for anything under /api/hmr; the runtime never offers it.
-    const status = await api.get("/api/hmr/platform");
-    expect(status.status).toBe(200);
-    expect(status.status).not.toBe(418);
+    // The fixture answers 418 for anything under /api/hmr; the runtime never offers
+    // it, so an unrouted path there is the runtime's own 404 rather than the
+    // platform's 418 — proof the claim was refused, not merely unmatched.
+    const probe = await api.get("/api/hmr/upgrade");
+    expect(probe.status).not.toBe(418);
+    expect(probe.status).toBe(404);
     // …and the channel still accepts the next push, which is the property that matters.
     expect((await pushPlatform(t.app, cookie, bundle)).status).toBe(200);
   });
