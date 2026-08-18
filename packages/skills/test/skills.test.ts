@@ -430,6 +430,46 @@ describe("librarySkill", () => {
     expect(optimizationRaw).not.toMatch(/\n\s+max_score:/);
   });
 
+  it("remote-claude-code relays verbatim, steps keys one at a time, and splits model+level switches", () => {
+    // Issue #307: the four TUI-driving rules, version-bumped alongside the content change.
+    const skill = librarySkill("remote-claude-code")!;
+    expect(skill.version).toBeGreaterThanOrEqual(2);
+    const content = skill.content.replace(/\s+/g, " ");
+
+    // 1) Pure relay: user messages reach Claude Code word-for-word, no local work.
+    expect(content).toContain(
+      "## 4. Relaying a conversation — the user's words go through verbatim",
+    );
+    expect(content).toContain("you are a message pipe — nothing more");
+    expect(content).toContain("Forward every user message to Claude Code **verbatim**");
+    expect(content).toContain("the user is talking to Claude Code, not to you");
+    expect(content).toContain(
+      "When in doubt whether a message is task or control, relay it verbatim",
+    );
+
+    // 2) "switch to fable5 max" style requests set the model AND the thinking level.
+    expect(content).toContain('"switch to fable5 max"');
+    expect(content).toContain("means **two** settings");
+    expect(content).toContain("Never read the pair as one unknown model name");
+    expect(content).toContain("shows **both** the new model and the new thinking level");
+
+    // 3) Key-sequence races: one key per send-keys call, capture-verified between keys.
+    expect(content).toContain("acts on the **previous** selection");
+    expect(content).toContain("one key per `send-keys` call");
+    expect(content).toContain("never fire the next key on faith");
+
+    // 4) Post-run composer text is an AI suggestion, not pending user input.
+    expect(content).toContain("cannot reliably tell the two apart");
+    expect(content).toContain("never treat post-run input-line text as pending user input");
+    expect(content).toContain("new text makes the suggestion disappear on its own");
+
+    // The keystroke rule (§3.3) precedes the relay contract (§4) that leans on it.
+    const stepIndex = skill.content.indexOf("### 3.3 One keystroke at a time");
+    const relayIndex = skill.content.indexOf("## 4. Relaying a conversation");
+    expect(stepIndex).toBeGreaterThan(-1);
+    expect(relayIndex).toBeGreaterThan(stepIndex);
+  });
+
   it("rejects illegal-character names (path traversal guard) and never hits the filesystem", () => {
     for (const name of ["../penguin-sdk", "..", "penguin-sdk/SKILL.md", "a/../b", ".", ""]) {
       expect(librarySkill(name), name).toBeUndefined();
