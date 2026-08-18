@@ -24,6 +24,8 @@ let fingerprint = "";
 let inflight: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+/** True once the server answered 404 for the terminal API (an older runtime). */
+let unsupported = false;
 
 /**
  * User-chosen tab order (ids), persisted. Presentation-only: ids the order does not know
@@ -106,6 +108,11 @@ export function liveTerminals(): TerminalInfo[] {
   return terminals;
 }
 
+/** Whether this server serves the terminal API at all (false on an older runtime). */
+export function terminalApiSupported(): boolean {
+  return !unsupported;
+}
+
 export function liveTerminalCount(): number {
   return terminals.length;
 }
@@ -116,7 +123,16 @@ export function refreshTerminals(): Promise<void> {
   inflight = (async () => {
     try {
       const res = await fetch("/api/terminals", { credentials: "same-origin" });
+      // 404 means the route does not exist at all: the running runtime predates the
+      // terminal API. Under hot update the Web App and the runtime can be different
+      // versions by design, so the UI has to notice rather than offer a dead control.
+      if (res.status === 404 && !unsupported) {
+        unsupported = true;
+        for (const listener of [...listeners]) listener();
+        return;
+      }
       if (!res.ok) return; // signed out or server unreachable: keep the last known list
+      unsupported = false;
       const data = (await res.json()) as { terminals: TerminalInfo[] };
       const listed = new Set(data.terminals.map((t) => t.id));
       for (const id of pendingKills.keys()) {

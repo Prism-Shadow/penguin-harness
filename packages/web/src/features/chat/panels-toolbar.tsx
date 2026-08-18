@@ -18,7 +18,12 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { showTerminal, toggleTerminalDock } from "../terminal/terminal-dock-state";
 import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
-import { liveTerminalCount, liveTerminals, subscribeTerminals } from "../terminal/terminal-list";
+import {
+  liveTerminalCount,
+  liveTerminals,
+  subscribeTerminals,
+  terminalApiSupported,
+} from "../terminal/terminal-list";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -246,6 +251,9 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
     });
   };
 
+  // An older runtime (hot update can leave the Web App ahead of it) has no terminal API;
+  // offering the panel would only produce a 404 on click.
+  const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
   const entries: PanelEntry[] = [
     {
       key: "agents",
@@ -275,12 +283,14 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
     },
   ];
 
+  const panels = entries.filter((entry) => entry.key !== "terminal" || terminalSupported);
+
   return (
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
       {/* Pinned panels: icon-only triggers in fixed order. The terminal trigger also
           shows the terminal list on hover (first-level dropdown); its click still toggles
           the dock. */}
-      {entries
+      {panels
         .filter((entry) => pins.includes(entry.key))
         .map((entry) => {
           const trigger = (
@@ -346,7 +356,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             </button>
           }
         >
-          {entries.map((entry) => {
+          {panels.map((entry) => {
             const pinned = pins.includes(entry.key);
             return (
               <div
