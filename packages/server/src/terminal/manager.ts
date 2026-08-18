@@ -14,6 +14,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { HttpError } from "../http/errors.js";
+import { spawnHelperHint } from "./spawn-helper.js";
 import {
   TerminalSession,
   expandHomePath,
@@ -84,10 +85,14 @@ export class TerminalManager {
     try {
       session = new TerminalSession(options);
     } catch (err) {
+      // A bare "posix_spawnp failed." says nothing; when the cause is node-pty's
+      // non-executable spawn-helper, name the file and the fix.
+      const hint = spawnHelperHint();
       throw new HttpError(
         500,
         "terminal_spawn_failed",
-        `Could not start a shell: ${err instanceof Error ? err.message : String(err)}`,
+        `Could not start a shell: ${err instanceof Error ? err.message : String(err)}` +
+          (hint === null ? "" : ` (${hint})`),
       );
     }
 
