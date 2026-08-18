@@ -1,95 +1,46 @@
 /**
- * Runtime-side live resources for the hot platform tree.
+ * Runtime-side live resources for the hot platform tree — the registry, and nothing
+ * about what a resource IS.
  *
- * The linear-state rule for live resources: a pty/child process never enters
- * the parked context document — it lives here, the document only carries its
- * handle id, and boot claims it back. Because the registry (and its output
- * buffers) sit outside the reloadable tree, a platform swap never interrupts
- * the process and never loses output produced during the freeze window.
+ * The linear-state rule for live resources: a pty/child process never enters the parked
+ * context document — it lives here, the document only carries its handle id, and boot
+ * claims it back. Because the registry sits outside the reloadable tree, a platform swap
+ * never interrupts the resource and never loses output produced during the freeze window.
+ *
+ * Kind-agnostic on purpose (see ./README.md): a registrant supplies its own disposer, so
+ * a pushed platform can introduce a resource type this file has never heard of and still
+ * have it shut down at process exit. Spawning anything — a shell, a pty, a connection —
+ * is the platform's business and lives there.
  */
-import { spawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 
-/** Output buffer cap per process (chunks are dropped oldest-first past this). */
-const MAX_BUFFER_BYTES = 128 * 1024;
-
-export interface ShellProcResource {
-  kind: "shell-proc";
-  proc: ChildProcess;
-  /** Full buffered output (stdout+stderr interleaved), capped. */
-  read(): string;
-  write(data: string): void;
-  alive(): boolean;
-  kill(): void;
-}
-
 export class HotResources implements Resources {
-  private readonly map = new Map<string, unknown>();
+  private readonly map = new Map<string, { resource: unknown; dispose?: () => void }>();
 
-  register(id: string, resource: unknown): void {
-    this.map.set(id, resource);
+  register(id: string, resource: unknown, dispose?: () => void): void {
+    this.map.set(id, { resource, dispose });
   }
 
   claim<T = unknown>(id: string): T | undefined {
-    return this.map.get(id) as T | undefined;
+    return this.map.get(id)?.resource as T | undefined;
   }
 
   release(id: string): void {
     this.map.delete(id);
   }
 
-  /** Process-exit sweep: kill every live shell process. Not part of any upgrade path. */
+  /**
+   * Process-exit sweep: run every registered disposer. Not part of any upgrade path —
+   * resources are meant to outlive swaps. A throwing disposer must not strand the rest.
+   */
   disposeAll(): void {
-    for (const resource of this.map.values()) {
-      const proc = resource as Partial<ShellProcResource>;
-      if (proc.kind === "shell-proc" && typeof proc.kill === "function") proc.kill();
+    for (const entry of this.map.values()) {
+      try {
+        entry.dispose?.();
+      } catch {
+        // Best-effort: the process is going away regardless.
+      }
     }
     this.map.clear();
   }
-}
-
-/** Spawns a shell command whose lifetime and output buffer are runtime-owned. */
-export function spawnShellResource(
-  resources: Resources,
-  id: string,
-  command: string,
-  cwd: string,
-): ShellProcResource {
-  const proc = spawn(command, { shell: true, cwd, stdio: ["pipe", "pipe", "pipe"] });
-  const chunks: string[] = [];
-  let bufferedBytes = 0;
-  let exited = false;
-  const push = (data: Buffer): void => {
-    const text = data.toString("utf8");
-    chunks.push(text);
-    bufferedBytes += text.length;
-    while (bufferedBytes > MAX_BUFFER_BYTES && chunks.length > 1) {
-      bufferedBytes -= chunks[0]!.length;
-      chunks.shift();
-    }
-  };
-  proc.stdout?.on("data", push);
-  proc.stderr?.on("data", push);
-  proc.on("exit", () => {
-    exited = true;
-  });
-  // 'error' (e.g. spawn failure) must not crash the server; surface it in the buffer.
-  proc.on("error", (err) => {
-    exited = true;
-    push(Buffer.from(`[spawn error] ${err.message}\n`));
-  });
-
-  const resource: ShellProcResource = {
-    kind: "shell-proc",
-    proc,
-    read: () => chunks.join(""),
-    write: (data) => void proc.stdin?.write(data),
-    alive: () => !exited,
-    kill: () => {
-      if (!exited) proc.kill();
-    },
-  };
-  resources.register(id, resource);
-  return resource;
 }

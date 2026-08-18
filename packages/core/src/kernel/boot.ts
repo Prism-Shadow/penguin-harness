@@ -18,7 +18,12 @@ import { isKeyed } from "./iface.js";
 
 /** Runtime-owned live resources (pty, child processes, connections). */
 export interface Resources {
-  register(id: string, resource: unknown): void;
+  /**
+   * `dispose` is how a resource says what "shut down" means for it — the registry
+   * itself knows nothing about kinds, so a platform can introduce a resource type the
+   * runtime has never heard of and still have it cleaned up at process exit.
+   */
+  register(id: string, resource: unknown, dispose?: () => void): void;
   claim<T = unknown>(id: string): T | undefined;
   release(id: string): void;
 }
