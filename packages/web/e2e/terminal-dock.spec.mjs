@@ -750,6 +750,43 @@ test("hover menus: create opens on hover; terminal lists on both levels", async 
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("HOVER_PICK_MARKER");
 });
 
+test("a failed shell create shows its error in the pane, and retry recovers", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+
+  // Make terminal creation fail the way a broken pty does server-side (spawn failure).
+  await page.route("**/api/terminals", (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "terminal_spawn_failed",
+          message: "Could not start a shell: posix_spawn failed (mock)",
+        }),
+      });
+    }
+    return route.continue();
+  });
+
+  await page.goto(`${BASE}/chat`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+
+  // The pane says WHY instead of sitting blank — the server's message included.
+  const errorCard = page.locator('[data-testid="terminal-dock-error"]');
+  await expect(errorCard).toBeVisible({ timeout: 10000 });
+  await expect(errorCard).toContainText("posix_spawn failed (mock)");
+
+  // Server recovers (unroute) → retry starts a real shell.
+  await page.unroute("**/api/terminals");
+  await page.locator('[data-testid="terminal-dock-retry"]').click();
+  await expect(errorCard).toBeHidden({ timeout: 10000 });
+  await waitForDockShell(page, "RECOVERED_UP");
+});
+
 test("terminal count badge and last-opened persistence", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
