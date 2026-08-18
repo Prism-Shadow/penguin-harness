@@ -121,6 +121,8 @@ export class Environment implements EnvironmentInterface {
     this.commandSessions = new CommandSessionManager({
       ...(config.vault !== undefined ? { vault: config.vault } : {}),
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
+      ...(config.confineSpawn !== undefined ? { confineSpawn: config.confineSpawn } : {}),
+      workspaceDir: config.workspaceDir,
     });
     this.subagentSessions = new SubagentSessionManager();
     const services = {
