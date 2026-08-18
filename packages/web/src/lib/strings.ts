@@ -813,6 +813,11 @@ export const zh = {
       high: "高",
       xhigh: "极高",
     } as Readonly<Record<string, string>>,
+    /** Mid-chat switch guard (issue #310): confirm before a level change that would invalidate the provider's prefix cache over the existing history. Title is the dialog's accessible name only. */
+    thinkingSwitchTitle: "切换思考等级",
+    thinkingSwitchBody: (to: string): string =>
+      `将思考等级切换为「${to}」？部分模型服务商按思考等级在提示词最前端注入不同前缀，会话已有历史，现在切换会使服务商的前缀缓存整体失效，下一次请求将按未缓存价格重新计入全部历史。更省钱的做法：先用 /compact 压缩上下文，再切换等级。`,
+    thinkingSwitchConfirm: "仍要切换",
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",

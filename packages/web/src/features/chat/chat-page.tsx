@@ -49,6 +49,7 @@ import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
@@ -60,6 +61,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import { needsThinkingSwitchConfirm, thinkingLevelLabel } from "./thinking-level";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
@@ -299,6 +301,12 @@ export function ChatPage() {
   // Once the user picks a level it sticks for the session and rides on every subsequent
   // postTask. Never written through to the Agent config (that behavior stays draft-only).
   const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
+  // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
+  // providers key their prompt PREFIX on the thinking level, so switching with history in
+  // place invalidates the provider's prefix cache and the next request re-bills the whole
+  // history as uncached input. The pick is only applied on explicit confirmation; null =
+  // no dialog. Guard logic in thinking-level.ts (needsThinkingSwitchConfirm).
+  const [pendingThinkingLevel, setPendingThinkingLevel] = useState<string | null>(null);
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanelRaw = useFilesPanel(routeSessionId);
@@ -625,6 +633,7 @@ export function ChatPage() {
   useEffect(() => {
     usageAppliedRef.current = null;
     setTurnThinkingLevel("");
+    setPendingThinkingLevel(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
@@ -1077,6 +1086,30 @@ export function ChatPage() {
     }
   }, [selected, syncHealedSessionId]);
 
+  // Session picker pick: applied directly while it cannot hurt (empty transcript, a
+  // re-pick of the displayed level, or right after a successful compaction), staged behind
+  // the confirm dialog otherwise — switching the level mid-chat invalidates the provider's
+  // prefix cache over the whole history (issue #310), so the dialog advises /compact first
+  // and Confirm is the explicit "switch anyway". The transcript is always loaded when the
+  // picker is clickable (the composer only mounts once history load settles), so the live
+  // tail items are authoritative here.
+  const onPickTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (
+        needsThinkingSwitchConfirm(
+          stream.model.items,
+          turnThinkingLevel || agentThinkingLevel,
+          level,
+        )
+      ) {
+        setPendingThinkingLevel(level);
+      } else {
+        setTurnThinkingLevel(level);
+      }
+    },
+    [stream.model, turnThinkingLevel, agentThinkingLevel],
+  );
+
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
   // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
@@ -1223,7 +1256,8 @@ export function ChatPage() {
       // Display value: the user's pick for this session, else the Agent config's level
       // (auto-follow while untouched; the send path uses the raw pick — see onSend).
       turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
-      onChangeTurnThinkingLevel={setTurnThinkingLevel}
+      // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
+      onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
@@ -1720,6 +1754,30 @@ export function ChatPage() {
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.noCredentialBody}</p>
       </Modal>
+
+      {/* Mid-chat thinking-level switch confirmation (issue #310): the staged pick is applied
+          only on the explicit "switch anyway"; Cancel keeps the current level, and the body
+          advises compacting first (/compact) — after a successful compaction the guard lets
+          the re-pick through without asking again. */}
+      <ConfirmModal
+        open={pendingThinkingLevel !== null}
+        title={S.chat.thinkingSwitchTitle}
+        tone="primary"
+        confirmLabel={S.chat.thinkingSwitchConfirm}
+        onClose={() => setPendingThinkingLevel(null)}
+        onConfirm={() => {
+          if (pendingThinkingLevel !== null) setTurnThinkingLevel(pendingThinkingLevel);
+          setPendingThinkingLevel(null);
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.chat.thinkingSwitchBody(
+            thinkingLevelLabel(S.chat.thinkingLevelNames, pendingThinkingLevel) ??
+              pendingThinkingLevel ??
+              "",
+          )}
+        </p>
+      </ConfirmModal>
     </div>
   );
 }

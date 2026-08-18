@@ -11,9 +11,12 @@ import {
   SELECTABLE_THINKING_LEVELS,
   THINKING_LEVELS,
   effectiveThinkingLevel,
+  needsThinkingSwitchConfirm,
+  prefixCacheAtRisk,
   thinkingLevelLabel,
   thinkingLevelOptionsFor,
 } from "../src/features/chat/thinking-level";
+import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {
@@ -100,5 +103,74 @@ describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
       label: "none",
       description: "legacy none",
     });
+  });
+});
+
+/** Stream-item stubs for the mid-chat switch guard (structural ThinkingSwitchItem subset). */
+const user: ThinkingSwitchItem = { kind: "user_text" };
+const reply: ThinkingSwitchItem = { kind: "assistant_text" };
+const stats: ThinkingSwitchItem = { kind: "task_stats" };
+const compactionDone: ThinkingSwitchItem = {
+  kind: "compaction",
+  running: false,
+  status: "completed",
+};
+const compactionFailed: ThinkingSwitchItem = {
+  kind: "compaction",
+  running: false,
+  status: "failed",
+};
+const compactionRunning: ThinkingSwitchItem = { kind: "compaction", running: true };
+
+describe("prefixCacheAtRisk (issue #310 — provider prefix cache over the existing history)", () => {
+  it("empty transcript: nothing cached provider-side yet", () => {
+    expect(prefixCacheAtRisk([])).toBe(false);
+  });
+
+  it("any conversation history puts the prefix cache at risk", () => {
+    expect(prefixCacheAtRisk([user])).toBe(true);
+    expect(prefixCacheAtRisk([user, reply, stats])).toBe(true);
+  });
+
+  it("a transcript ending in a successful compaction is safe (compact-then-switch is not re-warned)", () => {
+    expect(prefixCacheAtRisk([user, reply, stats, compactionDone])).toBe(false);
+  });
+
+  it("a failed or still-running trailing compaction leaves the old context — still at risk", () => {
+    expect(prefixCacheAtRisk([user, reply, compactionFailed])).toBe(true);
+    expect(prefixCacheAtRisk([user, reply, compactionRunning])).toBe(true);
+  });
+
+  it("a failed retry after a successful trailing compaction changed nothing — still safe", () => {
+    expect(prefixCacheAtRisk([user, reply, compactionDone, compactionFailed])).toBe(false);
+  });
+
+  it("new turns after a compaction re-arm the guard (only a TRAILING compaction is safe)", () => {
+    expect(prefixCacheAtRisk([user, reply, compactionDone, user, reply])).toBe(true);
+  });
+});
+
+describe("needsThinkingSwitchConfirm (mid-chat switch guard for the session picker)", () => {
+  const history = [user, reply, stats];
+
+  it("no dialog on a brand-new/empty session — the initial selection is free", () => {
+    expect(needsThinkingSwitchConfirm([], "medium", "high")).toBe(false);
+    expect(needsThinkingSwitchConfirm([], "", "high")).toBe(false);
+  });
+
+  it("dialog when history exists and the pick differs from the displayed level", () => {
+    expect(needsThinkingSwitchConfirm(history, "medium", "high")).toBe(true);
+  });
+
+  it("re-picking the displayed level only pins it — never a dialog, history or not", () => {
+    expect(needsThinkingSwitchConfirm(history, "high", "high")).toBe(false);
+  });
+
+  it("unknown displayed level ('' — config unset/still loading) with history: warn rather than silently invalidate", () => {
+    expect(needsThinkingSwitchConfirm(history, "", "medium")).toBe(true);
+  });
+
+  it("no dialog right after a successful compaction (the advised flow: /compact, then switch)", () => {
+    expect(needsThinkingSwitchConfirm([...history, compactionDone], "medium", "high")).toBe(false);
   });
 });

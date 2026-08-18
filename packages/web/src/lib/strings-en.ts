@@ -858,6 +858,10 @@ export const en: Strings = {
       high: "High",
       xhigh: "Extreme High",
     },
+    thinkingSwitchTitle: "Switch thinking level",
+    thinkingSwitchBody: (to: string): string =>
+      `Switch the thinking level to "${to}"? Some providers inject a different prompt prefix per thinking level at the very front of the prompt, and this conversation already has history — switching now invalidates the provider's prefix cache, so the next request re-bills the entire history at the uncached input rate. The cheaper path: run /compact first, then switch.`,
+    thinkingSwitchConfirm: "Switch anyway",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
