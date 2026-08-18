@@ -1,7 +1,7 @@
 # CI: build -> style (Prettier) -> typecheck (tsc) -> unit tests (vitest) -> live e2e (DeepSeek).
 # Build first: core's exports point at dist/, and cli's type resolution and runtime imports both need core's build output.
 # e2e needs the repo secret DEEPSEEK_API_KEY; when absent (e.g. forks) that step self-skips and the other checks run as usual.
-# A second job repeats build/typecheck/test on windows-latest (see ci-windows below).
+# Two more jobs repeat build/typecheck/test on macos-latest and windows-latest (ci-macos / ci-windows below).
 name: CI
 
 # Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
@@ -59,6 +59,41 @@ jobs:
             exit 0
           fi
           pnpm test:e2e
+
+  # macOS: the same build/typecheck/test gates on macos-latest (arm64). This is the only job
+  # where the terminal's pty suites run on darwin — node-pty compiles against the runner's
+  # toolchain and its darwin-only spawn-helper actually executes — and the standalone
+  # terminal smoke script then re-runs node-pty under Electron's own Node
+  # (ELECTRON_RUN_AS_NODE), the runtime the packaged app's server really uses. A macOS
+  # terminal regression that once shipped as a silently empty panel fails here instead.
+  # No format:check (same files as ubuntu) and no live-LLM e2e (ubuntu-only budget).
+  ci-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (tsup)
+        run: pnpm build
+
+      - name: Typecheck (tsc)
+        run: pnpm typecheck
+
+      - name: Unit tests (vitest)
+        run: pnpm test
+
+      - name: Terminal smoke (node-pty under Electron's Node)
+        run: node packages/desktop/scripts/terminal-smoke.mjs
 
   # Windows: the same build/typecheck/test gates on windows-latest (the ubuntu job above stays the
   # required one). The runner ships Git-Bash on PATH, so core's exec_command tests run through the
