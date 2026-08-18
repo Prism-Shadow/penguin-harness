@@ -43,7 +43,7 @@ export const en: Strings = {
     createFailed: "Could not start a terminal",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
     noTerminalApi:
-      "this server has no terminal API — it predates the feature; update or restart it",
+      "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",
