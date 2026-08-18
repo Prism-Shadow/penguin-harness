@@ -25,10 +25,12 @@ import {
   isTerminalDockOpen,
   movePane,
   paneCurrent,
+  paneError,
   paneOfTerminal,
   paneRatio,
   resetPaneRatio,
   setPaneCurrent,
+  setPaneError,
   setPaneRatio,
   subscribeTerminalDock,
   type DockPosition,
@@ -179,15 +181,26 @@ function TerminalTab(props: {
   );
 }
 
-/** Creates a fresh shell assigned to (and shown in) the given pane. */
+/**
+ * Creates a fresh shell assigned to (and shown in) the given pane. Failures surface in
+ * the pane body (setPaneError) — a swallowed create leaves a blank panel that looks like
+ * nothing happened, which is exactly how a server-side spawn failure used to present.
+ */
 async function createShellInPane(position: DockPosition): Promise<void> {
-  const created = await fetchJson<TerminalInfo>("/api/terminals", {
-    method: "POST",
-    body: JSON.stringify({ cwd: DOCK_CWD }),
-  }).catch(() => null);
-  if (!created) return;
-  noteTerminalCreated(created);
-  assignTerminalToPane(created.id, position);
+  try {
+    const created = await fetchJson<TerminalInfo>("/api/terminals", {
+      method: "POST",
+      body: JSON.stringify({ cwd: DOCK_CWD }),
+    });
+    if (!created) throw new Error("Server did not return a terminal.");
+    setPaneError(position, null);
+    noteTerminalCreated(created);
+    assignTerminalToPane(created.id, position);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[terminal] create failed (${position} pane):`, message);
+    setPaneError(position, message);
+  }
 }
 
 /**
@@ -262,7 +275,10 @@ async function resolvePaneCurrent(position: DockPosition): Promise<void> {
       const existing = await fetchJson<TerminalInfo>(
         `/api/terminals/${encodeURIComponent(storedId)}`,
       ).catch(() => null);
-      if (existing?.alive) return;
+      if (existing?.alive) {
+        setPaneError(position, null);
+        return;
+      }
     }
     const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(
       () => null,
@@ -272,6 +288,7 @@ async function resolvePaneCurrent(position: DockPosition): Promise<void> {
     );
     const newest = mine.at(-1);
     if (newest) {
+      setPaneError(position, null);
       setPaneCurrent(position, newest.id);
       return;
     }
@@ -286,6 +303,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
   useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
   const allTerminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const currentId = paneCurrent(position);
+  const resolveError = paneError(position);
   const viewState = useSyncExternalStore(subscribeTerminalViewStates, () =>
     terminalViewState(currentId),
   );
@@ -634,6 +652,28 @@ export function TerminalDock({ position }: { position: DockPosition }) {
 
       {/* The shown terminal's pooled view is adopted here (see the body effect). */}
       <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1" />
+      {/* Resolution/creation failure: say so instead of sitting blank. The server's error
+          message is shown verbatim (e.g. terminal_spawn_failed with the spawn error). */}
+      {currentId === null && resolveError !== null && (
+        <div
+          data-testid="terminal-dock-error"
+          className="absolute inset-x-0 bottom-0 top-9 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
+        >
+          <div className="text-sm text-red-400">{S.terminal.createFailed}</div>
+          <div className="max-w-xl break-all text-xs text-white/50">{resolveError}</div>
+          <button
+            type="button"
+            data-testid="terminal-dock-retry"
+            onClick={() => {
+              setPaneError(position, null);
+              void resolvePaneCurrent(position);
+            }}
+            className="rounded border border-white/15 px-3 py-1 text-xs text-white/70 hover:bg-white/10"
+          >
+            {S.common.retry}
+          </button>
+        </div>
+      )}
 
       {overlayActive && <DockLayoutOverlay candidate={overlayCandidate} />}
     </div>

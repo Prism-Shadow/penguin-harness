@@ -41,6 +41,8 @@ export const zh = {
     resize: "调整终端面板大小",
     /** Hover menu when the user has no live terminal yet. */
     noTerminals: "暂无终端",
+    /** Pane body when creating/attaching a shell failed (the server message follows). */
+    createFailed: "终端创建失败",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
     close: "关闭",

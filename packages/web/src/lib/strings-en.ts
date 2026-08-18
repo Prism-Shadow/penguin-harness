@@ -39,6 +39,8 @@ export const en: Strings = {
     resize: "Resize terminal panel",
     /** Hover menu when the user has no live terminal yet. */
     noTerminals: "No terminals",
+    /** Pane body when creating/attaching a shell failed (the server message follows). */
+    createFailed: "Could not start a terminal",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
     close: "Close",

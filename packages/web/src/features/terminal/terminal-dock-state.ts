@@ -82,6 +82,14 @@ let assignments: Record<string, DockPosition> = readJson(ASSIGN_KEY, {});
 /** Which terminal each pane is showing. */
 let currents: Partial<Record<DockPosition, string>> = readJson(CURRENTS_KEY, {});
 
+/**
+ * Last failure while resolving/creating a pane's shell (not persisted). Shown in the pane
+ * body: a blank panel with the cause swallowed is indistinguishable from "working" — the
+ * exact bug reported on macOS, where terminal creation failed server-side and nothing
+ * anywhere said so.
+ */
+let paneErrors: Partial<Record<DockPosition, string>> = {};
+
 const listeners = new Set<() => void>();
 let version = 0;
 
@@ -241,6 +249,17 @@ export function pruneAssignments(liveIds: ReadonlySet<string>): void {
 
 export function paneCurrent(position: DockPosition): string | null {
   return currents[position] ?? null;
+}
+
+export function paneError(position: DockPosition): string | null {
+  return paneErrors[position] ?? null;
+}
+
+export function setPaneError(position: DockPosition, message: string | null): void {
+  if ((paneErrors[position] ?? null) === message) return;
+  if (message === null) delete paneErrors[position];
+  else paneErrors = { ...paneErrors, [position]: message };
+  notify();
 }
 
 export function setPaneCurrent(position: DockPosition, id: string | null): void {
