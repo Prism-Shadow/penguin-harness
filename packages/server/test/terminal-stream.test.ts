@@ -35,6 +35,8 @@ let port: number;
 let server: ReturnType<typeof serve>;
 let adminCookie: string;
 let api: ReturnType<typeof apiClient>;
+/** Everything terminal/ws.ts logged for this suite (see the log hook in beforeAll). */
+const serverLogs: string[] = [];
 
 beforeAll(async () => {
   if (IS_WINDOWS) return;
@@ -51,7 +53,9 @@ beforeAll(async () => {
   attachTerminalWebSocket(server as unknown as HttpServer, {
     manager: t.deps.terminals,
     authService: t.deps.authService,
-    log: () => {},
+    // Kept, not discarded: the backpressure test's precondition (the server deciding a
+    // viewer is too far behind) is only observable through this line.
+    log: (line) => serverLogs.push(line),
   });
 });
 
@@ -288,41 +292,48 @@ describePty("terminal stream handshake", () => {
 });
 
 describePty("terminal stream backpressure", () => {
-  it(
-    "resyncs a lagging viewer with a fresh Restore instead of disconnecting it",
-    async () => {
-      const terminal = await createTerminal();
-      try {
-        const client = await attach(terminal.id);
-        await client.waitFor(() => client.restoreText().length > 0, "attach restore");
+  it("resyncs a lagging viewer with a fresh Restore instead of disconnecting it", async () => {
+    const terminal = await createTerminal();
+    try {
+      const client = await attach(terminal.id);
+      await client.waitFor(() => client.restoreText().length > 0, "attach restore");
 
-        // Stop reading: the TCP window and then the server's userland queue fill while
-        // the shell floods ~7 MB — far past the high watermark.
-        const socket = (client.ws as unknown as { _socket: { pause(): void; resume(): void } })
-          ._socket;
-        socket.pause();
-        client.sendInput("yes 0123456789abcdef | head -n 400000; echo BURST-DONE\r");
-        await waitForCapture(terminal.id, "BURST-DONE");
-
-        // The burst has fully landed server-side, and the lagging viewer is still attached.
-        expect(client.ws.readyState).toBe(WebSocket.OPEN);
-
-        // Catching up delivers one resync Restore carrying the final screen, and the
-        // stream is live again afterwards.
-        socket.resume();
-        const restores = (): number =>
-          client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore).length;
-        await client.waitFor(() => restores() >= 2, "resync Restore frame");
-        const resync = client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore)[1]!;
-        expect(resync.text).toContain("BURST-DONE");
-        await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
-        await client.close();
-      } finally {
-        await api.delete(`/api/terminals/${terminal.id}`);
+      // Stop reading: the TCP window and then the server's userland queue fill while
+      // the shell floods ~7 MB — far past the high watermark.
+      const socket = (client.ws as unknown as { _socket: { pause(): void; resume(): void } })
+        ._socket;
+      socket.pause();
+      // Flood until the server itself reports this viewer as lagging. A fixed burst is a
+      // coin flip: a paused reader still lets the kernel absorb megabytes into its socket
+      // buffers (autotuned), so the server's own send queue — the thing the watermark
+      // measures — may never cross 1 MiB however much the shell wrote. This suite failed
+      // that way roughly one run in three, locally and on CI.
+      const isLagging = (): boolean => serverLogs.some((l) => l.includes("pausing for resync"));
+      for (let round = 1; round <= 8 && !isLagging(); round += 1) {
+        client.sendInput(`yes 0123456789abcdef | head -n 400000; echo BURST-DONE-${round}\r`);
+        await waitForCapture(terminal.id, `BURST-DONE-${round}`, 60_000);
       }
-    },
-    TEST_TIMEOUT,
-  );
+      expect(isLagging(), "server never marked the paused viewer as lagging").toBe(true);
+
+      // The burst has fully landed server-side, and the lagging viewer is still attached.
+      expect(client.ws.readyState).toBe(WebSocket.OPEN);
+
+      // Catching up delivers one resync Restore carrying the final screen, and the
+      // stream is live again afterwards.
+      socket.resume();
+      const restores = (): number =>
+        client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore).length;
+      await client.waitFor(() => restores() >= 2, "resync Restore frame", 60_000);
+      const resync = client.frames.filter((f) => f.opcode === TerminalStreamOpcode.Restore)[1]!;
+      expect(resync.text).toContain("BURST-DONE-");
+      await runAndWait(client, "echo LIVE-$((40+2))", "LIVE-42");
+      await client.close();
+    } finally {
+      await api.delete(`/api/terminals/${terminal.id}`);
+    }
+    // Megabytes through a pty, a paused socket and a drain: minutes of budget on a loaded
+    // runner, where the default would report a timeout rather than a real defect.
+  }, 120_000);
 });
 
 describePty("terminal stream attach", () => {
