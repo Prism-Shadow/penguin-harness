@@ -123,10 +123,12 @@ function inputToUsd(inputStr: string, currency: Currency): string {
   return currency === "CNY" ? trimNum(n / USD_TO_CNY) : trimNum(n);
 }
 
-/** Group-header action glyphs (24x24 line paths): add, bulk key, gauge for speed test. */
+/** Group-header action glyphs (24x24 line paths): add, bulk key, external link, gauge for speed test. */
 const PLUS_ICON = "M12 5v14M5 12h14";
 const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
+const EXTERNAL_LINK_ICON =
+  "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
@@ -611,7 +613,9 @@ export function ModelsPage() {
                       actions on the right. Actions are separate elements because buttons can't
                       nest. The row is a size container: the sidebar can narrow it while the
                       viewport remains desktop-sized, so action labels must respond to this
-                      row's actual width rather than viewport breakpoints. */}
+                      row's actual width rather than viewport breakpoints. Narrow rows never
+                      hide an action — each one keeps its icon (with aria-label + title) and
+                      only sheds its text label. */}
                   <div className="@container flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
                     <button
                       type="button"
@@ -635,35 +639,38 @@ export function ModelsPage() {
                     </button>
                     {isOwner && (
                       // Add-model entry point: present on every group header (including
-                      // custom), new models belong to that group. The page header has no
-                      // global add button, so this doesn't collapse on narrow screens either.
-                      <span className="shrink-0">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() => setAddingTo(group.provider.id)}
-                        >
-                          <GlyphIcon d={PLUS_ICON} size={13} />
-                          {S.models.addToGroup}
-                        </Button>
-                      </span>
+                      // custom), new models belong to that group. Narrow rows never hide a
+                      // group action — they drop its label and keep the icon (same pattern
+                      // for every action in this row), so the button stays reachable.
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={busy}
+                        aria-label={`${S.models.addToGroup} ${group.provider.label}`}
+                        title={S.models.addToGroup}
+                        onClick={() => setAddingTo(group.provider.id)}
+                      >
+                        <GlyphIcon d={PLUS_ICON} size={13} />
+                        <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
+                      </Button>
                     )}
                     {isOwner && group.provider.id !== "custom" && (
-                      // Hide the wide bulk action when this row itself is narrow (per-model
-                      // keys remain configurable in the card dialog). Wrapped in a span:
-                      // passing hidden directly to Button conflicts with its inline-flex base.
-                      <span className="hidden shrink-0 @3xl:block">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busy}
-                          onClick={() => setGroupKeyFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={KEY_ICON} size={13} />
-                          {S.models.groupApiKey}
-                        </Button>
-                      </span>
+                      // Bulk key action: icon-only while this row is narrow, labeled from
+                      // @3xl up. The button itself never disappears — aria-label + title
+                      // carry the name while the visible label is dropped.
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={busy}
+                        aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
+                        title={S.models.groupApiKey}
+                        onClick={() => setGroupKeyFor(group.provider.id)}
+                      >
+                        <GlyphIcon d={KEY_ICON} size={13} />
+                        <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
+                      </Button>
                     )}
                     {isOwner && (
                       <Button
@@ -689,15 +696,19 @@ export function ModelsPage() {
                       </Button>
                     )}
                     {group.provider.apiKeyUrl && (
-                      // The external link is the last label admitted as space grows; it also
-                      // exists in the model dialog when the row is narrower.
+                      // External link: its label is the last one admitted as space grows
+                      // (@4xl); below that it collapses to the external-link glyph with a
+                      // small padding bump for a usable touch target.
                       <a
                         href={group.provider.apiKeyUrl}
                         target="_blank"
                         rel="noreferrer noopener"
-                        className="hidden shrink-0 whitespace-nowrap text-xs text-brand-600 underline-offset-2 hover:underline @4xl:inline dark:text-brand-300"
+                        aria-label={`${S.models.getApiKey} ${group.provider.label}`}
+                        title={S.models.getApiKey}
+                        className="inline-flex shrink-0 items-center whitespace-nowrap p-1 text-xs text-brand-600 underline-offset-2 hover:underline @4xl:p-0 dark:text-brand-300"
                       >
-                        {S.models.getApiKey} ↗
+                        <GlyphIcon d={EXTERNAL_LINK_ICON} size={13} className="@4xl:hidden" />
+                        <span className="hidden @4xl:inline">{S.models.getApiKey} ↗</span>
                       </a>
                     )}
                     {/* Collapse arrow sits at the far right of the header (after group actions); it too can be clicked to collapse. */}

@@ -10,6 +10,10 @@
  *   the group-level actions), and its model dialog opts every field out of browser autofill
  *   (the API-key box used to receive the account's saved password, the box above it the
  *   username);
+ * - the models group header is a size container (the desktop sidebar narrows it while the
+ *   viewport stays wide): narrow rows collapse every group action to an icon-only control
+ *   (icon + aria-label + title kept, text label hidden — an action is never hidden outright)
+ *   and neither the header nor the page overlaps or overflows at any width;
  * - every chat-page dropdown menu, opened at phone widths (375/390), must keep its panel
  *   inside the viewport and must not shove the page sideways (the model menu used to run
  *   ~34px off-screen left, the skills menu ~92px off-screen right — with its autofocused
@@ -261,7 +265,7 @@ test("layout: en draft + context gauge + mobile models", async ({ page }) => {
   ).toBe("rgba(0, 0, 0, 0)");
 });
 
-test("models: group headers adapt to the available desktop content width", async ({ page }) => {
+test("models: group header actions collapse to icons instead of disappearing", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await provisionAndLogin(page.request, "modelwidthuser", P);
   await page.setViewportSize({ width: 900, height: 900 });
@@ -272,8 +276,62 @@ test("models: group headers adapt to the available desktop content width", async
   const openRouter = page.getByRole("button", { name: /OpenRouter \d+ 个模型/ });
   await openRouter.waitFor();
 
-  for (const width of [900, 1280, 1440]) {
+  // Every group-level action, addressed by its accessible name (aria-label = "action vendor",
+  // stable across widths). Narrow rows must never hide an action: it keeps its icon (with a
+  // title tooltip) and sheds only the visible text label.
+  const actions = [
+    { role: "button", name: "新增模型 OpenRouter", label: "新增模型" },
+    { role: "button", name: "统一配置 API key OpenRouter", label: "统一配置 API key" },
+    { role: "button", name: "测速 OpenRouter", label: "测速" },
+    { role: "link", name: "获取 API key OpenRouter", label: "获取 API key" },
+  ];
+
+  // The expected label regime is derived from the row's measured width against the
+  // container thresholds — @3xl (48rem) admits the button labels, @4xl (56rem) the link
+  // label — because how wide the row is at a given viewport depends on the environment's
+  // root font size (the sidebar, page padding, viewport breakpoints and the thresholds are
+  // all rem-based). A row hugging a threshold (±16px) skips the label assertions; the
+  // coverage checks after the sweep guarantee both extreme regimes were exercised anyway.
+  const seen = { iconOnly: false, fullyLabeled: false };
+  for (const width of [390, 900, 1180, 1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
+    const { rowWidth, rem } = await openRouter.locator("xpath=..").evaluate((header) => {
+      // Container queries resolve against the content box, so strip the row's padding.
+      const s = getComputedStyle(header);
+      return {
+        rowWidth: header.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight),
+        rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      };
+    });
+    const regime = (remThreshold) =>
+      Math.abs(rowWidth - remThreshold * rem) <= 16 ? null : rowWidth >= remThreshold * rem;
+    const buttonLabels = regime(48);
+    const linkLabel = regime(56);
+    if (buttonLabels === false && linkLabel === false) seen.iconOnly = true;
+    if (buttonLabels === true && linkLabel === true) seen.fullyLabeled = true;
+
+    for (const { role, name, label } of actions) {
+      const action = page.getByRole(role, { name });
+      await expect(action, `${label} action reachable @${width}`).toBeVisible();
+      await expect(action, `${label} action has a tooltip @${width}`).toHaveAttribute(
+        "title",
+        /.+/,
+      );
+      const expectLabel = role === "link" ? linkLabel : buttonLabels;
+      if (expectLabel === null) continue;
+      const text = action.locator("span", { hasText: label });
+      const icon = action.locator("svg");
+      if (expectLabel) {
+        await expect(text, `${label} label shown @${width}`).toBeVisible();
+        // The link swaps between glyph and text; the buttons keep their glyph alongside.
+        if (role === "link") {
+          await expect(icon, `${label} icon swapped out @${width}`).toBeHidden();
+        }
+      } else {
+        await expect(text, `${label} label hidden @${width}`).toBeHidden();
+        await expect(icon, `${label} icon shown @${width}`).toBeVisible();
+      }
+    }
     const metrics = await openRouter.locator("xpath=..").evaluate((header) => {
       const visible = (el) => {
         for (let node = el; node; node = node.parentElement) {
@@ -327,6 +385,9 @@ test("models: group headers adapt to the available desktop content width", async
       d.clientWidth,
     );
   }
+
+  expect(seen.iconOnly, "the sweep exercised the icon-only regime").toBe(true);
+  expect(seen.fullyLabeled, "the sweep exercised the fully-labeled regime").toBe(true);
 });
 
 test("layout: collapsed rail — order, bilingual tooltips, last conversation", async ({ page }) => {
