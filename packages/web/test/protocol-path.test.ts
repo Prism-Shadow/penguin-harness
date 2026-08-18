@@ -2,7 +2,7 @@
  * Protocol-path suffix for the base URL field (pure mapping): which path the AgentHub
  * client appends to a custom base URL, keyed off (provider, clientType). The expected
  * paths mirror the vendored agenthub clients: Anthropic direct posts /v1/messages,
- * OpenAI direct uses the Responses API (/responses), Google direct hits
+ * OpenAI and MiniMax direct use a Responses API (/responses), Google direct hits
  * /v1beta/models/<id>:…, and every OpenAI-compatible client posts /chat/completions.
  */
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,12 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("anthropic", "")).toBe("/v1/messages");
     expect(protocolPathForModel("openai", "")).toBe("/responses");
     expect(protocolPathForModel("google", "")).toBe("/v1beta/models");
+    expect(protocolPathForModel("minimax", "")).toBe("/responses");
+  });
+
+  it("the MiniMax M3 client speaks MiniMax's Responses API, not chat completions", () => {
+    expect(protocolPathForModel("minimax", "minimax-m3")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", "minimax-m3")).toBe("/responses");
   });
 
   it("the remaining direct vendors speak chat completions", () => {

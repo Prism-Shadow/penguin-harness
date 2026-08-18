@@ -26,7 +26,7 @@ const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
   { provider: "anthropic", modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
   { provider: "moonshot", modelId: "kimi-k2.6", displayName: "Kimi K2.6" },
-  { provider: "minimax-token-plan", modelId: "MiniMax-M3", displayName: "MiniMax M3" },
+  { provider: "minimax", modelId: "MiniMax-M3", displayName: "MiniMax M3" },
   { provider: "custom", modelId: "my-proxy-model" },
   { provider: "unknown-vendor", modelId: "weird-model" }, // provider not in the catalog → custom-built group
 ];
@@ -62,7 +62,7 @@ describe("groupModelRows", () => {
     expect(groups.map((g) => g.provider.id)).toEqual([
       "anthropic",
       "moonshot",
-      "minimax-token-plan",
+      "minimax",
       "custom",
       "unknown-vendor",
     ]);
@@ -88,11 +88,11 @@ describe("groupModelRows", () => {
       "openai",
       "zhipu",
       "moonshot",
-      "minimax-token-plan",
+      "minimax",
       "custom",
     ]);
     expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");
-    expect(MODEL_PROVIDERS.find((p) => p.id === "minimax-token-plan")!.label).toBe("MiniMax");
+    expect(MODEL_PROVIDERS.find((p) => p.id === "minimax")!.label).toBe("MiniMax");
   });
 
   it("the custom group always shows without a search query (returned even when empty, hosting the add entry point)", () => {

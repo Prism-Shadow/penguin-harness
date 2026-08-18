@@ -34,7 +34,7 @@ When a model entry has no inline `api_key`, AgentHub falls back to the provider'
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
 | openai, openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
-| minimax-token-plan | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
+| minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |

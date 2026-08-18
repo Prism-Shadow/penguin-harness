@@ -13,7 +13,7 @@ import {
   resolveModelEnv,
 } from "../src/state/index.js";
 
-const UNPRICED = new Set(["minimax-token-plan\0MiniMax-M3"]);
+const UNPRICED = new Set(["minimax\0MiniMax-M3"]);
 
 describe("model-catalog", () => {
   it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
@@ -38,12 +38,12 @@ describe("model-catalog", () => {
       "openai",
       "zhipu",
       "moonshot",
-      "minimax-token-plan",
+      "minimax",
       "custom",
     ]);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
-    expect(providerInfo("minimax-token-plan")!.label).toBe("MiniMax");
-    expect(providerInfo("minimax-token-plan")!.envKey).toBe("MINIMAX_API_KEY");
+    expect(providerInfo("minimax")!.label).toBe("MiniMax");
+    expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -135,7 +135,7 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
-    expect(catalogEntryFor("minimax-token-plan", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
+    expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
 
   it("presetModelEntries: provider and bare upstream model_id are separate fields; preset endpoints are inlined", () => {
@@ -260,7 +260,7 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai");
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
-    const minimax = MODEL_CATALOG.filter((m) => m.provider === "minimax-token-plan");
+    const minimax = MODEL_CATALOG.filter((m) => m.provider === "minimax");
     expect(
       minimax.map((m) => [
         m.modelId,
@@ -273,8 +273,8 @@ describe("model-catalog", () => {
     ).toEqual([
       ["MiniMax-M3", 1000000, true, "minimax-m3", "https://api.minimax.io/v1", undefined],
     ]);
-    expect(providerInfo("minimax-token-plan")!.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
-    expect(providerInfo("minimax-token-plan")!.gatewayBaseUrl).toBeUndefined();
+    expect(providerInfo("minimax")!.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
+    expect(providerInfo("minimax")!.gatewayBaseUrl).toBeUndefined();
     // Routed through AgentHub's OpenAI client -> when the credential is left blank it reads OPENAI_API_KEY (not the provider's own env var name).
     for (const id of [
       "openrouter",
@@ -505,7 +505,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(modelHomepageUrl("deepseek", "deepseek-v4-pro")).toBe(
       "https://api-docs.deepseek.com/quick_start/pricing",
     );
-    expect(modelHomepageUrl("minimax-token-plan", "MiniMax-M3")).toBe(
+    expect(modelHomepageUrl("minimax", "MiniMax-M3")).toBe(
       "https://platform.minimax.io/docs/guides/models-intro",
     );
     // Z.AI and Moonshot have per-model pages (Moonshot drops the dot: kimi-k2.6 -> chat-k26).

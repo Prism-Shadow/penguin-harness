@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@prismshadow/agenthub": "^0.4.1",
+    "@prismshadow/agenthub": "^0.4.2",
     "@prismshadow/penguin-skills": "workspace:*",
     "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"

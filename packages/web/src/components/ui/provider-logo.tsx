@@ -92,7 +92,7 @@ const GLYPHS: Record<string, Glyph> = {
   },
   "qwen-token-plan": QWEN_GLYPH,
   "qwen-pay-as-you-go": QWEN_GLYPH,
-  "minimax-token-plan": {
+  minimax: {
     // The official MiniMax stream-lines mark (evenodd fill preserved from the brand SVG).
     path: (
       <path

@@ -69,7 +69,7 @@ api_key = "sk-..."
 | openai | `OPENAI_API_KEY` | |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax-token-plan（MiniMax） | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
+| minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点 |
 
 网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。MiniMax 在输入超过 512K Token 后将各档价格翻倍，而当前目录无法表达阶梯定价，因此不记录 M3 价格。

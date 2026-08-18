@@ -69,7 +69,7 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | openai | `OPENAI_API_KEY` | |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
-| minimax-token-plan (MiniMax) | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
+| minimax | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint |
 
 The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable. The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset pins `https://api.minimax.io/v1`; `MINIMAX_BASE_URL` is consulted only for entries without an inline `base_url`. M3 pricing is omitted because MiniMax doubles every rate above 512K input tokens and the catalog cannot represent tiered pricing.

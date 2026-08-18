@@ -1,7 +1,7 @@
 /**
  * Built-in model catalog (single source of truth): official chat models that AgentHub can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
- * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax Token Plan: 2026-08-03, per each provider's docs).
+ * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03, per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -184,11 +184,13 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl: "https://platform.kimi.com/docs/pricing",
   },
   {
-    id: "minimax-token-plan",
+    id: "minimax",
     label: "MiniMax",
     envKey: "MINIMAX_API_KEY",
     envBaseUrlKey: "MINIMAX_BASE_URL",
-    apiKeyUrl: "https://platform.minimax.io/subscribe/token-plan?tab=api-enterprise",
+    // The pay-as-you-go key page; a Token Plan Subscription Key (Billing > Token Plan) works
+    // against the same endpoint, so the group is not tied to either billing mode.
+    apiKeyUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
     modelsUrl: "https://platform.minimax.io/docs/guides/models-intro",
   },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
@@ -832,7 +834,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     modelId: "MiniMax-M3",
     displayName: "MiniMax M3",
-    provider: "minimax-token-plan",
+    provider: "minimax",
     contextWindow: 1000000,
     supportsVision: true,
     clientType: "minimax-m3",
