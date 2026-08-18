@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assistantText,
   compactionBegin,
@@ -273,6 +273,38 @@ describe("session fork", () => {
     expect(response.status).toBe(201);
     const { session } = (await response.json()) as SessionForkResponse;
     expect(session.title).toBe("(1)");
+  });
+
+  it("removes the committed fork row and cloned files when response shaping fails", async () => {
+    await seedSource();
+    const toInfo = vi
+      .spyOn(t.deps.sessionService, "toInfo")
+      .mockRejectedValueOnce(new Error("response shaping failed"));
+
+    const response = await api.post(`/api/sessions/${SID}/fork`, {
+      position: { fileIndex: 1, ordinal: 4 },
+    });
+    expect(response.status).toBe(500);
+
+    const forkRow = toInfo.mock.calls[0]?.[0];
+    expect(forkRow).toBeDefined();
+    expect(t.deps.sessionsRepo.findById(forkRow!.sessionId)).toBeNull();
+    await expect(
+      fs.stat(path.join(scratchpadDir(t.root, projectId, "default_agent"), forkRow!.sessionId)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      await fs.readdir(path.join(tracesDir(t.root, projectId, "default_agent"), "2026-08-14")),
+    ).toEqual([`${SID}_001.jsonl`]);
+
+    // The allocation remains consumed so a transient failure cannot make a number mean
+    // two different forks over time.
+    toInfo.mockRestore();
+    const retry = (await (
+      await api.post(`/api/sessions/${SID}/fork`, {
+        position: { fileIndex: 1, ordinal: 4 },
+      })
+    ).json()) as SessionForkResponse;
+    expect(retry.session.title).toBe("Attachment discussion (2)");
   });
 
   it("rejects a user-message coordinate rather than cutting an unsafe prefix", async () => {

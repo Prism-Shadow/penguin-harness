@@ -526,6 +526,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         201,
       );
     } catch (err) {
+      // insertFork commits before response shaping. If a later step fails (for example,
+      // resolving SessionInfo), remove that committed row along with the cloned files so
+      // the index cannot retain a Session whose Trace was rolled back.
+      deps.sessionsRepo.deleteById(fork.sessionId);
       await deps.traceService.deleteSessionTraces(row.projectId, row.agentId, fork.sessionId);
       await fs.rm(
         path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), fork.sessionId),
