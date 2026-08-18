@@ -99,6 +99,15 @@ export type UpgradeOutcome =
       impl: string;
       source: GitSource | null;
       web: { rev: string };
+      /**
+       * Whether persistVersion's disk commit succeeded. The live swap always applies
+       * on `status: "ok"` regardless (see the module doc: "never brick"); when this is
+       * false the new version is running but NOT durable — a restart would resume the
+       * previously committed version instead. Callers (routes.ts, scripts/deploy.mjs)
+       * surface this so a filesystem failure during persistence is visible rather than
+       * indistinguishable from a fully-durable push.
+       */
+      persisted: boolean;
     }
   | { status: "blocked"; dropped: string[]; missing: string[]; invalid: string[] };
 
@@ -113,7 +122,13 @@ export class HmrHost {
   private readonly hmrDir: string;
   private readonly storeDir: string;
   private readonly manifestPath: string;
-  private restored = false;
+  /**
+   * Single-flight guard for the first boot (see ensure()): every concurrent caller before the
+   * first successful boot awaits the SAME promise, so restore() and the packaged-default
+   * fallback can never run twice and race each other into assigning `this.instance` (a double
+   * boot, or a restored version clobbered by a concurrently-booted packaged default).
+   */
+  private initPromise: Promise<Instance<PlatformApi>> | null = null;
   /** The freeze, as a queue: everything the HTTP layer gates on chains here. */
   private opQueue: Promise<unknown> = Promise.resolve();
 
@@ -145,10 +160,19 @@ export class HmrHost {
   /**
    * Lazy first boot. Resumes the last committed version (platform + cli + web)
    * from disk when present; otherwise boots the packaged platform v1 with a
-   * fresh document.
+   * fresh document. Concurrent callers before the first boot completes share one
+   * in-flight promise (see `initPromise`) rather than each racing their own
+   * restore()/packaged-boot.
    */
-  async ensure(): Promise<Instance<PlatformApi>> {
-    if (this.instance === null) {
+  ensure(): Promise<Instance<PlatformApi>> {
+    if (this.instance !== null) return Promise.resolve(this.instance);
+    this.initPromise ??= this.initialize();
+    return this.initPromise;
+  }
+
+  /** Runs exactly once per process (guarded by `initPromise` in ensure()). */
+  private async initialize(): Promise<Instance<PlatformApi>> {
+    try {
       await this.restore();
       if (this.instance === null) {
         const bundle = packagedPlatform;
@@ -159,12 +183,17 @@ export class HmrHost {
           this.resources,
         )) as Instance<PlatformApi>;
       }
+      return this.instance;
+    } catch (err) {
+      // A failed init must not permanently strand ensure(): clear the guard so the next
+      // caller gets a fresh attempt instead of the same rejection forever.
+      this.initPromise = null;
+      throw err;
     }
-    return this.instance;
   }
 
   /**
-   * Resume from harness.json (once), as ONE unit: the platform bundle, its parked
+   * Resume from harness.json, as ONE unit: the platform bundle, its parked
    * doc, the cli bundle's own existence, and the web artifact are all read and
    * validated BEFORE anything is committed to `this.instance` / `this.webMem` — so a
    * failure partway through (a pruned bundle, a corrupt park, a missing web
@@ -173,11 +202,10 @@ export class HmrHost {
    * runs it — only packages/cli's own loader does); its file just has to exist, so a
    * restore can never leave `cli.bundle` pointing at nothing. Any failure is
    * non-fatal: it warns and leaves the runtime to boot the packaged default — a bad
-   * persisted state must never brick the runtime.
+   * persisted state must never brick the runtime. Only ever called once (from
+   * initialize(), itself single-flighted by ensure()'s `initPromise`).
    */
   private async restore(): Promise<void> {
-    if (this.restored) return;
-    this.restored = true;
     let manifest: Manifest;
     try {
       manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
@@ -285,7 +313,13 @@ export class HmrHost {
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
-    await this.persistVersion(target.platform, target.cli, result.doc, gz, digest.slice(0, 16));
+    const persisted = await this.persistVersion(
+      target.platform,
+      target.cli,
+      result.doc,
+      gz,
+      digest.slice(0, 16),
+    );
 
     return {
       status: "ok",
@@ -293,6 +327,7 @@ export class HmrHost {
       impl: bundle.id,
       source,
       web: { rev: digest.slice(0, 12) },
+      persisted,
     };
   }
 
@@ -352,6 +387,20 @@ export class HmrHost {
    * `platform.bundle` and `cli.bundle` are now genuinely independent files
    * (distinct content, distinct sha) rather than the same physical bundle
    * under two manifest keys.
+   *
+   * The park filename is content-addressed on BOTH the platform code and the parked
+   * doc (`${platformSha}-${docSha}.park.json`), not the code alone: two pushes of the
+   * SAME platform source with a DIFFERENT parked state used to collide on one
+   * `${platformSha}.park.json` file, so the second push overwrote the first commit's
+   * park file in place — if the process crashed between that overwrite and the
+   * harness.json rename, the already-committed version (still referenced by the
+   * on-disk manifest) would resume with the wrong parked doc. Suffixing by doc hash
+   * makes every write go to a NEW file; the currently-committed park file is never
+   * touched again until it is pruned (see pruneStore).
+   *
+   * Returns whether the commit succeeded — the caller surfaces this to clients
+   * (`persisted` in UpgradeOutcome) so a live swap that could not be written to disk
+   * is visibly at risk of reverting on the next restart, rather than silently ok.
    */
   private async persistVersion(
     platformContent: string,
@@ -359,13 +408,17 @@ export class HmrHost {
     doc: Json,
     webGz: Buffer,
     webSha: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const platformSha = sha1(platformContent).slice(0, 16);
+      const docSha = sha1(JSON.stringify(doc)).slice(0, 16);
       const platformDir = path.join(this.storeDir, "platform");
       await fsp.mkdir(platformDir, { recursive: true });
       await fsp.writeFile(path.join(platformDir, `${platformSha}.mjs`), platformContent, "utf8");
-      await fsp.writeFile(path.join(platformDir, `${platformSha}.park.json`), JSON.stringify(doc));
+      await fsp.writeFile(
+        path.join(platformDir, `${platformSha}-${docSha}.park.json`),
+        JSON.stringify(doc),
+      );
 
       const cliSha = sha1(cliContent).slice(0, 16);
       const cliDir = path.join(this.storeDir, "cli");
@@ -379,13 +432,15 @@ export class HmrHost {
       await this.commitManifest(() => ({
         platform: {
           bundle: `store/platform/${platformSha}.mjs`,
-          park: `store/platform/${platformSha}.park.json`,
+          park: `store/platform/${platformSha}-${docSha}.park.json`,
         },
         cli: { bundle: `store/cli/${cliSha}.mjs` },
         web: { manifest: `store/web/${webSha}.webz` },
       }));
+      return true;
     } catch (err) {
       this.warn(`update not persisted (filesystem unavailable?): ${errMsg(err)}`);
+      return false;
     }
   }
 
@@ -440,16 +495,29 @@ export class HmrHost {
       }
     };
 
+    // Platform code (`*.mjs`) and parked docs (`*.park.json`) are pruned as two
+    // INDEPENDENT passes over the same directory now that a park file is keyed on
+    // code+state (`${platformSha}-${docSha}.park.json`, see persistVersion): the same
+    // `.mjs` can be the target of several park files (same code re-pushed with a
+    // different parked state), so grouping "newest N" by platform sha alone would keep
+    // an `.mjs` while pruning the very park file the current manifest still points at
+    // (or vice versa). Each pass keeps its own newest STORE_KEEP + whatever the manifest
+    // currently references; an orphan under the old `${sha}.park.json` naming has no
+    // special standing and ages out like any other unreferenced entry.
     const platformDir = path.join(this.storeDir, "platform");
-    const platformRef = manifest.platform?.bundle.match(/([0-9a-f]+)\.mjs$/)?.[1] ?? null;
+    const platformBundleRef = manifest.platform?.bundle.match(/([0-9a-f]+)\.mjs$/)?.[1] ?? null;
     await keepNewest(
       platformDir,
       (name) => /^([0-9a-f]+)\.mjs$/.exec(name)?.[1] ?? null,
-      platformRef,
-      async (sha) => {
-        await fsp.rm(path.join(platformDir, `${sha}.mjs`), { force: true });
-        await fsp.rm(path.join(platformDir, `${sha}.park.json`), { force: true });
-      },
+      platformBundleRef,
+      (sha) => fsp.rm(path.join(platformDir, `${sha}.mjs`), { force: true }),
+    );
+    const platformParkRef = manifest.platform?.park.match(/([^/]+)\.park\.json$/)?.[1] ?? null;
+    await keepNewest(
+      platformDir,
+      (name) => /^(.+)\.park\.json$/.exec(name)?.[1] ?? null,
+      platformParkRef,
+      (key) => fsp.rm(path.join(platformDir, `${key}.park.json`), { force: true }),
     );
 
     const cliDir = path.join(this.storeDir, "cli");

@@ -51,6 +51,14 @@ export interface PlatformHttp {
 export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
+    // Wait out any in-flight swap FIRST, same as /api/hmr/*'s own gate (routes.ts): the
+    // kernel's upgrade() disposes the old tree before it awaits the new one's boot, and for
+    // that whole window `hmr.ensure()` still resolves synchronously to the OLD instance —
+    // it only reassigns once the swap is done. Without this wait, a request landing in that
+    // window would be handed to an already-disposed tree instead of observing the freeze as
+    // latency (see host.ts's module doc: "a client never observes the stop-the-world
+    // window").
+    await hmr.waitIdle();
     let handler: PlatformHttp["http"];
     try {
       const instance = await hmr.ensure();

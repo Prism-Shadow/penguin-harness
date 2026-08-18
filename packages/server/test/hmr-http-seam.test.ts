@@ -227,3 +227,78 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
     expect(await (await api.get("/api/version")).json()).toEqual(runtimeVersion);
   });
 });
+
+/**
+ * Same shape as `platformServing`, except `create()` awaits `delayMs` before returning —
+ * so the window between the kernel disposing the OLD instance and this NEW one finishing
+ * boot (see kernel/upgrade.ts: dispose-then-await-boot) is wide enough to race a request
+ * against on purpose.
+ */
+function platformSlow(delayMs: number, id: string): string {
+  return `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  async create(_ctx, context) {
+    await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
+    return {
+      park: () => context,
+      info: () => ({ impl: ${JSON.stringify(id)} }),
+      http(request) {
+        const { pathname } = new URL(request.url);
+        if (pathname !== "/api/demo/version") return null;
+        return new Response(JSON.stringify({ impl: ${JSON.stringify(id)} }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  },
+};
+export const hotPlatform = { id: ${JSON.stringify(id)}, iface, impl };
+`;
+}
+
+describe("platform HTTP seam: a request racing an in-flight swap", () => {
+  let t: TestApp;
+  let cookie: string;
+  let api: ReturnType<typeof apiClient>;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    const admin = await loginAdmin(t.app);
+    cookie = admin.cookie;
+    api = apiClient(t.app, cookie);
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  it("waits for the new instance instead of landing on the disposed old one", async () => {
+    // Boot v1 first (instant), so there IS an old instance for upgrade() to dispose.
+    expect((await pushPlatform(t.app, cookie, platformSlow(0, "v1"))).status).toBe(200);
+    expect(await (await api.get("/api/demo/version")).json()).toEqual({ impl: "v1" });
+
+    // Push v2 with a slow boot (kernel's upgrade() disposes v1 synchronously, then awaits
+    // v2's boot — see upgrade.ts) and race a seam request against it while it's in flight.
+    const pushed = pushPlatform(t.app, cookie, platformSlow(150, "v2"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const raced = await api.get("/api/demo/version");
+    expect((await pushed).status).toBe(200);
+
+    // Must observe latency (the seam awaited the swap), never the disposed v1 nor an error.
+    expect(raced.status).toBe(200);
+    expect(await raced.json()).toEqual({ impl: "v2" });
+  });
+});
