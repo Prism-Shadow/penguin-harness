@@ -362,7 +362,8 @@ const en: Messages = {
       "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session",
   },
   serve: {
-    serverDesc: "Start the Web service (HTTP API and the built-in frontend, same process)",
+    serverDesc:
+      "Start the Web service (HTTP API and the built-in frontend, same process); subcommand reset-admin-password resets a forgotten admin password",
     webDesc: "Start the Web service and open the UI in a browser once it is ready",
     port: "Listen port (falls back to the PORT env var, default 7364)",
     host: "Listen address (falls back to the HOST env var, default 127.0.0.1)",
@@ -619,7 +620,8 @@ const zh: Messages = {
       "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session",
   },
   serve: {
-    serverDesc: "启动 Web 服务（HTTP API 与内置前端，同一进程）",
+    serverDesc:
+      "启动 Web 服务（HTTP API 与内置前端，同一进程）；子命令 reset-admin-password 重置忘记的管理员密码",
     webDesc: "启动 Web 服务，就绪后用浏览器打开界面",
     port: "监听端口（其次取环境变量 PORT，缺省 7364）",
     host: "监听地址（其次取环境变量 HOST，缺省 127.0.0.1）",

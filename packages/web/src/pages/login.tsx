@@ -135,6 +135,9 @@ export function LoginPage() {
           <p className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500">
             {S.auth.defaultAdminNote}
           </p>
+          <p className="mt-1.5 text-center text-xs text-gray-400 dark:text-gray-500">
+            {S.auth.forgotAdminNote}
+          </p>
         </div>
       </div>
     </div>

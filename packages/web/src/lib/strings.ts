@@ -147,6 +147,9 @@ export const zh = {
     admin: "管理员",
     defaultAdminNote:
       "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",
+    /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
+    forgotAdminNote:
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
   },
 
   account: {
