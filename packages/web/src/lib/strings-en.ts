@@ -1271,6 +1271,11 @@ Scenarios:
     removeFile: "Remove file",
     attachmentTooLarge: (name: string): string =>
       `${name} exceeds the 10MB limit and was not attached.`,
+    /** Full-window overlay while files are dragged over the page (drag-and-drop upload). */
+    dropFilesTitle: "Drop files to attach",
+    dropFilesDesc: "Images and files are added to the message draft",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
