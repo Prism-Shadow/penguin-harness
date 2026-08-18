@@ -169,6 +169,11 @@ export class Environment implements EnvironmentInterface {
     return this.commandSessions.kill(processId);
   }
 
+  /** Removes one exited background command from the host-visible registry. */
+  removeExitedBackgroundCommand(processId: string): boolean {
+    return this.commandSessions.removeExited(processId);
+  }
+
   /**
    * Lists tools available to the current Session, for context_engine to initialize GenerativeModel.
    * Only lists tools that have been assembled (i.e. supported by the registry) — tool names

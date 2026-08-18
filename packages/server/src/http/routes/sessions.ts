@@ -851,6 +851,15 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  app.delete("/:sessionId/processes/:processId", (c) => {
+    const row = resolveSession(c);
+    const removed = deps.manager.removeExitedProcess(row.sessionId, pathParam(c, "processId"));
+    if (!removed) {
+      throw new HttpError(404, "process_not_found", "Process is still running or does not exist.");
+    }
+    return c.body(null, 204);
+  });
+
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
   // next retry immediately (attempt counter unchanged). Benign either way — 200 with
   // skipped:false when no reconnect wait is in progress, so a timing race (the wait

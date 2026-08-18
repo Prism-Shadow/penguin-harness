@@ -663,6 +663,11 @@ export class Session {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
   }
 
+  /** Removes one exited background command from the host-visible registry. */
+  removeExitedBackgroundCommand(processId: string): boolean {
+    return this.environment.removeExitedBackgroundCommand?.(processId) ?? false;
+  }
+
   /**
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web

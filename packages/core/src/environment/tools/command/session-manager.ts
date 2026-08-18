@@ -199,6 +199,14 @@ export class CommandSessionManager {
     return true;
   }
 
+  /** Removes an exited background process from the registry without affecting running processes. */
+  removeExited(processId: string): boolean {
+    const session = this.registry.get(processId);
+    if (!session || session.running) return false;
+    this.registry.remove(processId);
+    return true;
+  }
+
   /** Disposes: removes the fallback registration and kills all sessions (the process 'exit' fallback is hooked up by the registry itself). Idempotent. */
   dispose(): void {
     this.registry.dispose();

@@ -758,6 +758,22 @@ export function ChatPage() {
     [selected, procBusy],
   );
 
+  const onRemoveExitedProcess = useCallback(
+    async (processId: string) => {
+      if (!selected || procBusy !== null) return;
+      setProcBusy(processId);
+      try {
+        await api.removeExitedSessionProcess(selected.sessionId, processId);
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+      } finally {
+        setProcBusy(null);
+        api.getSessionProcesses(selected.sessionId).then((res) => setProcesses(res.processes)).catch(() => undefined);
+      }
+    },
+    [selected, procBusy],
+  );
+
   // Trace file path for the popover's trace row: the single-session GET is the only
   // surface carrying it, so fetch lazily on open (and once per session — the path only
   // ever moves forward when a new trace file starts, which a reopen picks up).
@@ -1534,9 +1550,14 @@ export function ChatPage() {
                             {procBusy === p.processId ? S.common.loading : S.chat.processStop}
                           </button>
                         ) : (
-                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                            {S.chat.processExited}
-                          </span>
+                          <button
+                            type="button"
+                            disabled={procBusy !== null}
+                            onClick={() => void onRemoveExitedProcess(p.processId)}
+                            className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                          >
+                            {procBusy === p.processId ? S.common.loading : S.common.delete}
+                          </button>
                         )}
                       </li>
                     ))}

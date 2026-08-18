@@ -110,6 +110,7 @@ export interface RuntimeSession {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  removeExitedBackgroundCommand?(processId: string): boolean;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -945,6 +946,14 @@ export class SessionManager {
     const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
     if (killed) entry.lastActivityMs = Date.now();
     return killed;
+  }
+
+  removeExitedProcess(sessionId: string, processId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    const removed = entry.session.removeExitedBackgroundCommand?.(processId) ?? false;
+    if (removed) entry.lastActivityMs = Date.now();
+    return removed;
   }
 
   /**

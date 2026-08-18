@@ -1,5 +1,7 @@
 # Unreleased
 
+- [2026-08-18] Web App: remove exited background processes from a session's process list. ([details](2026-08-18-remove-exited-processes.md))
+
 - [2026-08-18] Core & Web App: an official `MiniMax-M3` preset (1M context, vision) pins AgentHub's `minimax-m3` Responses client and direct endpoint, uses `MINIMAX_*` credential fallback, prices at the standard pay-as-you-go tier (≤512K input), and adds the MiniMax provider glyph plus bilingual docs (requires AgentHub >= 0.4.2). ([details](2026-08-18-minimax-m3-preset.md))
 - [2026-08-14] Match the macOS app icon's visual size to neighbouring apps. ([details](2026-08-14-macos-app-icon-size.md))
 - [2026-08-14] Unknown model IDs can be moved to Custom with the OpenAI-compatible client. ([details](2026-08-14-model-group-protocol.md))
