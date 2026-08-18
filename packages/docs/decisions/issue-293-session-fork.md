@@ -107,7 +107,7 @@ proves it.
   - [`01-source-fork-action.jpg`](../../../pr-assets/issue-293/01-source-fork-action.jpg)
   - [`02-forked-transcript.jpg`](../../../pr-assets/issue-293/02-forked-transcript.jpg)
   - [`03-fork-survives-source-delete.jpg`](../../../pr-assets/issue-293/03-fork-survives-source-delete.jpg)
-  - [`04-numbered-forks.png`](../../../pr-assets/issue-293/04-numbered-forks.png)
+  - [`04-numbered-forks.jpg`](../../../pr-assets/issue-293/04-numbered-forks.jpg)
 - Known limitations / remaining verification:
   - Forking intentionally duplicates the retained scratchpad and therefore its disk usage.
   - The UI does not display parent/child lineage; both Sessions are ordinary independent entries.
