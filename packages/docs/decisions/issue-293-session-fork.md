@@ -1,7 +1,7 @@
 # Issue #293 — Session fork behavior and verification checklist
 
 This document fixes the product contract before implementation. It is also the review checklist
-for the draft PR: an item is checked only after an automated test or a captured browser result
+for the PR: an item is checked only after an automated test or a captured browser result
 proves it.
 
 ## Expected behavior
@@ -95,8 +95,8 @@ proves it.
 - Automated checks:
   - `pnpm typecheck`
   - `pnpm test` (all workspace packages)
-  - `packages/server/test/session-fork.test.ts` (10 integration scenarios, including cross-position,
-    deletion, no-title, and concurrent numbering)
+  - `packages/server/test/session-fork.test.ts` (11 integration scenarios, including cross-position,
+    deletion, no-title, concurrent numbering, and committed-row rollback after response failure)
   - `packages/web/test/stream-model.test.ts` (history-coordinate propagation and SSE dedup)
 - Browser scenario: a deterministic two-turn Session with one image and one file was forked after
   the first reply. The fork opened immediately, excluded the second turn, retained both
