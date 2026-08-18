@@ -50,15 +50,54 @@ const THEME = {
   selectionBackground: "#3a4046",
 };
 
-export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const res = await fetch(path, {
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(path, {
     credentials: "same-origin",
     ...init,
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
+}
+
+/**
+ * A failure the user can act on: the method, the path and the server's own words. A bare
+ * "Server did not return a terminal" was the opposite — it hid a 404 (a server without the
+ * terminal API, e.g. an older build the desktop shell attached to) behind wording that
+ * suggested the terminal itself failed to start.
+ */
+export class HttpStatusError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "HttpStatusError";
+  }
+}
+
+function httpError(
+  path: string,
+  init: RequestInit | undefined,
+  res: Response,
+  body: string,
+): HttpStatusError {
+  const method = init?.method ?? "GET";
+  const detail = body.trim() === "" ? res.statusText : body.trim();
+  return new HttpStatusError(res.status, `${method} ${path} → ${res.status} ${detail}`);
+}
+
+/** Any non-ok status is an error, 404 included — use probeJson where absence is expected. */
+export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await request(path, init);
+  if (!res.ok) throw httpError(path, init, res, await res.text());
+  return (await res.json()) as T;
+}
+
+/** Existence probe: 404 means "not there" and answers null; every other failure throws. */
+export async function probeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
+  const res = await request(path, init);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-  return res.status === 204 ? null : ((await res.json()) as T);
+  if (!res.ok) throw httpError(path, init, res, await res.text());
+  return (await res.json()) as T;
 }
 
 function streamUrl(id: string, cols: number, rows: number): string {

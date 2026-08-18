@@ -14,7 +14,7 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { TerminalView, fetchJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
+import { TerminalView, probeJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
 import {
   isTerminalDockOpen,
   openPanes,
@@ -68,7 +68,7 @@ function setViewState(id: string, patch: Partial<TerminalViewState>): void {
 /** Attach-only ensure: pane logic creates terminals; the pool only ever attaches by id. */
 function attachById(id: string) {
   return async (): Promise<TerminalInfo> => {
-    const info = await fetchJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`);
+    const info = await probeJson<TerminalInfo>(`/api/terminals/${encodeURIComponent(id)}`);
     if (!info) throw new Error("Terminal no longer exists.");
     return info;
   };
