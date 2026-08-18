@@ -83,10 +83,21 @@ export interface MCPServerConfig {
   config: Record<string, unknown>;
 }
 
+/**
+ * How configured tools are exposed to the model:
+ * - `direct` (default): built-in and initially discovered MCP schemas are native tools;
+ * - `auto`: built-ins stay native, while a large MCP schema surface is replaced by a fixed
+ *   search/call gateway. The decision is made once when the Session starts;
+ * - `lazy`: every configured built-in and MCP tool is available through the fixed gateway.
+ */
+export type ToolExposure = "direct" | "auto" | "lazy";
+
 /** Set of tool configs required to initialize Environment. */
 export interface ToolConfig {
   customTools: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
+  /** Missing preserves the historical behavior (`direct`). */
+  toolExposure?: ToolExposure;
 }
 
 /**
@@ -380,8 +391,8 @@ export interface BackgroundCommandInfo {
 export interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
-  /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
-  toolPermission(name: string): ToolPermission | undefined;
+  /** Looks up a tool's permission level; arguments allow fixed gateways to resolve the effective target. */
+  toolPermission(name: string, rawArguments?: string): ToolPermission | undefined;
   /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */

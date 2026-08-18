@@ -95,7 +95,7 @@ export interface RuntimeSession {
   steer(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
-  toolPermission(name: string): "r" | "rw" | undefined;
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
    * writes no history/Trace). Material defaults to what the Session collects itself
@@ -630,7 +630,7 @@ export class SessionManager {
       this.publishState(entry, "running");
       const approve = makeApprove({
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-        toolPermission: (name) => entry.session.toolPermission(name),
+        toolPermission: (name, rawArguments) => entry.session.toolPermission(name, rawArguments),
         registry: entry.approvals,
         publishRequest: (pending) =>
           this.publishEvent(entry, {
@@ -788,7 +788,7 @@ export class SessionManager {
     const approve = makeApprove({
       // Re-reads approval_mode from the DB on every decision (a PATCH takes effect immediately).
       getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
-      toolPermission: (name) => entry.session.toolPermission(name),
+      toolPermission: (name, rawArguments) => entry.session.toolPermission(name, rawArguments),
       registry: entry.approvals,
       publishRequest: (pending) =>
         this.publishEvent(entry, {

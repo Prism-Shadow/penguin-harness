@@ -45,7 +45,7 @@ export function resolveApprovalMode(approve: string | undefined, t: Messages): A
  */
 export function makeApprove(args: {
   mode: ApprovalMode;
-  toolPermission: (name: string) => "r" | "rw" | undefined;
+  toolPermission: (name: string, rawArguments?: string) => "r" | "rw" | undefined;
   interactivePrompt: ApproveFn;
 }): ApproveFn {
   const { mode, toolPermission, interactivePrompt } = args;
@@ -58,7 +58,7 @@ export function makeApprove(args: {
         return "deny";
       case "read-only":
         // Auto-approve read-only tools; defer read-write/unknown tools to a human.
-        if (toolPermission(name) === "r") return "allow";
+        if (toolPermission(name, toolCall.payload.arguments) === "r") return "allow";
         return interactivePrompt(toolCall);
       case "always-ask":
       default:

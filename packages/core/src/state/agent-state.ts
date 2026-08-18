@@ -793,6 +793,7 @@ export function buildToolConfig(state: AgentState): ToolConfig {
   return {
     customTools: builtin.map(applyCallDescriptionToggle),
     mcpServers: systemTools?.mcpServers ?? [],
+    ...(systemTools?.toolExposure !== undefined ? { toolExposure: systemTools.toolExposure } : {}),
   };
 }
 

@@ -640,8 +640,8 @@ export class Session {
   }
 
   /** Queries a tool's permission level (for the frontend to determine permission mode); returns undefined for unknown tools. */
-  toolPermission(name: string): ToolPermission | undefined {
-    return this.environment.toolPermission(name);
+  toolPermission(name: string, rawArguments?: string): ToolPermission | undefined {
+    return this.environment.toolPermission(name, rawArguments);
   }
 
   /** This Session's session_meta message (used e.g. by host tools to forward nested-session metadata to a parent session). */

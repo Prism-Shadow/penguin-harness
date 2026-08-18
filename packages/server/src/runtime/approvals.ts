@@ -85,7 +85,7 @@ export class ApprovalRegistry {
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
-  toolPermission: (name: string) => "r" | "rw" | undefined;
+  toolPermission: (name: string, rawArguments?: string) => "r" | "rw" | undefined;
   registry: ApprovalRegistry;
   publishRequest: (pending: PendingApproval) => void;
 }): ApproveFn {
@@ -106,7 +106,9 @@ export function makeApprove(args: {
         return "deny";
       case "read-only":
         // Auto-approve read-only tools; route read-write/unknown tools to manual approval (matches CLI semantics).
-        if (toolPermission(toolCall.payload.name) === "r") return "allow";
+        if (toolPermission(toolCall.payload.name, toolCall.payload.arguments) === "r") {
+          return "allow";
+        }
         return manual(toolCall);
       case "always-ask":
       default:

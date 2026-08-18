@@ -105,7 +105,7 @@ The complete tool-execution contract:
 interface EnvironmentInterface {
   listTools(): Promise<ToolDefinition[]>;
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
-  toolPermission(name: string): "r" | "rw" | undefined;   // for frontend approval-mode decisions
+  toolPermission(name: string, rawArguments?: string): "r" | "rw" | undefined;
   dispose?(): void;                                        // release runtime resources; idempotent
 }
 ```

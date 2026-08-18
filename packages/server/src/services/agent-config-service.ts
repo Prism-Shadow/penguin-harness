@@ -39,6 +39,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   MCPServerConfig,
+  ToolExposure,
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core";
@@ -68,6 +69,7 @@ import { maskApiKey } from "./project-config-service.js";
 
 const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
 const COMPACTION_MODES = ["summarize", "discard"] as const;
+const TOOL_EXPOSURES: readonly ToolExposure[] = ["direct", "auto", "lazy"];
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v)
@@ -232,6 +234,10 @@ export class AgentConfigService {
       schedules: schedulesDto,
       toolsBuiltin: Array.isArray(tools.builtin) ? (tools.builtin as ToolDefinitionConfig[]) : [],
       mcpServers: Array.isArray(tools.mcpServers) ? (tools.mcpServers as MCPServerConfig[]) : [],
+      toolExposure:
+        tools.toolExposure === "auto" || tools.toolExposure === "lazy"
+          ? tools.toolExposure
+          : "direct",
     };
     return {
       agentsMd,
@@ -373,6 +379,7 @@ export class AgentConfigService {
     if (cfg.mcpServers !== undefined) {
       doc.setIn(["tools", "mcpServers"], validateMcpServers(cfg.mcpServers));
     }
+    setIfProvided(["tools", "toolExposure"], optionalEnum(cfg, "toolExposure", TOOL_EXPOSURES));
 
     await fs.writeFile(yamlPath, doc.toString(), "utf8");
   }

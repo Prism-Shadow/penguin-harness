@@ -275,7 +275,11 @@ export function AgentSettingsPage() {
               <ToolsTab data={data} onSave={save} />
               {/* MCP Servers persist vault-style (immediately, own modals) — separate from the
                   builtin table's Save button, so it lives beside ToolsTab, not inside it. */}
-              <McpServersSection agentId={agentId} initial={data.config.mcpServers} />
+              <McpServersSection
+                agentId={agentId}
+                initial={data.config.mcpServers}
+                initialExposure={data.config.toolExposure}
+              />
             </div>
           )}
           {tab === "skills" && <SkillsTab agentId={agentId} onConfigChanged={refreshConfig} />}

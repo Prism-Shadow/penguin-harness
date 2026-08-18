@@ -16,6 +16,7 @@
 import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
 import type {
   MCPServerConfig,
+  ToolExposure,
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core/interfaces";
@@ -612,6 +613,8 @@ export interface AgentConfigDto {
   schedules: AgentSchedulesConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
+  /** Model-facing tool exposure mode; `direct` preserves the historical behavior. */
+  toolExposure: ToolExposure;
 }
 
 export interface AgentConfigResponse {
@@ -666,6 +669,7 @@ export interface AgentConfigUpdateRequest {
     schedules?: { enabled?: boolean; prompt?: string };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
+    toolExposure?: ToolExposure;
   };
 }
 
