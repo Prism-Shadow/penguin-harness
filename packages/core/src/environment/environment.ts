@@ -175,6 +175,8 @@ export class Environment implements EnvironmentInterface {
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
       ...(config.controlEnv !== undefined ? { controlEnv: config.controlEnv } : {}),
       ...(config.pathPrepend !== undefined ? { pathPrepend: config.pathPrepend } : {}),
+      ...(config.confineSpawn !== undefined ? { confineSpawn: config.confineSpawn } : {}),
+      workspaceDir: config.workspaceDir,
     });
     this.subagentSessions = new SubagentSessionManager();
     // Background-task liveness fans in from both registries and from the subagent run-state
