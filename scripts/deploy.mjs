@@ -26,6 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
+import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,6 +57,9 @@ if (!ADMIN_PASSWORD) usage("[deploy] PENGUIN_ADMIN_PASSWORD is not set.");
 
 /** A bare port means this machine's loopback (typically an ssh -L tunnel to the real target). */
 const baseUrl = /^\d+$/.test(target) ? `http://127.0.0.1:${target}` : target.replace(/\/+$/, "");
+
+const plaintextProblem = unsafePlaintextTarget(baseUrl);
+if (plaintextProblem) usage(`[deploy] ${plaintextProblem}`);
 
 /**
  * On a loopback bind 127.0.0.1 is the PREVIEW host, where /api answers 401; the API is
@@ -206,6 +210,15 @@ async function main() {
   log(
     `ok in ${seconds}s — impl ${outcome.impl}, mode ${outcome.mode}, web rev ${outcome.web?.rev}`,
   );
+  if (outcome.persisted === false) {
+    // The live swap took effect, but the server could not write it to disk (see
+    // host.ts's persistVersion) — a restart on the target reverts to the previously
+    // committed version, silently undoing this push.
+    console.warn(
+      "[deploy] WARNING: the target could not persist this version to disk (persisted: false). " +
+        "It is live now but will REVERT on the target's next restart — check the target's disk/permissions.",
+    );
+  }
 }
 
 main()
