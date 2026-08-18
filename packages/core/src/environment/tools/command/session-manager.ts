@@ -12,7 +12,7 @@
 import { statSync } from "node:fs";
 import { ManagedSession } from "./session.js";
 import { BackgroundRegistry } from "../background/index.js";
-import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
+import type { ProxyEnvPolicy, SpawnConfiner } from "../../../interfaces/index.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;
@@ -210,15 +210,34 @@ export class CommandSessionManager {
    * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
    */
   private readonly controlEnv: (() => Record<string, string>) | undefined;
+  /**
+   * Sandbox-confinement seam (see {@link SpawnConfiner}): rewrites the exact argv of
+   * every spawn. A getter for the same reason as `proxyEnv`: the active confiner can
+   * change at runtime (the hosting server's platform layer is hot-swappable), and
+   * re-reading at every spawn makes the change reach Sessions that are already
+   * running. Absent, or returning null = commands spawn unconfined.
+   */
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
+  /**
+   * The Session's Workspace root, bound into every confiner call as
+   * `opts.workspaceDir` (a workspace-scoped policy must key off the Workspace, not the
+   * per-command cwd). Optional for standalone embedders without a Workspace concept;
+   * those fall back to the spawn cwd.
+   */
+  private readonly workspaceDir: string | undefined;
 
   constructor(opts?: {
     vault?: Record<string, string>;
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: () => Record<string, string>;
+    confineSpawn?: () => SpawnConfiner | null;
+    workspaceDir?: string;
   }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
     this.controlEnv = opts?.controlEnv;
+    this.confineSpawn = opts?.confineSpawn;
+    this.workspaceDir = opts?.workspaceDir;
   }
 
   /**
@@ -237,9 +256,16 @@ export class CommandSessionManager {
       throw new Error("command session manager disposed");
     }
     assertUsableCwd(opts.cwd);
+    const confiner = this.confineSpawn?.() ?? null;
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
+      ...(confiner !== null
+        ? {
+            confine: (argv: readonly string[], o: { cwd: string }) =>
+              confiner(argv, { cwd: o.cwd, workspaceDir: this.workspaceDir ?? o.cwd }),
+          }
+        : {}),
       // Spread order is priority: vault overrides host variables of the same name; the
       // host's control variables (controlEnv) override the vault — they are the hosting
       // server's own wiring (API URL/token, Session coordinates) and a vault entry must
