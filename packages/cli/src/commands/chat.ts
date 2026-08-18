@@ -6,7 +6,9 @@
  *
  * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
  * goal mode (looping until the goal reaches a terminal state);
- * `/compact` proactively compacts the context (reason=manual); `/exit` or `/quit` exits.
+ * `/compact` proactively compacts the context (reason=manual); `/clear` starts a fresh
+ * blank Session in place (the old Session's Trace stays on disk, resumable); `/exit` or
+ * `/quit` exits.
  * Uses the current directory when no Workspace is specified. A model reference is always an
  * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
  * together; giving neither uses the Project's default model.
@@ -28,8 +30,13 @@
 import { createInterface, type Interface } from "node:readline";
 import type { Command } from "commander";
 import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
-import type { ApprovalDecision, OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core";
-import { StreamRenderer, dim, renderHistory, sessionMetaTools } from "../render.js";
+import type {
+  ApprovalDecision,
+  OmniMessage,
+  Session,
+  ToolCallPayload,
+} from "@prismshadow/penguin-core";
+import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
@@ -90,8 +97,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       // --resume: resumes an existing Session. Workspace and
       // Model follow the original Session and cannot be overridden; when omitted, resumes
-      // the current Agent's most recent Session.
-      let session;
+      // the current Agent's most recent Session. Annotated (not inferred) because /clear
+      // reassigns it mid-REPL, after the closures below have captured it.
+      let session: Session;
       if (opts.resume !== undefined) {
         if (opts.workspace || opts.modelId || opts.provider) {
           out.write(`${t.error(t.resumeNoOverride())}\n`);
@@ -114,9 +122,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
         });
       }
 
-      const renderer = new StreamRenderer(out, t);
-      // The assembled tool schemas decide each tool's call-line preview path (see render.ts).
-      renderer.useToolSchemas(sessionMetaTools(session));
+      let renderer = new StreamRenderer(out, t);
+      // Tool schemas (each tool's call-line preview path) arrive on the stream as the
+      // first run's tool_list_ready event — the toolset isn't known before then (MCP
+      // servers connect lazily); the renderer registers them as they flow by.
 
       out.write(
         `${t.header("chat", VERSION, agent.state.agentId, session.workspaceDir, session.modelId)}\n` +
@@ -344,6 +353,14 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // command example on exit.
       let resumable = opts.resume !== undefined;
 
+      // The copy-pastable resume command for one Session: includes this run's Project /
+      // Agent options so it works as-is. Printed on exit, and by /clear for the Session
+      // it retires.
+      const resumeCommand = (sessionId: string): string =>
+        `penguin chat --resume ${sessionId}` +
+        (opts.projectId ? ` --project-id ${opts.projectId}` : "") +
+        (opts.agentId ? ` --agent-id ${opts.agentId}` : "");
+
       try {
         for (;;) {
           const line = await askLine();
@@ -377,6 +394,26 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 renderer.endCompact(Date.now() - startedAt);
               }
               if (!sawMessage) out.write(`${t.compactNothing()}\n`);
+            } else if (text === "/clear") {
+              // Start over with a brand-new blank Session on the same Workspace and model
+              // (pinned from the current Session, so a --resume'd chat clears to the same
+              // settings). The old Session is only disposed — its persisted Trace stays on
+              // disk and resumable — so its resume command is printed first (same shape as
+              // the exit hint). The new Session is created before the old one is dropped:
+              // a failure keeps the current conversation intact. A fresh renderer starts
+              // the Session-cumulative stats from zero; the new Session has no Trace
+              // record yet, so `resumable` resets until its first Task / compact.
+              const next = await agent.createSession({
+                workspaceDir: session.workspaceDir,
+                modelId: session.modelId,
+                provider: session.provider,
+              });
+              if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
+              session.dispose();
+              session = next;
+              renderer = new StreamRenderer(out, t);
+              resumable = false;
+              out.write(`${t.clearDone()}\n`);
             } else if (text === "/goal" || text.startsWith("/goal:") || text.startsWith("/goal ")) {
               // Goal mode: one command drives the whole loop; Ctrl-C aborts the entire
               // goal (a single signal spans every round), never just the current round.
@@ -418,15 +455,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
         cleanup();
         session.dispose(); // tear down managed long-running command sessions to avoid leaking background processes
         process.removeListener("exit", cleanup);
-        // On exit, print a dimmed resume command example: includes this
-        // session's Project / Agent options so the command can be copy-pasted directly;
-        // skipped when the Session has no Trace record yet (nothing to resume).
+        // On exit, print a dimmed resume command example; skipped when the Session has
+        // no Trace record yet (nothing to resume).
         if (resumable) {
-          const command =
-            `penguin chat --resume ${session.sessionId}` +
-            (opts.projectId ? ` --project-id ${opts.projectId}` : "") +
-            (opts.agentId ? ` --agent-id ${opts.agentId}` : "");
-          out.write(`${dim(t.resumeHint(command))}\n`);
+          out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
         }
       }
     });

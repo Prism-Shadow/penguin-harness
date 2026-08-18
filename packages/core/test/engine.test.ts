@@ -887,7 +887,6 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         model_id: "m-child",
         model_context_window: 1000,
         system_prompt: "sys",
-        tools: [],
         agent_state: "/root/p/worker/agent_state",
         workspace: "/tmp/w",
       });

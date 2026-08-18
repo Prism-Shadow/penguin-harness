@@ -229,34 +229,51 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
-    activeSessions: "Active Sessions",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
     scheduleCount: (n: number): string => `${n} scheduled task${n === 1 ? "" : "s"}`,
+    memoryCount: (n: number): string => (n === 1 ? "1 memory" : `${n} memories`),
     updatedAt: "Last modified",
     activity: (days: number): string => `${days}-day session activity`,
     settings: "Agent settings",
     backToList: "Back to Agents",
     tabOverview: "Overview",
-    tabPrompt: "Prompt",
+    tabPrompt: "System Prompt",
+    tabMemory: "Memory",
     tabRuntime: "Runtime",
     tabTools: "Tools",
     tabSkills: "Skills",
     tabVault: "Vault",
     tabSchedules: "Schedules",
     stateDir: "State path",
+    copyStateDir: "Copy State path",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt template",
     placeholdersTitle: "Available placeholders (click to insert)",
     insertPlaceholder: "Insert at the system_prompt cursor",
-    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). */
+    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} etc.) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "Injects the AGENTS.md content"],
-      ["{{VAULT_KEYS}}", "Injects the vault key-name section (empty when no keys)"],
-      ["{{SKILL_METADATA}}", "Injects the installed skills' metadata lines (empty when none)"],
+      [
+        "{{VAULT}}",
+        "Injects the vault block (vault.prompt with the key-name list); empty when its toggle is off",
+      ],
+      [
+        "{{SKILLS}}",
+        "Injects the skills block (skills.prompt with installed-skill metadata); empty when its toggle is off",
+      ],
+      [
+        "{{MEMORY}}",
+        "Injects the memory block: memory.prompt plus memory.workspace_prompt (persistent workspaces only); empty when memory is off",
+      ],
+      [
+        "{{SCHEDULES}}",
+        "Injects the scheduled-tasks block (schedules.prompt with the task-name roster); empty when its toggle is off",
+      ],
       ["{{PLATFORM}}", "Runtime platform"],
       ["{{OS_VERSION}}", "Operating system version"],
+      ["{{SHELL}}", "Shell used to run commands"],
       ["{{DATE}}", "Current date"],
       [
         "{{PROJECT_DIR}}",
@@ -321,14 +338,64 @@ export const en: Strings = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description: when on (the default), the tool's schema keeps the optional description argument — a model-written sentence about each call, shown to the user while it runs; when off, the argument is filtered out of the schema at assembly. Only tools whose parameters declare a description property can be toggled.",
-    mcpServers: "MCP Servers (read-only)",
+    mcpServers: "MCP Servers",
+    mcpDesc:
+      "Connect external MCP Servers: their tools join this agent's toolset as mcp__<name>__<tool>. Changes in this block save immediately.",
+    mcpEmpty: "No MCP Servers configured yet",
+    mcpAdd: "Add MCP Server",
+    mcpEditTitle: "Edit MCP Server",
+    mcpRemove: "Remove",
+    mcpName: "name",
+    mcpNameHint: "Tool-name prefix: mcp__<name>__<tool>; letters, digits, _ and - only",
+    mcpTransport: "transport",
+    mcpTransportStdio: "Local process: spawns command and talks over stdin/stdout",
+    mcpTransportHttp: "Streamable HTTP: the current spec's remote transport",
+    mcpTransportSse: "Legacy HTTP+SSE: kept for servers that have not migrated",
+    mcpTarget: "command / url",
+    mcpCommand: "command",
+    mcpArgs: "args",
+    mcpArgsHint: "One argument per line",
+    mcpEnv: "env",
+    mcpEnvHint: "One KEY=value per line; the Agent vault is not injected into MCP Server processes",
+    mcpCwd: "cwd",
+    mcpCwdHint: "Leave empty to use the Session's Workspace",
+    mcpUrl: "url",
+    mcpHeaders: "headers",
+    mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpConnectTimeout: "connectTimeoutMs",
+    mcpBudgetsHint:
+      "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
+    mcpNameInvalid: "Letters, digits, _ and - only, starting with a letter or digit",
+    mcpUrlInvalid: "Must be a valid http(s) URL",
+    mcpLineInvalid: (line: number): string => `Line ${line} is not valid`,
+    mcpNumberInvalid: "Must be an integer > 0",
+    mcpDuplicateName: "A server with this name already exists",
+    mcpTest: "Test connection",
+    mcpTesting: "Testing…",
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? ` (${(latencyMs / 1000).toFixed(1)}s)` : "";
+      return toolCount === 0
+        ? `Connected, but the server exposes no tools${timing}`
+        : `Connected — ${toolCount} tool${toolCount === 1 ? "" : "s"}${timing}`;
+    },
+    mcpTestFail: (detail: string): string => `Connection failed: ${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `Connects to ${n === 1 ? "the configured MCP server" : `each of the ${n} configured MCP servers`} in turn and runs tool discovery (real connections, nothing is saved); results land on each row.`,
+    mcpTestAllStart: "Start test",
+    mcpTestPending: "Testing…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} tool${toolCount === 1 ? "" : "s"}${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "Connection failed",
+    mcpDeleteTitle: "Delete MCP Server",
+    mcpDeleteConfirm: (name: string): string =>
+      `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
     defaultValue: "(default)",
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>
       `Delete agent "${name}"? Its directory (including all Traces) will be removed recursively and cannot be recovered.`,
+    stateTitle: "Agent State",
     stateVersion: "Agent State version",
-    transferTitle: "Export / import",
     transferDesc:
       "Export the current Agent State snapshot (tar.gz); importing overwrites the whole directory and adopts the version inside the package.",
     exportSnapshot: "Export snapshot",
@@ -339,12 +406,47 @@ export const en: Strings = {
     importConflictBody:
       "The snapshot's version is not newer than the current one; importing will overwrite the existing Agent State. Continue?",
     resetConfigTitle: "Restore default configuration",
-    resetConfigDesc:
-      "Restores system_config.yaml to the current built-in defaults (same semantics as a skill update): the custom system prompt, tool list, model/compaction settings and MCP servers are overwritten; only name, description and the State version are kept.",
     resetConfigAction: "Restore default configuration",
     resetConfigConfirmBody:
       "This overwrites the agent's existing configuration with the current defaults: the custom system prompt, tool list, model/compaction settings and MCP servers are all replaced, keeping only name and description. Like a skill update this cannot be undone. Continue?",
     resetConfigDone: "Configuration restored to the current defaults",
+    kernelTitle: "Kernel",
+    kernelLegacy: "predates kernel versioning",
+    kernelOutdatedHint: "Kernel update available",
+    kernelUpToDate: "Up to date",
+    kernelUpdateTitle: "Update kernel",
+    kernelCurrent: "current",
+    kernelLatest: "latest",
+    kernelUpdateAction: "Update kernel",
+    kernelUpdateConfirmBody:
+      "Fields you have not customized will be updated to the current built-in defaults; customized fields stay unchanged and are listed in the result. Name, description, the State version and MCP servers are unaffected. Continue?",
+    kernelUpdateDone: (version: string, advanced: number): string =>
+      advanced > 0
+        ? `Kernel updated to ${version}; ${advanced} field(s) now follow the new defaults`
+        : `Kernel updated to ${version}; every field was already current or kept as customized`,
+    kernelUpdateKeptIntro: "Kept because customized:",
+    kernelListSeparator: ", ",
+    kernelFieldTool: (name: string): string => `tool ${name}`,
+    kernelFields: {
+      system_prompt: "system prompt template",
+      max_turns: "max turns per task",
+      "model.max_tokens": "model max output tokens",
+      "model.thinking_level": "thinking level",
+      "model.timeoutMs": "request timeout",
+      "compaction.max_context_length": "compaction context threshold",
+      "compaction.max_session_turns": "compaction session-turn threshold",
+      "compaction.mode": "compaction mode",
+      "compaction.prompt": "compaction prompt",
+      "memory.enabled": "memory switch",
+      "memory.prompt": "memory prompt",
+      "memory.workspace_prompt": "workspace memory prompt",
+      "vault.enabled": "Vault section switch",
+      "vault.prompt": "Vault prompt",
+      "skills.enabled": "Skills section switch",
+      "skills.prompt": "Skills prompt",
+      "schedules.enabled": "Schedules section switch",
+      "schedules.prompt": "Schedules prompt",
+    } as Record<string, string>,
   },
 
   models: {
@@ -359,7 +461,8 @@ export const en: Strings = {
     vendorProtocolHint: (vendor: string): string =>
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     autoRouteNone:
-      "This id is not a recognized official model id: double-check it, or add the model under Custom / a user-defined group with an OpenAI-compatible endpoint",
+      "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
+    useCustomGroup: "Move to Custom",
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
@@ -469,6 +572,75 @@ export const en: Strings = {
     contextWindowInvalid: "Must be a number",
   },
 
+  memory: {
+    desc: "Long-term memory across Sessions (stored in agent_state/memory/): the agent saves what is worth keeping as it works, and you can also just ask it to remember something. User memory applies to all of this agent's sessions; workspace memory is kept per workspace. Memory edits are made by the agent in chat. Turning the switch off only stops memory from being used and deletes nothing.",
+    enable: "Enable memory",
+    userScope: "User memory",
+    templateMissing:
+      "The prompt template has no {{MEMORY}} placeholder, so memory never enters the context.",
+    insertPlaceholder: "Insert the {{MEMORY}} placeholder",
+    insertPlaceholderDone: "Inserted",
+    promptSection: "Memory prompt",
+    promptSectionHint:
+      "What the template's {{MEMORY}} placeholder expands to. The main prompt is injected into every session; the workspace addendum only in sessions with a persistent workspace.",
+    promptLabel: "Main prompt",
+    workspacePromptLabel: "Workspace addendum",
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
+     */
+    promptPlaceholders: [
+      [
+        "{{USER_MEMORY_INDEX}}",
+        "Content of the user MEMORY.md index (at most 200 lines and 25,000 characters total)",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_INDEX}}",
+        "Content of the workspace MEMORY.md index (at most 200 lines and 25,000 characters total); effective only in the workspace addendum",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_DIR}}",
+        "Absolute path of the current workspace's memory directory; effective only in the workspace addendum",
+      ],
+    ],
+    insertToken: "Insert at the cursor",
+    itemCount: (n: number): string => (n === 1 ? "1 item" : `${n} items`),
+    emptyScope:
+      "No memories for this Workspace yet — the agent saves what is worth keeping as it works",
+    emptyUserScope: 'No user memories yet — say "remember …" in a chat and the agent will save it',
+    add: "Add",
+    addTitle: "Add memory",
+    addWhy:
+      "The agent organizes and saves memories in a chat: fill in the content, open a new conversation, and the agent does the rest.",
+    addContentLabel: "Content or source to remember",
+    addContentPlaceholder: "Paste the content to remember, or a file path / URL",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "Please turn the following into memories in user memory:",
+      workspace: "Please turn the following into memories in this workspace's memory:",
+    },
+    view: "View",
+    edit: "Edit",
+    editTitle: "Edit memory",
+    editWhy:
+      "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
+    editRequirementLabel: "What to change",
+    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editPromptLabel: "Prompt preview",
+    editCopyPrompt: "Copy prompt",
+    editCopied: "Copied",
+    editOpenChat: "Open a new chat",
+    delete: "Delete",
+    deleteTitle: "Delete this memory?",
+    deleteConfirm: (name: string): string =>
+      `This deletes "${name}" and removes its index line from MEMORY.md. This cannot be undone.`,
+    deleteDone: "Deleted",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string): string => `Please update a memory: ${title}`,
+    editPromptTail: "What to change: ",
+  },
+
   vault: {
     desc: "Environment variables owned by this agent (stored in agent_state/.vault.toml), injected into the environment of its shell commands (exec_command); key names are shared with the model, values never enter the model context. Subagents use their own vaults and do not inherit this one. Saved changes take effect from the next task (a task already running is unaffected).",
     key: "Name",
@@ -488,6 +660,26 @@ export const en: Strings = {
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
     valueRequired: "Value must not be empty",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable vault",
+      templateMissing:
+        "The prompt template has no {{VAULT}} placeholder, so the vault section never enters the context.",
+      legacyTemplate:
+        "The template still carries the legacy hardcoded # Vault section: one-click migration replaces it in place with the {{VAULT}} placeholder, wording unchanged, after which it is editable below.",
+      insertPlaceholder: "Insert the {{VAULT}} placeholder",
+      migrate: "Migrate to the {{VAULT}} placeholder",
+      promptSection: "Vault prompt",
+      promptSectionHint:
+        "What the template's {{VAULT}} placeholder expands to; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{VAULT_KEYS}}",
+          'Vault key-name list (one "- KEY" line per key, names only — values are never injected; empty when no keys)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   schedule: {
@@ -525,12 +717,34 @@ export const en: Strings = {
     target: "Target",
     targetNew: "New session each time",
     targetSession: "Bound Session",
-    sessionId: "Session id",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "Choose a Session to bind",
+    sessionSearch: "Search title or Session id…",
+    sessionNoMatch: "No matching Session",
+    sessionEmpty: "This agent has no Sessions yet",
     workspace: "Workspace (optional; a temporary workspace is created when empty)",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable schedules",
+      templateMissing:
+        "The prompt template has no {{SCHEDULES}} placeholder, so the scheduled-tasks section never enters the context.",
+      insertPlaceholder: "Insert the {{SCHEDULES}} placeholder",
+      promptSection: "Schedules prompt",
+      promptSectionHint:
+        "What the template's {{SCHEDULES}} placeholder expands to — teaches the model to manage scheduled tasks with its file tools; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{SCHEDULE_LIST}}",
+          'Current task-name list (one "- name" line per task; an empty-roster note when none exist)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   skills: {
@@ -538,6 +752,8 @@ export const en: Strings = {
     pageDesc: "Built-in skill library: browse, quick-start a chat, or install to agents.",
     quickInvoke: "Quick start",
     quickInvokeText: (name: string): string => `use the ${name} skill`,
+    /** Title on a disabled quick-start button: quick start opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. a preinstall:false skill like remote-claude-code) can't be quick-started until it's installed on that agent. */
+    quickInvokeNeedsInstall: "Install this skill on the current agent first to quick-start",
     manageInstall: "Manage installs",
     manageInstallTitle: (name: string): string => `Manage installs: ${name}`,
     install: "Install",
@@ -605,6 +821,26 @@ export const en: Strings = {
     importOverwriteBody: (name: string): string =>
       `The skill "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
     importOverwriteAction: "Overwrite",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "Enable skills",
+      templateMissing:
+        "The prompt template has no {{SKILLS}} placeholder, so the skills section never enters the context.",
+      legacyTemplate:
+        "The template still carries the legacy hardcoded # Skills section: one-click migration replaces it in place with the {{SKILLS}} placeholder, wording unchanged, after which it is editable below.",
+      insertPlaceholder: "Insert the {{SKILLS}} placeholder",
+      migrate: "Migrate to the {{SKILLS}} placeholder",
+      promptSection: "Skills prompt",
+      promptSectionHint:
+        "What the template's {{SKILLS}} placeholder expands to; nothing is injected when the toggle is off or the template lacks the placeholder.",
+      promptLabel: "Prompt",
+      promptPlaceholders: [
+        [
+          "{{SKILL_METADATA}}",
+          'Installed skills\' metadata lines (one "- name — description" line per skill; empty when none)',
+        ],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   chat: {
@@ -628,6 +864,26 @@ export const en: Strings = {
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
+    /** Session-list section header controls: search / list settings / mode-dependent create (the created object follows the grouping mode). */
+    searchSessions: "Search chats",
+    searchSessionsPlaceholder: "Search chats…",
+    searchClear: "Clear search",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "No matches among loaded chats",
+    listSettings: "List options",
+    groupModeSection: "Group by",
+    sortModeSection: "Sort by",
+    sortManual: "Manual order",
+    sortRecent: "Most recent",
+    newWorkspaceEntity: "New workspace",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "Workspace options",
+    renameWorkspace: "Rename workspace",
+    renameWorkspaceLabel: "Name",
+    renameWorkspaceHint: "Leave empty to use the folder name",
+    deleteWorkspace: "Remove workspace",
+    deleteWorkspaceConfirm: (name: string) =>
+      `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
@@ -869,9 +1125,21 @@ Scenarios:
       "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
     infoPanel: "Session info",
     sessionStats: "Stats",
-    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
-    viewTrace: "View trace",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "Copy Session id",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "Trace file",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "Processes",
+    processStop: "Stop",
+    processExited: "exited",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "Total Tokens",
+    statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
     statInput: "Input tokens",
     statCached: "cached",
@@ -924,18 +1192,34 @@ Scenarios:
         ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
         : "Switched model — continued from the earlier conversation",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     emptyGreeting: "Start a new conversation",
-    compactionRunning: (mode: string) => `Compaction in progress (${mode})…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP connect",
+    mcpServerList: (servers: string[]): string => servers.join(", "),
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failed.length === 0) {
+        parts.push(`${toolCount} tool${toolCount === 1 ? "" : "s"} discovered`);
+      }
+      if (failed.length > 0) parts.push(`unavailable: ${failed.join(", ")}`);
+      return parts.join("; ");
+    },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
+    mcpServerFailed: "connection failed",
+    mcpConnectAborted: "interrupted — reconnects on the next send",
+    compactionTitle: "Compaction",
     compactionDone: (mode: string) =>
-      mode === "discard"
-        ? "[Compaction] done, old context discarded"
-        : "[Compaction] done, switched to the summarized context",
+      mode === "discard" ? "old context discarded" : "switched to the summarized context",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[Compaction] aborted, keeping current context";
+      if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined
-        ? `[Compaction] failed (${errorMessage}), keeping current context`
-        : "[Compaction] failed, keeping current context";
+        ? `failed (${errorMessage}), keeping current context`
+        : "failed, keeping current context";
     },
     unknownTool: "(unknown tool)",
     workRunning: "Running",
@@ -950,8 +1234,19 @@ Scenarios:
     renameSessionLabel: "Title",
     deleteSessionConfirm: (title: string) =>
       `Delete "${title}"? Its messages and Trace will be removed permanently.`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "Drafts",
+    draftUntitled: "(untitled draft)",
+    deleteDraft: "Delete draft",
+    deleteDraftConfirm: (title: string) =>
+      `Delete draft "${title}"? Unsent content will be discarded.`,
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "Chat options",
+    pinSession: "Pin",
+    unpinSession: "Unpin",
+    pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
@@ -1079,6 +1374,8 @@ Scenarios:
     kindModelReply: "model reply",
     kindToolGen: "tool call gen",
     legendToolExec: "tool exec",
+    legendOther: "Other",
+    toolParams: "Parameter schema",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",

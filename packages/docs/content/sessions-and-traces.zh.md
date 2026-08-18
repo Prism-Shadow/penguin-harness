@@ -30,7 +30,9 @@ PenguinHarness 的全部运行数据都落在本地文件系统：配置是可�
 └── agents/
     └── <agent>/
         ├── agent_state/              # system_config.yaml、AGENTS.md、.vault.toml、
-        │                             # tools/、memory/、skills/、schedule/
+        │                             # tools/、skills/、schedule/
+        │   └── memory/               # 记忆：user/ 加每个 Workspace 一个目录，
+        │                             # 各自带一份 MEMORY.md 索引
         ├── traces/
         │   └── <yyyy-mm-dd>/<sessionId>_<index3>.jsonl
         ├── scratchpad/               # 临时文件，按 Session id 建子目录（如粘贴的图片）
@@ -53,6 +55,7 @@ Trace 是 append-only 的 JSON Lines 文件，每行一个 OmniMessage 信封（
 - 不记录的消息：流式 `partial_*` 分片（片段结束后由生产方补写完整消息）；带 `origin` 标记的嵌套消息——子 Agent 的消息写入子 Session 自己的 Trace，父 Trace 只在派生位置保留一个 `subagent` 指针事件，记录子 Session id。
 - `request_begin` 与 `request_end(status)` 成对出现，界定一轮 Request；回放以 `request_end.status === "completed"` 作为该轮已提交的判据。
 - 追加在写入器内部串行执行：并发生产者（模型流、并行工具执行）的记录严格逐条落盘，每条都是一行完整内容——base64 图片 Data URL 之类的多 MB 大记录不会被并发追加撕裂，文件轮转也不会切断任何记录。
+- 每条记录以单次 `write(2)` 追加（不用 `fs.appendFile`——它会把超过 512 KiB 的负载拆成多次底层写入），因此进程异常退出至多截断最后一条记录，不会把某条记录从中间撕开。Session 恢复续写既有文件前会探测文件尾：若上次异常退出留下了残行（末尾不是换行符），下一条记录会先补换行再落盘，残行不会吞掉后续记录。
 
 实现见 `packages/core/src/trace/writer.ts`。
 

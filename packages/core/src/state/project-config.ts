@@ -514,6 +514,40 @@ export async function setVisionModel(
   return cfg;
 }
 
+/**
+ * Removes a Model and saves. Idempotent, like `removeVaultEntry`: a pair the config doesn't
+ * have is not an error and writes nothing, so the caller decides whether a missing entry
+ * deserves a message.
+ *
+ * `default_model` / `vision_model` are cleared when they named the removed entry. Leaving a
+ * pointer behind would name a model that is no longer configured, which createSession rejects
+ * outright — the same rule the models page applies when a row is deleted, kept on one behavior
+ * so the CLI and the Web App never disagree about what a deletion leaves behind.
+ */
+export async function removeModel(
+  root: string,
+  projectId: string,
+  ref: ModelRef,
+): Promise<ProjectConfig> {
+  const cfg = await loadProjectConfig(root, projectId);
+  const idx = cfg.models.findIndex((m) => sameRef(m, ref));
+  if (idx < 0) return cfg;
+  cfg.models.splice(idx, 1);
+  if (cfg.default_model && sameRef(cfg.default_model, ref)) {
+    delete cfg.default_model;
+  }
+  if (cfg.vision_model && sameRef(cfg.vision_model, ref)) {
+    delete cfg.vision_model;
+  }
+  await saveProjectConfig(root, projectId, cfg);
+  return cfg;
+}
+
+/** Whether two paired references name the same entry. Both halves must match — the pair is the config's unique key. */
+function sameRef(a: ModelRef, b: ModelRef): boolean {
+  return a.provider === b.provider && a.model_id === b.model_id;
+}
+
 /** Looks up a Model entry exactly by its `(provider, model_id)` paired reference; returns `undefined` if it doesn't exist. */
 export function getModel(cfg: ProjectConfig, ref: ModelRef): ModelEntry | undefined {
   return cfg.models.find((m) => m.provider === ref.provider && m.model_id === ref.model_id);

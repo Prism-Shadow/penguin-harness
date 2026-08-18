@@ -220,34 +220,42 @@ export const zh = {
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
-    activeSessions: "活跃 Session",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
     scheduleCount: (n: number): string => `${n} 个定时任务`,
+    memoryCount: (n: number): string => `${n} 条记忆`,
     updatedAt: "最后修改",
     activity: (days: number): string => `近 ${days} 天 Session 活跃度`,
     settings: "Agent 设置",
     backToList: "返回 Agents",
     tabOverview: "概览",
-    tabPrompt: "Prompt",
+    tabPrompt: "系统提示词",
+    tabMemory: "记忆",
     tabRuntime: "运行参数",
     tabTools: "工具",
     tabSkills: "技能",
     tabVault: "密钥保险柜",
     tabSchedules: "定时任务",
     stateDir: "State 路径",
+    copyStateDir: "复制 State 路径",
     agentsMd: "AGENTS.md",
     systemPrompt: "system_prompt 模板",
     placeholdersTitle: "可用占位符（点击插入）",
     insertPlaceholder: "插入到 system_prompt 光标处",
-    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). */
+    /** Order must match the default system prompt (core default-config.ts DEFAULT_SYSTEM_PROMPT). Inner tokens ({{VAULT_KEYS}} 等) live in each feature tab's promptPlaceholders instead. */
     placeholders: [
       ["{{AGENTS_MD}}", "注入 AGENTS.md 内容"],
-      ["{{VAULT_KEYS}}", "注入密钥保险柜的键名小节（无键时为空）"],
-      ["{{SKILL_METADATA}}", "注入已安装 Skill 的元数据行（无 Skill 时为空）"],
+      ["{{VAULT}}", "注入保险柜区块（vault.prompt，含键名清单）；开关关闭时为空"],
+      ["{{SKILLS}}", "注入技能区块（skills.prompt，含已安装技能元数据）；开关关闭时为空"],
+      [
+        "{{MEMORY}}",
+        "注入记忆区块：memory.prompt 加 memory.workspace_prompt（仅持久工作区）；关闭记忆时为空",
+      ],
+      ["{{SCHEDULES}}", "注入定时任务区块（schedules.prompt，含任务名清单）；开关关闭时为空"],
       ["{{PLATFORM}}", "运行平台"],
       ["{{OS_VERSION}}", "操作系统版本"],
+      ["{{SHELL}}", "命令执行使用的 Shell"],
       ["{{DATE}}", "当前日期"],
       [
         "{{PROJECT_DIR}}",
@@ -299,15 +307,66 @@ export const zh = {
     toolCallDescription: "call_description",
     callDescriptionHint:
       "call_description：开启（缺省）时该工具的 schema 保留可选的 description 参数——模型为每次调用写一句说明，运行期间展示给用户；关闭则装配时从 schema 滤除该参数。仅参数中定义了 description 属性的工具可切换。",
-    mcpServers: "MCP Server（只读）",
+    mcpServers: "MCP Server",
+    mcpDesc:
+      "连接外部 MCP Server：其工具以 mcp__<name>__<tool> 并入本 Agent 的工具列表。此区块的改动即时保存。",
+    mcpEmpty: "尚未配置 MCP Server",
+    mcpAdd: "添加 MCP Server",
+    mcpEditTitle: "编辑 MCP Server",
+    mcpRemove: "删除",
+    mcpName: "name",
+    mcpNameHint: "工具名前缀：mcp__<name>__<tool>；限字母、数字、_ 和 -",
+    mcpTransport: "transport",
+    mcpTransportStdio: "本地进程：启动 command 后经 stdin/stdout 通信",
+    mcpTransportHttp: "Streamable HTTP：当前规范的远程 transport",
+    mcpTransportSse: "旧版 HTTP+SSE：仅为未迁移的服务保留",
+    mcpTarget: "command / url",
+    mcpCommand: "command",
+    mcpArgs: "args",
+    mcpArgsHint: "每行一个参数",
+    mcpEnv: "env",
+    mcpEnvHint: "每行一条 KEY=value；Agent vault 不注入 MCP Server 进程",
+    mcpCwd: "cwd",
+    mcpCwdHint: "留空则使用本次 Session 的 Workspace",
+    mcpUrl: "url",
+    mcpHeaders: "headers",
+    mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpConnectTimeout: "connectTimeoutMs",
+    mcpBudgetsHint:
+      "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
+    mcpNameInvalid: "限字母、数字、_ 和 -，且以字母或数字开头",
+    mcpUrlInvalid: "必须是合法的 http(s) URL",
+    mcpLineInvalid: (line: number): string => `第 ${line} 行格式无效`,
+    mcpNumberInvalid: "必须是 > 0 的整数",
+    mcpDuplicateName: "同名 Server 已存在",
+    mcpTest: "测试连接",
+    mcpTesting: "测试中…",
+    mcpTestOk: (toolCount: number, latencyMs?: number): string => {
+      const timing = latencyMs !== undefined ? `（${(latencyMs / 1000).toFixed(1)}s）` : "";
+      return toolCount === 0
+        ? `连接成功，但该 Server 未暴露任何工具${timing}`
+        : `连接成功，发现 ${toolCount} 个工具${timing}`;
+    },
+    mcpTestFail: (detail: string): string => `连接失败：${detail}`,
+    mcpTestAllConfirm: (n: number): string =>
+      `将逐一连接已配置的 ${n} 个 MCP Server 并做工具发现（真实连接，不保存任何改动），结果显示在各行上。`,
+    mcpTestAllStart: "开始测试",
+    mcpTestPending: "测试中…",
+    mcpTestBadge: (toolCount: number, latencyMs?: number): string =>
+      `${toolCount} 个工具${latencyMs !== undefined ? ` · ${(latencyMs / 1000).toFixed(1)}s` : ""}`,
+    mcpTestBadgeFail: "连接失败",
+    mcpDeleteTitle: "删除 MCP Server",
+    mcpDeleteConfirm: (name: string): string =>
+      `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
       `确认删除 Agent「${name}」？其目录（含全部 Trace）将被递归删除，不可恢复。`,
+    /** Agent State section: the State version with the snapshot transfer actions, plus the copyable State path. */
+    stateTitle: "Agent State",
     stateVersion: "Agent State 版本",
-    transferTitle: "导出 / 导入",
     transferDesc: "导出当前 Agent State 快照包（tar.gz）；导入整目录覆盖，并以包内版本为准。",
     exportSnapshot: "导出快照",
     importSnapshot: "导入快照",
@@ -316,12 +375,51 @@ export const zh = {
     importConflictTitle: "版本冲突",
     importConflictBody: "快照包版本不高于当前版本，导入将覆盖现有 Agent State。确认继续？",
     resetConfigTitle: "还原为默认配置",
-    resetConfigDesc:
-      "把 system_config.yaml 还原为当前内置默认值（与 Skill 更新同语义）：自定义的系统提示词、工具列表、模型/压缩参数与 MCP Server 将被覆盖，仅保留名称、描述与版本号。",
     resetConfigAction: "还原为默认配置",
     resetConfigConfirmBody:
       "此操作会用当前默认值覆盖该 Agent 的现有配置：自定义系统提示词、工具列表、模型/压缩参数与 MCP Server 全部被替换，仅保留名称与描述。与 Skill 更新一样不可撤销，确认继续？",
     resetConfigDone: "配置已还原为当前默认值",
+    /** Kernel section: which defaults generation the config is based on (dates; unrelated to the optimization counter shown as stateVersion), with the update / restore actions. */
+    kernelTitle: "内核",
+    kernelLegacy: "早于内核版本机制",
+    kernelOutdatedHint: "内核有更新",
+    kernelUpToDate: "已是最新",
+    kernelUpdateTitle: "更新内核",
+    /** Inline labels around the outdated line's two generation values (the values themselves render dark and semibold). */
+    kernelCurrent: "当前",
+    kernelLatest: "最新",
+    kernelUpdateAction: "更新内核",
+    kernelUpdateConfirmBody:
+      "将把未自定义的字段更新为当前内置默认值；自定义过的字段保持不变并在结果中列出。名称、描述、版本号与 MCP Server 不受影响。确认继续？",
+    kernelUpdateDone: (version: string, advanced: number): string =>
+      advanced > 0
+        ? `内核已更新至 ${version}，${advanced} 个字段跟进新默认`
+        : `内核已更新至 ${version}，字段均已是当前默认或保持自定义`,
+    kernelUpdateKeptIntro: "以下字段因自定义被保留：",
+    kernelListSeparator: "、",
+    /** Display name of a per-tool merge leaf (`tools.builtin.<name>`) in the kept/advanced lists. */
+    kernelFieldTool: (name: string): string => `工具 ${name}`,
+    /** Display names of the fixed kernel merge leaves (dotted config paths); unknown paths fall back to the raw path. */
+    kernelFields: {
+      system_prompt: "系统提示词模板",
+      max_turns: "单任务最大轮数",
+      "model.max_tokens": "模型最大输出 Token",
+      "model.thinking_level": "思考力度",
+      "model.timeoutMs": "请求超时",
+      "compaction.max_context_length": "压缩上下文阈值",
+      "compaction.max_session_turns": "压缩会话轮数阈值",
+      "compaction.mode": "压缩模式",
+      "compaction.prompt": "压缩提示词",
+      "memory.enabled": "记忆开关",
+      "memory.prompt": "记忆提示词",
+      "memory.workspace_prompt": "工作区记忆提示词",
+      "vault.enabled": "Vault 小节开关",
+      "vault.prompt": "Vault 提示词",
+      "skills.enabled": "技能小节开关",
+      "skills.prompt": "技能提示词",
+      "schedules.enabled": "定时任务小节开关",
+      "schedules.prompt": "定时任务提示词",
+    } as Record<string, string>,
   },
 
   models: {
@@ -335,9 +433,8 @@ export const zh = {
     /** Add-dialog note for preset direct-vendor groups (fed the provider label): states whose protocol the group speaks — the in-field suffix on the base URL shows which path. */
     vendorProtocolHint: (vendor: string): string =>
       `仅支持 ${vendor} 官方接口协议，OpenAI 兼容接口请使用自定义模型分组`,
-    /** Non-blocking warning under the model id (preset direct-vendor groups, adding): the typed id is not a recognized official model id. */
-    autoRouteNone:
-      "该 id 不是可识别的官方模型 id：请核对，或改在 Custom / 自建分组以 OpenAI 兼容接口接入",
+    autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
+    useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
@@ -453,6 +550,69 @@ export const zh = {
     contextWindowInvalid: "必须为数字",
   },
 
+  memory: {
+    desc: "跨 Session 的长期记忆（存于 agent_state/memory/）：agent 会在对话中自行记下值得保留的信息，你也可以直接让它记住某件事。用户记忆对本 Agent 的所有会话生效，工作区记忆按工作区隔离；记忆修改在对话中由 agent 完成。关闭开关只停止使用记忆，不删除任何文件。",
+    enable: "启用记忆",
+    userScope: "用户记忆",
+    templateMissing: "提示词模板中没有 {{MEMORY}} 占位符，记忆不会进入上下文。",
+    insertPlaceholder: "插入 {{MEMORY}} 占位符",
+    insertPlaceholderDone: "已插入",
+    promptSection: "记忆提示词",
+    promptSectionHint:
+      "注入模板 {{MEMORY}} 占位符的内容。主提示词每个会话都注入；工作区附加段仅在持久工作区的会话中追加。",
+    promptLabel: "主提示词",
+    workspacePromptLabel: "工作区附加段",
+    /**
+     * Memory-prompt placeholder reference; a chip inserts into whichever field was focused
+     * last. The two indexes plus the workspace directory — the user directory stays a literal
+     * pattern in the prompt, resolvable from the Environment section.
+     */
+    promptPlaceholders: [
+      [
+        "{{USER_MEMORY_INDEX}}",
+        "用户记忆索引 MEMORY.md 的内容（最多注入 200 行、总计 25000 字符）",
+      ],
+      [
+        "{{WORKSPACE_MEMORY_INDEX}}",
+        "当前工作区记忆索引的内容（最多注入 200 行、总计 25000 字符）；仅在工作区附加段生效",
+      ],
+      ["{{WORKSPACE_MEMORY_DIR}}", "当前工作区记忆目录的绝对路径；仅在工作区附加段生效"],
+    ],
+    insertToken: "插入到光标处",
+    itemCount: (n: number): string => `${n} 条`,
+    emptyScope: "这个工作区还没有记忆——agent 会在会话中自行记下值得保留的信息",
+    emptyUserScope: "还没有用户记忆——在对话里说「记住……」即可让 agent 保存",
+    add: "添加",
+    addTitle: "添加记忆",
+    addWhy: "记忆整理由 agent 在对话中完成：填写内容后打开新对话，由 agent 整理保存。",
+    addContentLabel: "要记住的内容或来源",
+    addContentPlaceholder: "粘贴要记住的内容，或文件路径 / 链接",
+    /** Prefilled draft for the add-via-chat flow, per scope kind; the required content follows on the next line. */
+    addPromptLead: {
+      user: "请把下面的内容整理成记忆，存入用户记忆：",
+      workspace: "请把下面的内容整理成记忆，存入这个工作区的记忆：",
+    },
+    view: "查看",
+    edit: "编辑",
+    editTitle: "编辑记忆",
+    editWhy:
+      "内容修改由 agent 在对话中完成：确认引导语后打开新对话，agent 会同步更新记忆文件与 MEMORY.md 索引。",
+    editRequirementLabel: "修改要求",
+    editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
+    editPromptLabel: "引导语预览",
+    editCopyPrompt: "复制 Prompt",
+    editCopied: "已复制",
+    editOpenChat: "打开新对话",
+    delete: "删除",
+    deleteTitle: "删除这条记忆？",
+    deleteConfirm: (name: string): string =>
+      `将删除「${name}」并移除 MEMORY.md 中对应的索引行。此操作不可恢复。`,
+    deleteDone: "已删除",
+    /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
+    editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
+    editPromptTail: "修改要求：",
+  },
+
   vault: {
     desc: "本 Agent 专属的环境变量（存于 agent_state/.vault.toml）：键值对注入其 shell 命令（exec_command）的子进程环境；键名会告知模型，值不进入模型上下文。子 Agent 使用各自的保险柜，不继承。保存后自下一个任务起生效（进行中的任务不受影响）。",
     key: "键名",
@@ -470,6 +630,21 @@ export const zh = {
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
     valueRequired: "值不能为空",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用密钥保险柜",
+      templateMissing: "提示词模板中没有 {{VAULT}} 占位符，保险柜小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Vault 段落：一键迁移会将该段落原位替换为 {{VAULT}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{VAULT}} 占位符",
+      migrate: "迁移为 {{VAULT}} 占位符",
+      promptSection: "保险柜提示词",
+      promptSectionHint: "注入模板 {{VAULT}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{VAULT_KEYS}}", "保险柜键名列表（每键一行「- KEY」，仅键名，值永不注入；无键时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   schedule: {
@@ -507,12 +682,30 @@ export const zh = {
     target: "目标",
     targetNew: "每次新建会话",
     targetSession: "绑定 Session",
-    sessionId: "Session id",
+    sessionId: "Session",
+    /** Bind-Session picker (searchable dropdown): trigger placeholder, search box, and empty states. */
+    chooseSession: "选择要绑定的 Session",
+    sessionSearch: "搜索标题或 Session id…",
+    sessionNoMatch: "无匹配的 Session",
+    sessionEmpty: "该 Agent 暂无 Session",
     workspace: "Workspace（可选，留空自动创建临时工作区）",
     model: "Model",
     modelDefault: "Project 默认",
     deleteTitle: "删除定时任务",
     deleteConfirm: (name: string): string => `确认删除定时任务「${name}」？`,
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用定时任务",
+      templateMissing: "提示词模板中没有 {{SCHEDULES}} 占位符，定时任务小节不会进入上下文。",
+      insertPlaceholder: "插入 {{SCHEDULES}} 占位符",
+      promptSection: "定时任务提示词",
+      promptSectionHint:
+        "注入模板 {{SCHEDULES}} 占位符的内容，教模型用文件工具管理定时任务；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SCHEDULE_LIST}}", "现有任务名列表（每任务一行「- 名称」；无任务时注入空清单说明）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   skills: {
@@ -521,6 +714,8 @@ export const zh = {
     quickInvoke: "快捷调用",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
+    /** Title on a disabled quick-invoke button: quick invoke opens a draft on the currently selected agent, so a skill it hasn't installed (e.g. preinstall:false skills like remote-claude-code) can't be quick-invoked until it's installed on that agent. */
+    quickInvokeNeedsInstall: "先在当前 Agent 安装该技能后才能快捷调用",
     manageInstall: "管理安装",
     manageInstallTitle: (name: string): string => `管理安装：${name}`,
     install: "安装",
@@ -585,6 +780,21 @@ export const zh = {
     importOverwriteBody: (name: string): string =>
       `技能「${name}」已存在，覆盖安装将替换其全部文件（含本地改动），不可恢复。确认继续？`,
     importOverwriteAction: "覆盖安装",
+    /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
+    injection: {
+      enable: "启用技能",
+      templateMissing: "提示词模板中没有 {{SKILLS}} 占位符，技能小节不会进入上下文。",
+      legacyTemplate:
+        "模板仍是旧版硬编码的 # Skills 段落：一键迁移会将该段落原位替换为 {{SKILLS}} 占位符，措辞不变，此后可在下方编辑。",
+      insertPlaceholder: "插入 {{SKILLS}} 占位符",
+      migrate: "迁移为 {{SKILLS}} 占位符",
+      promptSection: "技能提示词",
+      promptSectionHint: "注入模板 {{SKILLS}} 占位符的内容；开关关闭或模板无占位符时不注入。",
+      promptLabel: "提示词",
+      promptPlaceholders: [
+        ["{{SKILL_METADATA}}", "已安装技能的元数据行（每技能一行「- 名称 — 描述」；无技能时为空）"],
+      ] as ReadonlyArray<readonly [string, string]>,
+    },
   },
 
   chat: {
@@ -609,6 +819,26 @@ export const zh = {
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按 Agent 分组",
+    /** Session-list section header controls: search / list settings / mode-dependent create (具体新建的对象按分组方式决定). */
+    searchSessions: "搜索会话",
+    searchSessionsPlaceholder: "搜索会话…",
+    searchClear: "清除搜索",
+    /** Zero hits: the filter only sees already-loaded conversations, so the copy says so rather than claiming none exist. */
+    searchNoMatches: "已加载的会话中无匹配",
+    listSettings: "列表选项",
+    groupModeSection: "分组方式",
+    sortModeSection: "排序方式",
+    sortManual: "手动排序",
+    sortRecent: "最近更新",
+    newWorkspaceEntity: "新建工作区",
+    /** Registry-backed workspace group's overflow (… right of the header "+"): alias rename + sidebar-only removal. */
+    workspaceMenu: "工作区选项",
+    renameWorkspace: "重命名工作区",
+    renameWorkspaceLabel: "名称",
+    renameWorkspaceHint: "留空则使用目录名",
+    deleteWorkspace: "删除工作区",
+    deleteWorkspaceConfirm: (name: string) =>
+      `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
@@ -847,9 +1077,21 @@ Benchmark：
       "当前模型不支持直接查看图片：发送时图片将保存到会话临时目录，以文件路径转交（模型经 describe_image 查看）",
     infoPanel: "Session 信息",
     sessionStats: "统计",
-    /** Info-dropdown jump to the Trace page, deep-linked to the current Session. */
-    viewTrace: "查看轨迹",
+    /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
+    sessionIdLabel: "Session id",
+    copySessionId: "复制 Session id",
+    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    traceFile: "轨迹文件",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    processList: "会话进程",
+    processStop: "停止",
+    processExited: "已退出",
+    /** Header chip title: count of the conversation's still-running background processes. */
+    runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",
+    /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
+    statTotalTokens: "总 Token",
+    statCacheHit: (pct: string) => `缓存命中率 ${pct}`,
     statElapsed: "用时",
     statInput: "输入 tokens",
     statCached: "已缓存",
@@ -904,16 +1146,32 @@ Benchmark：
       prevModel ? `已切换模型（原为 ${prevModel}），延续原会话` : "已切换模型，延续原会话",
     /** First message body auto-sent when `/model` is staged and the composer is empty (same convention as skillsAutoMessage). */
     modelSwitchAutoMessage: "换用新模型继续这段对话",
+    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
+    modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
     emptyGreeting: "开始一段新对话",
-    compactionRunning: (mode: string) => `压缩进行中（${mode}）…`,
+    /** Unified step-row titles (same header idiom as workRunning/workDone). */
+    mcpConnectTitle: "MCP 连接",
+    mcpServerList: (servers: string[]): string => servers.join("、"),
+    /** One-line result detail: tool count, plus the NAMES of failed servers (reasons live in the expanded server groups). */
+    mcpConnectResult: (toolCount: number, failed: string[]): string => {
+      const parts: string[] = [];
+      if (toolCount > 0 || failed.length === 0) parts.push(`发现 ${toolCount} 个工具`);
+      if (failed.length > 0) parts.push(`不可用：${failed.join("、")}`);
+      return parts.join("；");
+    },
+    /** Per-server group row meta inside the expanded connect row. */
+    mcpToolsCount: (n: number): string => `${n} 个工具`,
+    mcpServerFailed: "连接失败",
+    mcpConnectAborted: "已中断，下次发送时重新连接",
+    compactionTitle: "压缩",
     compactionDone: (mode: string): string =>
-      mode === "discard" ? "[压缩] 完成，旧上下文已丢弃" : "[压缩] 完成，已切换到摘要后的新上下文",
+      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
     compactionFailed: (status: string, errorMessage?: string): string => {
-      if (status === "aborted") return "[压缩] 已中断，保留当前上下文";
+      if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
-        ? `[压缩] 失败（${errorMessage}），保留当前上下文`
-        : "[压缩] 失败，保留当前上下文";
+        ? `失败（${errorMessage}），保留当前上下文`
+        : "失败，保留当前上下文";
     },
     unknownTool: "（未知工具）",
     workRunning: "运行中",
@@ -928,8 +1186,18 @@ Benchmark：
     renameSessionLabel: "标题",
     deleteSessionConfirm: (title: string) =>
       `确定删除「${title}」？该对话的消息与 Trace 将被移除，且不可恢复。`,
+    /** Parked draft conversations (unsent new chats living in the sidebar list — see draft-sessions.ts). */
+    draftGroup: "草稿",
+    draftUntitled: "（无标题草稿）",
+    deleteDraft: "删除草稿",
+    deleteDraftConfirm: (title: string) => `确定删除草稿「${title}」？未发送的内容将被丢弃。`,
     archiveSession: "归档",
     unarchiveSession: "取消归档",
+    /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
+    sessionMenu: "对话选项",
+    pinSession: "置顶",
+    unpinSession: "取消置顶",
+    pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
@@ -1053,6 +1321,8 @@ Benchmark：
     kindModelReply: "模型回复",
     kindToolGen: "工具调用生成",
     legendToolExec: "工具调用执行",
+    legendOther: "其他",
+    toolParams: "参数 Schema",
     legendApprovalWait: "审批等待",
     task: (n: number) => `第 ${n} 轮`,
     globalSummary: "全局统计",

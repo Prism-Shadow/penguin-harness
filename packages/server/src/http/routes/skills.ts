@@ -2,6 +2,7 @@
  * Skill library & Agent-installed-Skills routes:
  *   GET /api/skills                                       # library groups & metadata (any logged-in user)
  *   GET|POST /api/projects/:p/agents/:a/skills            # installed list / install from library (any member)
+ *   POST     /api/projects/:p/agents/:a/skills/template-placeholder  # insert/migrate the {{SKILLS}} placeholder (any member)
  *   POST     /api/projects/:p/agents/:a/skills/archive    # install one skill from an uploaded zip (any member)
  *   GET      /api/projects/:p/agents/:a/skills/:name/archive  # export one installed skill as a zip (any member)
  *   DELETE   /api/projects/:p/agents/:a/skills/:name      # uninstall (any member)
@@ -256,6 +257,21 @@ export function agentSkillsRoutes(deps: AppDeps): Hono<AppEnv> {
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(await listResponse(projectId, agentId));
+  });
+
+  // Insert (or migrate a legacy hardcoded # Skills section to) the {{SKILLS}} placeholder —
+  // the explicit adoption path mirroring memory's endpoint; idempotent config write,
+  // member-level like every other mutation on this router.
+  app.post("/template-placeholder", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const agentId = requireValidId(c, "agentId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const view = await deps.agentConfigService.insertTemplatePlaceholder(
+      projectId,
+      agentId,
+      "skills",
+    );
+    return c.json(view.config.skills);
   });
 
   app.post("/", async (c) => {

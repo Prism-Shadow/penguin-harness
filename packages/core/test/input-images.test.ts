@@ -196,7 +196,6 @@ describe("Session input-image wiring", () => {
     model_id: "m1",
     model_context_window: 1000,
     system_prompt: "sp",
-    tools: [],
     agent_state: tmp,
     workspace: tmp,
   });
@@ -222,11 +221,13 @@ describe("Session input-image wiring", () => {
 
   it("a steering image that cannot be saved ends the run instead of being dropped with a note", async () => {
     let session!: Session;
+    const llm = steeringLLM(() => {
+      expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
+    });
     session = new Session({
       meta: meta(),
-      llm: steeringLLM(() => {
-        expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
-      }),
+      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
       modelHasVision: false,
@@ -245,18 +246,20 @@ describe("Session input-image wiring", () => {
     // as messages and nothing touches the directory, broken or not.
     const inputs: OmniMessage[][] = [];
     let session!: Session;
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        inputs.push(params.newMessages);
+        if (inputs.length === 1) {
+          expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
+        }
+        yield assistantText(`turn ${inputs.length}`);
+        return { status: "completed" };
+      },
+    };
     session = new Session({
       meta: meta(),
-      llm: {
-        async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
-          inputs.push(params.newMessages);
-          if (inputs.length === 1) {
-            expect(session.steer([userText("look at this"), imageUrlMessage(DATA_URL)])).toBe(true);
-          }
-          yield assistantText(`turn ${inputs.length}`);
-          return { status: "completed" };
-        },
-      },
+      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
       imagesDir: await unwritableDir(),
       modelHasVision: true,

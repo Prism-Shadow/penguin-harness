@@ -14,7 +14,14 @@ import path from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { buildAppDeps, createApp } from "./app.js";
+import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig } from "./config.js";
+import {
+  clearInitialAdminPassword,
+  readInitialAdminPassword,
+  renderInitialPasswordNotice,
+  storeInitialAdminPassword,
+} from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
@@ -60,15 +67,29 @@ const app = createApp(deps);
 
 // Built-in admin seed (idempotent): creates admin and adopts default_project when the
 // users table is empty. The returned initial password (random unless pinned via
-// PENGUIN_SEED_ADMIN_PASSWORD) is printed here once — the only place it is ever shown.
+// PENGUIN_SEED_ADMIN_PASSWORD) is persisted in the data root while it remains the
+// initial one, and EVERY startup re-prints the framed reminder until the password is
+// changed (any password update for admin removes the file — see initial-password.ts).
+// Never printed (or persisted) in desktop mode: the seed there is fully random by design
+// (config.ts) and sign-in goes through the shell's one-shot token, so showing it would
+// only leak a credential into a log nobody needs.
 const seededAdminPassword = await deps.authService.seedAdmin();
-// Never printed in desktop mode: the seed there is fully random by design (config.ts)
-// and sign-in goes through the shell's one-shot token, so showing it would only leak a
-// credential into a log nobody needs.
-if (seededAdminPassword !== null && config.desktopToken === null) {
-  console.log(
-    `Seeded built-in admin "admin" — initial password: ${seededAdminPassword} (change it after first sign-in)`,
-  );
+if (config.desktopToken === null) {
+  if (seededAdminPassword !== null) {
+    storeInitialAdminPassword(config.root, seededAdminPassword);
+  }
+  if (deps.authService.adminPasswordIsInitial()) {
+    const initialPassword = seededAdminPassword ?? readInitialAdminPassword(config.root);
+    // Roots seeded before the password was persisted have no file: stay silent — the
+    // plaintext is unrecoverable, and a reminder with nothing to type is pure nagging.
+    if (initialPassword !== null) {
+      console.log(renderInitialPasswordNotice(ADMIN_USER_ID, initialPassword));
+    }
+  } else {
+    // Heal: the flag was cleared while the file survived (e.g. the password was changed
+    // under a build that predates the file) — a stale plaintext must not outlive it.
+    clearInitialAdminPassword(config.root);
+  }
 }
 
 // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.

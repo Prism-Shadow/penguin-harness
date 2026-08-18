@@ -53,7 +53,6 @@ const META: SessionMetaPayload = {
   model_id: "m1",
   model_context_window: 1000,
   system_prompt: "sp",
-  tools: [],
   agent_state: "/tmp/state",
   workspace: "/tmp/w",
 };
@@ -131,7 +130,8 @@ describe("session-title", () => {
     const withFactory = new Session({
       meta: META,
       ...IMAGES,
-      llm: fakeLLM([]),
+      bootstrap: async () => ({ tools: [], llm: fakeLLM([]), mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("Title A")]),
     });
@@ -145,7 +145,8 @@ describe("session-title", () => {
     const withoutFactory = new Session({
       meta: META,
       ...IMAGES,
-      llm: fakeLLM([]),
+      bootstrap: async () => ({ tools: [], llm: fakeLLM([]), mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
     });
     expect(await withoutFactory.generateTitle()).toEqual({
@@ -159,7 +160,12 @@ describe("session-title", () => {
     const session = new Session({
       meta: META,
       ...IMAGES,
-      llm: fakeLLM([thinkingMessage("thinking"), assistantText("answer body")]),
+      bootstrap: async () => ({
+        tools: [],
+        llm: fakeLLM([thinkingMessage("thinking"), assistantText("answer body")]),
+        mcp: [],
+      }),
+      mcpServers: [],
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("Title B")], { status: "completed" }, seen),
     });
@@ -180,7 +186,8 @@ describe("session-title", () => {
     const idle = new Session({
       meta: META,
       ...IMAGES,
-      llm: fakeLLM([]),
+      bootstrap: async () => ({ tools: [], llm: fakeLLM([]), mcp: [] }),
+      mcpServers: [],
       environment: fakeEnvironment,
       createBareLLM: () => fakeLLM([assistantText("must not be produced")]),
     });

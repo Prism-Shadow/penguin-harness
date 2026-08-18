@@ -80,6 +80,41 @@ describe("installSkill / removeSkill", () => {
     );
   });
 
+  it("writes auxiliary files a SKILL.md references (subdirs preserved), and a reinstall drops ones the new version omits", async () => {
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "multi",
+      content: "---\nname: multi\n---\nBody\n",
+      files: { "reference/API.md": "# API\n", "reference/nested/notes.txt": "notes\n" },
+    });
+    expect(await fs.readFile(skillFile("multi", "reference/API.md"), "utf8")).toBe("# API\n");
+    expect(await fs.readFile(skillFile("multi", "reference/nested/notes.txt"), "utf8")).toBe(
+      "notes\n",
+    );
+
+    // Reinstall with a smaller file set: the whole directory is replaced, so the dropped file is gone.
+    await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      name: "multi",
+      content: "---\nname: multi\n---\nBody\n",
+      files: { "reference/API.md": "# API v2\n" },
+    });
+    expect(await fs.readFile(skillFile("multi", "reference/API.md"), "utf8")).toBe("# API v2\n");
+    await expect(fs.access(skillFile("multi", "reference/nested/notes.txt"))).rejects.toThrow();
+  });
+
+  it("rejects auxiliary file paths that escape the skill directory, writing nothing", async () => {
+    for (const bad of ["../evil.md", "/abs.md", "a\\b.md", "ref/../../x.md", ""]) {
+      await expect(
+        installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+          name: "guarded",
+          content: "---\nname: guarded\n---\nBody\n",
+          files: { [bad]: "x" },
+        }),
+      ).rejects.toThrow(/skill file path/);
+      // The guard runs before any write: the skill directory is never created.
+      await expect(fs.access(skillMd("guarded"))).rejects.toThrow();
+    }
+  });
+
   it("removeSkill deletes the whole skill directory and is idempotent", async () => {
     const skill = librarySkill("penguin-sdk")!;
     await install(skill.name, skill.content);

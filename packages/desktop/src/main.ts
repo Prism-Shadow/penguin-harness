@@ -24,6 +24,7 @@ import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import { initUpdater } from "./updater.js";
 import {
   desktopLoginUrl,
   isAppUrl,
@@ -216,12 +217,12 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() =>
     (async () => {
-      // Standard menu plus the CLI-install entry where installing makes sense
-      // (packaged macOS / Windows / AppImage; deb ships /usr/bin/penguin itself).
+      // Standard menu plus native desktop-only actions; the window gets no IPC channel.
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),
       });
+      initUpdater(() => win);
       await boot();
       // First launch only: offer the 'penguin' command once; the menu entry remains.
       // Skipped in smoke mode — a modal dialog would hang the automated run.

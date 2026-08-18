@@ -8,6 +8,13 @@ import {
   AGENTS_MD_PLACEHOLDER,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
+  VAULT_PLACEHOLDER,
+  SKILLS_PLACEHOLDER,
+  SCHEDULES_PLACEHOLDER,
+  MEMORY_PLACEHOLDER,
+  DEFAULT_VAULT_PROMPT,
+  DEFAULT_SKILLS_PROMPT,
+  DEFAULT_SCHEDULES_PROMPT,
   CWD_PLACEHOLDER,
   DATE_PLACEHOLDER,
   DEFAULT_AGENT_ID,
@@ -19,6 +26,7 @@ import {
   SESSION_ID_PLACEHOLDER,
   SHELL_PLACEHOLDER,
   addModel,
+  removeModel,
   setVisionModel,
   agentsMdPath,
   agentStateDir,
@@ -164,28 +172,46 @@ describe("loadOrInitAgentState", () => {
       expect(state.systemConfig.system_prompt.indexOf(AGENTS_MD_PLACEHOLDER)).toBeLessThan(
         state.systemConfig.system_prompt.indexOf("# Environment"),
       );
-      // The # Vault and # Skills body sections plus their placeholders: the default template
-      // places them after [/developer_instructions] and before # Environment, in the order
-      // Vault -> Skills (the statement text is part of the template body, kept even with no
-      // keys/skills).
+      // The Vault / Skills / Memory / Schedules section placeholders: the default template
+      // places them after [/developer_instructions] and before # Environment, in that order.
+      // The section statement texts (# Vault, # Skills, [use_skills] …) moved into the
+      // editable default prompts, each carrying its inner injection point — the template body
+      // holds no inline {{VAULT_KEYS}}/{{SKILL_METADATA}} anymore (those are the legacy
+      // template form).
       const tpl = state.systemConfig.system_prompt;
-      expect(tpl).toContain("# Vault");
-      expect(tpl).toContain(VAULT_KEYS_PLACEHOLDER);
-      expect(tpl).toContain("# Skills");
-      expect(tpl).toContain(SKILL_METADATA_PLACEHOLDER);
-      expect(tpl).toContain("[use_skills]");
+      expect(tpl).toContain(VAULT_PLACEHOLDER);
+      expect(tpl).toContain(SKILLS_PLACEHOLDER);
+      expect(tpl).toContain(SCHEDULES_PLACEHOLDER);
+      expect(tpl).not.toContain("# Vault");
+      expect(tpl).not.toContain("# Skills");
+      expect(tpl).not.toContain(VAULT_KEYS_PLACEHOLDER);
+      expect(tpl).not.toContain(SKILL_METADATA_PLACEHOLDER);
+      expect(DEFAULT_VAULT_PROMPT).toContain("# Vault");
+      expect(DEFAULT_VAULT_PROMPT).toContain(VAULT_KEYS_PLACEHOLDER);
+      expect(DEFAULT_SKILLS_PROMPT).toContain("# Skills");
+      expect(DEFAULT_SKILLS_PROMPT).toContain(SKILL_METADATA_PLACEHOLDER);
+      expect(DEFAULT_SKILLS_PROMPT).toContain("[use_skills]");
+      expect(DEFAULT_SCHEDULES_PROMPT).toContain("# Scheduled Tasks");
+      // The per-feature injection config ships enabled with the default prompts materialized.
+      expect(state.systemConfig.vault).toEqual({ enabled: true, prompt: DEFAULT_VAULT_PROMPT });
+      expect(state.systemConfig.skills).toEqual({ enabled: true, prompt: DEFAULT_SKILLS_PROMPT });
+      expect(state.systemConfig.schedules).toEqual({
+        enabled: true,
+        prompt: DEFAULT_SCHEDULES_PROMPT,
+      });
       // Tooling installs once into a shared per-Agent directory rather than per task, so a
       // Session's scratchpad never becomes the home of a virtualenv. It governs every task, not
       // just skill runs, so it belongs to # File system — pinned by position, since the rule
-      // reads as skills-only the moment it drifts back under # Skills.
+      // reads as skills-only the moment it drifts back under # Skills (now the {{SKILLS}}
+      // block).
       expect(tpl).toContain("<app_data_dir>/agents/<agent_id>/shared_env/");
       expect(tpl.indexOf("# File system")).toBeLessThan(tpl.indexOf("shared_env/"));
-      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf("# Skills"));
-      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf("# Vault"));
-      expect(tpl.indexOf("# Vault")).toBeLessThan(tpl.indexOf(VAULT_KEYS_PLACEHOLDER));
-      expect(tpl.indexOf(VAULT_KEYS_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Skills"));
-      expect(tpl.indexOf("# Skills")).toBeLessThan(tpl.indexOf(SKILL_METADATA_PLACEHOLDER));
-      expect(tpl.indexOf(SKILL_METADATA_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
+      expect(tpl.indexOf("shared_env/")).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
+      expect(tpl.indexOf("[/developer_instructions]")).toBeLessThan(tpl.indexOf(VAULT_PLACEHOLDER));
+      expect(tpl.indexOf(VAULT_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SKILLS_PLACEHOLDER));
+      expect(tpl.indexOf(SKILLS_PLACEHOLDER)).toBeLessThan(tpl.indexOf(MEMORY_PLACEHOLDER));
+      expect(tpl.indexOf(MEMORY_PLACEHOLDER)).toBeLessThan(tpl.indexOf(SCHEDULES_PLACEHOLDER));
+      expect(tpl.indexOf(SCHEDULES_PLACEHOLDER)).toBeLessThan(tpl.indexOf("# Environment"));
       expect(state.systemConfig.model?.max_tokens).toBe(32000);
       expect(state.systemConfig.model?.thinking_level).toBe("medium");
       expect(state.systemConfig.model?.timeoutMs).toBe(120000);
@@ -1080,6 +1106,67 @@ describe("project-config round trip", () => {
     await expect(
       setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "blind" }),
     ).rejects.toThrow(/not supporting images/);
+  });
+
+  it("removeModel drops the exact pair and leaves a same-id entry in another group alone", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "pa", model_id: "m1" });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "pb", model_id: "m1" });
+    const removed = await removeModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "pa",
+      model_id: "m1",
+    });
+    expect(getModel(removed, { provider: "pa", model_id: "m1" })).toBeUndefined();
+    expect(getModel(removed, { provider: "pb", model_id: "m1" })).toBeDefined();
+    // Persisted, not just returned.
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(loaded, { provider: "pa", model_id: "m1" })).toBeUndefined();
+    expect(getModel(loaded, { provider: "pb", model_id: "m1" })).toBeDefined();
+  });
+
+  it("removeModel clears the default / vision pointers that named the removed entry", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "both",
+      vision: true,
+    });
+    const bothRef = { provider: "custom", model_id: "both" };
+    await setDefaultModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+    await setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+
+    await removeModel(tmpRoot, DEFAULT_PROJECT_ID, bothRef);
+    // A pointer left behind would name a model that is no longer configured, which
+    // resolveModelRef rejects on the next createSession.
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_model).toBeUndefined();
+    expect(loaded.vision_model).toBeUndefined();
+  });
+
+  it("removeModel leaves pointers aimed at other entries untouched", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "keeper",
+      vision: true,
+    });
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "spare" });
+    const keeperRef = { provider: "custom", model_id: "keeper" };
+    await setDefaultModel(tmpRoot, DEFAULT_PROJECT_ID, keeperRef);
+    await setVisionModel(tmpRoot, DEFAULT_PROJECT_ID, keeperRef);
+
+    await removeModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "spare" });
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.default_model).toEqual(keeperRef);
+    expect(loaded.vision_model).toEqual(keeperRef);
+  });
+
+  it("removeModel is idempotent: an absent pair is not an error and changes nothing", async () => {
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, { provider: "custom", model_id: "only" });
+    const before = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    const after = await removeModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "never-added",
+    });
+    expect(after.models).toEqual(before.models);
+    expect(getModel(after, { provider: "custom", model_id: "only" })).toBeDefined();
   });
 
   it("upsert preserves existing context_window and inline credential when not re-specified", async () => {

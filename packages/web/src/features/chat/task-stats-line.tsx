@@ -24,7 +24,6 @@
  * footer**: it provides the reply timestamp and copy button at the end, so the assistant message
  * itself doesn't render a separate one (otherwise two copy buttons would pop up in the same spot).
  */
-import { useState } from "react";
 import { formatTaskStats } from "../../lib/omni/task-stats";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import {
@@ -37,6 +36,7 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CopyButton } from "../../components/ui/copy-button";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
 
@@ -89,7 +89,6 @@ export function TaskStatsLine({
   /** Timestamp of this turn's AI reply (this line is that reply's footer). */
   atMs?: number;
 }) {
-  const [copied, setCopied] = useState(false);
   const { currency } = useTheme();
   const { locale } = useLocale();
 
@@ -97,23 +96,19 @@ export function TaskStatsLine({
   const b = stats?.tokensByBucket;
   const input = b ? b.cacheRead + b.cacheWrite : 0;
 
-  const copy = () => {
-    const text =
-      assistantText?.trim() || stats === null
-        ? (assistantText ?? "")
-        : formatTaskStats(stats, {
-            stats: S.chat.statsLabel,
-            input: S.chat.statInput,
-            cached: S.chat.statCached,
-            output: S.chat.statOutput,
-            parenOpen: S.chat.statParenOpen,
-            parenClose: S.chat.statParenClose,
-          });
-    void navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
+  // Computed at click time (CopyButton takes a getter): the reply text, or the formatted
+  // stats line when there's no reply body.
+  const copyText = () =>
+    assistantText?.trim() || stats === null
+      ? (assistantText ?? "")
+      : formatTaskStats(stats, {
+          stats: S.chat.statsLabel,
+          input: S.chat.statInput,
+          cached: S.chat.statCached,
+          output: S.chat.statOutput,
+          parenOpen: S.chat.statParenOpen,
+          parenClose: S.chat.statParenClose,
+        });
 
   // ≥sm: invisible but **space-reserved** by default (sm:opacity-0, not hidden) — the user
   // footer's hover-reveal convention; because the space is always reserved, appearing never
@@ -170,15 +165,12 @@ export function TaskStatsLine({
           </>
         )}
       </span>
-      <button
-        type="button"
-        title={copied ? S.common.copied : S.chat.copyReply}
-        aria-label={S.chat.copyReply}
-        onClick={copy}
+      {/* Pinned at the row's end, outside the scrollable stats span. */}
+      <CopyButton
+        text={copyText}
+        label={S.chat.copyReply}
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-      >
-        <GlyphIcon d={copied ? STAT_ICONS.check : STAT_ICONS.copy} />
-      </button>
+      />
     </div>
   );
 }

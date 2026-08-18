@@ -30,7 +30,7 @@ import type { ToolCallIdAllocator } from "./llm/tool-call-ids.js";
 // Tool definitions and configuration
 // ---------------------------------------------------------------------------
 
-// ToolDefinition is defined in omnimessage/types.ts (session_meta embeds the full tool schema directly); re-exported here to keep the original import path.
+// ToolDefinition is defined in omnimessage/types.ts (the tool_list_ready event carries the full tool schema); re-exported here to keep the original import path.
 export type { ToolDefinition } from "./omnimessage/types.js";
 
 /** Tool permission: read-only / read-write. */
@@ -68,6 +68,16 @@ export interface ToolDefinitionConfig {
   call_description?: boolean;
 }
 
+/**
+ * One MCP Server entry from `system_config.yaml` (`tools.mcpServers`). `name` scopes the
+ * server's tools as `mcp__<name>__<tool>`; `config` stays an open object at this seam (the
+ * stored YAML is schema-free) and is typed/validated at Environment assembly time by
+ * `environment/mcp/config.ts`: `transport: "stdio" | "http" | "sse"` (inferable from
+ * `command` / `url`), the per-transport fields (stdio: `command`/`args`/`env`/`cwd`;
+ * http/sse: `url`/`headers`), and the shared optional `connectTimeoutMs` / `timeoutMs` /
+ * `maxOutputLength`.
+ * Docs: /docs/tools § "MCP servers".
+ */
 export interface MCPServerConfig {
   name: string;
   config: Record<string, unknown>;
@@ -343,6 +353,21 @@ export interface ToolExecutionRequest {
 }
 
 /**
+ * One background command process owned by the environment (an exec_command promoted past
+ * its yield window): the registry handle plus display metadata for a host UI's process
+ * list. `pid` is the shell leading the process group (null when the spawn itself failed);
+ * `startedAt` is epoch milliseconds.
+ */
+export interface BackgroundCommandInfo {
+  processId: string;
+  pid: number | null;
+  cmd: string;
+  cwd: string;
+  startedAt: number;
+  running: boolean;
+}
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded
@@ -357,6 +382,10 @@ export interface EnvironmentInterface {
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
+  /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

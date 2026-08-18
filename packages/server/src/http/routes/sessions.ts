@@ -22,6 +22,7 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
   RetryNowResponse,
@@ -96,6 +97,19 @@ function pageLimit(raw: string, name: string): number {
  * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
  * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
  */
+/**
+ * Appends the running Task's already-published input messages that the Trace read has not
+ * caught up to yet. Duplication is decided by exact envelope-JSON identity — the engine
+ * writes the very same envelopes, and the client's overlap dedup uses the same rule — and
+ * only the history tail can contain them (inputs are the newest records when this races).
+ */
+function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
+  if (pending.length === 0) return messages;
+  const tail = new Set(messages.slice(-50).map((m) => JSON.stringify(m)));
+  const missing = pending.filter((m) => !tail.has(JSON.stringify(m)));
+  return missing.length > 0 ? [...messages, ...missing] : messages;
+}
+
 function messagesPageQuery(c: Context): MessagesPageRequest | null {
   const rawTail = c.req.query("tailLimit");
   const rawBefore = c.req.query("before");
@@ -446,8 +460,14 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       updated = { ...updated, archivedAt: at };
     }
     const hasTrace = await deps.sessionService.hasTrace(updated);
+    // Re-read after the writes (and after the awaits above): a run finishing anywhere in
+    // this window advances last_active_at, and `updated` is a snapshot taken before the
+    // PATCH even started. Returning it would hand back a REGRESSED value that the web
+    // store swaps in wholesale, rolling the row backwards with no event to repair it.
+    // Falls back to the snapshot if the Session was deleted meanwhile.
+    const fresh = deps.sessionsRepo.findById(row.sessionId) ?? updated;
     return c.json({
-      session: await deps.sessionService.toInfo(updated, hasTrace),
+      session: await deps.sessionService.toInfo(fresh, hasTrace),
     } satisfies SessionResponse);
   });
 
@@ -559,11 +579,28 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // page is immutable history — attaching in-flight fragments to it would seed them at
     // the wrong position — so it never carries `live`.
     let live: MessagesLiveTail | undefined;
-    if (page?.kind !== "before" && deps.manager.statusOf(row.sessionId) !== "idle") {
-      live = {
-        cursor: deps.channels.get(row.sessionId).lastEventId,
-        fragments: deps.manager.liveFragments(row.sessionId),
-      };
+    let pendingInputs: OmniMessage[] = [];
+    if (page?.kind !== "before") {
+      if (deps.manager.statusOf(row.sessionId) !== "idle") {
+        live = {
+          cursor: deps.channels.get(row.sessionId).lastEventId,
+          fragments: deps.manager.liveFragments(row.sessionId),
+        };
+      }
+      // The Task's inputs (published at launch) and its streamed bootstrap records
+      // (mcp_connect pair / tool_list_ready): the engine's Trace writes for both land
+      // only after the first run's connect, so a client rebuilding during that window
+      // would otherwise see neither its own message nor the connecting status — a
+      // silent blank while a slow MCP server times out. Appended below when the trace
+      // read hasn't caught up; `before` pages are immutable history and never carry
+      // them (same rule as `live`). NOT gated on running: a run aborted mid-bootstrap
+      // wrote nothing to the Trace, and its held input is the only copy a reload can
+      // show until the next run persists it (the holds survive idle for exactly that
+      // case — see the manager's request_begin clear).
+      pendingInputs = [
+        ...deps.manager.pendingInputs(row.sessionId),
+        ...deps.manager.pendingBootstrap(row.sessionId),
+      ];
     }
     if (page !== null) {
       const result = await deps.traceService.readMessagesPage(
@@ -583,7 +620,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         },
       };
       return c.json({
-        messages: result.messages,
+        messages: appendPendingInputs(result.messages, pendingInputs),
         ...(live !== undefined ? { live } : {}),
         page: info,
       } satisfies MessagesResponse);
@@ -593,7 +630,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       row.agentId,
       row.sessionId,
     );
-    return c.json({ messages, ...(live !== undefined ? { live } : {}) } satisfies MessagesResponse);
+    return c.json({
+      messages: appendPendingInputs(messages, pendingInputs),
+      ...(live !== undefined ? { live } : {}),
+    } satisfies MessagesResponse);
   });
 
   app.get("/:sessionId/stream", (c) => {
@@ -774,6 +814,41 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const aborted = deps.manager.abortTask(row.sessionId);
     // No Task in progress → 204 no-op; interrupt was triggered → 202 (wrap-up is completed by the SDK's "interrupt cleanup").
     return c.body(null, aborted ? 202 : 204);
+  });
+
+  // —— Background processes (the details popover's interactive list) ——
+
+  // Processes the conversation started (exec_commands promoted to background). Served
+  // from the ACTIVE runtime only: an evicted or never-loaded session truthfully reports
+  // none — the environment that owned them is gone, and resurrecting an entry could only
+  // ever produce an empty list anyway.
+  app.get("/:sessionId/processes", (c) => {
+    const row = resolveSession(c);
+    const processes = deps.manager.listProcesses(row.sessionId).map((p) => ({
+      processId: p.processId,
+      pid: p.pid,
+      cmd: p.cmd,
+      cwd: p.cwd,
+      startedAt: new Date(p.startedAt).toISOString(),
+      running: p.running,
+    }));
+    return c.json({ processes } satisfies SessionProcessesResponse);
+  });
+
+  // Stop one background process (SIGTERM to the whole group, SIGKILL after a grace
+  // period). 404 when the id is gone — already exited and reaped, or the runtime was
+  // evicted; the UI just refreshes its list either way.
+  app.post("/:sessionId/processes/:processId/kill", (c) => {
+    const row = resolveSession(c);
+    const killed = deps.manager.killProcess(row.sessionId, pathParam(c, "processId"));
+    if (!killed) {
+      throw new HttpError(
+        404,
+        "process_not_found",
+        "Process does not exist or has already exited.",
+      );
+    }
+    return c.body(null, 204);
   });
 
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the

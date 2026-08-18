@@ -40,6 +40,7 @@ import {
 } from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
+  BackgroundCommandInfo,
   CompactAvailability,
   OmniMessage,
   ProxyEnvPolicy,
@@ -105,6 +106,12 @@ export interface RuntimeSession {
     material?: { userText: string; assistantText: string };
     signal?: AbortSignal;
   }): Promise<SessionTitleResult>;
+  /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
+  listBackgroundCommands?(): BackgroundCommandInfo[];
+  /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
+  killBackgroundCommand?(processId: string): boolean;
+  /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
+  dispose?(): void;
 }
 
 /** The underlying loader behind get-or-resume-or-heal. */
@@ -215,6 +222,12 @@ export interface SessionManagerDeps {
   log?: (line: string) => void;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
+  /**
+   * Clock for persisted timestamps (last_active_at). Injected like the other services' so a
+   * stubbed clock moves this and `usage_records.ts` together — the pairing the legacy
+   * backfill assumes when it reads MAX(ts) as a session's last activity.
+   */
+  now?: () => Date;
 }
 
 /** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
@@ -251,6 +264,24 @@ interface RuntimeEntry {
    * Deliberately NOT discarded on abort: they are future tasks the user explicitly queued.
    */
   followUps: QueuedFollowUp[];
+  /**
+   * The running Task's input messages, held from launch until the run ends. The engine
+   * writes these exact envelopes to the Trace only after the session bootstrap (MCP
+   * connect + discovery on the first run), so a history read during that window would
+   * miss the user's own message — and the draft flow subscribes to the stream only after
+   * the input publish, so the live channel cannot backfill it either. GET /messages
+   * appends the ones the Trace has not caught up to yet (exact-envelope dedup).
+   */
+  pendingInputs: OmniMessage[];
+  /**
+   * The running Task's streamed bootstrap records (mcp_connect begin/end,
+   * tool_list_ready), held until the run ends. Their Trace writes are deferred by the
+   * engine until after the input lands (turn attribution), and the draft flow subscribes
+   * only after they were published — so a history rebuild during the MCP connect would
+   * otherwise show nothing at all (a silent blank while a slow server times out).
+   * GET /messages appends whichever of them the Trace has not caught up to.
+   */
+  pendingBootstrap: OmniMessage[];
   /**
    * Steering messages queued on core but not yet delivered to the model — a display mirror
    * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
@@ -371,9 +402,12 @@ export class SessionManager {
   /** Open streaming fragments of running sessions (fed by drive, served to GET /messages; see live-tail.ts). */
   private readonly liveTail = new LiveTailTracker();
   private readonly sweepTimer: NodeJS.Timeout;
+  /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
+  private readonly now: () => Date;
 
   constructor(private readonly deps: SessionManagerDeps) {
     this.log = deps.log ?? ((line) => console.error(line));
+    this.now = deps.now ?? (() => new Date());
     this.sweepTimer = setInterval(() => this.sweepIdle(), ENTRY_SWEEP_INTERVAL_MS);
     this.sweepTimer.unref?.();
   }
@@ -412,6 +446,22 @@ export class SessionManager {
     return this.liveTail.fragments(sessionId);
   }
 
+  /**
+   * The running Task's input messages as published at launch; empty when idle. The engine
+   * writes these exact envelopes to the Trace only after the first run's bootstrap (MCP
+   * connect + discovery), so GET /messages appends whichever of them the Trace read has
+   * not caught up to yet — without this, a client rebuilding history during the connect
+   * (the draft flow subscribes only after the input publish) loses the user's own message.
+   */
+  pendingInputs(sessionId: string): OmniMessage[] {
+    return this.entries.get(sessionId)?.pendingInputs ?? [];
+  }
+
+  /** The running Task's streamed bootstrap records (see RuntimeEntry.pendingBootstrap); empty when idle. */
+  pendingBootstrap(sessionId: string): OmniMessage[] {
+    return this.entries.get(sessionId)?.pendingBootstrap ?? [];
+  }
+
   /** Number of Sessions for this Agent that are currently running / compacting. */
   activeCountForAgent(projectId: string, agentId: string): number {
     let n = 0;
@@ -436,6 +486,8 @@ export class SessionManager {
       running: null,
       generation: this.generationOf(row.projectId, row.agentId),
       followUps: [],
+      pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     });
@@ -570,6 +622,11 @@ export class SessionManager {
       entry.status = "running";
       entry.abort = ac;
       entry.lastActivityMs = Date.now();
+      // Round-1 objective input: same pendingInputs hold as launchTask (core yields round
+      // inputs onto the stream, but the Trace write still waits for the bootstrap);
+      // append + bootstrap reset for the same abort-mid-bootstrap reasons as launchTask.
+      entry.pendingInputs = [...entry.pendingInputs, ...args.input];
+      entry.pendingBootstrap = [];
       this.publishState(entry, "running");
       const approve = makeApprove({
         getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
@@ -716,7 +773,15 @@ export class SessionManager {
     entry.abort = ac;
     entry.lastActivityMs = Date.now();
     // Publish the input messages first (visible to other subscribers; the Trace is
-    // persisted by the SDK), then flip the running status.
+    // persisted by the SDK), then flip the running status. The same envelopes are held as
+    // pendingInputs so GET /messages can serve them before the engine's Trace write
+    // catches up (delayed by the first run's MCP connect). APPEND, don't replace: inputs
+    // of a run aborted mid-bootstrap are still held (nothing reached the Trace; core
+    // carries them into this run) and must stay served until this run persists them.
+    // The previous attempt's bootstrap records are dropped instead — this run streams
+    // its own connect phase, and a stale aborted pair would render as an extra row.
+    entry.pendingInputs = [...entry.pendingInputs, ...input];
+    entry.pendingBootstrap = [];
     for (const msg of input) channel.publish(msg);
     this.publishState(entry, "running");
 
@@ -865,6 +930,37 @@ export class SessionManager {
   }
 
   /**
+   * Background command processes of a LOADED session (empty when the entry is not in
+   * the active table — a resumed entry starts with a fresh environment and can only
+   * ever report an empty list, so nothing is resurrected just to answer a poll).
+   */
+  listProcesses(sessionId: string): BackgroundCommandInfo[] {
+    return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+  }
+
+  /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
+  killProcess(sessionId: string, processId: string): boolean {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return false;
+    const killed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    if (killed) entry.lastActivityMs = Date.now();
+    return killed;
+  }
+
+  /**
+   * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
+   * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
+   * Agent / Project is the one intent that must also end the background processes the
+   * conversation started (a dev server surviving its deleted conversation is
+   * unreachable from every UI, running forever).
+   */
+  private disposeRemoved(entry: RuntimeEntry): void {
+    const dispose = (): void => entry.session.dispose?.();
+    if (entry.running) void entry.running.then(dispose, dispose);
+    else dispose();
+  }
+
+  /**
    * Before deleting a Project, converge all its active runs and clear them out of the
    * active table. Returns the in-flight drive Promises of the affected entries: the
    * caller (deleteProject) should await them before removing the directory, so that
@@ -878,6 +974,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -900,6 +997,7 @@ export class SessionManager {
       entry.abort?.abort();
       if (entry.running) runnings.push(entry.running);
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
     return runnings;
   }
@@ -926,6 +1024,7 @@ export class SessionManager {
     entry.approvals.denyAll();
     entry.abort?.abort();
     this.entries.delete(sessionId);
+    this.disposeRemoved(entry);
     return entry.running ? [entry.running] : [];
   }
 
@@ -964,6 +1063,11 @@ export class SessionManager {
     for (const [key, entry] of this.entries) {
       if (entry.status !== "idle" || entry.approvals.size !== 0 || entry.running !== null) continue;
       if (entry.followUps.length > 0) continue; // queued follow-ups must not be evicted with the entry
+      // A live background process (e.g. a dev server the conversation started) pins the
+      // entry: eviction would strand the process — a resumed entry starts with a fresh
+      // environment, so the process list and its stop control would go blind while the
+      // OS process kept running. Exited-but-listed processes don't pin anything.
+      if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -1077,6 +1181,8 @@ export class SessionManager {
       running: null,
       generation,
       followUps: [],
+      pendingInputs: [],
+      pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
     };
@@ -1095,10 +1201,6 @@ export class SessionManager {
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
-    // Every driven run (task, goal round, compaction) writes Trace lines: flip the row's
-    // has_trace cache here, the single choke point, so listing can serve it from the DB
-    // without a directory walk (see SessionService.listSessions).
-    this.deps.sessions.markHasTrace(entry.sessionId);
     let earlyTitleFired = false;
     let mainBodyChars = 0;
     const ctx: UsageContext = {
@@ -1108,6 +1210,17 @@ export class SessionManager {
       provider: entry.provider,
       modelId: entry.modelId,
     };
+    // Every driven run (a Task, a compaction, or a whole goal loop — startGoal hands all of
+    // its rounds to ONE drive) writes Trace lines: flip the row's has_trace cache here, the
+    // single choke point, so listing can serve it from the DB without a directory walk (see
+    // SessionService.listSessions). The same statement stamps last_active_at, so a run costs
+    // one row write here and one more when it ends (see the finally) — never one per streamed
+    // message; activity during the run (steering, approvals, queued follow-ups) rides on the
+    // run-end stamp. Guarded: this runs BEFORE the try below, so an unexpected DB failure
+    // (a closed handle after shutdown) would otherwise reject drive() with no finally to
+    // reach — leaving the entry pinned "running" and every later Task 409ing for the
+    // process's lifetime.
+    this.touchRow(ctx, (repo, at) => repo.markDriven(ctx.sessionId, at));
     // LLM request failures and tool execution failures aren't expressed via throw (core
     // converges them into the message stream), so the try/catch below can't catch them:
     // the watcher inspects messages one by one and fishes them out for persistence
@@ -1214,6 +1327,24 @@ export class SessionManager {
             }
           }
         }
+        // Bootstrap records (first-run MCP connect + toolset): held for GET /messages
+        // until the engine's deferred Trace write catches up (see pendingBootstrap).
+        if (!msg.origin || msg.origin.length === 0) {
+          const bt = (msg.payload as { type?: string }).type;
+          if (bt === "mcp_connect_begin" || bt === "mcp_connect_end" || bt === "tool_list_ready") {
+            entry.pendingBootstrap.push(msg);
+          }
+          // First request of the run: the engine writes input → bootstrap records → tool
+          // list to the Trace BEFORE issuing the request, so both holds are persisted by
+          // now — end them here rather than at idle. Holding for the whole run would
+          // outlive the messages endpoint's tail-window dedup: once the Task appends
+          // more records than the window, the input would be judged "not yet in the
+          // Trace" and served a second time at the end of history.
+          if (bt === "request_begin") {
+            entry.pendingInputs = [];
+            entry.pendingBootstrap = [];
+          }
+        }
         // Live-tail bookkeeping in the same synchronous tick as the publish below: the
         // messages endpoint captures "channel cursor + open fragments" between two
         // publishes, so the pair is always a consistent snapshot (see live-tail.ts).
@@ -1243,6 +1374,10 @@ export class SessionManager {
       // The run is over: no fragment will ever continue, so drop the live tail before the
       // idle flip (GET /messages stops attaching `live` the moment status reads idle).
       this.liveTail.clear(entry.sessionId);
+      // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
+      // to the Trace, so its held input (and the aborted connect pair) are the only copy
+      // a reload can show until the next run carries the input forward and persists it.
+      // Runs that issued a request already cleared them at their first request_begin.
       entry.approvals.denyAll();
       entry.status = "idle";
       entry.abort = null;
@@ -1252,6 +1387,14 @@ export class SessionManager {
       // now-empty state.
       entry.pendingSteering = [];
       entry.lastActivityMs = Date.now();
+      // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
+      // every other write in this finally: what follows — the idle broadcast, title
+      // generation, and the auto-start of queued follow-ups (this is its only call site) —
+      // must not be skippable by a DB failure, or SSE clients would sit on "running"
+      // forever with their queue stranded. A no-op UPDATE when the row is already gone:
+      // deletion normally awaits the drive first, so that only happens once its 5s wait
+      // times out.
+      this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
       this.publishState(entry, "idle");
       if (titleSource && titleSource.userExcerpt.trim()) {
         // Attempt generation whenever there's user material; whether generation is
@@ -1319,6 +1462,7 @@ export class SessionManager {
     // row deliberately stores no source column.
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
+    const createdAt = this.now().toISOString();
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -1332,7 +1476,10 @@ export class SessionManager {
       title: null,
       // Spawned by this server's run (client NULL = web); its Trace exists by construction.
       hasTrace: true,
-      createdAt: new Date().toISOString(),
+      // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
+      // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
+      lastActiveAt: createdAt,
+      createdAt,
     });
     // Make the subagent appear immediately in the sidebar: notify via the parent
     // Session's channel (a frontend currently watching the parent run refreshes its list in place).
@@ -1352,6 +1499,25 @@ export class SessionManager {
     };
     children.set(childSid, child);
     return child;
+  }
+
+  /**
+   * Runs one `sessions` row write for a driven run's bookkeeping (has_trace /
+   * last_active_at), swallowing failures the same way the per-message `recorder.record`
+   * call does: bookkeeping must never take down a run's lifecycle. The two call sites both
+   * sit outside a covering try — the run-start write precedes drive's try block, the
+   * run-end one lives in its finally — and the realistic failure (the DatabaseSync handle
+   * closed by shutdown while a run outlived its drain window) throws ERR_INVALID_STATE.
+   */
+  private touchRow(ctx: UsageContext, write: (repo: SessionsRepo, at: string) => void): void {
+    try {
+      write(this.deps.sessions, this.now().toISOString());
+    } catch (err) {
+      this.log(
+        `[session] last-active bookkeeping failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.deps.errors?.record({ source: "session", err, ctx, code: "session_touch_failed" });
+    }
   }
 
   private publishState(entry: RuntimeEntry, state: SessionStatus): void {

@@ -5,11 +5,14 @@
  */
 export * from "./paths.js";
 export * from "./default-config.js";
+export * from "./kernel-history.js";
+export * from "./kernel-update.js";
 export * from "./builtin-agents.js";
 export * from "./model-catalog.js";
 export * from "./project-config.js";
 export * from "./agent-state.js";
 export * from "./agent-vault.js";
+export * from "./memory.js";
 export * from "./example-benchmark.js";
 
 // Skill library types and frontmatter parser (from the skills package; server reuses the same implementation via core).

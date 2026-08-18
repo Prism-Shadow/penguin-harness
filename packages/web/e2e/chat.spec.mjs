@@ -62,9 +62,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
 
   // Live header statistics: the elapsed chip ticks once per second while the task runs (the
   // pending approval below keeps it running), so its text must advance with no further server
-  // event. Scoped to the header stats container (div.hidden …): the per-reply footer reuses
-  // the same 用时 ("elapsed") label once the turn's stats line lands.
-  const headerElapsed = page.locator('div.hidden span[title="用时"]');
+  // event. Scoped to the toolbar's details trigger (the chips now double as the "Session 信息"
+  // button at the far right): the per-reply footer reuses the same 用时 ("elapsed") label once
+  // the turn's stats line lands.
+  const headerElapsed = page.locator('button[title="Session 信息"] span[title="用时"]');
   const elapsedBefore = await headerElapsed.textContent();
   await expect(headerElapsed).not.toHaveText(elapsedBefore);
 
@@ -350,9 +351,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.keyboard.press("Escape");
 
   // --- session rename (manual title wins over the auto-generated one) ---
+  // Row actions live in the per-row ellipsis menu ("对话选项"); its panel is body-portaled,
+  // so the items are page-level, not inside the row locator.
   const renameTarget = sidebar.locator("li", { hasText: "Configure Tailwind theme" }).first();
   await renameTarget.hover();
-  await renameTarget.getByRole("button", { name: "重命名对话" }).click();
+  await renameTarget.getByRole("button", { name: "对话选项" }).click();
+  await page.getByRole("button", { name: "重命名对话" }).click();
   await page.getByLabel("标题").fill("My renamed title");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(sidebar.getByText("My renamed title")).toBeVisible();
@@ -366,9 +370,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await page.reload();
   const throwaway = sidebar.locator("li", { hasText: "新对话" }).first();
   await expect(throwaway).toBeVisible();
-  // Archive: moves it under the collapsed "已归档" group.
+  // Archive via the row menu: moves it under the collapsed "已归档" group.
   await throwaway.hover();
-  await throwaway.getByRole("button", { name: "归档", exact: true }).click();
+  await throwaway.getByRole("button", { name: "对话选项" }).click();
+  await page.getByRole("button", { name: "归档", exact: true }).click();
   await expect(sidebar.getByText(/已归档（\d+）/).first()).toBeVisible();
   await sidebar
     .getByText(/已归档（\d+）/)
@@ -376,9 +381,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
     .click();
   const archived = sidebar.locator("li", { hasText: "新对话" }).first();
   await expect(archived).toBeVisible();
-  // Delete from the archived group (delete + archive share one action group).
+  // Delete from the archived group (delete + archive share the same row menu).
   await archived.hover();
-  await archived.getByRole("button", { name: "删除对话" }).click();
+  await archived.getByRole("button", { name: "对话选项" }).click();
+  await page.getByRole("button", { name: "删除对话" }).click();
   await page.getByRole("button", { name: "删除", exact: true }).click();
   await expect(sidebar.getByText("新对话")).toHaveCount(0);
 

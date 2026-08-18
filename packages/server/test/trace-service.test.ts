@@ -12,6 +12,8 @@ import {
   compactionBegin,
   compactionEnd,
   imageUrlMessage,
+  mcpConnectBegin,
+  mcpConnectEnd,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -57,7 +59,6 @@ function metaPayload(over: Partial<SessionMetaPayload> = {}): SessionMetaPayload
     provider: "custom",
     model_context_window: 1000,
     system_prompt: "sp",
-    tools: [],
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
     ...over,
@@ -75,6 +76,7 @@ function dbRow(over: Partial<SessionRow> & { sessionId: string }): SessionRow {
     approvalMode: "allow-all",
     title: null,
     createdAt: "2026-07-05T10:00:00.000Z",
+    lastActiveAt: "2026-07-05T10:00:00.000Z",
     ...over,
   };
 }
@@ -819,6 +821,39 @@ describe("trace-service", () => {
     expect(a.toolSpans.map((s) => s.taskIndex)).toEqual([0]);
     // The first round calls a tool → the continuation round stays in Task 0; after ending in plain text, the new user turn goes into Task 1.
     expect(a.requests.map((r) => r.taskIndex)).toEqual([0, 0, 1]);
+  });
+
+  it("MCP connect pair becomes an other-span attached to the following Task", async () => {
+    const T = (sec: string) => `2026-07-05T10:04:${sec}Z`;
+    await writeTraceFile(root, P, A, "2026-07-05", S, 13, [
+      sessionMeta(metaPayload()),
+      // First run's bootstrap precedes any request: the pair closes before Task 0 begins.
+      at(T("00.000"), mcpConnectBegin(["fx"])),
+      at(
+        T("01.200"),
+        mcpConnectEnd({
+          status: "completed",
+          results: [
+            { server: "fx", transport: "stdio", status: "completed", duration_ms: 1150, tools: 3 },
+          ],
+        }),
+      ),
+      at(T("02.000"), requestBegin()),
+      at(T("03.000"), assistantText("answer")),
+      at(T("03.100"), requestEnd("completed")),
+    ]);
+    const a = await service.analyze(P, A, S, 13);
+    // An "other" span, not a tool span: nothing was called.
+    expect(a.toolSpans).toEqual([]);
+    expect(a.otherSpans).toEqual([
+      {
+        key: `mcp-connect-${T("00.000")}`,
+        name: "mcp connect",
+        startTs: T("00.000"),
+        endTs: T("01.200"),
+        taskIndex: 0,
+      },
+    ]);
   });
 
   it("Task grouping: [user_steering] user texts never start a new Task (steering continuation stays in the same Task)", async () => {

@@ -30,7 +30,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) on first start; change it right away. `penguin server` starts the same process headless.
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) in a framed notice on every start until it is changed; change it right away. `penguin server` starts the same process headless.
 
 ## One-shot run
 
@@ -47,7 +47,7 @@ penguin chat
 ```
 
 - Each input line starts a Task.
-- `/compact` compacts the context; `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
+- `/compact` compacts the context; `/clear` starts a fresh Session (the old one stays resumable); `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
 - On exit it prints a `penguin chat --resume <sessionId>` hint for resuming this Session; `--resume` without an id resumes the Agent's latest Session.
 
 ## SDK hello

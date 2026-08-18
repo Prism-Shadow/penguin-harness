@@ -33,7 +33,8 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { AppEnv } from "./auth/middleware.js";
-import { AuthService } from "./auth/service.js";
+import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
+import { clearInitialAdminPassword } from "./initial-password.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { adminUsersRoutes } from "./http/routes/admin.js";
 import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
@@ -45,6 +46,7 @@ import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { vaultRoutes } from "./http/routes/vault.js";
+import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
@@ -69,6 +71,7 @@ import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { desktopRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
+import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
@@ -105,6 +108,7 @@ export interface AppDeps {
   projectConfigService: ProjectConfigService;
   agentService: AgentService;
   agentConfigService: AgentConfigService;
+  memoryService: MemoryService;
   sessionService: SessionService;
   traceService: TraceService;
   /** Trace-file index (derived cache + reconciler); routes use it for delete-time coherence. */
@@ -179,6 +183,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   const projectConfigService = new ProjectConfigService(config.root);
   const agentConfigService = new AgentConfigService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const memoryService = new MemoryService(config.root, agentConfigService);
   // Session-origin registry: session_meta is the single source of truth (no DB column);
   // shared by the manager (subagent registration), the loader (self-heal rebuild),
   // SessionService (creation / adoption / lazy list resolution), and the Trace index /
@@ -231,6 +236,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     titles,
     log,
     goals: goalsRepo,
+    ...(overrides.now ? { now: overrides.now } : {}),
   });
   managerRef = manager;
 
@@ -249,12 +255,20 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     manager,
     traceIndex,
   });
+  // Any password update for the built-in admin makes the persisted initial-password
+  // plaintext stale (either the password is no longer initial, or a reset replaced it
+  // with an admin-chosen value that is never persisted): drop the file so later startups
+  // stop re-printing a credential that no longer signs in.
+  const onPasswordChanged = (userId: string): void => {
+    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
+  };
   const authService = new AuthService({
     users: usersRepo,
     authSessions: authSessionsRepo,
     provisionInitialProject: (user, isAdmin) =>
       projectService.provisionInitialProject(user, isAdmin),
     seedAdminPassword: config.seedAdminPassword,
+    onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
     ...(overrides.now ? { now: overrides.now } : {}),
@@ -264,6 +278,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     authSessions: authSessionsRepo,
     projects: projectsRepo,
     projectService,
+    onPasswordChanged,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const sessionService = new SessionService({
@@ -304,6 +319,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projectConfigService,
     agentService,
     agentConfigService,
+    memoryService,
     sessionService,
     traceService,
     traceIndex,
@@ -425,6 +441,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));

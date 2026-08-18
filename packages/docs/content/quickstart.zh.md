@@ -30,7 +30,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-
 penguin web
 ```
 
-服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在服务端首次启动时打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
+服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在改掉之前每次启动服务端都会以边框提示打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
 
 ## 单次运行
 
@@ -47,7 +47,7 @@ penguin chat
 ```
 
 - 每输入一行即发起一个 Task。
-- `/compact` 压缩上下文；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
+- `/compact` 压缩上下文；`/clear` 开启全新 Session（原会话仍可恢复）；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
 - 退出时会打印 `penguin chat --resume <sessionId>` 提示，用于恢复本次 Session；`--resume` 不带 id 时恢复该 Agent 最近的 Session。
 
 ## SDK 示例

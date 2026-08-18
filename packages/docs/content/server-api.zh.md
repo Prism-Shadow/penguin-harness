@@ -35,7 +35,7 @@ packages/server/src
 
 - Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 7 天，滑动续期；
 - 密码以 scrypt 哈希存储；服务端只保存会话 Token 的 sha256，不落明文；
-- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`）并仅在种子当次打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
+- 不开放注册：启动时种子化内置管理员 `admin`，初始密码随机生成（形如 `penguin-1234`），在改掉之前保存在 `<root>/initial-admin-password` 中并于每次启动时打印到服务端控制台——自动化可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定——其余账号由管理员创建；
 - 仅限同源访问，未启用 CORS 中间件。
 
 ```bash
@@ -129,6 +129,10 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | DELETE | /agents/:agentId | 删除 Agent |
 | GET / PUT | /agents/:agentId/config | 读写配置（AGENTS.md + system_config.yaml，PUT 保留 YAML 注释） |
 | GET / PUT | /agents/:agentId/vault | Vault 环境变量（值掩码显示；PUT 全表替换） |
+| GET | /agents/:agentId/memory | 记忆总览：开关、模板是否含 `{{MEMORY}}`，以及各作用域条目——用户作用域（`user`，`kind: "user"`）在前，其后为各 Workspace |
+| POST | /agents/:agentId/memory/template-placeholder | 向提示词模板插入 `{{MEMORY}}` 占位符（幂等；创建于记忆功能之前的 Agent 的显式采用路径） |
+| GET | /agents/:agentId/memory/scopes/:key/files | 列出单个作用域的主题文件（frontmatter + 文件信息）；`:key` 为 workspace key 或 `user` |
+| GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | 读取单个主题文件 / 删除它（并同步清理其 `MEMORY.md` 索引行） |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
 | POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
 | GET / POST | /agents/:agentId/skills | 已安装 Skill 列表 / 安装 |

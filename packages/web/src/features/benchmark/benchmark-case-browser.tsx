@@ -70,6 +70,10 @@ interface MaterialGroupProps extends Props {
   label: string;
   hiddenLabel?: string;
   defaultOpen?: boolean;
+  /** Auto-preview this group's root readme.md on first load. Exactly one group (the statement)
+   *  may carry it: both groups now open by default, and two racing auto-previews would leave the
+   *  preview pane on whichever listing happened to resolve last. */
+  autoPreviewReadme?: boolean;
   onPreview: (material: CaseMaterial, path: string) => void;
 }
 
@@ -129,6 +133,7 @@ function MaterialGroup({
   label,
   hiddenLabel,
   defaultOpen = false,
+  autoPreviewReadme = false,
   onPreview,
 }: MaterialGroupProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -152,7 +157,7 @@ function MaterialGroup({
       .then((data) => {
         if (cancelled) return;
         setListing({ base: path, res: data });
-        if (path === "" && !initialReadmeOpened.current) {
+        if (autoPreviewReadme && path === "" && !initialReadmeOpened.current) {
           initialReadmeOpened.current = true;
           const readme = data.entries.find(
             (entry) => entry.kind === "file" && entry.name.toLowerCase() === "readme.md",
@@ -166,7 +171,17 @@ function MaterialGroup({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, benchmarkId, caseSummary.id, material, onPreview, open, path]);
+  }, [
+    projectId,
+    agentId,
+    benchmarkId,
+    caseSummary.id,
+    material,
+    autoPreviewReadme,
+    onPreview,
+    open,
+    path,
+  ]);
 
   const crumbs = path === "" ? [] : path.split("/");
 
@@ -383,6 +398,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             material="statement"
             label={S.benchmark.taskMaterials}
             defaultOpen
+            autoPreviewReadme
             onPreview={previewPath}
           />
           <MaterialGroup
@@ -393,6 +409,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             material="rubric"
             label={S.benchmark.rubric}
             hiddenLabel={S.benchmark.agentHidden}
+            defaultOpen
             onPreview={previewPath}
           />
         </div>

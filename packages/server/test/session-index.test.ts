@@ -103,6 +103,47 @@ describe("session-index", () => {
     expect(list.sessions.map((s) => s.sessionId)).toContain(session.sessionId);
   });
 
+  it("SessionInfo carries lastActiveAt (ISO, = createdAt at creation) through create, list, and single GET", async () => {
+    await configureModels();
+    const res = await api.post(base(), {});
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    expect(session.lastActiveAt).toBe(session.createdAt);
+    expect(session.lastActiveAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const listed = list.sessions.find((s) => s.sessionId === session.sessionId);
+    expect(listed?.lastActiveAt).toBe(session.createdAt);
+
+    const got = (await (
+      await api.get(`/api/sessions/${session.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(got.session.lastActiveAt).toBe(session.createdAt);
+
+    // The real creation path must leave a stored cell, not just a value the read layer
+    // computes: every mapped read coalesces to created_at, so a row written NULL would
+    // answer all three assertions above identically.
+    const stored = t.deps.db
+      .prepare("SELECT last_active_at AS v FROM sessions WHERE session_id = ?")
+      .get(session.sessionId) as { v: unknown } | undefined;
+    expect(stored?.v).toBe(session.createdAt);
+  });
+
+  it("PATCH answers with the row as it stands after the write, not the pre-PATCH snapshot", async () => {
+    await configureModels();
+    const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    // Stand in for a run that advanced the stamp while the PATCH was in flight: the route
+    // reads its row before awaiting, so without a re-read the response would carry — and
+    // the web store would adopt — a value older than what is on disk.
+    const advanced = "2027-01-01T00:00:00.000Z";
+    t.deps.sessionsRepo.touchLastActive(session.sessionId, advanced);
+    const patched = (await (
+      await api.patch(`/api/sessions/${session.sessionId}`, { title: "renamed" })
+    ).json()) as SessionResponse;
+    expect(patched.session.title).toBe("renamed");
+    expect(patched.session.lastActiveAt).toBe(advanced);
+  });
+
   it("schedule-created Session: source derives from session_meta (registry), never from the DB row; user sessions carry none", async () => {
     await configureModels();
     // The scheduler goes through SessionService.createSession directly (no HTTP route exposes source).
@@ -141,6 +182,7 @@ describe("session-index", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: "2026-07-02T09:00:00.000Z",
+      lastActiveAt: "2026-07-02T09:00:00.000Z",
     });
     const meta: SessionMetaPayload = {
       session_id: sid,
@@ -148,7 +190,6 @@ describe("session-index", () => {
       provider: "custom",
       model_context_window: 1000,
       system_prompt: "",
-      tools: [],
       agent_state: "/tmp/a",
       workspace: "/tmp/w-restart",
       source: "subagent",
@@ -174,7 +215,6 @@ describe("session-index", () => {
       provider: "custom",
       model_context_window: 1000,
       system_prompt: "",
-      tools: [],
       agent_state: "/tmp/a",
       workspace: "/tmp/w-cli",
       source: "schedule",
@@ -212,6 +252,7 @@ describe("session-index", () => {
       approvalMode: "allow-all" as const,
       title: null,
       createdAt: `2026-07-0${n}T08:00:00.000Z`,
+      lastActiveAt: `2026-07-0${n}T08:00:00.000Z`,
     });
     for (const n of [1, 2, 3]) t.deps.sessionsRepo.insert(mk(n));
 
@@ -270,6 +311,7 @@ describe("session-index", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: "2026-07-02T09:30:00.000Z",
+      lastActiveAt: "2026-07-02T09:30:00.000Z",
     });
     await writeTraceFile(t.root, projectId, "default_agent", "2026-07-02", subagentE, 1, [
       sessionMeta({
@@ -278,7 +320,6 @@ describe("session-index", () => {
         provider: "custom",
         model_context_window: 1000,
         system_prompt: "",
-        tools: [],
         agent_state: "/tmp/a",
         workspace: "/tmp/w-sub",
         source: "subagent",
@@ -386,7 +427,6 @@ describe("session-index", () => {
       provider: "custom",
       model_context_window: 1000,
       system_prompt: "",
-      tools: [],
       agent_state: "/tmp/a",
       workspace: "/tmp/cli-workspace",
     };
@@ -432,6 +472,7 @@ describe("session-index", () => {
       approvalMode: "allow-all",
       title: null,
       createdAt: "2026-07-02T09:00:00.000Z",
+      lastActiveAt: "2026-07-02T09:00:00.000Z",
     });
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions.find((s) => s.sessionId === legacy)).toBeDefined();
@@ -449,7 +490,6 @@ describe("session-index", () => {
       provider: "custom",
       model_context_window: 1000,
       system_prompt: "",
-      tools: [],
       agent_state: "/tmp/a",
       workspace: session.workspace,
     };
@@ -506,7 +546,6 @@ describe("session-index", () => {
         provider: "custom",
         model_context_window: 1,
         system_prompt: "",
-        tools: [],
         agent_state: "/a",
         workspace: "/w",
       }),
@@ -536,6 +575,7 @@ describe("session-index", () => {
   });
 
   it("insertOrIgnore is idempotent: concurrent first discovery of one Session doesn't throw on the UNIQUE constraint", async () => {
+    const createdAt = new Date().toISOString();
     const row = {
       sessionId: "session-2026-07-02-00-00-00-11223344",
       projectId,
@@ -545,7 +585,8 @@ describe("session-index", () => {
       workspace: "/tmp/w",
       approvalMode: "always-ask" as const,
       title: null,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      lastActiveAt: createdAt,
     };
     t.deps.sessionsRepo.insertOrIgnore(row);
     // A second insert with different fields for the same id: silently ignored, no throw, first-inserted value is kept.
@@ -578,7 +619,6 @@ describe("session-index", () => {
       provider: session.provider,
       model_context_window: 128000,
       system_prompt: "",
-      tools: [],
       agent_state: "/tmp/a",
       workspace: session.workspace,
     };

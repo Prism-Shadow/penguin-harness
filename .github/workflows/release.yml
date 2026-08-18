@@ -7,12 +7,15 @@
 #   -> one program payload per target (four platform payloads bundling the official Node runtime,
 #   a win-x64 payload with runtime + MinGit, and a runtime-less universal payload) -> wrap each
 #   payload, its checksum and the native installer into the canonical installer bundle -> validate
-#   the real bundles -> upload to the Release.
+#   the real bundles -> collect desktop installers/update metadata -> generate release probes and
+#   the source-neutral download manifest -> upload to the Release.
 #   Artifacts (one shape per target, serving online and offline installs alike):
 #   penguin-{linux,darwin}-{x64,arm64}.tar.gz, penguin-universal.tar.gz, penguin-win32-x64.zip,
-#   their .sha256 files, SHA256SUMS, install.sh, and install.ps1; one version per tag, multiple
-#   versions coexist. Releases up to v0.1.5 shipped raw program archives under the same names
-#   plus *-offline wrappers; the installers keep accepting that legacy layout for pinned versions.
+#   their .sha256 files, SHA256SUMS, install.sh, install.ps1, probe-64k.bin, probe-1m.bin,
+#   release-download-manifest.tsv, and the desktop installers plus updater metadata/blockmaps;
+#   one version per tag, multiple versions coexist. Releases up to v0.1.5 shipped raw program
+#   archives under the same names plus *-offline wrappers; the installers keep accepting that
+#   legacy layout for pinned versions.
 # - publish-npm: publish the whole chain (@prismshadow/penguin-skills -> @prismshadow/penguin-core
 #   -> @prismshadow/penguin-server -> @prismshadow/penguin-cli) to npm at the tag version.
 #   skills/core serve the penguin-sdk Skill's `npm install`; server ships the built web assets inside
@@ -85,7 +88,15 @@ jobs:
     if: needs.check-release.outputs.exists != 'true'
     uses: ./.github/workflows/desktop-build.yml
     with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      require_macos_signing: true
+      require_windows_signing: true
+    # The signing secrets themselves live in the called workflow's matrix environments
+    # (`apple-signing` for macOS, `desktop-build` for Windows) and resolve inside those
+    # jobs; `inherit` additionally forwards repo-level secrets so the called workflow
+    # never sees a name shadowed to empty (the v0.2.2 failure mode).
+    secrets: inherit
 
   release:
     needs: [check-release, desktop]
@@ -337,10 +348,11 @@ jobs:
           cd dist-artifacts
           sha256sum -- *.tar.gz *.zip > SHA256SUMS
 
-      # Desktop installers built by the desktop job (three-OS matrix): collected here so
-      # they are part of the Release's initial (immutable) asset set. Their checksums go
-      # in a separate SHA256SUMS.desktop, which is also how the OSS mirror script verifies
-      # them (its manifest lists the installers by their version-less names).
+      # Desktop artifacts built by the desktop job (three-OS matrix): installers plus the
+      # latest*.yml metadata and .blockmap files electron-updater needs. They are collected
+      # here so they are part of the Release's initial (immutable) asset set. Their checksums
+      # go in a separate SHA256SUMS.desktop, which is also how the OSS mirror script verifies
+      # them.
       - name: Collect desktop artifacts
         uses: actions/download-artifact@v4
         with:
@@ -351,7 +363,26 @@ jobs:
       - name: Generate desktop checksums
         run: |
           cd desktop-artifacts
-          sha256sum -- * > SHA256SUMS.desktop
+          sha256sum -- \
+            penguin-desktop-*.AppImage \
+            penguin-desktop-*.deb \
+            penguin-desktop-*.dmg \
+            penguin-desktop-*.zip \
+            penguin-desktop-*.exe \
+            latest*.yml \
+            *.blockmap > SHA256SUMS.desktop
+
+      - name: Generate release probes and download manifest
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          node scripts/generate-release-download-manifest.mjs \
+            "$TAG" \
+            dist-artifacts \
+            dist-artifacts \
+            desktop-artifacts \
+            install.sh \
+            install.ps1
 
       # Release notes come from changelog/<version>/RELEASE.md, written during release preparation and
       # committed BEFORE the tag (the release job runs on the tag's checkout, so a file added afterwards
@@ -389,7 +420,16 @@ jobs:
             dist-artifacts/*.zip
             dist-artifacts/*.sha256
             dist-artifacts/SHA256SUMS
-            desktop-artifacts/*
+            dist-artifacts/probe-*.bin
+            dist-artifacts/release-download-manifest.tsv
+            desktop-artifacts/penguin-desktop-*.AppImage
+            desktop-artifacts/penguin-desktop-*.deb
+            desktop-artifacts/penguin-desktop-*.dmg
+            desktop-artifacts/penguin-desktop-*.zip
+            desktop-artifacts/penguin-desktop-*.exe
+            desktop-artifacts/latest*.yml
+            desktop-artifacts/*.blockmap
+            desktop-artifacts/SHA256SUMS.desktop
             install.sh
             install.ps1
 

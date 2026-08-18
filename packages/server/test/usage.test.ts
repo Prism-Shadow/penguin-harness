@@ -37,7 +37,6 @@ function meta(sessionId: string, modelId: string, provider = "custom"): SessionM
     model_id: modelId,
     model_context_window: 100000,
     system_prompt: "",
-    tools: [],
     agent_state: "/tmp/x",
     workspace: "/tmp/w",
   };

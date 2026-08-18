@@ -26,7 +26,6 @@ function meta(overrides: Partial<SessionMetaPayload> = {}): SessionMetaPayload {
     provider: "custom",
     model_context_window: 1000,
     system_prompt: "sp",
-    tools: [],
     agent_state: "/tmp/a",
     workspace: path.join("/tmp", "does-not-exist-xyz"),
     ...overrides,
@@ -44,6 +43,7 @@ function row(workspace: string): SessionRow {
     approvalMode: "always-ask",
     title: null,
     createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(),
   };
 }
 

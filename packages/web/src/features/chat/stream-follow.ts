@@ -16,7 +16,10 @@
  * - The first scroll event has no direction to judge from, so it initializes from position
  *   (≥80px from bottom is treated as being at a historical position, i.e. not following) — this
  *   doesn't depend on the call-ordering guarantee of "must stick to bottom programmatically right
- *   after mount."
+ *   after mount." Programmatic sticks therefore go through stickToBottom, which reports the
+ *   landed position synchronously: the snap's own scroll event only arrives at the next
+ *   rendering update, and content growing in between (an image decoding, a font swap) would
+ *   otherwise make that first event look like a historical position and wrongly exit follow.
  */
 export interface ScrollMetrics {
   scrollTop: number;
@@ -81,4 +84,33 @@ export function createStreamFollow(): StreamFollow {
       lastTop = null;
     },
   };
+}
+
+/** Minimal mutable view of a scroll container (structurally satisfied by HTMLElement; fakeable in unit tests). */
+export interface ScrollContainer {
+  scrollTop: number;
+  readonly scrollHeight: number;
+  readonly clientHeight: number;
+}
+
+/**
+ * Programmatic stick-to-bottom: snap the container to its bottom AND synchronously report the
+ * landed position to the follow model. The report is the point (the fix for entering a
+ * conversation occasionally not landing at the bottom): the browser dispatches the snap's
+ * scroll event asynchronously at the next rendering update, and late content growth (an image
+ * finishing decode, a font swap, a code block settling) can land in between. That event then
+ * reads a live position ≥80px above the new bottom with an unchanged scrollTop, and — as the
+ * first scrolled() call — the position initialization would misread it as the user parked at a
+ * historical position and exit follow; every later re-snap is gated on `stick`, so the view
+ * stayed off-bottom until manual scrolling. Reporting synchronously seeds the model with the
+ * snap itself, so the delayed event goes down the ordinary no-regression path and follow
+ * survives (growth with an unchanged scrollTop never exits).
+ */
+export function stickToBottom(el: ScrollContainer, follow: StreamFollow): void {
+  el.scrollTop = el.scrollHeight; // The browser clamps to the real bottom; read back the clamped value below.
+  follow.scrolled({
+    scrollTop: el.scrollTop,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+  });
 }

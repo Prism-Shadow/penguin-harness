@@ -98,6 +98,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `name` | — | Agent display name (falls back to the id) |
 | `description` | — | Agent description |
 | `version` | `1` | Agent State version (a natural number), incremented on each successful optimization |
+| `kernel_version` | current kernel version | Config kernel version (a date string): which generation of the built-in defaults this config is based on, stamped at creation, restore-defaults and kernel update; unrelated to `version`, never changed by user edits; missing = predates the mechanism (i.e. outdated) |
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
@@ -107,8 +108,17 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
+| `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
+| `memory.prompt` | built-in template | Always-injected half of the `{{MEMORY}}` block, editable on the Memory tab — carries `{{USER_MEMORY_INDEX}}` |
+| `memory.workspace_prompt` | built-in template | Appended only in a persistent Workspace, editable on the Memory tab — carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
+| `vault.enabled` | `true` | Whether the vault section enters the context (with it off, values are still injected into subprocess environments — the model just doesn't see the key-name list) |
+| `vault.prompt` | built-in template | The `{{VAULT}}` block, editable on the Vault tab — carries `{{VAULT_KEYS}}` |
+| `skills.enabled` | `true` | Whether the skills section enters the context (with it off, installed skills remain explicitly invocable via `[use_skills]`) |
+| `skills.prompt` | built-in template | The `{{SKILLS}}` block, editable on the Skills tab — carries `{{SKILL_METADATA}}` |
+| `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
+| `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
-| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`); reserved for the MCP adapter layer |
+| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
 
 Tool permissions and approval semantics are covered in [Tools & Approval](/tools).
 
@@ -141,7 +151,12 @@ compaction:
 # parameters JSON Schema) for every tool you keep — see Tools & Approval.
 ```
 
-An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. To adopt the current defaults (for example an updated built-in system prompt), use the settings page's **Restore default configuration** action: like a skill update it overwrites the existing configuration — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`.
+An existing Agent always runs with its on-disk config verbatim — newer code defaults are never merged in automatically. When the built-in defaults change substantively, the config's `kernel_version` falls behind the current kernel and the settings page and agents list show an update hint. Two paths adopt the current defaults (side by side on the settings overview):
+
+- **Update kernel**: a lossless merge. Field by field: a missing field, or one still equal to a *recorded* generation's built-in default, follows the current default; a user-edited field stays unchanged and is listed in the result. `tools.builtin` merges per tool name — only the edited tool is kept, the rest follow, and user-added entries are untouched; `name`, `description`, `version` and `tools.mcpServers` are never touched. The config is then stamped with the current `kernel_version`. Matching is **conservative**: only values whose hash hits a recorded generation count as old defaults — generations too old to reconstruct are kept as if customized.
+- **Restore default configuration**: like a skill update, overwrites the existing configuration with the current defaults — custom system prompt, tool list, model/compaction settings and MCP Servers — keeping only `name`, `description` and `version`. The full-refresh fallback when the kernel update's conservative matching leaves fields behind.
+
+For developers: `kernel_version` advances manually, and only on a substantive change to the built-in defaults (using that day's date). The pinned-hash test in CI (`core/test/kernel-version.test.ts`) recomputes every default leaf hash against the latest `kernel-history.ts` entry and fails on drift, telling you to bump `KERNEL_VERSION` and append a new entry; several changes on the same day may revise that day's entry, while older entries are frozen forever — they are what identifies "still the old default".
 
 ### System prompt placeholders
 
@@ -150,8 +165,16 @@ An existing Agent always runs with its on-disk config verbatim — newer code de
 | Placeholder | Injected content |
 | --- | --- |
 | `{{AGENTS_MD}}` | Full text of `AGENTS.md` |
-| `{{VAULT_KEYS}}` | List of Vault key names (names only) |
-| `{{SKILL_METADATA}}` | Metadata of installed Skills |
+| `{{VAULT}}` | The rendered `vault.prompt` block (the vault section); empty when `vault.enabled` is off. A template without it injects no vault section — the Vault tab offers inserting/migrating it explicitly |
+| `{{SKILLS}}` | The rendered `skills.prompt` block (the skills section); empty when `skills.enabled` is off. A template without it injects no skills section — the Skills tab offers inserting/migrating it explicitly |
+| `{{MEMORY}}` | The rendered `memory.prompt` block, plus `memory.workspace_prompt` in a persistent Workspace; empty when Memory is off. A template without it injects no Memory — the Memory tab offers inserting it explicitly |
+| `{{SCHEDULES}}` | The rendered `schedules.prompt` block (the scheduled-tasks section); empty when `schedules.enabled` is off. A template without it injects no schedules section — the Schedules tab offers inserting it explicitly |
+| `{{VAULT_KEYS}}` | Inside `vault.prompt`: the Vault key-name list (names only, one `- KEY` line per key). For legacy templates, an occurrence directly in the template body is still substituted, honoring `vault.enabled` the same way |
+| `{{SKILL_METADATA}}` | Inside `skills.prompt`: the installed Skills' metadata lines. For legacy templates, an occurrence directly in the template body is still substituted, honoring `skills.enabled` the same way |
+| `{{SCHEDULE_LIST}}` | Inside `schedules.prompt`: the current task-name list (one `- name` line per task; an empty-roster note when none exist) |
+| `{{USER_MEMORY_INDEX}}` | Inside the Memory prompts: content of the user scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
+| `{{WORKSPACE_MEMORY_INDEX}}` | Inside `memory.workspace_prompt` only: content of the Workspace scope's `MEMORY.md` index (at most 200 lines and 25,000 characters total) |
+| `{{WORKSPACE_MEMORY_DIR}}` | Inside `memory.workspace_prompt` only: absolute path of the current Workspace's Memory directory |
 | `{{PLATFORM}}` | Runtime platform |
 | `{{OS_VERSION}}` | Operating system version |
 | `{{DATE}}` | Current date |
@@ -168,13 +191,69 @@ On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes �
 
 `agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)).
 
+The Vault / Skills / Memory / Schedules sections all follow the same placeholder + toggle + editable prompt pattern: the template holds only the `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` placeholders, the section text lives in the corresponding `*.prompt` config (edited on its settings tab), and turning `*.enabled` off empties the whole block. The four section placeholders are expanded **last, in a single pass** at assembly time: expansion products are never rescanned, so placeholder-looking text inside a memory index or a section prompt stays literal instead of triggering a second substitution.
+
+**Legacy templates**: `system_config.yaml` is materialized at Agent creation and never auto-upgraded, so an Agent created before this mechanism carries hardcoded `# Vault` / `# Skills` section text with inline `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}` in its template. Such templates keep working: the inline placeholders are still substituted, and now honor the new toggles (an off switch substitutes an empty string). The matching tab reports the legacy template and offers one-click migration — replacing the old default section verbatim, in place, with the new placeholder, leaving the assembled prompt unchanged; a template whose section text was customized doesn't match the verbatim migration and is treated as missing the placeholder instead, with a one-click insert (before `# Environment`).
+
+## Memory
+
+`agent_state/memory/` is what the Agent remembers between Sessions: user feedback, project decisions, working conventions and entry points into external systems — the things that cannot be re-derived from the Workspace or its code history. It is not context compaction, which preserves one Session's short-term state.
+
+Memory has two scopes, both belonging to one Agent and never shared with another:
+
+- **User scope** (`memory/user/`) — what stays true wherever the Agent works: who the user is, their standing preferences, reference material not tied to one codebase. Every Session reads it, including one running in a temporary Workspace, which has no other place to write.
+- **Workspace scope** (`memory/<workspace_memory_key>/`) — facts about one Workspace. Sessions of one Agent in one Workspace share it; different Workspaces keep their topic files apart.
+
+Each scope carries its own `MEMORY.md` index, and different Agents never share Memory even in the same Workspace. Because Memory lives in Agent State it travels with export / import and snapshots, and every Project member who can reach the Agent can read it — so credentials and sensitive personal data never belong in it.
+
+```text
+agent_state/memory/
+├── user/                         # user scope (no marker: it stands for no path)
+│   ├── MEMORY.md                 # this scope's index
+│   └── prefers-pnpm.md
+└── my-app-a81f32c4/              # one Workspace
+    ├── .workspace                # the Workspace path this key stands for
+    ├── MEMORY.md
+    └── testing-conventions.md
+```
+
+`user` is a reserved directory name, safe because every generated workspace memory key is `<base>-<8 hex>` and therefore always carries a hyphen — a hyphen-free name can never be produced.
+
+The workspace memory key is `<safe-basename>-<8 hex of the real path's sha256>`. Identity is the directory itself and has nothing to do with Git: two symlinks to one directory resolve to one key, while moving or renaming a directory makes it a new Workspace (the old Memory stays on disk under the old key). A temporary Workspace — one PenguinHarness allocated under `agents/<agent_id>/workspaces/` — gets no Workspace scope at all, a subagent inheriting one included: a temporary Workspace is allocated per Session, so no later Session would ever run there to read it back. Such a Session still gets the user scope, which is where anything it learns belongs anyway.
+
+A topic file is a semantic subject, not one per Task, Session or date, and carries frontmatter:
+
+```markdown
+---
+name: testing-conventions
+description: the project's test environment and verification rules
+updated_at: 2026-08-07
+---
+
+- Integration tests connect to a real database; no mock repositories.
+```
+
+These three fields are all the frontmatter there is — which layer a memory belongs to is expressed by its directory, so there is no `type` field (a `type:` line left in an earlier file is ignored as an unknown field). Worth saving: who the user is (role, expertise, standing preferences) and how they want the Agent to work, with the why; decisions, constraints and plans not derivable from the code; stable entry points into external systems, documents and services. A topic that turns out to be wrong is deleted together with its index line, and dates are written absolute (`YYYY-MM-DD`) — relative ones mean nothing to a later Session. What must never be saved: facts the code, config or Git history already states; short-lived task progress and debugging notes; credentials, tokens or secrets; unconfirmed guesses; long transcript excerpts.
+
+Each `MEMORY.md` lists its scope's memories one line each — `- [Title](file.md) — hook`, links relative to the scope directory — and is updated in the same round as the file, so the two never disagree.
+
+Only the indexes reach the context, through the template's `{{MEMORY}}` placeholder. It expands to `memory.prompt` — what Memory is for, the save mechanics, then a `## User memory` section with its index (`{{USER_MEMORY_INDEX}}`) — plus `memory.workspace_prompt`, a `## Workspace memory` section with `{{WORKSPACE_MEMORY_INDEX}}`, when the Session runs in a persistent Workspace. Both prompts are per-Agent config, editable on the settings page's Memory tab, and organized by Markdown headings like the template's other sections. The `User Memory Dir` line is the literal pattern `<app_data_dir>/agents/<agent_id>/agent_state/memory/user`, resolvable from the Environment section; the `Workspace Memory Dir` line renders resolved via `{{WORKSPACE_MEMORY_DIR}}`, because its final segment — the workspace memory key — is a path hash the model could never compose itself.
+
+A blank index injects an explicit "nothing saved yet" note. Injection is capped at 200 lines per scope (one memory per line by convention), then at 25,000 characters total as a backstop for indexes whose few lines are enormous — past a cap a truncation note tells the model to open the full `MEMORY.md` itself, and the file on disk is never touched. The default Memory prompt declares the line cap and asks for index lines under ~150 characters, so the model keeps the index short before ever hitting the caps; the character backstop lives only in code. Topic bodies are read on demand by the model.
+
+The two halves are separate config keys because substitution has no conditionals: a temporary Workspace must never be handed the Workspace section (its directory line and the scope-choice rule), so that half is simply not appended there. The Harness only decides where Memory lives and keeps writes inside it — deciding what is worth keeping, splitting topics and maintaining the indexes is the model's job, done with the ordinary file tools.
+
+A template without `{{MEMORY}}` injects no Memory — an Agent created before Memory shipped, for instance. The Memory tab reports this and offers inserting the placeholder (before `# Environment`, the position the default template gives it) as an explicit one-click action; nothing is ever spliced in automatically. The assembled prompt is recorded in `session_meta`.
+
+To read, delete or ask the Agent to edit what it has saved, use the settings page's [Memory tab](/web-app#agent-settings-agents).
+
 ## Vault
 
 `agent_state/.vault.toml` is the Agent-level environment-variable vault: a hidden file written with mode 0600.
 
 - Key names must match `^[A-Za-z_][A-Za-z0-9_]*$` (shell environment variable naming rules);
 - Values are injected only into tool subprocess environments and never enter the model context or the Trace;
-- Only key names are disclosed in the system prompt via `{{VAULT_KEYS}}`;
+- Only key names are disclosed in the system prompt: the template's `{{VAULT}}` placeholder expands to `vault.prompt` (carrying the `{{VAULT_KEYS}}` key-name list), editable on the Vault tab; with `vault.enabled` off the block is empty — values are still injected into subprocesses, the model just doesn't see the key-name list. A legacy template's inline `{{VAULT_KEYS}}` is still substituted under the same toggle, and the tab offers one-click migration (see "System prompt placeholders");
 - Saving through the Web/API invalidates the Agent's cached Session runtimes: the next Task on any of its Sessions re-resumes and runs with the new values; a Task already in flight keeps the values it started with (a direct CLI file edit reaches a running server only when a Session is next created or resumed);
 - Managed via `penguin config vault set/list/remove` or the Web Vault tab.
 
@@ -199,6 +278,8 @@ enabled = true
 start_at = 2026-08-01T09:00:00Z
 period = "12h"
 ```
+
+The template's `{{SCHEDULES}}` placeholder expands to `schedules.prompt`: it teaches the model to manage these TOML files with its own file tools (the directory, the field rules, the ~30-second automatic pickup, and the hygiene rules against duplicates), ending with the current task-name list via `{{SCHEDULE_LIST}}`. The prompt is editable on the Schedules tab; with `schedules.enabled` off the block is empty — the server still fires tasks on schedule, the model just isn't taught the task system. An Agent created before this mechanism has no such placeholder in its template; the tab offers one-click insertion.
 
 ## Design principle
 

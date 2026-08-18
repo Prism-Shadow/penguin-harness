@@ -28,7 +28,6 @@ function metaPayload(): SessionMetaPayload {
     provider: "custom",
     model_context_window: 1000,
     system_prompt: "",
-    tools: [],
     agent_state: "/tmp/a",
     workspace: "/tmp/w",
   };
@@ -146,6 +145,7 @@ describe("agent-trace-detail", () => {
       title: "已生成的标题",
       client: "cli",
       createdAt: "2026-07-06T09:00:00.000Z",
+      lastActiveAt: "2026-07-06T09:00:00.000Z",
     });
     const titled = (await (
       await owner.get(`${base()}?limit=10&cli=1`)

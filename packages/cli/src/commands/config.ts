@@ -6,6 +6,7 @@
  *   penguin config model default --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model vision --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config model list [--root <dir>]
+ *   penguin config model remove --model-id <upstream id> --provider <group> [--root <dir>]
  *   penguin config vault set --key <name> --value <value> [--agent-id <id>] [--root <dir>]
  *   penguin config vault list [--agent-id <id>] [--root <dir>]
  *   penguin config vault remove --key <name> [--agent-id <id>] [--root <dir>]
@@ -13,13 +14,15 @@
  *
  * `--model-id` always takes the **upstream id** (the request id sent to AgentHub verbatim),
  * which together with `--provider` forms a `(provider, model_id)` paired reference —
- * **no string concatenation is ever performed**. `--provider` is **required** on all three
- * model subcommands: the group is never guessed, so `--api-key` can never land on a vendor
- * the user did not name. For `model add`, a new entry's client_type defaults according to
- * the group's semantics (not set for first-party vendors; openai for custom / self-hosted
+ * **no string concatenation is ever performed**. `--provider` is **required** on every model
+ * subcommand that names an entry: the group is never guessed, so `--api-key` can never land on
+ * a vendor the user did not name. For `model add`, a new entry's client_type defaults according
+ * to the group's semantics (not set for first-party vendors; openai for custom / self-hosted
  * groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
  * / `model vision`, core validation raises an error when the reference is not
- * found in models. `--root` specifies the data root directory (priority: option >
+ * found in models; `model remove` reports the same condition itself, since removal is
+ * idempotent in core, and clears the default / vision pointers that named the removed entry.
+ * `--root` specifies the data root directory (priority: option >
  * PENGUIN_HOME > ~/.penguin/data). The UI language is controlled by the PENGUIN_LANG
  * environment variable; `config lang` writes it into the shell startup file and restarts
  * the shell to take effect.
@@ -42,6 +45,7 @@ import {
   loadAgentVault,
   loadProjectConfig,
   providerInfo,
+  removeModel,
   removeVaultEntry,
   resolveRoot,
   setDefaultModel,
@@ -249,6 +253,38 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       process.stdout.write(`${t.modelListTitle()}\n`);
       for (const line of formatModelRows(cfg)) {
         process.stdout.write(`${line}\n`);
+      }
+    });
+
+  model
+    .command("remove")
+    .description(t.config.removeDesc)
+    .requiredOption("--model-id <id>", t.config.refModelId)
+    .requiredOption("--provider <group>", t.config.refProvider)
+    .option("--project-id <id>", t.common.projectId, DEFAULT_PROJECT_ID)
+    .option("--root <dir>", t.common.root)
+    .action(async (opts) => {
+      const root = resolveRootOption(opts.root);
+      // Paired reference semantics match `model default` / `model vision`. removeModel is
+      // idempotent, so whether a missing entry is worth reporting is decided here — same
+      // shape as `vault remove`, which also checks first and exits non-zero.
+      const ref: ModelRef = { provider: opts.provider, model_id: opts.modelId };
+      const before = await loadProjectConfig(root, opts.projectId);
+      if (getModel(before, ref) === undefined) {
+        process.stderr.write(`${t.modelNotConfigured(formatModelRef(ref))}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      const cfg = await removeModel(root, opts.projectId, ref);
+      // The default model rides along on the confirmation (as it does for add/update) because
+      // removing the model it named leaves it unset, and the next run would otherwise fail with
+      // a config error nobody would connect to this command. The vision pointer is rarer, so it
+      // only speaks up when this removal is what cleared it.
+      process.stdout.write(
+        `${t.modelRemoved(formatModelRef(ref), cfg.default_model && formatModelRef(cfg.default_model))}\n`,
+      );
+      if (before.vision_model !== undefined && cfg.vision_model === undefined) {
+        process.stdout.write(`${t.visionModelCleared()}\n`);
       }
     });
 

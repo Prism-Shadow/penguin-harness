@@ -119,7 +119,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 - **⌨️ 命令行**——一行命令（或 npm / 离线包）装出 `penguin` 命令，`penguin web` 即在浏览器打开完整 Web 体验 `http://127.0.0.1:7364`（多会话对话、Agent / 技能 / 模型管理、用量统计、轨迹观测、评估中心）。在线安装器自带 Node 运行时，解压即用；升级与重装不触碰数据。
 
 > [!NOTE]
-> 命令行安装后，Web 首次登录用户名为 `admin`，初始密码在服务端首次启动时打印（形如 `penguin-1234`），登录后请尽快修改；模型在应用内「模型」页配置。
+> 命令行安装后，Web 首次登录用户名为 `admin`，初始密码（形如 `penguin-1234`）在改掉之前每次启动服务端都会以边框提示打印，登录后请尽快修改；模型在应用内「模型」页配置。
 
 ### 🖥️ 桌面端应用
 
@@ -229,7 +229,7 @@ cd penguin-install
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
 penguin run -m "Create hello.txt containing Hello, Penguin"   # 单次任务
-penguin chat       # 交互式 REPL（/compact、/exit、Ctrl-C 中断）
+penguin chat       # 交互式 REPL（/compact、/clear、/exit、Ctrl-C 中断）
 penguin server     # 无界面服务（与 Web 应用同一套 API）
 ```
 

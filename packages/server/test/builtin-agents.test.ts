@@ -1,13 +1,14 @@
 /**
  * Project built-in Agent provisioning: the only built-in Agent is default_agent
- * (pre-installed with every Skill in the library, empty AGENTS.md, cannot be deleted).
+ * (pre-installed with the library's preinstalled Skill set — `preinstall: false` skills
+ * excluded — empty AGENTS.md, cannot be deleted).
  * Specialized capabilities are now carried by Skills — agent_creator / agent_optimizer
  * are no longer built-in Agents: neither provisioned nor deletion-protected.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadLibrarySkills } from "@prismshadow/penguin-skills";
+import { loadPreinstalledSkills } from "@prismshadow/penguin-skills";
 import type { BenchmarksResponse } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser, type TestApp } from "./helpers.js";
 
@@ -45,12 +46,15 @@ describe("built-in Agent provisioning", () => {
     expect(ids).not.toContain("agent_optimizer");
     expect(list.agents.find((a) => a.agentId === "default_agent")?.name).toBe("General Agent");
 
-    // Install policy: default_agent is pre-installed with every Skill currently in the library.
+    // Install policy: default_agent is pre-installed with the library's preinstalled set
+    // (skills marked `preinstall: false`, e.g. remote-claude-code, stay manual-install only).
     const skillsOf = async (agentId: string) =>
       (
         await fs.readdir(path.join(t.root, projectId, "agents", agentId, "agent_state", "skills"))
       ).sort();
-    expect(await skillsOf("default_agent")).toEqual(loadLibrarySkills().map((skill) => skill.name));
+    expect(await skillsOf("default_agent")).toEqual(
+      loadPreinstalledSkills().map((skill) => skill.name),
+    );
 
     // The default AGENTS.md is empty: it carries no preset guidance (delegation and task
     // conventions live in the default template's Suggested workflows section).
