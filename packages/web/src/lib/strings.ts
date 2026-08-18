@@ -43,6 +43,8 @@ export const zh = {
     noTerminals: "暂无终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "终端创建失败",
+    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
+    noTerminalApi: "该服务端没有终端接口，可能是旧版本；请更新或重启服务端",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
     close: "关闭",

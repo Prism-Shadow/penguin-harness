@@ -18,7 +18,13 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
-import { TerminalView, fetchJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
+import {
+  TerminalView,
+  fetchJson,
+  probeJson,
+  type TerminalInfo,
+  type TerminalStatus,
+} from "./terminal-view";
 
 const STORAGE_KEY = "penguin.terminal.page.id";
 
@@ -56,13 +62,13 @@ async function attachOrCreate(
   // 1. An explicit id wins — this is the detach handoff. A dead-but-not-yet-reaped
   //    terminal is still returned so the user sees its final screen and exit status.
   if (params.id) {
-    const existing = await fetchJson<TerminalInfo>(`/api/terminals/${params.id}`).catch(() => null);
+    const existing = await probeJson<TerminalInfo>(`/api/terminals/${params.id}`).catch(() => null);
     if (existing) return existing;
   } else {
     // 2. Bare visit: reattach to this page's previous terminal when it is still alive.
     const storedId = localStorage.getItem(STORAGE_KEY);
     if (storedId) {
-      const stored = await fetchJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(() => null);
+      const stored = await probeJson<TerminalInfo>(`/api/terminals/${storedId}`).catch(() => null);
       if (stored?.alive) return stored;
     }
   }
@@ -77,7 +83,6 @@ async function attachOrCreate(
       ...(params.name !== null ? { name: params.name } : {}),
     }),
   });
-  if (!created) throw new Error("Server did not return a terminal.");
   return created;
 }
 

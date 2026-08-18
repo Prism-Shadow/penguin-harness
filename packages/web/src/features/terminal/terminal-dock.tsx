@@ -36,7 +36,7 @@ import {
   type DockPosition,
 } from "./terminal-dock-state";
 import { DockLayoutOverlay, dockDropCandidate } from "./terminal-dock-layout";
-import { fetchJson, type TerminalInfo } from "./terminal-view";
+import { HttpStatusError, fetchJson, probeJson, type TerminalInfo } from "./terminal-view";
 import {
   killTerminal,
   liveTerminals,
@@ -192,14 +192,20 @@ async function createShellInPane(position: DockPosition): Promise<void> {
       method: "POST",
       body: JSON.stringify({ cwd: DOCK_CWD }),
     });
-    if (!created) throw new Error("Server did not return a terminal.");
     setPaneError(position, null);
     noteTerminalCreated(created);
     assignTerminalToPane(created.id, position);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[terminal] create failed (${position} pane):`, message);
-    setPaneError(position, message);
+    // A 404 here is not "this terminal is gone" — the endpoint itself is absent, which
+    // means the server answering is older than the terminal API (the desktop shell also
+    // attaches to an already-running server rather than starting its own).
+    const detail =
+      err instanceof HttpStatusError && err.status === 404
+        ? `${message} — ${S.terminal.noTerminalApi}`
+        : message;
+    console.error(`[terminal] create failed (${position} pane):`, detail);
+    setPaneError(position, detail);
   }
 }
 
@@ -272,7 +278,7 @@ async function resolvePaneCurrent(position: DockPosition): Promise<void> {
   try {
     const storedId = paneCurrent(position);
     if (storedId) {
-      const existing = await fetchJson<TerminalInfo>(
+      const existing = await probeJson<TerminalInfo>(
         `/api/terminals/${encodeURIComponent(storedId)}`,
       ).catch(() => null);
       if (existing?.alive) {
