@@ -422,10 +422,13 @@ describePty("terminal API", () => {
   });
 });
 
-describe("spawn-helper repair", () => {
+// POSIX file modes only: Windows has no exec bit (chmod there toggles the read-only
+// flag), so a 0644 helper and a 0755 one are indistinguishable to fs.stat. The repair
+// itself never runs off darwin, so nothing is left unguarded by skipping here.
+describe.skipIf(process.platform === "win32")("spawn-helper repair", () => {
   // node-pty's npm tarball ships its darwin prebuild's spawn-helper as 0644 (no exec
   // bit), and darwin's posix_spawnp then refuses it — the macOS "terminal opens blank"
-  // bug. Plain chmod logic, so it is checkable on any platform.
+  // bug.
   async function helperTree(relative: string[], mode: number): Promise<string> {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pty-"));
     const file = path.join(root, ...relative);
