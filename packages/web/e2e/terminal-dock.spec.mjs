@@ -719,6 +719,14 @@ test("hover menus: create opens on hover; terminal lists on both levels", async 
   await expect(page.locator('[data-testid="panels-menu-terminal"]')).toBeVisible({
     timeout: 5000,
   });
+  // A hover-opened menu must not pull focus: the programmatic focus a click-opened menu
+  // wants would draw a stray :focus-visible ring on the first row of a freshly loaded page.
+  expect(
+    await page.evaluate(
+      () => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName,
+    ),
+    "hover-open left focus alone",
+  ).not.toBe("panels-menu-agents");
   await page.locator('[data-testid="panels-menu-terminal"]').click();
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
   await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
