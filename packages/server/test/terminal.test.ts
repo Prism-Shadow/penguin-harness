@@ -14,6 +14,7 @@ import xterm from "@xterm/headless";
 import { createTestApp, loginAdmin, apiClient } from "./helpers.js";
 import { TerminalManager, MAX_TERMINALS_PER_USER } from "../src/terminal/manager.js";
 import { expandHomePath } from "../src/terminal/session.js";
+import { repairSpawnHelpers } from "../src/terminal/spawn-helper.js";
 import { TerminalInputModeTracker } from "../src/terminal/input-mode.js";
 import { TerminalOutputCoalescer } from "../src/terminal/output-coalescer.js";
 import { applyTerminalSize, releaseTerminalSize } from "../src/terminal/size-ownership.js";
@@ -418,6 +419,40 @@ describePty("terminal API", () => {
     } finally {
       await t.cleanup();
     }
+  });
+});
+
+describe("spawn-helper repair", () => {
+  // node-pty's npm tarball ships its darwin prebuild's spawn-helper as 0644 (no exec
+  // bit), and darwin's posix_spawnp then refuses it — the macOS "terminal opens blank"
+  // bug. Plain chmod logic, so it is checkable on any platform.
+  async function helperTree(relative: string[], mode: number): Promise<string> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pty-"));
+    const file = path.join(root, ...relative);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, "#!/bin/sh\n", { mode });
+    await fs.chmod(file, mode); // writeFile honours umask; pin the mode exactly
+    return root;
+  }
+
+  it("adds the exec bit to a prebuilt helper that lacks it", async () => {
+    const root = await helperTree(["prebuilds", "darwin-arm64", "spawn-helper"], 0o644);
+    const helper = path.join(root, "prebuilds", "darwin-arm64", "spawn-helper");
+
+    expect(repairSpawnHelpers(root, "arm64")).toEqual([helper]);
+    expect(fsSync.statSync(helper).mode & 0o111).not.toBe(0);
+  });
+
+  it("leaves an already-executable helper alone", async () => {
+    const root = await helperTree(["build", "Release", "spawn-helper"], 0o755);
+
+    expect(repairSpawnHelpers(root, "arm64")).toEqual([]);
+  });
+
+  it("is a no-op when node-pty shipped no helper (every non-darwin install)", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-pty-"));
+
+    expect(repairSpawnHelpers(root, "x64")).toEqual([]);
   });
 });
 

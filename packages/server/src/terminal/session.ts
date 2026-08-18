@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import xterm, { type Terminal } from "@xterm/headless";
 import pty, { type IPty } from "node-pty";
 import { TerminalInputModeTracker } from "./input-mode.js";
+import { ensureSpawnHelperExecutable } from "./spawn-helper.js";
 import {
   captureLines,
   renderRestoreAnsi,
@@ -168,6 +169,9 @@ export class TerminalSession {
     });
 
     const shell = options.shell ?? resolveDefaultShell();
+    // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
+    // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
+    ensureSpawnHelperExecutable();
     this.ptyProcess = pty.spawn(shell, shellArgs(shell), {
       name: "xterm-256color",
       cols,
