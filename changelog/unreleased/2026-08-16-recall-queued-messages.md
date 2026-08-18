@@ -11,7 +11,9 @@ Details:
   server-side and restores its original content into the draft: the text lands in front of
   whatever is currently typed, and images/file attachments come back as composer chips
   (files are read back from the Session scratchpad, whose copies are then deleted). A
-  recalled follow-up also restores the per-turn thinking level it was queued with.
+  recalled follow-up also restores the per-turn thinking level it was queued with, and a
+  recall that brings file attachments back releases a staged goal chip (a goal draft cannot
+  carry files).
 - New endpoints: `DELETE /api/sessions/:id/steer/:steerId` and
   `DELETE /api/sessions/:id/follow-ups/:followUpId`, both returning the withdrawn message's
   original content `{text, images, files}`. The recall handles ride `task_state` events:

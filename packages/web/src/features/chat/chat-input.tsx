@@ -102,6 +102,7 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { mergeRecalledDraft } from "./recall-draft";
 import {
   caretOnFirstLine,
   caretOnLastLine,
@@ -1354,12 +1355,23 @@ export function ChatInput({
   const [recallingId, setRecallingId] = useState<string | null>(null);
   /** Restores recalled content into the draft: its text goes in FRONT of whatever is currently typed (it was composed first), attachments likewise; caret parked at the end, applyHistory-style. */
   const applyRecalled = (r: RecalledMessageResponse) => {
-    const merged = text.trim() ? (r.text ? `${r.text}\n${text}` : text) : r.text;
+    // The recall round-trip may have taken keystrokes: read the live value off the controlled
+    // textarea rather than this closure's render-time `text`, or anything typed while the
+    // DELETE was in flight would be overwritten by the merge.
+    const { text: merged, dropGoal } = mergeRecalledDraft({
+      recalledText: r.text,
+      currentText: textareaRef.current?.value ?? text,
+      recalledFiles: r.files.length,
+      goalOn,
+    });
     setText(merged);
     onTextChange?.(merged);
     setCaret(merged.length);
     if (r.images.length > 0) setImages((prev) => [...r.images, ...prev]);
     if (r.files.length > 0) {
+      // A goal draft cannot carry the restored files — release the staged chip rather than
+      // strand them behind a dead Send (why: see mergeRecalledDraft).
+      if (dropGoal) toggleGoal(false);
       setAttachments((prev) => [
         ...r.files.map((f) => ({
           name: f.fileName,

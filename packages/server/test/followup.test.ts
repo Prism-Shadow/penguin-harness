@@ -11,7 +11,7 @@ import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { TaskCreateResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
-import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import type { RecallStore, RuntimeSession } from "../src/runtime/session-manager.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -147,5 +147,89 @@ describe("follow-up queue route", () => {
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
     t.deps.manager.decideApproval(SID, "tc-fu", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("the SSE subscribe snapshot carries the queued follow-up list (what makes the recall lines survive reloads)", async () => {
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "queued for later" }],
+      queueIfBusy: true,
+    });
+
+    // The first SSE frames are the initial task_state snapshot: it must carry the per-entry
+    // list (id + content), not just the queued count — a reloaded page rebuilds each hint
+    // line with its recall handle from this alone.
+    const res = await api.get(`/api/sessions/${SID}/stream`);
+    const reader = res.body!.getReader();
+    let seen = "";
+    for (let i = 0; i < 5 && !seen.includes("task_state"); i += 1) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      seen += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+    expect(seen).toContain('"task_state"');
+    expect(seen).toContain('"pendingFollowUps"');
+    expect(seen).toContain("queued for later");
+
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => runs.length === 2);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("recall (#287) racing the auto-start: a recall in the idle gap wins exactly once", async () => {
+    await api.post(`/api/sessions/${SID}/tasks`, { input: [{ type: "text", text: "task 1" }] });
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "recalled at the wire" }],
+      queueIfBusy: true,
+    });
+    const [queued] = t.deps.manager.pendingFollowUpsOf(SID);
+
+    // Between drive's idle flip and the drain's locked dequeue lies a microtask-wide gap:
+    // the idle task_state broadcast runs its channel listeners synchronously, while the
+    // startQueuedFollowUp scheduled right after it only dequeues a promise-chain hop later.
+    // A recall enqueued as a microtask from inside the idle broadcast therefore lands
+    // exactly in that gap — after the auto-start was scheduled (the queue was still
+    // non-empty then), before it shifts the entry. Exactly-one-of must hold: the recall
+    // wins, and the drain's under-lock revalidation finds the queue empty and starts nothing.
+    const result: { recalled?: { recall: RecallStore }; err?: unknown } = {};
+    let fired = false;
+    let lastQueued = -1;
+    const unsubscribe = t.deps.channels.get(SID).subscribe((evt) => {
+      if (evt.event !== "server_event") return;
+      const ev = JSON.parse(evt.data) as { type?: string; state?: string; queued?: number };
+      if (ev.type !== "task_state") return;
+      lastQueued = ev.queued ?? -1;
+      if (ev.state !== "idle" || fired) return;
+      fired = true;
+      queueMicrotask(() => {
+        try {
+          result.recalled = t.deps.manager.recallFollowUp(SID, queued!.id);
+        } catch (e) {
+          result.err = e;
+        }
+      });
+    });
+
+    // Finish run 1: drive flips to idle (its broadcast queues the recall) and schedules the
+    // auto-start behind it; then give the scheduled drain time to reach its revalidation.
+    t.deps.manager.decideApproval(SID, "tc-fu", "allow");
+    await waitFor(() => fired && t.deps.manager.statusOf(SID) === "idle");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    unsubscribe();
+
+    expect(result.err).toBeUndefined();
+    expect(result.recalled?.recall.text).toBe("recalled at the wire");
+    // Exactly once: withdrawn, never started — run 1 stays the only run, and nothing is left queued.
+    expect(runs).toEqual([["task 1"]]);
+    expect(t.deps.manager.pendingFollowUpCount(SID)).toBe(0);
+    expect(t.deps.manager.statusOf(SID)).toBe("idle");
+    // What another tab sees: the recall's own task_state broadcast already reports the
+    // emptied queue, so the entry disappears there without a reload.
+    expect(lastQueued).toBe(0);
   });
 });
