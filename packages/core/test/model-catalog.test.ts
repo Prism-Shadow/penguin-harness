@@ -22,8 +22,8 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order: DeepSeek first, followed by the OpenRouter, SiliconFlow, and Qwen Token
-    // Plan gateways, then Google Gemini before Anthropic, with custom last.
+    // Group order: DeepSeek first, followed by the gateway and first-party groups, with
+    // MiniMax immediately before custom.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
@@ -36,9 +36,12 @@ describe("model-catalog", () => {
       "openai",
       "zhipu",
       "moonshot",
+      "minimax",
       "custom",
     ]);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
+    expect(providerInfo("minimax")!.label).toBe("MiniMax");
+    expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -73,10 +76,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("every entry is priced (free-tier rows store a genuine $0); context_window is a positive integer", () => {
-    // As of 2026-08-03 no catalog entry ships unpriced: the last holdouts (the three
-    // SiliconFlow Pro//Qwen/ rows) got their official CNY list prices. Unpriced remains a
-    // legal state for user-added models only.
+  it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
       if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
         // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
@@ -128,9 +128,10 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
+    expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
 
-  it("presetModelEntries: provider and bare upstream model_id are separate fields; gateway models inline base_url", () => {
+  it("presetModelEntries: provider and bare upstream model_id are separate fields; preset endpoints are inlined", () => {
     const entries = presetModelEntries();
     expect(entries).toHaveLength(MODEL_CATALOG.length);
     for (const [i, entry] of entries.entries()) {
@@ -140,9 +141,9 @@ describe("model-catalog", () => {
       expect(entry.context_window).toBe(cat.contextWindow);
       expect(entry.pricing).toEqual(cat.pricing);
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // Models that AgentHub can auto-route leave client_type unset; OpenRouter gateway models set it to openai.
+      // Gateway and direct MiniMax presets pin a client protocol; other direct models auto-route.
       expect(entry.client_type).toBe(cat.clientType);
-      // Gateway models inline a preset base URL (no credentials); other models carry no credential at all.
+      // Gateway and direct MiniMax models inline a preset base URL; no entry carries credentials.
       expect(entry.base_url).toBe(cat.baseUrl);
       expect(entry.api_key).toBeUndefined();
       // The concatenated storage id and request_model_id have been removed and no longer appear.
@@ -252,6 +253,29 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai");
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
+    const minimax = MODEL_CATALOG.filter((m) => m.provider === "minimax");
+    expect(
+      minimax.map((m) => [
+        m.modelId,
+        m.contextWindow,
+        m.supportsVision,
+        m.clientType,
+        m.baseUrl,
+        m.pricing,
+      ]),
+    ).toEqual([
+      [
+        "MiniMax-M3",
+        1000000,
+        true,
+        "minimax-m3",
+        "https://api.minimax.io/v1",
+        // Standard tier at <=512K input: cache read 0.06, input 0.30, output 1.20 USD/Mtok.
+        { unit: "usd_per_mtok", cache_read: 0.06, cache_write: 0.3, output: 1.2 },
+      ],
+    ]);
+    expect(providerInfo("minimax")!.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
+    expect(providerInfo("minimax")!.gatewayBaseUrl).toBeUndefined();
     // Routed through AgentHub's OpenAI client -> when the credential is left blank it reads OPENAI_API_KEY (not the provider's own env var name).
     for (const id of [
       "openrouter",
@@ -317,10 +341,10 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
-    // In preset entries, exactly the gateway models (and only them) inline base_url (no credentials).
+    // In preset entries, every gateway model and the direct MiniMax client inline base_url (no credentials).
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      gateway.map((m) => [m.provider, m.modelId]).sort(),
+      [...gateway, ...minimax].map((m) => [m.provider, m.modelId]).sort(),
     );
   });
 
@@ -408,7 +432,7 @@ describe("model-catalog", () => {
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
-  it("first-party provider ids route by substring to the provider client's env var", () => {
+  it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
@@ -424,27 +448,32 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("gemini-3.5-flash-lite")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("claude-fable-5")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-5")?.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(resolveModelEnv("MiniMax-M3")?.envKey).toBe("MINIMAX_API_KEY");
+    expect(resolveModelEnv("MiniMax-M3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
   });
 
-  it("explicit client_type beats id: the openai protocol always uses OPENAI_* (independent of grouping)", () => {
+  it("explicit client_type selects the protocol, while model-scoped clients still validate the id", () => {
     expect(resolveModelEnv("deepseek-v4-pro", "openai")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("zai-org/GLM-5.2", "openai")?.envKey).toBe("OPENAI_API_KEY");
+    expect(resolveModelEnv("MiniMax-M3", "minimax-m3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
+    expect(resolveModelEnv("custom-model", "minimax-m3")).toBeUndefined();
   });
 
   it("unroutable ids return undefined (AgentHub would reject; needs explicit client_type or an OpenAI-protocol grouping)", () => {
     expect(resolveModelEnv("totally-unknown-model")).toBeUndefined();
     expect(resolveModelEnv("xiaomi/mimo-v2.5")).toBeUndefined();
+    expect(resolveModelEnv("minimax-m3-preview")).toBeUndefined();
+    expect(resolveModelEnv("MiniMax-M4")).toBeUndefined();
+    expect(resolveModelEnv("MiniMax-M4", "minimax-m3")).toBeUndefined();
   });
 
-  it("catalog invariant: entries without client_type route by id with envKey matching the provider; gateway entries resolve to OPENAI_* via client_type", () => {
+  it("catalog invariant: each model's resolved client uses its provider's documented environment variables", () => {
     for (const m of MODEL_CATALOG) {
       const env = resolveModelEnv(m.modelId, m.clientType);
+      const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
-      if (m.clientType === undefined) {
-        expect(env!.envKey, m.modelId).toBe(providerInfo(m.provider)!.envKey);
-      } else {
-        expect(env!.envKey, m.modelId).toBe("OPENAI_API_KEY");
-      }
+      expect(env!.envKey, m.modelId).toBe(provider.envKey);
+      expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
     }
   });
 
@@ -476,6 +505,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     // Direct vendors link to the vendor's model docs page.
     expect(modelHomepageUrl("deepseek", "deepseek-v4-pro")).toBe(
       "https://api-docs.deepseek.com/quick_start/pricing",
+    );
+    expect(modelHomepageUrl("minimax", "MiniMax-M3")).toBe(
+      "https://platform.minimax.io/docs/guides/models-intro",
     );
     // Z.AI and Moonshot have per-model pages (Moonshot drops the dot: kimi-k2.6 -> chat-k26).
     expect(modelHomepageUrl("zhipu", "glm-5.2")).toBe("https://docs.z.ai/guides/llm/glm-5.2");

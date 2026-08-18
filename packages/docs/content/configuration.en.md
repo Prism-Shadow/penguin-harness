@@ -27,18 +27,19 @@ These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and
 
 ### Provider credential variables
 
-When a model entry has no inline `api_key`, the AgentHub gateway falls back to the provider's environment variable; the `*_BASE_URL` variants override the base URL the same way:
+When a model entry has no inline `api_key`, AgentHub falls back to the provider's environment variable. A `*_BASE_URL` value is used only when the entry does not already inline `base_url`:
 
 | Provider | API key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
 | openai, openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and custom groups speak the OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M3 Responses client uses `MINIMAX_*`; the built-in MiniMax preset already pins the official endpoint. Provider groups and the built-in model catalog are covered in [Models & Providers](/models).
 
 ## Project config
 
@@ -64,7 +65,7 @@ Model entry (`[[models]]`) fields:
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
-| `base_url` | Custom base URL; preset for gateway models |
+| `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml

@@ -11,6 +11,8 @@
  *   URL replaces it whole).
  * - Google direct (gemini-* clients, `@google/genai`): {base}/v1beta/models/<id>:… —
  *   the SDK joins base URL + API version (v1beta) + the models path.
+ * - MiniMax direct (minimax-m3 client): MiniMax's Responses API, POST {base}/responses
+ *   (its default base URL https://api.minimax.io/v1 already ends in /v1).
  * - Every OpenAI-compatible client — explicit `client_type: "openai"` (gateways,
  *   custom and user-defined groups) plus the DeepSeek / GLM / Kimi direct clients —
  *   POST {base}/chat/completions.
@@ -31,12 +33,15 @@ export function protocolPathForModel(provider: string, clientType: string): stri
   if (t.includes("claude")) return "/v1/messages";
   if (t.includes("gemini")) return "/v1beta/models";
   if (t.includes("gpt")) return "/responses";
+  if (t.includes("minimax")) return "/responses";
   // Any other explicit client type (deepseek-v4 / glm-* / kimi-*): all speak chat completions.
   if (t !== "") return "/chat/completions";
   switch (provider) {
     case "anthropic":
       return "/v1/messages";
     case "openai":
+      return "/responses";
+    case "minimax":
       return "/responses";
     case "google":
       return "/v1beta/models";

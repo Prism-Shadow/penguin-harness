@@ -17,16 +17,13 @@
  * and the Session is only actually created when the first message is sent — after landing, the user
  * may still switch models or configure an API key first, so persisting the Session early would both
  * lock in the model and fail outright when no credential is configured yet.
+ *
+ * State lives in a zustand vanilla store (one instance per Provider mount); the Provider is a
+ * thin lifecycle component (initial fetch, refetch on Project/Agent-set/filter changes, the
+ * user-event subscription) and republishes the store's state through the same context value
+ * as before. Mutations read current values via store.getState() (the old refs' job).
  */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type {
   SessionCategory,
@@ -34,6 +31,8 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
 import {
@@ -95,6 +94,271 @@ interface PagePosition {
   fetched: number;
 }
 
+/** Store state: the context value's raw ingredients plus the mutation functions (byAgent / isLoadedFor / hasMoreFor are derived in the Provider). */
+interface SessionsStoreState {
+  /** Provider-synced fetch context: the current Project and its Agent set (what reload() targets). */
+  projectId: string | null;
+  agentIds: string[];
+
+  sessions: SessionInfo[];
+  /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
+  pageState: ReadonlyMap<string, PagePosition>;
+  countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
+  workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  loading: boolean;
+  // "Show CLI sessions" preference: server-persisted per user (ui_prefs); hydrated once by the
+  // Provider on mount, default off. Changing it makes the Provider's reset effect refetch the
+  // whole list under the new filter.
+  showCliSessions: boolean;
+
+  reload: () => Promise<void>;
+  loadMoreFor: (agentIds: string[], category: SessionCategory) => Promise<void>;
+  add: (session: SessionInfo) => void;
+  remove: (sessionId: string) => void;
+  replace: (session: SessionInfo) => void;
+  setStatus: (sessionId: string, status: SessionStatus) => void;
+  setTitle: (sessionId: string, title: string) => void;
+  setShowCliSessions: (value: boolean) => void;
+}
+
+function createSessionsStore() {
+  // Generation counter: invalidates any in-flight response once the Project/Agent set
+  // changes or a reload happens.
+  let gen = 0;
+
+  return createStore<SessionsStoreState>((set, get) => {
+    /** Keeps an Agent's category totals — overall and per Workspace — in step with a local list mutation of `session` (no-op while its counts are unknown). */
+    const adjustCount = (session: SessionInfo, category: SessionCategory, delta: number) => {
+      const { agentId, workspace } = session;
+      const counts = get().countsByAgent;
+      const cur = counts.get(agentId);
+      if (cur) {
+        const next = new Map(counts);
+        next.set(agentId, { ...cur, [category]: Math.max(0, cur[category] + delta) });
+        set({ countsByAgent: next });
+      }
+      const workspaceCounts = get().workspaceCountsByAgent;
+      const wsCur = workspaceCounts.get(agentId);
+      if (wsCur) {
+        const ws = wsCur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
+        const next = new Map(workspaceCounts);
+        next.set(agentId, {
+          ...wsCur,
+          [workspace]: { ...ws, [category]: Math.max(0, ws[category] + delta) },
+        });
+        set({ workspaceCountsByAgent: next });
+      }
+    };
+
+    return {
+      projectId: null,
+      agentIds: [],
+
+      sessions: [],
+      pageState: new Map(),
+      countsByAgent: new Map(),
+      workspaceCountsByAgent: new Map(),
+      loading: true,
+      showCliSessions: false,
+
+      reload: async () => {
+        const { projectId, agentIds, showCliSessions } = get();
+        if (!projectId || agentIds.length === 0) return;
+        const g = ++gen;
+        set({ loading: true });
+        try {
+          const results = await Promise.all(
+            agentIds.map(async (agentId) => {
+              // Active first page (with per-category totals) always; plus the first page of
+              // every folder category already on screen — a reload triggered by a server
+              // event must refresh, not blank, an open folder.
+              const categories: SessionCategory[] = [
+                "active",
+                ...FOLDER_CATEGORIES.filter((cat) => get().pageState.has(pageKey(agentId, cat))),
+              ];
+              try {
+                const pages = await Promise.all(
+                  categories.map(async (category) => {
+                    const res = await api.listSessions(projectId, agentId, {
+                      offset: 0,
+                      limit: SIDEBAR_PAGE_SIZE + 1,
+                      category,
+                      ...(category === "active" ? { withCounts: true } : {}),
+                      ...(showCliSessions ? { cli: true } : {}),
+                    });
+                    return {
+                      category,
+                      counts: res.counts,
+                      workspaceCounts: res.workspaceCounts,
+                      ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
+                    };
+                  }),
+                );
+                return { agentId, pages };
+              } catch {
+                // A single Agent's fetch failure shouldn't bring down the whole batch (e.g. its directory was deleted externally).
+                return { agentId, pages: [] };
+              }
+            }),
+          );
+          if (g !== gen) return;
+          const nextSessions: SessionInfo[] = [];
+          const seen = new Set<string>();
+          const nextPageState = new Map<string, PagePosition>();
+          const nextCounts = new Map<string, SessionCategoryCounts>();
+          const nextWorkspaceCounts = new Map<
+            string,
+            Readonly<Record<string, SessionCategoryCounts>>
+          >();
+          for (const r of results) {
+            for (const p of r.pages) {
+              nextPageState.set(pageKey(r.agentId, p.category), {
+                hasMore: p.hasMore,
+                fetched: p.items.length,
+              });
+              if (p.counts) nextCounts.set(r.agentId, p.counts);
+              if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
+              for (const s of p.items) {
+                if (!seen.has(s.sessionId)) {
+                  seen.add(s.sessionId);
+                  nextSessions.push(s);
+                }
+              }
+            }
+          }
+          set({
+            sessions: nextSessions,
+            pageState: nextPageState,
+            countsByAgent: nextCounts,
+            workspaceCountsByAgent: nextWorkspaceCounts,
+          });
+        } finally {
+          if (g === gen) set({ loading: false });
+        }
+      },
+
+      /**
+       * Category page fetch for each given Agent: the first page when the pair is unloaded
+       * (skipped unless the counts say the category holds anything), the next page when
+       * loaded with more. The offset is the pair's `fetched` cursor — rows actually
+       * consumed from the server's stream, never rows `add()` slipped in. A session
+       * created since the last page still shifts server offsets, so appended rows are
+       * deduplicated by sessionId (a short page is fine — `hasMore` comes from the server
+       * response, and the next click continues from the advanced cursor).
+       */
+      loadMoreFor: async (agentIds, category) => {
+        const { projectId, showCliSessions } = get();
+        if (!projectId) return;
+        const targets = [...new Set(agentIds)].filter((agentId) => {
+          const position = get().pageState.get(pageKey(agentId, category));
+          if (position === undefined)
+            return (get().countsByAgent.get(agentId)?.[category] ?? 0) > 0;
+          return position.hasMore;
+        });
+        if (targets.length === 0) return;
+        const g = gen;
+        const results = await Promise.all(
+          targets.map(async (agentId) => {
+            const offset = get().pageState.get(pageKey(agentId, category))?.fetched ?? 0;
+            try {
+              const fetched = (
+                await api.listSessions(projectId, agentId, {
+                  offset,
+                  limit: SIDEBAR_PAGE_SIZE + 1,
+                  category,
+                  ...(showCliSessions ? { cli: true } : {}),
+                })
+              ).sessions;
+              return { agentId, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
+            } catch {
+              // Transient failure: leave the pair's state untouched (still unloaded / still
+              // has-more), so the affordance stays and the user can retry.
+              return null;
+            }
+          }),
+        );
+        if (g !== gen) return; // Project switch / reload raced this page: drop it.
+        const ok = results.filter((r) => r !== null);
+        const prev = get().sessions;
+        const seen = new Set(prev.map((s) => s.sessionId));
+        const appended = ok.flatMap((r) => r.items.filter((s) => !seen.has(s.sessionId)));
+        const prevPageState = get().pageState;
+        const nextPageState = new Map(prevPageState);
+        for (const r of ok) {
+          const key = pageKey(r.agentId, category);
+          nextPageState.set(key, {
+            hasMore: r.hasMore,
+            fetched: (prevPageState.get(key)?.fetched ?? 0) + r.items.length,
+          });
+        }
+        set({
+          ...(appended.length > 0 ? { sessions: [...prev, ...appended] } : {}),
+          pageState: nextPageState,
+        });
+      },
+
+      add: (session) => {
+        // Invalidate any in-flight reload: the newly created entry mustn't be wiped by a stale snapshot.
+        gen += 1;
+        // Count the row only when the pair's fetched pages provably held its whole category
+        // (loaded, no more): the row is then genuinely new to the server totals. Otherwise
+        // (deep-link self-heal of an unfetched row) the counts already include it — a
+        // possible one-off drift self-heals on the next reload.
+        const existed = get().sessions.some((s) => s.sessionId === session.sessionId);
+        if (
+          !existed &&
+          get().pageState.get(pageKey(session.agentId, sessionCategory(session)))?.hasMore === false
+        ) {
+          adjustCount(session, sessionCategory(session), 1);
+        }
+        set({
+          sessions: [session, ...get().sessions.filter((s) => s.sessionId !== session.sessionId)],
+        });
+      },
+
+      remove: (sessionId) => {
+        // Invalidate any in-flight reload: the deletion mustn't be undone by a stale snapshot.
+        gen += 1;
+        const row = get().sessions.find((s) => s.sessionId === sessionId);
+        if (row) adjustCount(row, sessionCategory(row), -1);
+        set({ sessions: get().sessions.filter((s) => s.sessionId !== sessionId) });
+      },
+
+      replace: (session) => {
+        // An archive toggle moves the row across categories: keep the folder totals in step.
+        const old = get().sessions.find((s) => s.sessionId === session.sessionId);
+        if (old && sessionCategory(old) !== sessionCategory(session)) {
+          adjustCount(session, sessionCategory(old), -1);
+          adjustCount(session, sessionCategory(session), 1);
+        }
+        set({
+          sessions: get().sessions.map((s) => (s.sessionId === session.sessionId ? session : s)),
+        });
+      },
+
+      setStatus: (sessionId, status) => {
+        const prev = get().sessions;
+        const target = prev.find((s) => s.sessionId === sessionId);
+        if (!target || target.status === status) return;
+        set({ sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s)) });
+      },
+
+      setTitle: (sessionId, title) => {
+        set({
+          sessions: get().sessions.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
+        });
+      },
+
+      setShowCliSessions: (value) => {
+        set({ showCliSessions: value });
+        // Fire-and-forget: PUT /me/prefs merges shallowly; a lost write only costs persistence,
+        // the in-memory toggle already took effect.
+        void api.putPrefs({ showCliSessions: value }).catch(() => undefined);
+      },
+    };
+  });
+}
+
 export function SessionsProvider({ children }: { children: ReactNode }) {
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
@@ -102,196 +366,67 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   // so join the ids to avoid unnecessary reloads.
   const agentIdsKey = agents.map((a) => a.agentId).join(",");
 
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
-  const [pageState, setPageState] = useState<ReadonlyMap<string, PagePosition>>(new Map());
-  const [countsByAgent, setCountsByAgent] = useState<ReadonlyMap<string, SessionCategoryCounts>>(
-    new Map(),
-  );
-  const [workspaceCountsByAgent, setWorkspaceCountsByAgent] = useState<
-    ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>
-  >(new Map());
-  const [loading, setLoading] = useState(true);
-  // "Show CLI sessions" preference: server-persisted per user (ui_prefs); hydrated once on
-  // mount, default off. Changing it recreates reload(), and the reset effect below refetches
-  // the whole list under the new filter.
-  const [showCliSessions, setShowCliSessionsState] = useState(false);
+  const [store] = useState(createSessionsStore);
+  const state = useStore(store);
+
+  // Hydrate the "show CLI sessions" preference once on mount (a bare setState, not the
+  // setShowCliSessions action: hydration must not write the preference back).
   useEffect(() => {
     let cancelled = false;
     void api
       .getPrefs()
       .then((res) => {
-        if (!cancelled && res.prefs.showCliSessions === true) setShowCliSessionsState(true);
+        if (!cancelled && res.prefs.showCliSessions === true)
+          store.setState({ showCliSessions: true });
       })
       .catch(() => undefined); // Unreachable prefs: stay with the default (web only).
     return () => {
       cancelled = true;
     };
-  }, []);
-  const setShowCliSessions = useCallback((value: boolean) => {
-    setShowCliSessionsState(value);
-    // Fire-and-forget: PUT /me/prefs merges shallowly; a lost write only costs persistence,
-    // the in-memory toggle already took effect.
-    void api.putPrefs({ showCliSessions: value }).catch(() => undefined);
-  }, []);
-  // Generation counter: invalidates any in-flight response once the Project/Agent set
-  // changes or a reload happens.
-  const gen = useRef(0);
-  // Current values for loadMoreFor (offsets are computed from what is actually loaded).
-  const sessionsRef = useRef<SessionInfo[]>([]);
-  sessionsRef.current = sessions;
-  const pageStateRef = useRef<ReadonlyMap<string, PagePosition>>(pageState);
-  pageStateRef.current = pageState;
-  const countsRef = useRef<ReadonlyMap<string, SessionCategoryCounts>>(countsByAgent);
-  countsRef.current = countsByAgent;
+  }, [store]);
 
-  const reload = useCallback(async () => {
-    const agentIds = agentIdsKey === "" ? [] : agentIdsKey.split(",");
-    if (!projectId || agentIds.length === 0) return;
-    const g = ++gen.current;
-    setLoading(true);
-    try {
-      const results = await Promise.all(
-        agentIds.map(async (agentId) => {
-          // Active first page (with per-category totals) always; plus the first page of
-          // every folder category already on screen — a reload triggered by a server
-          // event must refresh, not blank, an open folder.
-          const categories: SessionCategory[] = [
-            "active",
-            ...FOLDER_CATEGORIES.filter((cat) => pageStateRef.current.has(pageKey(agentId, cat))),
-          ];
-          try {
-            const pages = await Promise.all(
-              categories.map(async (category) => {
-                const res = await api.listSessions(projectId, agentId, {
-                  offset: 0,
-                  limit: SIDEBAR_PAGE_SIZE + 1,
-                  category,
-                  ...(category === "active" ? { withCounts: true } : {}),
-                  ...(showCliSessions ? { cli: true } : {}),
-                });
-                return {
-                  category,
-                  counts: res.counts,
-                  workspaceCounts: res.workspaceCounts,
-                  ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
-                };
-              }),
-            );
-            return { agentId, pages };
-          } catch {
-            // A single Agent's fetch failure shouldn't bring down the whole batch (e.g. its directory was deleted externally).
-            return { agentId, pages: [] };
-          }
-        }),
-      );
-      if (g !== gen.current) return;
-      const nextSessions: SessionInfo[] = [];
-      const seen = new Set<string>();
-      const nextPageState = new Map<string, PagePosition>();
-      const nextCounts = new Map<string, SessionCategoryCounts>();
-      const nextWorkspaceCounts = new Map<
-        string,
-        Readonly<Record<string, SessionCategoryCounts>>
-      >();
-      for (const r of results) {
-        for (const p of r.pages) {
-          nextPageState.set(pageKey(r.agentId, p.category), {
-            hasMore: p.hasMore,
-            fetched: p.items.length,
-          });
-          if (p.counts) nextCounts.set(r.agentId, p.counts);
-          if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
-          for (const s of p.items) {
-            if (!seen.has(s.sessionId)) {
-              seen.add(s.sessionId);
-              nextSessions.push(s);
-            }
-          }
-        }
-      }
-      setSessions(nextSessions);
-      setPageState(nextPageState);
-      setCountsByAgent(nextCounts);
-      setWorkspaceCountsByAgent(nextWorkspaceCounts);
-    } finally {
-      if (g === gen.current) setLoading(false);
-    }
-  }, [projectId, agentIdsKey, showCliSessions]);
-
+  const { showCliSessions } = state;
   useEffect(() => {
-    setSessions([]);
-    // reload() reads the ref synchronously to pick the categories to refetch — reset it
-    // in place so a Project switch can't carry folder page state across via shared Agent
-    // ids (default_agent exists in every Project).
-    pageStateRef.current = new Map();
-    setPageState(pageStateRef.current);
-    setCountsByAgent(new Map());
-    setWorkspaceCountsByAgent(new Map());
-    void reload();
-  }, [reload]);
+    // Sync the fetch context and reset the loaded pages in the same synchronous step:
+    // reload() picks the categories to refetch from pageState, so a Project switch can't
+    // carry folder page state across via shared Agent ids (default_agent exists in every
+    // Project). Also reruns on a showCliSessions flip: refetch the whole list under the
+    // new filter.
+    store.setState({
+      projectId,
+      agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
+      sessions: [],
+      pageState: new Map(),
+      countsByAgent: new Map(),
+      workspaceCountsByAgent: new Map(),
+    });
+    void store.getState().reload();
+  }, [store, projectId, agentIdsKey, showCliSessions]);
 
-  /**
-   * Category page fetch for each given Agent: the first page when the pair is unloaded
-   * (skipped unless the counts say the category holds anything), the next page when
-   * loaded with more. The offset is the pair's `fetched` cursor — rows actually
-   * consumed from the server's stream, never rows `add()` slipped in. A session
-   * created since the last page still shifts server offsets, so appended rows are
-   * deduplicated by sessionId (a short page is fine — `hasMore` comes from the server
-   * response, and the next click continues from the advanced cursor).
-   */
-  const loadMoreFor = useCallback(
-    async (agentIds: string[], category: SessionCategory) => {
-      if (!projectId) return;
-      const targets = [...new Set(agentIds)].filter((agentId) => {
-        const position = pageStateRef.current.get(pageKey(agentId, category));
-        if (position === undefined) return (countsRef.current.get(agentId)?.[category] ?? 0) > 0;
-        return position.hasMore;
-      });
-      if (targets.length === 0) return;
-      const g = gen.current;
-      const results = await Promise.all(
-        targets.map(async (agentId) => {
-          const offset = pageStateRef.current.get(pageKey(agentId, category))?.fetched ?? 0;
-          try {
-            const fetched = (
-              await api.listSessions(projectId, agentId, {
-                offset,
-                limit: SIDEBAR_PAGE_SIZE + 1,
-                category,
-                ...(showCliSessions ? { cli: true } : {}),
-              })
-            ).sessions;
-            return { agentId, ...splitPage(fetched, SIDEBAR_PAGE_SIZE) };
-          } catch {
-            // Transient failure: leave the pair's state untouched (still unloaded / still
-            // has-more), so the affordance stays and the user can retry.
-            return null;
-          }
-        }),
-      );
-      if (g !== gen.current) return; // Project switch / reload raced this page: drop it.
-      const ok = results.filter((r) => r !== null);
-      setSessions((prev) => {
-        const seen = new Set(prev.map((s) => s.sessionId));
-        const appended = ok.flatMap((r) => r.items.filter((s) => !seen.has(s.sessionId)));
-        return appended.length > 0 ? [...prev, ...appended] : prev;
-      });
-      setPageState((prev) => {
-        const next = new Map(prev);
-        for (const r of ok) {
-          const key = pageKey(r.agentId, category);
-          next.set(key, {
-            hasMore: r.hasMore,
-            fetched: (prev.get(key)?.fetched ?? 0) + r.items.length,
-          });
+  // User-level event stream (/api/events): a scheduled task firing may have created a new
+  // Session (new-session mode); reload the list so it appears immediately. schedule_queued
+  // doesn't change the list (the target Session already exists), so it's ignored.
+  // store.getState() serves the current values: the connection stays a single one for the
+  // whole login session and doesn't reconnect on Project switches.
+  useEffect(() => {
+    const conn = openUserEvents({
+      onOmniMessage: () => undefined,
+      onServerEvent: (ev) => {
+        // The served web assets were hot-swapped (dev watch-push / platform
+        // upgrade): reload so this window runs the new code.
+        if (ev.type === "web_updated") {
+          window.location.reload();
+          return;
         }
-        return next;
-      });
-    },
-    [projectId, showCliSessions],
-  );
+        if (ev.type !== "schedule_fired") return;
+        // The event carries projectId: a trigger from another Project is unrelated to the current list.
+        if (ev.projectId === store.getState().projectId) void store.getState().reload();
+      },
+    });
+    return () => conn.close();
+  }, [store]);
 
+  const { pageState, countsByAgent } = state;
   const isLoadedFor = useCallback(
     (agentId: string, category: SessionCategory) => pageState.has(pageKey(agentId, category)),
     [pageState],
@@ -307,113 +442,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [pageState, countsByAgent],
   );
 
-  /** Keeps an Agent's category totals — overall and per Workspace — in step with a local list mutation of `session` (no-op while its counts are unknown). */
-  const adjustCount = useCallback(
-    (session: SessionInfo, category: SessionCategory, delta: number) => {
-      const { agentId, workspace } = session;
-      setCountsByAgent((prev) => {
-        const cur = prev.get(agentId);
-        if (!cur) return prev;
-        const next = new Map(prev);
-        next.set(agentId, { ...cur, [category]: Math.max(0, cur[category] + delta) });
-        return next;
-      });
-      setWorkspaceCountsByAgent((prev) => {
-        const cur = prev.get(agentId);
-        if (!cur) return prev;
-        const ws = cur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
-        const next = new Map(prev);
-        next.set(agentId, {
-          ...cur,
-          [workspace]: { ...ws, [category]: Math.max(0, ws[category] + delta) },
-        });
-        return next;
-      });
-    },
-    [],
-  );
-
-  // User-level event stream (/api/events): a scheduled task firing may have created a new
-  // Session (new-session mode); reload the list so it appears immediately. schedule_queued
-  // doesn't change the list (the target Session already exists), so it's ignored.
-  // refs hold the current values: the connection stays a single one for the whole login
-  // session and doesn't reconnect on Project switches.
-  const reloadRef = useRef(reload);
-  reloadRef.current = reload;
-  const projectIdRef = useRef(projectId);
-  projectIdRef.current = projectId;
-  useEffect(() => {
-    const conn = openUserEvents({
-      onOmniMessage: () => undefined,
-      onServerEvent: (ev) => {
-        if (ev.type !== "schedule_fired") return;
-        // The event carries projectId: a trigger from another Project is unrelated to the current list.
-        if (ev.projectId === projectIdRef.current) void reloadRef.current();
-      },
-    });
-    return () => conn.close();
-  }, []);
-
-  const add = useCallback(
-    (session: SessionInfo) => {
-      // Invalidate any in-flight reload: the newly created entry mustn't be wiped by a stale snapshot.
-      gen.current += 1;
-      // Count the row only when the pair's fetched pages provably held its whole category
-      // (loaded, no more): the row is then genuinely new to the server totals. Otherwise
-      // (deep-link self-heal of an unfetched row) the counts already include it — a
-      // possible one-off drift self-heals on the next reload.
-      const existed = sessionsRef.current.some((s) => s.sessionId === session.sessionId);
-      if (
-        !existed &&
-        pageStateRef.current.get(pageKey(session.agentId, sessionCategory(session)))?.hasMore ===
-          false
-      ) {
-        adjustCount(session, sessionCategory(session), 1);
-      }
-      setSessions((prev) => [session, ...prev.filter((s) => s.sessionId !== session.sessionId)]);
-    },
-    [adjustCount],
-  );
-
-  const remove = useCallback(
-    (sessionId: string) => {
-      // Invalidate any in-flight reload: the deletion mustn't be undone by a stale snapshot.
-      gen.current += 1;
-      const row = sessionsRef.current.find((s) => s.sessionId === sessionId);
-      if (row) adjustCount(row, sessionCategory(row), -1);
-      setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
-    },
-    [adjustCount],
-  );
-
-  const replace = useCallback(
-    (session: SessionInfo) => {
-      // An archive toggle moves the row across categories: keep the folder totals in step.
-      const old = sessionsRef.current.find((s) => s.sessionId === session.sessionId);
-      if (old && sessionCategory(old) !== sessionCategory(session)) {
-        adjustCount(session, sessionCategory(old), -1);
-        adjustCount(session, sessionCategory(session), 1);
-      }
-      setSessions((prev) => prev.map((s) => (s.sessionId === session.sessionId ? session : s)));
-    },
-    [adjustCount],
-  );
-
-  const setStatus = useCallback((sessionId: string, status: SessionStatus) => {
-    setSessions((prev) => {
-      const target = prev.find((s) => s.sessionId === sessionId);
-      if (!target || target.status === status) return prev;
-      return prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s));
-    });
-  }, []);
-
-  const setTitle = useCallback((sessionId: string, title: string) => {
-    setSessions((prev) => prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)));
-  }, []);
-
   const value = useMemo<SessionsContextValue>(() => {
     const byAgent = new Map<string, SessionInfo[]>();
-    for (const s of sessions) {
+    for (const s of state.sessions) {
       const list = byAgent.get(s.agentId);
       if (list) list.push(s);
       else byAgent.set(s.agentId, [s]);
@@ -427,40 +458,24 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       );
     }
     return {
-      sessions,
+      sessions: state.sessions,
       byAgent,
-      countsByAgent,
-      workspaceCountsByAgent,
+      countsByAgent: state.countsByAgent,
+      workspaceCountsByAgent: state.workspaceCountsByAgent,
       isLoadedFor,
       hasMoreFor,
-      loading,
-      reload,
-      loadMoreFor,
-      add,
-      remove,
-      replace,
-      setStatus,
-      setTitle,
-      showCliSessions,
-      setShowCliSessions,
+      loading: state.loading,
+      reload: state.reload,
+      loadMoreFor: state.loadMoreFor,
+      add: state.add,
+      remove: state.remove,
+      replace: state.replace,
+      setStatus: state.setStatus,
+      setTitle: state.setTitle,
+      showCliSessions: state.showCliSessions,
+      setShowCliSessions: state.setShowCliSessions,
     };
-  }, [
-    sessions,
-    countsByAgent,
-    workspaceCountsByAgent,
-    isLoadedFor,
-    hasMoreFor,
-    loading,
-    reload,
-    loadMoreFor,
-    add,
-    remove,
-    replace,
-    setStatus,
-    setTitle,
-    showCliSessions,
-    setShowCliSessions,
-  ]);
+  }, [state, isLoadedFor, hasMoreFor]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }

@@ -20,6 +20,7 @@ The full route tables and the SSE protocol are documented in the [Server API ref
 | `PENGUIN_HOME` | Data root (shared with SDK/CLI) | `~/.penguin/data` |
 | `PENGUIN_WEB_DB` | SQLite file path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end build dir (static hosting + SPA fallback when present) | `../web/dist`, or the bundled `web-dist/` in the npm package |
+| `PENGUIN_TRUST_PROXY` | Trust `x-forwarded-proto` for the hot-update network gate (`1` to enable) — only behind a reverse proxy that sets/strips the header itself | unset (untrusted) |
 
 `.env` in the process cwd is loaded automatically.
 

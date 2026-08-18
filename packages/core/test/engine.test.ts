@@ -2291,8 +2291,16 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect(nextRunTexts.join("\n")).not.toContain("[turn_aborted]");
     // t1 already executed once during the failed attempts (side effect occurred); the
     // transcript is plain text and is not dispatched again by either the retry or the next run.
-    const content = await readFile(join(workspace, "chain.txt"), "utf8").catch(() => "");
-    expect(content).toBe("x");
+    // Polled, not read once: t1 was dispatched by an attempt that then timed out, so the turn
+    // was abandoned with nobody awaiting the spawned process — on a slow-spawning host
+    // (Windows CI) it can still be in flight here. A second dispatch would settle on "xx",
+    // which this still catches.
+    const chainFile = join(workspace, "chain.txt");
+    const readChain = (): Promise<string> => readFile(chainFile, "utf8").catch(() => "");
+    for (let i = 0; i < 100 && (await readChain()) !== "x"; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(await readChain()).toBe("x");
   });
 
   it("user abort after a failed retry: [turn_retried] un-nests into the [turn_aborted] flatten", async () => {

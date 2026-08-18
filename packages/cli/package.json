@@ -10,7 +10,8 @@
     "directory": "packages/cli"
   },
   "bin": {
-    "penguin": "./dist/index.js"
+    "penguin": "./dist/penguin.js",
+    "penguin-hmr": "./dist/penguin-hmr.js"
   },
   "engines": {
     "node": ">=24"
@@ -19,11 +20,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "build": "tsup",
-    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7369 -- tsx src/index.ts"
+    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@prismshadow/agenthub": "^0.4.1",
+    "@prismshadow/agenthub": "^0.4.2",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "@prismshadow/penguin-skills": "workspace:*",

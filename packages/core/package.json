@@ -29,6 +29,11 @@
     "./model-catalog": {
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"
+    },
+    "./kernel": {
+      "types": "./dist/kernel/index.d.ts",
+      "import": "./dist/kernel/index.js",
+      "default": "./dist/kernel/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -41,8 +46,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@prismshadow/agenthub": "^0.4.1",
+    "@prismshadow/agenthub": "^0.4.2",
     "@prismshadow/penguin-skills": "workspace:*",
+    "arktype": "^2.2.3",
     "smol-toml": "^1.3.0",
     "yaml": "^2.5.0"
   },

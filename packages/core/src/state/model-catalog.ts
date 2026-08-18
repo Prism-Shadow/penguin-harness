@@ -1,7 +1,7 @@
 /**
  * Built-in model catalog (single source of truth): official chat models that AgentHub can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
- * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20, per the plan's docs).
+ * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03, per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -11,8 +11,8 @@
  * - cache_write: the vendor's "cache write" price (e.g. Anthropic uses 1.25 x input); vendors
  *   without a separate cache-write fee use the standard input price;
  * - output: output price (thinking + reply).
- * OpenAI charges extra for >272K input and Gemini 3.1 Pro for >200K input under official
- * long-context pricing; this catalog only records the base tier (the cost center uses a
+ * OpenAI charges extra for >272K input, Gemini 3.1 Pro for >200K input, and MiniMax M3 doubles
+ * every rate above 512K input; this catalog records their base tier (the cost center uses a
  * single rate, so long-context usage will be underestimated).
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
@@ -22,7 +22,8 @@
  * generation / TTS), and Bedrock. Direct-vendor ids are auto-routed by AgentHub and leave
  * client_type unset; the five gateway groups (OpenRouter, Fireworks AI, SiliconFlow, Qwen
  * Token Plan, Qwen Pay-As-You-Go) can't be auto-routed, so they set `client_type: "openai"`
- * and inline their preset base URL.
+ * and inline their preset base URL. The MiniMax M3 preset pins AgentHub's first-party
+ * `minimax-m3` protocol and direct API endpoint.
  *
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
@@ -60,25 +61,27 @@ export interface ModelCatalogEntry {
   pricing?: ModelPricing;
   /** Whether image input (vision modality) is supported. */
   supportsVision: boolean;
-  /** AgentHub client protocol: required for models whose id can't be auto-routed (e.g. OpenRouter gateway models). */
+  /** AgentHub client protocol: required when an id cannot be auto-routed or a shared protocol must be pinned. */
   clientType?: string;
-  /** Preset base URL (gateway models): inlined into the model entry so the user only needs to supply an API key. */
+  /** Preset base URL: inlined into gateway and direct MiniMax entries so only an API key is required. */
   baseUrl?: string;
 }
 
-/** Each gateway's OpenAI-compatible endpoint (preset base URL for gateway models; also used as the provider's gatewayBaseUrl). */
+/** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
+const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /**
  * Provider list (web model page groups in this order): DeepSeek first (the default model's
  * provider), followed by the five gateways (OpenRouter, Fireworks AI, SiliconFlow, Qwen Token
  * Plan, Qwen Pay-As-You-Go), then the first-party providers Google Gemini, Anthropic, OpenAI,
- * Z.AI (GLM) and Moonshot (Kimi); custom groups custom OpenAI-protocol models and comes last.
+ * Z.AI (GLM), Moonshot (Kimi), and MiniMax; custom groups custom OpenAI-protocol models and
+ * comes last.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -178,6 +181,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     envBaseUrlKey: "MOONSHOT_BASE_URL",
     apiKeyUrl: "https://platform.kimi.com/console/api-keys",
     modelsUrl: "https://platform.kimi.com/docs/pricing",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    envKey: "MINIMAX_API_KEY",
+    envBaseUrlKey: "MINIMAX_BASE_URL",
+    // The pay-as-you-go key page; a Token Plan Subscription Key (Billing > Token Plan) works
+    // against the same endpoint, so the group is not tied to either billing mode.
+    apiKeyUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
+    modelsUrl: "https://platform.minimax.io/docs/guides/models-intro",
   },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
 ];
@@ -815,6 +828,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
+  // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard
+  // tier at <=512K input — every rate doubles above 512K, and the priority tier is 1.5x). --
+  {
+    modelId: "MiniMax-M3",
+    displayName: "MiniMax M3",
+    provider: "minimax",
+    contextWindow: 1000000,
+    pricing: usd(0.06, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "minimax-m3",
+    baseUrl: MINIMAX_BASE_URL,
+  },
   // -- Google Gemini (official USD pricing) --
   {
     modelId: "gemini-3.6-flash",
@@ -1030,14 +1055,15 @@ export interface ModelEnvInfo {
 
 /**
  * Resolves the env var fallback for a model: mirrors AgentHub's
- * AutoLLMClient routing rules (verified against agenthub v0.4.1 autoClient.ts) - an explicit
- * client_type takes priority, otherwise routes to a client by lowercase substring match on
- * model_id, returning the var pair that client reads; branch order matches AutoLLMClient.
+ * AutoLLMClient routing rules - an explicit client_type takes priority; otherwise the lowercase
+ * model_id is matched by the same exact or family-specific rules, returning the var pair that
+ * client reads. Branch order matches AutoLLMClient.
  * Returns undefined on no match (AgentHub will reject that id: it needs an explicit
  * client_type, or should be added under custom / a self-built group via the OpenAI protocol).
  */
 export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvInfo | undefined {
-  const t = (clientType || modelId).toLowerCase();
+  const explicitClientType = clientType?.toLowerCase();
+  const t = explicitClientType || modelId.toLowerCase();
   const env = (prefix: string): ModelEnvInfo => ({
     envKey: `${prefix}_API_KEY`,
     envBaseUrlKey: `${prefix}_BASE_URL`,
@@ -1054,6 +1080,9 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   // agenthub 0.4.1 routes kimi-k3 to its own client, which reads the same MOONSHOT_* pair.
   if (t.includes("kimi-k3")) return env("MOONSHOT");
   if (t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return env("MOONSHOT");
+  if (t === "minimax-m3" && modelId.toLowerCase() === "minimax-m3") {
+    return env("MINIMAX");
+  }
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
@@ -1064,8 +1093,8 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * explicitly set client_type=openai and inline a preset base_url (no secrets included, so the
- * user only needs to supply an API key).
+ * explicitly set client_type=openai and inline a preset base_url. The direct MiniMax M3 entry
+ * also pins its protocol and endpoint. No secrets are included, so only an API key is needed.
  */
 export function presetModelEntries(): ModelEntry[] {
   return MODEL_CATALOG.map((m) => ({

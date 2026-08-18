@@ -31,6 +31,7 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
+import { languageForExtension } from "./code-languages";
 
 const TEXT_EXTS = new Set([
   "txt",
@@ -75,46 +76,6 @@ const HTML_EXTS = new Set(["html", "htm"]);
 const TEXT_PREVIEW_LIMIT = 256 * 1024;
 /** Source highlighting cap: tokenizing the full 256KB preview cap's worth of content in one go would block the main thread, so beyond this it falls back to unhighlighted. */
 const HIGHLIGHT_LIMIT = 64 * 1024;
-
-/** Extension -> Shiki language id; extensions not listed are highlighted as "text" (plain text
- *  with the theme's background color); an id Shiki doesn't recognize is caught by CodeBlock and falls back to an unhighlighted <pre>. */
-const SHIKI_LANG_BY_EXT: Record<string, string> = {
-  html: "html",
-  htm: "html",
-  css: "css",
-  js: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
-  jsx: "jsx",
-  ts: "typescript",
-  tsx: "tsx",
-  json: "json",
-  md: "markdown",
-  py: "python",
-  rb: "ruby",
-  php: "php",
-  go: "go",
-  rs: "rust",
-  java: "java",
-  c: "c",
-  h: "c",
-  cpp: "cpp",
-  hpp: "cpp",
-  sh: "shellscript",
-  bash: "shellscript",
-  yml: "yaml",
-  yaml: "yaml",
-  toml: "toml",
-  ini: "ini",
-  conf: "ini",
-  xml: "xml",
-  sql: "sql",
-  log: "log",
-};
-
-function langForExt(ext: string): string {
-  return SHIKI_LANG_BY_EXT[ext] ?? "text";
-}
 
 function extOf(name: string): string {
   const i = name.lastIndexOf(".");
@@ -686,7 +647,7 @@ export function WorkspaceBrowser({
               // instead (wrapping code is a disaster for readability, see the old mobile styling).
               <>
                 <CodeBlock
-                  language={langForExt(extOf(preview.name))}
+                  language={languageForExtension(extOf(preview.name))}
                   code={preview.content}
                   highlight={preview.content.length <= HIGHLIGHT_LIMIT}
                 />

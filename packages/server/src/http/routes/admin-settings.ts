@@ -32,7 +32,7 @@ function parseProxyUrl(value: unknown): string | null {
   throw new HttpError(
     400,
     "invalid_proxy_url",
-    "proxyUrl must be http://host[:port], https://host[:port], or host[:port] (empty or null clears it).",
+    "proxyUrl must be a proxy URL undici supports — http(s)://host[:port] or socks5://host[:port] — or bare host[:port] (empty or null clears it).",
   );
 }
 

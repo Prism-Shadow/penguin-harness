@@ -69,13 +69,14 @@ api_key = "sk-..."
 | openai | `OPENAI_API_KEY` | |
 | zhipu | `ZAI_API_KEY` | |
 | moonshot | `MOONSHOT_API_KEY` | |
+| minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点 |
 
-网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。
+网关分组(openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go)经 AgentHub 的 OpenAI 客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体(如 `inclusionai/ling-3.0-flash:free`、`nvidia/nemotron-3-ultra-550b-a55b:free`)与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max 等(非完整清单)。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、MiniMax-M3、gemini-3.1-pro-preview、claude-opus-4-8 / claude-sonnet-4-6、gpt-5.5、glm-5.2、kimi-k2.6、qwen3.8-max 等(非完整清单)。
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 
@@ -85,6 +86,8 @@ api_key = "sk-..."
 - **条目的 `context_window` 填服务端的真实窗口**——vLLM 即 `--max-model-len` 的值（如 `32768`）。每次请求的输出上限与压缩阈值都会由该窗口自动推导：请求把 `max_tokens` 收敛到窗口剩余空间以内，压缩也会在撞上窗口硬限制之前触发，无需手工调低 `max_tokens`。不填时不做逐请求输出收敛、压缩按 128000 假定，真实窗口更小会导致请求被拒。
 
 ## 思考等级
+
+对于 MiniMax M3，`none` 会直接映射为 `reasoning.effort = "none"`。
 
 思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区拾取器只列出各档位，初始即显示 Agent 配置的档位——用户未手动选择时自动跟随配置下发（请求不携带档位，配置的修改持续生效）；选定某档后即固定为该会话的档位，随之后每次发送携带（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
 

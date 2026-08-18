@@ -115,3 +115,65 @@ jobs:
       - name: Windows installer tests
         shell: pwsh
         run: ./scripts/test-installer.ps1
+
+  # Runtime desktop app, in parallel with the test jobs: an unpacked Electron
+  # shell that boots the server and WAITS for hot-reload requests (the
+  # "runtime" form of the four-layer model). The platform units are the
+  # existing packages (server = backend platform, web = frontend platform);
+  # the artifact bakes a copy of both in so it works out of the box, and its
+  # running platform is replaceable over /api/hmr. Built with electron-builder
+  # `--dir` (an unpacked app directory including the Electron runtime, not an
+  # installer): a runtime is meant to be dropped in and hot-updated, not
+  # distributed through an installer channel — signed installers stay in
+  # desktop-build.yml. Unsigned by design.
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: "--linux"
+          - os: macos-latest
+            platform: "--mac"
+          - os: windows-latest
+            platform: "--win"
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      # Stage the self-contained app tree (packages/desktop/stage/app) that
+      # electron-builder packages — the same explicit step desktop-build.yml runs.
+      - name: Stage the app tree
+        run: node packages/desktop/scripts/stage.mjs
+
+      - name: Build unpacked runtime
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.platform }} --dir --publish never
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: penguin-runtime-${{ runner.os }}
+          if-no-files-found: error
+          # Each OS produces exactly one of these unpacked trees.
+          path: |
+            packages/desktop/stage/out/linux-unpacked
+            packages/desktop/stage/out/win-unpacked
+            packages/desktop/stage/out/mac
+            packages/desktop/stage/out/mac-arm64
+            packages/desktop/stage/out/mac-x64
