@@ -1,6 +1,13 @@
 # Web App: copyable Session id, schedule-form pickers, saved toast, {{SHELL}} placeholder
 
-Four chat/settings tweaks (#245):
+- **Date:** 2026-08-11
+- **Type:** feature
+- **Scope:** `web`
+- **PR:** [#245](https://github.com/Prism-Shadow/penguin-harness/pull/245)
+
+[中文版](2026-08-11-web-session-and-schedule-forms.zh.md)
+
+Four chat/settings tweaks ([#245](https://github.com/Prism-Shadow/penguin-harness/pull/245)):
 
 - **Copyable Session id.** The chat details card gains a Session id row under the model line; the id is a click-to-copy button (label flips to "Copied", optimistic so it works regardless of clipboard-permission context).
 - **Schedule form selectors match the Project defaults dialog.** New-Session mode uses the same form-variant `ModelSelect` / `WorkspaceSelect` pickers instead of a native `<select>` plus a raw path input (leaving the project default selected still means "follow the default"); Bind-Session mode replaces the free-text Session-id input with a searchable dropdown fed by the agent's session list, matching on title or id.
