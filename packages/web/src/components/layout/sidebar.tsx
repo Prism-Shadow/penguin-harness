@@ -271,17 +271,15 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
-/** Session status: neutral motion while active, color only for a state that needs attention. */
-function StatusDot({ session, completed }: { session: SessionInfo; completed: boolean }) {
+/**
+ * Session status: the glyph SHAPE carries the state — hourglass (running), inward chevrons
+ * (compacting), circled check (completed) — so rows read without color; settled, seen rows
+ * show nothing.
+ */
+function StatusGlyph({ session, completed }: { session: SessionInfo; completed: boolean }) {
   const activity = sessionActivity(session.status, completed);
   if (activity === null) return null;
-  const label =
-    activity === "running"
-      ? S.chat.statusRunning
-      : activity === "compacting"
-        ? S.chat.statusCompacting
-        : S.chat.statusCompleted;
-  return <SessionActivityIcon activity={activity} label={label} />;
+  return <SessionActivityIcon activity={activity} />;
 }
 
 export function Sidebar({
@@ -935,7 +933,7 @@ export function Sidebar({
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
-            // (it recedes while the run continues — the spinner beside it is what says
+            // (it recedes while the run continues — the hourglass beside it is what says
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
@@ -2227,7 +2225,7 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusDot session={s} completed={completed} />
+          <StatusGlyph session={s} completed={completed} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

@@ -56,7 +56,10 @@ import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
+import {
+  SessionActivityIcon,
+  sessionActivityLabel,
+} from "../../components/ui/session-activity-icon";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -1257,6 +1260,12 @@ export function ChatPage() {
     />
   );
 
+  /** Header glyph state; the toolbar shows running/completed only (compacting stays in the stream banner). */
+  const headerActivity =
+    selectedSessionId === null
+      ? null
+      : sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId));
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Thin top toolbar */}
@@ -1266,32 +1275,20 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Session-level state: neutral motion while active, then a green completion dot
-                for the observed active→idle transition. Seen idle Sessions stay quiet. The
-                compacting state remains in the stream banner instead of being repeated here.
-                Below sm only the glyph remains so the title keeps its room. */}
-            {selectedSessionId !== null &&
-              sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId)) ===
-                "running" && (
-                <span
-                  title={S.chat.statusRunning}
-                  className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-                >
-                  <SessionActivityIcon activity="running" label={S.chat.statusRunning} />
-                  <span className="hidden sm:inline">{S.chat.statusRunning}</span>
-                </span>
-              )}
-            {selectedSessionId !== null &&
-              sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId)) ===
-                "completed" && (
-                <span
-                  title={S.chat.statusCompleted}
-                  className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-                >
-                  <SessionActivityIcon activity="completed" label={S.chat.statusCompleted} />
-                  <span className="hidden sm:inline">{S.chat.statusCompleted}</span>
-                </span>
-              )}
+            {/* Session-level state: a pulsing hourglass while the run is active, then a green
+                circled check for the observed active→idle transition (the shape, not the color,
+                carries the state). Seen idle Sessions stay quiet. The compacting state remains
+                in the stream banner instead of being repeated here. Below sm only the glyph
+                remains so the title keeps its room. */}
+            {(headerActivity === "running" || headerActivity === "completed") && (
+              <span
+                title={sessionActivityLabel(headerActivity)}
+                className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+              >
+                <SessionActivityIcon activity={headerActivity} />
+                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
+              </span>
+            )}
           </div>
 
           {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
