@@ -50,13 +50,22 @@ export async function readManifest(root: string): Promise<Manifest | null> {
 /**
  * Resolves the current CLI bundle's absolute path from a data root, or null when
  * nothing has been pushed yet: a fresh root, a missing/corrupt manifest, no `cli`
- * entry, or a referenced file that no longer exists (e.g. pruned from the store —
- * see host.ts's pruneStore). A null return means "use the packaged default" to every
- * caller; nothing here ever throws for an ordinary unconfigured root.
+ * entry, a `cli.bundle` that isn't a non-empty string (e.g. `{"cli":{}}` — a
+ * hand-edited or truncated harness.json), a path that resolves outside `<root>/hmr/`
+ * (defense in depth: `manifest.cli.bundle` is trusted content today, written only by
+ * this same process's persistVersion, but a reader must never let a malformed or
+ * malicious manifest value walk it out of the store directory via `..` segments), or
+ * a referenced file that no longer exists (e.g. pruned from the store — see host.ts's
+ * pruneStore). A null return means "use the packaged default" to every caller;
+ * nothing here ever throws for an ordinary unconfigured or malformed root.
  */
 export async function resolveCliBundlePath(root: string): Promise<string | null> {
   const manifest = await readManifest(root);
-  if (manifest?.cli === undefined) return null;
-  const abs = path.join(root, "hmr", manifest.cli.bundle);
+  const bundle = manifest?.cli?.bundle;
+  if (typeof bundle !== "string" || bundle.length === 0) return null;
+  const hmrDir = path.join(root, "hmr");
+  const abs = path.resolve(hmrDir, bundle);
+  const withinHmrDir = abs === hmrDir || abs.startsWith(hmrDir + path.sep);
+  if (!withinHmrDir) return null;
   return fs.existsSync(abs) ? abs : null;
 }

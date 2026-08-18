@@ -47,6 +47,7 @@ export function testConfig(root: string): ServerConfig {
     authSessionRenewMs: 6 * DAY_MS,
     desktopToken: null,
     portFile: null,
+    trustProxy: false,
   };
 }
 

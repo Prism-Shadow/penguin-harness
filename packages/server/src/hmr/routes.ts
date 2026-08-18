@@ -38,10 +38,20 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
 
   routes.use("*", async (c, next) => {
     // Dangerous-network off: hot APIs load and run code, so on a non-loopback
-    // bind (e.g. 0.0.0.0) without HTTPS they answer 403. There is no override.
+    // bind (e.g. 0.0.0.0) without HTTPS they answer 403. There is no override
+    // via the request itself — see the header note below.
     if (!LOOPBACK_HOSTS.has(deps.config.host.toLowerCase())) {
-      const proto =
-        c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
+      // `x-forwarded-proto` is caller-supplied and UNTRUSTED by default: anyone who can
+      // reach this bind at all can set it to `https` and walk straight through this gate
+      // while actually speaking plaintext HTTP (the gate exists precisely for the case
+      // where the caller is not a trusted party). Only a request's own URL scheme (real
+      // TLS terminated by this process) counts unless the deployment explicitly says a
+      // reverse proxy is in front and strips/overwrites the header itself
+      // (PENGUIN_TRUST_PROXY=1 / config.trustProxy) — the same opt-in a real proxy setup
+      // requires anyway.
+      const proto = deps.config.trustProxy
+        ? (c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", ""))
+        : new URL(c.req.url).protocol.replace(":", "");
       if (proto !== "https") {
         throw new HttpError(
           403,
