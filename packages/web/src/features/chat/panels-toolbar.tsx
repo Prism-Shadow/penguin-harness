@@ -138,8 +138,11 @@ function useHoverMenu(): {
   open: boolean;
   setOpen: (v: boolean) => void;
   hoverProps: { onMouseEnter: () => void; onMouseLeave: () => void };
+  /** False while the menu was opened by the pointer — see Dropdown's `focusOnOpen`. */
+  focusOnOpen: boolean;
 } {
   const [open, setOpen] = useState(false);
+  const [openedByHover, setOpenedByHover] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -155,13 +158,16 @@ function useHoverMenu(): {
   };
   return {
     open,
+    // Explicit opens (the trigger's click, hence also its keyboard activation) take focus.
     setOpen: (v: boolean) => {
       cancelClose();
+      setOpenedByHover(false);
       setOpen(v);
     },
     hoverProps: {
       onMouseEnter: () => {
         cancelClose();
+        setOpenedByHover(true);
         setOpen(true);
       },
       onMouseLeave: () => {
@@ -169,6 +175,7 @@ function useHoverMenu(): {
         closeTimer.current = setTimeout(() => setOpen(false), 160);
       },
     },
+    focusOnOpen: !openedByHover,
   };
 }
 
@@ -303,6 +310,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
               <Dropdown
                 open={terminalMenu.open}
                 setOpen={terminalMenu.setOpen}
+                focusOnOpen={terminalMenu.focusOnOpen}
                 menuClass="right-0 top-full mt-1 w-56 origin-top-right"
                 button={trigger}
               >
@@ -321,6 +329,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
         <Dropdown
           open={menuOpen}
           setOpen={setMenuOpen}
+          focusOnOpen={createMenu.focusOnOpen}
           menuClass="right-0 top-full mt-1 w-56 origin-top-right"
           button={
             <button
