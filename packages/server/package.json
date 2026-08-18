@@ -26,6 +26,10 @@
       "types": "./dist/initial-password.d.ts",
       "import": "./dist/initial-password.js"
     },
+    "./reset-admin-password": {
+      "types": "./dist/reset-admin-password.d.ts",
+      "import": "./dist/reset-admin-password.js"
+    },
     "./hmr/manifest": {
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"
