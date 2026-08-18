@@ -85,6 +85,20 @@ export interface Messages {
     host: string;
     noOpen: string;
   };
+  /** `penguin server reset-admin-password`: help text and every line the command can print. */
+  resetPassword: {
+    desc: string;
+    /** Refusal while a live server owns the data root (stop it first, then retry). */
+    serverRunning(url: string): string;
+    /** The root has no Web database: nothing to reset. */
+    noDatabase(dbPath: string): string;
+    /** The database exists but the admin was never seeded. */
+    noAdmin(): string;
+    /** Success header, printed above the framed credentials notice. */
+    done(root: string): string;
+    /** Hint printed below the notice. */
+    next(): string;
+  };
   /** `penguin update`: help text and every line the command can print. */
   update: {
     desc: string;
@@ -354,6 +368,21 @@ const en: Messages = {
     host: "Listen address (falls back to the HOST env var, default 127.0.0.1)",
     noOpen: "Do not open a browser automatically",
   },
+  resetPassword: {
+    desc: "Reset the Web admin password to a fresh initial password (the server must be stopped)",
+    serverRunning: (url) =>
+      `A PenguinHarness server is running on this data root: ${url}\n` +
+      `Stop it first, then run \`penguin server reset-admin-password\` again.`,
+    noDatabase: (dbPath) =>
+      `No Web database at ${dbPath} — nothing to reset. ` +
+      `Start the service once (\`penguin web\`) to create the admin account.`,
+    noAdmin: () =>
+      "The Web database has no admin account yet — nothing to reset. " +
+      "Start the service once (`penguin web`) to seed it.",
+    done: (root) =>
+      `Admin password reset for data root ${root}. All admin sign-in sessions were cleared.`,
+    next: () => "Start the service (`penguin web`) and sign in with the password above.",
+  },
   update: {
     desc: "Upgrade this PenguinHarness install in place",
     check: "Only report the current and latest versions; change nothing",
@@ -595,6 +624,18 @@ const zh: Messages = {
     port: "监听端口（其次取环境变量 PORT，缺省 7364）",
     host: "监听地址（其次取环境变量 HOST，缺省 127.0.0.1）",
     noOpen: "不自动打开浏览器",
+  },
+  resetPassword: {
+    desc: "把 Web 管理员密码重置为新的初始密码（须先停止服务）",
+    serverRunning: (url) =>
+      `该数据根目录已有 PenguinHarness 服务在运行：${url}\n` +
+      `请先停止它，再重新执行 \`penguin server reset-admin-password\`。`,
+    noDatabase: (dbPath) =>
+      `${dbPath} 处没有 Web 数据库，无可重置。请先执行 \`penguin web\` 启动一次服务以创建管理员账号。`,
+    noAdmin: () =>
+      "Web 数据库中尚无管理员账号，无可重置。请先执行 `penguin web` 启动一次服务完成种子创建。",
+    done: (root) => `已重置数据根目录 ${root} 的管理员密码，并清空其全部登录会话。`,
+    next: () => "启动服务（`penguin web`）后用上方密码登录。",
   },
   update: {
     desc: "原地升级当前的 PenguinHarness 安装",

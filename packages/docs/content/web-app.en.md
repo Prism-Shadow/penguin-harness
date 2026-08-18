@@ -23,7 +23,7 @@ penguin web
 # open http://127.0.0.1:7364
 ```
 
-The initial account is `admin`; its initial password (of the form `penguin-1234`) is printed in the server startup output — as a framed notice on every start — until it is changed. There is no self-registration: accounts are created by an admin on the user-management page, and every new user automatically gets an independent initial Project named `<userId>-default_project`. While the initial password is still in use, a banner prompts the user to change it.
+The initial account is `admin`; its initial password (of the form `penguin-1234`) is printed in the server startup output — as a framed notice on every start — until it is changed. There is no self-registration: accounts are created by an admin on the user-management page, and every new user automatically gets an independent initial Project named `<userId>-default_project`. While the initial password is still in use, a banner prompts the user to change it. A forgotten password is reset by the admin on the user-management page; a forgotten **admin** password is reset offline with `penguin server reset-admin-password` (server stopped), which issues a fresh initial password.
 
 Logins persist for 7 days with sliding renewal; an admin password reset invalidates all of that user's login sessions.
 

@@ -144,9 +144,9 @@ export interface ServerSettings {
    */
   proxyForAgent: boolean;
   /**
-   * The shared explicit proxy address (canonical `http(s)://host[:port]`), or null =
-   * follow the proxy environment variables. When set it takes precedence over
-   * HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
+   * The shared explicit proxy address (a canonical URL — http(s):// or socks5:// /
+   * socks://), or null = follow the proxy environment variables. When set it takes
+   * precedence over HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
    */
   proxyUrl: string | null;
 }
@@ -160,10 +160,11 @@ export interface ServerSettingsUpdateRequest {
   proxyForApp?: boolean;
   proxyForAgent?: boolean;
   /**
-   * New proxy address. Accepted forms: `http://host[:port]`, `https://host[:port]`, or
-   * bare `host[:port]` (normalized to `http://…` — only normalized values are stored,
-   * and the response echoes the stored form). Empty/whitespace-only or null clears the
-   * address (follow the environment variables); anything else is 400 `invalid_proxy_url`.
+   * New proxy address. Accepted forms: any proxy URL undici's dispatcher takes —
+   * `http://`, `https://`, `socks5://` / `socks://`, credentials allowed — or bare
+   * `host[:port]` (normalized to `http://…`; only normalized values are stored, and the
+   * response echoes the stored form). Empty/whitespace-only or null clears the address
+   * (follow the environment variables); anything else is 400 `invalid_proxy_url`.
    */
   proxyUrl?: string | null;
 }

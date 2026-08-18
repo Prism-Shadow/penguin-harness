@@ -1425,8 +1425,7 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
-      invalid_proxy_url:
-        "代理地址无效：应为 http://主机[:端口]、https://主机[:端口] 或 主机[:端口]。",
+      invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },

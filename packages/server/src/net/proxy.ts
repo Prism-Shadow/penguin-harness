@@ -20,7 +20,10 @@
  *     BEFORE the environment (verified against undici 7.29's constructor:
  *     `httpProxy ?? process.env.http_proxy ?? process.env.HTTP_PROXY`), so the explicit
  *     address governs both http and https traffic regardless of ambient env, while the
- *     merged NO_PROXY keeps working through the same `noProxy` option.
+ *     merged NO_PROXY keeps working through the same `noProxy` option. The pinned
+ *     address may be a socks5:// / socks:// URL: undici's ProxyAgent (which
+ *     EnvHttpProxyAgent builds per address) tunnels through SOCKS5 since 7.29
+ *     (experimental; the startup script disables the ExperimentalWarning).
  *
  * The loopback merge is load-bearing in every state: the CLI's readiness probe
  * (`penguin web` imports the server in-process and polls its own root path), SSE, and
@@ -35,7 +38,13 @@
  * in core (CommandSessionManager, threaded through the session loader as a
  * ProxyEnvPolicy getter), not here.
  */
-import { Agent, EnvHttpProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
+import {
+  Agent,
+  EnvHttpProxyAgent,
+  ProxyAgent,
+  fetch as undiciFetch,
+  setGlobalDispatcher,
+} from "undici";
 import type { Dispatcher } from "undici";
 
 /** Loopback names every effective NO_PROXY must contain (see module doc). */
@@ -68,11 +77,14 @@ export function mergedNoProxy(env: NodeJS.ProcessEnv = process.env): string {
 
 /**
  * Normalizes a proxy address to its canonical URL, or null when it is not acceptable.
- * Accepted forms: `http://host[:port]`, `https://host[:port]`, and the bare
- * `host[:port]` / `host` shorthand (normalized to `http://…`). Anything else — other
- * schemes (the dispatcher speaks only HTTP(S) proxies; a socks:// URL would break every
- * server fetch, see os-proxy.ts for the same rule), credentials, paths, queries — is
- * rejected rather than stored: server_settings only ever holds normalized values.
+ * Accepted forms: any proxy URL undici's dispatcher takes — `http://`, `https://` and
+ * the (experimental in undici) `socks5://` / `socks://` schemes, credentials included —
+ * plus the bare `host[:port]` / `host` shorthand (normalized to `http://…`). Beyond
+ * URL-parseability the gate is acceptance by undici itself rather than a scheme list
+ * duplicated here, and it is load-bearing: buildProxyDispatcher constructs a ProxyAgent
+ * from the stored value at every startup, and undici throws synchronously on schemes it
+ * cannot speak (socks4, ftp, …) — persisting such a value would keep the server from
+ * ever booting again. server_settings only ever holds normalized values.
  */
 export function normalizeProxyUrl(raw: string): string | null {
   const trimmed = raw.trim();
@@ -86,15 +98,21 @@ export function normalizeProxyUrl(raw: string): string | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  if (url.hostname === "" || url.username !== "" || url.password !== "") return null;
-  // A proxy address is host-only; the parser's bare "/" (its normal form for an absent
-  // path) is tolerated, an actual path/query/fragment means this was not a proxy address.
-  if ((url.pathname !== "/" && url.pathname !== "") || url.search !== "" || url.hash !== "") {
+  if (url.hostname === "") return null;
+  // href is the canonical form (lowercased scheme, default ports dropped) that — unlike
+  // origin, which drops credentials and reads "null" for non-special schemes like
+  // socks — keeps the whole address intact; only the parser's bare "/" (its normal form
+  // for an absent path) is trimmed off.
+  const normalized =
+    url.pathname === "/" && url.search === "" && url.hash === "" ? url.href.slice(0, -1) : url.href;
+  try {
+    // Acceptance probe: the same constructor EnvHttpProxyAgent runs per pinned address.
+    // An idle agent's close resolves immediately; nothing was connected.
+    void new ProxyAgent({ uri: normalized }).close();
+  } catch {
     return null;
   }
-  // origin is the canonical form: lowercased scheme/host, default ports dropped.
-  return url.origin;
+  return normalized;
 }
 
 /** The EnvHttpProxyAgent option subset this module assembles (undici's Options type is not re-exported cleanly). */

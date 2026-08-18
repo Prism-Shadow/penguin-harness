@@ -32,8 +32,10 @@ export function unsetProxyVars(env: NodeJS.ProcessEnv): readonly ProxyVar[] {
  * Maps one PAC-style resolveProxy result to a proxy URL, or null for "connect
  * directly". The result is a `;`-separated fallback list ("PROXY host:port; DIRECT");
  * the first usable entry wins: `PROXY` → http://, `HTTPS` (a proxy reached over TLS) →
- * https://. `DIRECT` and the SOCKS flavors yield nothing — undici's dispatcher speaks
- * only HTTP(S) proxies, and injecting a socks:// URL would break every server fetch.
+ * https://. `DIRECT` and the SOCKS flavors yield nothing: the injected variables also
+ * reach agent command subprocesses, where a socks:// value in HTTP(S)_PROXY is not
+ * universally understood, and undici's SOCKS support is still experimental — an admin
+ * who wants SOCKS sets it explicitly in the proxy options instead of via OS lookup.
  */
 export function proxyUrlFromPacResult(result: string): string | null {
   for (const entry of result.split(";")) {
