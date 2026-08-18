@@ -3,8 +3,10 @@
 #
 # GitHub Pages cannot serve HTTP redirects, so this thin forwarder IS the
 # stable install URL. It selects an immutable OSS release when that mirror is
-# available, otherwise it falls back to the matching GitHub Release, then runs
-# the real installer while forwarding every argument it was given. Usage:
+# available, otherwise it falls back to GitHub, then runs the real installer
+# while forwarding every argument it was given. In auto mode the script source
+# does not lock the large payload source; the real versioned installer decides
+# that for its own release. Usage:
 #
 #   curl -fsSL https://penguin.ooo/install.sh | sh
 #   curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal
@@ -130,10 +132,15 @@ fi
 
 rc=0
 (
-  export PENGUIN_DOWNLOAD_BASE_URL="$SELECTED_BASE"
-  if [ -n "$FALLBACK_BASE" ]; then
-    export PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$FALLBACK_BASE"
+  if [ -n "$EXPLICIT_BASE" ]; then
+    export PENGUIN_DOWNLOAD_BASE_URL="$SELECTED_BASE"
+    if [ -n "$FALLBACK_BASE" ]; then
+      export PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$FALLBACK_BASE"
+    else
+      unset PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
+    fi
   else
+    unset PENGUIN_DOWNLOAD_BASE_URL
     unset PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
   fi
   sh "$INSTALLER" "$@"

@@ -82,6 +82,56 @@ penguin-desktop-linux-x86_64.AppImage
 penguin-desktop-linux-amd64.deb
 penguin-desktop-win32-x64.exe
 "
+DESKTOP_UPDATE_METADATA="
+latest.yml
+latest-mac.yml
+latest-linux.yml
+"
+EXPECTED_DESKTOP_UPDATE_BLOCKMAPS="
+penguin-desktop-darwin-arm64.zip.blockmap
+penguin-desktop-darwin-x64.zip.blockmap
+penguin-desktop-win32-x64.exe.blockmap
+"
+
+if [ -f "$RELEASE_DIR/release-download-manifest.tsv" ]; then
+  RELEASE_PROBES_AND_MANIFEST="
+probe-64k.bin
+probe-1m.bin
+release-download-manifest.tsv
+"
+else
+  if [ -f "$RELEASE_DIR/probe-64k.bin" ] || [ -f "$RELEASE_DIR/probe-1m.bin" ]; then
+    echo "error: release probes are present but release-download-manifest.tsv is missing" >&2
+    exit 1
+  fi
+  RELEASE_PROBES_AND_MANIFEST=""
+  echo "No release download manifest found; mirroring legacy release assets."
+fi
+
+PRESENT_DESKTOP_UPDATE_METADATA=""
+for file in $DESKTOP_UPDATE_METADATA; do
+  if [ -f "$RELEASE_DIR/$file" ]; then
+    PRESENT_DESKTOP_UPDATE_METADATA="$PRESENT_DESKTOP_UPDATE_METADATA
+$file"
+  elif [ -n "$RELEASE_PROBES_AND_MANIFEST" ]; then
+    echo "error: missing desktop update metadata for release manifest contract: $file" >&2
+    exit 1
+  fi
+done
+
+for file in $EXPECTED_DESKTOP_UPDATE_BLOCKMAPS; do
+  if [ ! -f "$RELEASE_DIR/$file" ] && [ -n "$RELEASE_PROBES_AND_MANIFEST" ]; then
+    echo "error: missing desktop update blockmap for release manifest contract: $file" >&2
+    exit 1
+  fi
+done
+PRESENT_DESKTOP_UPDATE_BLOCKMAPS="$(
+  for path in "$RELEASE_DIR"/*.blockmap; do
+    [ -f "$path" ] || continue
+    basename "$path"
+  done | LC_ALL=C sort
+)"
+
 FILES="$BUNDLES
 penguin-linux-x64.tar.gz.sha256
 penguin-linux-arm64.tar.gz.sha256
@@ -91,7 +141,10 @@ penguin-universal.tar.gz.sha256
 penguin-win32-x64.zip.sha256
 SHA256SUMS
 $DESKTOP_INSTALLERS
+$PRESENT_DESKTOP_UPDATE_METADATA
+$PRESENT_DESKTOP_UPDATE_BLOCKMAPS
 SHA256SUMS.desktop
+$RELEASE_PROBES_AND_MANIFEST
 install.sh
 install.ps1
 "
@@ -148,6 +201,107 @@ file_sha256() {
   sha256sum "$1" | awk '{print $1}'
 }
 
+validate_release_download_manifest() {
+  manifest="$RELEASE_DIR/release-download-manifest.tsv"
+  [ -f "$manifest" ] || return 0
+
+  expected_header="$(printf 'penguin-release-download-manifest\t1\t%s' "$TAG")"
+  tab="$(printf '\t')"
+  line_no=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$((line_no + 1))
+    if [ "$line_no" -eq 1 ]; then
+      [ "$line" = "$expected_header" ] || {
+        echo "error: release-download-manifest.tsv header does not match $TAG" >&2
+        exit 1
+      }
+      continue
+    fi
+    [ -n "$line" ] || {
+      echo "error: release-download-manifest.tsv has an empty row at line $line_no" >&2
+      exit 1
+    }
+
+    old_ifs="$IFS"
+    IFS="$tab"
+    set -- $line
+    IFS="$old_ifs"
+
+    case "${1:-}" in
+      probe)
+        [ "$#" -eq 5 ] || {
+          echo "error: probe row $line_no must have 5 fields" >&2
+          exit 1
+        }
+        file="$3"
+        size="$4"
+        hash="$5"
+        ;;
+      asset|asset_checksum|desktop_asset|desktop_update_metadata|desktop_update_blockmap|desktop_checksum|installer_script)
+        [ "$#" -eq 4 ] || {
+          echo "error: manifest row $line_no must have 4 fields" >&2
+          exit 1
+        }
+        file="$2"
+        size="$3"
+        hash="$4"
+        ;;
+      *)
+        echo "error: unknown manifest row type at line $line_no: ${1:-}" >&2
+        exit 1
+        ;;
+    esac
+
+    case "$file" in
+      ""|*[!A-Za-z0-9._+-]*|*..*)
+        echo "error: unsafe filename in release-download-manifest.tsv line $line_no: $file" >&2
+        exit 1
+        ;;
+    esac
+    case "$size" in
+      ""|*[!0-9]*)
+        echo "error: invalid size in release-download-manifest.tsv line $line_no: $size" >&2
+        exit 1
+        ;;
+    esac
+    if ! [ "$size" -gt 0 ] 2>/dev/null; then
+      echo "error: non-positive size in release-download-manifest.tsv line $line_no: $size" >&2
+      exit 1
+    fi
+    case "$hash" in
+      ""|*[!0-9a-f]*)
+        echo "error: invalid sha256 in release-download-manifest.tsv line $line_no: $hash" >&2
+        exit 1
+        ;;
+    esac
+    [ "${#hash}" -eq 64 ] || {
+      echo "error: sha256 has wrong length in release-download-manifest.tsv line $line_no" >&2
+      exit 1
+    }
+
+    local_file="$RELEASE_DIR/$file"
+    [ -f "$local_file" ] || {
+      echo "error: manifest references missing release asset: $file" >&2
+      exit 1
+    }
+    actual_size="$(wc -c < "$local_file" | tr -d ' ')"
+    [ "$actual_size" = "$size" ] || {
+      echo "error: manifest size mismatch for $file: expected $size, got $actual_size" >&2
+      exit 1
+    }
+    actual_hash="$(file_sha256 "$local_file")"
+    [ "$actual_hash" = "$hash" ] || {
+      echo "error: manifest sha256 mismatch for $file" >&2
+      exit 1
+    }
+  done < "$manifest"
+
+  [ "$line_no" -gt 1 ] || {
+    echo "error: release-download-manifest.tsv has no asset rows" >&2
+    exit 1
+  }
+}
+
 verify_remote_file() {
   local_file="$1"
   remote_uri="$2"
@@ -187,6 +341,8 @@ upload_immutable_file() {
   fi
   verify_remote_file "$local_file" "$remote_uri"
 }
+
+validate_release_download_manifest
 
 RELEASE_PREFIX="releases/$TAG"
 for file in $FILES; do

@@ -2,8 +2,10 @@
 #
 # GitHub Pages cannot serve HTTP redirects, so this thin forwarder IS the
 # stable install URL. It selects an immutable OSS release when that mirror is
-# available, otherwise it falls back to the matching GitHub Release, then runs
-# the real installer while forwarding every argument it was given. Usage:
+# available, otherwise it falls back to GitHub, then runs the real installer
+# while forwarding every argument it was given. In auto mode the script source
+# does not lock the large payload source; the real versioned installer decides
+# that for its own release. Usage:
 #
 #   irm https://penguin.ooo/install.ps1 | iex
 #   & ([scriptblock]::Create((irm https://penguin.ooo/install.ps1))) -Version v0.2.0
@@ -136,10 +138,15 @@
       }
     }
 
-    $env:PENGUIN_DOWNLOAD_BASE_URL = $SelectedBase
-    if ($FallbackBase) {
-      $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = $FallbackBase
+    if ($OriginalBase) {
+      $env:PENGUIN_DOWNLOAD_BASE_URL = $SelectedBase
+      if ($FallbackBase) {
+        $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = $FallbackBase
+      } else {
+        Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL -ErrorAction SilentlyContinue
+      }
     } else {
+      Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL -ErrorAction SilentlyContinue
       Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL -ErrorAction SilentlyContinue
     }
     $InstallerText = [IO.File]::ReadAllText($InstallerPath, [Text.UTF8Encoding]::new($false))
