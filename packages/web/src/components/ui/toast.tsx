@@ -10,11 +10,12 @@
  *
  * Usage: call `toastSuccess("Saved")` / `toastInfo("Already up to date")` /
  * `toastError("Connection failed: ...")` from anywhere, no context needed — a
- * module-level subscriber list plus a single `<Toaster />` mounted at the app
+ * module-level store plus a single `<Toaster />` mounted at the app
  * root is all it takes.
  */
-import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 
 type ToastKind = "success" | "error" | "info";
 
@@ -29,34 +30,28 @@ interface ToastItem {
 /** Display duration: error messages are usually longer and more important to read, so give them more time; info sits in between. */
 const DURATION: Record<ToastKind, number> = { success: 2500, info: 4000, error: 6000 };
 
-let items: ToastItem[] = [];
+const toastStore = createStore<{ items: ToastItem[] }>(() => ({ items: [] }));
 let nextId = 1;
-const listeners = new Set<(items: ToastItem[]) => void>();
-
-function emit(): void {
-  for (const l of listeners) l(items);
-}
 
 /** Exit animation duration (matches toast-out in styles.css). */
 const LEAVE_MS = 160;
 
 function dismiss(id: number): void {
-  const item = items.find((i) => i.id === id);
+  const item = toastStore.getState().items.find((i) => i.id === id);
   if (!item || item.leaving) return;
   // Mark as leaving first (triggering the exit animation), then actually remove it once the animation ends — otherwise the toast would just vanish abruptly.
-  items = items.map((i) => (i.id === id ? { ...i, leaving: true } : i));
-  emit();
+  toastStore.setState((s) => ({
+    items: s.items.map((i) => (i.id === id ? { ...i, leaving: true } : i)),
+  }));
   setTimeout(() => {
-    items = items.filter((i) => i.id !== id);
-    emit();
+    toastStore.setState((s) => ({ items: s.items.filter((i) => i.id !== id) }));
   }, LEAVE_MS);
 }
 
 function push(kind: ToastKind, text: string): void {
   if (!text) return;
   const id = nextId++;
-  items = [...items, { id, kind, text }];
-  emit();
+  toastStore.setState((s) => ({ items: [...s.items, { id, kind, text }] }));
   setTimeout(() => dismiss(id), DURATION[kind]);
 }
 
@@ -74,13 +69,7 @@ const KIND_CLASS: Record<ToastKind, string> = {
 
 /** Toast container: mount once at the app root. */
 export function Toaster() {
-  const [list, setList] = useState<ToastItem[]>(items);
-  useEffect(() => {
-    listeners.add(setList);
-    return () => {
-      listeners.delete(setList);
-    };
-  }, []);
+  const list = useStore(toastStore, (s) => s.items);
   if (list.length === 0) return null;
   return createPortal(
     <div className="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4">
