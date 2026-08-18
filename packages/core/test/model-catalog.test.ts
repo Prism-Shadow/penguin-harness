@@ -13,8 +13,6 @@ import {
   resolveModelEnv,
 } from "../src/state/index.js";
 
-const UNPRICED = new Set(["minimax\0MiniMax-M3"]);
-
 describe("model-catalog", () => {
   it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
     // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
@@ -78,14 +76,9 @@ describe("model-catalog", () => {
     }
   });
 
-  it("priced entries have valid three-bucket pricing; documented unpriced entries omit it; context_window is a positive integer", () => {
+  it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      const key = `${m.provider}\0${m.modelId}`;
-      if (UNPRICED.has(key)) {
-        // MiniMax M3 doubles every rate above 512K input tokens; a single-rate catalog entry
-        // would be misleading, so pricing remains unknown until tiered rates are supported.
-        expect(m.pricing, key).toBeUndefined();
-      } else if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+      if (m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
         // Free-tier gateway model (:free variants and the openrouter/free router): a genuine
         // $0 price (not "unknown"), so costs compute to 0.
         expect(m.pricing, m.modelId).toBeDefined();
@@ -271,7 +264,15 @@ describe("model-catalog", () => {
         m.pricing,
       ]),
     ).toEqual([
-      ["MiniMax-M3", 1000000, true, "minimax-m3", "https://api.minimax.io/v1", undefined],
+      [
+        "MiniMax-M3",
+        1000000,
+        true,
+        "minimax-m3",
+        "https://api.minimax.io/v1",
+        // Standard tier at <=512K input: cache read 0.06, input 0.30, output 1.20 USD/Mtok.
+        { unit: "usd_per_mtok", cache_read: 0.06, cache_write: 0.3, output: 1.2 },
+      ],
     ]);
     expect(providerInfo("minimax")!.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
     expect(providerInfo("minimax")!.gatewayBaseUrl).toBeUndefined();

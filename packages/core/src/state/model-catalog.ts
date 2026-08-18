@@ -11,10 +11,9 @@
  * - cache_write: the vendor's "cache write" price (e.g. Anthropic uses 1.25 x input); vendors
  *   without a separate cache-write fee use the standard input price;
  * - output: output price (thinking + reply).
- * OpenAI charges extra for >272K input and Gemini 3.1 Pro for >200K input; this catalog records
- * their base tier (the cost center uses a single rate, so long-context usage will be
- * underestimated). MiniMax M3 pricing is omitted because all three rates double above 512K
- * input tokens and the catalog cannot represent tiered pricing.
+ * OpenAI charges extra for >272K input, Gemini 3.1 Pro for >200K input, and MiniMax M3 doubles
+ * every rate above 512K input; this catalog records their base tier (the cost center uses a
+ * single rate, so long-context usage will be underestimated).
  *
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
  * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
@@ -829,13 +828,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
-  // -- MiniMax (direct M3 Responses client). Pricing is omitted because all rates double above
-  // 512K input tokens and the catalog cannot represent tiered pricing. --
+  // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard
+  // tier at <=512K input — every rate doubles above 512K, and the priority tier is 1.5x). --
   {
     modelId: "MiniMax-M3",
     displayName: "MiniMax M3",
     provider: "minimax",
     contextWindow: 1000000,
+    pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
     clientType: "minimax-m3",
     baseUrl: MINIMAX_BASE_URL,

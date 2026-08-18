@@ -6,7 +6,7 @@ The built-in model catalog gains a MiniMax provider group with one direct `MiniM
 
 The new `minimax` group (label "MiniMax", listed between Moonshot and Custom) carries `MiniMax-M3` with a 1,000,000-token context window and vision support. The preset pins AgentHub's `minimax-m3` Responses client and inlines the direct endpoint `https://api.minimax.io/v1`, so it holds no secret. MiniMax serves both billing modes from that one endpoint — the group's key link points at the pay-as-you-go API key page, and a Token Plan Subscription Key works just as well — so it is a single `minimax` group rather than the per-billing-mode split the Qwen groups need.
 
-Pricing is omitted because MiniMax doubles cache-read, input, and output rates above 512K input tokens, while the catalog cannot represent tiered pricing. Env-var fallback mirrors AgentHub's exact routing: only `MiniMax-M3` with the `minimax-m3` client resolves to `MINIMAX_API_KEY` / `MINIMAX_BASE_URL`; lookalike and unsupported MiniMax ids remain unroutable.
+Pricing records MiniMax's standard pay-as-you-go tier at 512K input tokens or below — $0.06 cache read / $0.30 input / $1.20 output per million tokens. Every rate doubles above 512K and the priority tier is 1.5x, so long-context and priority usage is underestimated; that is the base-tier convention the catalog already applies to OpenAI (>272K) and Gemini 3.1 Pro (>200K). Env-var fallback mirrors AgentHub's exact routing: only `MiniMax-M3` with the `minimax-m3` client resolves to `MINIMAX_API_KEY` / `MINIMAX_BASE_URL`; lookalike and unsupported MiniMax ids remain unroutable.
 
 Core and CLI move to `@prismshadow/agenthub` ^0.4.2, the first release that ships the `minimax-m3` Responses client.
 
