@@ -103,11 +103,8 @@ proves it.
   attachments, and still rendered the copied image after the source Session was deleted. A second
   browser pass forked the first reply, then the second reply, then the first reply again and observed
   the shared, language-neutral title sequence `(1)`, `(2)`, `(3)`.
-- Screenshots:
-  - [`01-source-fork-action.jpg`](../../../pr-assets/issue-293/01-source-fork-action.jpg)
-  - [`02-forked-transcript.jpg`](../../../pr-assets/issue-293/02-forked-transcript.jpg)
-  - [`03-fork-survives-source-delete.jpg`](../../../pr-assets/issue-293/03-fork-survives-source-delete.jpg)
-  - [`04-numbered-forks.jpg`](../../../pr-assets/issue-293/04-numbered-forks.jpg)
+- The browser evidence is summarized in the PR description without committing screenshot binaries
+  to the repository.
 - Known limitations / remaining verification:
   - Forking intentionally duplicates the retained scratchpad and therefore its disk usage.
   - The UI does not display parent/child lineage; both Sessions are ordinary independent entries.
