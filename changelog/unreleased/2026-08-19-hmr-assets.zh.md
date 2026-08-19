@@ -1,0 +1,27 @@
+# 热更新开始携带原生模块、调用者身份，以及它推送的那份 CLI
+
+- **Date:** 2026-08-19
+- **Type:** feature
+- **Scope:** `server`, `desktop`, `tooling`
+
+[English](2026-08-19-hmr-assets.md)
+
+此前有三样东西是推送够不着的：原生模块、调用被推送端点的人是谁，以及在桌面应用里——被推送的 CLI 本身。
+
+## 原生模块作为 assets 随推送一同抵达
+
+被推送的 bundle 是从 `<dataRoot>/hmr/store/platform/<sha>.mjs` 导入的，在那里既解析不了包自己相对的 `build/Release/*.node`，也解析不了裸标识符，因此需要原生模块的 platform 只能等一次完整的服务端发布。现在一次推送多带一份产物：base64 文件加一个 `exec` 列表，解包到内容寻址的 `store/assets/<sha>/`，并按真实的 `node_modules` 目录结构摆放，于是包自身的解析重新生效。该目录经资源注册表发布给 platform 侧认领；它在 boot 之前落盘，boot 失败则指针回滚；与 platform、CLI 的指针一起提交进 `harness.json`；重启时重新发布；只要还有版本引用它，prune 就会保留。
+
+权限位来自 `exec` 列表——base64 不带 mode，而丢了执行位的 helper 二进制根本起不来。内容相同的一组资产绝不重写：它们是原生模块，而在 Windows 上，上一次推送留下的副本正被当前进程映射着，再打开来写会以 `EBUSY` 失败并拖垮整次升级。最后写入的 `.materialized` 正是用来区分「完整目录」与「被中断的推送留下的半成品」。
+
+`scripts/deploy.mjs` 按 `NATIVE_PACKAGES` 里列的包名收集，解析不到的跳过，一个都没有时干脆不发这个字段。
+
+## 被推送的端点知道调用者是谁
+
+seam 会在鉴权中间件之前把每个请求先交给 platform——这是刻意的，因为一次推送必须能自己决定如何鉴权——但这也让被推送的代码手里没有用户，除非在 bundle 里照着 cookie 名和会话 TTL 再实现一遍会话查找，而那些东西归运行时所有、还会在它脚下改变。现在运行时把自己的解析器注册进资源注册表（`runtime:identity`）供 platform 侧认领。老到不发布它的运行时，拿到的是一个「谁都不认证」的解析器：一个无法归属的请求不等于来自所有人的请求。
+
+## 桌面应用能跑它被推送的那份 CLI
+
+`penguin-hmr`——运行本机 HMR 存储里被推送的 CLI、而不是内置那份的入口——此前根本没有装进应用里，于是一个 CLI 修复可以抵达已安装的桌面应用，却仍然无法被触达。现在它是独立的 bundle，并在 `<app>/bin/penguin-hmr` 有自己的启动脚本。必须独立成 bundle：该入口靠比较 `import.meta.url` 与 `argv[1]` 判断自己是不是进程入口，与 `penguin.js` 合进同一个文件会让每次普通的 `penguin` 调用都去找被推送的 CLI。
+
+`bin/penguin` 仍然指内置 CLI，PATH 暴露（「安装 'penguin' 命令」）装的也仍是它——裸命令到底指哪一个，是产品决定，不是打包细节。
