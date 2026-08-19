@@ -76,8 +76,8 @@ import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./m
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
-  classifyDetectFailure,
   detectableBaseUrl,
+  displayWidthCh,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -213,7 +213,12 @@ export interface RowState {
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
-  /** AgentHub client protocol: defaults for preset models (auto-routed), "openai-chat" for new custom models; kept as-is, not user-editable. */
+  /**
+   * AgentHub client protocol. Empty for preset models (auto-routed from the model id) and
+   * for a NEW custom model, which starts with nothing selected until the user picks from
+   * the base URL field's suffix or a detection run fills it in; gateway groups start on
+   * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
+   */
   clientType: string;
   cacheRead: string;
   cacheWrite: string;
@@ -1138,17 +1143,18 @@ function ModelDialog({
   const [detecting, setDetecting] = useState(false);
   /**
    * Last detection outcome. A hit renders one green line under the base URL field; a miss
-   * only tints the suffix trigger amber, because the explanation goes to the popup below
-   * (an error the user must act on interrupts rather than waiting to be noticed).
+   * only tints the suffix trigger amber, because every explanation now goes to the popup.
    */
   const [detectResult, setDetectResult] = useState<
-    | { kind: "ok"; clientType: string }
-    | { kind: "none" }
-    | { kind: "error"; message: string }
-    | null
+    { kind: "ok"; clientType: string } | { kind: "failed" } | null
   >(null);
-  /** Message of the detection-failure popup (null = closed); dismissing it keeps the amber tone. */
-  const [detectAlert, setDetectAlert] = useState<string | null>(null);
+  /**
+   * The detection popup (null = closed). Both outcomes are announced here: a failure the
+   * user must act on, and — for a detection they explicitly asked for — the hit, so the
+   * answer is not a change they have to notice on their own. The save path opts out of the
+   * success case (see submit): it would interrupt an action already committed to.
+   */
+  const [detectAlert, setDetectAlert] = useState<{ ok: boolean; text: string } | null>(null);
   /**
    * Monotonic run counter: each detection captures it and only the newest run may apply
    * its result — a manual protocol pick or a re-run supersedes anything still in flight.
@@ -1160,8 +1166,6 @@ function ModelDialog({
    * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
    */
   const detectInFlight = useRef<Promise<string | null> | null>(null);
-  /** Base URL the last detection ran against (auto-detect on blur only fires when it changed). */
-  const lastDetectedUrl = useRef<string | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -1225,20 +1229,25 @@ function ModelDialog({
    * is always live and a failure explains itself in the popup instead of being pre-empted
    * by a disabled control.
    *
+   * Every failure — unreachable, timeout, gateway junk, nothing matched, an invalid URL
+   * that never left the browser, a server error — raises the SAME popup naming the two
+   * things the user can act on (API key, base URL). Per maintainer: the finer distinctions
+   * are invisible from the outside, and wording one of them as "the endpoint responded"
+   * read as success. The per-probe outcomes stay in the endpoint's response for debugging.
+   *
    * A stale run (superseded by a manual pick or a newer run) discards its result instead
    * of clobbering the form, and never raises the popup.
    */
   const detectOnce = async (): Promise<string | null> => {
     const baseUrl = form.baseUrl.trim();
-    // Invalid URLs are rejected by the server with a 400; catching it here turns "nothing
-    // to probe" into the same popup as every other failure, rather than an API error text.
+    // An unusable URL is just another failure: the server would 400 it, and the user gets
+    // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      setDetectResult({ kind: "none" });
-      setDetectAlert(S.models.detectNeedsUrl);
+      setDetectResult({ kind: "failed" });
+      setDetectAlert({ ok: false, text: S.models.detectFailedBody });
       return null;
     }
     const seq = ++detectSeq.current;
-    lastDetectedUrl.current = baseUrl;
     setDetecting(true);
     setDetectResult(null);
     try {
@@ -1258,18 +1267,13 @@ function ModelDialog({
         setDetectResult({ kind: "ok", clientType: res.detected });
         return res.detected;
       }
-      setDetectResult({ kind: "none" });
-      setDetectAlert(
-        classifyDetectFailure(res.probes) === "unreachable"
-          ? S.models.detectUnreachable
-          : S.models.detectNone,
-      );
+      setDetectResult({ kind: "failed" });
+      setDetectAlert({ ok: false, text: S.models.detectFailedBody });
       return null;
-    } catch (e) {
+    } catch {
       if (seq === detectSeq.current) {
-        const message = apiErrorText(e);
-        setDetectResult({ kind: "error", message });
-        setDetectAlert(S.models.detectFailed(message));
+        setDetectResult({ kind: "failed" });
+        setDetectAlert({ ok: false, text: S.models.detectFailedBody });
       }
       return null;
     } finally {
@@ -1288,6 +1292,20 @@ function ModelDialog({
     });
     detectInFlight.current = run;
     return run;
+  };
+
+  /**
+   * The Detect button. Announces BOTH outcomes in the popup: the user asked a question and
+   * gets an answer either way. (The save path calls runDetect directly instead, so a hit
+   * there does not interrupt the save with a dialog to dismiss.)
+   */
+  const detectFromButton = async () => {
+    const detected = await runDetect();
+    if (detected === null) return; // detectOnce already raised the failure popup
+    setDetectAlert({
+      ok: true,
+      text: S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected),
+    });
   };
 
   /**
@@ -1332,6 +1350,14 @@ function ModelDialog({
   // shape a custom URL must serve. Recomputed from the live form so switching the
   // group in add mode updates it.
   const protocolPath = protocolPathForModel(form.provider, form.clientType);
+  // Which protocol the picker shows as chosen — null while a fresh custom model has none.
+  const protocolChoice = protocolSelectorValue(form.clientType);
+  // In the picker, an unchosen protocol has no path to show: the field would otherwise
+  // display /chat/completions and read as a decision the user never made. The placeholder
+  // takes its place until a pick or a detection lands. (The read-only suffix used by preset
+  // groups keeps showing the real path — those entries genuinely route that way.)
+  const suffixLabel =
+    showProtocolPicker && protocolChoice === null ? S.models.protocolUnset : protocolPath;
 
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
@@ -1818,7 +1844,7 @@ function ModelDialog({
               <button
                 type="button"
                 disabled={detecting}
-                onClick={() => void runDetect()}
+                onClick={() => void detectFromButton()}
                 title={S.models.detectProtocolHint}
                 className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
               >
@@ -1852,24 +1878,14 @@ function ModelDialog({
               // Detection on leaving the field (custom / user-defined groups): only a
               // probeable URL the user actually changed in this dialog triggers a run —
               // typing never fires requests, and a click-through must not rewrite a working
-              // entry's protocol. Unlike the button, this one stays quiet when there is
-              // nothing to probe: an unfinished URL must not pop an error at the moment the
-              // user tabs out of the field.
-              onBlur={() => {
-                if (!showProtocolPicker || detecting) return;
-                const bu = form.baseUrl.trim();
-                if (!detectableBaseUrl(bu)) return;
-                if (bu === form.originalBaseUrl || bu === lastDetectedUrl.current) return;
-                void runDetect();
-              }}
               className="font-mono"
               // Reserve room so the typed URL never slides under the suffix. Input and
-              // suffix share the same monospace size, so the suffix width is exactly its
-              // character count in ch, plus the right offset and — for the interactive
-              // version — its padding, gap and chevron. The picker never changes width
-              // between states, so this reservation holds for all of them.
+              // suffix share the same monospace size, so the suffix width is its display
+              // width in ch (CJK placeholder glyphs count double), plus the right offset
+              // and — for the interactive version — its padding, gap and chevron. The
+              // picker never changes width between states, so this holds for all of them.
               style={{
-                paddingRight: `calc(${protocolPath.length}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
+                paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
               }}
               // The read-only suffix is hover-transparent (pointer-events-none), so the
               // explanation rides on the input's title; the picker carries its own.
@@ -1879,8 +1895,8 @@ function ModelDialog({
             {showProtocolPicker ? (
               <div className="absolute inset-y-0 right-1 flex items-center">
                 <ProtocolSuffixMenu
-                  value={protocolSelectorValue(form.clientType)}
-                  path={protocolPath}
+                  value={protocolChoice}
+                  path={suffixLabel}
                   detecting={detecting}
                   tone={detectResult === null ? null : detectResult.kind === "ok" ? "ok" : "warn"}
                   onPick={pickProtocol}
@@ -2068,14 +2084,19 @@ function ModelDialog({
         </ConfirmModal>
       )}
 
-      {/* Detection failure. A popup rather than a quiet line, because it interrupts
-          something the user asked for — and on the save path it is the reason the model
-          was NOT saved, which must not be missable. The config dialog stays mounted
-          underneath, so dismissing this returns to the form with the protocol still
-          unset, ready to be picked by hand or re-probed against a corrected URL. */}
+      {/* Detection verdict. A popup rather than a quiet line: on failure it is the reason
+          the model was NOT saved, which must not be missable, and on success it answers a
+          question the user explicitly asked. The config dialog stays mounted underneath,
+          so dismissing this returns to the form — with the detected protocol applied, or
+          with none, ready to be picked by hand or re-probed against a corrected URL. */}
       {detectAlert !== null && (
-        <AlertModal open title={S.models.detectFailedTitle} onClose={() => setDetectAlert(null)}>
-          <p className="text-sm text-gray-700 dark:text-gray-300">{detectAlert}</p>
+        <AlertModal
+          open
+          tone={detectAlert.ok ? "primary" : "danger"}
+          title={detectAlert.ok ? S.models.detectOkTitle : S.models.detectFailedTitle}
+          onClose={() => setDetectAlert(null)}
+        >
+          <p className="text-sm text-gray-700 dark:text-gray-300">{detectAlert.text}</p>
         </AlertModal>
       )}
     </Modal>

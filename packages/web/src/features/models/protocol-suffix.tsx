@@ -48,9 +48,13 @@ export function ProtocolSuffixMenu({
   tone,
   onPick,
 }: {
-  /** Protocol the selector currently represents (legacy `openai` / empty display as openai-chat). */
-  value: ProtocolClientType;
-  /** Path text on the trigger — the live suffix, kept identical to what the read-only span showed. */
+  /**
+   * Protocol the selector currently represents, or null when none has been chosen yet
+   * (a fresh custom model). Null renders the placeholder label and leaves every menu row
+   * unchecked — nothing may look selected that the user did not select.
+   */
+  value: ProtocolClientType | null;
+  /** Trigger text: the live protocol path, or the "pick one" placeholder while unset. */
   path: string;
   /** A detection run is in flight (started from the field's top-right button). */
   detecting: boolean;
@@ -59,7 +63,8 @@ export function ProtocolSuffixMenu({
   onPick: (clientType: ProtocolClientType) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const name = S.models.protocolNames[value] ?? value;
+  // Unset reads as "not selected" everywhere it is announced, not as a default.
+  const name = value === null ? S.models.protocolUnset : (S.models.protocolNames[value] ?? value);
   return (
     <Dropdown
       open={open}

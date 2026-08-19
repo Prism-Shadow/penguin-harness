@@ -7,12 +7,14 @@
  * composes.
  */
 import { describe, expect, it } from "vitest";
+import { zh as ZH } from "../src/lib/strings";
+import { en as EN } from "../src/lib/strings-en";
 import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
 import {
   PROTOCOL_CLIENT_TYPES,
-  classifyDetectFailure,
   detectableBaseUrl,
+  displayWidthCh,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -42,12 +44,31 @@ describe("isGenericProtocolClientType", () => {
 });
 
 describe("protocolSelectorValue", () => {
-  it("maps openai / empty / unknown to openai-chat for display without rewriting the stored value", () => {
+  it("maps openai / unknown to openai-chat for display without rewriting the stored value", () => {
     expect(protocolSelectorValue("openai-responses")).toBe("openai-responses");
     expect(protocolSelectorValue("ant-messages")).toBe("ant-messages");
     expect(protocolSelectorValue("openai-chat")).toBe("openai-chat");
     expect(protocolSelectorValue("openai")).toBe("openai-chat");
-    expect(protocolSelectorValue("")).toBe("openai-chat");
+  });
+
+  it("reports NOTHING selected for an unset protocol, so the control cannot imply a default", () => {
+    // A fresh custom model: no checked row in the menu, no path in the field. Returning
+    // "openai-chat" here (as it once did) rendered a choice the user never made.
+    expect(protocolSelectorValue("")).toBeNull();
+    expect(protocolSelectorValue("   ")).toBeNull();
+  });
+});
+
+describe("displayWidthCh (padding reserved for the in-field suffix)", () => {
+  it("counts ASCII as one column, so the protocol paths reserve exactly their length", () => {
+    expect(displayWidthCh("/chat/completions")).toBe(17);
+    expect(displayWidthCh("/responses")).toBe(10);
+    expect(displayWidthCh("Select protocol")).toBe(15);
+  });
+
+  it("counts CJK as two, so a localized placeholder is not under-reserved by half", () => {
+    expect(displayWidthCh("选择协议")).toBe(8);
+    expect(displayWidthCh("")).toBe(0);
   });
 });
 
@@ -161,31 +182,28 @@ describe("rowToEntry (the persistence funnel)", () => {
   });
 });
 
-describe("classifyDetectFailure (which explanation the popup shows)", () => {
-  it("calls it unreachable only when every probe failed to connect", () => {
-    expect(
-      classifyDetectFailure([
-        { outcome: "network_error" },
-        { outcome: "timeout" },
-        { outcome: "network_error" },
-      ]),
-    ).toBe("unreachable");
+describe("detection copy", () => {
+  it("has exactly one user-facing failure message, in both locales", () => {
+    // Every failure mode collapses to this: the maintainer's point is that a user cannot
+    // act on "the endpoint responded but serves no protocol", only on the key and the URL.
+    for (const catalog of [EN.models, ZH.models] as const) {
+      expect(catalog.detectFailedBody).toBeTruthy();
+      // No protocol names to parse, and no "pick one manually" instruction.
+      expect(catalog.detectFailedBody).not.toContain("OpenAI Responses");
+      expect(catalog.detectFailedBody).not.toContain("Anthropic Messages");
+    }
+    // The distinguishing strings are gone, not merely unused.
+    expect("detectNone" in EN.models).toBe(false);
+    expect("detectUnreachable" in EN.models).toBe(false);
+    expect("detectNone" in ZH.models).toBe(false);
+    expect("detectUnreachable" in ZH.models).toBe(false);
   });
 
-  it("says none matched when the endpoint answered at all", () => {
-    // A reachable endpoint that simply serves none of the three paths.
-    expect(
-      classifyDetectFailure([
-        { outcome: "route_missing" },
-        { outcome: "route_missing" },
-        { outcome: "junk" },
-      ]),
-    ).toBe("none");
-    // Mixed: one probe connected, so the address itself is fine.
-    expect(classifyDetectFailure([{ outcome: "timeout" }, { outcome: "route_missing" }])).toBe(
-      "none",
-    );
-    expect(classifyDetectFailure([])).toBe("none");
+  it("names the unset protocol as a placeholder rather than a protocol", () => {
+    for (const catalog of [EN.models, ZH.models] as const) {
+      expect(catalog.protocolUnset).toBeTruthy();
+      expect(Object.values(catalog.protocolNames)).not.toContain(catalog.protocolUnset);
+    }
   });
 });
 

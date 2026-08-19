@@ -87,15 +87,15 @@ api_key = "sk-..."
 
 ## 自定义模型的协议检测
 
-Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会检测 base URL 实际提供的是哪一种。新建自定义模型时**默认不选择任何协议**。「检测协议」按钮位于 base URL 输入框右上角、与标签同一行，始终可点击——不需要先填 API Key。点击它（或改完 base URL 失焦），服务端按固定顺序向该 URL 发三个轻量探测请求——先 `openai-responses`（`POST {base}/responses`，OpenAI Responses API），再 `ant-messages`（`POST {base}/v1/messages`，Anthropic Messages API），最后 `openai-chat`（`POST {base}/chat/completions`）——第一个真正被端点提供的协议写入条目的 `client_type`。
+Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会检测 base URL 实际提供的是哪一种。新建自定义模型时**默认不选择任何协议**：base URL 输入框右端的后缀显示「选择协议」而不是某条路径，其菜单中也没有任何一项被勾选。「检测协议」按钮位于该输入框右上角、与标签同一行，始终可点击——不需要先填 API Key。点击它，服务端按固定顺序向该 URL 发三个轻量探测请求——先 `openai-responses`（`POST {base}/responses`，OpenAI Responses API），再 `ant-messages`（`POST {base}/v1/messages`，Anthropic Messages API），最后 `openai-chat`（`POST {base}/chat/completions`）——第一个真正被端点提供的协议写入条目的 `client_type`，并弹窗告知检测到的是哪一种。
 
-保存是兜底环节：若确认对话框时协议仍为空，会先自动检测，再带着检测结果继续保存（这段往返期间按钮显示「检测中…」）。若这次探测什么都没找到，模型**不会**被保存——失败弹窗提示，对话框保持打开，你可以手动选协议或修正 URL。这一步是必要的：AgentHub 遇到无法匹配的 client type 会直接抛错而不是回退默认值，协议为空的条目就是一个根本起不来的模型。
+保存是兜底环节：若确认对话框时协议仍为空，会先自动检测，再带着检测结果继续保存（这段往返期间按钮显示「检测中…」）。此处检测成功不会弹窗——你要的保存直接继续。若这次探测什么都没找到，模型**不会**被保存：失败弹窗提示，对话框保持打开，你可以手动选协议或修正 URL。这一步是必要的：AgentHub 遇到无法匹配的 client type 会直接抛错而不是回退默认值，协议为空的条目就是一个根本起不来的模型。
 
 探测请求是刻意构造的最小非法请求（`{}` 请求体）：不消耗 Token、不需要有效的模型 id——按协议自身形态返回的错误即证明路由存在；`404`/`405` 则说明该路径未提供，HTML 或网关杂讯一概不算数。探测的 URL 与鉴权头和保存后 AgentHub 客户端实际使用的完全一致（OpenAI 系协议用 `Authorization: Bearer`；`ant-messages` 同时带 `x-api-key`、`Authorization: Bearer` 与 `anthropic-version`），因此检测出的协议就是真正能跑通的协议。
 
 探测所用凭据在服务端按三层依次解析：对话框里填的 API Key，其次该条目已保存的密钥，最后是**当前这个探测**所用协议对应的环境变量——`ant-messages` 读 `ANTHROPIC_API_KEY`，两个 OpenAI 协议读 `OPENAI_API_KEY`，与保存后模型实际读取的是同一批变量。之所以逐个探测分别解析，正是因为协议本身还没确定。这些值都不会回传浏览器，也不会出现在响应里。完全没有凭据时检测同样可用——协议形态的 `401` 足以认出路由——但带上鉴权的探测，远比匿名请求更容易拿到那种协议形态的应答，而不是笼统的 `401` 或网关 HTML。
 
-手动覆盖入口是 base URL 输入框右端内嵌的那段协议路径（`/responses`、`/v1/messages`、`/chat/completions`）——客户端会追加到你填的 URL 之后，与协议一一对应。点开它即列出三种协议及各自追加的路径，手动选择优先于检测结果——已经知道协议的端点根本不必探测。三种协议都没匹配时，该后缀转为琥珀色，并弹窗说明属于哪种情况：三次探测全部连不上（请检查地址、端口以及服务是否已启动），还是端点有响应但这三条路径都没提供（请自行选择协议）。此前创建的条目保留 `client_type = "openai"`（仍是 `openai-chat` 的别名），只有手动选择或检测生效时才会改写。检测能力以 `POST /api/projects/:id/models/detect` 暴露（仅 owner，见 [Server API](/server-api)）。
+手动覆盖入口是 base URL 输入框右端内嵌的那段协议路径（`/responses`、`/v1/messages`、`/chat/completions`）——客户端会追加到你填的 URL 之后，与协议一一对应。点开它即列出三种协议及各自追加的路径，手动选择优先于检测结果——已经知道协议的端点根本不必探测。只要检测失败——连不上、超时、返回的不是 API 响应、三条路径都没提供——该后缀就转为琥珀色，并统一弹出同一条提示：无法检测接口协议，请检查 API Key 与 base URL。逐个协议的探测结果仍由该接口返回，便于排查。此前创建的条目保留 `client_type = "openai"`（仍是 `openai-chat` 的别名），只有手动选择或检测生效时才会改写。检测能力以 `POST /api/projects/:id/models/detect` 暴露（仅 owner，见 [Server API](/server-api)）。
 
 ## 思考等级
 

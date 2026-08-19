@@ -490,20 +490,20 @@ export const zh = {
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
     protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
+    /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
+    protocolUnset: "选择协议",
     /** Detect button at the base URL field's top-right. */
     detectProtocol: "检测协议",
     /** Hover title on the detect button. */
     detectProtocolHint: "探测 base URL，采用它实际提供的协议",
-    detectNeedsUrl: "请先填写完整的 http(s) base URL，再重新检测。",
     detecting: "检测中…",
-    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
-    /** Accessible name of the detection-failure popup (紧凑卡片不渲染标题栏)。 */
-    detectFailedTitle: "协议检测",
-    detectNone:
-      "端点有响应，但该 base URL 未提供三种协议中的任何一种(OpenAI Responses / Anthropic Messages / OpenAI Chat Completions)。请检查地址，或在输入框右端的后缀处自行选择协议。",
-    detectUnreachable:
-      "无法连接该 base URL：三次探测均超时或连接失败。请检查地址、端口，以及服务是否已启动。",
-    detectFailed: (msg: string): string => `协议检测失败：${msg}`,
+    /** Accessible name of the detection-success popup (紧凑卡片不渲染标题栏)。 */
+    detectOkTitle: "已检测到协议",
+    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用到该模型。`,
+    /** Accessible name of the detection-failure popup。 */
+    detectFailedTitle: "协议检测失败",
+    /** The ONE failure message: 所有失败情形共用，只讲用户能动手改的两件事。 */
+    detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
       "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",

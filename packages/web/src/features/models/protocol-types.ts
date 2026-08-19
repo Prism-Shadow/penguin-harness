@@ -28,13 +28,34 @@ export function isGenericProtocolClientType(clientType: string): boolean {
 }
 
 /**
- * Picker value for the current clientType: `openai` / empty display as Chat Completions
- * (their effective routing) without rewriting the stored value — only an actual selection
- * or a detection hit writes the new-style client type.
+ * Picker value for the current clientType, or **null when nothing is selected yet**.
+ *
+ * The null case is load-bearing: a new custom model starts with no protocol, and the
+ * control has to look that way — no checked row in the menu, no path in the field. Before
+ * this returned "openai-chat" for the empty string, which rendered `/chat/completions` in
+ * the field and a checkmark in the menu, i.e. a default the user never chose and could not
+ * tell apart from one they did.
+ *
+ * A stored legacy `openai` still displays as Chat Completions (that IS its routing) without
+ * rewriting the stored value — only an actual selection or a detection hit writes the
+ * new-style client type.
  */
-export function protocolSelectorValue(clientType: string): ProtocolClientType {
+export function protocolSelectorValue(clientType: string): ProtocolClientType | null {
   const t = clientType.trim().toLowerCase();
+  if (t === "") return null;
   return t === "openai-responses" || t === "ant-messages" ? t : "openai-chat";
+}
+
+/**
+ * Monospace display width in `ch` units, counting wide (CJK) glyphs as two. The base URL
+ * input reserves right padding for whatever the suffix renders; `.length` is exact for the
+ * ASCII protocol paths but halves the reservation for a localized placeholder, which would
+ * let the typed URL slide under it.
+ */
+export function displayWidthCh(text: string): number {
+  let width = 0;
+  for (const ch of text) width += ch.codePointAt(0)! > 0x2e7f ? 2 : 1;
+  return width;
 }
 
 /** A base URL detection can probe: absolute http(s) (mirrors the server-side check; anything else 400s). */
@@ -96,19 +117,12 @@ export function needsProtocolDetectOnSave(
   return action === "save" && isCustomLikeGroup(provider) && clientType.trim() === "";
 }
 
-/** Why a detection run produced no protocol — picks which explanation the popup shows. */
-export type ProtocolDetectFailure = "unreachable" | "none";
-
-/**
- * Reads the per-probe outcomes to tell "we could not reach this endpoint at all" apart
- * from "we reached it and none of the three protocols were served". Only the former is
- * worth telling the user to check the URL/network over; the latter means picking a
- * protocol by hand is the way forward.
+/*
+ * Failure classification used to live here, splitting "unreachable" from "the endpoint
+ * answered but serves none of the three". Removed deliberately (per maintainer): the
+ * distinction is invisible to the person configuring a model, and phrasing one branch as
+ * "the endpoint responded" read as success to users. Every failure now shows the same
+ * short message naming the two things they can actually act on — the API key and the base
+ * URL. The per-protocol outcomes are still reported by the detect endpoint, so the detail
+ * remains available for debugging in the network response.
  */
-export function classifyDetectFailure(
-  probes: readonly { outcome: string }[],
-): ProtocolDetectFailure {
-  if (probes.length === 0) return "none";
-  const unreachable = probes.every((p) => p.outcome === "timeout" || p.outcome === "network_error");
-  return unreachable ? "unreachable" : "none";
-}

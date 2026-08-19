@@ -516,17 +516,16 @@ export const en: Strings = {
       "openai-chat": "OpenAI Chat Completions",
     } as Record<string, string | undefined>,
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
+    /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
+    protocolUnset: "Select protocol",
     detectProtocol: "Detect",
     detectProtocolHint: "Probe the base URL and apply the protocol it serves",
-    detectNeedsUrl: "Fill in an absolute http(s) base URL first, then detect again.",
     detecting: "Detecting…",
-    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
-    detectFailedTitle: "Protocol detection",
-    detectNone:
-      "The endpoint answered, but none of the three protocols (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions) are served at this base URL. Check the URL, or pick the protocol yourself from the suffix at the field's right edge.",
-    detectUnreachable:
-      "The base URL could not be reached: every probe timed out or failed to connect. Check the address, the port and whether the service is running.",
-    detectFailed: (msg: string): string => `Protocol detection failed: ${msg}`,
+    detectOkTitle: "Protocol detected",
+    detectedProtocol: (name: string): string => `Detected ${name}; applied to this model.`,
+    detectFailedTitle: "Protocol detection failed",
+    /** The ONE failure message: every mode collapses to it, naming only what the user can act on. */
+    detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
     addProtocolHintDetect:
       "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
     addTitleCustom: "Add model",
