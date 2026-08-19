@@ -331,8 +331,10 @@ export type CompactionReason = "context" | "turns" | "manual";
 export type CompactionMode = "summarize" | "discard";
 
 /**
- * Compaction boundary event: the compaction process exposes
- * only this event pair to Human, produced **in pairs** by `context_engine`. Both `reason` and
+ * Compaction boundary event, produced **in pairs** by `context_engine`. Between the pair
+ * the stream carries only each attempt's `token_usage` and the summary being written as
+ * ordinary `partial_text` fragments (or the complete text when nothing streamed) — the
+ * compaction request's other raw messages stay Trace-only. Both `reason` and
  * `mode` are carried on both events, for stateless frontend rendering; `status` reuses the
  * six-value `StopReason` protocol (compaction converges to a terminal state, taking
  * `completed` / `failed` / `aborted` in practice — `timeout` / `malformed` are handled internally

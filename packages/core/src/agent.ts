@@ -47,7 +47,7 @@ import {
   formatSessionId,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { userText, withOrigin } from "./omnimessage/index.js";
+import { compactionEnd, userText, withOrigin } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   MessageOrigin,
@@ -484,6 +484,25 @@ export class Agent {
       dateDir: located.dateDir,
       startIndex: located.index,
     });
+
+    // A compaction the user quit out of (a compaction_begin with no end — the process died
+    // mid-request) is simply a **failed** compaction: close the span with a `failed`
+    // compaction_end before any new record lands, and discard whatever half-summary it had
+    // written — nothing is reconstructed from it (the original context is intact and the
+    // standing threshold makes the compaction up at the next trigger). Closing the span is
+    // what keeps the rest of the conversation visible: readers treat messages between the
+    // paired events as compaction-internal, so an unclosed span would hide everything the
+    // user sends afterwards, and tool outputs whose calls it swallowed would render as
+    // "unknown tool" cards (issue #288). Best-effort like every Trace write: a failure here
+    // must not block the resume itself.
+    if (resumed.danglingCompaction) {
+      try {
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);
+      }
+    }
 
     return new Session({
       // Invariants only — meta writes never contain a thinking level.
