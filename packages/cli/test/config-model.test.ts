@@ -175,7 +175,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(list.out.split("\n").some((l) => /anthropic\s+claude-sonnet-4-6/.test(l))).toBe(true);
   });
 
-  it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai, first-party providers get none", async () => {
+  it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai-chat, first-party providers get none", async () => {
     // The custom group and self-hosted groups (--provider not a catalog value): default to client_type=openai.
     await runModel([
       "add",
@@ -197,7 +197,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--root",
       tmpRoot,
     ]);
-    // Gateway group: openai + the gateway's endpoint base URL pre-filled.
+    // Gateway group: openai-chat + the gateway's endpoint base URL pre-filled.
     await runModel([
       "add",
       "--model-id",
@@ -225,10 +225,10 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ) as { models: Array<Record<string, unknown>> };
     const by = (p: string, id: string) =>
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
-    expect(by("custom", "my-openai-proxy").client_type).toBe("openai");
-    expect(by("mylab", "in-house-1").client_type).toBe("openai");
+    expect(by("custom", "my-openai-proxy").client_type).toBe("openai-chat");
+    expect(by("mylab", "in-house-1").client_type).toBe("openai-chat");
     expect(by("deepseek", "my-fine-tune").client_type).toBeUndefined();
-    expect(by("openrouter", "acme/some-model").client_type).toBe("openai");
+    expect(by("openrouter", "acme/some-model").client_type).toBe("openai-chat");
     expect(by("openrouter", "acme/some-model").base_url).toBe("https://openrouter.ai/api/v1");
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });

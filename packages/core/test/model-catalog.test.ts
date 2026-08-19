@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   MODEL_CATALOG,
   MODEL_PROVIDERS,
+  canonicalClientType,
   modelHomepageUrl,
   catalogEntryFor,
   presetModelEntries,
@@ -49,6 +50,8 @@ describe("model-catalog", () => {
     expect(ids).not.toContain("z-ai/glm-5.1");
     expect(ids).not.toContain("Pro/zai-org/GLM-5.1");
     expect(ids).toContain("glm-5.1");
+    // Ling 3.0 Flash's free tier was delisted from OpenRouter (removed 2026-08-18).
+    expect(ids).not.toContain("inclusionai/ling-3.0-flash:free");
   });
 
   it("every provider is in MODEL_PROVIDERS (custom only groups user-defined models; the catalog never uses it)", () => {
@@ -163,11 +166,12 @@ describe("model-catalog", () => {
       "anthropic/claude-sonnet-5",
       "deepseek/deepseek-v4-flash-0731",
       "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
+      "google/gemini-3.7-flash",
       "google/gemini-3.6-flash",
       "google/gemini-3.5-flash",
       "google/gemini-3.5-flash-lite",
-      "inclusionai/ling-3.0-flash:free",
       "minimax/minimax-m3",
       "moonshotai/kimi-k3",
       "moonshotai/kimi-k2.6",
@@ -182,12 +186,13 @@ describe("model-catalog", () => {
       "stepfun/step-3.7-flash",
       "tencent/hy3",
       "thinkingmachines/inkling",
+      "x-ai/grok-4.6",
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
       "z-ai/glm-5.2",
     ]);
     for (const m of or) {
-      expect(m.clientType).toBe("openai");
+      expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://openrouter.ai/api/v1");
     }
     const fw = MODEL_CATALOG.filter((m) => m.provider === "fireworks");
@@ -202,7 +207,7 @@ describe("model-catalog", () => {
       ["accounts/fireworks/models/minimax-m3", true],
     ]);
     for (const m of fw) {
-      expect(m.clientType).toBe("openai");
+      expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
@@ -218,7 +223,7 @@ describe("model-catalog", () => {
       "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
-      expect(m.clientType).toBe("openai");
+      expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.siliconflow.cn/v1");
     }
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
@@ -230,7 +235,7 @@ describe("model-catalog", () => {
       "qwen3.7-plus",
     ]);
     for (const m of qtp) {
-      expect(m.clientType).toBe("openai");
+      expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
     }
     // Vision flags per the plan's supported-model table: 3.8-max and 3.7-plus see images.
@@ -250,7 +255,7 @@ describe("model-catalog", () => {
       ["ZHIPU/GLM-5.2", false],
     ]);
     for (const m of qpayg) {
-      expect(m.clientType).toBe("openai");
+      expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1");
     }
     const minimax = MODEL_CATALOG.filter((m) => m.provider === "minimax");
@@ -351,7 +356,7 @@ describe("model-catalog", () => {
   it("direct-vendor groups: auto-routed (no client_type / base_url), newest series first", () => {
     // These groups' ids are auto-routed by AgentHub, so they carry neither client_type nor a
     // preset base URL — the opposite of the gateway groups above.
-    for (const id of ["google", "anthropic", "moonshot"]) {
+    for (const id of ["google", "anthropic", "zhipu", "moonshot"]) {
       for (const m of MODEL_CATALOG.filter((e) => e.provider === id)) {
         expect(m.clientType, m.modelId).toBeUndefined();
         expect(m.baseUrl, m.modelId).toBeUndefined();
@@ -360,6 +365,7 @@ describe("model-catalog", () => {
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
     expect(MODEL_CATALOG.filter((m) => m.provider === "google").map((m) => m.modelId)).toEqual([
+      "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",
@@ -367,6 +373,39 @@ describe("model-catalog", () => {
       "gemini-3.1-pro-preview",
       "gemini-3-flash-preview",
     ]);
+    expect(MODEL_CATALOG.filter((m) => m.provider === "zhipu").map((m) => m.modelId)).toEqual([
+      "glm-5.3",
+      "glm-5.2",
+      "glm-5.1",
+      "glm-5",
+    ]);
+    // Gemini 3.7 Flash: the direct row stores Google's official list price (the launch
+    // discount that halves it through 2026-12-31 is not stored, matching the catalog's
+    // no-promotions policy), while the OpenRouter row stores what the gateway actually
+    // bills — the halved rates.
+    const g37 = catalogEntryFor("google", "gemini-3.7-flash")!;
+    expect([g37.contextWindow, g37.supportsVision]).toEqual([1048576, true]);
+    expect([g37.pricing!.cache_read, g37.pricing!.cache_write, g37.pricing!.output]).toEqual([
+      0.15, 1.5, 7.5,
+    ]);
+    const g37or = catalogEntryFor("openrouter", "google/gemini-3.7-flash")!;
+    expect([g37or.contextWindow, g37or.supportsVision]).toEqual([1048576, true]);
+    expect([g37or.pricing!.cache_read, g37or.pricing!.cache_write, g37or.pricing!.output]).toEqual([
+      0.075, 0.75, 3.75,
+    ]);
+    // GLM-5.3 (AgentHub 0.4.2's unified GLM client): text-only, 1M context, and Z.AI's
+    // published USD price — identical to glm-5.2.
+    const glm53 = catalogEntryFor("zhipu", "glm-5.3")!;
+    expect([glm53.contextWindow, glm53.supportsVision]).toEqual([1000000, false]);
+    expect(glm53.pricing).toEqual(catalogEntryFor("zhipu", "glm-5.2")!.pricing);
+    // Grok 4.6 keeps Grok 4.5's input/output rates with a raised cache-hit price.
+    const grok46 = catalogEntryFor("openrouter", "x-ai/grok-4.6")!;
+    expect([grok46.contextWindow, grok46.supportsVision]).toEqual([500000, true]);
+    expect([
+      grok46.pricing!.cache_read,
+      grok46.pricing!.cache_write,
+      grok46.pricing!.output,
+    ]).toEqual([0.5, 2, 6]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "anthropic").map((m) => m.modelId)).toEqual([
       "claude-fable-5",
       "claude-opus-4-8",
@@ -416,9 +455,15 @@ describe("model-catalog", () => {
 
   it("DeepSeek and Kimi are initialized from official CNY prices (stored in USD; x7 recovers the official price)", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
-    const pro = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-pro")!.pricing!;
+    // DeepSeek rows carry the official OFF-PEAK tier (the lower published price; peak hours
+    // bill double) — re-read 2026-08-18 after the official price increase (issue #313).
+    const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
+      0.05, 1.5, 4.5,
+    ]);
+    const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
-      0.025, 3, 6,
+      0.15, 4.5, 13.5,
     ]);
     const k3 = MODEL_CATALOG.find(
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
@@ -429,6 +474,38 @@ describe("model-catalog", () => {
       1.1, 6.5, 27,
     ]);
   });
+
+  it("OpenRouter DeepSeek rows carry the gateway's own 2026-08-18 prices (the 0813 GA release bills the official USD list)", () => {
+    const pro0813 = catalogEntryFor("openrouter", "deepseek/deepseek-v4-pro-0813")!;
+    expect([pro0813.contextWindow, pro0813.supportsVision]).toEqual([1048576, false]);
+    expect([
+      pro0813.pricing!.cache_read,
+      pro0813.pricing!.cache_write,
+      pro0813.pricing!.output,
+    ]).toEqual([0.022, 0.66, 1.98]);
+    // The undated pro listing routes to the same officially priced endpoints.
+    const pro = catalogEntryFor("openrouter", "deepseek/deepseek-v4-pro")!.pricing!;
+    expect([pro.cache_read, pro.cache_write, pro.output]).toEqual([0.022, 0.66, 1.98]);
+    const flash = catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash")!.pricing!;
+    expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([0.0168, 0.0679, 0.168]);
+    const flash0731 = catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-0731")!.pricing!;
+    expect([flash0731.cache_read, flash0731.cache_write, flash0731.output]).toEqual([
+      0.0157192, 0.078596, 0.157192,
+    ]);
+  });
+
+  it("canonicalClientType: the deprecated bare openai alias converges on openai-chat; everything else passes through", () => {
+    expect(canonicalClientType("openai")).toBe("openai-chat");
+    // Case/whitespace-insensitive match (AgentHub lowercases client types before routing).
+    expect(canonicalClientType(" OpenAI ")).toBe("openai-chat");
+    expect(canonicalClientType("openai-chat")).toBe("openai-chat");
+    // Other client types containing "openai" are different protocols and must pass through.
+    expect(canonicalClientType("openai-responses")).toBe("openai-responses");
+    expect(canonicalClientType("openai-embedding")).toBe("openai-embedding");
+    expect(canonicalClientType("ant-messages")).toBe("ant-messages");
+    expect(canonicalClientType("minimax-m3")).toBe("minimax-m3");
+    expect(canonicalClientType(undefined)).toBeUndefined();
+  });
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
@@ -438,13 +515,19 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gpt-5.5-pro")?.envKey).toBe("OPENAI_API_KEY");
+    // The GPT-5.6 generation (agenthub 0.4.2) reads the same OPENAI_* pair.
+    expect(resolveModelEnv("gpt-5.6-luna")?.envKey).toBe("OPENAI_API_KEY");
     expect(resolveModelEnv("glm-5.2")?.envKey).toBe("ZAI_API_KEY");
+    // glm-5.3 is served by agenthub 0.4.2's unified GLM client (same ZAI_* pair).
+    expect(resolveModelEnv("glm-5.3")?.envKey).toBe("ZAI_API_KEY");
     expect(resolveModelEnv("kimi-k2.6")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
-    // agenthub 0.4.1 routes these to their own clients; both read the same env pair as the
-    // family they belong to, so the id must still resolve (kimi-k3 matches no k2.x substring).
+    // agenthub 0.4.2 unified the Kimi clients; every spelling reads the same env pair
+    // (kimi-k3 matches no k2.x substring, so it must resolve on its own).
     expect(resolveModelEnv("kimi-k3")?.envKey).toBe("MOONSHOT_API_KEY");
     expect(resolveModelEnv("kimi-k3")?.envBaseUrlKey).toBe("MOONSHOT_BASE_URL");
     expect(resolveModelEnv("gemini-3.6-flash")?.envKey).toBe("GEMINI_API_KEY");
+    // The Gemini 3.7 generation is served by the same unified client (gemini-3 substring).
+    expect(resolveModelEnv("gemini-3.7-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash-lite")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("claude-fable-5")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-5")?.envKey).toBe("ANTHROPIC_API_KEY");
@@ -453,8 +536,17 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
   });
 
   it("explicit client_type selects the protocol, while model-scoped clients still validate the id", () => {
+    expect(resolveModelEnv("deepseek-v4-pro", "openai-chat")?.envKey).toBe("OPENAI_API_KEY");
+    expect(resolveModelEnv("zai-org/GLM-5.2", "openai-chat")?.envKey).toBe("OPENAI_API_KEY");
+    // The deprecated bare "openai" alias (pre-0.4.2 configs) still resolves the same pair.
     expect(resolveModelEnv("deepseek-v4-pro", "openai")?.envKey).toBe("OPENAI_API_KEY");
-    expect(resolveModelEnv("zai-org/GLM-5.2", "openai")?.envKey).toBe("OPENAI_API_KEY");
+    // agenthub 0.4.2's generic protocol clients: openai-responses reads OPENAI_*,
+    // ant-messages reads ANTHROPIC_* (matching the client implementations).
+    expect(resolveModelEnv("deepseek-v4-pro", "openai-responses")?.envKey).toBe("OPENAI_API_KEY");
+    expect(resolveModelEnv("deepseek-v4-pro", "ant-messages")?.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(resolveModelEnv("deepseek-v4-pro", "ant-messages")?.envBaseUrlKey).toBe(
+      "ANTHROPIC_BASE_URL",
+    );
     expect(resolveModelEnv("MiniMax-M3", "minimax-m3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
     expect(resolveModelEnv("custom-model", "minimax-m3")).toBeUndefined();
   });

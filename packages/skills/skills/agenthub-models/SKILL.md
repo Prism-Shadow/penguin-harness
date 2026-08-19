@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 11
-updated: 2026-08-06T11:51:12Z
+version: 12
+updated: 2026-08-18T11:30:00Z
 ---
 
 # AgentHub Model APIs
@@ -34,7 +34,7 @@ If the user's message only invokes this skill (e.g. "use agenthub-models skill")
 Check for a usable API key before writing code — the client needs one for whichever provider you target:
 
 ```bash
-env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI)_API_KEY" || echo none
+env | grep -oE "(DEEPSEEK|OPENAI|ANTHROPIC|GEMINI|ZAI|MOONSHOT|MINIMAX)_API_KEY" || echo none
 ```
 
 Vault keys also appear in your Vault Keys section. **Only two sources count as a usable key**: a vault-injected environment variable (the check above), or — when the app stores its own model config — a key already configured in the app's own data root (`penguin config model list --root <data_dir>`). Keys living in the global `~/.penguin` or any other `.penguin` directory do **not** count — a bare `penguin config model list` (no `--root`) reads the global store, because the CLI defaults to the global root unless `--root` is given, so a key showing up there proves nothing for your script and must never be used or copied.
@@ -49,18 +49,23 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 
 | Family           | Official IDs                                                          | Gateway variants                                                                                                                                |
 | ---------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini 3.7       | `gemini-3.7-flash`                                                    | OpenRouter `google/gemini-3.7-flash`                                                                                                            |
 | Gemini 3.6       | `gemini-3.6-flash`, `gemini-3.5-flash-lite`                           | —                                                                                                                                               |
 | Gemini 3         | `gemini-3.1-pro-preview`, `gemini-3.5-flash`, `gemini-3.1-flash-lite` | —                                                                                                                                               |
 | Gemini 3 image   | `gemini-3.1-flash-image`, `gemini-3-pro-image-preview`                | —                                                                                                                                               |
 | Gemini 3 TTS     | `gemini-3.1-flash-tts-preview`                                        | —                                                                                                                                               |
 | Gemini embedding | `gemini-embedding-2`                                                  | —                                                                                                                                               |
-| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-sonnet-5`                                                                              |
+| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
 | Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
-| GPT              | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`                  | —                                                                                                                                               |
+| GPT-5.6          | `gpt-5.6` (routes to sol), `gpt-5.6-terra`, `gpt-5.6-luna`            | OpenRouter `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`                                                                  |
+| GPT-5.5 / 5.4    | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                  | OpenRouter `openai/gpt-5.5`                                                                                                                     |
 | OpenAI embedding | `text-embedding-3-small`, `text-embedding-3-large`                    | —                                                                                                                                               |
+| MiniMax M3       | `MiniMax-M3`                                                          | OpenRouter `minimax/minimax-m3`                                                                                                                 |
 | Kimi K3          | `kimi-k3`                                                             | OpenRouter `moonshotai/kimi-k3`                                                                                                                 |
+| Kimi K2.7 Code   | —                                                                     | SiliconFlow `moonshotai/Kimi-K2.7-Code`; Fireworks AI `accounts/fireworks/models/kimi-k2p7-code`                                                |
 | Kimi K2.6        | `kimi-k2.6`                                                           | OpenRouter `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                                                                       |
-| DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-flash-0731`; Fireworks AI `accounts/fireworks/models/deepseek-v4-flash-0731`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
+| DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro-0813`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-flash-0731`; Fireworks AI `accounts/fireworks/models/deepseek-v4-flash-0731`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
+| GLM 5.3          | `glm-5.3`                                                             | —                                                                                                                                               |
 | GLM 5.2          | `glm-5.2`                                                             | OpenRouter `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                                                        |
 | GLM 5.1          | `glm-5.1`                                                             | —                                                                                                                                               |
 | Qwen 3.8 Max     | —                                                                     | OpenRouter `qwen/qwen3.8-max`                                                                                                                   |
@@ -96,10 +101,13 @@ The registry is the curated current line-up, so prefer it when picking a model o
 
 ## Routing and credentials
 
-- Without `clientType`, the client auto-routes by model id substring, in this order: `gemini-3.6` / `gemini-3.5-flash-lite`, then `gemini-3*` / `gemini-embedding`, `claude` 4-6/4-7/4-8/-5, `gpt-5.4`/`gpt-5.5`, `glm-5.2`, `glm-5`, `kimi-k3`, `kimi-k2.5`/`kimi-k2.6`, `deepseek-v4`, `openai`+`embedding` (embeddings), `openai`. Ids matching none of these throw. The gateway variants in the table above hit the same substrings, so they route to the right family — just set `baseUrl` to the gateway endpoint.
-- Exception: a Gemini id served by an OpenAI-compatible gateway (e.g. OpenRouter's `google/gemini-3.6-flash`) still matches the Gemini substring and would auto-route to the Google protocol client. Pass `clientType: "openai"` explicitly for those.
-- For any other OpenAI chat-completion compatible model (e.g. Qwen series via OpenRouter or SiliconFlow), pass `clientType: "openai"` plus `baseUrl` (embeddings endpoints use a different client type — see Embeddings below).
-- API key: constructor parameter first, then the provider environment variable — `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`. Base URLs read the same names with `_BASE_URL`.
+- Without `clientType`, the client auto-routes by model id substring, in this order: `minimax-m3` (exact), `gemini-3*` / `gemini-embedding`, `claude` 4-6/4-7/4-8/-5, `gpt-5.4`/`gpt-5.5`/`gpt-5.6`, `glm-5` (whole series, 5.3 included), `kimi-k3`/`kimi-k2.5`/`kimi-k2.6`, `deepseek-v4`, `ant-messages`, `openai-responses`, `openai`+`embedding` (embeddings), `openai` (chat). Ids matching none of these throw. Most gateway variants in the table above hit the same substrings, so they route to the right family — just set `baseUrl` to the gateway endpoint.
+- Three generic protocol clients cover everything else (all take `baseUrl` + `apiKey`):
+  - `clientType: "openai-chat"` — any OpenAI Chat Completions compatible endpoint (gateway models, Qwen via OpenRouter/SiliconFlow, local vLLM, …). Renamed from `openai` in AgentHub 0.4.2; the bare `openai` string still routes as a deprecated alias.
+  - `clientType: "openai-responses"` — OpenAI Responses-compatible endpoints (OpenAI, OpenRouter, DeepSeek, Z.AI, MiniMax all serve one).
+  - `clientType: "ant-messages"` — Anthropic Messages-compatible endpoints (Anthropic, OpenRouter `https://openrouter.ai/api`, DeepSeek `https://api.deepseek.com/anthropic`, Z.AI, MiniMax).
+- Exception: an id served by an OpenAI-compatible gateway that still matches a first-party substring (e.g. OpenRouter's `google/gemini-3.7-flash` or `anthropic/claude-sonnet-5` on the `/api/v1` endpoint) would auto-route to the vendor protocol client. Pass `clientType: "openai-chat"` explicitly for those.
+- API key: constructor parameter first, then the provider environment variable — `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY` (also for `ant-messages`), `OPENAI_API_KEY` (also for `openai-chat`/`openai-responses`), `GEMINI_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`, `MINIMAX_API_KEY`. Base URLs read the same names with `_BASE_URL`.
 
 ## Streaming text
 
@@ -115,7 +123,7 @@ for await (const event of client.streamingResponseStateful({
 ```
 
 - Each `event` is a `UniEvent`: `event_type` is `start` | `delta` | `stop`, and `content_items` carry the increments.
-- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `XHIGH`), `tool_choice`, `prompt_caching` and `tools`.
+- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `XHIGH`), `tool_choice`, `prompt_caching`, `fast_mode` and `tools`.
 - `streamingResponseStateful` keeps conversation history inside the client; manage it with `getHistory()` / `setHistory(history)` / `clearHistory()`. The stateless variant is `streamingResponse({ messages, config })`.
 
 ## Config parameters the model may reject
@@ -132,10 +140,11 @@ try {
 }
 ```
 
-- `thinking_level` never throws: every client maps each level onto the closest one the model supports. Kimi K3 reasons unconditionally, so `NONE` degrades to its lowest effort rather than disabling thinking; GLM-5.2 sends `reasoning_effort` alongside its `thinking` block and only `NONE` disables it.
-- `temperature` is rejected outright by Gemini 3.6 — that generation deprecated the sampling parameters, so the client refuses them instead of sending a value the API ignores. GPT-5.5, Claude 4.8/5, DeepSeek V4, Kimi K2.6 and Kimi K3 accept only the protocol default `1.0` and reject any other value. Gemini 3, Claude 4.6, GLM and the generic OpenAI client pass it through.
-- `tool_choice`: `"auto"` is safe everywhere. Claude accepts a single forced tool name; DeepSeek V4 and Kimi K2.6 allow `"auto"` / `"none"`; Kimi K3 adds `"required"` but refuses a specific tool; GLM only accepts `"auto"`.
+- `thinking_level` never throws: every client maps each level onto the closest one the model supports. Kimi K3 reasons unconditionally, so `NONE` degrades to its lowest effort rather than disabling thinking; GLM-5.2 sends `reasoning_effort` alongside its `thinking` block and only `NONE` disables it. GLM-5.3 thinks unconditionally (`NONE` degrades to the light `low` effort) and clamps `reasoning_effort` to `low`/`high`/`max`; `gemini-3.7-*` clamps to `low`/`medium`/`high` (`NONE` degrades to `low`).
+- `temperature` is rejected outright by Gemini 3.6/3.7 — those generations deprecated the sampling parameters, so the client refuses them instead of sending a value the API ignores. GPT-5.5/5.6, the whole Claude 4.6+ family (4.6 included since AgentHub 0.4.2), DeepSeek V4, Kimi K2.6 and Kimi K3 accept only the protocol default `1.0` and reject any other value. Gemini 3, GLM and the generic protocol clients (`openai-chat` / `openai-responses` / `ant-messages`) pass it through.
+- `tool_choice`: `"auto"` is safe everywhere. Claude accepts a single forced tool name; DeepSeek V4 and Kimi K2.6 allow `"auto"` / `"none"`; Kimi K3 adds `"required"` but refuses a specific tool (K2.x also rejects `"required"`); GLM only accepts `"auto"`.
 - `prompt_caching`: every client accepts `PromptCaching.ENABLE` and rejects the other values — caching is on by default and Kimi K3 caches context automatically.
+- `fast_mode` (`UniConfig`, AgentHub 0.4.2): fast processing at premium pricing. OpenAI-protocol clients (`openai-chat`, `openai-responses`, `gpt-5.6`, `minimax-m3`) map it to `service_tier: "priority"`; Anthropic-protocol clients (`ant-messages`, `claude-5`) map it to `speed: "fast"` with a beta header (an Anthropic research preview limited to Claude Opus 5 / Opus 4.8 — organizations without access get a 429). Clients without a fast tier (Gemini, GLM, Kimi, DeepSeek, embeddings, Claude 4.6 models) raise `UnsupportedParameterError`; DeepSeek and Z.AI's OpenAI-compatible endpoints simply ignore the tier.
 
 Leave a parameter unset and the protocol default applies, which is the portable choice when a script must run against several families.
 

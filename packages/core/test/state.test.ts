@@ -963,6 +963,51 @@ describe("project-config round trip", () => {
     expect(getModel(loaded, { provider: "custom", model_id: "unknown-model" })).toBeUndefined();
   });
 
+  it('normalizes the pre-0.4.2 client_type = "openai" alias to openai-chat on read and write', async () => {
+    // A config saved before AgentHub 0.4.2 renamed the generic Chat Completions client must
+    // keep working: the stored bare "openai" spelling reads back as the canonical
+    // "openai-chat" (normalize-on-read, no error and no disk rewrite required).
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "legacy-model"',
+        'client_type = "openai"',
+        'base_url = "https://example.com/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(loaded, { provider: "custom", model_id: "legacy-model" })?.client_type).toBe(
+      "openai-chat",
+    );
+    // Writes normalize too: an addModel caller passing the deprecated alias persists the
+    // canonical spelling.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "another-model",
+      client_type: "openai",
+    });
+    const reloaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(reloaded, { provider: "custom", model_id: "another-model" })?.client_type).toBe(
+      "openai-chat",
+    );
+    expect(await fs.readFile(file, "utf8")).toContain('client_type = "openai-chat"');
+    // Non-alias client types pass through untouched (openai-responses is a different protocol).
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "responses-model",
+      client_type: "openai-responses",
+    });
+    const third = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(third, { provider: "custom", model_id: "responses-model" })?.client_type).toBe(
+      "openai-responses",
+    );
+  });
+
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
     // provider is a required field: nothing is inferred from the builtin catalog, so a model
     // outside the known groups is filed under custom only because the caller said so. glm-5.2
