@@ -965,6 +965,33 @@ export class SessionManager {
   }
 
   /**
+   * Removes one EXITED background command entry from a loaded session's process list.
+   * A running process is refused ("running") — stopping is killProcess's job, and a
+   * bare removal must never surprise-signal a live process group. "not_found" covers
+   * an unloaded session and an unknown id alike: the entry is gone either way. The
+   * removal itself reuses the kill path — core's registry removal signals the (dead)
+   * group defensively and drops the row, exactly like input_command's post-exit reap.
+   * The only race, an entry observed running that exits before a retry, is benign:
+   * the caller gets "running", refreshes, and sees the row exited on the next look.
+   *
+   * Note what leaves with the row: the registry entry owns the ManagedSession holding
+   * that process's captured output, so after a removal input_command on the same
+   * process_id answers "unknown process_id". Removal is a deliberate discard, not just
+   * a list tidy-up — the Web App says so at the button and in the docs.
+   */
+  removeProcess(sessionId: string, processId: string): "removed" | "running" | "not_found" {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return "not_found";
+    const info = entry.session.listBackgroundCommands?.().find((p) => p.processId === processId);
+    if (!info) return "not_found";
+    if (info.running) return "running";
+    const removed = entry.session.killBackgroundCommand?.(processId) ?? false;
+    if (!removed) return "not_found";
+    entry.lastActivityMs = Date.now();
+    return "removed";
+  }
+
+  /**
    * Disposes a just-removed entry's runtime — after its in-flight drive (if any)
    * settles, so interrupt cleanup never races a dying environment. Deleting a Session /
    * Agent / Project is the one intent that must also end the background processes the

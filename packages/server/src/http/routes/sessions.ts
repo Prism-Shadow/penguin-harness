@@ -919,6 +919,30 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  // Remove one EXITED process entry from the list (the per-row delete on "exited" rows).
+  // A running process is 409 — stopping it is the kill route's job, so a removal never
+  // surprise-signals a live process group; 404 when the id is unknown or the runtime is
+  // gone (nothing left to remove either way — the UI just refreshes its list).
+  app.delete("/:sessionId/processes/:processId", (c) => {
+    const row = resolveSession(c);
+    const result = deps.manager.removeProcess(row.sessionId, pathParam(c, "processId"));
+    if (result === "running") {
+      throw new HttpError(
+        409,
+        "process_running",
+        "Process is still running; stop it instead of removing it.",
+      );
+    }
+    if (result === "not_found") {
+      throw new HttpError(
+        404,
+        "process_not_found",
+        "Process does not exist or has already been removed.",
+      );
+    }
+    return c.body(null, 204);
+  });
+
   // "Retry now" on the reconnect countdown: skip the remaining backoff wait and fire the
   // next retry immediately (attempt counter unchanged). Benign either way — 200 with
   // skipped:false when no reconnect wait is in progress, so a timing race (the wait

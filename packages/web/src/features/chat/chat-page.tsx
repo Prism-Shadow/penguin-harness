@@ -32,6 +32,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -59,7 +60,7 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton } from "../../components/ui/copy-button";
+import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
@@ -67,6 +68,7 @@ import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
@@ -145,8 +147,9 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
- * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
- * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ * sections' values) with the shared CopyButton beside it. The copy feedback is the button's
+ * icon swapping to the check (#312, no "已复制" text) — the "Session id" label above never
+ * changes.
  */
 function SessionIdRow({ sessionId }: { sessionId: string }) {
   return (
@@ -156,12 +159,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton
-          text={sessionId}
-          label={S.chat.copySessionId}
-          showCopiedText
-          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
       </div>
     </div>
   );
@@ -711,6 +709,14 @@ export function ChatPage() {
     };
   }, [projectId, selected, stream.taskState, infoOpen]);
 
+  // The currently selected Session, readable from an async callback that captured an older
+  // one (the process actions below): a state value read through a closure would be the value
+  // at click time, which is exactly what must not decide where a late response lands.
+  const selectedSessionIdRef = useRef<string | null>(selectedSessionId);
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
+
   // Background-process list: fetched on session entry, then kept fresh while it can still
   // change — during a run (a foreground command may promote to background at any moment),
   // while any listed process is still running (it can exit on its own), and while the
@@ -743,26 +749,57 @@ export function ChatPage() {
     };
   }, [selectedSessionId, stream.taskState, processesCanChange]);
 
-  // Stop one background process: the kill also removes it from the server-side registry,
-  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
-  // same outcome, not an error worth surfacing).
-  const onKillProcess = useCallback(
-    async (processId: string) => {
+  /**
+   * Shared body of the per-row process actions (Stop / Remove): one request at a time
+   * (procBusy), the statuses that only mean "the list was stale" swallowed instead of
+   * toasted, and the list refreshed however the request ended — the truth comes from the
+   * refresh, not from the response. The refresh is applied ONLY while its own session is
+   * still selected: switching sessions mid-request would otherwise paint the previous
+   * session's processes into the new session's card, and with the popover closed and
+   * nothing running there is no poll to correct it.
+   */
+  const runProcessAction = useCallback(
+    async (
+      processId: string,
+      request: (sessionId: string, processId: string) => Promise<void>,
+      staleStatuses: readonly number[],
+    ) => {
       if (!selected || procBusy !== null) return;
+      const sessionId = selected.sessionId;
       setProcBusy(processId);
       try {
-        await api.killSessionProcess(selected.sessionId, processId);
+        await request(sessionId, processId);
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+        if (!(e instanceof ApiError && staleStatuses.includes(e.status))) {
+          toastError(apiErrorText(e));
+        }
       } finally {
         setProcBusy(null);
         api
-          .getSessionProcesses(selected.sessionId)
-          .then((res) => setProcesses(res.processes))
+          .getSessionProcesses(sessionId)
+          .then((res) => {
+            if (selectedSessionIdRef.current === sessionId) setProcesses(res.processes);
+          })
           .catch(() => undefined);
       }
     },
     [selected, procBusy],
+  );
+
+  // Stop one background process: the kill also removes it from the server-side registry,
+  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
+  // same outcome, not an error worth surfacing).
+  const onKillProcess = useCallback(
+    (processId: string) => runProcessAction(processId, api.killSessionProcess, [404]),
+    [runProcessAction],
+  );
+
+  // Remove one EXITED process entry from the list (#312; running rows offer Stop instead).
+  // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
+  // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
+  const onRemoveProcess = useCallback(
+    (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
+    [runProcessAction],
   );
 
   // Trace file path for the popover's trace row: the single-session GET is the only
@@ -1543,8 +1580,9 @@ export function ChatPage() {
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole
-                  process group and the row drops on the follow-up refresh. Hidden entirely
-                  while there are none. */}
+                  process group and the row drops on the follow-up refresh; exited rows keep
+                  their "exited" label and carry a remove button that deletes the entry from
+                  the list (#312). Hidden entirely while there are none. */}
               {processes.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1580,9 +1618,26 @@ export function ChatPage() {
                             {procBusy === p.processId ? S.common.loading : S.chat.processStop}
                           </button>
                         ) : (
-                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                            {S.chat.processExited}
-                          </span>
+                          <>
+                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                              {S.chat.processExited}
+                            </span>
+                            {/* The row is the only handle on that process's captured
+                                output — removing the entry drops it from the runtime
+                                registry, so the model can no longer be asked to read it
+                                (input_command answers "unknown process_id"). No confirm
+                                step for a one-click tidy-up of a dead row, but the title
+                                says what leaves with it. */}
+                            <button
+                              type="button"
+                              title={S.chat.processRemoveHint}
+                              disabled={procBusy !== null}
+                              onClick={() => void onRemoveProcess(p.processId)}
+                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            >
+                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                            </button>
+                          </>
                         )}
                       </li>
                     ))}
@@ -1590,30 +1645,46 @@ export function ChatPage() {
                 </div>
               )}
               {/* Trace file, same section anatomy as the rows above (label + mono value):
-                  the path itself is the click target and SPA-navigates to the Trace page
-                  deep-linked to the owning Agent AND this Session (?agentId= focuses/expands
-                  the Agent group, ?sessionId= auto-selects — a Session beyond the first
-                  loaded page resolves via the Trace page's full-fetch fallback). Hidden
-                  until a trace exists (a brand-new session has no file to open); only
-                  reachable for a real Session — this whole header renders behind the
-                  `selected` guard, so a draft never shows it. */}
+                  the value is the file NAME on a single line (#312 — the full path wrapped
+                  over several lines; it now lives in the tooltip and the copy button, which
+                  copies the FULL path). The name itself is the click target and
+                  SPA-navigates to the Trace page deep-linked to the owning Agent AND this
+                  Session (?agentId= focuses/expands the Agent group, ?sessionId=
+                  auto-selects — a Session beyond the first loaded page resolves via the
+                  Trace page's full-fetch fallback). Hidden until a trace exists (a
+                  brand-new session has no file to open); only reachable for a real
+                  Session — this whole header renders behind the `selected` guard, so a
+                  draft never shows it. */}
               {tracePath !== null && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                     {S.chat.traceFile}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInfoOpen(false);
-                      navigate(
-                        `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                      );
-                    }}
-                    className="break-all text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-                  >
-                    {tracePath}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {/* Wrapper (not flex-1 on the button itself) keeps the click target no
+                        wider than the name while the copy button still sits at the row's
+                        right edge, mirroring the Session id row. */}
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        title={tracePath}
+                        onClick={() => {
+                          setInfoOpen(false);
+                          navigate(
+                            `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                          );
+                        }}
+                        className="max-w-full truncate text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
+                      >
+                        {pathFileName(tracePath)}
+                      </button>
+                    </div>
+                    <CopyButton
+                      text={tracePath}
+                      label={S.chat.copyTracePath}
+                      className={ROW_COPY_CLASS}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1623,7 +1694,12 @@ export function ChatPage() {
 
       {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+            covers the conversation and the composer in both branches below, and nothing else
+            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
+            bounds the drop overlay to this column. */}
+        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
             // selection panel; the Session is only created once the first message is sent. Keyed
@@ -1728,7 +1804,7 @@ export function ChatPage() {
               )}
             </div>
           )}
-        </div>
+        </ChatDropRegion>
 
         {selected && (
           <SubagentsPanel

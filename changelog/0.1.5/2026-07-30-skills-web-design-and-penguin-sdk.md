@@ -1,5 +1,12 @@
 # web-design and penguin-sdk skills: editorial theme, output contracts, thinking and images
 
+- **Date:** 2026-07-30
+- **Type:** feature
+- **Scope:** `skills`, `web`
+- **PR:** [#133](https://github.com/Prism-Shadow/penguin-harness/pull/133)
+
+[中文版](2026-07-30-skills-web-design-and-penguin-sdk.zh.md)
+
 Two of the built-in skills were reworked across three iterations (web-design v3 → v6, penguin-sdk v14 → v17), with the goal of getting better results from shorter user prompts.
 
 ## web-design

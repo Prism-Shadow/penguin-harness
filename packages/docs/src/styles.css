@@ -189,6 +189,95 @@
   color: inherit;
   padding: 0;
 }
+
+/* Fenced blocks: .md-code owns the surface (border, radius, fill) and the inner <pre> only
+   scrolls and pads, so the plain fallback and Shiki's markup sit in an identical box and
+   the swap on highlight causes no reflow. Shiki writes its theme background as an inline
+   style, which only !important can drop — hence the reset here rather than on .md-code. */
+.md-body .md-code {
+  @apply my-2.5 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900;
+}
+.md-body .md-code pre {
+  @apply overflow-x-auto p-3 text-[13px] leading-6;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent !important;
+}
+/* Dark mode flips colors through Shiki's dual-theme CSS variables, so switching themes
+   never re-highlights: one render carries both palettes. */
+html.dark .md-body .shiki,
+html.dark .md-body .shiki span {
+  color: var(--shiki-dark) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}
+
+/* Callouts (remark-callout). A collapsible one is a <details>, so the arrow and the
+   open/closed state are the browser's; the summary carries the whole clickable row. */
+.md-body .callout {
+  @apply my-3 rounded-lg border px-3.5 py-2.5;
+}
+.md-body .callout > :first-child {
+  margin-top: 0;
+}
+.md-body .callout > :last-child {
+  margin-bottom: 0;
+}
+.md-body .callout-title {
+  @apply font-medium;
+}
+.md-body details.callout > summary {
+  @apply -mx-1 cursor-pointer list-none rounded px-1 select-none;
+}
+.md-body details.callout > summary::-webkit-details-marker {
+  display: none;
+}
+.md-body details.callout > summary::before {
+  content: "";
+  @apply mr-2 inline-block h-0 w-0 align-[0.09em] border-y-4 border-l-[6px] border-y-transparent transition-transform;
+  border-left-color: currentColor;
+}
+.md-body details.callout[open] > summary::before {
+  transform: rotate(90deg);
+}
+.md-body details.callout[open] > summary {
+  @apply mb-2;
+}
+.md-body .callout-info {
+  @apply border-brand-200 bg-brand-50/50 dark:border-brand-900 dark:bg-brand-950/40;
+}
+.md-body .callout-info .callout-title {
+  @apply text-brand-800 dark:text-brand-200;
+}
+.md-body :is(.callout-warning, .callout-caution) {
+  @apply border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30;
+}
+.md-body :is(.callout-warning, .callout-caution) .callout-title {
+  @apply text-amber-800 dark:text-amber-200;
+}
+
+/* Tabbed code groups (remark-tabs): the strip sits on the code surface, so a group reads
+   as one object rather than a row of buttons above an unrelated block. */
+.md-body .md-tabs-group {
+  @apply my-2.5 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800;
+}
+.md-body .md-tabs-strip {
+  @apply flex flex-wrap gap-1 border-b border-gray-200 bg-gray-50 px-1.5 pt-1.5 dark:border-gray-800 dark:bg-gray-900;
+}
+.md-body .md-tabs-strip button {
+  @apply cursor-pointer rounded-t-md px-2.5 py-1 text-[13px] text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100;
+  border-bottom: 2px solid transparent;
+}
+.md-body .md-tabs-strip button[aria-selected="true"] {
+  @apply border-b-brand-600 font-medium text-brand-700 dark:border-b-brand-400 dark:text-brand-300;
+}
+/* The group already draws the border and radius the block would otherwise repeat. */
+.md-body .md-tabs-group .md-code {
+  @apply my-0 rounded-none border-0;
+}
+
 .md-body blockquote {
   @apply border-l-2 border-gray-300 pl-3 text-gray-600 dark:border-gray-700 dark:text-gray-400;
 }

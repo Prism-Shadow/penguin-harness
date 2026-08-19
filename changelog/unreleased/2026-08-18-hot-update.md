@@ -1,5 +1,12 @@
 # Hot update: replace the running harness's code over HTTP, no restart
 
+- **Date:** 2026-08-18
+- **Type:** feature
+- **Scope:** `server`, `cli`, `web`, `tooling`
+- **PR:** [#298](https://github.com/Prism-Shadow/penguin-harness/pull/298)
+
+[中文版](2026-08-18-hot-update.zh.md)
+
 A running PenguinHarness — the desktop app included — can now be updated in place: one
 HTTP push replaces the backend platform, the CLI's command implementations, and the Web
 App together, in seconds, without restarting the server or reinstalling anything. Live

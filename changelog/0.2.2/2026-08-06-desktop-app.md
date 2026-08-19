@@ -1,5 +1,12 @@
 # Desktop app: brand icons, completion notifications, single-user mode, bundled penguin CLI
 
+- **Date:** 2026-08-06
+- **Type:** feature
+- **Scope:** `desktop`, `server`, `web`
+- **PR:** [#226](https://github.com/Prism-Shadow/penguin-harness/pull/226)
+
+[中文版](2026-08-06-desktop-app.zh.md)
+
 ## App icons
 
 Every platform now shows the penguin brand mark instead of the stock Electron icon: electron-builder converts the committed 1024px PNG (rendered from the brand SVG by `scripts/render-icon.mjs`, which reuses the landing package's Playwright chromium) to icns/ico for macOS/Windows, Linux ships a pre-rendered freedesktop icon set, and the window itself carries the icon on Linux/Windows. No tray is introduced — the "default icon" came from the window/app icons never being configured.

@@ -1,5 +1,12 @@
 # Release tooling: the repo version can no longer drift behind a shipped release
 
+- **Date:** 2026-08-06
+- **Type:** process
+- **Scope:** `ci`, `tooling`
+- **PR:** [#219](https://github.com/Prism-Shadow/penguin-harness/pull/219)
+
+[中文版](2026-08-06-release-version-guard.zh.md)
+
 v0.2.1 was tagged from a repo still versioned 0.2.0 — its prep PR moved the changelog and wrote RELEASE.md but skipped the version bump that 0.2.0's prep performed — so every dev/source build compared itself against the published v0.2.1 and prompted about an update indefinitely, while release artifacts (stamped from the tag at build time) looked fine.
 
 - Root and every `packages/*/package.json` version, plus core's `VERSION` constant, are bumped to 0.2.1 to match the shipped release.

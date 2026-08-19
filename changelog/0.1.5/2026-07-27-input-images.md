@@ -1,5 +1,12 @@
 # Images reach every input: mid-run steering, goal objectives, and no dead action button
 
+- **Date:** 2026-07-27
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`
+- **PR:** [#71](https://github.com/Prism-Shadow/penguin-harness/pull/71)
+
+[中文版](2026-07-27-input-images.zh.md)
+
 Steering — the message you send to an agent that is already running, delivered between turns as a `[user_steering]` user message — used to be text and nothing else. That was a limitation of the channel, not of the model: the very moment an image is most useful is mid-run, when the agent has just produced the wrong layout and the fastest correction is a screenshot. Steering now carries images the way a prompt does, and an image with no caption is a complete steering message on its own.
 
 Core queues the images with the text — `session.steer(input)` takes an OmniMessage list, the same shape `session.run` takes a prompt in — and delivers them as ordinary user image messages directly behind the `[user_steering]` block — the same shape a prompt uses, so the LLM client, the Trace, and replay all already know what to do with them. On a model without vision they fold into `[attached image: <path>]` lines **inside** the block, exactly as a prompt's images fold, because the block has to remain the whole text: a line appended after the closing tag would cost the message its steering identity and every render layer would read it as a new Task. A scratchpad that cannot be written to ends the run — the picture usually arrives *because* the run is going the wrong way, so carrying on without it would spend the rest of the task heading further that way.

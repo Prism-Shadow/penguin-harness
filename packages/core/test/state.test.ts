@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
+  DEFAULT_CHAT_THINKING_LEVELS,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
   VAULT_PLACEHOLDER,
@@ -59,6 +60,7 @@ import {
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
+import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -963,6 +965,51 @@ describe("project-config round trip", () => {
     expect(getModel(loaded, { provider: "custom", model_id: "unknown-model" })).toBeUndefined();
   });
 
+  it('normalizes the pre-0.4.2 client_type = "openai" alias to openai-chat on read and write', async () => {
+    // A config saved before AgentHub 0.4.2 renamed the generic Chat Completions client must
+    // keep working: the stored bare "openai" spelling reads back as the canonical
+    // "openai-chat" (normalize-on-read, no error and no disk rewrite required).
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "legacy-model"',
+        'client_type = "openai"',
+        'base_url = "https://example.com/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(loaded, { provider: "custom", model_id: "legacy-model" })?.client_type).toBe(
+      "openai-chat",
+    );
+    // Writes normalize too: an addModel caller passing the deprecated alias persists the
+    // canonical spelling.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "another-model",
+      client_type: "openai",
+    });
+    const reloaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(reloaded, { provider: "custom", model_id: "another-model" })?.client_type).toBe(
+      "openai-chat",
+    );
+    expect(await fs.readFile(file, "utf8")).toContain('client_type = "openai-chat"');
+    // Non-alias client types pass through untouched (openai-responses is a different protocol).
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "responses-model",
+      client_type: "openai-responses",
+    });
+    const third = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(getModel(third, { provider: "custom", model_id: "responses-model" })?.client_type).toBe(
+      "openai-responses",
+    );
+  });
+
   it("addModel files the entry under the provider it was given, never one of its own choosing", async () => {
     // provider is a required field: nothing is inferred from the builtin catalog, so a model
     // outside the known groups is filed under custom only because the caller said so. glm-5.2
@@ -1414,6 +1461,22 @@ describe("default_chat (new-chat defaults block)", () => {
     expect(parsed.default_model).toEqual({ provider: "p", model_id: "m" });
     expect(parsed.default_chat).toEqual({ thinking_level: "low" });
     expect(parsed.models).toEqual([{ provider: "p", model_id: "m" }]);
+  });
+});
+
+describe("selectable thinking tiers (the parallel lists must agree)", () => {
+  it("run_subagent's enum is exactly the project-default tiers, and never offers none", () => {
+    // The same rule is spelled out in three places — this constant, the web picker's
+    // SELECTABLE_THINKING_LEVELS (pinned by its own test), and run_subagent's schema — while
+    // nothing checked the two core lists against each other. `"none"` stays a legal stored and
+    // wire value (a legacy config may carry it, and it is inherited verbatim by a subagent),
+    // it is simply never *offered*, because many models cannot disable thinking.
+    expect(SUBAGENT_THINKING_LEVELS).toEqual(DEFAULT_CHAT_THINKING_LEVELS);
+    expect(SUBAGENT_THINKING_LEVELS).not.toContain("none");
+    const entry = defaultSystemConfig().tools?.builtin?.find((t) => t.name === "run_subagent");
+    const properties = (entry?.parameters as { properties?: Record<string, { enum?: unknown }> })
+      ?.properties;
+    expect(properties?.thinking_level?.enum).toEqual([...SUBAGENT_THINKING_LEVELS]);
   });
 });
 

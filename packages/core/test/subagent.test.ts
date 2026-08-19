@@ -56,7 +56,12 @@ type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 /** Builds a SubagentRunner from a run implementation (spawn arguments observed via a spy). */
 function runnerOf(
   run: (input: RunInput) => AsyncGenerator<OmniMessage>,
-  spawnSpy?: (input: { agentId?: string; modelId?: string; provider?: string }) => void,
+  spawnSpy?: (input: {
+    agentId?: string;
+    modelId?: string;
+    provider?: string;
+    thinkingLevel?: string;
+  }) => void,
 ): SubagentRunner {
   return {
     async spawn(input) {
@@ -136,8 +141,13 @@ afterEach(() => {
 
 describe("run_subagent tool (foreground)", () => {
   it("forwards stamped child messages and mirrors child text as its own output deltas", async () => {
-    const seen: Array<{ prompt?: string; agentId?: string; modelId?: string; provider?: string }> =
-      [];
+    const seen: Array<{
+      prompt?: string;
+      agentId?: string;
+      modelId?: string;
+      provider?: string;
+      thinkingLevel?: string;
+    }> = [];
     const runner = runnerOf(
       async function* (input) {
         seen[0] = { ...seen[0], prompt: input.prompt };
@@ -152,7 +162,13 @@ describe("run_subagent tool (foreground)", () => {
     const tool = createSubagentTool(DEF, services);
     const { out, result } = await collectWithReturn(
       tool.execute(
-        { prompt: "world", agent_id: "researcher", model_id: "m1", provider: "p1" },
+        {
+          prompt: "world",
+          agent_id: "researcher",
+          model_id: "m1",
+          provider: "p1",
+          thinking_level: "high",
+        },
         CTX,
       ),
     );
@@ -165,13 +181,14 @@ describe("run_subagent tool (foreground)", () => {
     // complete tool_call_output from this).
     expect(ownDeltas(out)).toBe("Hello world");
     expect(result?.stopReason).toBe("completed");
-    // The model is free to choose the agent and model (spawn arguments); the prompt is
-    // handed to run.
+    // The model is free to choose the agent, model, and thinking level (spawn arguments); the
+    // prompt is handed to run.
     expect(seen[0]).toEqual({
       prompt: "world",
       agentId: "researcher",
       modelId: "m1",
       provider: "p1",
+      thinkingLevel: "high",
     });
   });
 
@@ -214,6 +231,49 @@ describe("run_subagent tool (foreground)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]?.modelId).toBeUndefined();
     expect(seen[0]?.provider).toBeUndefined();
+  });
+
+  it("rejects a thinking_level outside the selectable tiers, and never spawns", async () => {
+    // A typo must fail loudly: silently inheriting a level the caller did not ask for would
+    // defeat the override. "none" is deliberately not offered (mirroring the pickers — many
+    // models cannot disable thinking), so it is rejected like any other unknown value.
+    for (const thinking_level of ["hgih", "none", "", 3]) {
+      const spawned: unknown[] = [];
+      const runner = runnerOf(
+        async function* () {},
+        (input) => spawned.push(input),
+      );
+      const { services } = makeServices(runner);
+      const tool = createSubagentTool(DEF, services);
+      const { out, result } = await collectWithReturn(
+        tool.execute({ prompt: "x", thinking_level }, CTX),
+      );
+      expect(result?.stopReason).toBe("failed");
+      expect(ownDeltas(out)).toContain("invalid `thinking_level`");
+      expect(ownDeltas(out)).toContain("low / medium / high / xhigh");
+      expect(spawned).toHaveLength(0);
+    }
+  });
+
+  it("forwards NO thinking level when the argument is omitted or null (the runner inherits)", async () => {
+    // Omission means "inherit the parent session's effective level" — the tool forwards
+    // nothing and the real runner (the spawn closure in agent.ts) resolves the inheritance
+    // (locked in agent.test.ts). A JSON null counts as omitted, like a missing key.
+    for (const args of [{ prompt: "x" }, { prompt: "x", thinking_level: null }]) {
+      const seen: Array<{ thinkingLevel?: string }> = [];
+      const runner = runnerOf(
+        async function* () {
+          yield withOrigin(partialText("delta", "ok"), HOP);
+        },
+        (input) => seen.push(input),
+      );
+      const { services } = makeServices(runner);
+      const tool = createSubagentTool(DEF, services);
+      const { result } = await collectWithReturn(tool.execute(args, CTX));
+      expect(result?.stopReason).toBe("completed");
+      expect(seen).toHaveLength(1);
+      expect("thinkingLevel" in seen[0]!).toBe(false);
+    }
   });
 
   it("does not mirror deeper-nested (origin.length > 1) text into its own output", async () => {

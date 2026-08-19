@@ -10,7 +10,7 @@
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MODEL_CATALOG, userText } from "@prismshadow/penguin-core";
@@ -118,9 +118,9 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "deepseek", "deepseek-v4-flash").isDefault).toBe(true);
 
     // OpenRouter gateway model: the upstream id contains `/`, but under column storage it's just a
-    // plain string; openai protocol + a preset base URL inlined on the entry (no secret).
+    // plain string; openai-chat protocol + a preset base URL inlined on the entry (no secret).
     const mimo = pick(body, "openrouter", "xiaomi/mimo-v2.5");
-    expect(mimo.clientType).toBe("openai");
+    expect(mimo.clientType).toBe("openai-chat");
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
   });
@@ -141,7 +141,9 @@ describe("models preset & catalog enrichment", () => {
     expect(mine.displayName).toBeUndefined();
     expect(mine.vision).toBe(false);
     expect(mine.envKey).toBe("OPENAI_API_KEY");
-    expect(mine.clientType).toBe("openai");
+    // The request carried the deprecated bare "openai" alias (pre-0.4.2 clients/configs):
+    // it is normalized to the canonical "openai-chat" on write and reported canonically.
+    expect(mine.clientType).toBe("openai-chat");
 
     // Off-catalog model without client_type: no env-var fallback; with no vision annotation the field is omitted (default = supported).
     const opaque = pick(body, "custom", "opaque-model");
@@ -152,9 +154,14 @@ describe("models preset & catalog enrichment", () => {
     // AgentHub's openai client actually reads OPENAI_API_KEY, so the env fallback reports that, not the vendor's var name.
     expect(pick(body, "anthropic", "claude-via-gateway").envKey).toBe("OPENAI_API_KEY");
 
-    // GET again: vision was persisted (not just echoed from the request body).
+    // GET again: vision was persisted (not just echoed from the request body), and the disk
+    // stores the canonical client-type spelling.
     const again = (await (await api.get(url())).json()) as ModelsResponse;
     expect(pick(again, "custom", "my-model").vision).toBe(false);
+    expect(pick(again, "custom", "my-model").clientType).toBe("openai-chat");
+    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
+    expect(toml).toContain('client_type = "openai-chat"');
+    expect(toml).not.toContain('"openai"');
 
     // vision shape check: non-boolean → 400.
     const bad = await api.put(url(), {
@@ -165,6 +172,98 @@ describe("models preset & catalog enrichment", () => {
     // Missing provider → 400 (refs are always a pair; neither half may be omitted).
     const noProvider = await api.put(url(), { models: [{ modelId: "my-model" }] });
     expect(noProvider.status).toBe(400);
+  });
+
+  it('a config stored before the AgentHub 0.4.2 rename (client_type = "openai") keeps working: GET reports the canonical openai-chat', async () => {
+    // Simulate an existing user config written by an older harness version: the deprecated
+    // bare "openai" spelling on disk. Reading must not error and must report the canonical
+    // spelling (normalize-on-read, no disk rewrite needed until the next PUT).
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    await writeFile(
+      cfgFile,
+      [
+        "[[models]]",
+        'provider = "custom"',
+        'model_id = "legacy-openai-model"',
+        'client_type = "openai"',
+        'base_url = "https://legacy.example/v1"',
+      ].join("\n"),
+      "utf8",
+    );
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    const legacy = pick(body, "custom", "legacy-openai-model");
+    expect(legacy.clientType).toBe("openai-chat");
+    // The env fallback resolves like any openai-chat entry.
+    expect(legacy.envKey).toBe("OPENAI_API_KEY");
+  });
+
+  it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {
+    // Migration guard for catalog removals (the 2026-08-18 inclusionai/ling-3.0-flash:free
+    // delisting is the live example): a user who configured the preset before it was removed
+    // keeps a row on disk that catalogEntryFor no longer matches. Everything presetModelEntries
+    // persisted must survive — only display_name lived solely in the catalog — and the row must
+    // stay a normal, selectable entry rather than being pruned, rejected or blanked.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    await writeFile(
+      cfgFile,
+      [
+        "[[models]]",
+        'provider = "openrouter"',
+        'model_id = "vendor/removed-from-catalog:free"',
+        "context_window = 262144",
+        'client_type = "openai-chat"',
+        'base_url = "https://openrouter.ai/api/v1"',
+        'api_key = "sk-still-here"',
+        "vision = false",
+        "",
+        "[models.pricing]",
+        'unit = "usd_per_mtok"',
+        "cache_read = 0.0",
+        "cache_write = 0.0",
+        "output = 0.0",
+      ].join("\n"),
+      "utf8",
+    );
+    // Sanity: the id really is absent from the built-in catalog, so this exercises the
+    // off-catalog path rather than an accidental match.
+    expect(
+      MODEL_CATALOG.some(
+        (m) => m.provider === "openrouter" && m.modelId === "vendor/removed-from-catalog:free",
+      ),
+    ).toBe(false);
+
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    const orphan = pick(body, "openrouter", "vendor/removed-from-catalog:free");
+    // Everything stored in TOML is read straight back — pricing and context window come from
+    // the file, not the catalog, so a $0 free-tier row keeps costing 0 rather than going
+    // "unknown".
+    expect(orphan.contextWindow).toBe(262144);
+    expect(orphan.pricing).toEqual({ cacheRead: 0, cacheWrite: 0, output: 0 });
+    expect(orphan.vision).toBe(false);
+    expect(orphan.clientType).toBe("openai-chat");
+    expect(orphan.envKey).toBe("OPENAI_API_KEY");
+    // The credential survives, masked; the base URL is still inlined on the entry.
+    expect(orphan.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(orphan.credential?.apiKeyMasked).toBeTruthy();
+    // The one real loss: display_name only ever lived in the catalog, so the UI falls back to
+    // the raw upstream id.
+    expect(orphan.displayName).toBeUndefined();
+
+    // Still a legal default-model target — nothing validates the pair against the catalog.
+    const put = await api.put(url(), {
+      models: [
+        {
+          provider: "openrouter",
+          modelId: "vendor/removed-from-catalog:free",
+          contextWindow: 262144,
+          clientType: "openai-chat",
+        },
+      ],
+      defaultModel: { provider: "openrouter", modelId: "vendor/removed-from-catalog:free" },
+    });
+    expect(put.status).toBe(200);
+    const after = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(after, "openrouter", "vendor/removed-from-catalog:free").isDefault).toBe(true);
   });
 
   it("PUT maxTokens: persisted as max_tokens and read back through GET; omitting it table-wide clears it; 0 / negative / non-numeric 400", async () => {
