@@ -23,22 +23,35 @@ One trap: a remote branch literally named `docs` occupies that ref namespace, so
 
 Independent changes each get their own git worktree under `../penguin-harness-wt/<topic>/` so several can run in parallel.
 
-## Verify like CI, or you have not verified
+## Verify what you changed
 
-Node must be >= 24. In each worktree, `pnpm install --frozen-lockfile` first, then the chain CI actually runs:
+Node must be >= 24. In each worktree, `pnpm install --frozen-lockfile` first.
 
+The full chain CI runs is `pnpm build`, `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `sh scripts/test-installer.sh`. **Do not reach for `pnpm test` by reflex** — it is nine packages and ~2500 tests, minutes per run, and for a docs-only diff it proves nothing the narrow run does not. Pick the narrowest evidence that would actually fail for this change's regression:
+
+```sh
+pnpm --filter @prismshadow/penguin-core exec vitest run test/model-catalog.test.ts   # one file, ~1s
+pnpm --filter @prismshadow/penguin-web test                                          # one package
 ```
-pnpm build          # -r build
-pnpm format:check   # after pnpm format
-pnpm typecheck
-pnpm test
-sh scripts/test-installer.sh
-git diff --check
-```
+
+| Changed | Run |
+| --- | --- |
+| Markdown only — changelog, `CONTRIBUTING.md`, `.agents/`, README | `pnpm format:check` |
+| `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
+| `packages/skills/skills/**` | the `skills` package test + `docs`'s `skills-sync.test.ts` |
+| The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
+| One package's source | that package's `test`, plus `typecheck` |
+| Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
+| `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
+| Installers, `release.yml` | `sh scripts/test-installer.sh` |
+
+Always cheap, always worth it: `git diff --check`, and `pnpm format` + `format:check` on any diff at all.
+
+Run the whole chain in exactly three cases: the change spans the repo widely enough that nothing narrower is credible, you are diagnosing a CI failure, or you are asked to. There are no coverage thresholds in this repo, so nothing forces a wider run than the behavior needs.
 
 `ci-windows` runs the same minus `format:check`, plus `scripts/test-installer.ps1`. Two failures there are known and are not your diff: a bare `Failed` worker crash, and an `environment.test.ts` truncation-timing assertion — rerun before debugging. An `EBUSY` on removing a directory that is some child process's cwd is real, not a flake.
 
-Once the chain passes, commit and push to the current branch without asking. Force-pushes and reverting someone else's commits still need confirmation.
+Once the evidence you chose passes, commit and push to the current branch without asking. Force-pushes and reverting someone else's commits still need confirmation.
 
 ## Record and ship
 
@@ -123,4 +136,5 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
 - **`gh pr create --base dev`.** The base branch is `main`.
 - **Agent Notes** (`.agents/notes/<lifecycle>/<class>/…`) and their supersession lifecycle. No such convention.
 - **`knip`, `pnpm run doc-sync`, `pnpm run lint`.** None exist; the real chain is the one above.
+- **Coverage-scoped verification** (`--coverage.include`, per-file thresholds). No coverage gate is configured here, so narrowing means choosing test files, not proving coverage over a source scope.
 - **Adding a skill to `packages/skills/skills/`** because it is "a skill". That directory is the shipped, user-facing library — a docs-sync test requires every entry to have a row in the bilingual skill tables, and everything there installs into users' agents. Repo development skills live in `.agents/skills/`.
