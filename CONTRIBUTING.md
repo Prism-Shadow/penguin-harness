@@ -20,6 +20,7 @@ pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied to 7368
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
 pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
+pnpm desktop     # desktop app from source (builds everything first, then Electron)
 
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```
@@ -44,10 +45,28 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`) default
-to a separate data root, `~/.penguin/dev-data`, kept apart from the installed CLI/server's
-`~/.penguin/data` — hacking on the repo never mixes state with your real agents. Export
-`PENGUIN_HOME` to point them anywhere else; an explicit value always wins.
+Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`,
+`pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, kept apart from
+the installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
+your real agents. Export `PENGUIN_HOME` to point them anywhere else; an explicit value
+always wins. The desktop dev shell isolates one step further: an unpackaged run takes a
+dev-suffixed app identity (`PenguinHarness-Dev`) with its own userData directory,
+single-instance lock, and sticky port, and defaults to `~/.penguin/dev-data` even when
+launched without the env var (`pnpm --dir packages/desktop start`) — so it runs side by
+side with an installed release build, with neither instance seeing the other. Every
+unpackaged launch prints which pair it picked: `[shell] dev instance '<name>' on data
+root <root>`.
+
+Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
+to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,
+so sessions made that way are no longer in the window — run it with
+`PENGUIN_HOME=~/.penguin/data` to work against the release root on purpose. And the dev
+shell's userData directory moved with its name, taking the Chromium profile along, so the
+window's origin-scoped preferences (theme, language, layout) and its remembered port
+start fresh once. Note the identity is one fixed name, not one per checkout: two working
+copies both running the desktop shell still share it, and the second launch focuses the
+first one's window instead of opening its own — a distinct `PENGUIN_HOME` does not change
+that, because it moves the data root, not the identity.
 
 Copy `.env.example` to `.env` for model credentials in development.
 
