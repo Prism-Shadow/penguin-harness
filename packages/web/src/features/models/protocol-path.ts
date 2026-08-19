@@ -19,6 +19,9 @@
  *   `client_type: "openai-chat"` (gateways, custom and user-defined groups; the bare
  *   "openai" spelling is a deprecated pre-0.4.2 alias) plus the DeepSeek / GLM / Kimi
  *   direct clients — POST {base}/chat/completions.
+ *
+ * The three generic protocol clients — `openai-responses`, `ant-messages`,
+ * `openai-chat` — are also what the custom-model protocol detection stores.
  */
 
 /**
@@ -33,6 +36,7 @@ export function protocolPathForModel(provider: string, clientType: string): stri
   const t = clientType.trim().toLowerCase();
   // The generic protocol clients (agenthub 0.4.2): checked before the substring matches
   // below — "openai-responses" also contains "openai" but speaks the Responses API.
+  // Order mirrors AutoLLMClient's routing.
   if (t.includes("ant-messages")) return "/v1/messages";
   if (t.includes("openai-responses")) return "/responses";
   // openai-chat / openai-embedding / the deprecated bare "openai" alias.
