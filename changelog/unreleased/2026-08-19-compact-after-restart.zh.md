@@ -3,6 +3,7 @@
 - **Date:** 2026-08-19
 - **Type:** fix
 - **Scope:** `core`, `server`, `web`, `docs`
+- **PR:** [#342](https://github.com/Prism-Shadow/penguin-harness/pull/342)
 - **Breaking:** yes — `POST /compact` 三种拒绝原因中的两种从共用的 `nothing_to_compact` 错误码移到了 `compaction_not_configured` 与 `already_compacted`。
 
 [English](2026-08-19-compact-after-restart.md)
