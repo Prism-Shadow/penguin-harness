@@ -35,7 +35,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
-import { CopyButton } from "../../components/ui/copy-button";
+import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { SkillsTab } from "./skills-tab";
@@ -487,8 +487,7 @@ function OverviewTab({
               <CopyButton
                 text={data.stateDir}
                 label={S.agent.copyStateDir}
-                showCopiedText
-                className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                className={ROW_COPY_CLASS}
               />
             </div>
           </div>
