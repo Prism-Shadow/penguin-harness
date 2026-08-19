@@ -2,6 +2,9 @@
   "name": "@prismshadow/penguin-skills",
   "version": "0.2.2",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "description": "PenguinHarness skill library: built-in SKILL.md documents and skill groups, decoupled from core.",
   "license": "Apache-2.0",
   "repository": {

@@ -5,7 +5,7 @@ export default defineConfig({
   // at stage time (plain node, no Electron) to generate the CLI launcher scripts.
   entry: ["src/main.ts", "src/launcher.ts"],
   format: ["esm"],
-  target: "node22",
+  target: "node24",
   platform: "node",
   clean: true,
   sourcemap: true,
