@@ -205,6 +205,26 @@ describe("detection copy", () => {
       expect(Object.values(catalog.protocolNames)).not.toContain(catalog.protocolUnset);
     }
   });
+
+  it("carries no dialog-era copy: both outcomes are toasts, so no popup titles remain", () => {
+    // The verdict used to be a blocking AlertModal (which needed an accessible name) and,
+    // before that, a line rendered under the base URL field. Both are gone: a detection
+    // result is transient and must occupy no space in the form.
+    for (const catalog of [EN.models, ZH.models] as const) {
+      expect("detectOkTitle" in catalog).toBe(false);
+      expect("detectFailedTitle" in catalog).toBe(false);
+    }
+  });
+
+  it("keeps both toast messages to a single short line", () => {
+    for (const catalog of [EN.models, ZH.models] as const) {
+      const success = catalog.detectedProtocol("OpenAI Responses");
+      for (const text of [success, catalog.detectFailedBody]) {
+        expect(text.length).toBeLessThanOrEqual(80);
+        expect(text).not.toContain("\n");
+      }
+    }
+  });
 });
 
 describe("protocolPathForModel (generic protocol client types)", () => {

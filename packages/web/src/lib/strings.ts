@@ -497,12 +497,9 @@ export const zh = {
     /** Hover title on the detect button. */
     detectProtocolHint: "探测 base URL，采用它实际提供的协议",
     detecting: "检测中…",
-    /** Accessible name of the detection-success popup (紧凑卡片不渲染标题栏)。 */
-    detectOkTitle: "已检测到协议",
-    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用到该模型。`,
-    /** Accessible name of the detection-failure popup。 */
-    detectFailedTitle: "协议检测失败",
-    /** The ONE failure message: 所有失败情形共用，只讲用户能动手改的两件事。 */
+    /** Success toast；协议本身随后显示在 base URL 输入框的后缀处。 */
+    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
+    /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
     detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:

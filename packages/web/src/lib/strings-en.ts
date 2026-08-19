@@ -521,10 +521,9 @@ export const en: Strings = {
     detectProtocol: "Detect",
     detectProtocolHint: "Probe the base URL and apply the protocol it serves",
     detecting: "Detecting…",
-    detectOkTitle: "Protocol detected",
-    detectedProtocol: (name: string): string => `Detected ${name}; applied to this model.`,
-    detectFailedTitle: "Protocol detection failed",
-    /** The ONE failure message: every mode collapses to it, naming only what the user can act on. */
+    /** Success toast; the protocol itself then shows in the base URL field's suffix. */
+    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
     addProtocolHintDetect:
       "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",

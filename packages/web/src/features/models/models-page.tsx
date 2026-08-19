@@ -52,7 +52,7 @@ import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
-import { AlertModal, ConfirmModal } from "../../components/ui/confirm-modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -1142,19 +1142,12 @@ function ModelDialog({
   /** Protocol detection in progress (custom / user-defined groups only). */
   const [detecting, setDetecting] = useState(false);
   /**
-   * Last detection outcome. A hit renders one green line under the base URL field; a miss
-   * only tints the suffix trigger amber, because every explanation now goes to the popup.
+   * Whether the last detection run came back empty, purely to tint the suffix trigger
+   * amber. That tint is the control's own appearance, not a message occupying the form —
+   * the wording of both outcomes lives in a toast. It is deliberately the only trace left:
+   * a hit needs none, because the suffix then shows the protocol it applied.
    */
-  const [detectResult, setDetectResult] = useState<
-    { kind: "ok"; clientType: string } | { kind: "failed" } | null
-  >(null);
-  /**
-   * The detection popup (null = closed). Both outcomes are announced here: a failure the
-   * user must act on, and — for a detection they explicitly asked for — the hit, so the
-   * answer is not a change they have to notice on their own. The save path opts out of the
-   * success case (see submit): it would interrupt an action already committed to.
-   */
-  const [detectAlert, setDetectAlert] = useState<{ ok: boolean; text: string } | null>(null);
+  const [detectFailed, setDetectFailed] = useState(false);
   /**
    * Monotonic run counter: each detection captures it and only the newest run may apply
    * its result — a manual protocol pick or a re-run supersedes anything still in flight.
@@ -1226,30 +1219,35 @@ function ModelDialog({
    * key typed here, else this entry's stored key, else the environment variable for
    * whichever protocol each probe speaks (ANTHROPIC_* / OPENAI_*) — and a keyless probe
    * still identifies a route that answers in a protocol's own error shape. So the button
-   * is always live and a failure explains itself in the popup instead of being pre-empted
-   * by a disabled control.
+   * is always live and a failure explains itself afterwards instead of being pre-empted by
+   * a disabled control.
+   *
+   * Outcomes are announced with a toast, like the connectivity test in this same dialog:
+   * transient and non-blocking, nothing to dismiss before carrying on. The Toaster portals
+   * to document.body at z-[100] against the Modal's z-50, so a toast raised from inside
+   * this dialog renders above it rather than behind or clipped by it.
    *
    * Every failure — unreachable, timeout, gateway junk, nothing matched, an invalid URL
-   * that never left the browser, a server error — raises the SAME popup naming the two
+   * that never left the browser, a server error — raises the SAME message naming the two
    * things the user can act on (API key, base URL). Per maintainer: the finer distinctions
    * are invisible from the outside, and wording one of them as "the endpoint responded"
    * read as success. The per-probe outcomes stay in the endpoint's response for debugging.
    *
    * A stale run (superseded by a manual pick or a newer run) discards its result instead
-   * of clobbering the form, and never raises the popup.
+   * of clobbering the form, and stays silent.
    */
   const detectOnce = async (): Promise<string | null> => {
     const baseUrl = form.baseUrl.trim();
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      setDetectResult({ kind: "failed" });
-      setDetectAlert({ ok: false, text: S.models.detectFailedBody });
+      setDetectFailed(true);
+      toastError(S.models.detectFailedBody);
       return null;
     }
     const seq = ++detectSeq.current;
     setDetecting(true);
-    setDetectResult(null);
+    setDetectFailed(false);
     try {
       const body: ModelProtocolDetectRequest = { baseUrl };
       const key = form.apiKeyInput.trim();
@@ -1264,16 +1262,15 @@ function ModelDialog({
       if (seq !== detectSeq.current) return null;
       if (res.detected) {
         set({ clientType: res.detected });
-        setDetectResult({ kind: "ok", clientType: res.detected });
         return res.detected;
       }
-      setDetectResult({ kind: "failed" });
-      setDetectAlert({ ok: false, text: S.models.detectFailedBody });
+      setDetectFailed(true);
+      toastError(S.models.detectFailedBody);
       return null;
     } catch {
       if (seq === detectSeq.current) {
-        setDetectResult({ kind: "failed" });
-        setDetectAlert({ ok: false, text: S.models.detectFailedBody });
+        setDetectFailed(true);
+        toastError(S.models.detectFailedBody);
       }
       return null;
     } finally {
@@ -1295,17 +1292,14 @@ function ModelDialog({
   };
 
   /**
-   * The Detect button. Announces BOTH outcomes in the popup: the user asked a question and
-   * gets an answer either way. (The save path calls runDetect directly instead, so a hit
-   * there does not interrupt the save with a dialog to dismiss.)
+   * The Detect button. Announces BOTH outcomes: the user asked a question and gets an
+   * answer either way. (The save path calls runDetect directly instead — a hit there needs
+   * no announcement of its own, since the save it was serving carries straight on.)
    */
   const detectFromButton = async () => {
     const detected = await runDetect();
-    if (detected === null) return; // detectOnce already raised the failure popup
-    setDetectAlert({
-      ok: true,
-      text: S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected),
-    });
+    if (detected === null) return; // detectOnce already raised the failure toast
+    toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
   };
 
   /**
@@ -1315,7 +1309,7 @@ function ModelDialog({
   const pickProtocol = (clientType: ProtocolClientType) => {
     detectSeq.current++;
     setDetecting(false);
-    setDetectResult(null);
+    setDetectFailed(false);
     set({ clientType });
   };
 
@@ -1431,8 +1425,10 @@ function ModelDialog({
     const next = validated();
     if (!next) return;
     if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
-      // Joins a run already started from the button / blur rather than probing twice.
+      // Joins a run already started from the Detect button rather than probing twice.
       const detected = await runDetect();
+      // Aborted: onSubmit is never reached, so the dialog stays open (detectOnce already
+      // raised the failure toast, which renders above it) and nothing is persisted.
       if (!detected) return;
       onSubmit({ ...next, clientType: detected }, action);
       return;
@@ -1872,7 +1868,7 @@ function ModelDialog({
               // endpoint, and leaving it up would keep asserting a result for a URL that is
               // no longer in the field.
               onChange={(e) => {
-                setDetectResult(null);
+                setDetectFailed(false);
                 set({ baseUrl: e.target.value });
               }}
               // Detection on leaving the field (custom / user-defined groups): only a
@@ -1898,7 +1894,7 @@ function ModelDialog({
                   value={protocolChoice}
                   path={suffixLabel}
                   detecting={detecting}
-                  tone={detectResult === null ? null : detectResult.kind === "ok" ? "ok" : "warn"}
+                  tone={detectFailed ? "warn" : null}
                   onPick={pickProtocol}
                 />
               </div>
@@ -1909,17 +1905,11 @@ function ModelDialog({
             )}
           </div>
           {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
-          {/* Detection hit, in the field's own message slot rather than a row of its own:
-              nothing renders until a run has actually landed, and it is worth one line
-              because the suffix only shows the path, not the protocol's name. A miss says
-              nothing here — it raised the popup, and leaves the suffix amber. */}
-          {detectResult?.kind === "ok" && (
-            <p role="status" className="mt-1 text-xs text-green-600 dark:text-green-500">
-              {S.models.detectedProtocol(
-                S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
-              )}
-            </p>
-          )}
+          {/* No detection verdict is rendered here (per maintainer): a result must not take
+              up room in the form. Both outcomes are toasts, and where the protocol ENDED UP
+              is already visible in the suffix above, which is the thing that actually holds
+              it. Nothing conditional remains below the field, so the idle and post-detection
+              layouts are identical — no reserved height, no shift. */}
         </div>
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
@@ -2082,22 +2072,6 @@ function ModelDialog({
             {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
           </p>
         </ConfirmModal>
-      )}
-
-      {/* Detection verdict. A popup rather than a quiet line: on failure it is the reason
-          the model was NOT saved, which must not be missable, and on success it answers a
-          question the user explicitly asked. The config dialog stays mounted underneath,
-          so dismissing this returns to the form — with the detected protocol applied, or
-          with none, ready to be picked by hand or re-probed against a corrected URL. */}
-      {detectAlert !== null && (
-        <AlertModal
-          open
-          tone={detectAlert.ok ? "primary" : "danger"}
-          title={detectAlert.ok ? S.models.detectOkTitle : S.models.detectFailedTitle}
-          onClose={() => setDetectAlert(null)}
-        >
-          <p className="text-sm text-gray-700 dark:text-gray-300">{detectAlert.text}</p>
-        </AlertModal>
       )}
     </Modal>
   );
