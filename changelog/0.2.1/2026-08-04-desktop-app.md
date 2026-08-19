@@ -1,5 +1,12 @@
 # Desktop app: Electron shell over the embedded server
 
+- **Date:** 2026-08-04
+- **Type:** feature
+- **Scope:** `desktop`, `server`, `web`, `cli`
+- **PR:** [#173](https://github.com/Prism-Shadow/penguin-harness/pull/173), [#177](https://github.com/Prism-Shadow/penguin-harness/pull/177), [#180](https://github.com/Prism-Shadow/penguin-harness/pull/180), [#189](https://github.com/Prism-Shadow/penguin-harness/pull/189), [#199](https://github.com/Prism-Shadow/penguin-harness/pull/199), [#206](https://github.com/Prism-Shadow/penguin-harness/pull/206)
+
+[中文版](2026-08-04-desktop-app.zh.md)
+
 New `packages/desktop`: a desktop distribution of the Web App that runs the existing server and frontend unchanged — an Electron shell forks `@prismshadow/penguin-server` as a utilityProcess on the shared data root and points its window at `http://localhost:<port>`, keeping the plain same-origin HTTP/SSE contract (no private IPC, no preload, no node integration in the window).
 
 ## Shell
