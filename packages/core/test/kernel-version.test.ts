@@ -1,9 +1,9 @@
 /**
  * Agent config kernel versions: the pinned-hash guard (the mechanical definition of "the
- * defaults changed substantively, bump the kernel version"), the seeded pre-#257 generation's
- * reconstruction proof, and the smart-merge semantics of applyKernelUpdate (untouched old
- * defaults advance, customizations and unknown generations are kept, identity fields and
- * user data are never touched, YAML comments survive, the config is re-stamped).
+ * defaults changed substantively, bump the kernel version") and the smart-merge semantics of
+ * applyKernelUpdate (untouched old defaults advance, customizations and unknown generations
+ * are kept, identity fields and user data are never touched, YAML comments survive, the
+ * config is re-stamped).
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -31,21 +31,18 @@ import {
   type SystemConfig,
 } from "../src/index.js";
 
-/** The two seeded generations (see KERNEL_HASH_HISTORY's doc comment). */
-const PRE_TOGGLES_GENERATION = "2026-08-10";
-const TOGGLES_GENERATION = "2026-08-11";
-
 /** A mutable plain-object clone of a config, for seeding on-disk scenarios. */
 function mutableConfig(config: SystemConfig): Record<string, unknown> {
   return structuredClone(config) as unknown as Record<string, unknown>;
 }
 
 /**
- * Reconstructs the pre-#257 (pre-toggles) default config from the current one: the frozen
+ * Reconstructs a pre-#257 (pre-toggles) shaped config from the current defaults: the frozen
  * LEGACY_* sections swapped back into the template in place of the section placeholders, no
- * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections — exactly what a
- * `system_config.yaml` of that era carries (the same recipe prompt-sections.test.ts proves
- * byte-exact for the template).
+ * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (the recipe
+ * prompt-sections.test.ts proves byte-exact for the template). Leaves outside the swap — the
+ * tool entries — carry the *current* defaults, so the smart-merge tests below treat them as
+ * already-current; the seeding exercises the old-template migration paths regardless.
  */
 function preTogglesDefaultConfig(): SystemConfig {
   const current = defaultSystemConfig();
@@ -95,18 +92,11 @@ describe("kernel hash history (pinned-hash guard)", () => {
     ).toEqual([]);
   });
 
-  // Anchored to the first shipped generation: the reconstruction recipe reads the *current*
-  // defaults, so it only reproduces the pre-toggles era while the current generation is
-  // still the toggles one. Once the defaults evolve past it this proof self-retires — the
-  // pinned hashes remain the frozen source of truth on their own.
-  it.runIf(KERNEL_VERSION === TOGGLES_GENERATION)(
-    "the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction",
-    () => {
-      expect(computeKernelHashes(preTogglesDefaultConfig())).toEqual(
-        KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION],
-      );
-    },
-  );
+  // The pre-toggles ("2026-08-10") reconstruction proof lived here while the current
+  // generation was still the toggles one ("2026-08-11"): the recipe reads the *current*
+  // defaults, so once they evolved past that era (run_subagent's thinking_level,
+  // "2026-08-18") it self-retired as designed — the pinned hashes remain the frozen
+  // source of truth on their own.
 
   it("excludes identity fields and mcpServers from the managed leaves", () => {
     const paths = kernelLeafEntries({

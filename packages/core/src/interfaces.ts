@@ -238,6 +238,21 @@ export interface SubagentHandle {
 }
 
 /**
+ * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
+ * `thinking_level` argument): the four selectable tiers only — never `"none"`, mirroring the
+ * user-facing pickers (many models cannot disable thinking; see the web picker's
+ * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
+ * argument inherits the parent Session's effective level, so a parent genuinely running
+ * without a level still passes that down.
+ */
+export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+];
+
+/**
  * Child Agent runner: injected into the `run_subagent` tool so it can
  * derive and run a child Agent without a reverse dependency on Agent/Session, avoiding circular
  * dependencies. The concrete implementation is provided by the SDK composition layer (where
@@ -262,6 +277,12 @@ export interface SubagentRunner {
     modelId?: string;
     /** Provider group for `modelId`; required whenever `modelId` is given. */
     provider?: string;
+    /**
+     * Explicit thinking level for the child Session; omitted inherits the parent Session's
+     * effective level (including "no level" when the parent has none). The `run_subagent`
+     * tool restricts its `thinking_level` argument to {@link SUBAGENT_THINKING_LEVELS}.
+     */
+    thinkingLevel?: ThinkingLevelName;
   }): Promise<SubagentHandle>;
 }
 
