@@ -3,11 +3,11 @@
  * background execution.
  *
  * The tool itself doesn't depend on Agent/Session, only holding an injected `SubagentRunner`
- * (breaking the circular dependency). The model may freely choose the child Agent (`agent_id`)
- * and model (`model_id`) via arguments; if omitted, it falls back to reusing the current Agent
- * and inheriting the parent session's model respectively. The spawned child session is managed by
- * `ManagedSubagentSession` (sharing the `SubagentSessionManager` injected by Environment with
- * `input_subagent`).
+ * (breaking the circular dependency). The model may freely choose the child Agent (`agent_id`),
+ * model (`model_id`), and thinking level (`thinking_level`) via arguments; if omitted, it falls
+ * back to reusing the current Agent and inheriting the parent session's model and thinking level
+ * respectively. The spawned child session is managed by `ManagedSubagentSession` (sharing the
+ * `SubagentSessionManager` injected by Environment with `input_subagent`).
  *
  * The two-phase semantics mirror `exec_command`: within the `yield_time_ms` window, child-session
  * messages are forwarded live (tagged with origin, so the frontend can see the child Agent's tool
@@ -27,7 +27,12 @@
  */
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces.js";
+import { SUBAGENT_THINKING_LEVELS } from "../../interfaces.js";
+import type {
+  EnvironmentServices,
+  ThinkingLevelName,
+  ToolDefinitionConfig,
+} from "../../interfaces.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import {
   DEFAULT_SUBAGENT_YIELD_MS,
@@ -91,6 +96,21 @@ export function createSubagentTool(
         );
         return { stopReason: "failed" };
       }
+      // Thinking-level override: an explicit value must be one of the selectable tiers — a typo
+      // must fail loudly rather than silently running the child at an inherited level the caller
+      // did not ask for. JSON `null` counts as omitted (= inherit), like a missing key.
+      const rawThinkingLevel = args.thinking_level ?? undefined;
+      if (
+        rawThinkingLevel !== undefined &&
+        !(SUBAGENT_THINKING_LEVELS as readonly unknown[]).includes(rawThinkingLevel)
+      ) {
+        yield* fail(
+          `[run_subagent error: invalid \`thinking_level\` ${JSON.stringify(rawThinkingLevel)}; ` +
+            `use one of ${SUBAGENT_THINKING_LEVELS.join(" / ")}, or omit it to inherit the parent session's level]`,
+        );
+        return { stopReason: "failed" };
+      }
+      const thinkingLevel = rawThinkingLevel as ThinkingLevelName | undefined;
       const yieldMs = clampYield(
         args.yield_time_ms,
         DEFAULT_SUBAGENT_YIELD_MS,
@@ -116,6 +136,7 @@ export function createSubagentTool(
           ...(agentId !== undefined ? { agentId } : {}),
           ...(modelId !== undefined ? { modelId } : {}),
           ...(provider !== undefined ? { provider } : {}),
+          ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         });
         session = new ManagedSubagentSession(handle);
       } catch (err) {

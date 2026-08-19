@@ -14,6 +14,7 @@ $OriginalOs = $env:OS
 $OriginalDownloadBaseUrl = $env:PENGUIN_DOWNLOAD_BASE_URL
 $OriginalDownloadFallbackBaseUrl = $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
 $OriginalDownloadSource = $env:PENGUIN_DOWNLOAD_SOURCE
+$OriginalDownloadSpeedProbe = $env:PENGUIN_DOWNLOAD_SPEED_PROBE
 $OriginalArchive = $env:PENGUIN_ARCHIVE
 $OriginalInstallDir = $env:PENGUIN_INSTALL_DIR
 $OriginalVersion = $env:PENGUIN_VERSION
@@ -24,6 +25,10 @@ $Fixture = @{
   BadInnerBundle = $null
   LegacyArchive = $null
   Installer = $Installer
+  Probe64 = $null
+  Probe64Hash = $null
+  Probe1M = $null
+  Probe1MHash = $null
 }
 $global:PenguinInstallerFixture = $Fixture
 
@@ -77,6 +82,12 @@ function global:Invoke-WebRequest {
   if ($f.Mode -eq "forwarder-auto-github" -and $Uri -like "*/latest.json") {
     throw "fixture OSS metadata failure"
   }
+  if ($f.Mode -eq "speed-probe-missing-manifest" -and $Uri -like "*/release-download-manifest.tsv") {
+    throw "fixture missing release download manifest"
+  }
+  if ($f.Mode -eq "speed-probe-github-below-threshold" -and $Uri -like "https://github.com/*/probe-1m.bin") {
+    Start-Sleep -Milliseconds 4300
+  }
   switch -Wildcard ($Uri) {
     "*/latest.json" {
       if ($f.Mode -eq "forwarder-invalid-metadata") {
@@ -89,6 +100,25 @@ function global:Invoke-WebRequest {
           releaseBaseUrl = "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/releases/v0.0.0-test"
         } | ConvertTo-Json | Set-Content -LiteralPath $OutFile -Encoding ascii
       }
+    }
+    "*/release-download-manifest.tsv" {
+      if ($f.Mode -in @("speed-probe-small", "speed-probe-github-fast", "speed-probe-github-below-threshold")) {
+        $AssetSize = if ($f.Mode -eq "speed-probe-small") { 16777216 } else { 104857600 }
+        @(
+          "penguin-release-download-manifest`t1`tv0.0.0-test"
+          "probe`tsmall`tprobe-64k.bin`t65536`t$($f.Probe64Hash)"
+          "probe`tlarge`tprobe-1m.bin`t1048576`t$($f.Probe1MHash)"
+          "asset`tpenguin-win32-x64.zip`t$AssetSize`t$((Get-FileHash -Algorithm SHA256 -LiteralPath $f.GoodBundle).Hash.ToLowerInvariant())"
+        ) | Set-Content -LiteralPath $OutFile -Encoding ascii
+      } else {
+        throw "unexpected manifest request: $Uri"
+      }
+    }
+    "*/probe-64k.bin" {
+      Copy-Item -LiteralPath $f.Probe64 -Destination $OutFile
+    }
+    "*/probe-1m.bin" {
+      Copy-Item -LiteralPath $f.Probe1M -Destination $OutFile
     }
     "*/install.ps1" {
       Copy-Item -LiteralPath $f.Installer -Destination $OutFile
@@ -120,7 +150,8 @@ function Invoke-OnlineCase(
   [string]$Version,
   [bool]$ShouldSucceed,
   [int]$ExpectedRequests,
-  [string]$InstallerPath = ""
+  [string]$InstallerPath = "",
+  [string]$SpeedProbe = "0"
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
@@ -128,10 +159,11 @@ function Invoke-OnlineCase(
   $Arguments = @{ InstallDir = $InstallDir }
   if ($Version) { $Arguments.Version = $Version }
   if (-not $InstallerPath) { $InstallerPath = $Installer }
+  $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
   $Succeeded = $true
   $Output = @()
-  try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false }
-  Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result"
+  try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false; $Output += $_ }
+  Assert-True ($Succeeded -eq $ShouldSucceed) "$Name returned an unexpected result: $(($Output | Out-String).Trim())"
   Assert-True ($Fixture.Requests.Count -eq $ExpectedRequests) `
     "$Name made $($Fixture.Requests.Count) requests, expected $ExpectedRequests"
   [PSCustomObject]@{ InstallDir = $InstallDir; Requests = @($Fixture.Requests); Output = @($Output) }
@@ -143,7 +175,8 @@ function Invoke-ForwarderCase(
   [string]$Source,
   [int]$ExpectedRequests,
   [string]$Version = "",
-  [bool]$ShouldSucceed = $true
+  [bool]$ShouldSucceed = $true,
+  [string]$SpeedProbe = "0"
 ) {
   $Fixture.Mode = $Mode
   $Fixture.Requests.Clear()
@@ -157,6 +190,7 @@ function Invoke-ForwarderCase(
   }
   $env:PENGUIN_INSTALL_DIR = $InstallDir
   $env:PENGUIN_DOWNLOAD_SOURCE = $Source
+  $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL, Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL -ErrorAction SilentlyContinue
   $Forwarder = Join-Path $RepoRoot "packages\landing\public\install.ps1"
   $Output = @()
@@ -175,7 +209,7 @@ try {
   # Keep the fixture tests away from the runner's user registry Path.
   $env:OS = "PenguinInstallerFixtureTest"
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL, Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL, `
-    Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, `
+    Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_DOWNLOAD_SPEED_PROBE, Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, `
     Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
   # --- Offline program archive: good install, then a failing upgrade must roll back. ---
@@ -219,6 +253,12 @@ try {
     Set-Content -LiteralPath "$($Fixture.BadInnerBundle).sha256" -Encoding ascii
 
   $Fixture.LegacyArchive = $GoodArchive
+  $Fixture.Probe64 = Join-Path $WorkDir "probe-64k.bin"
+  $Fixture.Probe1M = Join-Path $WorkDir "probe-1m.bin"
+  [IO.File]::WriteAllBytes($Fixture.Probe64, [byte[]]::new(65536))
+  [IO.File]::WriteAllBytes($Fixture.Probe1M, [byte[]]::new(1048576))
+  $Fixture.Probe64Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture.Probe64).Hash.ToLowerInvariant()
+  $Fixture.Probe1MHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Fixture.Probe1M).Hash.ToLowerInvariant()
 
   # Model the release workflow's installer stamping without changing the source installer.
   $StampedInstaller = Join-Path $WorkDir "install-v0.0.0-test.ps1"
@@ -266,6 +306,26 @@ try {
   Assert-True ($stampedFallback.Requests[1] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "stamped installer did not fall back to the same GitHub version"
 
+  $speedProbeSmall = Invoke-OnlineCase "speed-probe-small" "speed-probe-small" "" $true 5 $StampedInstaller "1"
+  Assert-True (($speedProbeSmall.Requests | Out-String) -match 'release-download-manifest\.tsv') `
+    "speed probe did not request the release download manifest"
+  Assert-True (($speedProbeSmall.Requests | Out-String) -match 'probe-64k\.bin') `
+    "speed probe did not request the small probe"
+  Assert-True ($speedProbeSmall.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
+    "small speed probe path did not keep the default OSS source"
+
+  $speedProbeGitHubFast = Invoke-OnlineCase "speed-probe-github-fast" "speed-probe-github-fast" "" $true 6 $StampedInstaller "1"
+  Assert-True ($speedProbeGitHubFast.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "speed probe did not select GitHub when it met the minimum speed"
+
+  $speedProbeGitHubBelowThreshold = Invoke-OnlineCase "speed-probe-github-below-threshold" "speed-probe-github-below-threshold" "" $true 6 $StampedInstaller "1"
+  Assert-True ($speedProbeGitHubBelowThreshold.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
+    "speed probe did not keep OSS when GitHub was below the minimum speed"
+
+  $speedProbeMissing = Invoke-OnlineCase "speed-probe-missing-manifest" "speed-probe-missing-manifest" "" $true 4 $StampedInstaller "1"
+  Assert-True (($speedProbeMissing.Output | Out-String) -match 'Download source test was inconclusive') `
+    "missing speed probe manifest did not fall back to the compatible source policy"
+
   $env:PENGUIN_DOWNLOAD_SOURCE = "github"
   $stampedGitHub = Invoke-OnlineCase "stamped-github" "canonical" "" $true 2 $StampedInstaller
   Assert-True ($stampedGitHub.Requests[0] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
@@ -291,6 +351,14 @@ try {
     "download fallback exposed the OSS URL in normal output"
   Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL
+
+  $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://example.invalid/releases/v0.0.0-test"
+  $fallbackWithoutBase = Invoke-OnlineCase "fallback-without-base" "primary-network" "" $true 3 $StampedInstaller
+  Assert-True (-not (($fallbackWithoutBase.Requests | Out-String) -match 'example\.invalid')) `
+    "fallback without base should not override auto/source fallback"
+  Assert-True (($fallbackWithoutBase.Requests | Out-String) -match 'github\.com/.*/releases/download/v0\.0\.0-test/penguin-win32-x64\.zip') `
+    "fallback without base did not keep the internal same-version GitHub fallback"
+  Remove-Item Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL
 
   $forwarderOss = Invoke-ForwarderCase "forwarder-oss" "forwarder-oss" "auto" 2
   Assert-True ($forwarderOss.Requests[0] -like "*/latest.json") `
@@ -320,7 +388,14 @@ try {
     "pinned forwarder did not request the versioned installer"
   Assert-True ($pinnedForwarder.Requests[1] -like "*/releases/v0.0.0-test/penguin-win32-x64.zip") `
     "pinned installer did not keep the selected release version"
-  Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
+
+  $speedProbeForwarder = Invoke-ForwarderCase "forwarder-speed-probe-handoff" "speed-probe-github-fast" "auto" 7 "v0.0.0-test" $true "1"
+  Assert-True ($speedProbeForwarder.Requests[0] -like "*/releases/v0.0.0-test/install.ps1") `
+    "speed probe handoff forwarder did not fetch the versioned installer"
+  Assert-True ($speedProbeForwarder.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "forwarder locked the payload source instead of letting the installer run speed probes"
+
+  Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_DOWNLOAD_SPEED_PROBE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
   Invoke-OnlineCase "outer-mismatch" "outer-sha-mismatch" "" $false 3 | Out-Null
   Invoke-OnlineCase "inner-mismatch" "inner-sha-mismatch" "" $false 3 | Out-Null
@@ -348,6 +423,11 @@ try {
     Remove-Item Env:\PENGUIN_DOWNLOAD_SOURCE -ErrorAction SilentlyContinue
   } else {
     $env:PENGUIN_DOWNLOAD_SOURCE = $OriginalDownloadSource
+  }
+  if ($null -eq $OriginalDownloadSpeedProbe) {
+    Remove-Item Env:\PENGUIN_DOWNLOAD_SPEED_PROBE -ErrorAction SilentlyContinue
+  } else {
+    $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $OriginalDownloadSpeedProbe
   }
   if ($null -eq $OriginalArchive) {
     Remove-Item Env:\PENGUIN_ARCHIVE -ErrorAction SilentlyContinue

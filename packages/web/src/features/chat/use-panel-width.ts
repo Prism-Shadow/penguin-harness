@@ -9,14 +9,15 @@
  *
  * "Immediately" is what rules out two `useState`s over one storage key: only the panel that was
  * mounted and dragged would update, and the other would keep a stale copy until its next
- * remount. So the value lives in a module-level store both hooks subscribe to via
- * useSyncExternalStore, and the persisted preference is written once per drag (mouseup), not
- * per frame.
+ * remount. So the value lives in a module-level store both hooks subscribe to, and the
+ * persisted preference is written once per drag (mouseup), not per frame.
  *
  * Width is a layout preference, not session data: it is never reset on a Session switch.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 
 const MIN_WIDTH = 320;
 const WIDTH_STORAGE_KEY = "penguin.panelWidth";
@@ -80,23 +81,24 @@ function initialWidth(): number {
 
 // —— Module-level store: one width, every subscriber re-renders on change ——
 
-let sharedWidth: number | null = null;
-const listeners = new Set<() => void>();
+// null = not initialized yet: the width stays lazy (computed on the first read, i.e. the
+// first mounted panel's render), exactly like the pre-zustand module variable — an eager
+// initialWidth() at module load would run the legacy-key migration on every page load.
+const widthStore = createStore<{ width: number | null }>(() => ({ width: null }));
 
 function readWidth(): number {
-  sharedWidth ??= initialWidth();
-  return sharedWidth;
+  const { width } = widthStore.getState();
+  if (width !== null) return width;
+  // First read happens during the first subscriber's render, before anything subscribed:
+  // seeding via setState here notifies nobody, so it is safe inside a render.
+  const initial = initialWidth();
+  widthStore.setState({ width: initial });
+  return initial;
 }
 
 function writeWidth(next: number): void {
-  if (next === sharedWidth) return;
-  sharedWidth = next;
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  if (next === widthStore.getState().width) return;
+  widthStore.setState({ width: next });
 }
 
 export interface PanelWidthState {
@@ -114,7 +116,7 @@ export interface PanelWidthState {
  * (each panel has its own DOM node and its own handle); only the width crosses between them.
  */
 export function usePanelWidth(): PanelWidthState {
-  const width = useSyncExternalStore(subscribe, readWidth, readWidth);
+  const width = useStore(widthStore, () => readWidth());
   const [resizing, setResizing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 

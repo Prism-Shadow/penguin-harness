@@ -1,5 +1,12 @@
 # Cost center: the error table pages back, reads shorter, and stops logging ordinary command exits
 
+- **Date:** 2026-07-29
+- **Type:** feature
+- **Scope:** `server`, `web`, `core`
+- **PR:** [#103](https://github.com/Prism-Shadow/penguin-harness/pull/103)
+
+[中文版](2026-07-29-cost-center-errors.zh.md)
+
 Three changes to the error panel, which had become hard to use for the thing it exists for — finding the error that actually matters.
 
 ## The table pages back

@@ -39,7 +39,9 @@
  * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
  * opens them by path), and goal mode; selected files show as removable chips above the text
  * body, next to the image thumbnails, and — like images — an attachments-only message is
- * sendable with no text at all.
+ * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
+ * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
+ * with an overlay bounded to that region while the drag is over it.
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -69,7 +71,9 @@ import type {
   ApprovalMode,
   ModelInfo,
   ModelRefDto,
+  PendingFollowUpInfo,
   PendingSteeringInfo,
+  RecalledMessageResponse,
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
@@ -100,6 +104,7 @@ import {
   skillSlashItems,
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
+import { mergeRecalledDraft } from "./recall-draft";
 import {
   caretOnFirstLine,
   caretOnLastLine,
@@ -109,6 +114,8 @@ import {
 import type { HistoryStep } from "./input-history";
 import { midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
+import { FileDropZone } from "./drop-zone";
+import { splitDroppedFiles } from "../../lib/file-drop";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -812,13 +819,14 @@ function readDataUrl(file: File): Promise<string | null> {
   });
 }
 
-/**
- * Appends the draft's attachments to a task input — images first (in pick order), then files.
- * One place, because every send path submits the same draft: the normal send, the follow-up
- * queue, the @ handoff and the `/model` switch.
- */
+/** Approximate decoded byte size of a base64 data URL (for the recalled attachment's chip; display only). */
+function dataUrlBytes(dataUrl: string): number {
+  const body = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[=\s]+/g, "");
+  return Math.floor((body.length * 3) / 4);
+}
+
 /** One-line summary of a queued steering message: its text, then image/file counts for what the text cannot show. */
-function steeringSummary(p: PendingSteeringInfo): string {
+function steeringSummary(p: { text: string; images: number; files: number }): string {
   const parts: string[] = [];
   const line = p.text.replace(/\s+/g, " ").trim();
   if (line) parts.push(line);
@@ -827,6 +835,60 @@ function steeringSummary(p: PendingSteeringInfo): string {
   return parts.join(" \u00b7 ");
 }
 
+/**
+ * Curved-back arrow glyph (24×24 line path) for the recall control: arrowhead at the left,
+ * the shaft looping back beneath it — the undo reading, not the trash-can one. A recalled
+ * message is not discarded, it comes back to the composer, and the icon has to say that on
+ * its own (owner directive: this control carries no text).
+ */
+const RECALL_ICON = "M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11";
+
+/**
+ * One queued-message hint line (undelivered steering / queued follow-up) with its recall
+ * button (#287): the button withdraws the message server-side and puts its content back into
+ * the input box for editing and resending. No button when the channel offers no recall
+ * (old server: entries without ids, or no handler supplied).
+ *
+ * Icon-only, so the two localized strings become its accessible name instead of its body:
+ * `recallQueued` is the short one the button is *called* (aria-label), `recallQueuedTitle` the
+ * tooltip that says what happens. Sized like the other icon controls on a text-xs row, and
+ * `shrink-0` next to the truncating label so it survives narrow widths. It carries the icon
+ * set's gray (a step darker than the hint text it sits beside), not the label's: gray-400 on
+ * white is under the 3:1 an interactive control owes, and this one is interactive.
+ */
+function QueuedMessageLine({
+  label,
+  onRecall,
+  disabled,
+}: {
+  label: string;
+  onRecall?: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <p className="min-w-0 truncate text-xs text-gray-400 dark:text-gray-500">{label}</p>
+      {onRecall && (
+        <button
+          type="button"
+          aria-label={S.chat.recallQueued}
+          title={S.chat.recallQueuedTitle}
+          disabled={disabled}
+          onClick={onRecall}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d={RECALL_ICON} size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Appends the draft's attachments to a task input — images first (in pick order), then files.
+ * One place, because every send path submits the same draft: the normal send, the follow-up
+ * queue, the @ handoff and the `/model` switch.
+ */
 function appendAttachmentParts(
   input: TaskInputPart[],
   images: string[],
@@ -844,8 +906,11 @@ export function ChatInput({
   onSteer,
   steeringDeliveredCount,
   pendingSteering = [],
+  onRecallSteering,
   onQueueFollowUp,
   queuedFollowUps = 0,
+  pendingFollowUps = [],
+  onRecallFollowUp,
   onStop,
   onCompact,
   modelRef,
@@ -917,6 +982,13 @@ export function ChatInput({
    */
   pendingSteering?: PendingSteeringInfo[];
   /**
+   * Recall an undelivered steering message (#287): resolves to its original content, which
+   * this component restores into the draft (text / images / files), or null when the recall
+   * failed (already delivered — the parent toasts). Renders the recall button on each
+   * pending-steering line when supplied.
+   */
+  onRecallSteering?: (steerId: string) => Promise<RecalledMessageResponse | null>;
+  /**
    * Follow-up queue (session state only): posts the full input with `queueIfBusy` — a busy
    * session holds it server-side and auto-sends it as an ordinary next task once the current
    * run finishes. Offered as the "follow-up" choice of the mid-run mode switch; when absent,
@@ -925,6 +997,14 @@ export function ChatInput({
   onQueueFollowUp?: (input: TaskInputPart[]) => Promise<boolean>;
   /** Server-reported queued follow-up count (from task_state): renders the "N queued" hint until they auto-send. */
   queuedFollowUps?: number;
+  /**
+   * Queued follow-up tasks with per-entry content (from task_state): renders one line each —
+   * with a recall button — instead of the bare count; empty on old servers (the count hint
+   * stays as the fallback).
+   */
+  pendingFollowUps?: PendingFollowUpInfo[];
+  /** Recall a queued follow-up (#287): same contract as onRecallSteering, for the follow-up queue. */
+  onRecallFollowUp?: (followUpId: string) => Promise<RecalledMessageResponse | null>;
   /**
    * Used instead of onSend when an `/agent` target chip is staged: opens a new chat for the
    * target agent (the current Session receives no message). Returns whether it succeeded
@@ -1284,10 +1364,81 @@ export function ChatInput({
   const steerBaseline = useRef(0);
   useEffect(() => {
     if (!steerPending) return;
-    if (!running || (steeringDeliveredCount ?? 0) > steerBaseline.current) {
+    // ...and once the server's mirror has actually arrived, since from then on the mirror is
+    // what renders the hint. Dropping the bridge there is what keeps a recall in ANOTHER tab
+    // from stranding this one: that empties pendingSteering without a delivery and without
+    // ending the run, so a bridge still raised would fall back to the bare "steering queued"
+    // hint for a message that no longer exists (#287).
+    if (
+      !running ||
+      (steeringDeliveredCount ?? 0) > steerBaseline.current ||
+      pendingSteering.length > 0
+    ) {
       setSteerPending(false);
     }
-  }, [steerPending, running, steeringDeliveredCount]);
+  }, [steerPending, running, steeringDeliveredCount, pendingSteering.length]);
+
+  // Recall a queued message back into the draft (#287): the server withdraws the entry and
+  // returns its original content. One recall at a time; the id doubles as the busy flag so
+  // every recall button disables while one is in flight.
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+  /** Restores recalled content into the draft: its text goes in FRONT of whatever is currently typed (it was composed first), attachments likewise; caret parked at the end, applyHistory-style. */
+  const applyRecalled = (r: RecalledMessageResponse) => {
+    // The recall round-trip may have taken keystrokes: read the live value off the controlled
+    // textarea rather than this closure's render-time `text`, or anything typed while the
+    // DELETE was in flight would be overwritten by the merge.
+    const { text: merged, dropGoal } = mergeRecalledDraft({
+      recalledText: r.text,
+      currentText: textareaRef.current?.value ?? text,
+      recalledFiles: r.files.length,
+      goalOn,
+    });
+    setText(merged);
+    onTextChange?.(merged);
+    setCaret(merged.length);
+    if (r.images.length > 0) setImages((prev) => [...r.images, ...prev]);
+    if (r.files.length > 0) {
+      // A goal draft cannot carry the restored files — release the staged chip rather than
+      // strand them behind a dead Send (why: see mergeRecalledDraft).
+      if (dropGoal) toggleGoal(false);
+      setAttachments((prev) => [
+        ...r.files.map((f) => ({
+          name: f.fileName,
+          size: dataUrlBytes(f.dataUrl),
+          dataUrl: f.dataUrl,
+        })),
+        ...prev,
+      ]);
+    }
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+  };
+  const recallQueued = async (
+    id: string,
+    recall: (id: string) => Promise<RecalledMessageResponse | null>,
+  ) => {
+    // `busy` too: a send in flight is about to clear the draft, which would wipe the
+    // restored content if the recall slid in between. Both conditions also disable the
+    // buttons, so this guard is only the race backstop — the refusal is never silent.
+    if (recallingId !== null || busy) return;
+    setRecallingId(id);
+    try {
+      const r = await recall(id);
+      if (r) {
+        // The mirror entry is gone server-side; drop the local post-202 bridge flag with it,
+        // or the bare "steering queued" hint would resurrect once pendingSteering empties.
+        setSteerPending(false);
+        applyRecalled(r);
+      }
+    } finally {
+      setRecallingId(null);
+    }
+  };
 
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
@@ -1907,6 +2058,23 @@ export function ChatInput({
     if (e.target.files) addAttachments(e.target.files);
     e.target.value = "";
   };
+
+  /**
+   * Files dropped onto the chat area (see FileDropZone): one batch, routed into the SAME two
+   * intakes the "+" menu and paste use — images join the pasted-image pipeline, everything
+   * else joins the file-attachment pipeline (10MB cap, same rejection toast). Goal mode takes
+   * images but not files (nothing folds a file into the re-injected objective — the "+" menu
+   * grays its file entry out for the same reason); a drop has no disabled affordance to gray,
+   * so the refusal is said out loud instead of silently swallowing the files.
+   */
+  const addDroppedFiles = (dropped: File[]) => {
+    const batch = splitDroppedFiles(dropped);
+    if (batch.images.length > 0) addFiles(batch.images);
+    if (batch.files.length > 0) {
+      if (goalOn) toastInfo(S.chat.dropFilesGoalHint);
+      else addAttachments(batch.files);
+    }
+  };
   /**
    * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
    * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
@@ -1918,6 +2086,11 @@ export function ChatInput({
 
   return (
     <div className="relative" ref={anchorRef}>
+      {/* Drag-and-drop upload: mounted with the composer (chat page and draft page alike, and
+          kept while a Task runs), so dropping works exactly when there is a composer to attach
+          to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
+          Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
+      <FileDropZone onFiles={addDroppedFiles} />
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
           Height is capped to the room measured above the composer (see upwardMaxH) with internal
           scrolling, so a long skill list never pushes the menu's top edge out of view; the active
@@ -2066,14 +2239,20 @@ export function ChatInput({
 
       {/* Mid-run steering queued: the server's undelivered-steering mirror, one line per
           queued message with its content — task_state-fed, so it survives reloads (#136,
-          #140). The local steerPending flag only bridges the gap between the 202 and the
-          first task_state that carries the mirror. */}
+          #140) — plus a recall button that takes the message back into this input for
+          editing and resending (#287). The local steerPending flag only bridges the gap
+          between the 202 and the first task_state that carries the mirror. */}
       {pendingSteering.length > 0 ? (
         <div className="anim-fade mb-1">
           {pendingSteering.map((p, i) => (
-            <p key={i} className="truncate text-xs text-gray-400 dark:text-gray-500">
-              {S.chat.steerQueuedItem(steeringSummary(p))}
-            </p>
+            <QueuedMessageLine
+              key={p.id ?? i}
+              label={S.chat.steerQueuedItem(steeringSummary(p))}
+              disabled={recallingId !== null || busy}
+              {...(onRecallSteering && p.id
+                ? { onRecall: () => void recallQueued(p.id, onRecallSteering) }
+                : {})}
+            />
           ))}
         </div>
       ) : (
@@ -2084,12 +2263,29 @@ export function ChatInput({
         )
       )}
 
-      {/* Queued follow-ups (server-side, auto-sent once this run finishes): count from
-          task_state — survives reloads because the queue lives on the server. */}
-      {queuedFollowUps > 0 && (
-        <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
-          {S.chat.followUpQueuedChip(queuedFollowUps)}
-        </p>
+      {/* Queued follow-ups (server-side, auto-sent once this run finishes): one line per
+          queued message with its content and a recall button (#287) — task_state-fed, so it
+          survives reloads; the bare count stays as the fallback for a server that predates
+          the per-entry list. */}
+      {pendingFollowUps.length > 0 ? (
+        <div className="anim-fade mb-1">
+          {pendingFollowUps.map((p) => (
+            <QueuedMessageLine
+              key={p.id}
+              label={S.chat.followUpQueuedItem(steeringSummary(p))}
+              disabled={recallingId !== null || busy}
+              {...(onRecallFollowUp
+                ? { onRecall: () => void recallQueued(p.id, onRecallFollowUp) }
+                : {})}
+            />
+          ))}
+        </div>
+      ) : (
+        queuedFollowUps > 0 && (
+          <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
+            {S.chat.followUpQueuedChip(queuedFollowUps)}
+          </p>
+        )
       )}
 
       {/* Auth-dead session (model credentials failed): slim notice above the composer, same

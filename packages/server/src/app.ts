@@ -83,6 +83,9 @@ import { TraceService } from "./services/trace-service.js";
 import { UpdateCheckService } from "./services/update-check-service.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { HmrHost } from "./hmr/host.js";
+import { hmrRoutes } from "./hmr/routes.js";
+import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
   createPreviewTokenSigner,
   hostOnly,
@@ -133,6 +136,8 @@ export interface AppDeps {
   errors: ErrorRecorder;
   /** Desktop mode (PENGUIN_DESKTOP_TOKEN): one-shot login + shutdown token holder; null outside desktop mode. */
   desktop: DesktopService | null;
+  /** HMR host: loads/swaps/persists the platform and web bundles (park/boot kernel). */
+  hmr: HmrHost;
   /** Request log output (minimal one-liner); tests inject a noop. */
   log: (line: string) => void;
 }
@@ -338,6 +343,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
+    hmr: new HmrHost(config.root),
     log,
   };
 }
@@ -422,6 +428,17 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (deps.desktop) {
     app.route("/api/desktop", desktopRoutes(deps));
   }
+  // Hot platform APIs authenticate themselves (local-agent Bearer token OR
+  // admin cookie session, see hot/routes.ts), so they mount outside the
+  // cookie-only authMiddleware below.
+  app.route("/api/hmr", hmrRoutes(deps));
+
+  // THE seam: from here down, every route is one the platform may take over by push. Mounted
+  // after /api/hmr (which stays runtime-owned — see http-seam.ts) and before both the auth
+  // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
+  // ones, and decide its own authentication. Declining costs one property read and lands on
+  // the runtime's own routes below, which is what a platform without an `http` handler does.
+  app.use("*", platformHttpSeam(deps.hmr));
 
   // Protected routes: cookie -> auth_session -> user.
   const auth = authMiddleware(deps.authService);
@@ -457,10 +474,19 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   // SPA fallback cannot swallow it.
   app.route("/preview", previewRoutes(deps));
 
-  // Static hosting (production): serves the frontend build output when webDist exists, with SPA fallback to index.html.
-  if (fs.existsSync(deps.config.webDist)) {
-    registerStaticRoutes(app, deps.config.webDist);
-  }
+  // Static hosting (production): serves the frontend build output with SPA fallback to
+  // index.html. The source resolves per request — the hot host can point it at a
+  // freshly pushed/restored web dist (in memory) without a restart; when nothing has
+  // been pushed, it falls back to the configured webDist. `hmr.ensure()` is awaited
+  // FIRST: web is only restored from harness.json as part of the platform+cli+web
+  // version's lazy first boot (see HmrHost.restore()), which nothing else here
+  // triggers — without this, a request landing right after a restart (before any
+  // /api/hmr/* call warms the host up) would miss a restored version entirely and
+  // silently fall back to the packaged webDist.
+  registerStaticRoutes(app, async () => {
+    await deps.hmr.ensure();
+    return deps.hmr.resolveWebSource() ?? { kind: "dir", dir: deps.config.webDist };
+  });
 
   return app;
 }
@@ -513,15 +539,46 @@ const CONTENT_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-/** Minimal static file server (avoiding an extra dependency): path traversal protection + SPA fallback. */
-function registerStaticRoutes(app: Hono<AppEnv>, webDist: string): void {
+/** Where registerStaticRoutes reads a request's bytes from, resolved fresh per request. */
+export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "dir"; dir: string };
+
+/**
+ * Minimal static file server (avoiding an extra dependency): path traversal
+ * protection + SPA fallback, over either an in-memory pushed/restored dist (the
+ * hot host's primary path — no filesystem at all) or the packaged webDist
+ * directory on disk.
+ */
+function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<WebSource>): void {
   app.get("*", async (c) => {
     const reqPath = decodeURIComponent(c.req.path);
     if (reqPath.startsWith("/api/")) {
       return c.json(errorBody("not_found", "Endpoint does not exist."), 404);
     }
-    const rel = reqPath.replace(/^\/+/, "");
-    const resolved = path.resolve(webDist, rel === "" ? "index.html" : rel);
+    const rel = reqPath.replace(/^\/+/, "") || "index.html";
+    // Resolved per request: the hot host may retarget it between requests.
+    const source = await resolveSource();
+
+    if (source.kind === "mem") {
+      // No filesystem involved, so no traversal guard is needed: an unknown
+      // key simply isn't in the map, same as a missing file on disk.
+      const servedPath = source.files.has(rel) ? rel : "index.html"; // SPA fallback
+      const content = source.files.get(servedPath);
+      if (content === undefined) {
+        return c.json(errorBody("not_found", "Resource does not exist."), 404);
+      }
+      const type =
+        CONTENT_TYPES[path.extname(servedPath).toLowerCase()] ?? "application/octet-stream";
+      return new Response(new Uint8Array(content), {
+        status: 200,
+        headers: { "Content-Type": type },
+      });
+    }
+
+    const webDist = source.dir;
+    if (!fs.existsSync(webDist)) {
+      return c.json(errorBody("not_found", "Resource does not exist."), 404);
+    }
+    const resolved = path.resolve(webDist, rel);
     // Guard against path traversal: once resolved, it must still be inside webDist.
     const base = path.resolve(webDist);
     const target =

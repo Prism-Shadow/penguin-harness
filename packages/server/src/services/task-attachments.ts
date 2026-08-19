@@ -100,6 +100,12 @@ export interface TaskAttachment {
   /** Original file name as submitted (validated: non-empty, no path separators, no `..`). */
   fileName: string;
   bytes: Buffer;
+  /**
+   * Media type from the submitted data URL (parameters included, e.g. `text/plain;charset=utf-8`);
+   * empty when the URL carried none. Kept so a queued message's recall can re-encode the
+   * on-disk bytes into the same data URL shape the composer submitted (see readRecalledFiles).
+   */
+  mime: string;
 }
 
 /**
@@ -136,11 +142,11 @@ export function parseAttachmentPart(
   // type from the payload. The payload's character class is the actual check that it IS
   // base64 (whitespace tolerated — line-wrapped encoders decode fine).
   const match =
-    typeof dataUrl === "string" ? /^data:[^,]*;base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl) : null;
+    typeof dataUrl === "string" ? /^data:([^,]*);base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl) : null;
   if (!match) {
     throw badRequest(`${field}[${index}].dataUrl must be a base64 data: URL of the file's bytes.`);
   }
-  const bytes = Buffer.from(match[1]!, "base64");
+  const bytes = Buffer.from(match[2]!, "base64");
   if (bytes.length === 0) {
     throw badRequest(`${field}[${index}].dataUrl decodes to an empty file.`);
   }
@@ -151,7 +157,42 @@ export function parseAttachmentPart(
       `Attached file exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB limit.`,
     );
   }
-  return { fileName, bytes };
+  return { fileName, bytes, mime: match[1]! };
+}
+
+/**
+ * A queued message's file attachment as held for recall: the scratchpad path it was written
+ * to, plus what is needed to rebuild the composer-shaped part — the submitted name and media
+ * type (the bytes stay on disk; queued entries never hold file payloads in memory).
+ */
+export interface RecallableFile {
+  fileName: string;
+  path: string;
+  mime: string;
+}
+
+/**
+ * Read recalled attachments back from the scratchpad into the `{fileName, dataUrl}` shape the
+ * composer submits. Best effort: a file that disappeared meanwhile (Session deleted from
+ * another tab, manual cleanup) is omitted rather than failing the whole recall — the text and
+ * images still come back. The caller deletes the on-disk copies afterwards (removeAttachments);
+ * reading first keeps the two steps safely ordered.
+ */
+export async function readRecalledFiles(
+  files: RecallableFile[],
+): Promise<{ fileName: string; dataUrl: string }[]> {
+  const read = await Promise.all(
+    files.map(async (f) => {
+      try {
+        const bytes = await fs.readFile(f.path);
+        const mime = f.mime || "application/octet-stream";
+        return { fileName: f.fileName, dataUrl: `data:${mime};base64,${bytes.toString("base64")}` };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return read.filter((f) => f !== null);
 }
 
 /**

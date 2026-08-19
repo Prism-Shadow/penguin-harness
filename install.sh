@@ -9,8 +9,9 @@
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
+#   PENGUIN_DOWNLOAD_SPEED_PROBE=1 enable same-version OSS/GitHub probe timing in auto mode
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
-#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> same-version fallback asset directory
+#   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
 #
 # Each Release attaches exactly one artifact per target: penguin-<target>.tar.gz, a shallow
@@ -24,7 +25,7 @@
 #
 # The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
 #
-# Docs: https://penguin.ooo/docs/installation
+# Docs: https://penguin.ooo/docs/quickstart-cli
 set -eu
 
 REPO="https://github.com/Prism-Shadow/penguin-harness"
@@ -40,6 +41,10 @@ ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
 DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
+DOWNLOAD_SPEED_PROBE="${PENGUIN_DOWNLOAD_SPEED_PROBE:-0}"
+SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=8
+SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND=262144
+SPEED_PROBE_STARTED_AT=0
 PAYLOAD_NAME="payload.tar.gz"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copies sealed inside the Linux, macOS and universal bundles.
@@ -130,6 +135,10 @@ case "$SOURCE_MODE" in
   auto | oss | github) ;;
   *) fail "PENGUIN_DOWNLOAD_SOURCE must be auto, oss, or github" ;;
 esac
+case "$DOWNLOAD_SPEED_PROBE" in
+  0 | 1) ;;
+  *) fail "PENGUIN_DOWNLOAD_SPEED_PROBE must be 0 or 1" ;;
+esac
 RESOLVED_RELEASE_VERSION="$VERSION"
 if [ -z "$RESOLVED_RELEASE_VERSION" ] && is_release_tag "$EMBEDDED_RELEASE_VERSION"; then
   RESOLVED_RELEASE_VERSION="$EMBEDDED_RELEASE_VERSION"
@@ -137,10 +146,12 @@ fi
 if [ -n "$DOWNLOAD_BASE_URL" ]; then
   DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL%/}"
   validate_https_url PENGUIN_DOWNLOAD_BASE_URL "$DOWNLOAD_BASE_URL"
-fi
-if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
-  DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
-  validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
+  if [ -n "$DOWNLOAD_FALLBACK_BASE_URL" ]; then
+    DOWNLOAD_FALLBACK_BASE_URL="${DOWNLOAD_FALLBACK_BASE_URL%/}"
+    validate_https_url PENGUIN_DOWNLOAD_FALLBACK_BASE_URL "$DOWNLOAD_FALLBACK_BASE_URL"
+  fi
+else
+  DOWNLOAD_FALLBACK_BASE_URL=""
 fi
 
 # --- Universal package precheck: system Node >= 24 (platform packages bundle the runtime, so exempt) ---
@@ -247,6 +258,228 @@ verify_sha256() {
   echo "$3 checksum OK."
 }
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  else
+    fail "sha256sum or shasum is required for checksum verification"
+  fi
+}
+
+is_positive_integer() {
+  case "$1" in
+    '' | *[!0-9]*) return 1 ;;
+    0) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+speed_probe_now_seconds() {
+  date +%s 2>/dev/null || printf '%s\n' 0
+}
+
+speed_probe_remaining_seconds() {
+  brs_now="$(speed_probe_now_seconds)"
+  case "$brs_now:$SPEED_PROBE_STARTED_AT" in
+    *[!0-9:]* | :* | *:) printf '%s\n' "$SPEED_PROBE_TOTAL_TIMEOUT_SECONDS"; return 0 ;;
+  esac
+  brs_elapsed=$((brs_now - SPEED_PROBE_STARTED_AT))
+  brs_remaining=$((SPEED_PROBE_TOTAL_TIMEOUT_SECONDS - brs_elapsed))
+  if [ "$brs_remaining" -gt 0 ]; then
+    printf '%s\n' "$brs_remaining"
+  else
+    printf '%s\n' 0
+  fi
+}
+
+speed_probe_curl_timeout() {
+  bct_cap="$1"
+  bct_remaining="$(speed_probe_remaining_seconds)"
+  [ "$bct_remaining" -gt 0 ] || return 1
+  if [ "$bct_remaining" -lt "$bct_cap" ]; then
+    printf '%s\n' "$bct_remaining"
+  else
+    printf '%s\n' "$bct_cap"
+  fi
+}
+
+load_release_download_manifest() {
+  lrdm_tag="$1"
+  lrdm_manifest="$TMP/release-download-manifest.tsv"
+  rm -f "$lrdm_manifest"
+  if lrdm_timeout="$(speed_probe_curl_timeout 2)" \
+    && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$OSS_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
+    :
+  elif lrdm_timeout="$(speed_probe_curl_timeout 2)" \
+    && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$GITHUB_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
+    :
+  else
+    return 1
+  fi
+
+  lrdm_expected_header="$(printf 'penguin-release-download-manifest\t1\t%s' "$lrdm_tag")"
+  [ "$(sed -n '1p' "$lrdm_manifest")" = "$lrdm_expected_header" ] || return 1
+
+  SPEED_PROBE_SMALL_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $3; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_SMALL_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $4; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_SMALL_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "small" { print $5; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_PROBE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $3; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_SIZE="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $4; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_LARGE_HASH="$(awk -F '\t' '$1 == "probe" && $2 == "large" { print $5; exit }' "$lrdm_manifest")"
+  SPEED_PROBE_ASSET_SIZE="$(awk -F '\t' -v asset="$ASSET" '$1 == "asset" && $2 == asset { print $3; exit }' "$lrdm_manifest")"
+
+  for lrdm_file in "$SPEED_PROBE_SMALL_PROBE" "$SPEED_PROBE_LARGE_PROBE"; do
+    case "$lrdm_file" in
+      *[!A-Za-z0-9._+-]* | *..* | '') return 1 ;;
+    esac
+  done
+  is_positive_integer "$SPEED_PROBE_SMALL_SIZE" || return 1
+  is_positive_integer "$SPEED_PROBE_LARGE_SIZE" || return 1
+  is_positive_integer "$SPEED_PROBE_ASSET_SIZE" || return 1
+  case "$SPEED_PROBE_SMALL_HASH:$SPEED_PROBE_LARGE_HASH" in
+    *[!0-9a-f:]* | *::* | :* | *:) return 1 ;;
+  esac
+  [ "${#SPEED_PROBE_SMALL_HASH}" -eq 64 ] || return 1
+  [ "${#SPEED_PROBE_LARGE_HASH}" -eq 64 ] || return 1
+  return 0
+}
+
+probe_download_source() {
+  pds_label="$1"
+  pds_base="$2"
+  pds_file="$3"
+  pds_size="$4"
+  pds_hash="$5"
+  pds_metrics="$6"
+  pds_timeout_cap="${7:-2}"
+  pds_body="$TMP/probe-$pds_label-$pds_file"
+  pds_write="$pds_metrics.tmp"
+  rm -f "$pds_body" "$pds_metrics" "$pds_write"
+  pds_timeout="$(speed_probe_curl_timeout "$pds_timeout_cap")" || {
+    printf '%s\n' "fail" > "$pds_metrics"
+    return 0
+  }
+  if curl -fsSL --connect-timeout "$pds_timeout" --max-time "$pds_timeout" -H "Accept-Encoding: identity" \
+      -w '%{time_starttransfer} %{time_total} %{speed_download}' \
+      "$pds_base/$pds_file" -o "$pds_body" > "$pds_write" 2>/dev/null; then
+    pds_actual_size="$(wc -c < "$pds_body" | tr -d ' ')"
+    pds_actual_hash="$(sha256_file "$pds_body" | tr 'A-F' 'a-f')"
+    if [ "$pds_actual_size" = "$pds_size" ] && [ "$pds_actual_hash" = "$pds_hash" ]; then
+      read pds_start pds_total pds_speed < "$pds_write" || :
+      case "$pds_start:$pds_total" in
+        *[!0-9.:]* | :* | *:) printf '%s\n' "fail" > "$pds_metrics" ;;
+        *) printf '%s %s %s %s\n' "ok" "$pds_start" "$pds_total" "${pds_speed:-0}" > "$pds_metrics" ;;
+      esac
+    else
+      printf '%s\n' "fail" > "$pds_metrics"
+    fi
+  else
+    printf '%s\n' "fail" > "$pds_metrics"
+  fi
+}
+
+run_probe_pair() {
+  rpp_file="$1"
+  rpp_size="$2"
+  rpp_hash="$3"
+  OSS_PROBE_METRICS="$TMP/probe-oss-$rpp_file.metrics"
+  GITHUB_PROBE_METRICS="$TMP/probe-github-$rpp_file.metrics"
+  probe_download_source oss "$OSS_SPEED_PROBE_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$OSS_PROBE_METRICS" &
+  rpp_oss_pid=$!
+  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$rpp_file" "$rpp_size" "$rpp_hash" "$GITHUB_PROBE_METRICS" &
+  rpp_github_pid=$!
+  wait "$rpp_oss_pid" 2>/dev/null || :
+  wait "$rpp_github_pid" 2>/dev/null || :
+}
+
+probe_status() {
+  ps_file="$1"
+  if [ -f "$ps_file" ]; then
+    awk 'NR == 1 { print $1 }' "$ps_file"
+  else
+    printf '%s\n' "fail"
+  fi
+}
+
+select_speed_probe_source_from_metrics() {
+  sfm_github_metrics="$1"
+  awk -v github_min="$SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND" '
+    function read_metrics(path, out, line, fields) {
+      if ((getline line < path) <= 0) return 0
+      close(path)
+      split(line, fields, " ")
+      if (fields[1] != "ok") return 0
+      out["start"] = fields[2] + 0
+      out["total"] = fields[3] + 0
+      out["speed"] = fields[4] + 0
+      return 1
+    }
+    BEGIN {
+      github_ok = read_metrics(ARGV[1], github)
+      ARGV[1] = ""
+      if (github_ok && github["speed"] >= github_min) { print "github"; exit }
+      print "oss"
+    }
+  ' "$sfm_github_metrics"
+}
+
+speed_probe_release_sources() {
+  brs_tag="$1"
+  SPEED_PROBE_BASE_URL=""
+  SPEED_PROBE_FALLBACK_BASE_URL=""
+  OSS_SPEED_PROBE_BASE_URL="$OSS_RELEASE_ROOT/$brs_tag"
+  GITHUB_SPEED_PROBE_BASE_URL="$GITHUB_RELEASE_ROOT/$brs_tag"
+  SPEED_PROBE_STARTED_AT="$(speed_probe_now_seconds)"
+
+  load_release_download_manifest "$brs_tag" || return 1
+  echo "Testing OSS mirror and GitHub download sources ..."
+
+  run_probe_pair "$SPEED_PROBE_SMALL_PROBE" "$SPEED_PROBE_SMALL_SIZE" "$SPEED_PROBE_SMALL_HASH"
+  brs_oss_small="$(probe_status "$OSS_PROBE_METRICS")"
+  brs_github_small="$(probe_status "$GITHUB_PROBE_METRICS")"
+
+  if [ "$brs_oss_small" != "ok" ] && [ "$brs_github_small" = "ok" ]; then
+    SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    echo "Selected GitHub (OSS mirror probe unavailable)."
+    return 0
+  fi
+  if [ "$brs_oss_small" = "ok" ] && [ "$brs_github_small" != "ok" ]; then
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    echo "Selected OSS mirror (GitHub probe unavailable)."
+    return 0
+  fi
+  if [ "$brs_oss_small" != "ok" ] && [ "$brs_github_small" != "ok" ]; then
+    return 1
+  fi
+
+  if [ "$SPEED_PROBE_ASSET_SIZE" -lt 33554432 ]; then
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    echo "Selected OSS mirror (download source test did not need throughput probing)."
+    return 0
+  fi
+
+  GITHUB_PROBE_METRICS="$TMP/probe-github-$SPEED_PROBE_LARGE_PROBE.metrics"
+  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$GITHUB_PROBE_METRICS" 5
+  brs_choice="$(select_speed_probe_source_from_metrics "$GITHUB_PROBE_METRICS")"
+  if [ "$brs_choice" = "github" ]; then
+    SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    echo "Selected GitHub (meets minimum download speed)."
+  elif [ "$brs_choice" = "oss" ]; then
+    SPEED_PROBE_BASE_URL="$OSS_SPEED_PROBE_BASE_URL"
+    SPEED_PROBE_FALLBACK_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"
+    echo "Selected OSS mirror (GitHub did not meet minimum download speed)."
+  else
+    return 1
+  fi
+  return 0
+}
+
 # Downloads the bundle and its checksum as a pair. Transport failures may try a same-version
 # fallback; checksum failures are handled afterwards and always abort rather than being hidden
 # by a different source.
@@ -255,9 +488,9 @@ download_release_pair() {
   drp_label="$(download_source_label "$drp_base")"
   echo "Downloading $ASSET from $drp_label ..."
   rm -f "$ARCHIVE_PATH" "$TMP/$ASSET.sha256"
-  curl -fSL --progress-bar "$drp_base/$ASSET" -o "$ARCHIVE_PATH" \
+  curl -fSL --progress-bar --connect-timeout 5 --speed-limit 65536 --speed-time 20 "$drp_base/$ASSET" -o "$ARCHIVE_PATH" \
     || return 1
-  curl -fsSL "$drp_base/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
+  curl -fsSL --connect-timeout 5 --speed-limit 1024 --speed-time 20 "$drp_base/$ASSET.sha256" -o "$TMP/$ASSET.sha256" \
     || return 1
   return 0
 }
@@ -347,6 +580,14 @@ else
       BASE_URL="$OSS_RELEASE_ROOT/$SELECTED_TAG"
       if [ "$SOURCE_MODE" = "auto" ] && [ -z "$FALLBACK_BASE_URL" ]; then
         FALLBACK_BASE_URL="$GITHUB_RELEASE_ROOT/$SELECTED_TAG"
+      fi
+      if [ "$SOURCE_MODE" = "auto" ] && [ "$DOWNLOAD_SPEED_PROBE" = "1" ] && [ -z "$DOWNLOAD_BASE_URL" ]; then
+        if speed_probe_release_sources "$SELECTED_TAG"; then
+          BASE_URL="$SPEED_PROBE_BASE_URL"
+          FALLBACK_BASE_URL="$SPEED_PROBE_FALLBACK_BASE_URL"
+        else
+          echo "Download source test was inconclusive; using OSS with same-version GitHub fallback."
+        fi
       fi
     elif [ "$SOURCE_MODE" = "oss" ]; then
       fail "the OSS mirror is unavailable or its release metadata is invalid."

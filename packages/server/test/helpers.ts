@@ -47,6 +47,7 @@ export function testConfig(root: string): ServerConfig {
     authSessionRenewMs: 6 * DAY_MS,
     desktopToken: null,
     portFile: null,
+    trustProxy: false,
   };
 }
 
@@ -81,6 +82,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     root,
     adminPassword,
     cleanup: async () => {
+      deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();
       // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own

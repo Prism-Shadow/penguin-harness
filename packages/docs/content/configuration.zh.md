@@ -27,18 +27,19 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 
 ### Provider 凭证环境变量
 
-当模型条目未内联 `api_key` 时，AgentHub 网关按 Provider 回退读取对应环境变量；`*_BASE_URL` 变体同理覆盖 Base URL：
+当模型条目未内联 `api_key` 时，AgentHub 按 Provider 回退读取对应环境变量；仅当条目未内联 `base_url` 时才使用 `*_BASE_URL`：
 
 | Provider | API Key | Base URL |
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
 | openai、openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。Provider 分组与内置模型目录见[模型与 Provider](/models)。
+openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 custom 分组走 OpenAI 兼容协议，因此复用 `OPENAI_*` 变量。直连 MiniMax M3 Responses 客户端使用 `MINIMAX_*`；内置 MiniMax 预设已固定官方端点。Provider 分组与内置模型目录见[模型与 Provider](/models)。
 
 ## Project 配置
 
@@ -58,13 +59,13 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `provider` | Provider 分组；与 `model_id` 共同构成条目唯一键 |
 | `model_id` | 上游请求 id，原样发送给 AgentHub |
 | `context_window` | 上下文窗口大小 |
-| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断，OpenAI 兼容的第三方模型应设为 `openai` |
+| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断，OpenAI 兼容的第三方模型应设为 `openai-chat`(0.4.2 之前的旧写法 `openai` 为已废弃别名，读取时归一化) |
 | `display_name` | 展示名；仅在与内置目录不同时持久化 |
 | `vision` | 是否支持图片输入；缺省视为支持 |
 | `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
 | `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
-| `base_url` | 自定义 Base URL；网关模型预置 |
+| `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml

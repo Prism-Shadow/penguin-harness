@@ -2,6 +2,7 @@
  * `penguin server` / `penguin web` — starts the Web service.
  *
  *   penguin server [--port <port>] [--host <host>]
+ *   penguin server reset-admin-password        (subcommand, see reset-password.ts)
  *   penguin web [--port <port>] [--host <host>] [--no-open]
  *
  * Both are entry points into the same service process: after setting PORT / HOST, it
@@ -24,6 +25,7 @@ import {
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import type { Command } from "commander";
 import type { Messages, WebProbeFailureKind } from "../i18n.js";
+import { registerResetPasswordCommand } from "./reset-password.js";
 
 /** Why the readiness poll gave up: failure class plus a one-line diagnostic from the last probe. */
 export interface ReadinessFailure {
@@ -255,7 +257,7 @@ function openBrowser(url: string): void {
 }
 
 export function registerServeCommands(program: Command, t: Messages): void {
-  program
+  const server = program
     .command("server")
     .description(t.serve.serverDesc)
     .option("--port <port>", t.serve.port)
@@ -269,6 +271,9 @@ export function registerServeCommands(program: Command, t: Messages): void {
       }
       await startServer(opts);
     });
+  // Bare `penguin server` still starts the service (commander runs the action when no
+  // subcommand is named); the subcommand only dispatches on an exact name match.
+  registerResetPasswordCommand(server, t);
 
   program
     .command("web")

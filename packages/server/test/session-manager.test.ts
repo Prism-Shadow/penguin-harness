@@ -280,10 +280,41 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("a")], { thinkingLevel: "high" });
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
-    // Omitted on the next Task: the session falls back to its default (nothing forwarded).
+    // Omitted on the next Task, with nothing pinned on the Session row either: nothing is
+    // forwarded and core falls back to the Agent config.
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
     expect(seen).toEqual(["high", undefined]);
+  });
+
+  it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const seen: (string | undefined)[] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
+        seen.push(opts.thinkingLevel);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    // What the Web App's in-chat picker writes (PATCH /api/sessions/:id).
+    sessions.updateThinkingLevel("session-1", "xhigh");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
+    await manager.startTask("session-1", [userText("b")], { thinkingLevel: "low" });
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
+    // Re-pinning applies from the next Task on.
+    sessions.updateThinkingLevel("session-1", "medium");
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 3);
+    expect(seen).toEqual(["xhigh", "low", "medium"]);
   });
 
   it("LLM / tool failures in the message stream are persisted via drive (source=llm / environment, with the current Session context)", async () => {
@@ -350,7 +381,7 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     const steerErr = (text: string): unknown => {
       try {
-        manager.steer("session-1", [userText(text)], { text, images: 0, files: 0 });
+        manager.steer("session-1", [userText(text)], { text, images: [], files: [] });
         return null;
       } catch (e) {
         return e;
@@ -402,11 +433,18 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     // Two queued steering messages: the mirror keeps both, in queue order.
-    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: 0, files: 0 });
-    manager.steer("session-1", [userText("b")], { text: "later", images: 1, files: 2 });
+    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: [], files: [] });
+    manager.steer("session-1", [userText("b")], {
+      text: "later",
+      images: ["data:image/png;base64,aa"],
+      files: [
+        { fileName: "a.txt", path: "/tmp/a.txt", mime: "text/plain" },
+        { fileName: "b.txt", path: "/tmp/b.txt", mime: "text/plain" },
+      ],
+    });
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "focus on tests", images: 0, files: 0 },
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "focus on tests", images: 0, files: 0 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // First delivery observed on the stream: the mirror shifts while the run is still going.
@@ -414,7 +452,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingSteeringOf("session-1").length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // Run end: core discards undelivered steering, and the mirror goes with it.

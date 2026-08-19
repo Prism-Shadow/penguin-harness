@@ -71,6 +71,7 @@ import type {
   SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
+  RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
   TaskCreateRequest,
@@ -469,12 +470,33 @@ export const killSessionProcess = (sessionId: string, processId: string) =>
     { method: "POST", body: {} },
   );
 
+/** Removes one EXITED background process entry from the list (409 process_running while it still runs — stopping is the kill route's job; 404 when it is already gone — callers just refresh). */
+export const removeSessionProcess = (sessionId: string, processId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/processes/${encodeURIComponent(processId)}`,
+    { method: "DELETE" },
+  );
+
 /** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
 export const postSteer = (sessionId: string, body: SteerRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {
     method: "POST",
     body,
   });
+
+/** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
+export const recallSteer = (sessionId: string, steerId: string) =>
+  apiFetch<RecalledMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/steer/${encodeURIComponent(steerId)}`,
+    { method: "DELETE" },
+  );
+
+/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 not_pending once it already auto-started. */
+export const recallFollowUp = (sessionId: string, followUpId: string) =>
+  apiFetch<RecalledMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
+    { method: "DELETE" },
+  );
 
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).

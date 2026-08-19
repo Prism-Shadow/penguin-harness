@@ -88,7 +88,7 @@ for (const [what, file] of [
   ["server entry", path.join(serverPkg, "dist", "index.js")],
   [
     "CLI entry",
-    path.join(appDir, "node_modules", "@prismshadow", "penguin-cli", "dist", "index.js"),
+    path.join(appDir, "node_modules", "@prismshadow", "penguin-cli", "dist", "penguin.js"),
   ],
   ["launcher generator (dist/launcher.js)", launcherModule],
 ]) {

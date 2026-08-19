@@ -17,6 +17,7 @@
  * such as \`<app_data_dir>\`, \`<agent_id>\`, \`<session_id>\` — these are **not substituted**;
  * the model fills in the actual values from the Environment section itself.
  */
+import { SUBAGENT_THINKING_LEVELS } from "../interfaces.js";
 import type { MCPServerConfig, ThinkingLevelName, ToolDefinitionConfig } from "../interfaces.js";
 import type { CompactionMode } from "../omnimessage/types.js";
 import { KERNEL_VERSION } from "./kernel-history.js";
@@ -714,7 +715,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "run_subagent",
       description:
-        "Delegate a self-contained subtask to a subagent that runs autonomously in the same workspace and returns its final answer. Use it for focused sub-tasks you can fully specify in one prompt. Optionally choose a specific agent via `agent_id` and a model via `model_id`. " +
+        "Delegate a self-contained subtask to a subagent that runs autonomously in the same workspace and returns its final answer. Use it for focused sub-tasks you can fully specify in one prompt. Optionally choose a specific agent via `agent_id`, a model via `model_id`, and a thinking level via `thinking_level`. " +
         'Begin the prompt by identifying yourself with your own agent id (from the Environment section), e.g. "Caller agent: default_agent" — the subagent cannot otherwise tell who invoked it.',
       parameters: {
         type: "object",
@@ -743,6 +744,12 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             type: "string",
             description:
               "The provider group that model_id belongs to (see the Environment section's Provider). Required whenever model_id is given.",
+          },
+          thinking_level: {
+            type: "string",
+            enum: [...SUBAGENT_THINKING_LEVELS],
+            description:
+              "Thinking level for the subagent. Omit to inherit the current session's level. Lower it for cheap mechanical subtasks; raise it for hard analysis or design subtasks.",
           },
           yield_time_ms: {
             type: "number",

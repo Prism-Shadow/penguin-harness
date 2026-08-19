@@ -1,5 +1,12 @@
 # Explicit model reference pairs, and a batch of review fixes
 
+- **Date:** 2026-07-21
+- **Type:** fix
+- **Scope:** `core`, `cli`, `server`, `web`, `landing`
+- **PR:** [#7](https://github.com/Prism-Shadow/penguin-harness/pull/7)
+
+[中文版](2026-07-21-model-reference-and-review-fixes.zh.md)
+
 The provider group is no longer resolved automatically anywhere — a model is referenced by the complete `(provider, model_id)` pair or not at all — and a code review of the release branch turned up a further set of correctness, accessibility and documentation defects, all fixed here.
 
 - **The provider is never inferred, guessed, or defaulted (core, CLI, server, web).** Two mechanisms used to pick a group on the user's behalf, and both are gone. Catalog inference (`inferProviderForUpstream`) took the first bare-id match, and gateways resell vendor models under their upstream ids — `glm-5.2`, `qwen3.7-max`, `qwen3.7-plus` and `deepseek-v4-pro` each belong to two groups now — so `penguin config model add --model-id glm-5.2 --api-key <key>` wrote a Z.AI credential onto the Qwen Token Plan entry and sent it to Alibaba's endpoint (on the previous release the same command resolved to `zhipu`). Config resolution (`resolveModelRef`) separately matched a bare `model_id` against the Project's configured models whenever it happened to be unique. Both are deleted, along with `inferProviderForUpstream` and `providersForUpstream`. The rule everywhere is now **both halves or neither**: `--provider` is required on `config model add`; on `run` / `chat` the pair as a whole stays optional (omit both for the Project default) but supplying one half is an error; `addModel` and `Agent.createSession` require the pair at the type level; `POST /sessions` and the schedule routes return 400 for a half reference, and a schedule file persisted with only a `modelId` is reported invalid instead of silently binding to a guessed group. `run_subagent` gains a `provider` argument beside `model_id` and refuses half a reference, so a delegating model cannot land a subagent on the wrong vendor either. The trace viewer stops attributing cost to a first-match guess for pre-tag traces, showing no cost instead. CLI help, the CLI/models/server-api/quickstart/configuration/interfaces docs (en+zh), the READMEs and every skill that scripts the CLI were updated to pass the pair.

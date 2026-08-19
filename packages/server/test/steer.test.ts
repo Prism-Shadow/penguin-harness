@@ -48,6 +48,14 @@ function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): Runti
       steered.push(input);
       return true;
     },
+    // Same contract as core: withdraw by input-list identity, false once "delivered"
+    // (tests simulate delivery by emptying `steered`).
+    unsteer: (input: OmniMessage[]) => {
+      const i = steered.indexOf(input);
+      if (i < 0) return false;
+      steered.splice(i, 1);
+      return true;
+    },
     skipReconnectWait: () => false,
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
@@ -248,7 +256,7 @@ describe("steer route", () => {
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
     await api.post(`/api/sessions/${SID}/steer`, { text: "hold on" });
     expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([
-      { text: "hold on", images: 0, files: 0 },
+      { id: expect.any(String), text: "hold on", images: 0, files: 0 },
     ]);
 
     // The first SSE frames are the initial task_state snapshot: it must carry the mirror.
@@ -264,6 +272,65 @@ describe("steer route", () => {
     expect(seen).toContain('"task_state"');
     expect(seen).toContain('"pendingSteering"');
     expect(seen).toContain("hold on");
+
+    t.deps.manager.decideApproval(SID, "tc-steer", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("recall (#287): DELETE withdraws the queued entry, returns its original content, and cleans the scratchpad", async () => {
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+
+    const png = "data:image/png;base64,AAAA";
+    const data = `data:text/plain;base64,${Buffer.from("hello notes").toString("base64")}`;
+    const posted = await api.post(`/api/sessions/${SID}/steer`, {
+      text: " keep me ",
+      images: [png],
+      files: [{ fileName: "notes.txt", dataUrl: data }],
+    });
+    expect(posted.status).toBe(202);
+    expect(steered).toHaveLength(1);
+    const [info] = t.deps.manager.pendingSteeringOf(SID);
+    expect(info).toEqual({ id: expect.any(String), text: "keep me", images: 1, files: 1 });
+
+    // The recall hands the whole message back in the composer's own shape — the file read
+    // back from the scratchpad as the very data URL it was submitted as.
+    const res = await api.delete(`/api/sessions/${SID}/steer/${info!.id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      text: "keep me",
+      images: [png],
+      files: [{ fileName: "notes.txt", dataUrl: data }],
+    });
+
+    // Withdrawn everywhere: core's queue (the fake's unsteer), the mirror, and the disk copy.
+    expect(steered).toHaveLength(0);
+    expect(t.deps.manager.pendingSteeringOf(SID)).toEqual([]);
+    const dir = path.join(scratchpadDir(t.root, "steerer-default_project", "default_agent"), SID);
+    expect(await readdir(dir).catch(() => [])).toEqual([]);
+
+    // Nothing left under that id: a second recall (double click, another tab) is a 409.
+    const again = await api.delete(`/api/sessions/${SID}/steer/${info!.id}`);
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+
+    t.deps.manager.decideApproval(SID, "tc-steer", "allow");
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
+  });
+
+  it("recall after delivery → 409 not_pending; the mirror entry is left for the stream shift to retire", async () => {
+    await t.deps.manager.startTask(SID, [userText("go")]);
+    await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
+    await api.post(`/api/sessions/${SID}/steer`, { text: "too late" });
+    const [info] = t.deps.manager.pendingSteeringOf(SID);
+
+    // Simulate core having drained the queue (delivery is imminent/underway): the mirror
+    // still shows the entry until the [user_steering] message is observed on the stream.
+    steered.length = 0;
+    const res = await api.delete(`/api/sessions/${SID}/steer/${info!.id}`);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("not_pending");
+    expect(t.deps.manager.pendingSteeringOf(SID)).toHaveLength(1);
 
     t.deps.manager.decideApproval(SID, "tc-steer", "allow");
     await waitFor(() => t.deps.manager.statusOf(SID) === "idle");

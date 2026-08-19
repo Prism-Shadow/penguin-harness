@@ -20,6 +20,7 @@ pnpm dev:web     # web app (Vite) at 127.0.0.1:7365, /api proxied to 7368
 pnpm dev:docs    # docs site (Vite) at 127.0.0.1:7367
 pnpm dev:landing # landing page (Vite) at 127.0.0.1:7366
 pnpm penguin ... # CLI from source; `penguin web` serves at 127.0.0.1:7369
+pnpm desktop     # desktop app from source (builds everything first, then Electron)
 
 BASE_PATH=/ pnpm build:site   # assemble landing + docs exactly like the Pages deploy
 ```
@@ -44,10 +45,28 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
-Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`) default
-to a separate data root, `~/.penguin/dev-data`, kept apart from the installed CLI/server's
-`~/.penguin/data` — hacking on the repo never mixes state with your real agents. Export
-`PENGUIN_HOME` to point them anywhere else; an explicit value always wins.
+Dev entry points that touch data (`pnpm dev`, `pnpm dev:server`, `pnpm penguin`,
+`pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, kept apart from
+the installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
+your real agents. Export `PENGUIN_HOME` to point them anywhere else; an explicit value
+always wins. The desktop dev shell isolates one step further: an unpackaged run takes a
+dev-suffixed app identity (`PenguinHarness-Dev`) with its own userData directory,
+single-instance lock, and sticky port, and defaults to `~/.penguin/dev-data` even when
+launched without the env var (`pnpm --dir packages/desktop start`) — so it runs side by
+side with an installed release build, with neither instance seeing the other. Every
+unpackaged launch prints which pair it picked: `[shell] dev instance '<name>' on data
+root <root>`.
+
+Two one-time moves came with that split. A bare `pnpm --dir packages/desktop start` used
+to run on `~/.penguin/data` (the release/CLI root) and now runs on `~/.penguin/dev-data`,
+so sessions made that way are no longer in the window — run it with
+`PENGUIN_HOME=~/.penguin/data` to work against the release root on purpose. And the dev
+shell's userData directory moved with its name, taking the Chromium profile along, so the
+window's origin-scoped preferences (theme, language, layout) and its remembered port
+start fresh once. Note the identity is one fixed name, not one per checkout: two working
+copies both running the desktop shell still share it, and the second launch focuses the
+first one's window instead of opening its own — a distinct `PENGUIN_HOME` does not change
+that, because it moves the data root, not the identity.
 
 Copy `.env.example` to `.env` for model credentials in development.
 
@@ -82,6 +101,12 @@ pnpm typecheck
 pnpm test           # unit suites for every package
 ```
 
+Working on this repo with a coding agent: [`.agents/skills/penguin-harness-dev/`](.agents/skills/penguin-harness-dev/SKILL.md)
+collects the conventions that are easy to get wrong from the outside — the two-repo symlink
+layout, the CI-parity chain, the record-and-ship contract, the model catalog's pricing rules,
+and the seams that are intentional. `.claude` is a symlink to `.agents`, so a Claude Code
+session and any other agent read the same directory.
+
 End-to-end suites (optional locally, slower):
 
 ```bash
@@ -97,13 +122,13 @@ pnpm test:e2e                                        # core live-model e2e, need
   where it is the content itself: zh i18n catalogs and fields (`strings.ts` dictionaries,
   CLI `i18n.ts`, `titleZh`, `short_description_zh`), `*.zh.md` documents, and test
   literals that assert zh i18n output or exercise CJK-specific behavior.
-- **Every change ships with a changelog entry**: add
-  `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` under the next unreleased version
-  (released versions' folders are frozen) — an H1 title, a one-sentence summary
-  paragraph, then details — and add a one-line link for it to that version's index,
-  `changelog/<version>/README.md`. The layout is documented in
+- **Every change ships with a changelog entry, in both languages**: add
+  `changelog/unreleased/YYYY-MM-DD-<semantic-id>.md` plus its `.zh.md` counterpart
+  (released versions' folders are frozen) — an H1 title, the `Date` / `Type` / `Scope` /
+  `PR` / `Issue` / `Breaking` metadata block, the counterpart link, then a lead paragraph
+  and bespoke sections. There is no index file to update. The format is documented in
   [`changelog/README.md`](changelog/README.md). Related changes may share one entry
-  file (extending its details) instead of opening a new file per small change.
+  file (extending its sections) instead of opening a new file per small change.
 - **A release ships its own announcement**: `changelog/<version>/RELEASE.md` is published
   verbatim as the GitHub Release body. Write it during release preparation and **commit it
   before creating the tag** — the release workflow reads it from the tag's checkout, so a
