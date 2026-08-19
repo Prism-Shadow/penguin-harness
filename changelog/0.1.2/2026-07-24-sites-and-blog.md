@@ -1,3 +1,10 @@
 # Sites: a free-models post, featured in the announcement bar
 
+- **Date:** 2026-07-24
+- **Type:** process
+- **Scope:** `landing`
+- **PR:** [#60](https://github.com/Prism-Shadow/penguin-harness/pull/60)
+
+[中文版](2026-07-24-sites-and-blog.zh.md)
+
 The blog gains a bilingual post, `free-models-in-penguin-harness`: the free lineup now in the catalog — Nemotron 3 Ultra (free), the newly added Ling 3.0 Flash and Laguna M.1 free tiers, and the `openrouter/free` Free Models Router — how to enable it (a free OpenRouter key; presets automatic on new Projects, Sync presets on the web Models page or `penguin config model add` from the CLI), and honest caveats: free-tier rate limits, prompts handled under the upstream provider's own terms, availability and quality variance, and the router's varying per-request target — PenguinHarness records a conservative window for it so long Sessions compact early instead of failing — fine for trying things out and light automation, paid models for serious work. The post is featured as the newest announcement-bar slide, at the head of the rotation.

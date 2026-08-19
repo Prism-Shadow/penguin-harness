@@ -1,5 +1,12 @@
 # Web App: the Session's elapsed time is taken from Trace timestamps, so a reload stops restarting it
 
+- **Date:** 2026-07-29
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#124](https://github.com/Prism-Shadow/penguin-harness/pull/124)
+
+[中文版](2026-07-29-session-elapsed.zh.md)
+
 The elapsed chip in the chat header restarted from zero whenever a running Session was reloaded, and the figure it eventually settled on depended on the browser clock. Both came from the same root: the running Task was the one part of the number not derived from the Trace.
 
 ## Reloading mid-run resumes the chip instead of restarting it

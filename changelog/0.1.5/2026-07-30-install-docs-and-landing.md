@@ -1,5 +1,12 @@
 # Install documentation and landing refresh for 0.1.5
 
+- **Date:** 2026-07-30
+- **Type:** process
+- **Scope:** `landing`, `docs`
+- **PR:** [#134](https://github.com/Prism-Shadow/penguin-harness/pull/134)
+
+[中文版](2026-07-30-install-docs-and-landing.zh.md)
+
 The 0.1.5 release repackages how the product introduces and installs itself, in both READMEs and on the landing site.
 
 ## One tagline pair everywhere

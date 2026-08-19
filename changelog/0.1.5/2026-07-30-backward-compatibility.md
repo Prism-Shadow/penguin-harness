@@ -1,5 +1,12 @@
 # Backward compatibility in this batch
 
+- **Date:** 2026-07-30
+- **Type:** process
+- **Scope:** `web`
+- **PR:** [#130](https://github.com/Prism-Shadow/penguin-harness/pull/130)
+
+[中文版](2026-07-30-backward-compatibility.zh.md)
+
 Per the repo rule, every compatibility decision of the batch is recorded here once; the feature entries reference this file instead of re-telling it.
 
 ## The two per-panel width preferences are adopted into one shared key

@@ -1,5 +1,12 @@
 # Web App: file attachments in the composer, and `/agent` in place of the `@` mention
 
+- **Date:** 2026-07-29
+- **Type:** feature
+- **Scope:** `web`, `server`, `core`
+- **PR:** [#121](https://github.com/Prism-Shadow/penguin-harness/pull/121), [#122](https://github.com/Prism-Shadow/penguin-harness/pull/122)
+
+[中文版](2026-07-29-composer-attachments-and-switch-commands.zh.md)
+
 The composer gains a second upload entry and loses its `@` trigger. A message can now carry arbitrary files the way it already carried pasted images, and the two commands that move a conversation elsewhere — `/agent` and `/model` — stage their pick as a chip instead of acting on it, so the message that opens the new conversation is the one the user meant to write.
 
 ## File attachments

@@ -1,5 +1,12 @@
 # Core: truncated tool output remains recoverable within its Session
 
+- **Date:** 2026-07-31
+- **Type:** feature
+- **Scope:** `core`, `web`
+- **PR:** [#145](https://github.com/Prism-Shadow/penguin-harness/pull/145)
+
+[中文版](2026-07-31-recover-truncated-tool-output.zh.md)
+
 Tool output still obeys each entry's `maxOutputLength` exactly as before: the Web/CLI stream, the complete `tool_call_output`, Trace, and the next model input remain byte-for-byte aligned, with truncation and terminal markers staying outside the cap.
 
 When a tool call in an Agent Session actually exceeds that cap, Environment now also saves the text it received to the Session scratchpad (`scratchpad/<sessionId>/truncated-tool-output/`, created only on actual truncation, private permissions where the platform has them) and appends the recovery path to the same tool result seen by the frontend and the model. No model-facing tool or schema is added: the model inspects the file with the existing `read_file` (`offset`/`limit`) or targeted `rg`/`tail` commands.

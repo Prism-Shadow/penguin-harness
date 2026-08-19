@@ -1,5 +1,12 @@
 # Tooling: one canonical install bundle per target, for online and offline alike
 
+- **Date:** 2026-07-31
+- **Type:** feature
+- **Scope:** `tooling`, `ci`
+- **PR:** [#142](https://github.com/Prism-Shadow/penguin-harness/pull/142)
+
+[中文版](2026-07-31-unified-installer-artifact.zh.md)
+
 Each Release now attaches exactly one artifact per target: `penguin-{linux,darwin}-{x64,arm64}.tar.gz`, `penguin-universal.tar.gz` and `penguin-win32-x64.zip` are flat installer bundles, each sealing the native installer, the program payload (`payload.tar.gz` / `payload.zip`) and the payload's SHA256 checksum. Raw program archives and the five `*-offline` wrappers introduced in 0.1.5 are no longer published; `SHA256SUMS` covers exactly the six bundles.
 
 Both installation modes consume the same file. Online, `install.sh` / `install.ps1` download the bundle, verify it against its published `.sha256` — checksums are now always mandatory; the online warn-and-skip fallback is gone — then open the flat outer layer and verify the payload checksum sealed inside before staging. Offline, the user transfers that one file, extracts it once and runs the bundled `./install.sh` (or double-clicks `install.cmd`); the installer finds the sibling payload by itself and verifies the same sealed checksum with no network access, so no separate checksum file needs to be carried.
