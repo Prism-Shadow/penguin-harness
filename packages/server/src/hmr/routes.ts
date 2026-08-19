@@ -117,6 +117,7 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
       platform?: string;
       cli?: string;
       web?: { files?: Record<string, string> };
+      assets?: { files?: Record<string, string>; exec?: string[] };
       source?: { repo: string; revision: string };
     };
     try {
@@ -148,6 +149,16 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
         platform: payload.platform,
         cli: payload.cli,
         web: payload.web.files,
+        // Optional: a push that needs no real files on disk (no native module, no helper
+        // binary) simply omits it, and older pushers keep working unchanged.
+        ...(payload.assets?.files
+          ? {
+              assets: {
+                files: payload.assets.files,
+                ...(payload.assets.exec ? { exec: payload.assets.exec } : {}),
+              },
+            }
+          : {}),
         ...(payload.source ? { source: payload.source } : {}),
       });
     } catch (err) {

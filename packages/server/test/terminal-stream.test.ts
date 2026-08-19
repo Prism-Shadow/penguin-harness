@@ -383,6 +383,10 @@ describePty("terminal stream attach", () => {
       const terminal = await createTerminal();
       const first = await attach(terminal.id);
       try {
+        // Wait for the shell to reach a prompt first: `sh -l` sources a profile, and under
+        // load that output can land AFTER our command — resetting the very mode this test
+        // then expects to survive.
+        await runAndWait(first, "echo shell-ready-marker", "shell-ready-marker");
         // Hide the cursor (DECTCSM reset) — a mode a reattached view must reproduce.
         await runAndWait(first, "printf '\\033[?25l'; echo mode-set-marker", "mode-set-marker");
       } finally {

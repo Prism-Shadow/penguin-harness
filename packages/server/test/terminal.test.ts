@@ -491,9 +491,20 @@ describe("capture ranges", () => {
 });
 
 describePty("terminal manager lifecycle", () => {
-  /** Direct manager (no HTTP) with a short grace so reap timing is testable. */
+  /**
+   * Direct manager (no HTTP) with a short grace so reap timing is testable. The registry is
+   * the real one's stand-in: these tests exercise manager policy, not resource hand-off.
+   */
   function shortGraceManager(graceMs = 80): TerminalManager {
-    return new TerminalManager(graceMs);
+    const registry = new Map<string, unknown>();
+    return new TerminalManager(
+      {
+        register: (id, resource) => void registry.set(id, resource),
+        claim: <T>(id: string) => registry.get(id) as T | undefined,
+        release: (id) => void registry.delete(id),
+      },
+      graceMs,
+    );
   }
 
   async function waitUntil(cond: () => boolean, timeoutMs = 10_000): Promise<void> {

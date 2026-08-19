@@ -336,6 +336,11 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
 
+  // Hoisted out of the returned literal: the terminal manager needs this host's resource
+  // registry (live ptys register there, so a platform swap reclaims them rather than
+  // killing them — see hmr/resources.ts).
+  const hmr = new HmrHost(config.root);
+
   return {
     config,
     db,
@@ -364,11 +369,11 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     scheduler,
     channels,
     manager,
-    terminals: new TerminalManager(),
+    terminals: new TerminalManager(hmr.resources),
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
-    hmr: new HmrHost(config.root),
+    hmr,
     log,
   };
 }
