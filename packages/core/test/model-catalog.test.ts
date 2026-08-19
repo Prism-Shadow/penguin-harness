@@ -180,6 +180,11 @@ describe("model-catalog", () => {
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.5",
+      "openai/gpt-5.5-pro",
+      "openai/gpt-5.4",
+      "openai/gpt-5.4-mini",
+      "openai/gpt-5.4-nano",
+      "openai/gpt-5.4-pro",
       "openrouter/free",
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
@@ -189,11 +194,23 @@ describe("model-catalog", () => {
       "x-ai/grok-4.6",
       "x-ai/grok-4.5",
       "xiaomi/mimo-v2.5",
+      "z-ai/glm-5.3",
       "z-ai/glm-5.2",
     ]);
     for (const m of or) {
-      expect(m.clientType).toBe("openai-chat");
+      // Every gateway row pins a client type — never left to AgentHub's id-substring routing,
+      // which would send openai/gpt-5.6-* to the first-party GPT client and throw outright on
+      // the dotted anthropic/claude-opus-4.8. The openai/* rows speak the Responses protocol
+      // (OpenRouter serves it at {base}/responses); everything else is Chat Completions.
+      expect(m.clientType, m.modelId).toBe(
+        m.modelId.startsWith("openai/") ? "openai-responses" : "openai-chat",
+      );
       expect(m.baseUrl).toBe("https://openrouter.ai/api/v1");
+    }
+    // Both protocols read the same OPENAI_* pair, so the env-fallback hint is unaffected by
+    // the split.
+    for (const m of or) {
+      expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
     }
     const fw = MODEL_CATALOG.filter((m) => m.provider === "fireworks");
     expect(fw.map((m) => [m.modelId, m.supportsVision])).toEqual([
@@ -382,7 +399,7 @@ describe("model-catalog", () => {
     // Gemini 3.7 Flash: the direct row stores Google's official list price (the launch
     // discount that halves it through 2026-12-31 is not stored, matching the catalog's
     // no-promotions policy), while the OpenRouter row stores what the gateway actually
-    // bills — the halved rates.
+    // bills — a `discount: 0.75` off that same list price, i.e. a quarter of it.
     const g37 = catalogEntryFor("google", "gemini-3.7-flash")!;
     expect([g37.contextWindow, g37.supportsVision]).toEqual([1048576, true]);
     expect([g37.pricing!.cache_read, g37.pricing!.cache_write, g37.pricing!.output]).toEqual([
@@ -391,8 +408,17 @@ describe("model-catalog", () => {
     const g37or = catalogEntryFor("openrouter", "google/gemini-3.7-flash")!;
     expect([g37or.contextWindow, g37or.supportsVision]).toEqual([1048576, true]);
     expect([g37or.pricing!.cache_read, g37or.pricing!.cache_write, g37or.pricing!.output]).toEqual([
-      0.075, 0.75, 3.75,
+      0.0375, 0.375, 1.875,
     ]);
+    // GLM-5.3 is listed both directly and on OpenRouter; the gateway runs no discount, so
+    // the two rows agree on price and differ only in context window and protocol pin.
+    const glm53or = catalogEntryFor("openrouter", "z-ai/glm-5.3")!;
+    expect([glm53or.contextWindow, glm53or.supportsVision]).toEqual([1048576, false]);
+    expect([
+      glm53or.pricing!.cache_read,
+      glm53or.pricing!.cache_write,
+      glm53or.pricing!.output,
+    ]).toEqual([0.26, 1.4, 4.4]);
     // GLM-5.3 (AgentHub 0.4.2's unified GLM client): text-only, 1M context, and Z.AI's
     // published USD price — identical to glm-5.2.
     const glm53 = catalogEntryFor("zhipu", "glm-5.3")!;
@@ -492,6 +518,70 @@ describe("model-catalog", () => {
     expect([flash0731.cache_read, flash0731.cache_write, flash0731.output]).toEqual([
       0.0157192, 0.078596, 0.157192,
     ]);
+  });
+
+  it("the OpenAI line-up is listed both directly and on OpenRouter, and only the gateway rows speak Responses", () => {
+    // Every direct OpenAI model has an OpenRouter counterpart and vice versa: `openai/<id>`
+    // is exactly the gateway spelling, so the two groups must stay in lockstep when either
+    // gains a model.
+    const direct = MODEL_CATALOG.filter((m) => m.provider === "openai").map((m) => m.modelId);
+    expect(direct).toEqual([
+      "gpt-5.6",
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.5",
+      "gpt-5.5-pro",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.4-nano",
+      "gpt-5.4-pro",
+    ]);
+    const gateway = MODEL_CATALOG.filter(
+      (m) => m.provider === "openrouter" && m.modelId.startsWith("openai/"),
+    ).map((m) => m.modelId);
+    // The bare `gpt-5.6` alias has no gateway listing of its own — OpenRouter spells that
+    // tier out as `openai/gpt-5.6-sol`, which is what the alias resolves to upstream.
+    expect([...gateway].sort()).toEqual(
+      [...direct.map((id) => (id === "gpt-5.6" ? "openai/gpt-5.6-sol" : `openai/${id}`))].sort(),
+    );
+    // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client); only the
+    // gateway rows pin a protocol, and they pin Responses.
+    for (const m of MODEL_CATALOG.filter((m) => m.provider === "openai")) {
+      expect(m.clientType, m.modelId).toBeUndefined();
+      expect(m.baseUrl, m.modelId).toBeUndefined();
+      expect(m.supportsVision, m.modelId).toBe(true);
+    }
+    // Direct rows carry OpenAI's list price; the two 5.6 tiers below sol were re-read from
+    // OpenRouter's undiscounted OpenAI/Azure endpoints, which agree with the list.
+    const price = (provider: string, id: string): number[] => {
+      const p = catalogEntryFor(provider, id)!.pricing!;
+      return [p.cache_read, p.cache_write, p.output];
+    };
+    expect(price("openai", "gpt-5.6")).toEqual([0.5, 5, 30]);
+    expect(price("openai", "gpt-5.6-terra")).toEqual([0.2, 2, 12]);
+    expect(price("openai", "gpt-5.6-luna")).toEqual([0.02, 0.2, 1.2]);
+    // Gateway rows store what OpenRouter bills, so they diverge from the list price wherever
+    // a promotion is running: sol is at `discount: 0.5`, terra and luna are back at full rate
+    // after theirs lapsed (the 2x drift this re-read corrected).
+    expect(price("openrouter", "openai/gpt-5.6-sol")).toEqual([0.25, 3.125, 15]);
+    expect(price("openrouter", "openai/gpt-5.6-terra")).toEqual([0.2, 2.5, 12]);
+    expect(price("openrouter", "openai/gpt-5.6-luna")).toEqual([0.02, 0.25, 1.2]);
+    // The 5.4/5.5 rows run no promotion, so gateway and direct agree except on cache_write,
+    // where the gateway publishes GPT's genuine 1.25x write premium and the direct rows use
+    // the standard input price.
+    for (const id of ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"]) {
+      const [dr, , dOut] = price("openai", id);
+      const [gr, , gOut] = price("openrouter", `openai/${id}`);
+      expect([gr, gOut], id).toEqual([dr, dOut]);
+    }
+    // The Pro tiers publish no cache discount at all, so cache_read carries the input price.
+    for (const p of [price("openai", "gpt-5.5-pro"), price("openrouter", "openai/gpt-5.5-pro")]) {
+      expect(p).toEqual([30, 30, 180]);
+    }
+    expect(price("openrouter", "openai/gpt-5.4-pro")).toEqual([30, 30, 180]);
+    // Context windows match OpenRouter's published values and the direct rows.
+    expect(catalogEntryFor("openrouter", "openai/gpt-5.4-mini")!.contextWindow).toBe(400000);
+    expect(catalogEntryFor("openrouter", "openai/gpt-5.5")!.contextWindow).toBe(1050000);
   });
 
   it("canonicalClientType: the deprecated bare openai alias converges on openai-chat; everything else passes through", () => {

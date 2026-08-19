@@ -4,7 +4,7 @@ description: Call model APIs through @prismshadow/agenthub — streaming text ge
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
 version: 12
-updated: 2026-08-18T11:30:00Z
+updated: 2026-08-18T21:40:00Z
 ---
 
 # AgentHub Model APIs
@@ -58,14 +58,14 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
 | Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT-5.6          | `gpt-5.6` (routes to sol), `gpt-5.6-terra`, `gpt-5.6-luna`            | OpenRouter `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`                                                                  |
-| GPT-5.5 / 5.4    | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                  | OpenRouter `openai/gpt-5.5`                                                                                                                     |
+| GPT-5.5 / 5.4    | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                  | OpenRouter `openai/gpt-5.5`, `openai/gpt-5.5-pro`, `openai/gpt-5.4`, `openai/gpt-5.4-mini`, `openai/gpt-5.4-nano`, `openai/gpt-5.4-pro`         |
 | OpenAI embedding | `text-embedding-3-small`, `text-embedding-3-large`                    | —                                                                                                                                               |
 | MiniMax M3       | `MiniMax-M3`                                                          | OpenRouter `minimax/minimax-m3`                                                                                                                 |
 | Kimi K3          | `kimi-k3`                                                             | OpenRouter `moonshotai/kimi-k3`                                                                                                                 |
 | Kimi K2.7 Code   | —                                                                     | SiliconFlow `moonshotai/Kimi-K2.7-Code`; Fireworks AI `accounts/fireworks/models/kimi-k2p7-code`                                                |
 | Kimi K2.6        | `kimi-k2.6`                                                           | OpenRouter `moonshotai/kimi-k2.6`; SiliconFlow `Pro/moonshotai/Kimi-K2.6`                                                                       |
 | DeepSeek V4      | `deepseek-v4-pro`, `deepseek-v4-flash`                                | OpenRouter `deepseek/deepseek-v4-pro-0813`, `deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4-flash`, `deepseek/deepseek-v4-flash-0731`; Fireworks AI `accounts/fireworks/models/deepseek-v4-flash-0731`; SiliconFlow `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` |
-| GLM 5.3          | `glm-5.3`                                                             | —                                                                                                                                               |
+| GLM 5.3          | `glm-5.3`                                                             | OpenRouter `z-ai/glm-5.3`                                                                                                                       |
 | GLM 5.2          | `glm-5.2`                                                             | OpenRouter `z-ai/glm-5.2`; SiliconFlow `zai-org/GLM-5.2`                                                                                        |
 | GLM 5.1          | `glm-5.1`                                                             | —                                                                                                                                               |
 | Qwen 3.8 Max     | —                                                                     | OpenRouter `qwen/qwen3.8-max`                                                                                                                   |
@@ -106,7 +106,8 @@ The registry is the curated current line-up, so prefer it when picking a model o
   - `clientType: "openai-chat"` — any OpenAI Chat Completions compatible endpoint (gateway models, Qwen via OpenRouter/SiliconFlow, local vLLM, …). Renamed from `openai` in AgentHub 0.4.2; the bare `openai` string still routes as a deprecated alias.
   - `clientType: "openai-responses"` — OpenAI Responses-compatible endpoints (OpenAI, OpenRouter, DeepSeek, Z.AI, MiniMax all serve one).
   - `clientType: "ant-messages"` — Anthropic Messages-compatible endpoints (Anthropic, OpenRouter `https://openrouter.ai/api`, DeepSeek `https://api.deepseek.com/anthropic`, Z.AI, MiniMax).
-- Exception: an id served by an OpenAI-compatible gateway that still matches a first-party substring (e.g. OpenRouter's `google/gemini-3.7-flash` or `anthropic/claude-sonnet-5` on the `/api/v1` endpoint) would auto-route to the vendor protocol client. Pass `clientType: "openai-chat"` explicitly for those.
+- Exception: an id served by an OpenAI-compatible gateway that still matches a first-party substring (e.g. OpenRouter's `google/gemini-3.7-flash`, `anthropic/claude-sonnet-5` or `openai/gpt-5.6-sol` on the `/api/v1` endpoint) would auto-route to the vendor protocol client — and a dotted id like `anthropic/claude-opus-4.8` matches nothing and throws. Always pass an explicit `clientType` for gateway ids; never rely on the id. Routing reads `clientType` (or the model id) as a plain lowercased string and never looks at `baseUrl`, so the vendor prefix gives no protection.
+- OpenRouter serves both protocols at `https://openrouter.ai/api/v1`, so its `openai/*` ids work with `clientType: "openai-responses"` as well as `"openai-chat"`; use Responses when you want reasoning items round-tripped.
 - API key: constructor parameter first, then the provider environment variable — `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY` (also for `ant-messages`), `OPENAI_API_KEY` (also for `openai-chat`/`openai-responses`), `GEMINI_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`, `MINIMAX_API_KEY`. Base URLs read the same names with `_BASE_URL`.
 
 ## Streaming text

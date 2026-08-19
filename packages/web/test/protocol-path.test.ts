@@ -59,6 +59,9 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
     expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
+    // The built-in OpenRouter openai/* presets pin openai-responses, so the gateway's base
+    // URL must be hinted with /responses rather than the group's usual /chat/completions.
+    expect(protocolPathForModel("openrouter", "openai-responses")).toBe("/responses");
   });
 
   it("legacy explicit client types pin the family like auto-routing would", () => {

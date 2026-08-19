@@ -197,6 +197,75 @@ describe("models preset & catalog enrichment", () => {
     expect(legacy.envKey).toBe("OPENAI_API_KEY");
   });
 
+  it("a configured model that has since been dropped from the built-in catalog still loads, keeps its data, and stays usable", async () => {
+    // Migration guard for catalog removals (the 2026-08-18 inclusionai/ling-3.0-flash:free
+    // delisting is the live example): a user who configured the preset before it was removed
+    // keeps a row on disk that catalogEntryFor no longer matches. Everything presetModelEntries
+    // persisted must survive — only display_name lived solely in the catalog — and the row must
+    // stay a normal, selectable entry rather than being pruned, rejected or blanked.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    await writeFile(
+      cfgFile,
+      [
+        "[[models]]",
+        'provider = "openrouter"',
+        'model_id = "vendor/removed-from-catalog:free"',
+        "context_window = 262144",
+        'client_type = "openai-chat"',
+        'base_url = "https://openrouter.ai/api/v1"',
+        'api_key = "sk-still-here"',
+        "vision = false",
+        "",
+        "[models.pricing]",
+        'unit = "usd_per_mtok"',
+        "cache_read = 0.0",
+        "cache_write = 0.0",
+        "output = 0.0",
+      ].join("\n"),
+      "utf8",
+    );
+    // Sanity: the id really is absent from the built-in catalog, so this exercises the
+    // off-catalog path rather than an accidental match.
+    expect(
+      MODEL_CATALOG.some(
+        (m) => m.provider === "openrouter" && m.modelId === "vendor/removed-from-catalog:free",
+      ),
+    ).toBe(false);
+
+    const body = (await (await api.get(url())).json()) as ModelsResponse;
+    const orphan = pick(body, "openrouter", "vendor/removed-from-catalog:free");
+    // Everything stored in TOML is read straight back — pricing and context window come from
+    // the file, not the catalog, so a $0 free-tier row keeps costing 0 rather than going
+    // "unknown".
+    expect(orphan.contextWindow).toBe(262144);
+    expect(orphan.pricing).toEqual({ cacheRead: 0, cacheWrite: 0, output: 0 });
+    expect(orphan.vision).toBe(false);
+    expect(orphan.clientType).toBe("openai-chat");
+    expect(orphan.envKey).toBe("OPENAI_API_KEY");
+    // The credential survives, masked; the base URL is still inlined on the entry.
+    expect(orphan.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(orphan.credential?.apiKeyMasked).toBeTruthy();
+    // The one real loss: display_name only ever lived in the catalog, so the UI falls back to
+    // the raw upstream id.
+    expect(orphan.displayName).toBeUndefined();
+
+    // Still a legal default-model target — nothing validates the pair against the catalog.
+    const put = await api.put(url(), {
+      models: [
+        {
+          provider: "openrouter",
+          modelId: "vendor/removed-from-catalog:free",
+          contextWindow: 262144,
+          clientType: "openai-chat",
+        },
+      ],
+      defaultModel: { provider: "openrouter", modelId: "vendor/removed-from-catalog:free" },
+    });
+    expect(put.status).toBe(200);
+    const after = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(after, "openrouter", "vendor/removed-from-catalog:free").isDefault).toBe(true);
+  });
+
   it("PUT maxTokens: persisted as max_tokens and read back through GET; omitting it table-wide clears it; 0 / negative / non-numeric 400", async () => {
     const put = await api.put(url(), {
       models: [
