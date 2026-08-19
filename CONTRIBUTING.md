@@ -82,6 +82,12 @@ pnpm typecheck
 pnpm test           # unit suites for every package
 ```
 
+Working on this repo with a coding agent: [`.agents/skills/penguin-harness-dev/`](.agents/skills/penguin-harness-dev/SKILL.md)
+collects the conventions that are easy to get wrong from the outside — the two-repo symlink
+layout, the CI-parity chain, the record-and-ship contract, the model catalog's pricing rules,
+and the seams that are intentional. `.claude` is a symlink to `.agents`, so a Claude Code
+session and any other agent read the same directory.
+
 End-to-end suites (optional locally, slower):
 
 ```bash
