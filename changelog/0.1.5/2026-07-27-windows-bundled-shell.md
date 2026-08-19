@@ -1,8 +1,15 @@
 # Windows: the package bundles its own bash, so the Agent's shell no longer depends on the machine
 
+- **Date:** 2026-07-27
+- **Type:** feature
+- **Scope:** `core`, `tooling`
+- **PR:** [#95](https://github.com/Prism-Shadow/penguin-harness/pull/95)
+
+[中文版](2026-07-27-windows-bundled-shell.zh.md)
+
 `penguin-win32-x64.zip` now ships **MinGit** under `git/`, and `exec_command` uses it when the machine has no Git for Windows of its own.
 
-## Why
+## The shell was whatever the machine had
 
 The Windows shell was whatever happened to be installed: `bash` if the user had Git for Windows, otherwise PowerShell. That made the same Agent running the same Skill behave differently on two Windows machines, and the degradation was silent — a Skill written for a POSIX shell does not fail loudly under PowerShell, it fails strangely. The sharpest case: `curl -fsSL <url>` under Windows PowerShell 5.1 resolves the built-in `curl` → `Invoke-WebRequest` alias and returns a cmdlet parameter-binding error, which a model recovers from far less easily than "command not found".
 

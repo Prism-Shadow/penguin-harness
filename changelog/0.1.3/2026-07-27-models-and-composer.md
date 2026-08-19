@@ -1,5 +1,12 @@
 # Models and composer: Kimi K3 on Fireworks; image upload joins the "+" menu, height and version-line fixes
 
+- **Date:** 2026-07-27
+- **Type:** feature
+- **Scope:** `web`, `model-catalog`
+- **PR:** [#91](https://github.com/Prism-Shadow/penguin-harness/pull/91)
+
+[中文版](2026-07-27-models-and-composer.zh.md)
+
 ## Kimi K3 on Fireworks
 
 The preset catalog gains **Kimi K3** on Fireworks (`accounts/fireworks/models/kimi-k3`): a 1M-token context window, vision support, the OpenAI-compatible client against the shared Fireworks base URL, priced $0.30 / $3 / $15 per Mtok (cache read / cache write / output), slotted ahead of Kimi K2.7 Code in the provider's rows.

@@ -1,5 +1,12 @@
 # The harness's own port stops colliding: out of the Agent's environment, off the dev server
 
+- **Date:** 2026-07-29
+- **Type:** fix
+- **Scope:** `core`, `tooling`
+- **PR:** [#100](https://github.com/Prism-Shadow/penguin-harness/pull/100)
+
+[中文版](2026-07-29-harness-env-and-dev-ports.zh.md)
+
 Two places where PenguinHarness's listen port reached somewhere it should not have.
 
 ## `PORT` no longer leaks into commands the Agent runs

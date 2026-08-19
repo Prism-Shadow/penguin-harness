@@ -1,5 +1,12 @@
 # Core: what a failed request does next
 
+- **Date:** 2026-07-29
+- **Type:** fix
+- **Scope:** `core`
+- **PR:** [#104](https://github.com/Prism-Shadow/penguin-harness/pull/104), [#107](https://github.com/Prism-Shadow/penguin-harness/pull/107)
+
+[中文版](2026-07-29-llm-request-lifecycle.zh.md)
+
 ## Every failure but a rejected credential now retries
 
 The engine used to reconnect on `timeout` and `malformed` only. `failed` — the bucket for "the classifier did not judge this transient" — ended the turn.

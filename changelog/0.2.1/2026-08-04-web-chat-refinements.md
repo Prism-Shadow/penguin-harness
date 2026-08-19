@@ -1,5 +1,12 @@
 # Web App: outline windowing, a cost stat that stays put, attachments as user content, quieter failure and update chrome
 
+- **Date:** 2026-08-04
+- **Type:** fix
+- **Scope:** `web`
+- **PR:** [#182](https://github.com/Prism-Shadow/penguin-harness/pull/182), [#184](https://github.com/Prism-Shadow/penguin-harness/pull/184), [#185](https://github.com/Prism-Shadow/penguin-harness/pull/185), [#188](https://github.com/Prism-Shadow/penguin-harness/pull/188), [#190](https://github.com/Prism-Shadow/penguin-harness/pull/190)
+
+[中文版](2026-08-04-web-chat-refinements.zh.md)
+
 ## Conversation outline
 
 The tick-rail minimap over the stream's left gutter now appears only once a conversation reaches 5 exchanges, and renders a sliding window of at most 20 turns either side of the active one instead of one tick per turn forever — the window recenters as reading position moves, shifts rather than shrinks at the ends, and small edge dots mark hidden ranges; global turn numbering is preserved and the toolbar dropdown fallback still lists every turn. Two overlap bugs went with it: the tick stack is height-adaptive with an overflow backstop, so very long runs can no longer spill ticks over the toolbar and composer; and the gutter-fit check, which compared against a hardcoded 768 px column, now resolves the column's real 48 rem width against the live root font size — under browser font scaling the old check kept the rail visible while the widened prose column ran beneath it.
