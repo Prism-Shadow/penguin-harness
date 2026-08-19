@@ -30,6 +30,7 @@ export function openDatabase(dbPath: string): DatabaseSync {
   ensureColumn(db, "sessions", "client", "TEXT");
   ensureColumn(db, "sessions", "has_trace", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "fork_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "sessions", "thinking_level", "TEXT");
   ensureColumn(db, "auth_sessions", "via", "TEXT");
   ensureColumn(db, "trace_files", "page_stats", "TEXT");
   // Superseded by idx_usage_session_ts (session_id, ts), which SCHEMA_SQL just created on

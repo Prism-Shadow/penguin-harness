@@ -553,6 +553,16 @@ export class Session {
   }
 
   /**
+   * Withdraws a steering input queued via `steer` before the engine delivers it: `input` is
+   * the exact list that was passed to `steer` (matched by identity). Returns false when it
+   * is no longer queued — already delivered to the model, or the run exited — so the host
+   * reports "already delivered" instead of silently pretending the recall worked.
+   */
+  unsteer(input: OmniMessage[]): boolean {
+    return this.engine?.unsteer(input) ?? false;
+  }
+
+  /**
    * Skips the in-progress reconnect backoff and fires the next retry immediately (the
    * user's "retry now" on the reconnect countdown): the attempt counter is unchanged —
    * the skipped wait does not consume an extra attempt. Returns false (a benign no-op)
