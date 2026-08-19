@@ -106,9 +106,39 @@ export class TerminalManager {
       );
     }
 
+    this.track(session);
+    return session;
+  }
+
+  /**
+   * Takes a session into this manager AND into the runtime's resource registry. The
+   * registry is what makes a pty outlive a platform swap: it sits outside the reloadable
+   * tree, so the shell keeps running and the next instance claims it back (see
+   * hmr/resources.ts). The parked context carries only these ids.
+   */
+  private track(session: TerminalSession): void {
     this.sessions.set(session.id, session);
     session.onExit(() => this.scheduleReap(session.id));
-    return session;
+    this.resources.register(resourceId(session.id), session, () => session.dispose());
+  }
+
+  /**
+   * Reclaims the sessions a previous instance parked. An id the registry no longer knows
+   * is simply dropped: its shell died with the process that owned it, and a manager
+   * holding a handle to nothing would only fail later, further from the cause.
+   */
+  adopt(ids: readonly string[]): void {
+    for (const id of ids) {
+      const session = this.resources.claim<TerminalSession>(resourceId(id));
+      if (session === undefined) continue;
+      this.sessions.set(session.id, session);
+      session.onExit(() => this.scheduleReap(session.id));
+    }
+  }
+
+  /** Handle ids for the parked context document — live sessions only. */
+  handleIds(): string[] {
+    return [...this.sessions.values()].filter((s) => s.alive).map((s) => s.id);
   }
 
   /** Looks up a session, enforcing ownership. Unknown and not-yours are both 404 — no probing. */
@@ -148,6 +178,8 @@ export class TerminalManager {
       this.reapTimers.delete(id);
       this.sessions.get(id)?.dispose();
       this.sessions.delete(id);
+      // Out of the registry too: a disposed pty must not be claimable by the next boot.
+      this.resources.release(resourceId(id));
     }, delayMs);
     timer.unref?.();
     this.reapTimers.set(id, timer);
@@ -181,4 +213,9 @@ async function resolveCwd(input: string): Promise<string> {
     throw new HttpError(400, "cwd_not_a_dir", `Not a directory: ${real}`);
   }
   return real;
+}
+
+/** Registry key for a session's live pty (namespaced so kinds cannot collide). */
+function resourceId(sessionId: string): string {
+  return `terminal:${sessionId}`;
 }

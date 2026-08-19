@@ -31,7 +31,8 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
+import { IDENTITY_RESOURCE_ID } from "./platform/terminal/identity.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
@@ -58,8 +59,6 @@ import { agentTracesRoutes } from "./http/routes/agent-traces.js";
 import { usageRoutes } from "./http/routes/usage.js";
 import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
 import { versionRoutes } from "./http/routes/version.js";
-import { terminalsRoutes } from "./platform/terminal/routes.js";
-import { TerminalManager } from "./platform/terminal/manager.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
 import { createCoreSessionLoader, SessionManager } from "./runtime/session-manager.js";
@@ -132,8 +131,6 @@ export interface AppDeps {
   scheduler: Scheduler;
   channels: ChannelHub;
   manager: SessionManager;
-  /** Server-side pty sessions behind /api/terminals (the WebSocket data plane is attached in index.ts). */
-  terminals: TerminalManager;
   /** Session-origin registry derived from session_meta (single source of truth; no DB column). */
   sessionSources: SessionSources;
   /** Error persistence (shared by app.onError and various background capture points; the process-level fallback is in index.ts). */
@@ -316,10 +313,18 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
 
-  // Hoisted out of the returned literal: the terminal manager needs this host's resource
-  // registry (live ptys register there, so a platform swap reclaims them rather than
-  // killing them — see hmr/resources.ts).
+  // Hoisted out of the returned literal so its registry can be populated before anything
+  // boots against it.
   const hmr = new HmrHost(config.root);
+  // The seam runs before the auth middleware, so a platform serving an API of its own has
+  // no `c.var.user`. Authenticating is the runtime's job, not something a bundle should
+  // re-implement against cookie names and session TTLs — so it is published as a
+  // capability the booting platform claims (see platform/terminal/identity.ts).
+  hmr.resources.register(IDENTITY_RESOURCE_ID, async (request: Request) => {
+    const token = readSessionCookie(request.headers.get("cookie"));
+    const authed = token === null ? null : authService.authenticateWithMeta(token);
+    return authed === null ? null : { userId: authed.user.userId };
+  });
 
   return {
     config,
@@ -349,7 +354,6 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     scheduler,
     channels,
     manager,
-    terminals: new TerminalManager(hmr.resources),
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
@@ -477,9 +481,6 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
   app.route("/api/projects/:projectId/usage", usageRoutes(deps));
   app.route("/api/sessions", sessionsRoutes(deps));
-  // Terminals: control plane only. The byte stream upgrades to a WebSocket on the same path
-  // prefix and is handled off the Hono app, in terminal/ws.ts.
-  app.route("/api/terminals", terminalsRoutes(deps.terminals));
 
   // Workspace HTML preview on the separate preview origin: deliberately outside /api and
   // outside the auth middleware — that origin never receives the session cookie, so the
@@ -618,4 +619,16 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       headers: { "Content-Type": type },
     });
   });
+}
+
+/** The session cookie out of a raw Cookie header (the seam hands over a plain Request). */
+function readSessionCookie(header: string | null): string | null {
+  if (header === null) return null;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
+    return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
 }

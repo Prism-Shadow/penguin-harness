@@ -51,7 +51,7 @@ beforeAll(async () => {
     });
   });
   attachTerminalWebSocket(server as unknown as HttpServer, {
-    manager: t.deps.terminals,
+    hmr: t.deps.hmr,
     authService: t.deps.authService,
     // Kept, not discarded: the backpressure test's precondition (the server deciding a
     // viewer is too far behind) is only observable through this line.

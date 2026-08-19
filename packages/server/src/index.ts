@@ -133,7 +133,7 @@ function writePortFile(file: string, port: number): void {
 
 /** Terminal WebSocket wiring, shared by every listener this process opens. */
 const terminalWebSocketDeps = {
-  manager: deps.terminals,
+  hmr: deps.hmr,
   authService: deps.authService,
   log: (line: string) => console.log(line),
 };
@@ -192,9 +192,6 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
   deps.hmr.dispose();
-  // Every terminal is a live child process; without this they are reparented to init and
-  // keep running (and holding the data root) after the server is gone.
-  deps.terminals.disposeAll();
   deps.channels.dispose();
   ipv6Loopback?.close();
   server.close(() => {
