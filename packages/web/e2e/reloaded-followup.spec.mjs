@@ -101,7 +101,13 @@ test("a stale steer response after reload queues the follow-up instead of strand
     thinkingLevel: "high",
   });
   expect(await response.json()).toMatchObject({ queued: true });
-  await expect(page.getByText("1 条跟进消息已排队，本轮结束后自动发送")).toBeVisible();
+  // The queued hint is now one line per entry carrying that entry's own content (the bare
+  // "N queued" count is only the fallback for a server that predates pendingFollowUps), and
+  // it ends in the icon-only recall control — which must still answer to its name (#287).
+  await expect(
+    page.getByText("跟进消息已排队，本轮结束后自动发送：hello after reload"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "撤回" })).toHaveCount(1);
   await expect(composer).toHaveValue("");
 
   // The first task completes, then the accepted follow-up reaches the LLM and produces a
