@@ -4,7 +4,9 @@
  * in real time from the current Model's pricing, hidden if no pricing is configured); all five
  * share the same basis (this turn's usage), each expressed uniformly as icon + value (no text
  * labels); the reply timestamp and a copy button sit at the end (copies this turn's assistant
- * text, falling back to the stats themselves when there's no text). Below sm the row is slimmed
+ * text, falling back to the stats themselves when there's no text), with the fork action to the
+ * right of copy — forking asks for confirmation first (it duplicates the conversation into a new
+ * Session up to this reply), while copy stays a plain immediate click. Below sm the row is slimmed
  * to fit the width: the TPS chip is dropped and cost/elapsed lose excess decimals (compact
  * formatter variants); desktop shows all five, formatted as always.
  * At ≥sm the whole line is invisible but takes up space by default, surfacing only on hovering
@@ -38,6 +40,7 @@ import {
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { CopyButton } from "../../components/ui/copy-button";
 import { useTheme } from "../../state/theme";
 import { useLocale } from "../../state/locale";
@@ -104,6 +107,10 @@ export function TaskStatsLine({
   const { currency } = useTheme();
   const { locale } = useLocale();
   const [forking, setForking] = useState(false);
+  // Fork is gated behind an explicit confirmation (review request): duplicating a whole
+  // conversation is a heavier action than the neighboring copy button suggests, so a stray
+  // click must not silently create a Session. Plain copy stays unconfirmed.
+  const [confirmingFork, setConfirmingFork] = useState(false);
 
   // This turn's usage (not a context snapshot): input = this Task's cached + uncached input.
   const b = stats?.tokensByBucket;
@@ -178,47 +185,66 @@ export function TaskStatsLine({
           </>
         )}
       </span>
-      {onFork && assistantText?.trim() && (
-        <button
-          type="button"
-          disabled={forking}
-          title={S.chat.forkSession}
-          aria-label={S.chat.forkSession}
-          onClick={() => {
-            setForking(true);
-            void onFork({
-              assistantText,
-              ...(atMs !== undefined ? { atMs } : {}),
-              ...(forkPosition !== undefined ? { position: forkPosition } : {}),
-            }).finally(() => setForking(false));
-          }}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-            className={forking ? "animate-pulse" : ""}
-          >
-            <circle cx="6" cy="5" r="2" />
-            <circle cx="18" cy="7" r="2" />
-            <circle cx="6" cy="19" r="2" />
-            <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
-          </svg>
-        </button>
-      )}
       {/* Pinned at the row's end, outside the scrollable stats span. */}
       <CopyButton
         text={copyText}
         label={S.chat.copyReply}
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
       />
+      {/* Fork sits to the RIGHT of copy (review request): copy is the frequent action and
+          keeps its accustomed spot; the click only opens the confirmation below — the fork
+          request fires on Confirm, never directly. */}
+      {onFork && assistantText?.trim() && (
+        <>
+          <button
+            type="button"
+            disabled={forking}
+            title={S.chat.forkSession}
+            aria-label={S.chat.forkSession}
+            onClick={() => setConfirmingFork(true)}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 disabled:cursor-wait disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+              className={forking ? "animate-pulse" : ""}
+            >
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="18" cy="7" r="2" />
+              <circle cx="6" cy="19" r="2" />
+              <path d="M6 7v8M8 11h4a6 6 0 0 0 6-2" />
+            </svg>
+          </button>
+          <ConfirmModal
+            open={confirmingFork}
+            title={S.chat.forkSession}
+            tone="primary"
+            confirmLabel={S.chat.forkSessionConfirmAction}
+            busy={forking}
+            onClose={() => setConfirmingFork(false)}
+            onConfirm={() => {
+              setConfirmingFork(false);
+              setForking(true);
+              void onFork({
+                assistantText,
+                ...(atMs !== undefined ? { atMs } : {}),
+                ...(forkPosition !== undefined ? { position: forkPosition } : {}),
+              }).finally(() => setForking(false));
+            }}
+          >
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {S.chat.forkSessionConfirmBody}
+            </p>
+          </ConfirmModal>
+        </>
+      )}
     </div>
   );
 }

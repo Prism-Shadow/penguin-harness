@@ -1184,6 +1184,8 @@ Benchmark：
     copyCode: "复制代码",
     copyReply: "复制回复",
     forkSession: "从这里分叉对话",
+    forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
+    forkSessionConfirmAction: "分叉",
     forkSessionFailed: "无法定位这条回复，请刷新后重试。",
     copyMessage: "复制消息",
     deleteSession: "删除对话",

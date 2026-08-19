@@ -20,7 +20,7 @@
  * there's no longer a separate "quick / advanced" pair of new-chat dialogs.
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 import type {
@@ -699,7 +699,15 @@ export function Sidebar({
     const target = deletingSession;
     try {
       await api.deleteSession(target.sessionId);
-      remove(target.sessionId);
+      // Remove IN A TRANSITION, deliberately: navigate() below wraps its router update in
+      // React.startTransition, so a plain (sync-lane) remove would commit one render EARLIER
+      // than the route change. In that intermediate commit the deleted id is still the route
+      // but already missing from the list — the chat page's deep-link probe then re-fetches
+      // the just-deleted Session and the server logs a session_not_found 404 on every
+      // delete-while-open (the standard flow when discarding a fork you just tried).
+      // Scheduling the removal in the same lane makes both land in one commit, so no frame
+      // ever pairs the stale route with the pruned list and no request fires.
+      startTransition(() => remove(target.sessionId));
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));
       // Prune its pin and manual-order entry as well (both helpers return the same
