@@ -652,10 +652,12 @@ export class SessionManager {
         objective,
         budget: args.budget,
       });
+      // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
+      const thinkingLevel = this.runThinkingLevel(entry.sessionId, args.thinkingLevel);
       const gen = this.goalStream(entry, {
         input: args.input,
         budget: args.budget,
-        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         approve,
         signal: ac.signal,
         ...(goalId !== undefined ? { goalId } : {}),
@@ -762,11 +764,26 @@ export class SessionManager {
   }
 
   /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
+  /**
+   * Thinking level for one run: the level the request carried wins, else the level pinned
+   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
+   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
+   * a queued follow-up that carried no level of its own picks up the pin as it stands when
+   * it finally starts, and a pin set mid-run applies from the next run.
+   */
+  private runThinkingLevel(
+    sessionId: string,
+    requested?: ThinkingLevelName,
+  ): ThinkingLevelName | undefined {
+    return requested ?? this.deps.sessions.findById(sessionId)?.thinkingLevel ?? undefined;
+  }
+
   private launchTask(
     entry: RuntimeEntry,
     input: OmniMessage[],
-    thinkingLevel?: ThinkingLevelName,
+    requestedThinkingLevel?: ThinkingLevelName,
   ): void {
+    const thinkingLevel = this.runThinkingLevel(entry.sessionId, requestedThinkingLevel);
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
     entry.status = "running";

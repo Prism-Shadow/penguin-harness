@@ -856,6 +856,17 @@ export const en: Strings = {
       high: "High",
       xhigh: "Extreme High",
     },
+    thinkingSwitchTitle: "Switch thinking level",
+    thinkingSwitchBody: (to: string): string =>
+      `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
+    thinkingSwitchBusyHint: "This conversation is still working — compaction has to wait for it.",
+    thinkingSwitchCompactFirst: "Compact, then switch",
+    thinkingSwitchConfirm: "Switch anyway",
+    thinkingSwitchCompacting: "Compacting the context — the thinking level switches when it ends.",
+    thinkingSwitchApplied: (to: string): string =>
+      `Context compacted; thinking level switched to "${to}".`,
+    thinkingSwitchCompactFailed:
+      "The compaction did not finish; the thinking level was switched anyway.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -1482,6 +1493,7 @@ Scenarios:
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
       task_in_progress: "This Session already has a task running.",
+      compacting: "This Session is compacting its context and is not accepting new input.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:

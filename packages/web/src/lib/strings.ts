@@ -811,6 +811,20 @@ export const zh = {
       high: "高",
       xhigh: "极高",
     } as Readonly<Record<string, string>>,
+    /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
+    thinkingSwitchTitle: "切换思考等级",
+    thinkingSwitchBody: (to: string): string =>
+      `将思考等级切换为「${to}」？会话中途切换会降低提示词缓存命中率、增加成本，先压缩上下文再切换更省。`,
+    /** Shown under the body when the session isn't idle — compaction can only start on an idle session. */
+    thinkingSwitchBusyHint: "会话正在运行，压缩要等空闲后才能开始。",
+    /** Primary (recommended) choice: compact first, then apply the switch. */
+    thinkingSwitchCompactFirst: "压缩后切换",
+    thinkingSwitchConfirm: "仍要切换",
+    /** Toast when the compaction starts: the switch is applied once it ends. */
+    thinkingSwitchCompacting: "正在压缩上下文，压缩结束后切换思考等级。",
+    thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
+    /** Compaction ended without completing — the switch still applies, so say both. */
+    thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
@@ -1433,6 +1447,8 @@ Benchmark：
       path_not_found: "该路径不存在。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",
       task_in_progress: "该 Session 已有任务在运行。",
+      /** `nothing_to_compact` is deliberately NOT mapped: the server sends three different specific reasons under that one code (not configured / no completed turn yet / just compacted), and a single localized sentence would flatten them into a wrong one. */
+      compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",

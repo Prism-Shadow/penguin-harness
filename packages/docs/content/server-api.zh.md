@@ -179,7 +179,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
-| PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
+| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级固定在该 Session 上并持久化：此后凡是自身未携带等级的运行都改用它，而不再回落到 Agent 配置；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未固定） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
@@ -261,7 +261,7 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 回退到 Agent 配置的档位
+  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 先回退到该 Session 固定的档位，再回退到 Agent 配置
   thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =
