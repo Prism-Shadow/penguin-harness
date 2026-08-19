@@ -7,6 +7,7 @@
  * composes.
  */
 import { describe, expect, it } from "vitest";
+import { resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
 import { zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
 import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
@@ -15,6 +16,7 @@ import {
   PROTOCOL_CLIENT_TYPES,
   detectableBaseUrl,
   displayWidthCh,
+  envHintClientType,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -125,6 +127,30 @@ describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)"
     expect(needsProtocolDetectOnSave("remove", "custom", "")).toBe(false);
     expect(needsProtocolDetectOnSave("setDefault", "custom", "")).toBe(false);
     expect(needsProtocolDetectOnSave("setVisionModel", "custom", "")).toBe(false);
+  });
+});
+
+describe("envHintClientType (custom groups never infer a client from the model id)", () => {
+  const envFor = (provider: string, modelId: string, clientType: string) =>
+    resolveModelEnv(modelId, envHintClientType(provider, clientType))?.envKey;
+
+  it("keeps a vendor-looking model id in a custom group on the compatible client's env var", () => {
+    // The bug this pins: `claude-sonnet-5` typed into a custom group used to resolve to
+    // ANTHROPIC_API_KEY, implying an Anthropic client that group never routes to.
+    expect(envFor("custom", "claude-sonnet-5", "")).toBe("OPENAI_API_KEY");
+    expect(envFor("custom", "gpt-5.6", "")).toBe("OPENAI_API_KEY");
+    expect(envFor("my-group", "claude-sonnet-5", "")).toBe("OPENAI_API_KEY");
+  });
+
+  it("still honours a protocol the user actually chose", () => {
+    expect(envFor("custom", "whatever", "ant-messages")).toBe("ANTHROPIC_API_KEY");
+    expect(envFor("custom", "whatever", "openai-responses")).toBe("OPENAI_API_KEY");
+  });
+
+  it("leaves vendor groups routing by model id, which is how they really work", () => {
+    expect(envHintClientType("anthropic", "")).toBeUndefined();
+    expect(envFor("anthropic", "claude-sonnet-5", "")).toBe("ANTHROPIC_API_KEY");
+    expect(envFor("google", "gemini-3.1-pro", "")).toBe("GEMINI_API_KEY");
   });
 });
 

@@ -393,6 +393,42 @@ export interface ModelTestRequest {
 }
 
 /**
+ * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
+ * credential, to decide whether the models dialog's "supports vision" switch should be
+ * turned on. The body mirrors the connectivity test (same paired reference and same
+ * not-yet-saved overrides), so an unsaved model can be probed before it exists on disk.
+ *
+ * Unlike protocol detection this is a real, billed completion — an image request cannot be
+ * shaped to cost nothing — so it only ever runs when the user presses the control.
+ */
+export interface ModelVisionDetectRequest {
+  provider: string;
+  modelId: string;
+  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key. */
+  clearApiKey?: boolean;
+  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
+  baseUrl?: string | null;
+  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
+  clientType?: string;
+}
+
+/**
+ * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
+ * = it answered specifically that it will not take an image (a definitive negative, not an
+ * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
+ * error), so nothing about the capability was learned and the setting is left alone.
+ */
+export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
+
+/** Vision probe result; `message` carries the truncated provider error for the failed case. */
+export interface ModelVisionDetectResponse {
+  outcome: ModelVisionOutcome;
+  message?: string;
+}
+
+/**
  * Connectivity test result: carries round-trip latency when ok, and a reason on failure
  * (truncated raw provider error). When streamed content was observed, also carries the
  * time-to-first-token and, when usage was reported (completed streams), the output rate.

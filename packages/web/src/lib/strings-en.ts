@@ -525,10 +525,20 @@ export const en: Strings = {
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
+    /** Save-time detection came back empty: the save proceeds on the compatible client. */
+    detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
     addProtocolHintDetect:
       "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
     addTitleCustom: "Add model",
     vision: "Vision support",
+    /** Detect action beside the vision switch. */
+    detectVision: "Detect",
+    detectingVision: "Testing…",
+    detectVisionHint:
+      "Send one tiny test image to see whether this model accepts images (uses your API key)",
+    detectVisionNeedsId: "Fill in the model id first, then detect.",
+    detectVisionOk: "This model accepts images; vision turned on",
+    detectVisionNo: "This model does not accept images; vision left off",
     visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
     freeBadge: "Free",

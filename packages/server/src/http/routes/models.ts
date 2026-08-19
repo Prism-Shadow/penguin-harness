@@ -1,7 +1,8 @@
 /**
  * Model & credential config routes:
  * GET|PUT /api/projects/:p/models, PUT /api/projects/:p/models/default,
- * POST /api/projects/:p/models/test, POST /api/projects/:p/models/detect (the model
+ * POST /api/projects/:p/models/test, POST /api/projects/:p/models/detect,
+ * POST /api/projects/:p/models/detect-vision (the model
  * reference `(provider, modelId)` is sent as a pair in the request body, avoiding
  * URL-encoding issues). Any member can read (api_key is masked); only the owner can
  * modify, test, or detect.
@@ -14,6 +15,7 @@ import type {
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
+  ModelVisionDetectRequest,
   ServerEvent,
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
@@ -266,6 +268,41 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       req.modelId = requireString(body, "modelId", { minLen: 1, maxLen: 200 });
     }
     return c.json(await deps.projectConfigService.detectProtocol(projectId, req));
+  });
+
+  /**
+   * Vision capability probe (owner only). Body mirrors the connectivity test's, since the
+   * probe is one real completion on the same credential — see detectVision. Owner-only for
+   * the same reason as /test and /detect: it spends the Project's key.
+   */
+  app.post("/detect-vision", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const req: ModelVisionDetectRequest = {
+      provider: requireString(body, "provider", { minLen: 1, maxLen: 64 }),
+      modelId: requireString(body, "modelId", { minLen: 1, maxLen: 200 }),
+    };
+    if (body.apiKey !== undefined) {
+      if (typeof body.apiKey !== "string") throw badRequest("apiKey must be a string.");
+      if (body.apiKey) req.apiKey = body.apiKey;
+    }
+    if (body.clearApiKey !== undefined) {
+      if (typeof body.clearApiKey !== "boolean") throw badRequest("clearApiKey must be a boolean.");
+      req.clearApiKey = body.clearApiKey;
+    }
+    // null is meaningful (explicitly no base URL), so it is kept distinct from absent.
+    if (body.baseUrl !== undefined) {
+      if (body.baseUrl !== null && typeof body.baseUrl !== "string") {
+        throw badRequest("baseUrl must be a string or null.");
+      }
+      req.baseUrl = body.baseUrl as string | null;
+    }
+    if (body.clientType !== undefined) {
+      if (typeof body.clientType !== "string") throw badRequest("clientType must be a string.");
+      if (body.clientType) req.clientType = body.clientType;
+    }
+    return c.json(await deps.projectConfigService.detectVision(projectId, req));
   });
 
   return app;

@@ -38,6 +38,7 @@ import type {
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
+  ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -76,8 +77,10 @@ import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./m
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
+  DEFAULT_CUSTOM_CLIENT_TYPE,
   detectableBaseUrl,
   displayWidthCh,
+  envHintClientType,
   isCustomLikeGroup,
   isGenericProtocolClientType,
   needsProtocolDetectOnSave,
@@ -181,6 +184,12 @@ export function clientTypeAfterProviderChange(provider: string, current: string)
   if (provider !== "custom") return current;
   return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai-chat";
 }
+
+/**
+ * Who asked for a detection run. Only the failure wording differs: a manual run reports a
+ * failure, a save-triggered one reports the fallback it is proceeding with.
+ */
+type DetectMode = "manual" | "save";
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
@@ -1113,7 +1122,10 @@ function ModelDialog({
       provider: addProvider,
       modelId: "",
       original: null,
-      vision: true,
+      // A new custom model claims no vision support until it is detected or switched on by
+      // hand (per maintainer). Vendor and gateway adds keep the old optimistic default:
+      // their ids are catalog-known, so the capability is already established for them.
+      vision: !isCustomLikeGroup(addProvider),
       contextWindow: "",
       maxTokens: "",
       // No protocol is preselected for a custom / user-defined group: it is detected from
@@ -1159,6 +1171,10 @@ function ModelDialog({
    * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
    */
   const detectInFlight = useRef<Promise<string | null> | null>(null);
+  /** Vision probe in progress (its own control, so its own busy state). */
+  const [visionDetecting, setVisionDetecting] = useState(false);
+  /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
+  const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -1236,13 +1252,20 @@ function ModelDialog({
    * A stale run (superseded by a manual pick or a newer run) discards its result instead
    * of clobbering the form, and stays silent.
    */
-  const detectOnce = async (): Promise<string | null> => {
+  const detectOnce = async (mode: DetectMode): Promise<string | null> => {
+    // What an empty result means depends on who asked. A manual run simply failed; a save
+    // run silently resolves to the compatible client and says so, because the save it was
+    // serving is still going through.
+    const failed = () => {
+      setDetectFailed(true);
+      if (mode === "save") toastInfo(S.models.detectFellBack);
+      else toastError(S.models.detectFailedBody);
+    };
     const baseUrl = form.baseUrl.trim();
     // An unusable URL is just another failure: the server would 400 it, and the user gets
     // the same message either way rather than a distinct piece of API error text.
     if (!detectableBaseUrl(baseUrl)) {
-      setDetectFailed(true);
-      toastError(S.models.detectFailedBody);
+      failed();
       return null;
     }
     const seq = ++detectSeq.current;
@@ -1264,14 +1287,10 @@ function ModelDialog({
         set({ clientType: res.detected });
         return res.detected;
       }
-      setDetectFailed(true);
-      toastError(S.models.detectFailedBody);
+      failed();
       return null;
     } catch {
-      if (seq === detectSeq.current) {
-        setDetectFailed(true);
-        toastError(S.models.detectFailedBody);
-      }
+      if (seq === detectSeq.current) failed();
       return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
@@ -1282,9 +1301,9 @@ function ModelDialog({
    * Single-flight wrapper: a second trigger joins the run already in progress rather than
    * starting a rival probe (the button while the save path is probing, or vice versa).
    */
-  const runDetect = (): Promise<string | null> => {
+  const runDetect = (mode: DetectMode): Promise<string | null> => {
     if (detectInFlight.current) return detectInFlight.current;
-    const run = detectOnce().finally(() => {
+    const run = detectOnce(mode).finally(() => {
       detectInFlight.current = null;
     });
     detectInFlight.current = run;
@@ -1297,9 +1316,58 @@ function ModelDialog({
    * no announcement of its own, since the save it was serving carries straight on.)
    */
   const detectFromButton = async () => {
-    const detected = await runDetect();
+    const detected = await runDetect("manual");
     if (detected === null) return; // detectOnce already raised the failure toast
     toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+  };
+
+  /**
+   * Vision probe. Mirrors protocol detection — always clickable, single-flight, toast-only
+   * — with one deliberate difference: it is a REAL completion on the user's credential
+   * (an image request cannot be shaped to cost nothing the way the protocol probes are), so
+   * it only ever runs from this button, never implicitly and never on save.
+   *
+   * Three outcomes, because "the probe failed" and "the model says no" are different facts:
+   * a hit switches vision ON, a definitive image rejection switches it OFF, and a probe
+   * that learned nothing leaves the switch exactly as the user had it.
+   */
+  const detectVisionFromButton = async () => {
+    if (visionInFlight.current) return;
+    const modelId = form.modelId.trim();
+    if (!modelId) {
+      toastError(S.models.detectVisionNeedsId);
+      return;
+    }
+    setVisionDetecting(true);
+    const run = (async () => {
+      try {
+        const body: ModelVisionDetectRequest = { provider: form.provider, modelId };
+        const key = form.apiKeyInput.trim();
+        if (key) body.apiKey = key;
+        else if (form.clearApiKey) body.clearApiKey = true;
+        const bu = form.baseUrl.trim();
+        body.baseUrl = bu ? bu : null;
+        if (form.clientType.trim()) body.clientType = form.clientType.trim();
+        const res = await api.detectVision(projectId, body);
+        if (res.outcome === "supported") {
+          set({ vision: true });
+          toastSuccess(S.models.detectVisionOk);
+        } else if (res.outcome === "unsupported") {
+          set({ vision: false });
+          toastInfo(S.models.detectVisionNo);
+        } else {
+          toastError(S.models.detectFailedBody);
+        }
+      } catch {
+        toastError(S.models.detectFailedBody);
+      } finally {
+        setVisionDetecting(false);
+      }
+    })();
+    visionInFlight.current = run.finally(() => {
+      visionInFlight.current = null;
+    });
+    await visionInFlight.current;
   };
 
   /**
@@ -1411,26 +1479,25 @@ function ModelDialog({
 
   /**
    * Commit one dialog action. Saving a custom-like entry whose protocol is still unset
-   * detects it FIRST and only then continues with the detected value: nothing may reach
-   * the config without a protocol (an entry AgentHub would refuse to start — see
-   * protocolForPersist), and asking the endpoint is more reliable than guessing.
+   * detects it FIRST and continues with whatever comes back: asking the endpoint is more
+   * reliable than guessing, so it is worth the round-trip.
    *
-   * A failed probe aborts the save and leaves the dialog open on top of the popup, so the
-   * user can pick a protocol by hand or fix the URL — never a silent save. The other
-   * actions (set-default / set-vision-proxy / remove) do not probe: they are not the user
-   * saying "this model is ready", and rowToEntry's fallback still keeps the written entry
-   * startable.
+   * A probe that finds nothing no longer blocks (per maintainer: 默认都走兼容类型). The save
+   * goes through on the compatible client, with a toast saying that is what happened —
+   * detection is an accuracy improvement, not a gate, and refusing to save left the user
+   * stuck on an endpoint that simply cannot be probed. Nothing unstartable is written
+   * either way, because the fallback is a real client.
+   *
+   * The other actions (set-default / set-vision-proxy / remove) do not probe: they are not
+   * the user saying "this model is ready", and rowToEntry's fallback still applies.
    */
   const submit = async (action: DialogAction) => {
     const next = validated();
     if (!next) return;
     if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
       // Joins a run already started from the Detect button rather than probing twice.
-      const detected = await runDetect();
-      // Aborted: onSubmit is never reached, so the dialog stays open (detectOnce already
-      // raised the failure toast, which renders above it) and nothing is persisted.
-      if (!detected) return;
-      onSubmit({ ...next, clientType: detected }, action);
+      const detected = await runDetect("save");
+      onSubmit({ ...next, clientType: detected ?? DEFAULT_CUSTOM_CLIENT_TYPE }, action);
       return;
     }
     onSubmit(next, action);
@@ -1442,12 +1509,17 @@ function ModelDialog({
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
   // env fallback resolves live from the current form (uses the same
-  // resolveModelEnv as the server's getModels): explicit
-  // client_type takes priority, otherwise auto-route by model_id; no
-  // fallback if it can't be routed.
+  // resolveModelEnv as the server's getModels): explicit client_type takes
+  // priority, otherwise auto-route by model_id; no fallback if it can't be routed.
+  //
+  // Custom and user-defined groups opt out of the model_id half (per maintainer): typing
+  // `claude-sonnet-5` into a custom group must not quietly imply the Anthropic client and
+  // its ANTHROPIC_* key. Those groups default to the compatible client, which is also what
+  // gets persisted when nothing is picked or detected — so keying the hint off it is what
+  // the entry will actually read after saving.
   const liveEnvKey = resolveModelEnv(
     form.modelId.trim(),
-    form.clientType.trim() || undefined,
+    envHintClientType(form.provider, form.clientType),
   )?.envKey;
   // First-party provider group (built-in, non-gateway, non-custom): adding
   // goes through auto-routing — show a hint when the id can't be routed
@@ -2033,19 +2105,43 @@ function ModelDialog({
             proxy model (describe_image). */}
         {!preset && (
           <div>
-            <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-            >
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.vision}
-              </span>
-              <Switch
-                checked={form.vision}
-                disabled={!canEdit}
-                onChange={(vision) => set({ vision })}
-                aria-label={S.models.vision}
-              />
-            </label>
+            {/* Detect sits inline after the switch — the protocol control's idiom, but next
+                to the setting it fills in rather than at a field's top-right, since this row
+                has no field to hang off. Always clickable, single-flight, toast-only, like
+                protocol detection; it just costs a real (tiny) completion, so it never runs
+                on its own. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <label
+                className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+              >
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                  {S.models.vision}
+                </span>
+                <Switch
+                  checked={form.vision}
+                  disabled={!canEdit}
+                  onChange={(vision) => set({ vision })}
+                  aria-label={S.models.vision}
+                />
+              </label>
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={visionDetecting}
+                  onClick={() => void detectVisionFromButton()}
+                  title={S.models.detectVisionHint}
+                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                >
+                  {visionDetecting && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                    />
+                  )}
+                  {visionDetecting ? S.models.detectingVision : S.models.detectVision}
+                </button>
+              )}
+            </div>
             {!form.vision && (
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                 {S.models.visionOffProxyHint}

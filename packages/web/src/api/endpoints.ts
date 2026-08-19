@@ -50,6 +50,8 @@ import type {
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
   PasswordChangeRequest,
   PrefsResponse,
   ProjectCreateRequest,
@@ -207,6 +209,13 @@ export const testModel = (projectId: string, body: ModelTestRequest) =>
 export const detectProtocol = (projectId: string, body: ModelProtocolDetectRequest) =>
   apiFetch<ModelProtocolDetectResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/detect`,
+    { method: "POST", body },
+  );
+
+/** Vision probe: sends one 1x1 image on this model's credential and reports whether it was accepted (a real, billed completion — unlike the protocol probes). */
+export const detectVision = (projectId: string, body: ModelVisionDetectRequest) =>
+  apiFetch<ModelVisionDetectResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/detect-vision`,
     { method: "POST", body },
   );
 

@@ -501,12 +501,21 @@ export const zh = {
     detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
     /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
     detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
+    /** 保存时检测无结果：按兼容协议继续保存。 */
+    detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
       "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
     addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
+    /** Detect action beside the vision switch. */
+    detectVision: "检测",
+    detectingVision: "测试中…",
+    detectVisionHint: "发送一张极小的测试图片，判断该模型是否接受图片输入(会消耗 API Key 额度)",
+    detectVisionNeedsId: "请先填写模型 id，再进行检测。",
+    detectVisionOk: "该模型接受图片输入，已开启视觉",
+    detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
     visionBadge: "视觉",

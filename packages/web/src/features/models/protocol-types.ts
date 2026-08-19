@@ -16,6 +16,17 @@ export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "opena
 export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
 
 /**
+ * What a custom / user-defined group falls back to whenever its protocol is undetermined:
+ * the compatible client (OpenAI Chat Completions), which is the broadest of the three.
+ *
+ * Per maintainer, this fallback is unconditional for those groups — nothing is ever
+ * inferred from the model id there, and a detection that comes back empty resolves here
+ * instead of blocking the save. Vendor and gateway groups are unaffected: their entries
+ * are auto-routed by a catalog-known id or pinned by the group's preset.
+ */
+export const DEFAULT_CUSTOM_CLIENT_TYPE = "openai-chat";
+
+/**
  * Whether a stored client_type belongs to the generic protocol family the picker can
  * represent: the three protocol clients, the bare `openai` alias (legacy default for
  * custom groups; routes to openai-chat), or empty. Any other explicit type (a legacy
@@ -95,7 +106,7 @@ export function isCustomLikeGroup(provider: string): boolean {
 export function protocolForPersist(provider: string, clientType: string): string {
   const t = clientType.trim();
   if (t !== "" || !isCustomLikeGroup(provider)) return t;
-  return "openai-chat";
+  return DEFAULT_CUSTOM_CLIENT_TYPE;
 }
 
 /**
@@ -115,6 +126,22 @@ export function needsProtocolDetectOnSave(
   clientType: string,
 ): boolean {
   return action === "save" && isCustomLikeGroup(provider) && clientType.trim() === "";
+}
+
+/**
+ * The client type the dialog's API-key env hint should resolve against.
+ *
+ * `resolveModelEnv` normally falls back to routing by model id when no client type is
+ * given — right for a vendor group, wrong for a custom one: typing `claude-sonnet-5` into
+ * a custom group would then claim the entry reads ANTHROPIC_API_KEY, when nothing about
+ * that group routes by id and the entry will in fact be saved on the compatible client.
+ * Returning the default for custom-like groups keeps the hint honest; undefined elsewhere
+ * preserves the id-based routing those groups genuinely use.
+ */
+export function envHintClientType(provider: string, clientType: string): string | undefined {
+  const t = clientType.trim();
+  if (t !== "") return t;
+  return isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined;
 }
 
 /*

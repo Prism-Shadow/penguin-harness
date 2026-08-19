@@ -33,6 +33,7 @@ import {
   canonicalClientType,
   catalogEntryFor,
   defaultProjectConfig,
+  imageUrlMessage,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
@@ -51,10 +52,20 @@ import type {
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
 import { detectModelProtocol } from "./protocol-detect.js";
+import {
+  VISION_PROBE_IMAGE,
+  VISION_PROBE_MAX_TOKENS,
+  VISION_PROBE_PROMPT,
+  VISION_PROBE_TIMEOUT_MS,
+  classifyVisionProbe,
+  classifyVisionProbeError,
+} from "./vision-detect.js";
 import type { PricingRates } from "./usage-service.js";
 
 type RawTable = Record<string, unknown>;
@@ -397,6 +408,71 @@ export class ProjectConfigService {
    * Tokens (single-digit output; speed mode spends up to its 64-token cap to have a
    * window worth timing), and writes no Trace and records no usage.
    */
+  /**
+   * Vision capability probe: sends one 1x1 PNG plus a one-word prompt and reports whether
+   * the model took it (see services/vision-detect.ts for the verdict rules and why this
+   * one costs real money, unlike the protocol probes).
+   *
+   * Credential resolution is the connectivity test's, verbatim — the request's key, else
+   * the stored one, unless "clear" is checked. The environment layer needs no code here:
+   * omitting apiKey lets AgentHub read the protocol's own variable, which is the same
+   * chain protocol detection spells out by hand because it bypasses the SDK. Nothing
+   * secret is returned; the failure message is the provider's own text, truncated.
+   */
+  async detectVision(
+    projectId: string,
+    req: ModelVisionDetectRequest,
+  ): Promise<ModelVisionDetectResponse> {
+    const raw = await this.readRaw(projectId);
+    // Probeable before the entry exists, so a custom model can be checked while adding it.
+    const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
+    const savedKey = optStr(entry.api_key);
+    const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
+    const savedBaseUrl = optStr(entry.base_url);
+    const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
+    const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
+    try {
+      // Inside the try for the same reason as testModel: the SDK throws on a missing
+      // credential during construction, and that must read as "probe failed", not a 500.
+      const llm = new GenerativeModel({
+        modelId: req.modelId,
+        ...(apiKey ? { apiKey } : {}),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(clientType ? { clientType } : {}),
+        tools: [],
+        thinkingLevel: "none",
+        maxTokens: VISION_PROBE_MAX_TOKENS,
+        requestTimeoutMs: VISION_PROBE_TIMEOUT_MS,
+      });
+      // Both parts must carry role "user" — a mixed-role batch is rejected before it is
+      // sent (see generative-model's UniMessage merge).
+      const gen = llm.streamGenerate({
+        newMessages: [userText(VISION_PROBE_PROMPT), imageUrlMessage(VISION_PROBE_IMAGE)],
+      });
+      let sawContent = false;
+      for (;;) {
+        const step = await gen.next();
+        if (step.done) {
+          const outcome = classifyVisionProbe(step.value, sawContent);
+          if (outcome !== "failed") return { outcome };
+          const detail =
+            "errorMessage" in step.value && step.value.errorMessage
+              ? step.value.errorMessage
+              : step.value.status;
+          return { outcome, message: String(detail).slice(0, 300) };
+        }
+        if (isProbeContent(step.value)) sawContent = true;
+      }
+    } catch (err) {
+      const outcome = classifyVisionProbeError(err);
+      if (outcome !== "failed") return { outcome };
+      return {
+        outcome,
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    }
+  }
+
   async testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse> {
     const raw = await this.readRaw(projectId);
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
