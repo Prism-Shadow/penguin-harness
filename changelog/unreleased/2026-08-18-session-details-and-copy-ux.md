@@ -14,6 +14,10 @@ surprise-signal a live process group.
   exited entry, 409 `process_running` while the process still runs (stop it instead),
   404 `process_not_found` when the id is unknown or the runtime is gone. The removal
   reuses the kill path on the dead entry, exactly like `input_command`'s post-exit reap.
+- Removal is immediate and final: the entry leaves the runtime registry together with the
+  output captured from that process, so afterwards the model can no longer be asked to
+  read it (`input_command` on that `process_id` fails). There is no confirm step for a
+  one-click tidy-up of a dead row — the button's tooltip and the docs say what goes with it.
 - The docs' session endpoint table now lists all three `/processes` routes (the GET and
   the kill POST had been undocumented).
 
@@ -25,6 +29,13 @@ label** is gone everywhere (previously shown next to the check on the Session id
 Agent State path rows). The memory tab's and the skill import dialog's "Copy prompt"
 buttons move from toast feedback onto the same shared convention (their glyph flips,
 their label never changes), and the now-unused toast strings are removed.
+
+An icon swap is silent, so every copy control now also carries a visually hidden polite
+live region that announces the confirmation to screen readers — the accessible name stays
+the copy action, as before. Repeated clicks each get the full flash window (the pending
+reset is restarted rather than left over from the previous click), and a control that
+unmounts inside that window — the Trace row closes the details card itself — no longer
+leaves a timer behind.
 
 ## Trace file row shows the single-line file name (Web App)
 

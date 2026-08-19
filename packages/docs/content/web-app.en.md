@@ -48,7 +48,7 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 
 The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. Below those:
 
-- **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid. Running rows carry a **Stop** button (kills the whole process group and drops the row); exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list.
+- **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid. Running rows carry a **Stop** button (kills the whole process group and drops the row); exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list. Removal is immediate and final: the entry leaves the runtime registry together with the output captured from that process, so afterwards the model can no longer be asked to read it — keep the row until you are done with its output.
 - **Trace file** — the Session's current Trace file, shown as its file name on a single line: clicking the name opens the Trace Browser focused on this session, and the button beside it copies the full path.
 
 Copy buttons across the app confirm at the button itself: the copy icon flips to a check mark for a moment (no "Copied" text label).

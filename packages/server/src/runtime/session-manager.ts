@@ -956,6 +956,11 @@ export class SessionManager {
    * group defensively and drops the row, exactly like input_command's post-exit reap.
    * The only race, an entry observed running that exits before a retry, is benign:
    * the caller gets "running", refreshes, and sees the row exited on the next look.
+   *
+   * Note what leaves with the row: the registry entry owns the ManagedSession holding
+   * that process's captured output, so after a removal input_command on the same
+   * process_id answers "unknown process_id". Removal is a deliberate discard, not just
+   * a list tidy-up — the Web App says so at the button and in the docs.
    */
   removeProcess(sessionId: string, processId: string): "removed" | "running" | "not_found" {
     const entry = this.entries.get(sessionId);

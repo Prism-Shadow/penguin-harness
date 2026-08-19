@@ -701,6 +701,14 @@ export function ChatPage() {
     };
   }, [projectId, selected, stream.taskState, infoOpen]);
 
+  // The currently selected Session, readable from an async callback that captured an older
+  // one (the process actions below): a state value read through a closure would be the value
+  // at click time, which is exactly what must not decide where a late response lands.
+  const selectedSessionIdRef = useRef<string | null>(selectedSessionId);
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
+
   // Background-process list: fetched on session entry, then kept fresh while it can still
   // change — during a run (a foreground command may promote to background at any moment),
   // while any listed process is still running (it can exit on its own), and while the
@@ -733,50 +741,57 @@ export function ChatPage() {
     };
   }, [selectedSessionId, stream.taskState, processesCanChange]);
 
-  // Stop one background process: the kill also removes it from the server-side registry,
-  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
-  // same outcome, not an error worth surfacing).
-  const onKillProcess = useCallback(
-    async (processId: string) => {
+  /**
+   * Shared body of the per-row process actions (Stop / Remove): one request at a time
+   * (procBusy), the statuses that only mean "the list was stale" swallowed instead of
+   * toasted, and the list refreshed however the request ended — the truth comes from the
+   * refresh, not from the response. The refresh is applied ONLY while its own session is
+   * still selected: switching sessions mid-request would otherwise paint the previous
+   * session's processes into the new session's card, and with the popover closed and
+   * nothing running there is no poll to correct it.
+   */
+  const runProcessAction = useCallback(
+    async (
+      processId: string,
+      request: (sessionId: string, processId: string) => Promise<void>,
+      staleStatuses: readonly number[],
+    ) => {
       if (!selected || procBusy !== null) return;
+      const sessionId = selected.sessionId;
       setProcBusy(processId);
       try {
-        await api.killSessionProcess(selected.sessionId, processId);
+        await request(sessionId, processId);
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+        if (!(e instanceof ApiError && staleStatuses.includes(e.status))) {
+          toastError(apiErrorText(e));
+        }
       } finally {
         setProcBusy(null);
         api
-          .getSessionProcesses(selected.sessionId)
-          .then((res) => setProcesses(res.processes))
+          .getSessionProcesses(sessionId)
+          .then((res) => {
+            if (selectedSessionIdRef.current === sessionId) setProcesses(res.processes);
+          })
           .catch(() => undefined);
       }
     },
     [selected, procBusy],
   );
 
+  // Stop one background process: the kill also removes it from the server-side registry,
+  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
+  // same outcome, not an error worth surfacing).
+  const onKillProcess = useCallback(
+    (processId: string) => runProcessAction(processId, api.killSessionProcess, [404]),
+    [runProcessAction],
+  );
+
   // Remove one EXITED process entry from the list (#312; running rows offer Stop instead).
   // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
   // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
   const onRemoveProcess = useCallback(
-    async (processId: string) => {
-      if (!selected || procBusy !== null) return;
-      setProcBusy(processId);
-      try {
-        await api.removeSessionProcess(selected.sessionId, processId);
-      } catch (e) {
-        if (!(e instanceof ApiError && (e.status === 404 || e.status === 409))) {
-          toastError(apiErrorText(e));
-        }
-      } finally {
-        setProcBusy(null);
-        api
-          .getSessionProcesses(selected.sessionId)
-          .then((res) => setProcesses(res.processes))
-          .catch(() => undefined);
-      }
-    },
-    [selected, procBusy],
+    (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
+    [runProcessAction],
   );
 
   // Trace file path for the popover's trace row: the single-session GET is the only
@@ -1560,8 +1575,15 @@ export function ChatPage() {
                             <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
                               {S.chat.processExited}
                             </span>
+                            {/* The row is the only handle on that process's captured
+                                output — removing the entry drops it from the runtime
+                                registry, so the model can no longer be asked to read it
+                                (input_command answers "unknown process_id"). No confirm
+                                step for a one-click tidy-up of a dead row, but the title
+                                says what leaves with it. */}
                             <button
                               type="button"
+                              title={S.chat.processRemoveHint}
                               disabled={procBusy !== null}
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"

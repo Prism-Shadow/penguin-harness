@@ -191,7 +191,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
 | GET | /processes | Background processes the conversation started (`exec_command`s promoted past their yield window). Served from the active runtime only — an evicted or never-loaded session truthfully reports an empty list |
 | POST | /processes/:processId/kill | Stop one background process (SIGTERM to the whole process group, SIGKILL after a grace period); the entry drops from the list. 404 `process_not_found` when it is gone |
-| DELETE | /processes/:processId | Remove one **exited** process entry from the list: 409 `process_running` while it still runs (stop it instead), 404 `process_not_found` when it is already gone |
+| DELETE | /processes/:processId | Remove one **exited** process entry from the list: 409 `process_running` while it still runs (stop it instead), 404 `process_not_found` when it is already gone. The entry leaves the runtime registry with the output captured from it, so `input_command` on that `process_id` fails afterwards |
 | GET | /files?path= | Browse the Workspace directory |
 | GET | /files/content?path=&download=&preview= | Read a Workspace file (`download=1` serves it as an attachment, `preview=1` renders it in a sandbox — see below) |
 | GET | /files/preview-redirect?path= | "Open in a new tab" for html: mints a signed token and 302s to the separate preview origin |

@@ -184,8 +184,12 @@ describe("pathFileName", () => {
     expect(pathFileName("001.jsonl")).toBe("001.jsonl");
   });
 
-  it("a backslash inside a POSIX directory name never reaches the result (only the part after the last '/' is inspected)", () => {
+  it("a backslash inside a POSIX directory name is harmless — the later '/' wins the cut", () => {
     expect(pathFileName("/data/weird\\dir/traces/001.jsonl")).toBe("001.jsonl");
+  });
+
+  it("the cut is the last separator of either kind, so a backslash in the file name cuts too (no such trace name exists — pinning the rule, not endorsing it)", () => {
+    expect(pathFileName("/data/traces/weird\\001.jsonl")).toBe("001.jsonl");
   });
 
   it("degenerate trailing separator falls back to the input (never blank)", () => {

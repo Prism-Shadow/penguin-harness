@@ -4,7 +4,8 @@
  *   Project defaults dialog, and its bind-Session field is a searchable dropdown (not a
  *   raw id text input);
  * - the chat details card shows the Session id as a click-to-copy row (the button's icon
- *   flips to the check and its tooltip to "已复制" — no text label, #312).
+ *   flips to the check and its tooltip to "已复制", with the same confirmation in a
+ *   visually hidden live region for screen readers — no visible text label, #312).
  *
  * (The Project-defaults "已保存" toast is a one-line success path exercised manually; it is
  * left out here — dirtying the defaults block through its custom pickers is too sensitive
@@ -101,8 +102,13 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
   // and the icon-only content stay — no transient text label anywhere.
   await expect(copyBtn).toHaveAttribute("title", "已复制");
   await expect(copyBtn).toHaveText("");
-  // …and it flips back once the copied flash ends (1.5s).
+  // An icon swap is silent, so the confirmation ALSO lands in a visually hidden live
+  // region beside the button — present in the DOM (that is what a screen reader reads)
+  // while the button itself stays icon-only, as asserted right above.
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(1);
+  // …and both halves clear once the copied flash ends (1.5s).
   await expect(copyBtn).toHaveAttribute("title", "复制 Session id", { timeout: 5_000 });
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(0);
   // The section label above the id is not the feedback target — it stays "Session id".
   await expect(page.getByText("Session id", { exact: true })).toBeVisible();
 });

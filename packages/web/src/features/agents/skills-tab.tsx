@@ -29,7 +29,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
-import { CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
@@ -410,6 +410,7 @@ export function SkillsTab({
                   <CopyCheckGlyph copied={promptCopy.copied} size={12} />
                   {S.skills.importCopyPrompt}
                 </Button>
+                <CopiedStatus copied={promptCopy.copied} />
                 <Button size="sm" variant="primary" onClick={openChat}>
                   {S.skills.importOpenChat}
                 </Button>

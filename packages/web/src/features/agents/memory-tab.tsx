@@ -28,7 +28,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
-import { CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
@@ -679,6 +679,7 @@ export function MemoryTab({
                 <CopyCheckGlyph copied={editCopy.copied} size={12} />
                 {S.memory.editCopyPrompt}
               </Button>
+              <CopiedStatus copied={editCopy.copied} />
               <Button size="sm" variant="primary" onClick={openEditChat}>
                 {S.memory.editOpenChat}
               </Button>
@@ -726,6 +727,7 @@ export function MemoryTab({
                 <CopyCheckGlyph copied={addCopy.copied} size={12} />
                 {S.memory.editCopyPrompt}
               </Button>
+              <CopiedStatus copied={addCopy.copied} />
               <Button
                 size="sm"
                 variant="primary"

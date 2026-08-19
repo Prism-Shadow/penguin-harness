@@ -1089,6 +1089,8 @@ Benchmark：
     processStop: "停止",
     processExited: "已退出",
     processRemove: "移除",
+    /** Remove button tooltip: removal also drops the output captured from that process. */
+    processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",

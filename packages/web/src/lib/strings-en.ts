@@ -1137,6 +1137,8 @@ Scenarios:
     processStop: "Stop",
     processExited: "exited",
     processRemove: "Remove",
+    /** Remove button tooltip: removal also drops the output captured from that process. */
+    processRemoveHint: "Remove this entry — the output captured from it is discarded too",
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
