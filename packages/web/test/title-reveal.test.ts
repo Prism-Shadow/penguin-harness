@@ -6,7 +6,16 @@
  * speed), clamped between a floor (a sub-350ms hop reads as a glitch) and a
  * ceiling (a huge title speeds up instead of holding the hover hostage), and 0
  * when there is nothing to scroll.
+ *
+ * The second half pins the CSS contract. The arithmetic was never the fragile
+ * part: the reveal only works while three files agree on four names, and nothing
+ * else in the suite notices if one side is renamed. vitest runs node-only here
+ * (`environment: "node"`, no jsdom), so these assert against the source text
+ * rather than a rendered DOM.
  */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   OVERFLOW_TOLERANCE_PX,
@@ -59,5 +68,67 @@ describe("revealDurationMs", () => {
   it("rounds to whole milliseconds", () => {
     // 100px at 60px/s = 1666.66…ms.
     expect(revealDurationMs(100)).toBe(1667);
+  });
+});
+
+const src = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
+const read = (rel: string) => readFileSync(resolve(src, rel), "utf8");
+const truncated = read("components/ui/truncated.tsx");
+const sidebar = read("components/layout/sidebar.tsx");
+/** styles.css with comments stripped and whitespace collapsed, so the assertions survive reformatting. */
+const css = read("styles.css")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/\s+/g, " ");
+/** The keyframes that carry the whole reveal. */
+const keyframes = css.match(/@keyframes title-scroll-reveal \{.*?\} \}/)?.[0] ?? "";
+/** The hover/focus rule that starts them. */
+const trigger = css.match(/\[data-title-reveal\][^{]*\{[^}]*\}/)?.[0] ?? "";
+
+describe("the truncated-title reveal's CSS contract", () => {
+  it("triggers on the row attribute the sidebar rows actually render", () => {
+    expect(sidebar).toContain("data-title-reveal");
+    expect(trigger).toContain("[data-title-reveal]:is(:hover, :has(:focus-visible))");
+    // Scoped to the inner span, so a title that fits (no class, no variables) matches nothing.
+    expect(trigger).toContain(".title-scroll > .title-scroll-text");
+  });
+
+  it("selects the class names truncated.tsx emits", () => {
+    expect(truncated).toContain('" title-scroll"');
+    expect(truncated).toContain('className="title-scroll-text"');
+  });
+
+  it("reads the custom properties truncated.tsx writes", () => {
+    for (const prop of ["--title-scroll-shift", "--title-scroll-ms"]) {
+      expect(truncated).toContain(prop);
+      expect(`${keyframes}${trigger}`).toContain(`var(${prop},`);
+    }
+  });
+
+  it("moves the text with an animation, which is what reduced motion disables", () => {
+    // The reduced-motion guarantee is the global `animation: none !important` block —
+    // it does not gate on any JS state, but it only reaches animations. Rewriting this
+    // as a transition would keep the visuals and silently lose reduced-motion support.
+    expect(trigger).toMatch(/animation: title-scroll-reveal var\(--title-scroll-ms/);
+    expect(trigger).not.toContain("transition:");
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[^@]*animation: none !important/,
+    );
+  });
+
+  it("makes the text transformable inside the keyframes, never on the trigger rule", () => {
+    // `transform` is inert on a non-replaced inline box, so the reveal needs the inner
+    // span to become inline-block. It has to happen in the keyframes: as a declaration
+    // on the trigger it would apply the moment the pointer touches the row, and Blink
+    // paints no ellipsis for an overflowing atomic inline — so every long title would
+    // drop its "…" 0.3s before anything moved, which is the flicker the delay exists
+    // to prevent.
+    expect(keyframes).toContain("display: inline-block");
+    expect(keyframes).toContain("transform: translateX(var(--title-scroll-shift");
+    expect(trigger).not.toContain("display:");
+    expect(trigger).not.toContain("transform:");
+  });
+
+  it("holds the revealed tail with a forwards fill after a start delay", () => {
+    expect(trigger).toMatch(/animation:[^;}]*\blinear\b[^;}]*\b0\.3s\b[^;}]*\bforwards\b/);
   });
 });

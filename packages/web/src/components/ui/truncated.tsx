@@ -12,31 +12,18 @@
  * the nearest `data-title-reveal` ancestor (the sidebar conversation row) is
  * hovered or holds keyboard focus, the text slides left by the measured overflow
  * at a constant reading speed, holds at the end, and snaps back the instant the
- * hover/focus ends. The animation itself is pure CSS (styles.css `.title-scroll`
- * rules) driven by the two custom properties set here — no timers to leak, and
- * the row's clicks/drag/menu buttons are untouched because only a transform
- * inside the existing clip box moves. Under prefers-reduced-motion the class is
- * withheld, so the reveal falls back to the `title` tooltip; the full text also
- * always stays in the DOM (screen readers announce it regardless of the visual
- * clipping) and `title` gives touch browsers their long-press peek.
+ * hover/focus ends. The animation itself is pure CSS (styles.css
+ * `title-scroll-reveal` keyframes) driven by the two custom properties set here:
+ * this component only measures and publishes numbers. There are no timers and no
+ * media-query subscriptions to leak — reduced motion is handled by the global
+ * `animation: none !important` block in styles.css, which disables the keyframes
+ * outright and leaves the plain ellipsis plus the `title` tooltip. The full text
+ * also always stays in the DOM, so screen readers announce it regardless of the
+ * visual clipping.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { revealDistancePx, revealDurationMs } from "../../lib/title-reveal";
-
-/** prefers-reduced-motion, kept live via the change listener (the sheet.tsx pattern). */
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
-}
 
 export function Truncated({
   text,
@@ -51,7 +38,6 @@ export function Truncated({
   const ref = useRef<HTMLSpanElement>(null);
   /** Measured overflow in px (0 = fits): > 0 drives both the `title` tooltip and the scroll distance. */
   const [overflowPx, setOverflowPx] = useState(0);
-  const reducedMotion = usePrefersReducedMotion();
 
   // className is also a dependency: when the caller switches to font-medium in the
   // selected state, the font weight changes and content width (scrollWidth) changes
@@ -59,6 +45,8 @@ export function Truncated({
   // parent, so clientWidth doesn't move -> ResizeObserver won't fire. Without
   // re-measuring, this would under-report (should have `title` but doesn't) or
   // over-report (should remove `title` but keeps it).
+  // Measuring while the reveal is mid-scroll is safe: the animation only transforms
+  // the inner span, which leaves the outer span's scrollWidth at its layout value.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -73,10 +61,10 @@ export function Truncated({
   }, [text, className]);
 
   const overflowing = overflowPx > 0;
-  // The scroll classes and variables are attached only while there is something to
-  // scroll AND motion is allowed: without them the styles.css rules match nothing,
-  // leaving exactly the pre-#309 rendering (native ellipsis + conditional title).
-  const scrolling = scrollReveal && overflowing && !reducedMotion;
+  // The scroll class and variables are attached only while there is something to
+  // scroll: without them the styles.css rules match nothing, leaving exactly the
+  // pre-#309 rendering (native ellipsis + conditional title) for titles that fit.
+  const scrolling = scrollReveal && overflowing;
   return (
     <span
       ref={ref}
@@ -91,8 +79,9 @@ export function Truncated({
         : {})}
       {...(overflowing ? { title: text } : {})}
     >
-      {/* The scroll needs a transformable child; at rest it renders inline, i.e. exactly
-          like the bare text node every other caller keeps (native ellipsis included). */}
+      {/* The scroll needs a child the keyframes can turn into an inline-block and
+          transform; at rest it renders inline, i.e. exactly like the bare text node
+          every other caller keeps (native ellipsis included). */}
       {scrollReveal ? <span className="title-scroll-text">{text}</span> : text}
     </span>
   );

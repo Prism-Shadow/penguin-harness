@@ -4,8 +4,8 @@ Long conversation titles in the chat sidebar are ellipsis-truncated, and hoverin
 
 ## Behavior
 
-- After a 0.3s hold (so a mouse merely passing across the sidebar doesn't set every long title in motion), the title slides left at a constant reading speed — the duration is proportional to the measured hidden width, clamped between 0.35s and 4s — holds at the end, and snaps back the instant the hover/focus ends.
+- After a 0.3s hold the title slides left at a constant reading speed — the duration is proportional to the measured hidden width, clamped between 0.35s and 4s — holds at the end, and snaps back the instant the hover/focus ends. Nothing at all changes during the hold, ellipsis included, so a mouse merely passing across the sidebar leaves every row exactly as it was.
 - Titles that fit are measured as such and stay perfectly still; the measurement re-runs on resize and when the title or its style changes.
 - The scroll is a pure CSS transform clipped inside the row's existing box: no layout shift, no timers, and the row's click, drag-reorder, and hover action buttons are untouched.
-- Under `prefers-reduced-motion` the animation is disabled and the reveal falls back to the native `title` tooltip, which also serves touch long-press; the full title always remains in the DOM, so screen readers announce it regardless of the visual clipping.
+- Under `prefers-reduced-motion` the keyframes are disabled outright, so the title renders exactly as at rest and hovering falls back to the native `title` tooltip. The full title always remains in the DOM, so screen readers announce it regardless of the visual clipping. Touch has no hover and no `title` tooltip: there, the full text is reached by opening the Session.
 - Parked-draft rows get the same treatment as session rows.

@@ -2212,8 +2212,10 @@ function SessionRow({
             </span>
           )}
           {/* Truncated titles reveal their full text on row hover / keyboard focus by
-              scrolling the tail into view (#309; scrollReveal, no-op when the title fits),
-              falling back to the title tooltip under prefers-reduced-motion and on touch. */}
+              scrolling the tail into view (#309; scrollReveal, no-op when the title fits).
+              The conditional `title` stays as the pointer-hover fallback under
+              prefers-reduced-motion — not as a touch path: mobile browsers do not surface
+              `title` on long-press. Touch reaches the full text by opening the Session. */}
           <Truncated
             scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
