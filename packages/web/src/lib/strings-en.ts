@@ -858,19 +858,15 @@ export const en: Strings = {
     },
     thinkingSwitchTitle: "Switch thinking level",
     thinkingSwitchBody: (to: string): string =>
-      `Switch the thinking level to "${to}"? Some providers inject a different prompt prefix per thinking level at the very front of the prompt, and this conversation already has history — switching now invalidates the provider's prefix cache, so the next request re-bills the entire history at the uncached input rate.`,
-    thinkingSwitchRecommend:
-      "Recommended: compact the context first, so only the summary gets re-billed.",
-    thinkingSwitchBusyHint:
-      "This conversation is still working — compaction can only start once it is idle. “Switch anyway” still applies immediately.",
+      `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
+    thinkingSwitchBusyHint: "This conversation is still working — compaction has to wait for it.",
     thinkingSwitchCompactFirst: "Compact, then switch",
     thinkingSwitchConfirm: "Switch anyway",
-    thinkingSwitchCompacting:
-      "Compacting the context — the thinking level switches once it finishes.",
+    thinkingSwitchCompacting: "Compacting the context — the thinking level switches when it ends.",
     thinkingSwitchApplied: (to: string): string =>
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
-      "The compaction did not finish, so the thinking level is unchanged.",
+      "The compaction did not finish; the thinking level was switched anyway.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",

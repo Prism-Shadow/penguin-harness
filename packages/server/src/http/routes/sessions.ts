@@ -419,6 +419,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
@@ -436,11 +437,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         );
       }
     }
-    if (approvalMode === undefined && archived === undefined && title === undefined) {
+    if (
+      approvalMode === undefined &&
+      thinkingLevel === undefined &&
+      archived === undefined &&
+      title === undefined
+    ) {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / archived / title).",
+        "No updatable field provided (approvalMode / thinkingLevel / archived / title).",
       );
     }
     let updated: SessionRow = { ...row };
@@ -453,6 +459,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
+    }
+    if (thinkingLevel !== undefined) {
+      // Takes effect from the next run on: launchTask/startGoal read the pinned level for
+      // any run that carries none of its own (a run already in flight keeps its level).
+      deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
+      updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {
       const at = archived ? new Date().toISOString() : null;

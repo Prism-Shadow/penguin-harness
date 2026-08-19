@@ -179,7 +179,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
-| PATCH | / | Update: `{approvalMode?, archived?, title?}` |
+| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable): every later run that carries no level of its own uses it instead of the Agent config's, and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | GET | /stream | SSE event stream (next section) |
@@ -263,7 +263,7 @@ Key request bodies (explicit keys):
 interface TaskCreateRequest {
   input: TaskInputPart[];
   // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
-  // omitted = falls back to the Agent config
+  // omitted = falls back to the Session's pinned level, then to the Agent config
   thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
 }
 type TaskInputPart =

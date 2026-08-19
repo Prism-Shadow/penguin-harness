@@ -22,6 +22,7 @@ import type {
   ApprovalMode,
   ModelRefDto,
   ModelsResponse,
+  SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -64,9 +65,10 @@ import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import {
   compactionTally,
+  heldThinkingSwitch,
   needsThinkingSwitchConfirm,
+  sessionThinkingLevel,
   thinkingLevelLabel,
-  thinkingSwitchAfterCompaction,
 } from "./thinking-level";
 import type { StagedThinkingSwitch } from "./thinking-level";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
@@ -298,12 +300,6 @@ export function ChatPage() {
   // Latest trace file path (single-session GET only — list rows don't carry it), fetched
   // when the details popover opens; null = none yet (brand-new session) or still loading.
   const [tracePath, setTracePath] = useState<string | null>(null);
-  // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
-  // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
-  // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
-  // Once the user picks a level it sticks for the session and rides on every subsequent
-  // postTask. Never written through to the Agent config (that behavior stays draft-only).
-  const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
   // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
   // providers key their prompt PREFIX on the thinking level, so switching with history in
   // place invalidates the provider's prefix cache and the next request re-bills the whole
@@ -461,6 +457,14 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  // The thinking level pinned on THIS Session, read straight off the Session row
+  // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
+  // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
+  // config's level while sends omit thinkingLevel (auto-follow — the server/core fallback
+  // applies, so Agent-config edits keep taking effect). A pin is DURABLE: it survives a
+  // reload, shows up in a second tab, and the server applies it to every later run of this
+  // Session. It is still never written through to the Agent config (that stays draft-only).
+  const turnThinkingLevel = selected?.thinkingLevel ?? "";
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -630,16 +634,16 @@ export function ChatPage() {
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the usage-fetch marker, the file-card existence cache, the
-  // per-turn thinking level together with any switch staged behind its dialog (both are
-  // per-session UI state — a compaction that self-heals to a new session id routes through
-  // here too, dropping the staged pick along with the level it would have pinned), and the
-  // popover's per-session data (process list / token buckets / trace path), avoiding stale
-  // data from the previous Session (Files panel state resets itself keyed on sessionId
-  // inside use-files-panel, and the cost hold re-keys itself inside advanceCostStat).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, any
+  // thinking-level switch staged behind its dialog (per-session UI state — a compaction
+  // that self-heals to a new session id routes through here too and drops the held pick),
+  // and the popover's per-session data (process list / token buckets / trace path),
+  // avoiding stale data from the previous Session (Files panel state resets itself keyed
+  // on sessionId inside use-files-panel, and the cost hold re-keys itself inside
+  // advanceCostStat). The thinking level itself needs no reset — it is read off the
+  // selected Session row, so it changes with the session by construction.
   useEffect(() => {
     usageAppliedRef.current = null;
-    setTurnThinkingLevel("");
     setThinkingSwitch(null);
     statCacheRef.current = new Map();
     setProcesses([]);
@@ -1146,35 +1150,54 @@ export function ChatPage() {
     await runCompaction();
   }, [runCompaction]);
 
-  // Session picker pick: applied directly while it cannot hurt (empty transcript, a
-  // re-pick of the displayed level, or right after a successful compaction), staged behind
-  // the confirm dialog otherwise — switching the level mid-chat invalidates the provider's
-  // prefix cache over the whole history (issue #310), so the dialog offers compact-then-switch
-  // (recommended), switch anyway, or cancel. The transcript is always loaded when the picker
-  // is clickable (the composer only mounts once history load settles), so the live tail items
-  // are authoritative here.
+  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
+  // returned row into the session store (the picker reads it back from there). Modeled on
+  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // was, rather than showing a level the server does not have.
+  const applyTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (!selected) return;
+      void api
+        .patchSession(selected.sessionId, {
+          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+        })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        });
+    },
+    [selected, replace],
+  );
+
+  // Session picker pick: pinned directly while it cannot hurt (empty transcript, a re-pick
+  // of the displayed level, or right after a successful compaction), staged behind the
+  // confirm dialog otherwise — switching the level mid-chat costs prompt-cache hits over
+  // the whole history (issue #310), so the dialog offers compact-then-switch (recommended),
+  // switch anyway, or cancel. The transcript is always loaded when the picker is clickable
+  // (the composer only mounts once history load settles), so the live tail items are
+  // authoritative here.
   const onPickTurnThinkingLevel = useCallback(
     (level: string) => {
       if (
         needsThinkingSwitchConfirm(
           stream.model.items,
-          turnThinkingLevel || agentThinkingLevel,
+          sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
           level,
         )
       ) {
         setThinkingSwitch({ phase: "ask", level });
       } else {
-        setTurnThinkingLevel(level);
+        applyTurnThinkingLevel(level);
       }
     },
-    [stream.model, turnThinkingLevel, agentThinkingLevel],
+    [stream.model, turnThinkingLevel, agentThinkingLevel, applyTurnThinkingLevel],
   );
 
   // Dialog choice 1 (recommended): compact first, then switch. The compaction is only
   // STARTED here — POST /compact answers 202 — so the pick is held with a tally of the
-  // compactions already on record, and the watcher below releases it when a new one
-  // completes. Compaction cannot be started (nor queued) while the session is busy, so the
-  // dialog disables this choice unless idle; the guard here is the same rule, for safety.
+  // compactions already on record, and the watcher below releases it once a new one ends
+  // (either way it ends). Compaction cannot be started (nor queued) while the session is
+  // busy, so the dialog disables this choice unless idle; the guard here is the same rule.
   const compactThenThinkingSwitch = useCallback(() => {
     if (thinkingSwitch === null || stream.taskState !== "idle") return;
     const staged: StagedThinkingSwitch = {
@@ -1185,36 +1208,42 @@ export function ChatPage() {
     setThinkingSwitch(staged);
     toastInfo(S.chat.thinkingSwitchCompacting);
     void runCompaction().then((ok) => {
-      // Refused (the toast already said why): drop the held pick so the level stays put —
-      // unless the user has meanwhile staged something else, which then owns the state.
-      if (!ok) setThinkingSwitch((cur) => (cur === staged ? null : cur));
+      // Refused (the toast already said why, e.g. nothing to compact): no compaction will
+      // ever settle, so hand the pick to the watcher below to release — the user asked to
+      // switch, and only the compaction half of that failed. A pick staged meanwhile owns
+      // the state instead.
+      if (!ok) {
+        setThinkingSwitch((cur) =>
+          cur === staged ? { phase: "settle", level: staged.level } : cur,
+        );
+      }
     });
   }, [thinkingSwitch, stream.taskState, stream.model, runCompaction]);
 
-  // Releases (or drops) a pick held behind a running compaction: applied once a compaction
-  // completes, refused with an explicit notice when one settles without completing — a
-  // failed/aborted compaction leaves the OLD context in place, and silently switching then
-  // would cost exactly what the dialog set out to avoid. Runs on every stream version bump
-  // because the model's items are mutated in place.
+  // Releases the pick held behind a running compaction: applied as soon as the compaction is
+  // over, whichever way it ended. A failed/aborted compaction is reported (the context was
+  // not rewritten, so this switch does cost cache hits) but never swallows the switch the
+  // user asked for. Runs on every stream version bump because the model's items are mutated
+  // in place.
   useEffect(() => {
-    if (thinkingSwitch?.phase !== "compacting") return;
-    const outcome = thinkingSwitchAfterCompaction(stream.model.items, thinkingSwitch.baseline);
-    if (outcome === "pending") return;
+    if (thinkingSwitch === null) return;
+    const next = heldThinkingSwitch(thinkingSwitch, stream.model.items);
+    if (next.act === "wait") return;
     setThinkingSwitch(null);
-    if (outcome === "apply") {
-      setTurnThinkingLevel(thinkingSwitch.level);
+    applyTurnThinkingLevel(next.level);
+    if (next.notice === "compacted") {
       toastSuccess(
         S.chat.thinkingSwitchApplied(
-          thinkingLevelLabel(S.chat.thinkingLevelNames, thinkingSwitch.level) ??
-            thinkingSwitch.level,
+          thinkingLevelLabel(S.chat.thinkingLevelNames, next.level) ?? next.level,
         ),
       );
-    } else {
+    } else if (next.notice === "compaction-failed") {
       toastError(S.chat.thinkingSwitchCompactFailed);
     }
+    // notice "none": the compaction never started and runCompaction already said why.
     // The items are read from the model per run; `version` is the change signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream.version, stream.model, thinkingSwitch]);
+  }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
@@ -1359,9 +1388,9 @@ export function ChatPage() {
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
-      // Display value: the user's pick for this session, else the Agent config's level
-      // (auto-follow while untouched; the send path uses the raw pick — see onSend).
-      turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
+      // Display value: the level pinned on this Session, else the Agent config's level
+      // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
+      turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
       // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
@@ -1910,7 +1939,7 @@ export function ChatPage() {
         onConfirm={compactThenThinkingSwitch}
         secondaryLabel={S.chat.thinkingSwitchConfirm}
         onSecondary={() => {
-          if (thinkingSwitch !== null) setTurnThinkingLevel(thinkingSwitch.level);
+          if (thinkingSwitch !== null) applyTurnThinkingLevel(thinkingSwitch.level);
           setThinkingSwitch(null);
         }}
         onClose={() => setThinkingSwitch(null)}
@@ -1922,11 +1951,11 @@ export function ChatPage() {
               "",
           )}
         </p>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          {stream.taskState === "idle"
-            ? S.chat.thinkingSwitchRecommend
-            : S.chat.thinkingSwitchBusyHint}
-        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
       </ConfirmModal>
     </div>
   );

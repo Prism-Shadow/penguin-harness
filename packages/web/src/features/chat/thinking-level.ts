@@ -63,6 +63,19 @@ export function thinkingLevelLabel(
     : null;
 }
 
+/**
+ * The level the ACTIVE-SESSION picker displays, and the one its sends carry.
+ *
+ * `pinned` is the Session's own stored level (`SessionInfo.thinkingLevel`, written by the
+ * picker through PATCH — durable, so it survives a reload and a second tab); "" = never
+ * pinned, and the picker then auto-follows `agentLevel`, the Agent config's level, exactly
+ * as a brand-new session does. A pin wins from then on: later Agent-config edits no longer
+ * move a session whose level the user chose explicitly.
+ */
+export function sessionThinkingLevel(pinned: string, agentLevel: string): string {
+  return pinned || agentLevel;
+}
+
 /** One dropdown row of the agent-settings thinking-level menu (shape of OptionMenuChoice<string>). */
 export interface ThinkingLevelOptionRow {
   value: string;
@@ -199,34 +212,71 @@ export function compactionTally(items: ReadonlyArray<ThinkingSwitchItem>): Compa
  * The dialog's "compact, then switch" choice, held while the compaction runs.
  *
  * `POST /compact` answers **202** — it only starts the compaction, whose outcome arrives
- * later over the stream — so the pick cannot be applied on the request promise. It is
- * staged here and released by thinkingSwitchAfterCompaction below.
+ * later over the stream — so the pick cannot be applied on the request promise. It is held
+ * here until compactionSettledSince below reports the compaction over.
+ *
+ * The pick is applied either way once that happens (a failed compaction is reported, not
+ * silently swallowed): holding it is about ORDER, not about a veto — a level applied while
+ * the compaction is still running would ride on anything sent in between (a queued
+ * follow-up auto-starts the moment the session goes idle) and invalidate the very cache
+ * the compaction is there to shrink.
  */
 export type StagedThinkingSwitch =
+  /** The dialog is open on this pick. */
   | { phase: "ask"; level: string }
-  | { phase: "compacting"; level: string; baseline: CompactionTally };
+  /** A compaction was started; the pick lands when it settles (see compactionSettledSince). */
+  | { phase: "compacting"; level: string; baseline: CompactionTally }
+  /** The compaction never started (the server refused it): release the pick on the next pass. */
+  | { phase: "settle"; level: string };
 
 /**
- * What the staged switch should do now, given the transcript and the tally taken when the
- * compaction was requested:
- * - `"apply"` — a compaction completed since then: the provider context is now the short
- *   summary, so switching is cheap. Applied even if items were appended after it (a queued
- *   follow-up may start the moment the session goes idle), because the compaction the user
- *   asked for did happen.
- * - `"failed"` — a compaction settled without completing (failed / aborted): the old context
- *   is still in effect, so the level must NOT change; the caller surfaces it.
+ * Whether a compaction has finished since the tally was taken, and how it ended:
+ * - `"completed"` — one completed: the provider context is now the short summary. Reported
+ *   even if items were appended after it (a queued follow-up may have started), because the
+ *   compaction the user asked for did happen.
+ * - `"failed"` — one settled without completing (failed / aborted): the old context is still
+ *   in effect, and the caller says so while still applying the pick.
  * - `"pending"` — nothing has settled yet, keep waiting.
  *
  * Counting rather than matching item ids keeps this correct across a stream reconnect
- * (history is rebuilt and ids restart) — the worst case is a stalled `"pending"`, which
- * leaves the level untouched, never a silent switch.
+ * (history is rebuilt and ids restart); the worst case is a stalled `"pending"`.
  */
-export function thinkingSwitchAfterCompaction(
+export function compactionSettledSince(
   items: ReadonlyArray<ThinkingSwitchItem>,
   baseline: CompactionTally,
-): "pending" | "apply" | "failed" {
+): "pending" | "completed" | "failed" {
   const now = compactionTally(items);
-  if (now.completed > baseline.completed) return "apply";
+  if (now.completed > baseline.completed) return "completed";
   if (now.settled > baseline.settled) return "failed";
   return "pending";
+}
+
+/**
+ * What the page owes a staged switch right now — the whole decision, so the rule stays
+ * testable instead of living in an effect:
+ * - `"wait"` — the dialog is still open, or the compaction is still running.
+ * - `"apply"` with a notice — release the pick. **The pick is applied whichever way the
+ *   compaction ended**: a failed one only means the context was not rewritten (so the
+ *   switch does cost cache hits), never that the user's choice is dropped.
+ *   - `"compacted"`: the compaction completed, the cheap path worked out;
+ *   - `"compaction-failed"`: it ended without completing — say so alongside the switch;
+ *   - `"none"`: it never started (the server refused it and already said why).
+ */
+export type HeldThinkingSwitch =
+  | { act: "wait" }
+  | { act: "apply"; level: string; notice: "compacted" | "compaction-failed" | "none" };
+
+export function heldThinkingSwitch(
+  staged: StagedThinkingSwitch,
+  items: ReadonlyArray<ThinkingSwitchItem>,
+): HeldThinkingSwitch {
+  if (staged.phase === "ask") return { act: "wait" };
+  if (staged.phase === "settle") return { act: "apply", level: staged.level, notice: "none" };
+  const outcome = compactionSettledSince(items, staged.baseline);
+  if (outcome === "pending") return { act: "wait" };
+  return {
+    act: "apply",
+    level: staged.level,
+    notice: outcome === "completed" ? "compacted" : "compaction-failed",
+  };
 }
