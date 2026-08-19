@@ -3,8 +3,9 @@
  * @prismshadow/penguin-core, returning an exit code.
  *
  * Built twice: into this package's `penguin` binary (penguin.ts), and — as the CLI
- * artifact pushed to POST /api/hmr/upgrade — into the bundle `penguin-hmr` loads from
- * the HMR store instead (see scripts/deploy.mjs).
+ * artifact pushed to POST /api/hmr/upgrade — into the bundle that binary loads from the
+ * HMR store in preference to itself (see scripts/deploy.mjs and pushed-cli.ts). This file
+ * is the push's entry, so a pushed bundle never re-enters that resolution.
  */
 import { Command, CommanderError } from "commander";
 import { VERSION } from "@prismshadow/penguin-core";

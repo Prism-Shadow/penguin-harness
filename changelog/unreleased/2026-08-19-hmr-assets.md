@@ -6,8 +6,9 @@
 
 [中文版](2026-08-19-hmr-assets.zh.md)
 
-Three things a push could not reach before: a native module, the identity of whoever is
-calling a pushed endpoint, and — on the desktop app — the pushed CLI itself.
+Four things a push could not reach before: a native module, the identity of whoever is
+calling a pushed endpoint, the command people actually type, and — on the desktop app —
+the pushed CLI itself.
 
 ## Native modules travel as assets
 
@@ -39,6 +40,22 @@ names and TTLs the runtime owns. The runtime now registers its own resolver in t
 registry (`runtime:identity`) for platform code to claim. A runtime too old to publish one
 yields a resolver that authenticates nobody: an unattributable request is not a request from
 every user.
+
+## `penguin` runs the CLI it was pushed
+
+A pushed CLI only reached anyone who knew to type `penguin-hmr` instead, so a command fix
+sent alongside the server it talks to sat in the store unused. `penguin` now prefers the
+pushed implementation and falls back to the built-in one, exactly as the server prefers a
+pushed platform over its packaged default.
+
+Neither direction can brick the command. A pushed bundle that fails to load is a warning on
+stderr and the built-in implementation runs — old behaviour beats no behaviour, and the
+binary itself is never touched. `PENGUIN_NO_HMR=1` skips the store entirely, which is the
+way back when a pushed CLI loads fine and then misbehaves. Running from source (`pnpm
+penguin`) never consults the store at all: the working tree is the thing being run.
+
+`penguin-hmr` stays as the strict form — it errors instead of falling back, which is how you
+check that a push arrived, and how a script pins itself to pushed code.
 
 ## The desktop app can run the CLI it was pushed
 

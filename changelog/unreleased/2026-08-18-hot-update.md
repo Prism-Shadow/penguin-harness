@@ -36,10 +36,12 @@ take it away.
 
 ## The CLI updates with the push
 
-`penguin` always runs the commands built into it; `penguin-hmr` runs the CLI
-implementation most recently pushed to the machine, straight from the update store — so
-command fixes ship with the same push as the server code they talk to, without
-reinstalling the binary.
+`penguin` runs the CLI implementation most recently pushed to the machine, straight from
+the update store, falling back to the one built into the binary when nothing has been
+pushed — so command fixes ship with the same push as the server code they talk to, without
+reinstalling the binary. `penguin-hmr` is the strict form, erroring rather than falling
+back, for checking that a push arrived. A pushed bundle that cannot be loaded is a warning,
+not a failure, and `PENGUIN_NO_HMR=1` runs the built-in implementation without looking.
 
 ## Access
 
