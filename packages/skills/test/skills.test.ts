@@ -453,15 +453,48 @@ describe("librarySkill", () => {
     expect(content).toContain("Never read the pair as one unknown model name");
     expect(content).toContain("shows **both** the new model and the new thinking level");
 
+    // 2b) The rule generalizes past its own examples: any language, level-only and model-only too.
+    expect(content).toContain("any** message naming a model, a thinking level, or both");
+    expect(content).toContain("**Level only**");
+    expect(content).toContain("**Model only**");
+    expect(content).toContain(
+      "A level word sitting next to a model name is always the thinking level",
+    );
+
     // 3) Key-sequence races: one key per send-keys call, capture-verified between keys.
     expect(content).toContain("acts on the **previous** selection");
     expect(content).toContain("one key per `send-keys` call");
     expect(content).toContain("never fire the next key on faith");
+    // ... and a bounded failure branch when the capture shows the state was NOT reached.
+    expect(content).toContain("**Nothing changed**");
+    expect(content).toContain("**The wrong thing changed**");
+    expect(content).toContain('Never "fix" a wrong state by pressing on toward the goal');
+    expect(content).toContain("Show the user the captured screen and ask");
 
     // 4) Post-run composer text is an AI suggestion, not pending user input.
     expect(content).toContain("cannot reliably tell the two apart");
     expect(content).toContain("never treat post-run input-line text as pending user input");
     expect(content).toContain("new text makes the suggestion disappear on its own");
+
+    // 5) Verbatim delivery survives the transport: `send-keys -l` splits newlines and eats a
+    // trailing `;`, so anything non-trivial goes through load-buffer/paste-buffer.
+    expect(content).toContain("goes through the paste buffer");
+    expect(content).toContain("tmux load-buffer -");
+    expect(content).toContain("tmux paste-buffer -d -p -t <sess>");
+    expect(content).toContain("The landed check is **exact, not approximate**");
+    expect(content).toContain("**Already submitted**");
+
+    // 6) The decision on a permission prompt is the user's, never the relaying agent's.
+    expect(content).toContain("Never approve a tool call on the user's behalf");
+    expect(content).toContain("**Questions travel back, not to you.**");
+
+    // 7) Mid-run messages, session/work boundary, dead session, untruncated reporting.
+    expect(content).toContain("**A message that arrives mid-turn waits.**");
+    expect(content).toContain("Escape twice in a row is not a stronger interrupt");
+    expect(content).toContain("**Split by subject, not by phrasing.**");
+    expect(content).toContain("tmux has-session -t <sess>");
+    expect(content).toContain("claude --continue");
+    expect(content).toContain("capture-pane -p -S -200");
 
     // The keystroke rule (§3.3) precedes the relay contract (§4) that leans on it.
     const stepIndex = skill.content.indexOf("### 3.3 One keystroke at a time");
