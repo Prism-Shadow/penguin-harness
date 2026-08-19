@@ -20,6 +20,7 @@ import xterm, { type Terminal } from "@xterm/headless";
 import type { IPty } from "node-pty";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import { loadNodePty } from "./pty-module.js";
+import { defaultTerminalShell, shellArgs } from "./shell.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
 import { ensureSpawnHelperExecutable } from "../../terminal/spawn-helper.js";
 import {
@@ -102,15 +103,6 @@ export type TerminalOutputListener = (data: string) => void;
 export type TerminalExitListener = (info: TerminalExitInfo) => void;
 export type TerminalTitleListener = (title: string | null) => void;
 
-/** Default login shell, mirroring what the user would get from a real terminal emulator. */
-export function resolveDefaultShell(
-  env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  if (platform === "win32") return env.ComSpec || env.COMSPEC || "C:\\Windows\\System32\\cmd.exe";
-  return env.SHELL || "/bin/sh";
-}
-
 /**
  * Environment for the pty. `TERM`/`COLORTERM` are what make colour and 256-colour output
  * work at all; the rest of the parent environment is inherited so the shell behaves like the
@@ -175,7 +167,7 @@ export class TerminalSession {
       allowProposedApi: true,
     });
 
-    const shell = options.shell ?? resolveDefaultShell();
+    const shell = options.shell ?? defaultTerminalShell();
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
     ensureSpawnHelperExecutable();
@@ -398,12 +390,6 @@ export class TerminalSession {
     this.titleListeners.clear();
     this.terminal.dispose();
   }
-}
-
-function shellArgs(shell: string): string[] {
-  // Login shell so the user's normal profile (PATH, aliases, prompt) is in effect, exactly
-  // like opening a terminal app. cmd.exe has no equivalent flag.
-  return path.basename(shell).toLowerCase().startsWith("cmd") ? [] : ["-l"];
 }
 
 function clampDimension(value: number | undefined, fallback: number, max: number): number {
