@@ -183,7 +183,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/docs/goal-mode) |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
 | DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files, thinkingLevel?}`；已自动发出则 409 `not_pending` |
@@ -191,6 +191,9 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
+| GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表 |
+| POST | /processes/:processId/kill | 停止一个后台进程（对整个进程组先 SIGTERM、宽限期后 SIGKILL），条目随之从列表消失；已不存在时 404 `process_not_found` |
+| DELETE | /processes/:processId | 从列表移除一个**已退出**的进程条目：仍在运行时 409 `process_running`（应改用停止），已不存在时 404 `process_not_found`。条目连同该进程已捕获的输出一起离开运行时注册表，此后对该 `process_id` 调用 `input_command` 会失败 |
 | GET | /files?path= | 浏览 Workspace 目录 |
 | GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |

@@ -23,6 +23,7 @@ import {
   applyKernelUpdate,
   computeKernelHashes,
   defaultSystemConfig,
+  hashKernelValue,
   isKernelOutdated,
   kernelLeafEntries,
   loadOrInitAgentState,
@@ -41,11 +42,14 @@ function mutableConfig(config: SystemConfig): Record<string, unknown> {
 }
 
 /**
- * Reconstructs the pre-#257 (pre-toggles) default config from the current one: the frozen
+ * Reconstructs a pre-#257 (pre-toggles) shaped config from the current defaults: the frozen
  * LEGACY_* sections swapped back into the template in place of the section placeholders, no
- * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections — exactly what a
- * `system_config.yaml` of that era carries (the same recipe prompt-sections.test.ts proves
- * byte-exact for the template).
+ * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (the recipe
+ * prompt-sections.test.ts proves byte-exact for the template). Leaves outside the swap — the
+ * tool entries — carry the *current* defaults, so the smart-merge tests below treat them as
+ * already-current; the seeding exercises the old-template migration paths regardless. The
+ * reconstruction proof below therefore speaks only for the leaves whose default has not
+ * drifted since the toggles generation (see there).
  */
 function preTogglesDefaultConfig(): SystemConfig {
   const current = defaultSystemConfig();
@@ -95,18 +99,30 @@ describe("kernel hash history (pinned-hash guard)", () => {
     ).toEqual([]);
   });
 
-  // Anchored to the first shipped generation: the reconstruction recipe reads the *current*
-  // defaults, so it only reproduces the pre-toggles era while the current generation is
-  // still the toggles one. Once the defaults evolve past it this proof self-retires — the
-  // pinned hashes remain the frozen source of truth on their own.
-  it.runIf(KERNEL_VERSION === TOGGLES_GENERATION)(
-    "the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction",
-    () => {
-      expect(computeKernelHashes(preTogglesDefaultConfig())).toEqual(
-        KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION],
-      );
-    },
-  );
+  // Keeps the oldest seeded generation honest: its pinned hashes are the only record of what
+  // a pre-#257 `system_config.yaml` actually contains, and nothing else can catch a typo in
+  // them. The recipe reads the *current* defaults, so it can only speak for leaves whose
+  // default has not drifted since the toggles generation — chiefly `system_prompt`, the leaf
+  // the LEGACY_* swap is actually about. Retirement is therefore per leaf and automatic: a
+  // generation that changes some other leaf (e.g. run_subagent's thinking_level in
+  // "2026-08-18") drops just that leaf and leaves the proof standing.
+  it("the pre-toggles generation's pinned hashes equal the LEGACY_* reconstruction", () => {
+    const preToggles = KERNEL_HASH_HISTORY[PRE_TOGGLES_GENERATION]!;
+    const toggles = KERNEL_HASH_HISTORY[TOGGLES_GENERATION]!;
+    const current = computeKernelHashes(defaultSystemConfig());
+    const reconstructed = computeKernelHashes(preTogglesDefaultConfig());
+    const reconstructible = Object.keys(preToggles).filter((p) => current[p] === toggles[p]);
+    // If the template itself ever moves, this proof has nothing left to say and must be
+    // re-anchored (or retired) deliberately rather than quietly passing on leftovers.
+    expect(reconstructible).toContain("system_prompt");
+    expect(Object.fromEntries(reconstructible.map((p) => [p, reconstructed[p]]))).toEqual(
+      Object.fromEntries(reconstructible.map((p) => [p, preToggles[p]])),
+    );
+    // The recipe's other half: an era config carries no vault/skills/schedules sections at all.
+    expect(Object.keys(reconstructed).filter((p) => /^(vault|skills|schedules)\./.test(p))).toEqual(
+      [],
+    );
+  });
 
   it("excludes identity fields and mcpServers from the managed leaves", () => {
     const paths = kernelLeafEntries({
@@ -272,6 +288,38 @@ describe("applyKernelUpdate", () => {
     expect(writtenExec).toEqual(
       defaultSystemConfig().tools?.builtin?.find((t) => t.name === "exec_command"),
     );
+  });
+
+  it("advances a stored tool entry that matches an older generation's hash", async () => {
+    // The path every existing config takes when a tool's default schema changes (the first
+    // such bump is run_subagent's thinking_level, "2026-08-18"): the stored entry is not the
+    // current default, but it hash-matches a recorded generation, so it is an untouched old
+    // default and must be replaced — not kept as if the user had edited it. Driven through
+    // the history seam so the test cannot rot when the real generations move on.
+    const defaults = defaultSystemConfig();
+    const current = computeKernelHashes(defaults);
+    const currentEntry = defaults.tools?.builtin?.find((t) => t.name === "run_subagent");
+    const oldEntry = { ...currentEntry!, description: "the previous generation's wording" };
+    const history = {
+      "2000-01-01": { ...current, "tools.builtin.run_subagent": hashKernelValue(oldEntry) },
+      [KERNEL_VERSION]: current,
+    };
+    const config = mutableConfig(defaults);
+    config.kernel_version = "2000-01-01";
+    const tools = config.tools as { builtin: Array<Record<string, unknown>> };
+    tools.builtin = tools.builtin.map((t) =>
+      t.name === "run_subagent" ? (oldEntry as unknown as Record<string, unknown>) : t,
+    );
+    await seedConfig(config);
+
+    const result = await applyKernelUpdate(root, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
+      history,
+    });
+    expect(result.advanced).toEqual(["tools.builtin.run_subagent"]);
+    expect(result.kept).toEqual([]);
+    const written = await readConfig();
+    expect(written.tools?.builtin?.find((t) => t.name === "run_subagent")).toEqual(currentEntry);
+    expect(written.kernel_version).toBe(KERNEL_VERSION);
   });
 
   it("materializes the whole default toolset when tools.builtin is missing", async () => {

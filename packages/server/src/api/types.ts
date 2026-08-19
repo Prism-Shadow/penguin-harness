@@ -289,7 +289,7 @@ export interface ModelInfo {
   /** Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog; falls back to unset (frontend shows modelId). */
   displayName?: string;
   contextWindow?: number;
-  /** AgentHub client protocol (`openai`, etc.); defaults to AgentHub inferring it from modelId. */
+  /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
   clientType?: string;
   /**
    * Whether image input (vision/multimodal) is supported: the TOML `vision` annotation takes

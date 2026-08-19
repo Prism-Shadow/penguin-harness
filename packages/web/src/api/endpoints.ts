@@ -470,6 +470,13 @@ export const killSessionProcess = (sessionId: string, processId: string) =>
     { method: "POST", body: {} },
   );
 
+/** Removes one EXITED background process entry from the list (409 process_running while it still runs — stopping is the kill route's job; 404 when it is already gone — callers just refresh). */
+export const removeSessionProcess = (sessionId: string, processId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/processes/${encodeURIComponent(processId)}`,
+    { method: "DELETE" },
+  );
+
 /** Mid-run steering: queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message); 409 not_running when no Task is in progress. */
 export const postSteer = (sessionId: string, body: SteerRequest) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/steer`, {

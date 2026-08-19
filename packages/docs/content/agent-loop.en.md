@@ -99,7 +99,7 @@ An input image either rides the request as an image message or becomes an `[atta
 | Steering (`steer`) | the model has no vision | delivery, at the turn boundary — queuing must stay synchronous, and a queue discarded on abort would otherwise leave orphan files |
 | Goal objective | **always** | before the objective is extracted, so the path lines survive every round's re-injection |
 
-Goal mode is the exception because its objective is re-injected as text every round: see [Goal mode](/docs/goal-mode).
+Goal mode is the exception because its objective is re-injected as text every round: see [Goal mode](/goal-mode).
 
 ## Automatic reconnect
 

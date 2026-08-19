@@ -3,8 +3,9 @@
  * - the schedule create form's model/workspace use the same form-style pickers as the
  *   Project defaults dialog, and its bind-Session field is a searchable dropdown (not a
  *   raw id text input);
- * - the chat details card shows the Session id as a click-to-copy row (label flips to
- *   "已复制").
+ * - the chat details card shows the Session id as a click-to-copy row (the button's icon
+ *   flips to the check and its tooltip to "已复制", with the same confirmation in a
+ *   visually hidden live region for screen readers — no visible text label, #312).
  *
  * (The Project-defaults "已保存" toast is a one-line success path exercised manually; it is
  * left out here — dirtying the defaults block through its custom pickers is too sensitive
@@ -88,14 +89,26 @@ test("schedule form pickers and details Session-id copy", async ({ page }) => {
 
   // --- Details card Session id + copy ---
   // The id is selectable mono text with the copy button beside it (not inside it); the
-  // "已复制" feedback appears AT the button (text), and the "Session id" label is untouched.
+  // copied feedback is the button's own icon flipping to the check + its tooltip flipping
+  // to "已复制" — NO "已复制" text is rendered (#312), and the "Session id" label is untouched.
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await page.locator('button[title="Session 信息"]').click();
   await expect(page.getByText(sessionId, { exact: true }).first()).toBeVisible();
   const copyBtn = page.getByRole("button", { name: "复制 Session id" });
   await copyBtn.click();
-  await expect(copyBtn).toContainText("已复制");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(sessionId);
+  // Feedback at the button: tooltip flips while copied; the accessible name (aria-label)
+  // and the icon-only content stay — no transient text label anywhere.
+  await expect(copyBtn).toHaveAttribute("title", "已复制");
+  await expect(copyBtn).toHaveText("");
+  // An icon swap is silent, so the confirmation ALSO lands in a visually hidden live
+  // region beside the button — present in the DOM (that is what a screen reader reads)
+  // while the button itself stays icon-only, as asserted right above.
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(1);
+  // …and both halves clear once the copied flash ends (1.5s).
+  await expect(copyBtn).toHaveAttribute("title", "复制 Session id", { timeout: 5_000 });
+  await expect(page.getByText("已复制", { exact: true })).toHaveCount(0);
   // The section label above the id is not the feedback target — it stays "Session id".
   await expect(page.getByText("Session id", { exact: true })).toBeVisible();
 });

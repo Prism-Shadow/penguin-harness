@@ -19,14 +19,20 @@
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead — normal login page, deliberate degradation.
  *
+ * Dev isolation: an unpackaged run takes a dev-suffixed identity (own userData, and with
+ * it the single-instance lock and sticky port) and defaults to the ~/.penguin/dev-data
+ * root, so it runs beside an installed release build (see app-identity.ts).
+ *
  * Smoke hook (PENGUIN_DESKTOP_SMOKE=1): after the first load settles, print a
  * `DESKTOP-SMOKE-RESULT {json}` line (+ screenshot when PENGUIN_DESKTOP_SMOKE_SHOT is
  * set) and quit through the regular quit path, exercising the graceful server stop.
  */
+import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
+import { appIdentity, desktopDataRoot } from "./app-identity.js";
 import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
 import { installAppMenu } from "./menu.js";
@@ -41,11 +47,17 @@ import {
   restartDelayMs,
 } from "./util.js";
 
-app.setName("PenguinHarness");
+// Identity first: the name decides the userData directory, which also keys the
+// single-instance lock requested below — a dev (unpackaged) run takes a dev-suffixed
+// identity so it runs beside an installed release build instead of quitting into its
+// window (#292; see app-identity.ts).
+const identity = appIdentity(app.isPackaged);
+app.setName(identity.name);
 // Windows toasts (the web app's task-completion notifications) need the AppUserModelID
-// of the installed shortcuts; electron-builder stamps them with the appId. Keep in sync
-// with electron-builder.yml.
-if (process.platform === "win32") app.setAppUserModelId("com.prismshadow.penguinharness");
+// of the installed shortcuts; electron-builder stamps them with the appId. Keep the
+// release value in sync with electron-builder.yml. Dev runs stamp the dev-suffixed id
+// so their taskbar/toast identity never claims the installed app's.
+if (process.platform === "win32") app.setAppUserModelId(identity.appUserModelId);
 
 let win: BrowserWindow | null = null;
 let server: EmbeddedServer | null = null;
@@ -55,9 +67,11 @@ let quitting = false;
 let stopPromise: Promise<void> | null = null;
 let restartAttempts = 0;
 
+// app.name, not a literal: a dev run raises this box while the installed build may be
+// running beside it, and a dialog titled "PenguinHarness" cannot be attributed to either.
 function fatal(context: string, err: unknown): void {
   const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
-  dialog.showErrorBox("PenguinHarness", `${context}\n\n${detail}`);
+  dialog.showErrorBox(app.name, `${context}\n\n${detail}`);
   app.exit(1);
 }
 
@@ -177,7 +191,17 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  const dataRoot = process.env.PENGUIN_HOME ?? resolveRoot();
+  // Explicit PENGUIN_HOME wins; otherwise a release build shares the CLI's data root and
+  // a dev run takes the repo's dev root (the rule, and why, live in app-identity.ts).
+  const dataRoot = desktopDataRoot({
+    envHome: process.env.PENGUIN_HOME,
+    isPackaged: app.isPackaged,
+    homedir: os.homedir(),
+    releaseRoot: resolveRoot,
+  });
+  if (!app.isPackaged) {
+    process.stdout.write(`[shell] dev instance '${app.name}' on data root ${dataRoot}\n`);
+  }
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
     // Attach mode: the one-shot token only works against a server this shell spawned,
@@ -235,7 +259,7 @@ if (!app.requestSingleInstanceLock()) {
       // First launch only: offer the 'penguin' command once; the menu entry remains.
       // Skipped in smoke mode — a modal dialog would hang the automated run.
       if (process.env.PENGUIN_DESKTOP_SMOKE !== "1") await maybeOfferCliInstall(win);
-    })().catch((err) => fatal("PenguinHarness failed to start.", err)),
+    })().catch((err) => fatal(`${app.name} failed to start.`, err)),
   );
 }
 

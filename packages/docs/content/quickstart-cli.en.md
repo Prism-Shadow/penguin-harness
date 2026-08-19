@@ -1,44 +1,95 @@
 ---
-title: Installation
-description: Install PenguinHarness via the install script, npm, or from source.
+title: CLI and Web App
+description: One line installs penguin; configure a model and open the browser interface with penguin web — with the full installation reference.
 ---
 
-## Requirements
+One line installs `penguin`; `penguin web` then opens the same interface as the [desktop app](/quickstart-desktop) in your browser. The online installers bundle an official Node.js runtime — unpack and run, no local Node needed.
 
-- Linux / macOS (x64 or arm64): the install script ships platform tarballs with an official Node.js runtime bundled — no local Node needed.
-- Windows 10 or later (x64) with PowerShell 5.1+: the Windows installer ships `penguin-win32-x64.zip` with the runtime bundled — no local Node needed.
-- Other platforms, or installing via npm / from source: system Node.js >= 24.
+## Install
 
-## Script install (recommended)
+Pick your platform. The first two bundle their own Node.js runtime; the npm route needs Node.js >= 24 already installed.
 
-On Linux / macOS:
-
-```bash
+```bash tab="Linux / macOS"
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz` — the canonical installer bundle, sealing the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer below, not by `--universal`).
-
-The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`: it prefers an immutable OSS release directory only after that release has been completely uploaded and verified, then falls back to the matching GitHub Release if the metadata or download is unavailable. Set the variable to `oss` or `github` to force either source. Normal installer output names the source without printing the mirror's full URL.
-
-The `penguin.ooo` stable entry resolves the current stable version each time it runs. A standalone script downloaded from a versioned GitHub or OSS Release is stamped with that Release tag and defaults to the same version, keeping the installer and package format matched; set `PENGUIN_VERSION` (or `--version` on POSIX) to override it explicitly.
-
-On Windows (PowerShell):
-
-```powershell
+```powershell tab="Windows"
 irm https://penguin.ooo/install.ps1 | iex
 ```
 
-To pin a version, set the env var first:
-
-```powershell
-$env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
+```bash tab="npm (any platform)"
+npm install -g @prismshadow/penguin-cli
 ```
 
 Verify the install:
 
 ```bash
 penguin -v
+```
+
+Offline installs, installing from source, install locations, version pinning and Windows specifics are all in the [installation reference](#installation-reference) at the end of this page.
+
+## Configure a model
+
+Use the Models page in the Web UI, or the CLI:
+
+```bash
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+```
+
+- A model is always referenced as a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required — the Provider is never inferred from the model id. See [Models & Providers](/models) for the built-in groups.
+- The API key can also come from environment variables: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+
+## Start the Web App
+
+```bash
+penguin web
+```
+
+The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). First login is `admin` — the server prints the initial password (of the form `penguin-1234`) in a framed notice on every start until it is changed; change it right away. `penguin server` starts the same process headless.
+
+The [Web App Guide](/web-app) covers the interface in full.
+
+## One-shot run
+
+```bash
+penguin run -m "Create hello.txt containing Hello, Penguin"
+```
+
+The Workspace defaults to the current directory; pass `--workspace /path` to change it. The target directory must already exist.
+
+## Interactive chat
+
+```bash
+penguin chat
+```
+
+- Each input line starts a Task.
+- `/compact` compacts the context; `/clear` starts a fresh Session (the old one stays resumable); `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
+- On exit it prints a `penguin chat --resume <sessionId>` hint for resuming this Session; `--resume` without an id resumes the Agent's latest Session.
+
+The full command and option list is in the [CLI Reference](/cli).
+
+## Installation reference
+
+The three commands above cover nearly every case; the rest of the options and details follow.
+
+### Requirements
+
+- Linux / macOS (x64 or arm64): the install script ships platform tarballs with an official Node.js runtime bundled — no local Node needed.
+- Windows 10 or later (x64) with PowerShell 5.1+: the Windows installer ships `penguin-win32-x64.zip` with the runtime bundled — no local Node needed.
+- Other platforms, or installing via npm / from source: system Node.js >= 24.
+
+### Install script details
+
+The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz` — the canonical installer bundle, sealing the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer, not by `--universal`).
+
+The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`: it prefers an immutable OSS release directory only after that release has been completely uploaded and verified, then falls back to the matching GitHub Release if the metadata or download is unavailable. Set the variable to `oss` or `github` to force either source. Normal installer output names the source without printing the mirror's full URL.
+
+The `penguin.ooo` stable entry resolves the current stable version each time it runs. A standalone script downloaded from a versioned GitHub or OSS Release is stamped with that Release tag and defaults to the same version, keeping the installer and package format matched; set `PENGUIN_VERSION` (or `--version` on POSIX) to override it explicitly. To pin a version on Windows, set the env var before running the installer:
+
+```powershell
+$env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
 ```
 
 ### Offline install
@@ -58,6 +109,18 @@ On Linux / macOS, run:
 ```
 
 The extracted bundle keeps the installer, the program payload (`payload.tar.gz` / `payload.zip`) and the payload's `.sha256` together; the installer finds the sibling payload by itself, always verifies the sealed checksum and performs no network requests — no separate checksum file needs to be transferred. You can also point the installer at a file explicitly: `install.sh --archive <file>`, `PENGUIN_ARCHIVE=<file>`, `install.ps1 -ArchivePath <file>`, or `$env:PENGUIN_ARCHIVE` — accepting a Release bundle, its inner payload, or a pre-0.1.6 legacy program archive alike.
+
+### From source
+
+Requires Node.js >= 24 and pnpm:
+
+```bash
+git clone https://github.com/Prism-Shadow/penguin-harness.git
+cd penguin-harness
+pnpm install && pnpm build
+```
+
+After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or use the globally linked `penguin` command. Dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a separate data root `~/.penguin/dev-data`, while the linked/installed `penguin` keeps `~/.penguin/data`; export `PENGUIN_HOME` to override. The desktop dev run also uses its own app identity (`PenguinHarness-Dev`), so it can run alongside an installed desktop build without conflicts.
 
 ### Install location and options
 
@@ -94,29 +157,7 @@ Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.s
 
 The data directory defaults to `~/.penguin/data` (`%USERPROFILE%\.penguin\data` on Windows) — under the install home, but never modified by install or upgrade — and is overridable with the `PENGUIN_HOME` env var. Model configuration, Session records, and other data are preserved across upgrades.
 
-## npm install
-
-Requires system Node.js >= 24:
-
-```bash
-npm install -g @prismshadow/penguin-cli
-```
-
-The npm package is `@prismshadow/penguin-cli`; the installed command is `penguin`. Web UI assets ship inside the `@prismshadow/penguin-server` package, so this single install yields a working `penguin web`. This route works on every platform (including Windows) and is the alternative when the packaged zip/tarball is unsuitable.
-
-## From source
-
-Requires Node.js >= 24 and pnpm:
-
-```bash
-git clone https://github.com/Prism-Shadow/penguin-harness.git
-cd penguin-harness
-pnpm install && pnpm build
-```
-
-After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or use the globally linked `penguin` command. Dev entry points (`pnpm penguin`, `pnpm dev`) default to a separate data root `~/.penguin/dev-data`, while the linked/installed `penguin` keeps `~/.penguin/data`; export `PENGUIN_HOME` to override.
-
-## Published npm packages
+### Published npm packages
 
 | Package | Description |
 | --- | --- |
@@ -129,5 +170,6 @@ All packages are published under the Apache-2.0 license.
 
 ## Next steps
 
-- [Quickstart](/quickstart): configure a model and run your first Task.
+- [Web App Guide](/web-app): use PenguinHarness from the browser.
 - [CLI Reference](/cli): the full list of commands and options.
+- [SDK](/quickstart-sdk): embed the engine in your own program.
