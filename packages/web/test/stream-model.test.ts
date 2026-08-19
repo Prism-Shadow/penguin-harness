@@ -1150,6 +1150,139 @@ describe("compaction attribution by position: in-round counts toward the round, 
     expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
   });
 
+  it("a wrap-up compaction settles the round's stats row as it begins, so the banner is born below it", () => {
+    // The row's final position was already right, but it used to be spliced in at task-idle —
+    // after the compaction request had finished. A compaction runs against the largest
+    // context of the session, so for those seconds the banner sat directly under the reply
+    // and then jumped down once the row appeared above it. The round is over the moment a
+    // wrap-up compaction starts, so its ledger is settled right there.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.500Z"),
+      at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.900Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 600, turns: 1 }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+    ]);
+
+    // Already in place while the compaction is still running — no later reordering.
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+    ]);
+    expect((items(m)[3] as CompactionItem).running).toBe(true);
+    expect((items(m)[2] as TaskStatsItem).stats!.elapsedDeltaMs).toBe(3_000);
+
+    // Finishing the compaction adds nothing and moves nothing.
+    pushMessage(
+      m,
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:24.000Z",
+      ),
+    );
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+    ]);
+  });
+
+  it("a compaction after tool outputs is mid-Task: the round stays open and keeps one ledger, at the end", () => {
+    // The counter-case for the rule above: this turn owes the model its tool results, so the
+    // Task continues after the compaction and its row must not be settled early.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(toolCallOutput({ output: "ok", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 100, turns: 1 }),
+        "2026-07-05T00:00:05.000Z",
+      ),
+    ]);
+    // No ledger yet: the round is still working.
+    expect(items(m).filter((i) => i.kind === "task_stats")).toHaveLength(0);
+
+    pushMessages(m, [
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:06.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:07.000Z"),
+      at(assistantText("done"), "2026-07-05T00:00:08.000Z"),
+      at(tokenUsage(out(200), out(200)), "2026-07-05T00:00:08.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:09.000Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "tool_call",
+      "compaction",
+      "assistant_text",
+      "task_stats",
+    ]);
+  });
+
+  it("steering delivered during a wrap-up compaction opens the continuation's own round", () => {
+    // The one way a Task outlives a wrap-up compaction: steering queued while it ran is
+    // delivered afterwards and the loop keeps going. The settled row stands, and the
+    // continuation gets a ledger of its own rather than a reply with no footer.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 600, turns: 1 }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:20.000Z",
+      ),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:21.000Z"),
+      at(
+        userText("[user_steering]\nalso check the tests\n[/user_steering]"),
+        "2026-07-05T00:00:22.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:23.000Z"),
+      at(assistantText("checked"), "2026-07-05T00:00:24.000Z"),
+      at(tokenUsage(out(100), out(700)), "2026-07-05T00:00:24.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:25.000Z"),
+    ]);
+    finalizeHistory(m);
+
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+      "user_steering",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const rows = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    // The first round's ledger stops at its own request_end; the continuation measures from
+    // the steering that started it.
+    expect(rows[0]!.stats!.elapsedDeltaMs).toBe(3_000);
+    expect(rows[1]!.stats!.elapsedDeltaMs).toBe(3_000);
+    expect(rows[1]!.assistantText).toBe("checked");
+  });
+
   it("**mid-round** compaction: inside the round's span, both elapsed time and Tokens count toward the round", () => {
     // After compaction, the engine keeps running with the carry-over, and this round still has a
     // normal Request after compaction — so compaction sits between two of this round's

@@ -393,6 +393,42 @@ export interface ModelTestRequest {
 }
 
 /**
+ * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
+ * credential, to decide whether the models dialog's "supports vision" switch should be
+ * turned on. The body mirrors the connectivity test (same paired reference and same
+ * not-yet-saved overrides), so an unsaved model can be probed before it exists on disk.
+ *
+ * Unlike protocol detection this is a real, billed completion — an image request cannot be
+ * shaped to cost nothing — so it only ever runs when the user presses the control.
+ */
+export interface ModelVisionDetectRequest {
+  provider: string;
+  modelId: string;
+  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key. */
+  clearApiKey?: boolean;
+  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
+  baseUrl?: string | null;
+  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
+  clientType?: string;
+}
+
+/**
+ * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
+ * = it answered specifically that it will not take an image (a definitive negative, not an
+ * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
+ * error), so nothing about the capability was learned and the setting is left alone.
+ */
+export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
+
+/** Vision probe result; `message` carries the truncated provider error for the failed case. */
+export interface ModelVisionDetectResponse {
+  outcome: ModelVisionOutcome;
+  message?: string;
+}
+
+/**
  * Connectivity test result: carries round-trip latency when ok, and a reason on failure
  * (truncated raw provider error). When streamed content was observed, also carries the
  * time-to-first-token and, when usage was reported (completed streams), the output rate.
@@ -410,6 +446,53 @@ export interface ModelTestResponse {
    */
   tps?: number;
   message?: string;
+}
+
+/**
+ * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
+ * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
+ * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
+ * is a minimal invalid request whose error reveals the protocol shape).
+ */
+export interface ModelProtocolDetectRequest {
+  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
+  baseUrl: string;
+  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
+  clearApiKey?: boolean;
+  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  provider?: string;
+  modelId?: string;
+}
+
+/**
+ * One probe's outcome: `served` = the route answered in an API shape (including auth
+ * failures — 401/403 with a protocol-shaped body proves the route exists);
+ * `route_missing` = 404/405; `server_error` = 5xx (proves nothing about the path);
+ * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
+ * the request itself failed.
+ */
+export type ProtocolProbeOutcome =
+  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
+
+/** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
+export interface ModelProtocolProbeDto {
+  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  clientType: string;
+  /** Full URL probed (base URL + the protocol's path). */
+  url: string;
+  outcome: ProtocolProbeOutcome;
+  /** HTTP status, when a response arrived at all. */
+  status?: number;
+}
+
+/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+export interface ModelProtocolDetectResponse {
+  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  detected?: string;
+  probes: ModelProtocolProbeDto[];
 }
 
 /**
