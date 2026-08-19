@@ -37,6 +37,7 @@ import { sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
+import { offersChangePassword } from "../../lib/account-menu";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
@@ -144,6 +145,7 @@ import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
+import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
@@ -284,7 +286,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode } = useAuth();
+  const { user, logout, desktopMode, sessionVia } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
   const { lang, locale, setLang } = useLocale();
@@ -366,6 +368,11 @@ export function Sidebar({
    * ProxySettingsDialog.
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
+  /**
+   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
+   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
+   */
+  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -1756,16 +1763,25 @@ export function Sidebar({
             </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setChangePasswordOpen(true);
-              }}
-            >
-              {S.account.changePassword}
-            </button>
+            {/* Hidden in the desktop shell's own window: it signs in through the shell's
+                one-shot token rather than a login form, and the seed password of a
+                desktop-created root is fully random and never printed — there is no
+                password its holder has seen, or needs. Deliberately NOT keyed on
+                desktopMode alone: a browser signed into the same desktop-mode server over
+                loopback holds a password session that can, and still does, change it.
+                See offersChangePassword for the full rule. */}
+            {offersChangePassword({ desktopMode, sessionVia }) && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setChangePasswordOpen(true);
+                }}
+              >
+                {S.account.changePassword}
+              </button>
+            )}
             {/* Admin-only, server-global proxy settings: one menu row opening the
                 dialog (same idiom as Change password above) — the switch, address
                 input and their live-save semantics live in ProxySettingsDialog. */}
@@ -1779,6 +1795,20 @@ export function Sidebar({
                 }}
               >
                 {S.settings.proxyMenu}
+              </button>
+            )}
+            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
+                opener above. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setUploadLimitsOpen(true);
+                }}
+              >
+                {S.settings.uploadLimitsMenu}
               </button>
             )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
@@ -1879,6 +1909,7 @@ export function Sidebar({
         onClose={() => setChangePasswordOpen(false)}
       />
       <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
+      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}

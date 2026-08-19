@@ -71,7 +71,7 @@ Models that can serve fast mode gained a toggle, default off. Models that cannot
 
 ## Also in this release
 
-The sidebar row's hover actions went back to archive and delete, with the full set moved to the right-click menu. Attachments and images can be dragged onto the chat area to upload. The CLI gained `/thinking` and `--thinking`, and long tool output now collapses to its first and last lines with `/verbose` to see all of it — the model and the Trace always received the full text either way.
+The sidebar row's hover actions went back to archive and delete, with the full set moved to the right-click menu. Attachments and images can be dragged onto the chat area to upload, and a file attachment can now be 100MB rather than 10MB, with an admin able to change that from the user menu. Inline images keep a separate 20MB cap, because their bytes enter the conversation and the Trace, which is re-read whole on every history page; a file attachment is opened by path, so its size never reaches the context. The CLI gained `/thinking` and `--thinking`, and long tool output now collapses to its first and last lines with `/verbose` to see all of it — the model and the Trace always received the full text either way.
 
 The model catalog was refreshed: Gemini 3.7, GLM-5.3 and the GPT-5.6 family, plus their OpenRouter counterparts, with the nine `openai/*` rows pinned to the Responses protocol. DeepSeek pricing follows the current official rates, and the delisted `ling-3.0-flash` row is gone.
 

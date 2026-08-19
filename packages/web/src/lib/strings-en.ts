@@ -42,6 +42,18 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Admin-only user-menu row opening the upload-limits dialog. */
+    uploadLimitsMenu: "Upload limits…",
+    uploadLimitsDialogTitle: "Upload limits",
+    /** The dialog's two number fields, both in whole MB. */
+    attachmentMaxMb: "Max attachment size (MB)",
+    attachmentTotalMb: "Max total per message (MB)",
+    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
+    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
+      `${min}–${max} MB; the total may not be below the per-file limit. A message may carry at ` +
+      `most ${count} attachments. Images placed inline in the conversation keep a separate ` +
+      `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
+      `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -1342,8 +1354,8 @@ Scenarios:
     uploadFile: "Upload file",
     uploadFileDesc: "Saved to the session scratchpad; the model reads them by path",
     removeFile: "Remove file",
-    attachmentTooLarge: (name: string): string =>
-      `${name} exceeds the 10MB limit and was not attached.`,
+    attachmentTooLarge: (name: string, limitMb: number): string =>
+      `${name} exceeds the ${limitMb}MB limit and was not attached.`,
     /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
     dropFilesTitle: "Drop files to attach",
     dropFilesDesc: "Images and files are added to the message draft",
@@ -1554,6 +1566,7 @@ Scenarios:
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
+      image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
@@ -1582,6 +1595,8 @@ Scenarios:
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",
+      invalid_attachment_limit:
+        "Invalid upload limit — use a whole number of MB inside the allowed range, with the total no lower than the per-file limit.",
       invalid_trace: "This file is not a valid Trace file.",
       trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
