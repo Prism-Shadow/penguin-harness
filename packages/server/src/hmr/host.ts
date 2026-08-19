@@ -134,6 +134,13 @@ export interface UpgradeAllTarget {
  */
 export const ASSETS_RESOURCE_ID = "runtime:assets-dir";
 
+/**
+ * Written into an assets directory once every file in it is on disk. Its absence marks a
+ * directory whose materialization was interrupted; no asset path can collide with it
+ * (assets arrive as `node_modules/...` paths).
+ */
+const MATERIALIZED = ".materialized";
+
 export type UpgradeOutcome =
   | {
       status: "ok";
@@ -465,20 +472,34 @@ export class HmrHost {
    * artifact so an unchanged set reuses its directory. Modes are restored from the push's
    * `exec` list: an asset arrives as base64 with no mode of its own, and a helper binary
    * without its exec bit is exactly the failure this whole path exists to avoid.
+   *
+   * An identical set is NOT re-written. That is a correctness requirement, not a saving:
+   * these assets are native modules, and on Windows the copies from the last push are
+   * mapped into this very process — reopening one for writing fails with EBUSY and takes
+   * the whole upgrade down with it. The directory name already proves the content
+   * matches; MATERIALIZED, written last, is what proves the directory is complete, so a
+   * push interrupted halfway is repaired rather than trusted.
    */
   private async materializeAssets(assets: UpgradeAssets): Promise<string> {
     const sha = filesDigest(assets.files).slice(0, 16);
     const dir = path.join(this.storeDir, "assets", sha);
+    const marker = path.join(dir, MATERIALIZED);
+    if (fs.existsSync(marker)) return dir;
+
     const exec = new Set(assets.exec ?? []);
     for (const [rel, b64] of Object.entries(assets.files)) {
       if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
       const file = path.join(dir, rel);
+      const content = Buffer.from(b64, "base64");
       await fsp.mkdir(path.dirname(file), { recursive: true });
-      await fsp.writeFile(file, Buffer.from(b64, "base64"));
+      // Repairing an incomplete directory: whatever already matches is left alone, for the
+      // same reason the whole directory is skipped above.
+      if (!(await sameFileContent(file, content))) await fsp.writeFile(file, content);
       // Explicit chmod: writeFile's mode is masked by umask, and ignored outright when
       // the file already exists (a reused, content-addressed directory).
       await fsp.chmod(file, exec.has(rel) ? 0o755 : 0o644);
     }
+    await fsp.writeFile(marker, sha);
     return dir;
   }
 
@@ -638,6 +659,17 @@ function filesDigest(files: Record<string, string>): string {
 }
 
 /** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
+/** Whether `file` already holds exactly these bytes (missing/unreadable counts as no). */
+async function sameFileContent(file: string, content: Buffer): Promise<boolean> {
+  try {
+    const stat = await fsp.stat(file);
+    if (!stat.isFile() || stat.size !== content.length) return false;
+    return (await fsp.readFile(file)).equals(content);
+  } catch {
+    return false;
+  }
+}
+
 function isSafeRelPath(rel: string): boolean {
   if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");

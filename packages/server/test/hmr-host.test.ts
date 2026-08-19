@@ -5,6 +5,7 @@
  * and the durability flag an upgrade's HTTP response carries.
  */
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
@@ -297,5 +298,87 @@ describe("upgrade outcome: persisted flag", () => {
     const ping = await api.get("/api/demo/ping");
     expect(ping.status).toBe(200);
     expect(await ping.json()).toEqual({ servedBy: "unpersisted", pathname: "/api/demo/ping" });
+  });
+});
+
+describe("upgrade assets: an unchanged set is not copied again", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  /** One push carrying a native-module-shaped asset tree. */
+  async function pushWithAssets(app: Hono<AppEnv>, cookie: string, id: string) {
+    const gz = zlib.gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          platform: platformServing([`/api/demo/${id}`], id),
+          cli: MINIMAL_CLI,
+          web: { files: MINIMAL_WEB },
+          assets: {
+            files: {
+              "node_modules/demo-native/package.json":
+                Buffer.from('{"name":"demo-native"}').toString("base64"),
+              "node_modules/demo-native/build/Release/demo.node":
+                Buffer.from("\0binary").toString("base64"),
+            },
+            exec: ["node_modules/demo-native/build/Release/demo.node"],
+          },
+        }),
+      ),
+    );
+    return app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: gz,
+    });
+  }
+
+  /** The single assets directory the pushes above content-address to. */
+  async function assetsDirOf(root: string): Promise<string> {
+    const base = path.join(root, "hmr", "store", "assets");
+    const entries = await fs.readdir(base);
+    expect(entries).toHaveLength(1); // identical content, so one directory serves both pushes
+    return path.join(base, entries[0]!);
+  }
+
+  it("leaves the files untouched on a re-push, so a mapped native module cannot EBUSY", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect((await pushWithAssets(t.app, cookie, "first")).status).toBe(200);
+
+    const binary = path.join(
+      await assetsDirOf(t.root),
+      "node_modules/demo-native/build/Release/demo.node",
+    );
+    const before = await fs.stat(binary);
+    expect(before.mode & 0o111).not.toBe(0); // the exec list was honoured
+
+    // Windows keeps an open handle on a loaded .node, so a second write to it fails with
+    // EBUSY and takes the whole upgrade down. Read-only stands in for that lock here.
+    await fs.chmod(binary, 0o444);
+    expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
+
+    const after = await fs.stat(binary);
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it("repairs a directory whose materialization was interrupted", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect((await pushWithAssets(t.app, cookie, "first")).status).toBe(200);
+
+    // A push killed before it finished leaves files but no completion marker — and here,
+    // one truncated file.
+    const dir = await assetsDirOf(t.root);
+    const manifest = path.join(dir, "node_modules/demo-native/package.json");
+    await fs.rm(path.join(dir, ".materialized"));
+    await fs.writeFile(manifest, "trunc");
+
+    expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
+    expect(await fs.readFile(manifest, "utf8")).toBe('{"name":"demo-native"}');
+    expect(fsSync.existsSync(path.join(dir, ".materialized"))).toBe(true);
   });
 });
