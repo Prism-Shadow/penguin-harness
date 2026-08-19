@@ -172,3 +172,61 @@ export function needsThinkingSwitchConfirm(
   if (currentLevel !== "" && nextLevel === currentLevel) return false;
   return prefixCacheAtRisk(items);
 }
+
+/**
+ * Settled compaction attempts visible in the transcript, and how many of them completed.
+ * Snapshotted when the user picks "compact, then switch" so the wait below can tell OUR
+ * compaction's outcome from the ones that were already on record.
+ */
+export interface CompactionTally {
+  settled: number;
+  completed: number;
+}
+
+/** Counts settled (not still running) compaction items and the completed subset. */
+export function compactionTally(items: ReadonlyArray<ThinkingSwitchItem>): CompactionTally {
+  let settled = 0;
+  let completed = 0;
+  for (const item of items) {
+    if (item.kind !== "compaction" || item.running === true) continue;
+    settled++;
+    if (item.status === "completed") completed++;
+  }
+  return { settled, completed };
+}
+
+/**
+ * The dialog's "compact, then switch" choice, held while the compaction runs.
+ *
+ * `POST /compact` answers **202** — it only starts the compaction, whose outcome arrives
+ * later over the stream — so the pick cannot be applied on the request promise. It is
+ * staged here and released by thinkingSwitchAfterCompaction below.
+ */
+export type StagedThinkingSwitch =
+  | { phase: "ask"; level: string }
+  | { phase: "compacting"; level: string; baseline: CompactionTally };
+
+/**
+ * What the staged switch should do now, given the transcript and the tally taken when the
+ * compaction was requested:
+ * - `"apply"` — a compaction completed since then: the provider context is now the short
+ *   summary, so switching is cheap. Applied even if items were appended after it (a queued
+ *   follow-up may start the moment the session goes idle), because the compaction the user
+ *   asked for did happen.
+ * - `"failed"` — a compaction settled without completing (failed / aborted): the old context
+ *   is still in effect, so the level must NOT change; the caller surfaces it.
+ * - `"pending"` — nothing has settled yet, keep waiting.
+ *
+ * Counting rather than matching item ids keeps this correct across a stream reconnect
+ * (history is rebuilt and ids restart) — the worst case is a stalled `"pending"`, which
+ * leaves the level untouched, never a silent switch.
+ */
+export function thinkingSwitchAfterCompaction(
+  items: ReadonlyArray<ThinkingSwitchItem>,
+  baseline: CompactionTally,
+): "pending" | "apply" | "failed" {
+  const now = compactionTally(items);
+  if (now.completed > baseline.completed) return "apply";
+  if (now.settled > baseline.settled) return "failed";
+  return "pending";
+}

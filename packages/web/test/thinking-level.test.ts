@@ -5,16 +5,23 @@
  * config by initializing its display to it), while "none" stays a displayable stored value;
  * "" (internally "untouched"/no override) and a legacy meta's "default" resolve to null so
  * callers substitute the config level or a placeholder.
+ *
+ * Plus the mid-chat switch guard (#310): when a pick has to be confirmed, and how the
+ * dialog's "compact, then switch" choice decides — from the transcript alone — whether the
+ * compaction it started completed (apply the pick), settled without completing (keep the
+ * level and say so), or is still in flight.
  */
 import { describe, expect, it } from "vitest";
 import {
   SELECTABLE_THINKING_LEVELS,
   THINKING_LEVELS,
+  compactionTally,
   effectiveThinkingLevel,
   needsThinkingSwitchConfirm,
   prefixCacheAtRisk,
   thinkingLevelLabel,
   thinkingLevelOptionsFor,
+  thinkingSwitchAfterCompaction,
 } from "../src/features/chat/thinking-level";
 import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
@@ -172,5 +179,68 @@ describe("needsThinkingSwitchConfirm (mid-chat switch guard for the session pick
 
   it("no dialog right after a successful compaction (the advised flow: /compact, then switch)", () => {
     expect(needsThinkingSwitchConfirm([...history, compactionDone], "medium", "high")).toBe(false);
+  });
+});
+
+describe("thinkingSwitchAfterCompaction (dialog choice 1: compact, then switch)", () => {
+  const history = [user, reply, stats];
+  /** The tally taken when the user picks "compact, then switch". */
+  const at = (items: ThinkingSwitchItem[]) => compactionTally(items);
+
+  it("counts settled compactions and their completed subset (a running one is not settled yet)", () => {
+    expect(compactionTally([])).toEqual({ settled: 0, completed: 0 });
+    expect(compactionTally([user, reply])).toEqual({ settled: 0, completed: 0 });
+    expect(compactionTally([user, compactionRunning])).toEqual({ settled: 0, completed: 0 });
+    expect(compactionTally([user, compactionFailed, reply, compactionDone])).toEqual({
+      settled: 2,
+      completed: 1,
+    });
+  });
+
+  it("waits while the compaction is still running", () => {
+    const baseline = at(history);
+    expect(thinkingSwitchAfterCompaction(history, baseline)).toBe("pending");
+    expect(thinkingSwitchAfterCompaction([...history, compactionRunning], baseline)).toBe(
+      "pending",
+    );
+  });
+
+  it("applies the held pick once the compaction completes", () => {
+    const baseline = at(history);
+    expect(thinkingSwitchAfterCompaction([...history, compactionDone], baseline)).toBe("apply");
+  });
+
+  it("a compaction that fails or is aborted does NOT switch — the old context is still in effect", () => {
+    const baseline = at(history);
+    expect(thinkingSwitchAfterCompaction([...history, compactionFailed], baseline)).toBe("failed");
+    expect(
+      thinkingSwitchAfterCompaction(
+        [...history, { kind: "compaction", running: false, status: "aborted" }],
+        baseline,
+      ),
+    ).toBe("failed");
+  });
+
+  it("compactions already on record when the choice was made don't settle the wait", () => {
+    // A failed compaction sitting in the transcript is exactly why the dialog opened
+    // (prefixCacheAtRisk stays true) — it must not be read as "our compaction failed".
+    const before = [...history, compactionFailed];
+    const baseline = at(before);
+    expect(thinkingSwitchAfterCompaction(before, baseline)).toBe("pending");
+    expect(thinkingSwitchAfterCompaction([...before, compactionDone], baseline)).toBe("apply");
+  });
+
+  it("a failed retry after our compaction completed still applies (the compaction did happen)", () => {
+    const baseline = at(history);
+    expect(
+      thinkingSwitchAfterCompaction([...history, compactionDone, compactionFailed], baseline),
+    ).toBe("apply");
+  });
+
+  it("items appended after the completed compaction (e.g. a queued follow-up) still apply", () => {
+    const baseline = at(history);
+    expect(thinkingSwitchAfterCompaction([...history, compactionDone, user, reply], baseline)).toBe(
+      "apply",
+    );
   });
 });

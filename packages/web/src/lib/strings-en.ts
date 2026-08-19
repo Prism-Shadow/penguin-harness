@@ -860,8 +860,19 @@ export const en: Strings = {
     },
     thinkingSwitchTitle: "Switch thinking level",
     thinkingSwitchBody: (to: string): string =>
-      `Switch the thinking level to "${to}"? Some providers inject a different prompt prefix per thinking level at the very front of the prompt, and this conversation already has history — switching now invalidates the provider's prefix cache, so the next request re-bills the entire history at the uncached input rate. The cheaper path: run /compact first, then switch.`,
+      `Switch the thinking level to "${to}"? Some providers inject a different prompt prefix per thinking level at the very front of the prompt, and this conversation already has history — switching now invalidates the provider's prefix cache, so the next request re-bills the entire history at the uncached input rate.`,
+    thinkingSwitchRecommend:
+      "Recommended: compact the context first, so only the summary gets re-billed.",
+    thinkingSwitchBusyHint:
+      "This conversation is still working — compaction can only start once it is idle. “Switch anyway” still applies immediately.",
+    thinkingSwitchCompactFirst: "Compact, then switch",
     thinkingSwitchConfirm: "Switch anyway",
+    thinkingSwitchCompacting:
+      "Compacting the context — the thinking level switches once it finishes.",
+    thinkingSwitchApplied: (to: string): string =>
+      `Context compacted; thinking level switched to "${to}".`,
+    thinkingSwitchCompactFailed:
+      "The compaction did not finish, so the thinking level is unchanged.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -1479,6 +1490,7 @@ Scenarios:
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
       task_in_progress: "This Session already has a task running.",
+      compacting: "This Session is compacting its context and is not accepting new input.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
