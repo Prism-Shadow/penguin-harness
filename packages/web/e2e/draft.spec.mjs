@@ -96,24 +96,20 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByRole("button", { name: /放行只读/ }).click();
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
-  // Conversation-time thinking level (backed by the Agent settings): the trigger shows the
-  // seeded default (medium); the popup carries a title bar and a slider running low (left)
-  // to max (right), whose stops exclude 无/none (many models cannot disable thinking).
-  // Stepping it up one tier from 中 (medium) reaches 高 (high), which writes straight
-  // through to the Agent config, so the session created on send runs with it and it becomes
-  // the Agent's new default. The slider is keyboard-driven here: opening the popup focuses
-  // it, so ArrowRight steps a tier without simulating a drag.
+  // Conversation-time thinking level (backed by the Agent settings): the picker shows the
+  // seeded default (medium); the menu carries a title bar and the rows 低/中/高/极高/最高
+  // only — no descriptions, no default row, and no 无 (many models cannot disable thinking).
+  // Each row is labelled with the wire value it sends, so the names read "高 (high)".
+  // Picking 高 (high) writes straight through to the Agent config, so the session created on
+  // send runs with it and it becomes the Agent's new default.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中 (medium)");
   await thinkingBtn.click();
   await expect(page.getByText("思考等级", { exact: true })).toBeVisible(); // menu title bar
-  const thinkingSlider = page.getByRole("slider", { name: "思考等级" });
-  await expect(thinkingSlider).toHaveAttribute("aria-valuetext", "中 (medium)");
-  // The ends are labelled low..max — 无 (none) is not a stop unless it is the stored value.
-  await expect(thinkingSlider).toHaveAttribute("aria-valuemax", "4");
-  await expect(page.getByText("无 (none)", { exact: true })).toHaveCount(0);
-  await thinkingSlider.press("ArrowRight");
-  await expect(thinkingSlider).toHaveAttribute("aria-valuetext", "高 (high)");
+  await expect(page.getByRole("button", { name: "低 (low)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "最高 (max)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "无 (none)", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
   await expect(thinkingBtn).toContainText("高 (high)");
   await expect
     .poll(async () => {

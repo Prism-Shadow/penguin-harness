@@ -86,8 +86,7 @@ test("a stale steer response after reload queues the follow-up instead of strand
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中 (medium)");
   await thinkingBtn.click();
-  // The popup's slider takes focus on open, so one ArrowRight steps medium -> high.
-  await page.getByRole("slider", { name: "思考等级" }).press("ArrowRight");
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
   await expect(thinkingBtn).toContainText("高 (high)");
 
   await composer.fill("hello after reload");

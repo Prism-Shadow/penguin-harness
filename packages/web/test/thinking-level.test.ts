@@ -22,12 +22,8 @@ import {
   needsThinkingSwitchConfirm,
   prefixCacheAtRisk,
   sessionThinkingLevel,
-  thinkingLevelAtStep,
-  thinkingLevelIndex,
   thinkingLevelLabel,
   thinkingLevelOptionsFor,
-  thinkingLevelStepAtRatio,
-  thinkingLevelStops,
 } from "../src/features/chat/thinking-level";
 import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
@@ -316,63 +312,5 @@ describe("sessionThinkingLevel (what the in-session picker shows and sends)", ()
 
   it("nothing pinned and no config yet (still loading): no level to display", () => {
     expect(sessionThinkingLevel("", "")).toBe("");
-  });
-});
-
-describe("thinking level slider geometry", () => {
-  it("runs the selectable ladder left (shallowest) to right (deepest)", () => {
-    expect(thinkingLevelStops("medium")).toEqual(["low", "medium", "high", "xhigh", "max"]);
-    // Left-to-right must mean more thinking: that is the whole premise of the control.
-    expect(thinkingLevelStops("medium").at(-1)).toBe("max");
-  });
-
-  it("prepends a stored 'none' so the value on disk stays reachable, and only then", () => {
-    expect(thinkingLevelStops("none")).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
-    // Anyone not already on "none" is never offered it — many models cannot disable thinking.
-    for (const current of ["low", "max", "", null, undefined]) {
-      expect(thinkingLevelStops(current)).not.toContain("none");
-    }
-  });
-
-  it("indexes the current level, and reports -1 when there is no position to show", () => {
-    const stops = thinkingLevelStops("medium");
-    expect(thinkingLevelIndex(stops, "low")).toBe(0);
-    expect(thinkingLevelIndex(stops, "max")).toBe(4);
-    // "" = an Agent with no explicit override; null = config still loading; "none" is off
-    // this ladder. None of them may park the thumb on a level the user never chose.
-    for (const level of ["", null, undefined, "none", "bogus"]) {
-      expect(thinkingLevelIndex(stops, level)).toBe(-1);
-    }
-  });
-
-  it("clamps a step to the ladder, so an arrow key at either end stays put", () => {
-    const stops = thinkingLevelStops("medium");
-    expect(thinkingLevelAtStep(stops, 0)).toBe("low");
-    expect(thinkingLevelAtStep(stops, 4)).toBe("max");
-    expect(thinkingLevelAtStep(stops, -1)).toBe("low");
-    expect(thinkingLevelAtStep(stops, 99)).toBe("max");
-  });
-
-  it("picks the nearest stop for a pointer ratio, clamping outside the track", () => {
-    const stops = thinkingLevelStops("medium");
-    expect(thinkingLevelStepAtRatio(stops, 0)).toBe(0);
-    expect(thinkingLevelStepAtRatio(stops, 1)).toBe(4);
-    // Nearest, not "the one already passed": just past the midpoint of a gap rounds up.
-    expect(thinkingLevelStepAtRatio(stops, 0.26)).toBe(1);
-    expect(thinkingLevelStepAtRatio(stops, 0.24)).toBe(1);
-    expect(thinkingLevelStepAtRatio(stops, 0.12)).toBe(0);
-    // A drag past either edge stays on the ladder.
-    expect(thinkingLevelStepAtRatio(stops, -3)).toBe(0);
-    expect(thinkingLevelStepAtRatio(stops, 4.2)).toBe(4);
-  });
-
-  it("keeps the stop set stable while a stored 'none' is displayed, so a drag cannot resize it", () => {
-    // The component derives stops from the DISPLAYED value, never from the drag position:
-    // a six-stop ladder must not collapse to five mid-drag and teleport the thumb.
-    const stops = thinkingLevelStops("none");
-    expect(stops).toHaveLength(6);
-    expect(thinkingLevelAtStep(stops, 0)).toBe("none");
-    expect(thinkingLevelStepAtRatio(stops, 1)).toBe(5);
-    expect(thinkingLevelAtStep(stops, 5)).toBe("max");
   });
 });
