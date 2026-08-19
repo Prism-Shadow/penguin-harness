@@ -13,7 +13,10 @@
  */
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
+// Types only (erased at compile time): the xterm runtime stays behind loadXterm() below.
+import type { ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { TerminalOpcode, decodeFrame, encodeFrame, encodeResize } from "./terminal-frames";
+import { useTheme } from "../../state/theme";
 
 /**
  * xterm and its addons load lazily, on the first actual terminal render: their UMD
@@ -43,12 +46,71 @@ export interface TerminalInfo {
 
 export type TerminalStatus = "connecting" | "ready" | "exited" | "error";
 
-const THEME = {
-  background: "#14171a",
-  foreground: "#e6e6e6",
-  cursor: "#e6e6e6",
-  selectionBackground: "#3a4046",
+/**
+ * The screen's own palette, one per appearance. Two things matter here.
+ *
+ * The surface colours are the app's, not a terminal's: `#000000`/`#ffffff` are the body
+ * tones (styles.css overrides the neutral gray scale to pure black in dark mode), and the
+ * selection matches `::selection` there. A panel docked inside the app that brought its
+ * own charcoal along read as a foreign window sitting on top of it.
+ *
+ * The sixteen ANSI slots are NOT the app's palette and must not be: programs pick them by
+ * meaning ("red = error"), so they have to stay recognisable, and legible against the
+ * background they land on — which is why light mode has its own set rather than a dimmed
+ * copy. These are the values editor terminals converged on; xterm's built-in defaults are
+ * VGA-bright and unreadable on white.
+ */
+const DARK_THEME = {
+  background: "#000000",
+  foreground: "#f3f4f6",
+  cursor: "#f3f4f6",
+  cursorAccent: "#000000",
+  selectionBackground: "rgba(255, 255, 255, 0.18)",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#0dbc79",
+  yellow: "#e5e510",
+  blue: "#2472c8",
+  magenta: "#bc3fbc",
+  cyan: "#11a8cd",
+  white: "#e5e5e5",
+  brightBlack: "#666666",
+  brightRed: "#f14c4c",
+  brightGreen: "#23d18b",
+  brightYellow: "#f5f543",
+  brightBlue: "#3b8eea",
+  brightMagenta: "#d670d6",
+  brightCyan: "#29b8db",
+  brightWhite: "#ffffff",
 };
+
+const LIGHT_THEME = {
+  background: "#ffffff",
+  foreground: "#111827",
+  cursor: "#111827",
+  cursorAccent: "#ffffff",
+  selectionBackground: "rgba(0, 0, 0, 0.12)",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#00bc00",
+  yellow: "#949800",
+  blue: "#0451a5",
+  magenta: "#bc05bc",
+  cyan: "#0598bc",
+  white: "#555555",
+  brightBlack: "#666666",
+  brightRed: "#cd3131",
+  brightGreen: "#14ce14",
+  brightYellow: "#b5ba00",
+  brightBlue: "#0451a5",
+  brightMagenta: "#bc05bc",
+  brightCyan: "#0598bc",
+  brightWhite: "#a5a5a5",
+};
+
+export function terminalTheme(dark: boolean): ITheme {
+  return dark ? DARK_THEME : LIGHT_THEME;
+}
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
   return fetch(path, {
@@ -120,6 +182,17 @@ export interface TerminalViewProps {
 
 export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // Appearance is repainted in place rather than remounted: the xterm instance, its
+  // scrollback and its WebSocket all outlive a theme switch (the view pool exists to keep
+  // exactly those alive). The ref is what lets the once-per-mount effect below read the
+  // current appearance without listing it as a dependency.
+  const { dark } = useTheme();
+  const darkRef = useRef(dark);
+  darkRef.current = dark;
+  const termRef = useRef<XTerminal | null>(null);
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = terminalTheme(dark);
+  }, [dark]);
   // Kept in refs so the (intentionally once-per-mount) effect always calls the latest
   // callbacks without re-running when a parent re-renders with a new closure.
   const callbacks = useRef({ ensure, onStatus, onInfo, onTitle });
@@ -169,11 +242,12 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
         fontSize: 13,
         lineHeight: 1.2,
         scrollback: 5000,
-        theme: THEME,
+        theme: terminalTheme(darkRef.current),
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
       term.loadAddon(new WebLinksAddon());
+      termRef.current = term;
       term.open(container);
       fit.fit();
 
@@ -339,6 +413,7 @@ export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: T
 
       return () => {
         disposed = true;
+        termRef.current = null;
         listenerAbort.abort();
         observer.disconnect();
         socket?.close();

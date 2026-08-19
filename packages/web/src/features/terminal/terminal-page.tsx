@@ -136,10 +136,10 @@ export function TerminalPage() {
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-[#14171a] text-[#e6e6e6]">
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-4 py-2 text-xs">
+    <div className="flex h-screen w-screen flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
         <span className="font-medium">{S.terminal.title}</span>
-        <span className="text-white/45">{info?.cwd ?? params.cwd}</span>
+        <span className="text-gray-500 dark:text-gray-400">{info?.cwd ?? params.cwd}</span>
         <span
           data-testid="terminal-status"
           data-status={status}
@@ -157,7 +157,7 @@ export function TerminalPage() {
           type="button"
           data-testid="terminal-new-shell"
           onClick={restart}
-          className="ml-auto rounded border border-white/15 px-2 py-1 text-white/70 hover:bg-white/10"
+          className="ml-auto rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
         >
           {S.terminal.newShell}
         </button>

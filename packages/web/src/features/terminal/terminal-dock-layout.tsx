@@ -135,7 +135,9 @@ function DropTarget(props: {
       data-dock-pos={props.position}
       data-testid="dock-layout-target"
       className={`${props.shape} rounded-[3px] border transition-colors duration-100 ${
-        active ? "border-sky-400 bg-sky-500/60" : "border-white/30 bg-white/10"
+        active
+          ? "border-sky-400 bg-sky-500/60"
+          : "border-gray-400/70 bg-gray-500/10 dark:border-white/30 dark:bg-white/10"
       }`}
     />
   );
@@ -172,11 +174,11 @@ export function DockLayoutOverlay({ candidate }: { candidate: DockPosition | nul
         className="fixed z-[70] flex items-center gap-3"
         style={{ left: rect.right - 172, top: rect.bottom - 96 }}
       >
-        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-white/20 bg-gray-900/90 p-2.5 shadow-lg">
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2.5 shadow-lg dark:border-white/20 dark:bg-gray-900/90">
           <DropTarget position="top" candidate={candidate} shape="h-3.5 w-10" />
           <DropTarget position="bottom" candidate={candidate} shape="h-3.5 w-10" />
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-white/20 bg-gray-900/90 p-2.5 shadow-lg">
+        <div className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 p-2.5 shadow-lg dark:border-white/20 dark:bg-gray-900/90">
           <DropTarget position="left" candidate={candidate} shape="h-9 w-4.5" />
           <DropTarget position="right" candidate={candidate} shape="h-9 w-4.5" />
         </div>
