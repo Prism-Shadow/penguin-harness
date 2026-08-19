@@ -13,6 +13,7 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
 import {
+  MAX_PROBE_BODY_BYTES,
   classifyProbeResponse,
   detectModelProtocol,
   isHttpUrl,
@@ -101,6 +102,15 @@ describe("classifyProbeResponse", () => {
 
   it("4xx JSON that matches no API-error shape is junk", () => {
     expect(classifyProbeResponse("openai-chat", 400, '{"status":"bad"}')).toBe("junk");
+  });
+
+  it("a FastAPI-style `detail` only proves the route when it carries a message (null / empty say nothing)", () => {
+    expect(classifyProbeResponse("openai-chat", 400, '{"detail":"field required"}')).toBe("served");
+    expect(classifyProbeResponse("openai-chat", 400, '{"detail":[{"loc":["body"]}]}')).toBe(
+      "served",
+    );
+    expect(classifyProbeResponse("openai-chat", 400, '{"detail":null}')).toBe("junk");
+    expect(classifyProbeResponse("openai-chat", 400, '{"detail":""}')).toBe("junk");
   });
 });
 
@@ -235,6 +245,49 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: timeoutOnResponses });
     expect(res.detected).toBe("openai-chat");
     expect(res.probes.map((p) => p.outcome)).toEqual(["timeout", "network_error", "served"]);
+  });
+
+  it("an oversized response body is abandoned at the cap and counts as junk, so a flooding endpoint neither detects nor buffers", async () => {
+    // Streams well past MAX_PROBE_BODY_BYTES; the reader must stop at the cap rather than
+    // materialize the whole thing, and the probe must not be credited as served.
+    let pushed = 0;
+    const flooder: typeof fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/v1/v1/messages") {
+        return new Response(OPENAI_ERROR, {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (path !== "/v1/responses") {
+        return new Response(OPENAI_ERROR, {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const chunk = new Uint8Array(8 * 1024).fill(0x20); // 8 KiB of spaces per pull
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pushed += chunk.byteLength;
+            // Far more than the cap if it were ever drained in full.
+            if (pushed > MAX_PROBE_BODY_BYTES * 100) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk);
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: flooder });
+    expect(res.probes[0]?.outcome).toBe("junk");
+    expect(res.detected).toBe("openai-chat");
+    // Read stopped near the cap instead of draining the stream (the producer runs a chunk
+    // or two ahead of the reader, so this is "the cap plus slack", not the exact cap —
+    // what matters is that it is nowhere near the 100x the stream would have emitted).
+    expect(pushed).toBeLessThanOrEqual(MAX_PROBE_BODY_BYTES * 2);
   });
 
   it("auth headers mirror the AgentHub clients: Bearer for the OpenAI protocols; x-api-key + Bearer + anthropic-version for ant-messages; the {} body and key-free URLs everywhere", async () => {

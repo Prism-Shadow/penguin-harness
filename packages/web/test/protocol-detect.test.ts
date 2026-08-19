@@ -5,13 +5,13 @@
  * package's protocol-detect tests); these are the pure helpers the dialog composes.
  */
 import { describe, expect, it } from "vitest";
+import { clientTypeAfterProviderChange } from "../src/features/models/models-page";
 import {
   PROTOCOL_CLIENT_TYPES,
-  clientTypeAfterProviderChange,
   detectableBaseUrl,
   isGenericProtocolClientType,
   protocolSelectorValue,
-} from "../src/features/models/models-page";
+} from "../src/features/models/protocol-types";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
 
 describe("PROTOCOL_CLIENT_TYPES", () => {

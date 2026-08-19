@@ -87,11 +87,11 @@ api_key = "sk-..."
 
 ## 自定义模型的协议自动检测
 
-Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会检测 base URL 实际提供的是哪一种。base URL 输入框失焦时（或点击协议行的「自动检测」按钮），服务端按固定顺序向该 URL 发三个轻量探测请求——先 `openai-responses`（`POST {base}/responses`，OpenAI Responses API），再 `ant-messages`（`POST {base}/v1/messages`，Anthropic Messages API），最后 `openai-chat`（`POST {base}/chat/completions`）——第一个真正被端点提供的协议写入条目的 `client_type`。
+Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会检测 base URL 实际提供的是哪一种。协议控件就是 base URL 输入框右侧内嵌的那段协议路径（`/responses`、`/v1/messages`、`/chat/completions`）——客户端会追加到你填的 URL 之后，与协议一一对应。base URL 输入框失焦时（或点开该后缀菜单里的「自动检测」），服务端按固定顺序向该 URL 发三个轻量探测请求——先 `openai-responses`（`POST {base}/responses`，OpenAI Responses API），再 `ant-messages`（`POST {base}/v1/messages`，Anthropic Messages API），最后 `openai-chat`（`POST {base}/chat/completions`）——第一个真正被端点提供的协议写入条目的 `client_type`。
 
 探测请求是刻意构造的最小非法请求（`{}` 请求体）：不消耗 Token、不需要有效的模型 id，没有 key 也能用——按协议形态返回的鉴权错误同样证明路由存在；`404`/`405` 则说明该路径未提供，HTML 或网关杂讯一概不算数。探测的 URL 与鉴权头和保存后 AgentHub 客户端实际使用的完全一致（OpenAI 系协议用 `Authorization: Bearer`；`ant-messages` 同时带 `x-api-key`、`Authorization: Bearer` 与 `anthropic-version`），因此检测出的协议就是真正能跑通的协议。
 
-检测结果旁的协议下拉框即手动覆盖入口：三种协议都没匹配（URL 不可达、返回的不是 API 响应）时自行选择。此前创建的条目保留 `client_type = "openai"`（仍是 `openai-chat` 的别名），只有手动选择或检测生效时才会改写。检测能力以 `POST /api/projects/:id/models/detect` 暴露（仅 owner，见 [Server API](/server-api)）。
+同一个菜单即手动覆盖入口：菜单列出三种协议及各自追加的路径，手动选择优先于检测结果。三种协议都没匹配（URL 不可达、返回的不是 API 响应）时后缀转为琥珀色、字段下方给出原因，自行选择协议即可。此前创建的条目保留 `client_type = "openai"`（仍是 `openai-chat` 的别名），只有手动选择或检测生效时才会改写。检测能力以 `POST /api/projects/:id/models/detect` 暴露（仅 owner，见 [Server API](/server-api)）。
 
 ## 思考等级
 

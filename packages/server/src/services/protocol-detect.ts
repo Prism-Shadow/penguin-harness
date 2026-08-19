@@ -114,7 +114,12 @@ function isApiErrorShape(body: Record<string, unknown>): boolean {
   if (body.type === "error") return true;
   if (body.object === "error") return true;
   if (typeof body.message === "string" && body.message !== "") return true;
-  if (body.detail !== undefined) return true;
+  // FastAPI/vLLM `detail`: it must actually carry a message. `{"detail": null}` and
+  // `{"detail": ""}` say nothing about the route, and accepting them (a bare `!== undefined`
+  // check did) let a JSON body with one empty field pass as proof the route exists.
+  const detail = body.detail;
+  if (typeof detail === "string") return detail !== "";
+  if (detail !== null && (typeof detail === "object" || typeof detail === "number")) return true;
   return false;
 }
 
@@ -158,6 +163,50 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
+/**
+ * Byte budget for a probe's response body. The timeout caps how LONG an endpoint may
+ * answer for, not how MUCH it may send: a fast host can push a great deal in five seconds,
+ * and `res.text()` buffers all of it before classification ever looks at it. Classification
+ * only needs the top of a structured error, so anything past this cap is junk by
+ * definition — 64 KiB is orders of magnitude above any real API error body.
+ */
+export const MAX_PROBE_BODY_BYTES = 64 * 1024;
+
+/**
+ * Reads at most {@link MAX_PROBE_BODY_BYTES} of a probe response and reports whether the
+ * body ran past that. Streams rather than calling `res.text()`, so an oversized (or
+ * endless) body is abandoned at the cap instead of being buffered whole; the caller's
+ * timeout signal still bounds the read in time.
+ */
+async function readCappedBody(res: Response): Promise<{ text: string; truncated: boolean }> {
+  const body = res.body;
+  // A bodyless response (204, HEAD-like) or a fetch mock returning no stream: fall back to
+  // text(), which is empty or already-materialized in both cases.
+  if (!body) return { text: await res.text(), truncated: false };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let truncated = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > MAX_PROBE_BODY_BYTES) {
+        truncated = true;
+        break;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    // Releases the connection: without a cancel, abandoning an oversized body would leave
+    // the socket draining in the background.
+    await reader.cancel().catch(() => {});
+  }
+  return { text: truncated ? "" : Buffer.concat(chunks).toString("utf8"), truncated };
+}
+
 async function runProbe(
   spec: ProbeSpec,
   baseUrl: string,
@@ -172,13 +221,21 @@ async function runProbe(
       headers: spec.headers(apiKey),
       body: "{}",
       signal: AbortSignal.timeout(timeoutMs),
+      // Redirects stay followed (fetch's default). It is tempting to pin `redirect: "manual"`
+      // so a base URL cannot bounce the server somewhere it never named, but the SDKs the
+      // real clients wrap follow redirects too — pinning it would report "no protocol" for
+      // the ordinary case of a base URL that 301s http -> https, i.e. break the invariant
+      // that a detected protocol is one that actually works after saving. The probe reply is
+      // reduced to an outcome enum plus a status and is never echoed, so a followed redirect
+      // leaks no response content.
     });
-    // The same timeout signal covers the body read (a junk endpoint may stream forever).
-    const text = await res.text();
+    // The same timeout signal covers the body read (a junk endpoint may stream forever);
+    // the byte cap covers the other direction (an endpoint that streams a lot, fast).
+    const { text, truncated } = await readCappedBody(res);
     return {
       clientType: spec.clientType,
       url,
-      outcome: classifyProbeResponse(spec.clientType, res.status, text),
+      outcome: truncated ? "junk" : classifyProbeResponse(spec.clientType, res.status, text),
       status: res.status,
     };
   } catch (err) {

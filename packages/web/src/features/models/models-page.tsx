@@ -73,6 +73,13 @@ import {
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import { protocolPathForModel } from "./protocol-path";
+import { ProtocolSuffixMenu } from "./protocol-suffix";
+import {
+  detectableBaseUrl,
+  isGenericProtocolClientType,
+  protocolSelectorValue,
+} from "./protocol-types";
+import type { ProtocolClientType } from "./protocol-types";
 import {
   isGroupExpanded,
   loadExpandedProviders,
@@ -160,48 +167,10 @@ export function decimalOnly(v: string): string {
 }
 
 /**
- * AgentHub's generic protocol client types, in detection order (custom / user-defined
- * groups select among these; see the protocol selector and the /models/detect probes).
- */
-export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
-export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
-
-/**
- * Whether a stored client_type belongs to the generic protocol family the selector can
- * represent: the three protocol clients, the bare `openai` alias (legacy default for
- * custom groups; routes to openai-chat), or empty. Any other explicit type (a legacy
- * vendor-pinned config like `deepseek-v4`) keeps the read-only note instead — showing
- * the selector there would silently rewrite it.
- */
-export function isGenericProtocolClientType(clientType: string): boolean {
-  const t = clientType.trim().toLowerCase();
-  return t === "" || t === "openai" || (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(t);
-}
-
-/**
- * Selector value for the current clientType: `openai` / empty display as Chat
- * Completions (their effective routing) without rewriting the stored value — only an
- * actual selection or a detection hit writes the new-style client type.
- */
-export function protocolSelectorValue(clientType: string): ProtocolClientType {
-  const t = clientType.trim().toLowerCase();
-  return t === "openai-responses" || t === "ant-messages" ? t : "openai-chat";
-}
-
-/** A base URL detection can probe: absolute http(s) (mirrors the server-side check; anything else 400s). */
-export function detectableBaseUrl(baseUrl: string): boolean {
-  try {
-    const u = new URL(baseUrl.trim());
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Moving an existing model to Custom keeps a generic protocol client type (protocol
- * detection / the selector manage those) and otherwise switches to the OpenAI-compatible
- * client — an unroutable or vendor-pinned type must not leak into a custom group.
+ * detection / the in-field picker manage those) and otherwise switches to the
+ * OpenAI-compatible client — an unroutable or vendor-pinned type must not leak into a
+ * custom group.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
   if (provider !== "custom") return current;
@@ -1260,6 +1229,17 @@ function ModelDialog({
   };
 
   /**
+   * Manual protocol override from the in-field picker. Bumping the run counter supersedes
+   * any in-flight detection, so a late result cannot clobber a choice the user just made.
+   */
+  const pickProtocol = (clientType: ProtocolClientType) => {
+    detectSeq.current++;
+    setDetecting(false);
+    setDetectResult(null);
+    set({ clientType });
+  };
+
+  /**
    * Validate and convert pricing back to USD storage; returns null on validation failure —
    * every error is placed below the offending input, which is highlighted red (no more
    * top-level banner: it's too far from the error site, and with three price fields it's
@@ -1276,12 +1256,15 @@ function ModelDialog({
     providerInfo(form.provider) === undefined;
   const baseUrlRequired = !preset && openAiLike;
   // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
-  // clients: the selector (with auto-detection) shows there, unless the entry carries a
-  // legacy vendor-pinned client_type — that keeps the read-only note below instead.
-  // Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  // clients: the base URL field's suffix becomes the protocol picker there, unless the
+  // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
+  // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
   const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
   const showProtocolSelector =
     customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
+  // A viewer without edit rights gets the plain grey suffix: the picker would offer writes
+  // the save path rejects anyway.
+  const showProtocolPicker = showProtocolSelector && canEdit;
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
@@ -1711,27 +1694,45 @@ function ModelDialog({
         )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
-            baseUrlRequired). The grey in-field suffix shows the protocol path the client appends
-            to the base URL — the endpoint shape a custom URL must serve; it renders for every
-            model and stays while the field is empty (hints the shape before typing). Reuses the
-            unit-adornment idiom of the context window / max tokens fields below; the error text
-            sits outside the relative wrapper (see Input.invalid). */}
-        <label className="block">
+            baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
+            client appends to the base URL — the endpoint shape a custom URL must serve; it
+            renders for every model and stays while the field is empty (hints the shape before
+            typing). Reuses the unit-adornment idiom of the context window / max tokens fields
+            below; the error text sits outside the relative wrapper (see Input.invalid).
+
+            For custom / user-defined groups that suffix IS the protocol control (see
+            protocol-suffix.tsx): the path is one-to-one with the three generic protocol
+            clients, so selection and auto-detection reuse it instead of taking a form row of
+            their own. Elsewhere (preset groups, read-only viewers) it stays the plain grey
+            label it has always been.
+
+            A <div>, not a <label>: the picker is a <button>, and a label may not contain a
+            second labelable element besides its control — the click would fire the button AND
+            re-focus the input. Same shape as the API key block above; the input carries an
+            aria-label so it stays named. */}
+        <div className="block">
           <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
-          <span className="relative block">
+          <div className="relative">
             <Input
               size="sm"
+              aria-label={S.models.baseUrl}
               required={baseUrlRequired}
               value={form.baseUrl}
               disabled={!canEdit}
               invalid={Boolean(fieldErrors.baseUrl)}
-              onChange={(e) => set({ baseUrl: e.target.value })}
+              // Editing the URL retires the previous run's verdict: it described the old
+              // endpoint, and leaving it up would keep asserting a result for a URL that is
+              // no longer in the field.
+              onChange={(e) => {
+                setDetectResult(null);
+                set({ baseUrl: e.target.value });
+              }}
               // Auto-detection on leaving the field (custom / user-defined groups): only
               // a probeable URL the user actually changed in this dialog triggers a run —
               // typing never fires requests, a click-through must not rewrite a working
-              // entry's protocol, and the explicit button re-runs at will.
+              // entry's protocol, and the picker's "auto-detect" row re-runs at will.
               onBlur={() => {
-                if (!showProtocolSelector || !canEdit || detecting) return;
+                if (!showProtocolPicker || detecting) return;
                 const bu = form.baseUrl.trim();
                 if (!detectableBaseUrl(bu)) return;
                 if (bu === form.originalBaseUrl || bu === lastDetectedUrl.current) return;
@@ -1740,80 +1741,58 @@ function ModelDialog({
               className="font-mono"
               // Reserve room so the typed URL never slides under the suffix. Input and
               // suffix share the same monospace size, so the suffix width is exactly its
-              // character count in ch (plus the right offset and a small gap).
-              style={{ paddingRight: `calc(${protocolPath.length}ch + 1.25rem)` }}
-              // The suffix itself is hover-transparent (pointer-events-none), so the
-              // explanation rides on the input's title.
+              // character count in ch, plus the right offset and — for the interactive
+              // version — its padding, gap and chevron. The picker never changes width
+              // between states, so this reservation holds for all of them.
+              style={{
+                paddingRight: `calc(${protocolPath.length}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
+              }}
+              // The read-only suffix is hover-transparent (pointer-events-none), so the
+              // explanation rides on the input's title; the picker carries its own.
               title={S.models.baseUrlSuffixTitle}
               placeholder={preset ? S.models.baseUrlHint : "https://…"}
             />
-            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
-              {protocolPath}
-            </span>
-          </span>
-          {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
-        </label>
-
-        {/* 2b) Protocol (custom / user-defined groups only): which of AgentHub's generic
-            protocol clients the entry uses. Auto-detected from the base URL (on blur, or
-            via the label-row button — the same link-next-to-label idiom as "get API key");
-            the selector doubles as the manual override. `openai` / empty display as Chat
-            Completions without being rewritten until the user picks or detection applies.
-            The in-field grey suffix on the base URL above tracks the choice live. */}
-        {showProtocolSelector && (
-          <div className="block">
-            <span className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.protocol}
+            {showProtocolPicker ? (
+              <div className="absolute inset-y-0 right-1 flex items-center">
+                <ProtocolSuffixMenu
+                  value={protocolSelectorValue(form.clientType)}
+                  path={protocolPath}
+                  detecting={detecting}
+                  tone={detectResult === null ? null : detectResult.kind === "ok" ? "ok" : "warn"}
+                  canDetect={detectableBaseUrl(form.baseUrl)}
+                  onDetect={() => void runDetect()}
+                  onPick={pickProtocol}
+                />
+              </div>
+            ) : (
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
+                {protocolPath}
               </span>
-              {canEdit && (
-                <button
-                  type="button"
-                  disabled={detecting || !detectableBaseUrl(form.baseUrl)}
-                  onClick={() => void runDetect()}
-                  className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-300"
-                >
-                  {detecting ? S.models.detecting : S.models.detectProtocol}
-                </button>
-              )}
-            </span>
-            <Select
-              size="sm"
-              value={protocolSelectorValue(form.clientType)}
-              disabled={!canEdit}
-              onChange={(e) => {
-                // A manual pick supersedes any in-flight detection (its late result must not clobber the choice).
-                detectSeq.current++;
-                setDetecting(false);
-                setDetectResult(null);
-                set({ clientType: e.target.value });
-              }}
-            >
-              {PROTOCOL_CLIENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {S.models.protocolNames[t] ?? t}
-                </option>
-              ))}
-            </Select>
-            {detectResult?.kind === "ok" && (
-              <p className="mt-1 text-xs text-green-600 dark:text-green-500">
-                {S.models.detectedProtocol(
-                  S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
-                )}
-              </p>
-            )}
-            {detectResult?.kind === "none" && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {S.models.detectNone}
-              </p>
-            )}
-            {detectResult?.kind === "error" && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                {S.models.detectFailed(detectResult.message)}
-              </p>
             )}
           </div>
-        )}
+          {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
+          {/* Detection verdict, in the field's own message slot rather than a row of its own:
+              nothing renders until a run has actually happened, and a success line is worth
+              one line because the picker only shows the path, not the protocol's name. */}
+          {detectResult && (
+            <p
+              role="status"
+              className={`mt-1 text-xs ${
+                detectResult.kind === "ok"
+                  ? "text-green-600 dark:text-green-500"
+                  : "text-amber-600 dark:text-amber-400"
+              }`}
+            >
+              {detectResult.kind === "ok"
+                ? S.models.detectedProtocol(
+                    S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
+                  )
+                : detectResult.kind === "none"
+                  ? S.models.detectNone
+                  : S.models.detectFailed(detectResult.message)}
+            </p>
+          )}
+        </div>
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
             sits inside each box as a muted right suffix. Placeholders cannot scroll, so at

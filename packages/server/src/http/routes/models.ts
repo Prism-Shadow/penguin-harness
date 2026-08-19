@@ -235,6 +235,14 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   // probe is a minimal invalid request (no tokens billed). Like the connectivity test,
   // an optional paired reference lets a stored key back the probes without the frontend
   // ever seeing the plaintext.
+  //
+  // On the server fetching a caller-supplied URL: deliberate, and not a new capability.
+  // /test already hands an arbitrary baseUrl to the provider SDK behind the same
+  // owner-only guard, and in a self-hosted product pointing the server at an internal or
+  // loopback inference endpoint is the feature (vLLM / Ollama / a LAN gateway), not the
+  // attack — so no host allowlist. This route is the tighter of the two: it rejects
+  // anything that is not an absolute http(s) URL, and reduces every answer to an outcome
+  // enum plus an HTTP status, where /test surfaces the upstream message verbatim.
   app.post("/detect", async (c) => {
     const projectId = requireValidId(c, "projectId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);

@@ -488,7 +488,12 @@ export const zh = {
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
     } as Record<string, string | undefined>,
+    /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
+    protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换或重新自动检测。`,
     detectProtocol: "自动检测",
+    /** Description under the picker's auto-detect row, and the reason line when it is unavailable. */
+    detectProtocolHint: "探测 base URL，采用它实际提供的协议",
+    detectNeedsUrl: "请先填写完整的 http(s) base URL",
     detecting: "正在检测协议…",
     detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
     detectNone: "三种协议均未识别：请检查 base URL，或手动选择协议",
@@ -525,8 +530,8 @@ export const zh = {
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
     baseUrlHint: "留空使用厂商默认地址",
-    /** Hover title for the base URL field: explains the grey in-field suffix (the protocol path the client appends to the base URL). */
-    baseUrlSuffixTitle: "客户端会在 base URL 后追加右侧灰色协议路径",
+    /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
+    baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",

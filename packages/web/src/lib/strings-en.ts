@@ -515,7 +515,11 @@ export const en: Strings = {
       "ant-messages": "Anthropic Messages",
       "openai-chat": "OpenAI Chat Completions",
     } as Record<string, string | undefined>,
+    protocolTriggerTitle: (name: string): string =>
+      `Protocol: ${name}. Click to change it or re-run auto-detection.`,
     detectProtocol: "Auto-detect",
+    detectProtocolHint: "Probe the base URL and apply the protocol it serves",
+    detectNeedsUrl: "Fill in an absolute http(s) base URL first",
     detecting: "Detecting protocol…",
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
     detectNone:
@@ -549,7 +553,8 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
-    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
+    baseUrlSuffixTitle:
+      "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
