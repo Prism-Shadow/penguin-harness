@@ -1,5 +1,12 @@
 # Dependencies: @hono/node-server ≥ 2.0.5 and nanoid ≥ 3.3.17 (workspace overrides)
 
+- **Date:** 2026-08-11
+- **Type:** fix
+- **Scope:** `server`, `tooling`
+- **PR:** [#264](https://github.com/Prism-Shadow/penguin-harness/pull/264)
+
+[中文版](2026-08-11-deps-hono-node-server-nanoid.zh.md)
+
 Resolves Dependabot alert 20 — GHSA-frvp-7c67-39w9, a medium path traversal in `@hono/node-server`'s `serve-static` on Windows via an encoded backslash (`%5C`). The server package's direct dependency was already `^2.0.5` (resolving 2.0.12); the vulnerable 1.19.17 copy came transitively from `@modelcontextprotocol/node`, which pins `^1.19.9` and has no fixed release. A workspace override in `pnpm-workspace.yaml` (the only place pnpm 11 honors overrides) forces every copy to ≥ 2.0.5, with a comment noting the removal condition; the MCP stdio / Streamable HTTP / SSE transport tests all pass against the forced version.
 
-The same pass clears the one remaining `pnpm audit` finding: `nanoid` < 3.3.17 (high — custom generators can loop indefinitely when size is 0). Only 3.x copies existed in the lockfile, so the override stays within the major. `pnpm audit` reports **no known vulnerabilities** after both overrides (#264).
+The same pass clears the one remaining `pnpm audit` finding: `nanoid` < 3.3.17 (high — custom generators can loop indefinitely when size is 0). Only 3.x copies existed in the lockfile, so the override stays within the major. `pnpm audit` reports **no known vulnerabilities** after both overrides ([#264](https://github.com/Prism-Shadow/penguin-harness/pull/264)).

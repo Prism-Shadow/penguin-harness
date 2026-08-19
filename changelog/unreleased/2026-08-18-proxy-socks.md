@@ -1,5 +1,12 @@
 # Proxy options: SOCKS proxy addresses
 
+- **Date:** 2026-08-18
+- **Type:** feature
+- **Scope:** `server`
+- **PR:** [#315](https://github.com/Prism-Shadow/penguin-harness/pull/315)
+
+[中文版](2026-08-18-proxy-socks.zh.md)
+
 The admin proxy address (the "Proxy options" dialog, `PUT /api/admin/settings`) now accepts any proxy URL undici's dispatcher takes — `http://`, `https://` and the (experimental in undici 7.29) `socks5://` / `socks://` schemes, credentials allowed — alongside the unchanged bare `host[:port]` shorthand (still normalized to `http://…`).
 
 - The write-time gate is a probe ProxyAgent construction rather than a scheme list: what undici refuses (`socks4://`, `ftp://`, …) is `400 invalid_proxy_url` instead of a stored value that would crash every later startup — the dispatcher is rebuilt from the stored address on every boot, and undici throws at construction time on schemes it cannot speak.

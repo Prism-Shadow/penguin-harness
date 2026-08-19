@@ -1,5 +1,12 @@
 # Landing homepage leads with the desktop app
 
+- **Date:** 2026-08-06
+- **Type:** process
+- **Scope:** `landing`
+- **PR:** [#221](https://github.com/Prism-Shadow/penguin-harness/pull/221)
+
+[中文版](2026-08-06-landing-desktop-first.zh.md)
+
 The homepage now presents the desktop download as the first install path; CLI and self-host content sits below the fold at the quick start.
 
 - Hero: the CLI one-liner install box is replaced by a platform-aware "Download for \<OS\>" primary button linking to `/download` (generic label when detection fails), an "All platforms" line, and a "CLI and self-hosted install ↓" link down to the quick start; the GitHub button stays.

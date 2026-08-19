@@ -1,10 +1,17 @@
 # Web App: code highlighting drops the WASM engine and the full grammar registry
 
+- **Date:** 2026-08-18
+- **Type:** refactor
+- **Scope:** `web`
+- **PR:** [#300](https://github.com/Prism-Shadow/penguin-harness/pull/300)
+
+[中文版](2026-08-18-web-code-highlight-bundle.zh.md)
+
 The first code block a conversation renders used to pull ~308 KB gzip of highlighter before coloring a single token; it now pulls ~69 KB.
 
 ## What changed
 
-Chat code blocks and the workspace source view no longer import `shiki` (its full bundle) (#300). The highlighter is assembled from `shiki/core` with an explicit language list, and the oniguruma WASM engine is replaced by Shiki's pure-JavaScript regex engine.
+Chat code blocks and the workspace source view no longer import `shiki` (its full bundle) ([#300](https://github.com/Prism-Shadow/penguin-harness/pull/300)). The highlighter is assembled from `shiki/core` with an explicit language list, and the oniguruma WASM engine is replaced by Shiki's pure-JavaScript regex engine.
 
 The full bundle's cost is not the grammars — those already load lazily, one chunk per language — it is the two things that load with the *first* block regardless of language: the WASM engine (622 KB raw / 230 KB gzip) and the registry describing all 332 bundled grammars.
 

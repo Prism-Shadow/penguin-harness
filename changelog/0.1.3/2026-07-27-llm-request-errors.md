@@ -1,5 +1,12 @@
 # Core and Web App: transport and quota errors reconnect with a visible countdown, auth failures lock the Session recoverably
 
+- **Date:** 2026-07-27
+- **Type:** fix
+- **Scope:** `core`, `server`, `web`
+- **PR:** [#82](https://github.com/Prism-Shadow/penguin-harness/pull/82)
+
+[中文版](2026-07-27-llm-request-errors.zh.md)
+
 Two field failures used to abort the turn outright with `[Aborted]: llm request error: …` — a dropped connection (`terminated: other side closed (UND_ERR_SOCKET)`) and a gateway quota rejection (`403 … no active subscription (insufficient_user_quota)`). Neither is a verdict on the Session: a socket drop is just the network, and a quota error heals when the balance tops up. Both now go through the engine's in-run reconnect (the `[turn_retried]` flow that re-sends the turn's input with the already-produced content attached).
 
 The classifier got honest about error shapes: retryability probes the `cause` chain (Node's `fetch` wraps the real transport failure — `UND_ERR_SOCKET` and friends live on `cause`) and the parsed provider body in its OpenAI and Anthropic SDK nestings; a bare `terminated` only counts alongside transport vocabulary, so "terminated by content filter" copy does not retry. The quota carve-out stays tight — 402/403 with `insufficient_user_quota` / `insufficient_quota` codes or a message naming quota/subscription — and **authentication signals are checked first**: a definitive auth code can never be swallowed by the quota keyword heuristic into the retry path.

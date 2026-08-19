@@ -1,5 +1,12 @@
 # CLI: pasting CJK or emoji into chat no longer corrupts characters at chunk boundaries
 
+- **Date:** 2026-07-30
+- **Type:** fix
+- **Scope:** `cli`
+- **PR:** [#127](https://github.com/Prism-Shadow/penguin-harness/pull/127)
+
+[中文版](2026-07-30-paste-filter-utf8.zh.md)
+
 `penguin chat` decoded each stdin chunk on its own, so a multi-byte character that a terminal split across two reads was destroyed in both halves. Pasting a few thousand Chinese characters was enough to lose one.
 
 `PasteFilter` sits between raw-mode stdin and readline, and a raw-mode chunk ends wherever the terminal's buffer ended — routinely mid-character, since a paste is delivered in fixed-size blocks that have nothing to do with character boundaries. Decoding a chunk in isolation turned its incomplete trailing bytes into U+FFFD immediately, and the leading bytes of the next chunk into more of them: a single 3-byte character came out as three replacement characters rather than one, so the text also silently grew. Pasting about 1400 Chinese characters — roughly one 4KB terminal block — was already enough to hit it, and the loss was invisible until the model answered about text the user never sent.
