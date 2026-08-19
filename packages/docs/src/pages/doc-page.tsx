@@ -5,6 +5,11 @@
  * slugifier as the TOC) and the active section is tracked while scrolling — the same
  * mechanics as the landing page blog. Internal links written as "/<slug>" navigate
  * client-side; external links open in a new tab.
+ *
+ * Two remark plugins extend the Markdown the content may use: remark-tabs groups adjacent
+ * `tab="…"` fences into one switcher, and remark-callout turns a `[!TYPE]` blockquote into
+ * a boxed (optionally collapsed) note. Both emit plain elements carrying data attributes,
+ * which the component overrides below pick back up.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -14,10 +19,47 @@ import { Link, useParams } from "react-router";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
 import { docMarkdown, docTitle, getDoc } from "../lib/docs";
-import { DOC_SLUGS, HOME_SLUG, sectionOf } from "../lib/nav";
+import { HOME_SLUG, pagerFor, sectionOf } from "../lib/nav";
 import { extractToc, slugifyHeading } from "../lib/toc";
+import { remarkCallout } from "../lib/remark-callout";
+import { remarkTabs } from "../lib/remark-tabs";
 import { CopyMarkdownButton } from "../components/copy-markdown-button";
+import { CodeBlock } from "../components/code-block";
+import { DocTabs } from "../components/doc-tabs";
 import { ArrowRightIcon } from "../components/icons";
+
+/** The hast shape the tab / code overrides read back off their rendered nodes. */
+interface HastElement {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastElement[];
+  value?: string;
+}
+
+/** Tab labels a tab group carries, in child order; empty when the value is unusable. */
+function parseTabLabels(raw: unknown): string[] {
+  if (typeof raw !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Fence language and source text of a `<pre><code class="language-x">` hast node. */
+function readFencedCode(node: HastElement | undefined): { code: string; language: string } {
+  const codeEl = node?.children?.find((child) => child.tagName === "code");
+  const className = codeEl?.properties?.className;
+  const language = (Array.isArray(className) ? className : [])
+    .map(String)
+    .find((name) => name.startsWith("language-"))
+    ?.slice("language-".length);
+  const collect = (el: HastElement | undefined): string =>
+    el?.type === "text" ? (el.value ?? "") : (el?.children ?? []).map(collect).join("");
+  return { code: collect(codeEl).replace(/\n$/, ""), language: language ?? "" };
+}
 
 /** Flatten react-markdown heading children to plain text for slugging. */
 function nodeText(node: ReactNode): string {
@@ -74,10 +116,7 @@ function Toc({
 
 function Pager({ slug }: { slug: string }) {
   const { locale } = useLocale();
-  const index = DOC_SLUGS.indexOf(slug);
-  if (index === -1) return null;
-  const prev = index > 0 ? DOC_SLUGS[index - 1]! : null;
-  const next = index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1]! : null;
+  const { prev, next } = pagerFor(slug);
   const card = (target: string, dir: "prev" | "next") => (
     <Link
       to={target === HOME_SLUG ? "/" : `/${target}`}
@@ -258,7 +297,7 @@ export function DocPage() {
         </header>
         <div className="md-body mt-6 text-[15px] text-gray-800 dark:text-gray-200">
           <Markdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkTabs, remarkCallout]}
             components={{
               a: ({ href, children }) => <MdLink href={href}>{children}</MdLink>,
               h2: ({ children }) => (
@@ -271,6 +310,25 @@ export function DocPage() {
                   {children}
                 </h3>
               ),
+              pre: ({ node, children }) => {
+                const { code, language } = readFencedCode(node as HastElement | undefined);
+                // Not a fenced block (no language-* class and no text): leave it alone.
+                if (!code) return <pre>{children}</pre>;
+                return <CodeBlock code={code} language={language} />;
+              },
+              div: ({ node, className, children, ...props }) => {
+                if (className !== "md-tabs") {
+                  return (
+                    <div className={className} {...props}>
+                      {children}
+                    </div>
+                  );
+                }
+                const raw = (node as HastElement | undefined)?.properties?.["data-tab-labels"];
+                const labels = parseTabLabels(raw);
+                if (labels.length === 0) return <div className={className}>{children}</div>;
+                return <DocTabs labels={labels}>{children}</DocTabs>;
+              },
             }}
           >
             {doc.body}

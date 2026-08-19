@@ -827,6 +827,20 @@ export const zh = {
       high: "高",
       xhigh: "极高",
     } as Readonly<Record<string, string>>,
+    /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
+    thinkingSwitchTitle: "切换思考等级",
+    thinkingSwitchBody: (to: string): string =>
+      `将思考等级切换为「${to}」？会话中途切换会降低提示词缓存命中率、增加成本，先压缩上下文再切换更省。`,
+    /** Shown under the body when the session isn't idle — compaction can only start on an idle session. */
+    thinkingSwitchBusyHint: "会话正在运行，压缩要等空闲后才能开始。",
+    /** Primary (recommended) choice: compact first, then apply the switch. */
+    thinkingSwitchCompactFirst: "压缩后切换",
+    thinkingSwitchConfirm: "仍要切换",
+    /** Toast when the compaction starts: the switch is applied once it ends. */
+    thinkingSwitchCompacting: "正在压缩上下文，压缩结束后切换思考等级。",
+    thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
+    /** Compaction ended without completing — the switch still applies, so say both. */
+    thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
@@ -1038,6 +1052,12 @@ Benchmark：
     followUpSend: "排队为下一条消息",
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) => `跟进消息已排队，本轮结束后自动发送：${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "撤回",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "撤回到输入框，编辑后重新发送",
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -1239,6 +1259,11 @@ Benchmark：
     removeFile: "移除文件",
     /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
     attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
+    dropFilesTitle: "松开以添加附件",
+    dropFilesDesc: "图片与文件将添加到输入框",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -1435,6 +1460,7 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",
       file_not_found: "该文件已不存在。",
+      not_pending: "该消息已发出，无法撤回。",
       file_too_large: "文件过大。",
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
@@ -1444,6 +1470,8 @@ Benchmark：
       path_not_found: "该路径不存在。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",
       task_in_progress: "该 Session 已有任务在运行。",
+      /** `nothing_to_compact` is deliberately NOT mapped: the server sends three different specific reasons under that one code (not configured / no completed turn yet / just compacted), and a single localized sentence would flatten them into a wrong one. */
+      compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",

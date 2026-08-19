@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ID_PLACEHOLDER,
   AGENTS_MD_PLACEHOLDER,
+  DEFAULT_CHAT_THINKING_LEVELS,
   VAULT_KEYS_PLACEHOLDER,
   SKILL_METADATA_PLACEHOLDER,
   VAULT_PLACEHOLDER,
@@ -59,6 +60,7 @@ import {
   type ProjectConfig,
   type SystemConfig,
 } from "../src/state/index.js";
+import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -1459,6 +1461,22 @@ describe("default_chat (new-chat defaults block)", () => {
     expect(parsed.default_model).toEqual({ provider: "p", model_id: "m" });
     expect(parsed.default_chat).toEqual({ thinking_level: "low" });
     expect(parsed.models).toEqual([{ provider: "p", model_id: "m" }]);
+  });
+});
+
+describe("selectable thinking tiers (the parallel lists must agree)", () => {
+  it("run_subagent's enum is exactly the project-default tiers, and never offers none", () => {
+    // The same rule is spelled out in three places — this constant, the web picker's
+    // SELECTABLE_THINKING_LEVELS (pinned by its own test), and run_subagent's schema — while
+    // nothing checked the two core lists against each other. `"none"` stays a legal stored and
+    // wire value (a legacy config may carry it, and it is inherited verbatim by a subagent),
+    // it is simply never *offered*, because many models cannot disable thinking.
+    expect(SUBAGENT_THINKING_LEVELS).toEqual(DEFAULT_CHAT_THINKING_LEVELS);
+    expect(SUBAGENT_THINKING_LEVELS).not.toContain("none");
+    const entry = defaultSystemConfig().tools?.builtin?.find((t) => t.name === "run_subagent");
+    const properties = (entry?.parameters as { properties?: Record<string, { enum?: unknown }> })
+      ?.properties;
+    expect(properties?.thinking_level?.enum).toEqual([...SUBAGENT_THINKING_LEVELS]);
   });
 });
 

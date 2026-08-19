@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   GoalServerEvent,
+  PendingFollowUpInfo,
   PendingSteeringInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
@@ -63,6 +64,8 @@ export interface SessionStreamState {
   queuedFollowUps: number;
   /** Steering messages queued on the server but not yet delivered (from task_state events): keeps the composer's hint and its content across reloads. */
   pendingSteering: PendingSteeringInfo[];
+  /** Queued follow-up tasks (from task_state events): per-entry content + recall handle; empty on old servers (the count above still renders a plain hint). */
+  pendingFollowUps: PendingFollowUpInfo[];
   /**
    * Timestamp (ms) of the last main-session auth failure (request_end with status "auth"),
    * or null. Derived from the model, so it survives history replay and resets when
@@ -114,6 +117,7 @@ export function useSessionStream(
   const [taskState, setTaskState] = useState<SessionStatus>(initialStatus);
   const [queuedFollowUps, setQueuedFollowUps] = useState(0);
   const [pendingSteering, setPendingSteering] = useState<PendingSteeringInfo[]>([]);
+  const [pendingFollowUps, setPendingFollowUps] = useState<PendingFollowUpInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
   const [goal, setGoal] = useState<GoalBannerState | null>(null);
@@ -192,6 +196,7 @@ export function useSessionStream(
       setTaskState("idle");
       setQueuedFollowUps(0);
       setPendingSteering([]);
+      setPendingFollowUps([]);
       setLoading(false);
       setError(null);
       setGoal(null);
@@ -208,6 +213,7 @@ export function useSessionStream(
     setGoal(null);
     setQueuedFollowUps(0);
     setPendingSteering([]);
+    setPendingFollowUps([]);
     setPendingTick((t) => t + 1);
 
     // Restore an in-flight goal's banner (only when still active — a long-finished goal
@@ -235,6 +241,7 @@ export function useSessionStream(
       onTaskState: setTaskState,
       onQueuedFollowUps: setQueuedFollowUps,
       onPendingSteering: setPendingSteering,
+      onPendingFollowUps: setPendingFollowUps,
       onLoading: setLoading,
       onError: setError,
       onModelChange: bump,
@@ -318,6 +325,7 @@ export function useSessionStream(
     taskState,
     queuedFollowUps,
     pendingSteering,
+    pendingFollowUps,
     lastAuthFailureMs: (controllerRef.current?.model ?? placeholderRef.current).lastAuthFailureMs,
     dismissModelAuthDead,
     pendingApprovals: controllerRef.current?.pendingApprovals ?? EMPTY_PENDING,

@@ -492,6 +492,43 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
+  it("pins an explicit spawn-time thinking level over inheritance (run_subagent's thinking_level)", async () => {
+    const agent = await createAgent();
+    agent.state.systemConfig.model = {
+      ...(agent.state.systemConfig.model ?? {}),
+      thinking_level: "high",
+    };
+    const ws = path.join(tmpRoot, "ws-thinking-override");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      const child = await spawnedChildMeta(runner, { thinkingLevel: "low" });
+      // The explicit level wins over the parent's effective "high"; the rest of the spawn
+      // still follows the parent (workspace locked here as the cheap witness).
+      expect(child.llm.thinkingLevel).toBe("low");
+      expect(child.workspace).toBe(ws);
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("pins an explicit spawn-time thinking level even when the parent has no level at all", async () => {
+    // With the parent suppressing the config chain (tri-state null), an explicit spawn level
+    // must still apply — the override sits above the inherit-or-null resolution, not below it.
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-override-none");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
+    const runner = lastSpawnedRunner();
+    try {
+      const child = await spawnedChildMeta(runner, { thinkingLevel: "xhigh" });
+      expect(child.llm.thinkingLevel).toBe("xhigh");
+    } finally {
+      parent.dispose();
+    }
+  });
+
   it("rejects half a model reference at the runner layer (never completed from the parent's half)", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-inherit-half");

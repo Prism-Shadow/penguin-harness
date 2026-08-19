@@ -6,6 +6,14 @@
  * danger (red) for deletions, primary for saves and other overwrites. The message
  * and any details (e.g. a version list) go in children; `title` only names the
  * dialog for assistive tech (never rendered).
+ *
+ * A dialog may add ONE extra choice (`secondaryLabel` + `onSecondary`) between Cancel
+ * and Confirm — for prompts whose recommended path is the confirm button while a plain
+ * "do it anyway" escape hatch has to stay one click away (the mid-chat thinking-level
+ * switch: compact-then-switch / switch anyway / cancel). It stays the same card: a
+ * neutral button in the same row, never a second primary. `confirmDisabled` covers the
+ * case where that recommended action is temporarily unavailable — the body then says
+ * why, and the other choices stay live.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -52,6 +60,9 @@ export function ConfirmModal({
   onClose,
   onConfirm,
   confirmLabel,
+  confirmDisabled = false,
+  secondaryLabel,
+  onSecondary,
   tone = "danger",
   busy = false,
   children,
@@ -63,6 +74,12 @@ export function ConfirmModal({
   onConfirm: () => void;
   /** Confirm button text (defaults to the shared "Confirm"). */
   confirmLabel?: string;
+  /** Disables ONLY the confirm button (its action is temporarily unavailable — the body copy is expected to say why); Cancel and the secondary action stay clickable. */
+  confirmDisabled?: boolean;
+  /** Optional third choice, rendered as a neutral button between Cancel and Confirm; needs `onSecondary` to appear. */
+  secondaryLabel?: string;
+  /** Handler for the third choice (the dialog does not close itself — the caller decides, exactly like onConfirm). */
+  onSecondary?: () => void;
   /** Confirm button variant: danger for deletions, primary for saves and other overwrites. */
   tone?: "danger" | "primary";
   busy?: boolean;
@@ -74,11 +91,18 @@ export function ConfirmModal({
         <ToneBadge tone={tone} />
         <div className="min-w-0 flex-1 pt-1.5">{children}</div>
       </div>
-      <div className="mt-4 flex justify-end gap-2">
+      {/* Wraps rather than overflows: three choices with long labels don't fit one row inside
+          the bottom-sheet width on a phone (a two-button card never reaches the wrap point). */}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
         <Button size="sm" onClick={onClose} disabled={busy}>
           {S.common.cancel}
         </Button>
-        <Button size="sm" variant={tone} disabled={busy} onClick={onConfirm}>
+        {secondaryLabel !== undefined && onSecondary !== undefined && (
+          <Button size="sm" onClick={onSecondary} disabled={busy}>
+            {secondaryLabel}
+          </Button>
+        )}
+        <Button size="sm" variant={tone} disabled={busy || confirmDisabled} onClick={onConfirm}>
           {confirmLabel ?? S.common.confirm}
         </Button>
       </div>

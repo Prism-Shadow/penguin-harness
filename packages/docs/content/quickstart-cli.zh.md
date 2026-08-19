@@ -1,44 +1,95 @@
 ---
-title: 安装
-description: 通过安装脚本、npm 或源码安装 PenguinHarness。
+title: 命令行与 Web 应用
+description: 一行命令装出 penguin，配置模型，用 penguin web 打开浏览器界面——附完整安装参考。
 ---
 
-## 系统要求
+一行命令装出 `penguin`，再用 `penguin web` 在浏览器里打开与[桌面端应用](/quickstart-desktop)相同的界面。在线安装器自带官方 Node.js 运行时，解压即用，本机无需安装 Node。
 
-- Linux / macOS（x64 或 arm64）：安装脚本提供内置官方 Node.js 运行时的平台压缩包，解压即用，无需本机安装 Node。
-- Windows 10 及以上（x64），PowerShell 5.1+：Windows 安装器提供内置运行时的 `penguin-win32-x64.zip`，同样无需本机安装 Node。
-- 其他平台，或通过 npm / 源码安装：需要系统 Node.js >= 24。
+## 安装
 
-## 脚本安装（推荐）
+选择你的平台。前两种自带 Node.js 运行时；npm 方式需要本机已有 Node.js >= 24。
 
-在 Linux / macOS 上执行：
-
-```bash
+```bash tab="Linux / macOS"
 curl -fsSL https://penguin.ooo/install.sh | sh
 ```
 
-脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`——即标准安装包：包内封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用下方专属安装器，而不是 `--universal`）。
-
-稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
-
-`penguin.ooo` 稳定入口每次执行时都会解析当前稳定版本。从 GitHub 或 OSS 的版本化 Release 中直接下载的独立安装脚本会写入该 Release tag，并默认安装同一版本，确保安装器与安装包格式匹配；如需覆盖，可显式设置 `PENGUIN_VERSION`（POSIX 也可使用 `--version`）。
-
-在 Windows（PowerShell）上执行：
-
-```powershell
+```powershell tab="Windows"
 irm https://penguin.ooo/install.ps1 | iex
 ```
 
-如需固定版本，先设置环境变量：
-
-```powershell
-$env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
+```bash tab="npm（任意平台）"
+npm install -g @prismshadow/penguin-cli
 ```
 
 安装完成后验证：
 
 ```bash
 penguin -v
+```
+
+离线安装、源码安装、安装目录、版本固定与 Windows 细节，见本页末尾的[安装参考](#安装参考)。
+
+## 配置模型
+
+可以在 Web UI 的模型页完成，也可以用 CLI：
+
+```bash
+penguin config model add --provider deepseek --model-id deepseek-v4-flash --api-key sk-... --set-default
+```
+
+- 模型引用始终是 `(provider, model_id)` 二元组，因此 `--provider` 与 `--model-id` 均为必填——Provider 绝不由模型 id 推断。内置分组见[模型与 Provider](/models)。
+- API Key 也可以来自环境变量：当模型条目没有内联 api_key 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等变量；工作目录下的 `.env` 会被自动加载。
+
+## 启动 Web App
+
+```bash
+penguin web
+```
+
+服务运行在 http://127.0.0.1:7364 并自动打开浏览器（`--no-open` 跳过）。首次登录使用 `admin`，初始密码（形如 `penguin-1234`）在改掉之前每次启动服务端都会以边框提示打印，请立即修改密码。`penguin server` 启动同一进程的 headless 版本。
+
+界面的完整说明见 [Web App 指南](/web-app)。
+
+## 单次运行
+
+```bash
+penguin run -m "创建 hello.txt，内容为 Hello, Penguin"
+```
+
+Workspace 默认为当前目录，可用 `--workspace /path` 指定；目标目录必须已存在。
+
+## 交互式对话
+
+```bash
+penguin chat
+```
+
+- 每输入一行即发起一个 Task。
+- `/compact` 压缩上下文；`/clear` 开启全新 Session（原会话仍可恢复）；`/exit` 或 `/quit` 退出；Ctrl-C 中断正在运行的 Task。
+- 退出时会打印 `penguin chat --resume <sessionId>` 提示，用于恢复本次 Session；`--resume` 不带 id 时恢复该 Agent 最近的 Session。
+
+完整命令与选项见 [CLI 参考](/cli)。
+
+## 安装参考
+
+上面的三条安装命令覆盖绝大多数情况；以下是其余选项与细节。
+
+### 系统要求
+
+- Linux / macOS（x64 或 arm64）：安装脚本提供内置官方 Node.js 运行时的平台压缩包，解压即用，无需本机安装 Node。
+- Windows 10 及以上（x64），PowerShell 5.1+：Windows 安装器提供内置运行时的 `penguin-win32-x64.zip`，同样无需本机安装 Node。
+- 其他平台，或通过 npm / 源码安装：需要系统 Node.js >= 24。
+
+### 安装脚本细节
+
+脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`——即标准安装包：包内封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用专属安装器，而不是 `--universal`）。
+
+稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
+
+`penguin.ooo` 稳定入口每次执行时都会解析当前稳定版本。从 GitHub 或 OSS 的版本化 Release 中直接下载的独立安装脚本会写入该 Release tag，并默认安装同一版本，确保安装器与安装包格式匹配；如需覆盖，可显式设置 `PENGUIN_VERSION`（POSIX 也可使用 `--version`）。Windows 上固定版本，在运行安装器前设置环境变量：
+
+```powershell
+$env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
 ```
 
 ### 离线安装
@@ -58,6 +109,18 @@ Linux / macOS 上执行：
 ```
 
 解压后的目录同时包含安装器、程序负载（`payload.tar.gz` / `payload.zip`）与负载的 `.sha256`；安装器会自行找到同目录负载，始终校验包内封入的 checksum，且不发起任何网络请求——无需另外传输校验文件。也可以显式指定本地文件：`install.sh --archive <file>`、`PENGUIN_ARCHIVE=<file>`、`install.ps1 -ArchivePath <file>` 或 `$env:PENGUIN_ARCHIVE`——Release 安装包、其内部负载或 0.1.6 之前的旧版程序压缩包均可。
+
+### 源码安装
+
+需要 Node.js >= 24 与 pnpm：
+
+```bash
+git clone https://github.com/Prism-Shadow/penguin-harness.git
+cd penguin-harness
+pnpm install && pnpm build
+```
+
+构建完成后，在仓库内用 `pnpm penguin <args>` 作为开发入口运行，或使用全局链接的 `penguin` 命令。开发入口（`pnpm penguin`、`pnpm dev`、`pnpm desktop`）默认使用独立数据根目录 `~/.penguin/dev-data`，全局链接或安装的 `penguin` 仍使用 `~/.penguin/data`；可通过环境变量 `PENGUIN_HOME` 覆盖。桌面开发运行还会使用独立的应用标识（`PenguinHarness-Dev`），因此可以与已安装的桌面版同时运行、互不冲突。
 
 ### 安装位置与选项
 
@@ -94,29 +157,7 @@ Linux / macOS 上执行：
 
 数据目录默认位于 `~/.penguin/data`（Windows 为 `%USERPROFILE%\.penguin\data`），在安装主目录之下，但安装与升级都不会改动它，可用环境变量 `PENGUIN_HOME` 覆盖。模型配置、Session 记录等在升级后均会保留。
 
-## npm 安装
-
-需要系统 Node.js >= 24：
-
-```bash
-npm install -g @prismshadow/penguin-cli
-```
-
-npm 包名为 `@prismshadow/penguin-cli`，安装后的命令是 `penguin`。Web UI 静态资源随 `@prismshadow/penguin-server` 包发布，因此仅执行上述命令即可直接使用 `penguin web`。该方式在所有平台（含 Windows）可用，是压缩包不适用时的替代路径。
-
-## 源码安装
-
-需要 Node.js >= 24 与 pnpm：
-
-```bash
-git clone https://github.com/Prism-Shadow/penguin-harness.git
-cd penguin-harness
-pnpm install && pnpm build
-```
-
-构建完成后，在仓库内用 `pnpm penguin <args>` 作为开发入口运行，或使用全局链接的 `penguin` 命令。开发入口（`pnpm penguin`、`pnpm dev`）默认使用独立数据根目录 `~/.penguin/dev-data`，全局链接或安装的 `penguin` 仍使用 `~/.penguin/data`；可通过环境变量 `PENGUIN_HOME` 覆盖。
-
-## 已发布的 npm 包
+### 已发布的 npm 包
 
 | 包 | 说明 |
 | --- | --- |
@@ -129,5 +170,6 @@ pnpm install && pnpm build
 
 ## 下一步
 
-- [快速开始](/quickstart)：配置模型并运行第一个 Task。
-- [CLI 参考](/cli)：完整的命令与选项列表。
+- [Web App 指南](/web-app)：在浏览器中使用 PenguinHarness。
+- [CLI 参考](/cli)：完整命令与选项。
+- [SDK](/quickstart-sdk)：把引擎嵌进自己的程序。
