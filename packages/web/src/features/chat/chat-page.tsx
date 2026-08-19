@@ -266,6 +266,7 @@ export function ChatPage() {
     loading: sessionsLoading,
     reload: reloadSessions,
     add: addSession,
+    isDeleted: isSessionDeleted,
     replace,
     setStatus,
     setTitle,
@@ -557,6 +558,15 @@ export function ChatPage() {
   useEffect(() => {
     if (draft || !routeSessionId || sessionsLoading) return;
     if (sessions.some((s) => s.sessionId === routeSessionId)) return;
+    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
+    // lookup below could only 404 (and the server would record that as an error). Deleting
+    // the conversation you are looking at is the normal way to discard a Session fork, so
+    // this path runs on every such delete. Treat it as an already-failed probe, which
+    // releases the redirect effect below to move on to another conversation.
+    if (isSessionDeleted(routeSessionId)) {
+      setProbeFailedId(routeSessionId);
+      return;
+    }
     let cancelled = false;
     api.getSession(routeSessionId).then(
       (res) => {
@@ -569,7 +579,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [draft, routeSessionId, sessionsLoading, sessions, addSession]);
+  }, [draft, routeSessionId, sessionsLoading, sessions, addSession, isSessionDeleted]);
 
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong

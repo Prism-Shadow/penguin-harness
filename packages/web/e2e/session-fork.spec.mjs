@@ -5,23 +5,34 @@
  * - The fork button sits to the RIGHT of the copy button (review request), and clicking it
  *   only opens the shared ConfirmModal — Cancel fires no fork request, Confirm creates the
  *   fork and navigates to it. Copy itself stays a plain unconfirmed click.
- * - Deleting the fork while it is the open chat must not fire any follow-up request against
- *   the deleted id. Regression: the sidebar's remove() used to commit one render before
- *   navigate()'s router transition, and in that intermediate commit the chat page's
- *   deep-link probe re-fetched the just-deleted Session — the server logged a
- *   session_not_found 404 on every fork deletion (the natural fork workflow always deletes
- *   the fork it is looking at).
+ * - Deleting the fork must not ADD A SERVER ERROR RECORD. That is the acceptance criterion
+ *   the maintainer stated ("不应该多"), and it is asserted as a count taken before and after
+ *   the delete — not merely as "the UI looks right". Deleting the conversation you are
+ *   looking at is the normal way to discard a fork, and the chat page's deep-link lookup
+ *   used to re-fetch that just-deleted Session, so every fork deletion left one
+ *   `[http] session_not_found` row behind in the Cost Center's error panel.
+ *
+ * Runs as ADMIN deliberately: `/api/sessions/:sessionId` carries no `:projectId`, so the
+ * recorder attributes its errors to no Project, and unattributed records are only visible to
+ * admins. A regular member reads 0 either way, which would make this assertion vacuous.
  */
 import { test, expect } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { login, ADMIN_ID, ADMIN_PASSWORD } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
-const U = "forkuser";
-const P = "password123";
+
+/** Total server-recorded errors visible to this (admin) context, including unattributed ones. */
+async function errorRecordCount(page, projectId) {
+  const res = await page.request.get(
+    `${BASE}/api/projects/${projectId}/usage/errors?offset=0&limit=1`,
+  );
+  expect(res.ok(), "read error records").toBeTruthy();
+  return (await res.json()).total;
+}
 
 test("fork from reply: button order + confirm gate + clean fork deletion", async ({ page }) => {
-  await provisionAndLogin(page.request, U, P);
+  await login(page.request, ADMIN_ID, ADMIN_PASSWORD);
 
   const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
   const projectId = projects.projects[0].projectId;
@@ -116,6 +127,11 @@ test("fork from reply: button order + confirm gate + clean fork deletion", async
   // The fork carries the copied transcript.
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
 
+  // Let the fork page settle (its per-session fetches all done) so the baseline below counts a
+  // quiet system, and any record that appears afterwards is attributable to the delete.
+  await page.waitForTimeout(2000);
+  const errorsBefore = await errorRecordCount(page, projectId);
+
   // Delete the fork (it is the open chat — the standard try-then-discard fork flow).
   const sidebar = page.getByRole("complementary");
   const forkRow = sidebar.locator("li", { hasText: "(1)" }).first();
@@ -128,10 +144,21 @@ test("fork from reply: button order + confirm gate + clean fork deletion", async
   // The app must land somewhere else and the fork row must be gone.
   await page.waitForURL((u) => !u.pathname.includes(forkId), { timeout: 15_000 });
   await expect(sidebar.locator("li", { hasText: "(1)" })).toHaveCount(0);
-  await page.waitForTimeout(1500); // window for any stray follow-up request to show itself
+  // Generous window: a stray poll, an SSE reconnect or a late-settling effect all get time to
+  // show themselves before the count below is taken.
+  await page.waitForTimeout(5000);
 
-  // Regression: after the DELETE nothing may request the deleted id again (the server used
-  // to log an expected-but-noisy session_not_found 404 here), and nothing may 4xx at all.
+  // THE acceptance criterion: deleting a fork adds no error record at all. Asserted first, and
+  // as a count — a doomed request that got downgraded, reclassified or filtered out of the view
+  // would still move this number, and it must not move.
+  const errorsAfter = await errorRecordCount(page, projectId);
+  expect(
+    errorsAfter,
+    `deleting a fork must add no server error record (before=${errorsBefore}, after=${errorsAfter})`,
+  ).toBe(errorsBefore);
+
+  // The two supporting facts, kept because they name the culprit when the count does move:
+  // nothing may request the deleted id again, and nothing may 4xx at all.
   const strays = apiLog.filter(
     (e) => e.t >= tDelete && e.kind === "req" && e.m !== "DELETE" && e.url.includes(forkId),
   );
