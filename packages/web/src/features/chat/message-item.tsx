@@ -387,6 +387,10 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
             assistantText={item.assistantText}
             cost={item.stats ? (ctx.taskCost?.(item.stats) ?? null) : null}
             {...(item.atMs !== undefined ? { atMs: item.atMs } : {})}
+            {...(ctx.origin.length === 0 && item.forkable && ctx.onFork
+              ? { onFork: ctx.onFork }
+              : {})}
+            {...(item.forkPosition !== undefined ? { forkPosition: item.forkPosition } : {})}
           />
         </>
       );

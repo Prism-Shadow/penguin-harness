@@ -699,6 +699,11 @@ export function Sidebar({
     const target = deletingSession;
     try {
       await api.deleteSession(target.sessionId);
+      // remove() also tombstones the id (see the store's isDeleted), which is what keeps the
+      // chat page from re-fetching the Session it is still routed at during the frames before
+      // the navigate() below lands. Ordering the two is deliberately NOT the mechanism: the
+      // list lives in a zustand store whose updates are not subject to React's transition
+      // lanes, so scheduling tricks here cannot be relied on to sequence them.
       remove(target.sessionId);
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));

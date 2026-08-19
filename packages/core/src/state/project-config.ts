@@ -101,6 +101,16 @@ export interface ModelEntry {
    * the Agent value. User-only, never preset by the builtin catalog.
    */
   max_tokens?: number;
+  /**
+   * Per-model fast mode (AgentHub UniConfig `fast_mode`): opts session requests into the
+   * provider's faster serving tier at premium pricing (OpenAI-protocol clients send
+   * `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"`). Only `true`
+   * is ever persisted; absent = off (the default). Models without a fast tier reject the
+   * parameter (AgentHub raises UnsupportedParameterError), which ends the request with a
+   * clear non-retried failure (see llm/generative-model.ts). User-only, never preset by the
+   * builtin catalog.
+   */
+  fast_mode?: boolean;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
@@ -398,6 +408,8 @@ export async function addModel(
     vision?: boolean;
     /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
     max_tokens?: number;
+    /** Per-model fast mode; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = off). */
+    fast_mode?: boolean;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     api_key?: string;
@@ -438,6 +450,12 @@ export async function addModel(
   const maxTokens = entry.max_tokens ?? existing?.max_tokens;
   if (maxTokens !== undefined) {
     modelEntry.max_tokens = maxTokens;
+  }
+  // Only `true` is persisted (absent = off): an explicit `false` clears the stored annotation
+  // instead of writing `fast_mode = false`, and a hand-edited `false` normalizes to absent.
+  const fastMode = entry.fast_mode ?? existing?.fast_mode;
+  if (fastMode === true) {
+    modelEntry.fast_mode = true;
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and

@@ -16,6 +16,8 @@ export {
   isIncompleteStreamError,
   isRetryableError,
   isAuthenticationError,
+  isFastModeUnsupportedError,
+  FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   toolDefinitionsToSchemas,
   buildUniConfig,

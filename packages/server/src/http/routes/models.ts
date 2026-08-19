@@ -103,6 +103,12 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
       }
       entry.maxTokens = m.maxTokens;
     }
+    if (m.fastMode !== undefined) {
+      if (typeof m.fastMode !== "boolean") {
+        throw badRequest(`models[${i}].fastMode must be a boolean.`);
+      }
+      entry.fastMode = m.fastMode;
+    }
     if (m.pricing !== undefined) {
       const p = m.pricing as Record<string, unknown>;
       if (p === null || typeof p !== "object" || Array.isArray(p)) {
@@ -227,6 +233,10 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (body.clientType !== undefined) {
       if (typeof body.clientType !== "string") throw badRequest("clientType must be a string.");
       if (body.clientType) req.clientType = body.clientType;
+    }
+    if (body.fastMode !== undefined) {
+      if (typeof body.fastMode !== "boolean") throw badRequest("fastMode must be a boolean.");
+      req.fastMode = body.fastMode;
     }
     return c.json(await deps.projectConfigService.testModel(projectId, req));
   });

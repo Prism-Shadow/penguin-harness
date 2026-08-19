@@ -62,8 +62,15 @@ interface SessionsContextValue {
   loadMoreFor: (agentIds: string[], category: SessionCategory) => Promise<void>;
   /** Prepend to the list on success (draft materialized by the first message, or explicit creation via dialog). */
   add: (session: SessionInfo) => void;
-  /** Remove from the list in place after deletion. */
+  /** Remove from the list in place after deletion (also tombstones the id — see isDeleted). */
   remove: (sessionId: string) => void;
+  /**
+   * Whether this client deleted the Session during this page's lifetime. A row missing from
+   * the paged list normally means "not fetched yet", which the chat page resolves with a
+   * direct lookup; for an id we deleted ourselves that lookup is guaranteed to 404, so
+   * callers consult this first and skip the request entirely.
+   */
+  isDeleted: (sessionId: string) => boolean;
   /** Replace the whole entry with the PATCH result. */
   replace: (session: SessionInfo) => void;
   /** Live stream task_state → list badge. */
@@ -101,6 +108,12 @@ interface SessionsStoreState {
   agentIds: string[];
 
   sessions: SessionInfo[];
+  /**
+   * Ids this client deleted during the page's lifetime (see isDeleted). Deliberately kept
+   * OUTSIDE the rendered state: it must not be read as "the list changed", and nothing
+   * renders from it — consumers only ask whether a specific id is in it.
+   */
+  deletedSessionIds: ReadonlySet<string>;
   /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
   pageState: ReadonlyMap<string, PagePosition>;
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
@@ -120,6 +133,14 @@ interface SessionsStoreState {
   setTitle: (sessionId: string, title: string) => void;
   setShowCliSessions: (value: boolean) => void;
 }
+
+/**
+ * Cap on remembered deleted ids. Session ids are never reused, so a tombstone never expires
+ * on correctness grounds — this only keeps a very long-lived tab from growing the set without
+ * bound. Evicts oldest-first (Sets iterate in insertion order); the only cost of dropping a
+ * tombstone is that a re-visit of that dead id would fall back to the (404-ing) lookup again.
+ */
+const DELETED_IDS_MAX = 500;
 
 function createSessionsStore() {
   // Generation counter: invalidates any in-flight response once the Project/Agent set
@@ -155,6 +176,7 @@ function createSessionsStore() {
       agentIds: [],
 
       sessions: [],
+      deletedSessionIds: new Set(),
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
@@ -321,7 +343,21 @@ function createSessionsStore() {
         gen += 1;
         const row = get().sessions.find((s) => s.sessionId === sessionId);
         if (row) adjustCount(row, sessionCategory(row), -1);
-        set({ sessions: get().sessions.filter((s) => s.sessionId !== sessionId) });
+        // Tombstone BEFORE pruning the list, in the same update: consumers re-render on the
+        // pruned list, and any of them that reacts to the row's disappearance (the chat
+        // page's deep-link lookup) must already be able to see that the id is dead rather
+        // than merely unfetched — otherwise it fires a request that can only 404.
+        const deleted = new Set(get().deletedSessionIds);
+        deleted.add(sessionId);
+        while (deleted.size > DELETED_IDS_MAX) {
+          const oldest = deleted.values().next();
+          if (oldest.done) break;
+          deleted.delete(oldest.value);
+        }
+        set({
+          deletedSessionIds: deleted,
+          sessions: get().sessions.filter((s) => s.sessionId !== sessionId),
+        });
       },
 
       replace: (session) => {
@@ -392,6 +428,9 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // carry folder page state across via shared Agent ids (default_agent exists in every
     // Project). Also reruns on a showCliSessions flip: refetch the whole list under the
     // new filter.
+    // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
+    // reused, so a Session deleted before a Project switch is still deleted after it — and
+    // re-arming its lookup would just re-create the 404 this set exists to prevent.
     store.setState({
       projectId,
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
@@ -442,6 +481,14 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     [pageState, countsByAgent],
   );
 
+  // Reads the store directly rather than the subscribed snapshot: this answers "is this id
+  // already dead", and a caller asking that inside an effect must get the newest answer even
+  // when it runs before its own re-render. Stable identity, so it never re-triggers effects.
+  const isDeleted = useCallback(
+    (sessionId: string) => store.getState().deletedSessionIds.has(sessionId),
+    [store],
+  );
+
   const value = useMemo<SessionsContextValue>(() => {
     const byAgent = new Map<string, SessionInfo[]>();
     for (const s of state.sessions) {
@@ -469,13 +516,14 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       loadMoreFor: state.loadMoreFor,
       add: state.add,
       remove: state.remove,
+      isDeleted,
       replace: state.replace,
       setStatus: state.setStatus,
       setTitle: state.setTitle,
       showCliSessions: state.showCliSessions,
       setShowCliSessions: state.setShowCliSessions,
     };
-  }, [state, isLoadedFor, hasMoreFor]);
+  }, [state, isLoadedFor, hasMoreFor, isDeleted]);
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>;
 }

@@ -68,11 +68,12 @@ import {
   MODEL_PROVIDERS,
   canonicalClientType,
   catalogEntryFor,
+  fastModeProtocol,
   modelHomepageUrl,
   providerInfo,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
@@ -225,6 +226,12 @@ export interface RowState {
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
   /**
+   * Per-model fast mode (premium faster serving tier, AgentHub `fast_mode`): off by default;
+   * user-only, never preset by the catalog, editable on every model (preset ones included).
+   * Models without a fast tier reject requests carrying it, hence the standing hint while ON.
+   */
+  fastMode: boolean;
+  /**
    * AgentHub client protocol. Empty for preset models (auto-routed from the model id) and
    * for a NEW custom model, which starts with nothing selected until the user picks from
    * the base URL field's suffix or a detection run fills it in; gateway groups start on
@@ -321,6 +328,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
+    fastMode: m.fastMode === true,
     clientType: m.clientType ?? "",
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
@@ -334,6 +342,58 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.credential) row.credential = m.credential;
   return row;
+}
+
+/**
+ * Whether the model dialog offers the fast-mode switch for a draft row, and on which protocol
+ * the parameter would travel.
+ *
+ * `protocol` is AgentHub's own answer (see fastModeProtocol): `undefined` means the routed
+ * client rejects `fast_mode` — or the id routes to no client at all — so arming the switch
+ * could only produce a turn-killing error, and it is not offered. `show` adds the one
+ * exception: a row that already stores fast mode keeps its switch regardless, because a
+ * value that arrived another way (a hand-edited config, `penguin config model add
+ * --fast-mode`, or an upstream id renamed afterwards) has to remain switchable off — the
+ * runtime rejection tells the user to turn it off in the model settings, and that has to be
+ * true. `protocol` also picks the warning copy: only Anthropic's fast mode is a gated
+ * research preview.
+ *
+ * The client type is resolved through protocolForPersist — the one the entry will actually
+ * be SAVED with — rather than the raw field, for the same reason envHintClientType exists: a
+ * custom-like group leaves the protocol empty until detection or a manual pick fills it in,
+ * and fastModeProtocol then falls back to routing by model id. Typing an id that routes to a
+ * client with no fast tier (`kimi-k3`, `gemini-3-pro`) into a custom group would hide a
+ * switch that the persisted `openai-chat` entry can in fact serve. An empty result keeps the
+ * id-based routing the preset and vendor groups genuinely use.
+ */
+export function fastModeState(
+  row: Pick<RowState, "provider" | "modelId" | "clientType" | "baseUrl" | "fastMode">,
+): { protocol: FastModeProtocol | undefined; show: boolean } {
+  const protocol = fastModeProtocol(
+    row.modelId.trim(),
+    protocolForPersist(row.provider, row.clientType) || undefined,
+    row.baseUrl.trim() || undefined,
+  );
+  return { protocol, show: protocol !== undefined || row.fastMode };
+}
+
+/**
+ * Layout of the dialog's capability row, which carries the vision-support and fast-mode
+ * switches side by side in the two-up grid.
+ *
+ * Neither switch is guaranteed to be there: vision is read-only catalog metadata on preset
+ * models (no switch at all), and fast mode is withheld wherever the routed client rejects the
+ * parameter (see fastModeState). So the pair is a coincidence, not an invariant, and the row
+ * degrades in both directions — with neither switch it must not be rendered at all (an empty
+ * grid still draws the parent's `space-y` gap), and with exactly one the lone switch spans
+ * both columns rather than sitting in a half-width cell next to dead space.
+ */
+export function capabilityRow(present: { vision: boolean; fastMode: boolean }): {
+  show: boolean;
+  cellClass: string | undefined;
+} {
+  const both = present.vision && present.fastMode;
+  return { show: present.vision || present.fastMode, cellClass: both ? undefined : "col-span-2" };
 }
 
 /** Row edit state -> wire entry (exported for unit tests): the single funnel into the config PUT. */
@@ -358,6 +418,8 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   // Output cap ("" = inherit the Agent setting): submitted only when filled; omitting clears the stored annotation.
   const mt = Number(row.maxTokens.trim());
   if (row.maxTokens.trim() && Number.isFinite(mt) && mt > 0) entry.maxTokens = mt;
+  // Off by default: submitted only when enabled (omitting clears the stored annotation; the server never persists false).
+  if (row.fastMode) entry.fastMode = true;
   const cr = Number(row.cacheRead.trim());
   const cwr = Number(row.cacheWrite.trim());
   const out = Number(row.output.trim());
@@ -1042,6 +1104,10 @@ function ModelCard({
         {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
+        {/* Fast mode moves the model onto a premium price list that the recorded prices do not
+            reflect, so it has to be visible without opening the dialog (amber, like the other
+            badge that flags a standing cost/behavior choice). */}
+        {row.fastMode && <Badge tone="amber">{S.models.fastModeBadge}</Badge>}
       </span>
       {/* Upstream id in small text (grouping already separates by group, no composite id is
           shown anymore); when there's no display name, the main line is already the
@@ -1137,6 +1203,7 @@ function ModelDialog({
       vision: !isCustomLikeGroup(addProvider),
       contextWindow: "",
       maxTokens: "",
+      fastMode: false,
       // No protocol is preselected for a custom / user-defined group: it is detected from
       // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
       // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
@@ -1160,6 +1227,8 @@ function ModelDialog({
    * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
+  /** Fast mode is being switched ON and awaits the premium-billing warning's confirmation. */
+  const [confirmingFastMode, setConfirmingFastMode] = useState(false);
   /** Protocol detection in progress (custom / user-defined groups only). */
   const [detecting, setDetecting] = useState(false);
   /**
@@ -1186,6 +1255,18 @@ function ModelDialog({
   const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+
+  // Read from the live form, not the saved row, so editing the upstream id, the protocol or
+  // the base URL updates the answer as it is typed.
+  const { protocol: fastProtocol, show: showFastMode } = fastModeState(form);
+
+  // Vision support and fast mode share one row; either can be missing, so the row's own
+  // presence and the cell width follow from which switches are actually there (capabilityRow).
+  const showVision = !preset;
+  const { show: showCapabilityRow, cellClass: toggleCellClass } = capabilityRow({
+    vision: showVision,
+    fastMode: showFastMode,
+  });
 
   const set = (patch: Partial<RowState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -1223,6 +1304,10 @@ function ModelDialog({
       if (key) body.apiKey = key;
       else if (form.clearApiKey) body.clearApiKey = true;
       if (form.clientType.trim()) body.clientType = form.clientType.trim();
+      // Like base URL, the form's current value is always sent (not just when true): an
+      // unsaved toggle-off must override a stored fast_mode=true, so the probe tests
+      // exactly the draft's serving tier.
+      body.fastMode = form.fastMode;
       const res = await api.testModel(projectId, body);
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else toastError(S.models.testFailed(res.message ?? ""));
@@ -2107,58 +2192,144 @@ function ModelDialog({
             </p>
           )}
 
-        {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only);
-            custom models toggle it here — an iOS-style switch sitting inline right next to the
-            label (per owner: no full-row stretch, no standing explanation text). Only the OFF
-            state shows one small muted line: images are then read via the configured vision
-            proxy model (describe_image). */}
-        {!preset && (
-          <div>
-            {/* Detect sits inline after the switch — the protocol control's idiom, but next
-                to the setting it fills in rather than at a field's top-right, since this row
-                has no field to hang off. Always clickable, single-flight, toast-only, like
-                protocol detection; it just costs a real (tiny) completion, so it never runs
-                on its own. */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <label
-                className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-              >
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                  {S.models.vision}
-                </span>
-                <Switch
-                  checked={form.vision}
-                  disabled={!canEdit}
-                  onChange={(vision) => set({ vision })}
-                  aria-label={S.models.vision}
-                />
-              </label>
-              {canEdit && (
-                <button
-                  type="button"
-                  disabled={visionDetecting}
-                  onClick={() => void detectVisionFromButton()}
-                  title={S.models.detectVisionHint}
-                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
-                >
-                  {visionDetecting && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+        {/* 6) Capability switches — vision support and fast mode side by side on one row,
+            reusing the dialog's two-up grid (same `grid grid-cols-2 items-start gap-2` as the
+            context-window / max-tokens row above, which already carries two full inputs at
+            phone width; two compact switches are strictly narrower). `items-start` keeps both
+            cells top-aligned when only one of them grows a muted hint line, and the hint text
+            wraps inside its half-width cell rather than overflowing. Each switch is optional,
+            so the row itself is conditional and a lone switch takes the whole width
+            (toggleCellClass) — the layout must not depend on both being present. */}
+        {showCapabilityRow && (
+          <div className="grid grid-cols-2 items-start gap-2">
+            {/* Vision capability: for preset models it's flagged by the built-in catalog
+                (read-only, so no cell at all); custom models toggle it here — an iOS-style
+                switch sitting inline right next to the label (per owner: no full-row stretch,
+                no standing explanation text). Only the OFF state shows one small muted line:
+                images are then read via the configured vision proxy model (describe_image). */}
+            {showVision && (
+              <div className={toggleCellClass}>
+                {/* Detect sits inline after the switch — the protocol control's idiom, but next
+                    to the setting it fills in rather than at a field's top-right, since this row
+                    has no field to hang off. Always clickable, single-flight, toast-only, like
+                    protocol detection; it just costs a real (tiny) completion, so it never runs
+                    on its own. `flex-wrap` is what lets the switch and the trigger share a
+                    half-width cell: when they do not both fit, the trigger drops onto its own
+                    line inside the cell instead of widening the grid column. */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <label
+                    className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                  >
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                      {S.models.vision}
+                    </span>
+                    <Switch
+                      checked={form.vision}
+                      disabled={!canEdit}
+                      onChange={(vision) => set({ vision })}
+                      aria-label={S.models.vision}
                     />
+                  </label>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={visionDetecting}
+                      onClick={() => void detectVisionFromButton()}
+                      title={S.models.detectVisionHint}
+                      className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                    >
+                      {visionDetecting && (
+                        <span
+                          aria-hidden
+                          className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                        />
+                      )}
+                      {visionDetecting ? S.models.detectingVision : S.models.detectVision}
+                    </button>
                   )}
-                  {visionDetecting ? S.models.detectingVision : S.models.detectVision}
-                </button>
-              )}
-            </div>
-            {!form.vision && (
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                {S.models.visionOffProxyHint}
-              </p>
+                </div>
+                {!form.vision && (
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.visionOffProxyHint}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
+                pricing). Offered only where AgentHub's routed client actually puts the
+                parameter on the wire (fastModeProtocol) — a model whose client rejects it
+                would otherwise arm a switch that kills the next turn. Same inline-switch shape
+                as vision; the one small muted line appears in the non-default (ON) state, and
+                the label's hover title reveals it before toggling. Enabling is confirmed
+                (premium billing), disabling is immediate. */}
+            {showFastMode && (
+              <div className={toggleCellClass}>
+                <label
+                  className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                  title={S.models.fastModeHint}
+                >
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                    {S.models.fastMode}
+                  </span>
+                  <Switch
+                    checked={form.fastMode}
+                    disabled={!canEdit}
+                    onChange={(fastMode) => {
+                      // Only the ON direction is confirmed: it is the one that starts spending
+                      // at premium rates. Turning it off costs nothing and must stay one click
+                      // — it is the documented escape from a model that rejects the parameter.
+                      if (fastMode) setConfirmingFastMode(true);
+                      else set({ fastMode: false });
+                    }}
+                    aria-label={S.models.fastMode}
+                  />
+                </label>
+                {form.fastMode && (
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.fastModeHint}
+                  </p>
+                )}
+                {/* Reachable only for a stored annotation the rule would not have offered (a
+                    hand-edited config, `--fast-mode`, or an id renamed after the fact): the
+                    switch is kept visible precisely so it can be turned off, and says why it
+                    should be. */}
+                {form.fastMode && fastProtocol === undefined && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    {S.models.fastModeUnsupported}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Premium-billing warning, stacked on the config dialog the same way: fast mode moves
+          the model onto the provider's premium price list while the recorded per-token prices
+          stay standard, so the Cost center under-reports it — and on the Anthropic protocol
+          access is a gated research preview that answers 429 until granted. Warning tone (the
+          alert triangle) rather than the save pencil: nothing is being written yet, the point
+          is what enabling costs. */}
+      {confirmingFastMode && (
+        <ConfirmModal
+          open
+          title={S.models.fastModeConfirmTitle}
+          tone="danger"
+          onClose={() => setConfirmingFastMode(false)}
+          onConfirm={() => {
+            setConfirmingFastMode(false);
+            set({ fastMode: true });
+          }}
+        >
+          <p className="text-sm text-gray-700 dark:text-gray-300">{S.models.fastModeConfirmBody}</p>
+          {fastProtocol === "anthropic" && (
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              {S.models.fastModeConfirmPreview}
+            </p>
+          )}
+        </ConfirmModal>
+      )}
 
       {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
       {confirming && (

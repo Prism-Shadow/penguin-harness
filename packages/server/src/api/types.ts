@@ -304,6 +304,13 @@ export interface ModelInfo {
    * seeded per-Agent default (32000), which cannot fit into e.g. a 32k context window.
    */
   maxTokens?: number;
+  /**
+   * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
+   * built-in catalog): when true, session requests opt into the provider's faster serving
+   * tier at premium pricing (AgentHub UniConfig `fast_mode`). Only `true` is reported;
+   * unset = off. Models without a fast tier reject requests carrying it.
+   */
+  fastMode?: boolean;
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
@@ -348,6 +355,8 @@ export interface ModelUpdateEntry {
   vision?: boolean;
   /** Per-model max output tokens, a positive integer (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
   maxTokens?: number;
+  /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
+  fastMode?: boolean;
   pricing?: ModelPricingDto;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
@@ -390,6 +399,12 @@ export interface ModelTestRequest {
   baseUrl?: string | null;
   /** AgentHub client protocol; required for unsaved custom models (otherwise the id can't be auto-routed). */
   clientType?: string;
+  /**
+   * Test with fast mode (the frontend always sends the form's current value, so an unsaved
+   * toggle — either direction — is what gets tested); omitted falls back to the stored
+   * annotation. Lets "Test connection" surface a fast-mode rejection before saving.
+   */
+  fastMode?: boolean;
 }
 
 /**
@@ -930,6 +945,26 @@ export interface SessionCreateResponse {
   session: SessionInfo;
 }
 
+/** Immutable location of one record in a Session's append-only Trace. */
+export interface TracePosition {
+  /** Trace shard index (`001` on disk becomes `1`). */
+  fileIndex: number;
+  /** Zero-based record ordinal within the parsed shard. */
+  ordinal: number;
+}
+
+/** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
+export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+
+export interface SessionForkRequest {
+  /** The final root assistant text record of the completed Task to keep. */
+  position: TracePosition;
+}
+
+export interface SessionForkResponse {
+  session: SessionInfo;
+}
+
 export interface SessionResponse {
   session: SessionInfo;
 }
@@ -1013,7 +1048,7 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining

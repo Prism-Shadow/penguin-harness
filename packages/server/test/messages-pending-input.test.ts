@@ -17,12 +17,13 @@ import {
   mcpConnectBegin,
   mcpConnectEnd,
   requestBegin,
+  sessionMeta,
 } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
+import { apiClient, createTestApp, provisionUser, waitFor, writeTraceFile } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SID = "session-2026-08-10-10-00-00-eeff0002";
@@ -152,6 +153,41 @@ describe("GET /messages serves the running task's pending inputs", () => {
     expect(after.messages.map((m) => (m.payload as { type?: string }).type)).not.toContain(
       "mcp_connect_begin",
     );
+  });
+
+  it("deduplicates a persisted pending input even when history adds a Trace position", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "text", text: "positioned once" }],
+    });
+    expect(res.status).toBe(202);
+    await waitFor(() => t.deps.manager.pendingBootstrap(SID).length === 1);
+    const input = t.deps.manager.pendingInputs(SID)[0]!;
+    await writeTraceFile(t.root, "pender-default_project", "default_agent", "2026-08-15", SID, 1, [
+      sessionMeta({
+        session_id: SID,
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 10_000,
+        system_prompt: "test",
+        agent_state: "/tmp/agent-state",
+        workspace: "/tmp/w",
+      }),
+      input,
+    ]);
+
+    const during = (await (await api.get(`/api/sessions/${SID}/messages`)).json()) as {
+      messages: OmniMessage[];
+    };
+    expect(
+      during.messages.filter(
+        (message) => (message.payload as { text?: string }).text === "positioned once",
+      ),
+    ).toHaveLength(1);
+
+    releaseBootstrap();
+    await waitFor(() => t.deps.manager.pendingInputs(SID).length === 0);
+    releaseRequest();
+    await waitFor(() => t.deps.manager.statusOf(SID) === "idle");
   });
 
   it("keeps the holds after a run aborted mid-bootstrap (no request_begin): a reload still sees the message; the next run appends", async () => {

@@ -1042,6 +1042,19 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.assistantText).toBe("Creating `package.json`.\n\nInstallation finished.");
   });
 
+  it("carries the final assistant Trace position into the forkable Task footer", () => {
+    const m = createStreamModel();
+    const reply = {
+      ...at(assistantText("fork here"), "2026-07-05T00:00:03.000Z"),
+      tracePosition: { fileIndex: 2, ordinal: 17 },
+    };
+    pushMessages(m, [at(userText("Q"), "2026-07-05T00:00:00.000Z"), reply]);
+    finalizeHistory(m);
+    const stats = items(m).find((item) => item.kind === "task_stats") as TaskStatsItem;
+    expect(stats.forkable).toBe(true);
+    expect(stats.forkPosition).toEqual({ fileIndex: 2, ordinal: 17 });
+  });
+
   it("stream end (finalizeHistory) closes the last Task; rounds without usage get no stats figures but still get a footer", () => {
     const m = createStreamModel();
     pushMessages(m, [
@@ -1840,6 +1853,12 @@ describe("overlap dedup (contract §7.2)", () => {
     expect(isDuplicate(index, m1)).toBe(false); // already slid out of the window
     expect(isDuplicate(index, m2)).toBe(true);
     expect(isDuplicate(index, { ...m3 })).toBe(true); // matches on identical structure
+  });
+
+  it("history-only Trace positions do not defeat overlap dedup against the live envelope", () => {
+    const live = at(assistantText("same"), "2026-07-05T00:00:01.000Z");
+    const history = { ...live, tracePosition: { fileIndex: 1, ordinal: 9 } };
+    expect(isDuplicate(buildDedupIndex([history]), live)).toBe(true);
   });
 
   it("a full message hitting dedup discards the matching in-flight fragment (discardFragmentFor)", () => {
