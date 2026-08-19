@@ -3,6 +3,7 @@
 - **Date:** 2026-08-19
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#341](https://github.com/Prism-Shadow/penguin-harness/pull/341)
 
 [English](2026-08-19-session-row-actions.md)
 
