@@ -88,6 +88,9 @@ describe("openDatabase column upgrade", () => {
       expect(legacy).not.toBeNull();
       expect(legacy!.client).toBeNull();
       expect(legacy!.hasTrace).toBe(false);
+      expect(
+        db.prepare("SELECT fork_count FROM sessions WHERE session_id = ?").get("session-legacy"),
+      ).toEqual({ fork_count: 0 });
       // last_active_at is ALTERed in too; with no usage_records the backfill falls to created_at.
       expect(legacy!.lastActiveAt).toBe("2026-01-01T00:00:00.000Z");
       expect(repo.listByAgent("p1", "a1", { webOnly: true }).map((r) => r.sessionId)).toEqual([
@@ -127,6 +130,7 @@ describe("openDatabase column upgrade", () => {
       const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
       expect(cols.filter((c) => c.name === "client")).toHaveLength(1);
       expect(cols.filter((c) => c.name === "has_trace")).toHaveLength(1);
+      expect(cols.filter((c) => c.name === "fork_count")).toHaveLength(1);
       expect(cols.filter((c) => c.name === "last_active_at")).toHaveLength(1);
     } finally {
       db.close();

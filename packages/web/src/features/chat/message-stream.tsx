@@ -16,6 +16,7 @@ import { MessageItem } from "./message-item";
 import { WorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
+import type { ForkTarget } from "./task-stats-line";
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -49,6 +50,8 @@ export interface StreamRenderContext {
   workspace?: string | null;
   /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */
   statFiles?: (paths: string[]) => Promise<ReadonlySet<string>>;
+  /** Creates a new root Session through the selected completed assistant turn. */
+  onFork?: (target: ForkTarget) => Promise<void>;
 }
 
 /** Pure list rendering (reused recursively inside subagent cards): consecutive thinking + tool-call items are aggregated into one "Reasoning & Tools" group. */

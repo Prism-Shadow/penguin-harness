@@ -23,6 +23,7 @@ import type {
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionForkResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
@@ -108,8 +109,14 @@ function pageLimit(raw: string, name: string): number {
  */
 function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
   if (pending.length === 0) return messages;
-  const tail = new Set(messages.slice(-50).map((m) => JSON.stringify(m)));
-  const missing = pending.filter((m) => !tail.has(JSON.stringify(m)));
+  const envelopeKey = (message: OmniMessage): string => {
+    const { tracePosition: _tracePosition, ...envelope } = message as OmniMessage & {
+      tracePosition?: unknown;
+    };
+    return JSON.stringify(envelope);
+  };
+  const tail = new Set(messages.slice(-50).map(envelopeKey));
+  const missing = pending.filter((message) => !tail.has(envelopeKey(message)));
   return missing.length > 0 ? [...messages, ...missing] : messages;
 }
 
@@ -534,6 +541,67 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       session: await deps.sessionService.toInfo(fresh, hasTrace),
     } satisfies SessionResponse);
+  });
+
+  app.post("/:sessionId/fork", async (c) => {
+    const row = resolveSession(c);
+    const body = (await readJson(c)) as Record<string, unknown>;
+    const raw = body.position;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw badRequest("position must be a Trace position object.");
+    }
+    const { fileIndex, ordinal } = raw as Record<string, unknown>;
+    if (
+      !Number.isSafeInteger(fileIndex) ||
+      (fileIndex as number) < 1 ||
+      !Number.isSafeInteger(ordinal) ||
+      (ordinal as number) < 0
+    ) {
+      throw badRequest("position.fileIndex must be positive and position.ordinal non-negative.");
+    }
+
+    const fork = await deps.manager.atIdleBoundary(row.sessionId, () =>
+      deps.traceService.forkSessionTrace(row.projectId, row.agentId, row.sessionId, {
+        fileIndex: fileIndex as number,
+        ordinal: ordinal as number,
+      }),
+    );
+    const forkRow: SessionRow = {
+      sessionId: fork.sessionId,
+      projectId: row.projectId,
+      agentId: row.agentId,
+      provider: row.provider,
+      modelId: row.modelId,
+      workspace: row.workspace,
+      approvalMode: row.approvalMode,
+      // insertFork replaces this with the source's current title plus its persistent number.
+      title: null,
+      client: "web",
+      hasTrace: true,
+      lastActiveAt: fork.createdAt,
+      createdAt: fork.createdAt,
+    };
+    try {
+      const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
+      deps.sessionSources.set(fork.sessionId, null);
+      return c.json(
+        {
+          session: await deps.sessionService.toInfo(insertedForkRow, true),
+        } satisfies SessionForkResponse,
+        201,
+      );
+    } catch (err) {
+      // insertFork commits before response shaping. If a later step fails (for example,
+      // resolving SessionInfo), remove that committed row along with the cloned files so
+      // the index cannot retain a Session whose Trace was rolled back.
+      deps.sessionsRepo.deleteById(fork.sessionId);
+      await deps.traceService.deleteSessionTraces(row.projectId, row.agentId, fork.sessionId);
+      await fs.rm(
+        path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), fork.sessionId),
+        { recursive: true, force: true },
+      );
+      throw err;
+    }
   });
 
   app.delete("/:sessionId", async (c) => {
