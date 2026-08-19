@@ -46,7 +46,7 @@ const PRESET: PresetEntry[] = [
     provider: "qwen-token-plan",
     model_id: "glm-5.2",
     context_window: 1048576,
-    client_type: "openai",
+    client_type: "openai-chat",
     pricing: { unit: "usd_per_mtok", cache_read: 0.285714, cache_write: 1.142857, output: 4 },
     vision: false,
     base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
@@ -56,7 +56,7 @@ const PRESET: PresetEntry[] = [
     provider: "qwen-token-plan",
     model_id: "qwen3.8-max-preview",
     context_window: 1000000,
-    client_type: "openai",
+    client_type: "openai-chat",
     base_url: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
   },
 ];
@@ -68,7 +68,7 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(0);
     const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.2")!;
     expect(glm.original).toBeNull();
-    expect(glm.clientType).toBe("openai");
+    expect(glm.clientType).toBe("openai-chat");
     expect(glm.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
     expect(glm.originalBaseUrl).toBe(""); // differs from baseUrl -> the PUT submits the preset URL
     expect(glm.cacheRead).toBe("0.285714");
@@ -148,7 +148,7 @@ describe("syncRowsWithCatalog", () => {
       provider: "qwen-token-plan",
       modelId: "qwen3.8-max-preview",
       contextWindow: "1000000",
-      clientType: "openai",
+      clientType: "openai-chat",
       baseUrl: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
       cacheRead: "1",
       cacheWrite: "2",

@@ -25,7 +25,7 @@
 #
 # The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
 #
-# Docs: https://penguin.ooo/docs/installation
+# Docs: https://penguin.ooo/docs/quickstart-cli
 set -eu
 
 REPO="https://github.com/Prism-Shadow/penguin-harness"

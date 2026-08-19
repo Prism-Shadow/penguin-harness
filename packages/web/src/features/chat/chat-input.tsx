@@ -39,7 +39,9 @@
  * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
  * opens them by path), and goal mode; selected files show as removable chips above the text
  * body, next to the image thumbnails, and — like images — an attachments-only message is
- * sendable with no text at all.
+ * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
+ * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
+ * with an overlay bounded to that region while the drag is over it.
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -109,6 +111,8 @@ import {
 import type { HistoryStep } from "./input-history";
 import { midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
+import { FileDropZone } from "./drop-zone";
+import { splitDroppedFiles } from "../../lib/file-drop";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -1907,6 +1911,23 @@ export function ChatInput({
     if (e.target.files) addAttachments(e.target.files);
     e.target.value = "";
   };
+
+  /**
+   * Files dropped onto the chat area (see FileDropZone): one batch, routed into the SAME two
+   * intakes the "+" menu and paste use — images join the pasted-image pipeline, everything
+   * else joins the file-attachment pipeline (10MB cap, same rejection toast). Goal mode takes
+   * images but not files (nothing folds a file into the re-injected objective — the "+" menu
+   * grays its file entry out for the same reason); a drop has no disabled affordance to gray,
+   * so the refusal is said out loud instead of silently swallowing the files.
+   */
+  const addDroppedFiles = (dropped: File[]) => {
+    const batch = splitDroppedFiles(dropped);
+    if (batch.images.length > 0) addFiles(batch.images);
+    if (batch.files.length > 0) {
+      if (goalOn) toastInfo(S.chat.dropFilesGoalHint);
+      else addAttachments(batch.files);
+    }
+  };
   /**
    * The image picker moved into the "+" menu, so the file input can no longer be a `<label>`
    * wrapper: the menu unmounts its items on select. It lives outside the menu instead and the
@@ -1918,6 +1939,11 @@ export function ChatInput({
 
   return (
     <div className="relative" ref={anchorRef}>
+      {/* Drag-and-drop upload: mounted with the composer (chat page and draft page alike, and
+          kept while a Task runs), so dropping works exactly when there is a composer to attach
+          to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
+          Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
+      <FileDropZone onFiles={addDroppedFiles} />
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
           Height is capped to the room measured above the composer (see upwardMaxH) with internal
           scrolling, so a long skill list never pushes the menu's top edge out of view; the active

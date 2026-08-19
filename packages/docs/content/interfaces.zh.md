@@ -226,7 +226,9 @@ interface SubagentRunner {
   // 深度超限、目标 Agent 不存在等前置错误以抛出表达(由 Environment 收敛为 failed)
   spawn(input: {
     agentId?: string;     // 缺省复用当前 Agent(自派生)
-    modelId?: string;     // 缺省继承父 Session 的模型
+    modelId?: string;     // 与 provider 成对给出;两者都缺省时继承父 Session 的模型
+    provider?: string;    // 给出 modelId 时必填(模型引用即二元组)
+    thinkingLevel?: ThinkingLevelName; // 缺省继承父 Session 的有效思考等级
   }): Promise<SubagentHandle>;
 }
 

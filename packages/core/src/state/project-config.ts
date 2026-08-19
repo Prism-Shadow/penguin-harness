@@ -28,7 +28,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type { ThinkingLevelName } from "../interfaces.js";
-import { presetModelEntries } from "./model-catalog.js";
+import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
@@ -69,9 +69,11 @@ export interface ModelEntry {
   model_id: string;
   context_window?: number;
   /**
-   * AgentHub client protocol (`openai` / `claude-4-8` / `deepseek-v4` / …); defaults to being
-   * inferred by AgentHub from the request id (`model_id`). A third-party model speaking the
-   * OpenAI protocol should set this to `openai`.
+   * AgentHub client protocol (`openai-chat` / `claude-4-8` / `deepseek-v4` / …); defaults to
+   * being inferred by AgentHub from the request id (`model_id`). A third-party model speaking
+   * the OpenAI Chat Completions protocol should set this to `openai-chat` (the bare `openai`
+   * spelling from configs saved before AgentHub 0.4.2's rename is normalized to it on read —
+   * see canonicalClientType).
    */
   client_type?: string;
   /**
@@ -202,7 +204,7 @@ function parseRefField(file: string, name: string, value: unknown): ModelRef | u
 
 /** Validates a model entry: both provider and model_id must be strings (an old-format entry is missing provider). */
 function assertModelEntry(file: string, entry: unknown): ModelEntry {
-  const m = entry as { provider?: unknown; model_id?: unknown };
+  const m = entry as { provider?: unknown; model_id?: unknown; client_type?: unknown };
   if (
     typeof entry !== "object" ||
     entry === null ||
@@ -212,6 +214,16 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
     throw new Error(
       `A models entry in .project_config.toml is in a legacy/invalid format (provider and model_id must be two separate fields): ${file}. ${OLD_FORMAT_HINT}`,
     );
+  }
+  // Backward compatibility for configs saved before AgentHub 0.4.2 renamed the generic Chat
+  // Completions client: a stored `client_type = "openai"` is normalized to the canonical
+  // "openai-chat" on read (copied, never mutated in place — callers may hand in a cached
+  // parse), so old configs keep working and every consumer sees one spelling.
+  if (typeof m.client_type === "string") {
+    const canonical = canonicalClientType(m.client_type);
+    if (canonical !== m.client_type) {
+      return { ...(entry as ModelEntry), client_type: canonical };
+    }
   }
   return entry as ModelEntry;
 }
@@ -406,7 +418,9 @@ export async function addModel(
   if (contextWindow !== undefined) {
     modelEntry.context_window = contextWindow;
   }
-  const clientType = entry.client_type ?? existing?.client_type;
+  // Normalized on write as well as on read (canonicalClientType), so a caller passing the
+  // pre-0.4.2 "openai" spelling still persists the canonical "openai-chat".
+  const clientType = canonicalClientType(entry.client_type ?? existing?.client_type);
   if (clientType !== undefined) {
     modelEntry.client_type = clientType;
   }

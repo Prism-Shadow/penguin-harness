@@ -28,6 +28,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
@@ -306,13 +307,9 @@ export function MemoryTab({
   };
 
   const editPrompt = editing ? buildMemoryEditPrompt(editing.file.title, editRequirement) : "";
-
-  const copyEditPrompt = () => {
-    void navigator.clipboard
-      .writeText(editPrompt)
-      .then(() => toastSuccess(S.memory.editCopied))
-      .catch(() => toastError(S.common.unknownError));
-  };
+  // Copy feedback lives at the button (the shared copy convention): its glyph flips to
+  // the check while copied — no toast, and the button label never changes.
+  const editCopy = useCopied();
 
   /**
    * The bridge-to-chat jump shared by edit and add: prefill the draft (merging over what is
@@ -351,13 +348,7 @@ export function MemoryTab({
   };
 
   const addPrompt = adding ? buildMemoryAddPrompt(adding.kind, addContent) : "";
-
-  const copyAddPrompt = () => {
-    void navigator.clipboard
-      .writeText(addPrompt)
-      .then(() => toastSuccess(S.memory.editCopied))
-      .catch(() => toastError(S.common.unknownError));
-  };
+  const addCopy = useCopied();
 
   const openAddChat = () => {
     if (adding) openChatWithDraft(addPrompt, adding.workspacePath);
@@ -684,9 +675,11 @@ export function MemoryTab({
               className="text-gray-600 dark:text-gray-300"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={copyEditPrompt}>
+              <Button size="sm" onClick={() => editCopy.flash(editPrompt)}>
+                <CopyCheckGlyph copied={editCopy.copied} size={12} />
                 {S.memory.editCopyPrompt}
               </Button>
+              <CopiedStatus copied={editCopy.copied} />
               <Button size="sm" variant="primary" onClick={openEditChat}>
                 {S.memory.editOpenChat}
               </Button>
@@ -726,9 +719,15 @@ export function MemoryTab({
               className="text-gray-600 dark:text-gray-300"
             />
             <div className="flex gap-2">
-              <Button size="sm" disabled={addContent.trim() === ""} onClick={copyAddPrompt}>
+              <Button
+                size="sm"
+                disabled={addContent.trim() === ""}
+                onClick={() => addCopy.flash(addPrompt)}
+              >
+                <CopyCheckGlyph copied={addCopy.copied} size={12} />
                 {S.memory.editCopyPrompt}
               </Button>
+              <CopiedStatus copied={addCopy.copied} />
               <Button
                 size="sm"
                 variant="primary"
