@@ -22,14 +22,18 @@ describe("sessionActivity", () => {
     expect(sessionActivity("compacting", true, true)).toBe("compacting");
   });
 
-  it("splits a settled Session by whether its last reply has been read", () => {
-    expect(sessionActivity("idle", true, false)).toBe("completed");
+  it("marks a settled Session only while its last reply is unread", () => {
     expect(sessionActivity("idle", true, true)).toBe("completedUnread");
+    // Read: the marker is removed, not muted. Nothing left to act on, nothing shown.
+    expect(sessionActivity("idle", true, false)).toBeNull();
   });
 
   it("shows nothing for a Session that has never run", () => {
     expect(sessionActivity("idle", false, false)).toBeNull();
-    // Unread is meaningless without a reply to have missed.
+    // hasTrace is still load-bearing even though read and never-ran look identical: a Session
+    // created after this browser first saw the Project has no read marker of its own, so it
+    // falls back to the baseline and its creation time reads as UNREAD. Without the guard every
+    // brand-new conversation would wear the "go look" dot before it had ever run.
     expect(sessionActivity("idle", false, true)).toBeNull();
   });
 
@@ -48,60 +52,82 @@ describe("sessionActivity", () => {
  * to find out what a row is doing.
  */
 describe("SessionActivityIcon", () => {
-  const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completed", "completedUnread"];
+  const ACTIVITIES: readonly Activity[] = ["running", "compacting", "completedUnread"];
 
   const render = (activity: Activity) =>
     renderToStaticMarkup(createElement(SessionActivityIcon, { activity }));
 
-  it("draws the hourglass for both busy states and the circled check for both settled ones", () => {
+  it("draws one hourglass for both busy states", () => {
     expect(ACTIVITY_GLYPH.compacting).toBe(ACTIVITY_GLYPH.running);
-    expect(ACTIVITY_GLYPH.completedUnread).toBe(ACTIVITY_GLYPH.completed);
-    // Busy and settled must NOT collapse into one shape.
-    expect(ACTIVITY_GLYPH.running).not.toBe(ACTIVITY_GLYPH.completed);
-    for (const activity of ACTIVITIES) {
+    for (const activity of ["running", "compacting"] as const) {
       expect(render(activity)).toContain(`d="${ACTIVITY_GLYPH[activity]}"`);
     }
+  });
+
+  it("draws the unread state as a dot, not as a path glyph", () => {
+    const unread = render("completedUnread");
+    expect(unread).toContain("rounded-full");
+    expect(unread).not.toContain("<svg");
+    expect(unread).not.toContain(ACTIVITY_GLYPH.running);
   });
 
   it("labels each state distinctly for screen readers and hover", () => {
     expect(sessionActivityLabel("running")).toBe(S.chat.statusRunning);
     expect(sessionActivityLabel("compacting")).toBe(S.chat.statusCompacting);
-    expect(sessionActivityLabel("completed")).toBe(S.chat.statusCompleted);
     expect(sessionActivityLabel("completedUnread")).toBe(S.chat.statusCompletedUnread);
-    // Four states, four different names: nothing is distinguishable by colour alone to a
-    // screen reader, including read vs unread.
+    // Three states, three different names: the compacting/running pair differs only in colour
+    // on screen, so nothing may be distinguishable by colour alone to a screen reader.
     expect(new Set(ACTIVITIES.map(sessionActivityLabel)).size).toBe(ACTIVITIES.length);
     for (const activity of ACTIVITIES) {
-      const markup = render(activity);
-      const label = sessionActivityLabel(activity);
-      expect(markup).toContain(`aria-label="${label}"`);
-      // The svg <title> child is what browsers surface as the hover tooltip.
-      expect(markup).toContain(`<title>${label}</title>`);
+      expect(render(activity)).toContain(`aria-label="${sessionActivityLabel(activity)}"`);
     }
   });
 
-  it("announces busy states as status and settled ones as an image", () => {
+  it("gives the hourglass a hover tooltip through the svg title child", () => {
+    for (const activity of ["running", "compacting"] as const) {
+      expect(render(activity)).toContain(`<title>${sessionActivityLabel(activity)}</title>`);
+    }
+    // The dot is an HTML span, so its tooltip is a plain title attribute.
+    expect(render("completedUnread")).toContain(
+      `title="${sessionActivityLabel("completedUnread")}"`,
+    );
+  });
+
+  it("announces busy states as status and the unread dot as an image", () => {
     expect(render("running")).toContain('role="status"');
     expect(render("compacting")).toContain('role="status"');
-    expect(render("completed")).toContain('role="img"');
     expect(render("completedUnread")).toContain('role="img"');
   });
 
-  it("turns the hourglass while busy and leaves the settled check still", () => {
+  it("turns the hourglass while busy and leaves the dot still", () => {
     expect(render("running")).toContain("hourglass-turn");
     expect(render("compacting")).toContain("hourglass-turn");
-    expect(render("completed")).not.toContain("hourglass-turn");
     expect(render("completedUnread")).not.toContain("hourglass-turn");
   });
 
-  it("gives read and unread different ink, since colour is their only visual difference", () => {
-    // Distinct in BOTH themes: a pair that only diverged in light mode would collapse in dark.
-    const read = render("completed");
+  it("keeps the two busy states apart by ink, since shape cannot separate them", () => {
+    expect(render("running")).toContain("text-gray-500");
+    expect(render("running")).toContain("dark:text-gray-400");
+    expect(render("compacting")).toContain("text-amber-600");
+    expect(render("compacting")).toContain("dark:text-amber-400");
+  });
+
+  it("gives the dot ink that clears 3:1 in BOTH themes, being the only marker left", () => {
+    // emerald-600 on white is 3.77:1; the emerald-500 this dot was first drawn in reaches only
+    // 2.57:1 there. Dark mode keeps the brighter emerald-400 (10.37:1 on gray-950).
     const unread = render("completedUnread");
-    expect(read).toContain("text-gray-400");
-    expect(read).toContain("dark:text-gray-600");
-    expect(unread).toContain("text-emerald-700");
-    expect(unread).toContain("dark:text-emerald-400");
+    expect(unread).toContain("bg-emerald-600");
+    expect(unread).toContain("dark:bg-emerald-400");
+  });
+
+  it("occupies the same box whatever the glyph, so a row never shifts", () => {
+    // The slot is reserved at 12px by the sidebar for the no-glyph case; every rendered glyph
+    // has to match it or the title would re-flow as a run starts and ends.
+    for (const activity of ACTIVITIES) {
+      const markup = render(activity);
+      expect(markup).toMatch(/(width="12"|width:12px)/);
+      expect(markup).toMatch(/(height="12"|height:12px)/);
+    }
   });
 });
 

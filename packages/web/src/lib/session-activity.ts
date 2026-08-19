@@ -3,24 +3,26 @@ import { isSessionUnread } from "./session-seen";
 import type { SessionSeenState } from "./session-seen";
 
 /**
- * Visual state carried by a Session row / chat header.
- *
- * `null` means "nothing has run here yet" and renders no glyph at all: a Session created but
- * never used has no activity to report, and an icon that says so would be noise on every fresh
- * row. Everything else has run at least once, so it always carries a glyph.
+ * Visual state carried by a Session row / chat header. Three states, and `null` for "say
+ * nothing at all" — which is the resting state of every row the user has nothing to act on.
  */
-export type SessionActivity = "running" | "compacting" | "completed" | "completedUnread" | null;
+export type SessionActivity = "running" | "compacting" | "completedUnread" | null;
 
 /**
  * The Session's glyph state.
  *
  * Live execution comes from the server (`running` / `compacting` / `idle`). A settled Session
- * splits by whether the user has looked at it since it last did anything — that read/unread
- * distinction is the client's, because the API models no read receipt (see session-seen.ts).
+ * only has something to say while its last reply is UNREAD — that read/unread distinction is
+ * the client's, because the API models no read receipt (see session-seen.ts). Once read it
+ * falls silent: the glyph is a notification, and a list where every finished row carries a
+ * permanent marker tells the user nothing about where to look next.
  *
- * `hasTrace` is the server's own "a Task has been started" flag, already on every list row: it
- * is what separates "finished" from "never ran", so idle-and-never-ran stays blank instead of
- * claiming completion.
+ * `hasTrace` is the server's own "a Task has been started" flag, already on every list row, and
+ * it is still load-bearing even though read and never-ran now render identically. Unread is a
+ * timestamp comparison against the read marker, and a Session created AFTER this browser first
+ * saw the Project has no marker of its own — it falls back to the baseline, and its creation
+ * time is later, so it reads as unread. Without this guard every brand-new conversation would
+ * wear the "finished, go look" dot before it had ever run.
  */
 export function sessionActivity(
   status: SessionStatus,
@@ -31,7 +33,7 @@ export function sessionActivity(
   if (status === "running") return "running";
   if (status === "compacting") return "compacting";
   if (!hasTrace) return null;
-  return unread ? "completedUnread" : "completed";
+  return unread ? "completedUnread" : null;
 }
 
 /** The subset of a row this function needs (a whole SessionInfo satisfies it). */

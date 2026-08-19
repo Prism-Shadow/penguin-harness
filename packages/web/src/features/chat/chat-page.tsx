@@ -1507,11 +1507,12 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Session-level state: a turning hourglass while the run is active, a circled check
-                once it has settled. The compacting state stays in the stream banner rather than
-                being repeated here, and a Session that has never run shows nothing. Below sm
-                only the glyph remains so the title keeps its room. */}
-            {(headerActivity === "running" || headerActivity === "completed") && (
+            {/* Session-level state: a turning hourglass while the run is active, and nothing at
+                all once it settles — the conversation on screen is by definition read, and the
+                unread dot is a sidebar affordance for the rows you are NOT looking at. The
+                compacting state stays in the stream banner rather than being repeated here.
+                Below sm only the glyph remains so the title keeps its room. */}
+            {headerActivity === "running" && (
               <span
                 title={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"

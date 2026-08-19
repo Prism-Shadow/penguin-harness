@@ -1068,9 +1068,7 @@ Scenarios:
     } as Record<string, string>,
     statusRunning: "Running",
     statusCompacting: "Compacting",
-    /** Settled Session whose last reply the user has already seen. */
-    statusCompleted: "Done",
-    /** Settled Session that finished since the user last opened it. */
+    /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "Done, unread",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",

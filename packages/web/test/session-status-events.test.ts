@@ -14,7 +14,7 @@
 import { describe, expect, it } from "vitest";
 import type { ServerEvent, SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
-import { markSessionSeen } from "../src/lib/session-seen";
+import { isSessionUnread, markSessionSeen } from "../src/lib/session-seen";
 import type { SessionSeenState } from "../src/lib/session-seen";
 import { sessionRowActivity } from "../src/lib/session-activity";
 
@@ -137,8 +137,8 @@ describe("hasTrace across a status flip", () => {
   // The regression this pins: `sessionActivity` checks status first, so `running` draws the
   // hourglass whatever hasTrace says — and then falls to `if (!hasTrace) return null` once the
   // run settles. A first run on a row still carrying the `hasTrace: false` it was fetched with
-  // therefore turned the hourglass into NOTHING instead of the completed glyph.
-  it("running -> idle on a never-run row settles into the completed glyph, not a blank", () => {
+  // therefore turned the hourglass into nothing, where the unread dot belongs.
+  it("running -> idle on a never-run row settles into the unread dot, not a blank", () => {
     const store = storeWith(freshSession("a"));
     expect(glyph(store, "a", neverSeen)).toBeNull();
 
@@ -163,9 +163,11 @@ describe("hasTrace across a status flip", () => {
     store.getState().setStatus("a", "running");
     expect(rowOf(store, "a").hasTrace).toBe(true);
     store.getState().setStatus("a", "idle");
-    // Read, not unread: the two-argument call moves no stamp, so nothing has happened since
-    // this browser first saw the Project.
-    expect(glyph(store, "a", neverSeen)).toBe("completed");
+    // Read, so nothing is drawn: the two-argument call moves no stamp, so nothing has happened
+    // since this browser first saw the Project. hasTrace still had to flip, though — the next
+    // run's settle depends on it.
+    expect(glyph(store, "a", neverSeen)).toBeNull();
+    expect(rowOf(store, "a").hasTrace).toBe(true);
   });
 
   it("never regresses to blank once the Session has run", () => {
@@ -173,6 +175,23 @@ describe("hasTrace across a status flip", () => {
     // A stale or conservative flag must not un-run a Session: has_trace is a one-way cache.
     applyUserEvent(store, stateEvent("a", "idle", FINISHED, false), neverReload);
     expect(rowOf(store, "a").hasTrace).toBe(true);
+  });
+
+  it("a brand-new conversation does not wear the dot before it has ever run", () => {
+    // Read and never-ran both render nothing now, which makes hasTrace look redundant. It is
+    // not. This Session was created AFTER this browser first saw the Project, so it has no read
+    // marker of its own and falls back to the baseline — and its own timestamp is later, so the
+    // unread test says TRUE. hasTrace is the only thing standing between a fresh conversation
+    // and a "there is something to read here" dot it has never earned.
+    const store = storeWith(
+      session("new-one", { hasTrace: false, createdAt: STARTED, lastActiveAt: STARTED }),
+    );
+    expect(isSessionUnread(neverSeen, "new-one", STARTED)).toBe(true);
+    expect(glyph(store, "new-one", neverSeen)).toBeNull();
+
+    // The moment it actually runs, that same row earns the dot.
+    applyUserEvent(store, stateEvent("new-one", "idle", FINISHED), neverReload);
+    expect(glyph(store, "new-one", neverSeen)).toBe("completedUnread");
   });
 
   it("a Session that genuinely never ran stays blank", () => {
@@ -185,7 +204,7 @@ describe("hasTrace across a status flip", () => {
 });
 
 describe("the full sequence, for a Session the user is not looking at", () => {
-  it("blank -> hourglass -> completed unread -> completed read once opened", () => {
+  it("nothing -> hourglass -> unread dot -> nothing again once opened", () => {
     const store = storeWith(freshSession("a"));
     // The user has this Project open and has looked at nothing in particular.
     let seen = neverSeen;
@@ -197,15 +216,16 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen)).toBe("completedUnread");
 
-    // Opening it is what marks it read (sidebar's openSession -> noteSessionSeen).
+    // Opening it is what marks it read (sidebar's openSession -> noteSessionSeen), and a read
+    // row goes back to showing nothing at all — the dot is removed, not muted.
     seen = markSessionSeen(seen, "a", rowOf(store, "a").lastActiveAt);
-    expect(glyph(store, "a", seen)).toBe("completed");
+    expect(glyph(store, "a", seen)).toBeNull();
   });
 
   it("a Session the user opened earlier still goes unread when it later runs", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
-    expect(glyph(store, "a", seen)).toBe("completed");
+    expect(glyph(store, "a", seen)).toBeNull();
 
     applyUserEvent(store, stateEvent("a", "running", STARTED), neverReload);
     expect(glyph(store, "a", seen)).toBe("running");
@@ -213,7 +233,7 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     expect(glyph(store, "a", seen)).toBe("completedUnread");
   });
 
-  it("compaction shows its own glyph and settles back to completed", () => {
+  it("compaction shows the hourglass too, and settles to the unread dot", () => {
     const store = storeWith(session("a"));
     const seen = seenAt("a", LOOKED);
     applyUserEvent(store, stateEvent("a", "compacting", STARTED), neverReload);
@@ -233,13 +253,13 @@ describe("the full sequence, for a Session the user is not looking at", () => {
     expect(glyph(store, "a", seen, open)).toBe("running");
     applyUserEvent(store, stateEvent("a", "idle", FINISHED), neverReload);
     expect(glyph(store, "a", seen, open)).toBe("completedUnread");
-    // And the conversation this tab IS looking at was never touched.
-    expect(glyph(store, "elsewhere", seen, open)).toBe("completed");
+    // And the conversation this tab IS looking at was never touched: read, so nothing.
+    expect(glyph(store, "elsewhere", seen, open)).toBeNull();
   });
 });
 
 describe("the open Session", () => {
-  it("finishes under the user's eyes as completed and READ, with no unread flash", () => {
+  it("finishes under the user's eyes as READ — nothing drawn, no unread flash", () => {
     const store = storeWith(freshSession("open"));
     // Stale marker on purpose: the seen stamp is older than the run that is about to end, so
     // only the "this is the conversation on screen" rule can keep it out of unread.
@@ -250,10 +270,10 @@ describe("the open Session", () => {
 
     // The user channel settles the row first, moving lastActiveAt past the marker.
     applyUserEvent(store, stateEvent("open", "idle", FINISHED), neverReload);
-    expect(glyph(store, "open", seen, "open")).toBe("completed");
-    // Then this tab's own stream reports the same flip: still no flash.
+    expect(glyph(store, "open", seen, "open")).toBeNull();
+    // Then this tab's own stream reports the same flip: still no dot.
     store.getState().setStatus("open", "idle");
-    expect(glyph(store, "open", seen, "open")).toBe("completed");
+    expect(glyph(store, "open", seen, "open")).toBeNull();
   });
 
   it("its own stream writes the row with no stamp of its own to offer", () => {

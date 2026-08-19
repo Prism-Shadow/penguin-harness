@@ -274,9 +274,9 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 const DRAFTS_GROUP_KEY = "\0drafts";
 
 /**
- * Session status glyph: a turning hourglass while the Session is busy, a circled check once it
- * has settled (vivid until the user opens it again, muted after). A Session that has never run
- * shows nothing at all — see sessionActivity.
+ * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
+ * finished with a reply the user has not seen, and nothing once that reply has been read — or
+ * if the Session never ran at all. See sessionActivity.
  */
 function StatusGlyph({ activity }: { activity: SessionActivity }) {
   // Reserve the glyph's box even when there is no glyph: the row is a flex line whose title
