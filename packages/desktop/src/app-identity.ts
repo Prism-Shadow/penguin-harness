@@ -56,9 +56,9 @@ export function devDataRoot(homedir: string): string {
 
 /**
  * This form's data root, i.e. the precedence rule itself: an explicit `PENGUIN_HOME`
- * always wins; without one a release build shares the CLI's root (design § "桌面端原型 ·
- * 数据根与实例互斥") and a dev run takes the repo's dev root instead of attaching to — or
- * writing into — the release install's data.
+ * always wins; without one a release build shares the CLI's root by design, so a desktop
+ * install and the CLI see the same Agents, Sessions and usage, while a dev run takes the
+ * repo's dev root instead of attaching to — or writing into — the release install's data.
  *
  * `releaseRoot` stays a thunk (core's `resolveRoot`) so core remains the single
  * definition point of `~/.penguin/data`; it is only called when there is no explicit
