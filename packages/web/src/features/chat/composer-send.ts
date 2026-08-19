@@ -57,7 +57,8 @@ export interface MidRunComposerState {
 
 /**
  * The button's mode while a Task runs. Idle and compacting are not this function's business:
- * the button is always Send there, gated by the ordinary `canSend`.
+ * a compacting Session takes its face from `isStopAction` below, and an idle one is always
+ * Send, gated by the ordinary `canSend`.
  *
  * Steering is preferred over the queue when both could carry the draft, since it reaches the
  * turn already under way; the queue picks up what steering cannot — a skills-only draft, a
@@ -80,4 +81,27 @@ export function midRunAction(s: MidRunComposerState): MidRunAction {
   // Follow-up mode with a draft the queue refuses: steering is not a silent substitute for it,
   // because the two put the message in different places. Stop, as with anything unsendable.
   return "stop";
+}
+
+/**
+ * Whether the single action button wears its Stop face, for **every** session state.
+ *
+ * Compaction is abortable — the server takes an abort while a compaction is in flight and
+ * core stops the compaction request on the signal — but the button used to ask only
+ * `running && midRunAction(...) === "stop"`, and a compacting Session is not `running`. It
+ * therefore fell through to the Send branch, which `canSend` disables while compacting: a
+ * dead button exactly where Stop belonged, and no way to interrupt a compaction from the
+ * composer at all.
+ *
+ * That is the same mistake this module was extracted to stop repeating (see the header): a
+ * state where nothing can be sent must leave Stop, never a disabled Send. Compacting is
+ * unconditionally that state — neither send channel is offered while a compaction runs, so
+ * there is no draft the button could carry instead, whatever the composer holds.
+ */
+export function isStopAction(
+  status: "idle" | "running" | "compacting",
+  midRun: MidRunAction,
+): boolean {
+  if (status === "compacting") return true;
+  return status === "running" && midRun === "stop";
 }

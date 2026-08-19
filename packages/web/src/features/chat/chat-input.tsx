@@ -112,7 +112,7 @@ import {
   historyStepForward,
 } from "./input-history";
 import type { HistoryStep } from "./input-history";
-import { midRunAction } from "./composer-send";
+import { isStopAction, midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { splitDroppedFiles } from "../../lib/file-drop";
@@ -1339,7 +1339,8 @@ export function ChatInput({
   // Which of the two channels this draft can use, or Stop when neither will take it — the whole
   // decision lives in midRunAction so it can be reasoned about and tested on its own, and so
   // that Stop stays the fallthrough rather than a case somebody has to remember to widen. Only
-  // meaningful while running; idle/compacting is always Send, gated by canSend above.
+  // meaningful while running: an idle Session is always Send (gated by canSend above) and a
+  // compacting one is always Stop (see isStopAction).
   const midRun = midRunAction({
     sending: busy,
     goalOn,
@@ -1359,7 +1360,7 @@ export function ChatInput({
   const queueAction = running && midRun === "queue";
   const canMidRunSend = steerAction || queueAction;
   const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
-  const stopAction = running && midRun === "stop";
+  const stopAction = isStopAction(status, midRun);
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -2757,8 +2758,10 @@ export function ChatInput({
             {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,
               steers or queues per the remembered send mode (the "+" menu's settings row).
-              Idle/compacting keeps the ordinary send button (disabled while compacting via
-              canSend). Merging the pair keeps the running-state row within a 320px viewport. */}
+              While COMPACTING it is always Stop: a compaction is abortable, and neither send
+              channel is open then, so the alternative was a permanently disabled Send sitting
+              where the only available action belonged. Idle keeps the ordinary send button.
+              Merging the pair keeps the running-state row within a 320px viewport. */}
             <button
               type="button"
               title={stopAction ? S.chat.stop : running ? midRunSendLabel : S.chat.send}
