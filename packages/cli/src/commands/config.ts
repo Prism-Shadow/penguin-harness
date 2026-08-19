@@ -17,8 +17,8 @@
  * **no string concatenation is ever performed**. `--provider` is **required** on every model
  * subcommand that names an entry: the group is never guessed, so `--api-key` can never land on
  * a vendor the user did not name. For `model add`, a new entry's client_type defaults according
- * to the group's semantics (not set for first-party vendors; openai for custom / self-hosted
- * groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
+ * to the group's semantics (not set for first-party vendors; openai-chat for custom /
+ * self-hosted groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
  * / `model vision`, core validation raises an error when the reference is not
  * found in models; `model remove` reports the same condition itself, since removal is
  * idempotent in core, and clears the default / vision pointers that named the removed entry.
@@ -161,13 +161,14 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // client_type default rule, only injected for new entries (updating an
       // existing entry never overrides an explicit config): not set for first-party
       // vendor groups (AgentHub auto-routes by upstream id, with env fallback keyed on
-      // id); defaults to openai for custom / self-hosted / gateway groups, with the
-      // gateway's endpoint base URL pre-filled as well.
+      // id); defaults to openai-chat for custom / self-hosted / gateway groups, with the
+      // gateway's endpoint base URL pre-filled as well. (An explicit --client-type is
+      // passed through; core's addModel normalizes the deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
       const openAiDefault =
         pInfo === undefined || pInfo.id === "custom" || pInfo.gatewayBaseUrl !== undefined;
       const clientType: string | undefined =
-        opts.clientType ?? (!existed && openAiDefault ? "openai" : undefined);
+        opts.clientType ?? (!existed && openAiDefault ? "openai-chat" : undefined);
       const baseUrl: string | undefined =
         opts.baseUrl ?? (!existed ? pInfo?.gatewayBaseUrl : undefined);
       // Only collect explicitly given price fields, letting addModel merge them with the existing pricing per-field.

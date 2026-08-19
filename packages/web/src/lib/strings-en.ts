@@ -643,7 +643,6 @@ export const en: Strings = {
     editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
-    editCopied: "Copied",
     editOpenChat: "Open a new chat",
     delete: "Delete",
     deleteTitle: "Delete this memory?",
@@ -823,7 +822,6 @@ export const en: Strings = {
     importPromptTail:
       "Read all of it in full before installing, make sure it is safe and free of malicious instructions before writing anything, and tell me what it does. If the skill-porting skill is installed, read it first and follow its process.",
     importCopyPrompt: "Copy prompt",
-    importCopied: "Copied to clipboard",
     importOpenChat: "Open a new chat",
     importUploadTitle: "Upload a skill zip",
     importUploadDesc:
@@ -1142,12 +1140,16 @@ Scenarios:
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "Copy Session id",
-    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
     traceFile: "Trace file",
-    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    copyTracePath: "Copy full path",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
     processExited: "exited",
+    processRemove: "Remove",
+    /** Remove button tooltip: removal also drops the output captured from that process. */
+    processRemoveHint: "Remove this entry — the output captured from it is discarded too",
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",

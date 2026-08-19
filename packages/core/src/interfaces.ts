@@ -112,9 +112,10 @@ export interface GenerativeModelConfig {
   apiKey?: string;
   baseUrl?: string;
   /**
-   * AgentHub client protocol (`openai` / `claude-4-8` / `deepseek-v4` / …). If omitted, AgentHub
-   * infers it from `modelId`; custom-named models or third-party models using the OpenAI protocol
-   * must specify it explicitly.
+   * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /
+   * `deepseek-v4` / …; the bare `openai` spelling is a deprecated alias of `openai-chat`). If
+   * omitted, AgentHub infers it from `modelId`; custom-named models or third-party models
+   * using an OpenAI protocol must specify it explicitly.
    */
   clientType?: string;
   tools: ToolDefinition[];

@@ -331,7 +331,8 @@ const en: Messages = {
     addContextWindow: "Context window size (tokens)",
     addMaxTokens:
       "Per-model max output tokens (positive integer); when set it overrides the Agent's max_tokens, omit to inherit — lower it for small-context models",
-    addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
+    addClientType:
+      "AgentHub client type (e.g. openai-chat); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
     addFastMode:
@@ -595,7 +596,7 @@ const zh: Messages = {
     addContextWindow: "上下文窗口大小（token 数）",
     addMaxTokens:
       "该模型的最大输出长度（正整数）；设置后覆盖 Agent 的 max_tokens，缺省沿用——小上下文模型建议调低",
-    addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",
+    addClientType: "AgentHub 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
     addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",

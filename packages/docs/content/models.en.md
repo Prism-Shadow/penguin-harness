@@ -23,7 +23,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `model_id` | Upstream request id |
 | `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
-| `client_type` | Protocol hint (e.g. `openai`); inferred by AgentHub from the model id when omitted |
+| `client_type` | Protocol hint (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …); inferred by AgentHub from the model id when omitted. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `fast_mode` | Optional fast mode (off by default): opts the model's session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
@@ -46,7 +46,7 @@ context_window = 1000000
 [[models]]
 provider = "custom"
 model_id = "my-model"
-client_type = "openai"
+client_type = "openai-chat"
 base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
@@ -73,15 +73,15 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | minimax | `MINIMAX_API_KEY` | Direct MiniMax M3 Responses client (`client_type = "minimax-m3"`): `MiniMax-M3` with a 1,000,000-token context window and vision; preset base URL `https://api.minimax.io/v1`; accepts a Token Plan Subscription Key or pay-as-you-go API key |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint |
 
-The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's OpenAI client, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable. The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset pins `https://api.minimax.io/v1`; `MINIMAX_BASE_URL` is consulted only for entries without an inline `base_url`. M3 pricing records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; every rate doubles above that and the priority tier is 1.5x, so long-context and priority usage is underestimated — the same base-tier convention already used for OpenAI (>272K) and Gemini 3.1 Pro (>200K).
+The gateway groups (openrouter / fireworks / siliconflow / qwen-token-plan / qwen-pay-as-you-go) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable. Most gateway presets pin the Chat Completions client (`client_type = "openai-chat"`); the OpenRouter `openai/*` presets pin the Responses client (`client_type = "openai-responses"`) instead, because OpenRouter serves the Responses API at the same base URL and those rows' upstream is OpenAI itself. Both clients read the same `OPENAI_*` variables, so the credential rules are identical either way. The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset pins `https://api.minimax.io/v1`; `MINIMAX_BASE_URL` is consulted only for entries without an inline `base_url`. M3 pricing records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; every rate doubles above that and the priority tier is 1.5x, so long-context and priority usage is underestimated — the same base-tier convention already used for OpenAI (>272K) and Gemini 3.1 Pro (>200K).
 
-The preset catalog also carries OpenRouter's free tier: `:free` model variants (e.g. `inclusionai/ling-3.0-flash:free`, `nvidia/nemotron-3-ultra-550b-a55b:free`) and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
+The preset catalog also carries OpenRouter's free tier: the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, MiniMax-M3, gemini-3.1-pro-preview, claude-opus-4-8 / claude-sonnet-4-6, gpt-5.5, glm-5.2, kimi-k2.6, qwen3.8-max (not exhaustive).
+Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, MiniMax-M3, gemini-3.7-flash, claude-opus-4-8 / claude-sonnet-5, gpt-5.6 / gpt-5.5, glm-5.3, kimi-k3, qwen3.8-max (not exhaustive). The whole OpenAI line-up is listed twice — directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions). DeepSeek's direct-group prices record the official off-peak tier (peak hours, Beijing 9:00–12:00 and 14:00–18:00, bill double).
 
 ## Local / self-hosted OpenAI-compatible endpoints (e.g. vLLM)
 
-A local inference server is just a `custom` entry: `client_type = "openai"`, `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), and the served model name as `model_id`. Two settings make it run smoothly:
+A local inference server is just a `custom` entry: `client_type = "openai-chat"`, `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), and the served model name as `model_id`. Two settings make it run smoothly:
 
 - **Enable tool calling server-side.** For vLLM, start the server with `--enable-auto-tool-choice` and the `--tool-call-parser` matching your model (e.g. `hermes` for Qwen, `llama3_json` for Llama 3.x); without them tool calls arrive as plain text and the agent loop cannot execute anything.
 - **Set the entry's `context_window` to the server's real window** — for vLLM, the `--max-model-len` value (e.g. `32768`). The per-request output cap and the compaction threshold both derive from this window automatically: requests clamp `max_tokens` to what the window still fits, and compaction fires before the window overflows, so no hand-tuned `max_tokens` is needed. Left unset, the per-request output clamp is off and compaction assumes a 128000 window, so a smaller real window will reject requests.

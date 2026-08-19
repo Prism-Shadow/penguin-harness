@@ -44,10 +44,10 @@ describe("decimalOnly (price)", () => {
 });
 
 describe("clientTypeAfterProviderChange", () => {
-  it("uses openai when moving to Custom and otherwise preserves the current client", () => {
-    expect(clientTypeAfterProviderChange("custom", "")).toBe("openai");
-    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai");
-    expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
+  it("uses openai-chat when moving to Custom and otherwise preserves the current client", () => {
+    expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("google", "openai-chat")).toBe("openai-chat");
   });
 });
 

@@ -1054,9 +1054,10 @@ export class GenerativeModel implements LLMInterface {
 
   constructor(config: GenerativeModelConfig) {
     // Omit apiKey / baseUrl when undefined, letting AgentHub read them from environment
-    // variables. clientType determines which protocol to speak (`openai` means OpenAI Chat
-    // Completions compatible); when omitted, AgentHub infers it from model_id, so it only needs
-    // to be specified explicitly for custom-named models.
+    // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
+    // Chat Completions compatible; the bare `openai` spelling is a deprecated upstream alias);
+    // when omitted, AgentHub infers it from model_id, so it only needs to be specified
+    // explicitly for custom-named models.
     this.client = new AutoLLMClient({
       model: config.modelId,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
