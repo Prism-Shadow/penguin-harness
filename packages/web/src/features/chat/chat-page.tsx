@@ -1129,21 +1129,45 @@ export function ChatPage() {
     [selected],
   );
 
+  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
+  // returned row into the session store (the picker reads it back from there). Modeled on
+  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // was, rather than showing a level the server does not have.
+  // Defined above the recall callback below, which depends on it: both are useCallbacks in
+  // this component body, so a later `const` would still be in its temporal dead zone when
+  // that dependency array is evaluated during render.
+  const applyTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (!selected) return;
+      void api
+        .patchSession(selected.sessionId, {
+          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+        })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        });
+    },
+    [selected, replace],
+  );
+
   const onRecallFollowUp = useCallback(
     async (followUpId: string) => {
       if (!selected) return null;
       try {
         const res = await api.recallFollowUp(selected.sessionId, followUpId);
         // The follow-up was queued with a per-turn thinking level: restore it with the draft,
-        // so an unedited resend goes out exactly as it was queued.
-        if (res.thinkingLevel) setTurnThinkingLevel(res.thinkingLevel);
+        // so an unedited resend goes out exactly as it was queued. Since the level became a
+        // Session-level pin (it outlives the tab), restoring it means pinning it back on the
+        // Session rather than setting a local per-turn state that no longer exists.
+        if (res.thinkingLevel) applyTurnThinkingLevel(res.thinkingLevel);
         return res;
       } catch (e) {
         toastError(apiErrorText(e));
         return null;
       }
     },
-    [selected],
+    [selected, applyTurnThinkingLevel],
   );
 
   const onApprove = useCallback(
@@ -1201,25 +1225,6 @@ export function ChatPage() {
   const onCompact = useCallback(async () => {
     await runCompaction();
   }, [runCompaction]);
-
-  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
-  // returned row into the session store (the picker reads it back from there). Modeled on
-  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have.
-  const applyTurnThinkingLevel = useCallback(
-    (level: string) => {
-      if (!selected) return;
-      void api
-        .patchSession(selected.sessionId, {
-          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
-        })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
-        });
-    },
-    [selected, replace],
-  );
 
   // Session picker pick: pinned directly while it cannot hurt (empty transcript, a re-pick
   // of the displayed level, or right after a successful compaction), staged behind the
