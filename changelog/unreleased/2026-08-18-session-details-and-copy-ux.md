@@ -1,45 +1,30 @@
-# Removable exited processes, icon-only copy feedback, single-line trace file name
+# Removable exited processes, icon-only copy feedback, single-line Trace file row
 
-Three details-card / copy UX fixes from issue #312.
+- **Date:** 2026-08-18
+- **Type:** fix
+- **Scope:** `web`, `server`, `docs`
+- **PR:** [#327](https://github.com/Prism-Shadow/penguin-harness/pull/327)
+- **Issue:** [#312](https://github.com/Prism-Shadow/penguin-harness/issues/312)
 
-## Exited session processes can be removed (Web App & Server)
+[中文版](2026-08-18-session-details-and-copy-ux.zh.md)
 
-The session details card's process list keeps entries whose command has already exited
-(the "已退出/exited" rows). Those rows now carry a **Remove** button that deletes the
-entry from the list; running rows keep their **Stop** button (which kills and removes,
-as before) and are deliberately not removable — a bare removal must never
-surprise-signal a live process group.
+Three fixes to the chat session's details card and the copy affordances around it: exited background processes became removable from the process list, copy buttons confirm with their icon alone, and the Trace file row shows a single-line file name.
 
-- New endpoint `DELETE /api/sessions/:sessionId/processes/:processId`: 204 removes an
-  exited entry, 409 `process_running` while the process still runs (stop it instead),
-  404 `process_not_found` when the id is unknown or the runtime is gone. The removal
-  reuses the kill path on the dead entry, exactly like `input_command`'s post-exit reap.
-- Removal is immediate and final: the entry leaves the runtime registry together with the
-  output captured from that process, so afterwards the model can no longer be asked to
-  read it (`input_command` on that `process_id` fails). There is no confirm step for a
-  one-click tidy-up of a dead row — the button's tooltip and the docs say what goes with it.
-- The docs' session endpoint table now lists all three `/processes` routes (the GET and
-  the kill POST had been undocumented).
+## Removable exited processes
 
-## Copy buttons confirm with the check icon alone (Web App)
+The details card's process list keeps entries whose command has already exited. Those rows gained a **Remove** button that deletes the entry; running rows kept their **Stop** button, which kills and removes as before, and were deliberately left non-removable.
 
-After a successful copy, every copy button swaps its copy icon to a check mark for a
-moment (the tooltip flips to "已复制/Copied") — the transient "已复制/Copied" **text
-label** is gone everywhere (previously shown next to the check on the Session id and
-Agent State path rows). The memory tab's and the skill import dialog's "Copy prompt"
-buttons move from toast feedback onto the same shared convention (their glyph flips,
-their label never changes), and the now-unused toast strings are removed.
+- Added `DELETE /api/sessions/:sessionId/processes/:processId`: 204 removes an exited entry, 409 `process_running` while the process is still running (stop it instead), 404 `process_not_found` when the id is unknown or the runtime is gone. The removal reuses the kill path on the dead entry, like `input_command`'s post-exit reap.
+- Removal is immediate and final: the entry leaves the runtime registry together with the output captured from that process, so `input_command` on that `process_id` afterwards reports an unknown `process_id`. No confirmation step was added — the button's tooltip and the Web App docs state what the row takes with it.
+- The docs' session endpoint table gained rows for all three `/processes` routes; the GET and the kill POST had been undocumented.
 
-An icon swap is silent, so every copy control now also carries a visually hidden polite
-live region that announces the confirmation to screen readers — the accessible name stays
-the copy action, as before. Repeated clicks each get the full flash window (the pending
-reset is restarted rather than left over from the previous click), and a control that
-unmounts inside that window — the Trace row closes the details card itself — no longer
-leaves a timer behind.
+## Copy buttons confirm with the check icon alone
 
-## Trace file row shows the single-line file name (Web App)
+After a successful copy, every copy button swaps its copy icon to a check mark for a moment and flips its tooltip to "Copied". The transient "Copied" **text label** was dropped everywhere — it had sat next to the check on the Session id and Agent State path rows. The memory tab's and the skill import dialog's "Copy prompt" buttons moved off toast feedback and onto that shared convention, flipping their glyph while their visible label stays put; the toast strings they had used were removed.
 
-The details card's Trace file row no longer wraps the full absolute path over several
-lines: it shows just the file name on one line. The full path lives in the tooltip and
-in a new copy-full-path button beside the name; clicking the name still deep-links into
-the Trace browser focused on the session.
+- An icon swap is silent, so every copy control also renders a visually hidden polite live region that announces the confirmation to screen readers. The accessible name stays the copy action.
+- Repeated clicks each get the full flash window: the pending reset is restarted rather than left over from the previous click. A control that unmounts inside that window — the Trace row closes the details card itself — no longer leaves a timer behind.
+
+## Trace file row shows the single-line file name
+
+The details card's Trace file row stopped wrapping the full absolute path over several lines and shows just the file name on one line. The full path moved into the tooltip and into a new copy-full-path button beside the name; clicking the name still deep-links into the Trace browser focused on the session.

@@ -1,5 +1,12 @@
 # Skills: skill-porting — install skills from any ecosystem
 
+- **Date:** 2026-08-04
+- **Type:** feature
+- **Scope:** `skills`, `docs`
+- **PR:** [#195](https://github.com/Prism-Shadow/penguin-harness/pull/195)
+
+[中文版](2026-08-04-skill-porting-library-skill.zh.md)
+
 New library skill `skill-porting` (agent-tuning group) teaching an agent to bring skills in from the outside world and land them correctly in `agent_state/skills/<name>/`. Its schema tables were verified by directly fetching each source on 2026-08-04 — the skill says so and treats the live JSON as authoritative:
 
 - **Claude Code plugin marketplaces** (`anthropics/claude-plugins-official`, 278 plugins): the marketplace.json shape, all four `source` forms (relative path, sha-pinned `url`, `git-subdir`, `github`) and the five places a plugin can keep skills.
