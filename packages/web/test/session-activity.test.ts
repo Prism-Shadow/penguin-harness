@@ -112,12 +112,12 @@ describe("SessionActivityIcon", () => {
     expect(render("compacting")).toContain("dark:text-amber-400");
   });
 
-  it("gives the dot ink that clears 3:1 in BOTH themes, being the only marker left", () => {
-    // emerald-600 on white is 3.77:1; the emerald-500 this dot was first drawn in reaches only
-    // 2.57:1 there. Dark mode keeps the brighter emerald-400 (10.37:1 on gray-950).
+  it("draws the dot in the emerald the Session status dot has always used", () => {
+    // Same green as the pulsing dot this replaces (sidebar StatusDot / chat header): one tone
+    // in both themes, no per-theme override.
     const unread = render("completedUnread");
-    expect(unread).toContain("bg-emerald-600");
-    expect(unread).toContain("dark:bg-emerald-400");
+    expect(unread).toContain("bg-emerald-500");
+    expect(unread).not.toMatch(/dark:bg-emerald-/);
   });
 
   it("occupies the same box whatever the glyph, so a row never shifts", () => {

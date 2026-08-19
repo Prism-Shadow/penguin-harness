@@ -30,17 +30,15 @@ export const ACTIVITY_GLYPH: Record<"running" | "compacting", string> = {
 };
 
 /**
- * Ink per state. Contrast measured against the surfaces these glyphs actually sit on — white
- * and gray-950 — as WCAG 2.x ratios; the 3:1 bar for non-text graphics (1.4.11) is what these
- * are held to:
+ * Ink for the two busy states, measured against the surfaces they actually sit on — white and
+ * gray-950 — as WCAG 2.x ratios:
  *
  * - running    gray-500 / gray-400 …… 4.83 : 1 light, 7.93 : 1 dark
  * - compacting amber-600 / amber-400 … 3.19 : 1 light, 12.06 : 1 dark
- * - unread dot emerald-600 / emerald-400 … 3.77 : 1 light, 10.37 : 1 dark
  *
- * The dot is a shade darker in light mode than the emerald-500 it was originally drawn in:
- * as the only marker left in the list it has to clear 3:1 on white, and emerald-500 reaches
- * just 2.57:1 there. Dark mode keeps the brighter emerald-400 for the same reason in reverse.
+ * The unread dot takes the emerald the Session status dot has always used — `bg-emerald-500`,
+ * one tone in both themes (sidebar.tsx's StatusDot, and its twin in the chat header). It is the
+ * same kind of marker in the same place, so it stays the same green.
  */
 const APPEARANCE: Record<"running" | "compacting", string> = {
   running: "hourglass-turn text-gray-500 dark:text-gray-400",
@@ -73,7 +71,7 @@ export function SessionActivityIcon({
         style={{ width: size, height: size }}
         className="flex shrink-0 items-center justify-center"
       >
-        <span className="block h-2 w-2 rounded-full bg-emerald-600 dark:bg-emerald-400" />
+        <span className="block h-2 w-2 rounded-full bg-emerald-500" />
       </span>
     );
   }
