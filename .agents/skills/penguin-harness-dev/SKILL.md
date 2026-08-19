@@ -72,7 +72,7 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 
 The PR number exists only once the PR is open: open it, then add the links in a follow-up commit on the same branch.
 
-Changelog entries land in their own aggregate PR, not inside feature PRs. Released version folders are frozen. `RELEASE.md` is written at release preparation and must be committed **before** the tag — the workflow reads it from the tag's own checkout.
+An entry ships **inside the PR that makes the change** — there is no separate aggregate PR. Released version folders are frozen. `RELEASE.md` is written at release preparation and must be committed **before** the tag — the workflow reads it from the tag's own checkout.
 
 ## Changing the built-in model catalog
 

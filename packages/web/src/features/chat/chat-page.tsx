@@ -1112,6 +1112,27 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
+  // returned row into the session store (the picker reads it back from there). Modeled on
+  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // was, rather than showing a level the server does not have. Declared above the recall
+  // callbacks because one of them lists it as a dependency, which is evaluated during
+  // render rather than when the callback runs.
+  const applyTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (!selected) return;
+      void api
+        .patchSession(selected.sessionId, {
+          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+        })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        });
+    },
+    [selected, replace],
+  );
+
   // Recall a queued message back into the composer (#287): the DELETE returns the original
   // content (text / images / files) and the input area restores it as the draft. A 409
   // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
@@ -1129,37 +1150,14 @@ export function ChatPage() {
     [selected],
   );
 
-  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
-  // returned row into the session store (the picker reads it back from there). Modeled on
-  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
-  // was, rather than showing a level the server does not have.
-  // Defined above the recall callback below, which depends on it: both are useCallbacks in
-  // this component body, so a later `const` would still be in its temporal dead zone when
-  // that dependency array is evaluated during render.
-  const applyTurnThinkingLevel = useCallback(
-    (level: string) => {
-      if (!selected) return;
-      void api
-        .patchSession(selected.sessionId, {
-          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
-        })
-        .then((res) => replace(res.session))
-        .catch((e: unknown) => {
-          toastError(apiErrorText(e));
-        });
-    },
-    [selected, replace],
-  );
-
   const onRecallFollowUp = useCallback(
     async (followUpId: string) => {
       if (!selected) return null;
       try {
         const res = await api.recallFollowUp(selected.sessionId, followUpId);
         // The follow-up was queued with a per-turn thinking level: restore it with the draft,
-        // so an unedited resend goes out exactly as it was queued. Since the level became a
-        // Session-level pin (it outlives the tab), restoring it means pinning it back on the
-        // Session rather than setting a local per-turn state that no longer exists.
+        // so an unedited resend goes out exactly as it was queued. The level now lives on the
+        // Session (#310), so restoring it pins it there rather than in local state.
         if (res.thinkingLevel) applyTurnThinkingLevel(res.thinkingLevel);
         return res;
       } catch (e) {

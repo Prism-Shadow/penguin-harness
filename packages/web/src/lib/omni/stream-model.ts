@@ -491,6 +491,22 @@ export interface StreamModel {
    * null = this round has no request_end yet (a degenerate round, falls back to taskLastTsMs).
    */
   taskLastReqEndMs: number | null;
+  /**
+   * Whether the turn that ran most recently produced tool outputs — the same
+   * question the engine asks to tell a mid-Task compaction from a wrap-up one
+   * (`turn.toolOutputs.length > 0`). Set by a complete tool_call_output, cleared
+   * when the next Request opens, and read at `compaction_begin` (see
+   * `isWrapUpCompaction`).
+   */
+  turnToolOutputs: boolean;
+  /**
+   * A wrap-up compaction closed the round before its banner was created (see
+   * `compaction_begin`), yet the Task can still continue: steering queued while
+   * that compaction ran is delivered right after it and keeps the loop going.
+   * The steering chip reopens a Task for that continuation, so its reply gets a
+   * ledger of its own instead of no footer at all.
+   */
+  reopenTaskAtSteering: boolean;
   nextItemId: number;
 }
 
@@ -519,6 +535,8 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
     taskLastReqEndMs: null,
+    turnToolOutputs: false,
+    reopenTaskAtSteering: false,
     nextItemId: 1,
   };
 }
@@ -788,6 +806,8 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   // Any unclosed Request start / approval wait left over from the previous Task isn't carried into this Task's LLM timing.
   model.openRequestBeginMs = null;
   model.openApprovalWaitMs = 0;
+  model.turnToolOutputs = false;
+  model.reopenTaskAtSteering = false;
   model.taskOpen = true;
   model.taskStartLocalMs = nowMs;
   const ts = Date.parse(timestamp);
@@ -841,13 +861,14 @@ function finalizeOpenTask(model: StreamModel): void {
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
     ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
   };
-  // The stats row is inserted **before this trailing run of compaction
-  // banners**: an automatic compaction triggered while finalizing a round
-  // would otherwise sandwich its banner between the reply and the stats row
-  // (items: assistant_text → compaction → task_stats), leaving the stats
-  // row underneath the banner, reading as if it were "the compaction's
-  // stats" when it's actually reporting this round's conversation.
-  // Compaction is housekeeping outside this round, so it belongs after this round's ledger, not before it.
+  // The stats row is inserted **before any trailing run of compaction banners**: compaction
+  // is its own round, housekeeping outside this one, so it belongs after this round's ledger
+  // — a banner sandwiched between the reply and the row (assistant_text → compaction →
+  // task_stats) reads as if the row were the compaction's own stats.
+  // A wrap-up compaction normally settles the round on arrival, before its banner exists
+  // (see isWrapUpCompaction), so this loop is what still places the row correctly in the
+  // cases that test declines to judge — a mid-stream join, or a round whose reply never
+  // landed as an item.
   let at = model.items.length;
   while (at > 0 && model.items[at - 1]!.kind === "compaction") at--;
   model.items.splice(at, 0, statsItem);
@@ -1034,6 +1055,11 @@ function handleComplete(
         // user-styled steering chip in-flow.
         const steering = parseUserSteeringText(p.text);
         if (steering !== null) {
+          // Unless a wrap-up compaction already settled the round it belongs to: this
+          // steering is exactly why the Task went on past that compaction, so it opens the
+          // continuation's own round rather than joining a closed one (see
+          // reopenTaskAtSteering).
+          if (model.reopenTaskAtSteering && !model.taskOpen) startTask(model, timestamp, nowMs);
           touchTask(model, timestamp);
           const steerMs = tsOf(timestamp);
           const item: UserSteeringItem = {
@@ -1229,6 +1255,9 @@ function handleComplete(
       card.outputComplete = true;
       if (p.stop_reason !== undefined) card.outputStopReason = p.stop_reason;
       settleToolDuration(card, tsOf(timestamp));
+      // This turn owes the model its results, so a compaction triggering now is mid-Task
+      // and the round is not over (see turnToolOutputs).
+      model.turnToolOutputs = true;
       return;
     }
     // inline_data / inline_thinking: same convention as the CLI's history rendering — not shown for now.
@@ -1442,6 +1471,15 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "compaction_begin": {
+      // A wrap-up compaction is its own round, so the round it follows is over: settle that
+      // round's ledger NOW, before the banner exists, and the banner is created underneath
+      // it. Settling at task-idle instead would put the banner on screen first and slide the
+      // stats row in above it once the compaction finished — a jump, since a compaction
+      // request against the largest context of the session takes seconds.
+      if (isWrapUpCompaction(model)) {
+        finalizeOpenTask(model);
+        model.reopenTaskAtSteering = true;
+      }
       beginCompaction(model.stats);
       model.items.push({
         kind: "compaction",
@@ -1487,6 +1525,8 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       if (!model.stats.compactionActive) {
         model.openRequestBeginMs = tsMs ?? null;
         model.openApprovalWaitMs = 0;
+        // A new turn: whatever the previous one owed the model has been sent with it.
+        model.turnToolOutputs = false;
       }
       return;
     }
@@ -1581,6 +1621,26 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
     if (item.kind === "compaction" && item.running) return item;
   }
   return null;
+}
+
+/**
+ * Whether a compaction starting right now wraps the round up rather than interrupting it
+ * mid-Task — the test for settling the round's stats row ahead of the banner.
+ *
+ * Two signals must agree, and either one being unsure simply leaves the old behavior (the row
+ * is placed above the trailing banners at finalization instead, see finalizeOpenTask):
+ *   - the turn that just ran produced no tool outputs — the engine's own criterion for a
+ *     mid-Task compaction (`turn.toolOutputs.length > 0`);
+ *   - the round's last item is the model's reply, which is what "the conversation ended" looks
+ *     like on screen. A client that joined mid-Task, or a history window paged in after this
+ *     round's tool outputs, can satisfy the first signal without ever having seen them, while a
+ *     tool card sitting at the end says the round is still working.
+ * A manual `/compact` between Tasks needs neither: no Task is open, so there is nothing to
+ * settle and the banner already lands after the previous round's row.
+ */
+function isWrapUpCompaction(model: StreamModel): boolean {
+  if (!model.taskOpen || model.turnToolOutputs) return false;
+  return model.items[model.items.length - 1]?.kind === "assistant_text";
 }
 
 function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {
