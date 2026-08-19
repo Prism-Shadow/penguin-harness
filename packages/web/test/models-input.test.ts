@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  capabilityRow,
   clientTypeAfterProviderChange,
   decimalOnly,
   digitsOnly,
@@ -261,5 +262,36 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
     expect(fastModeState(draft({ modelId: "claude-fable-5", clientType: "  " })).protocol).toBe(
       "anthropic",
     );
+  });
+});
+
+describe("capabilityRow (vision support + fast mode sharing one row)", () => {
+  it("splits the row into two half-width cells when both switches are there", () => {
+    expect(capabilityRow({ vision: true, fastMode: true })).toEqual({
+      show: true,
+      cellClass: undefined,
+    });
+  });
+
+  it("gives a lone switch the full width, in either direction", () => {
+    // The pair is a coincidence, not an invariant. Fast mode is withheld for every model
+    // whose routed client rejects the parameter (the common case), and the vision switch has
+    // to keep rendering on its own — full width, not squeezed into half a row beside a hole.
+    expect(capabilityRow({ vision: true, fastMode: false })).toEqual({
+      show: true,
+      cellClass: "col-span-2",
+    });
+    // The mirror image: a preset model annotated by the catalog shows no vision switch, so
+    // fast mode is alone.
+    expect(capabilityRow({ vision: false, fastMode: true })).toEqual({
+      show: true,
+      cellClass: "col-span-2",
+    });
+  });
+
+  it("drops the row entirely when neither switch is there", () => {
+    // A preset model whose client rejects fast mode has no capability switches at all: the
+    // grid must not render, or the dialog's space-y would draw a gap around an empty box.
+    expect(capabilityRow({ vision: false, fastMode: false }).show).toBe(false);
   });
 });

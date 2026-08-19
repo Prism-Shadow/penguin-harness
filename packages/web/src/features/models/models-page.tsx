@@ -335,6 +335,25 @@ export function fastModeState(
   return { protocol, show: protocol !== undefined || row.fastMode };
 }
 
+/**
+ * Layout of the dialog's capability row, which carries the vision-support and fast-mode
+ * switches side by side in the two-up grid.
+ *
+ * Neither switch is guaranteed to be there: vision is read-only catalog metadata on preset
+ * models (no switch at all), and fast mode is withheld wherever the routed client rejects the
+ * parameter (see fastModeState). So the pair is a coincidence, not an invariant, and the row
+ * degrades in both directions — with neither switch it must not be rendered at all (an empty
+ * grid still draws the parent's `space-y` gap), and with exactly one the lone switch spans
+ * both columns rather than sitting in a half-width cell next to dead space.
+ */
+export function capabilityRow(present: { vision: boolean; fastMode: boolean }): {
+  show: boolean;
+  cellClass: string | undefined;
+} {
+  const both = present.vision && present.fastMode;
+  return { show: present.vision || present.fastMode, cellClass: both ? undefined : "col-span-2" };
+}
+
 function rowToEntry(row: RowState): ModelUpdateEntry {
   // provider and modelId are always submitted as separate fields ((provider, modelId) is the entry's unique key, no concatenation).
   const entry: ModelUpdateEntry = { provider: row.provider, modelId: row.modelId };
@@ -1158,6 +1177,14 @@ function ModelDialog({
   // the base URL updates the answer as it is typed.
   const { protocol: fastProtocol, show: showFastMode } = fastModeState(form);
 
+  // Vision support and fast mode share one row; either can be missing, so the row's own
+  // presence and the cell width follow from which switches are actually there (capabilityRow).
+  const showVision = !preset;
+  const { show: showCapabilityRow, cellClass: toggleCellClass } = capabilityRow({
+    vision: showVision,
+    fastMode: showFastMode,
+  });
+
   const set = (patch: Partial<RowState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
     // Clear the error marker for whichever field was changed (keys match RowState field names).
@@ -1787,75 +1814,88 @@ function ModelDialog({
             </p>
           )}
 
-        {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only);
-            custom models toggle it here — an iOS-style switch sitting inline right next to the
-            label (per owner: no full-row stretch, no standing explanation text). Only the OFF
-            state shows one small muted line: images are then read via the configured vision
-            proxy model (describe_image). */}
-        {!preset && (
-          <div>
-            <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-            >
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.vision}
-              </span>
-              <Switch
-                checked={form.vision}
-                disabled={!canEdit}
-                onChange={(vision) => set({ vision })}
-                aria-label={S.models.vision}
-              />
-            </label>
-            {!form.vision && (
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                {S.models.visionOffProxyHint}
-              </p>
+        {/* 6) Capability switches — vision support and fast mode side by side on one row,
+            reusing the dialog's two-up grid (same `grid grid-cols-2 items-start gap-2` as the
+            context-window / max-tokens row above, which already carries two full inputs at
+            phone width; two compact switches are strictly narrower). `items-start` keeps both
+            cells top-aligned when only one of them grows a muted hint line, and the hint text
+            wraps inside its half-width cell rather than overflowing. Each switch is optional,
+            so the row itself is conditional and a lone switch takes the whole width
+            (toggleCellClass) — the layout must not depend on both being present. */}
+        {showCapabilityRow && (
+          <div className="grid grid-cols-2 items-start gap-2">
+            {/* Vision capability: for preset models it's flagged by the built-in catalog
+                (read-only, so no cell at all); custom models toggle it here — an iOS-style
+                switch sitting inline right next to the label (per owner: no full-row stretch,
+                no standing explanation text). Only the OFF state shows one small muted line:
+                images are then read via the configured vision proxy model (describe_image). */}
+            {showVision && (
+              <div className={toggleCellClass}>
+                <label
+                  className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                >
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                    {S.models.vision}
+                  </span>
+                  <Switch
+                    checked={form.vision}
+                    disabled={!canEdit}
+                    onChange={(vision) => set({ vision })}
+                    aria-label={S.models.vision}
+                  />
+                </label>
+                {!form.vision && (
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.visionOffProxyHint}
+                  </p>
+                )}
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
-            pricing). Offered only where AgentHub's routed client actually puts the parameter
-            on the wire (fastModeProtocol) — a model whose client rejects it would otherwise
-            arm a switch that kills the next turn. Same inline-switch shape as vision; the one
-            small muted line appears in the non-default (ON) state, and the label's hover title
-            reveals it before toggling. Enabling is confirmed (premium billing), disabling is
-            immediate. */}
-        {showFastMode && (
-          <div>
-            <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-              title={S.models.fastModeHint}
-            >
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.fastMode}
-              </span>
-              <Switch
-                checked={form.fastMode}
-                disabled={!canEdit}
-                onChange={(fastMode) => {
-                  // Only the ON direction is confirmed: it is the one that starts spending at
-                  // premium rates. Turning it off costs nothing and must stay one click — it
-                  // is the documented escape from a model that rejects the parameter.
-                  if (fastMode) setConfirmingFastMode(true);
-                  else set({ fastMode: false });
-                }}
-                aria-label={S.models.fastMode}
-              />
-            </label>
-            {form.fastMode && (
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                {S.models.fastModeHint}
-              </p>
-            )}
-            {/* Reachable only for a stored annotation the rule would not have offered (a
-                hand-edited config, `--fast-mode`, or an id renamed after the fact): the switch
-                is kept visible precisely so it can be turned off, and says why it should be. */}
-            {form.fastMode && fastProtocol === undefined && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
-                {S.models.fastModeUnsupported}
-              </p>
+            {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
+                pricing). Offered only where AgentHub's routed client actually puts the
+                parameter on the wire (fastModeProtocol) — a model whose client rejects it
+                would otherwise arm a switch that kills the next turn. Same inline-switch shape
+                as vision; the one small muted line appears in the non-default (ON) state, and
+                the label's hover title reveals it before toggling. Enabling is confirmed
+                (premium billing), disabling is immediate. */}
+            {showFastMode && (
+              <div className={toggleCellClass}>
+                <label
+                  className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+                  title={S.models.fastModeHint}
+                >
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                    {S.models.fastMode}
+                  </span>
+                  <Switch
+                    checked={form.fastMode}
+                    disabled={!canEdit}
+                    onChange={(fastMode) => {
+                      // Only the ON direction is confirmed: it is the one that starts spending
+                      // at premium rates. Turning it off costs nothing and must stay one click
+                      // — it is the documented escape from a model that rejects the parameter.
+                      if (fastMode) setConfirmingFastMode(true);
+                      else set({ fastMode: false });
+                    }}
+                    aria-label={S.models.fastMode}
+                  />
+                </label>
+                {form.fastMode && (
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                    {S.models.fastModeHint}
+                  </p>
+                )}
+                {/* Reachable only for a stored annotation the rule would not have offered (a
+                    hand-edited config, `--fast-mode`, or an id renamed after the fact): the
+                    switch is kept visible precisely so it can be turned off, and says why it
+                    should be. */}
+                {form.fastMode && fastProtocol === undefined && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                    {S.models.fastModeUnsupported}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
