@@ -1,5 +1,12 @@
 # Web App: the Traces page scales like the session sidebar
 
+- **Date:** 2026-08-04
+- **Type:** feature
+- **Scope:** `web`, `server`
+- **PR:** [#183](https://github.com/Prism-Shadow/penguin-harness/pull/183)
+
+[中文版](2026-08-04-traces-page-scaling.zh.md)
+
 The trace list used to fetch everything at once: every agent auto-expanded on load, each expansion walked the agent's entire trace tree server-side with a stat per file, every session row and file pill rendered, and any session the paged sidebar store hadn't loaded fell back to its raw id in mono type — long-lived Projects froze the page.
 
 `GET /api/projects/:p/agents/:a/traces` now takes optional `offset`/`limit`. Without them the response shape is byte-identical to before; with them the server returns newest-first session groups plus a total, and only the returned page is stat-ed (sizes written back to the index).

@@ -117,4 +117,4 @@ curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/downl
 penguin web
 ```
 
-然后打开 Models 页面，填入 Gemini 或 OpenRouter 的 Key，选择 `gemini-3.6-flash` 即可。完整的发布说明见 [`changelog/0.1.1/`](https://github.com/Prism-Shadow/penguin-harness/blob/main/changelog/0.1.1/README.md)。
+然后打开 Models 页面，填入 Gemini 或 OpenRouter 的 Key，选择 `gemini-3.6-flash` 即可。完整的发布说明见 [`changelog/0.1.1/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.1)。

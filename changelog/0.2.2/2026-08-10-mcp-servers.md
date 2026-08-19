@@ -1,6 +1,15 @@
 # MCP Server support: stdio, Streamable HTTP and SSE transports
 
-`tools.mcpServers` in `system_config.yaml` — until now a reserved, empty seam — is wired to a real MCP (Model Context Protocol) client, built on the official TypeScript SDK v2 (`@modelcontextprotocol/client` 2.0.0, spec revision 2026-07-28). Each entry keeps the spec's `{ name, config }` shape; `config` describes one of three transports (#242, closing #239 and #229):
+- **Date:** 2026-08-10
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `cli`, `docs`
+- **PR:** [#242](https://github.com/Prism-Shadow/penguin-harness/pull/242)
+- **Issue:** [#229](https://github.com/Prism-Shadow/penguin-harness/issues/229), [#239](https://github.com/Prism-Shadow/penguin-harness/issues/239)
+- **Breaking:** yes — pre-split Traces' embedded tool record is no longer read or displayed.
+
+[中文版](2026-08-10-mcp-servers.zh.md)
+
+`tools.mcpServers` in `system_config.yaml` — until now a reserved, empty seam — is wired to a real MCP (Model Context Protocol) client, built on the official TypeScript SDK v2 (`@modelcontextprotocol/client` 2.0.0, spec revision 2026-07-28). Each entry keeps the spec's `{ name, config }` shape; `config` describes one of three transports ([#242](https://github.com/Prism-Shadow/penguin-harness/pull/242), closing [#239](https://github.com/Prism-Shadow/penguin-harness/issues/239) and [#229](https://github.com/Prism-Shadow/penguin-harness/issues/229)):
 
 - `stdio` — spawn a local server process (`command` / `args` / `env` / `cwd`);
 - `http` — Streamable HTTP, the current spec's remote transport (`url` / `headers`);
@@ -29,3 +38,7 @@ Session creation no longer blocks on MCP connects — the first send used to fre
 - Credential validation stays at Session-creation time (the server's `model_credential_missing` 400 is preserved); a resumed session no longer blocks on MCP either, at the price of trace-corruption errors surfacing on the first run instead of at resume.
 
 Existing configs are unaffected: `mcpServers` defaulted to `[]` and the inner `config` object was never interpreted before, so no stored shape changes and no migration is involved. Docs: the tools, configuration, interfaces, web-app and omni-message pages (zh + en) document the schema, events and semantics.
+
+## Compatibility
+
+`session_meta` no longer carries `tools`; the schemas arrive as a separate `tool_list_ready` event. A Trace written before the split keeps its embedded tool record on disk, but nothing reads or displays it — everything else about such a Trace renders unchanged. No migration and no user action; no compatibility code was kept for the old shape. Stored `mcpServers` configs are unaffected: the field defaulted to `[]` and the inner `config` object was never interpreted before.

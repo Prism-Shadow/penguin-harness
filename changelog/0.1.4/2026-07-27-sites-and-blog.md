@@ -1,5 +1,12 @@
 # Sites: blog images move to the community repo
 
+- **Date:** 2026-07-27
+- **Type:** process
+- **Scope:** `landing`
+- **PR:** [#98](https://github.com/Prism-Shadow/penguin-harness/pull/98)
+
+[中文版](2026-07-27-sites-and-blog.zh.md)
+
 Blog images are the one asset class in this repo whose growth has no ceiling. A published post's images are never deleted, and every new post adds a few hundred KB more — bytes that only the marketing site ever renders, carried forever by everyone who clones the repo to build the product. They now live where the demo videos already do, in the sibling `Prism-Shadow/penguin-harness-community` repo, served from raw.githubusercontent with `access-control-allow-origin: *` and a five-minute cache; the seven files this repo carried under `packages/landing/public/blog-assets/` (six post images plus the generated `benchmark-light.svg`) are deleted. The accepted trade is that a GitHub outage degrades the site to missing images, which is cheaper than the bytes.
 
 ## Post bodies did not change
