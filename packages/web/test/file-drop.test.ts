@@ -1,22 +1,24 @@
 /**
- * Drag-and-drop upload logic (lib/file-drop.ts): what counts as a file drag, the overlay's
- * drag-depth machine, how a dropped batch splits across the composer's two intakes, and the
- * app-shell guard that cancels the browser's navigate-to-file default.
+ * Drag-and-drop upload logic (lib/file-drop.ts): what counts as a file drag, what the chat
+ * area's drop zone does with one drag event, how a dropped batch splits across the composer's
+ * two intakes, and the app-shell guard that cancels the browser's navigate-to-file default.
  *
- * The depth machine is the part that earns the tests: dragenter/dragleave fire for every
- * element boundary crossed, so the naive boolean flickers the overlay off inside the window,
- * and an unpaired leave (browsers drop one occasionally) must not strand it visible or drive
- * the counter negative.
+ * The region decision is the part that earns the tests, because it is where the feature's
+ * scope lives: the overlay and the attachment happen only while the drag is over the chat
+ * area, and a file released on the sidebar, the top bar or a docked panel must produce no
+ * attachments at all — while still being cancelled by the app-wide guard, so the browser does
+ * not navigate to the file. Being stateless is the other half: the overlay is re-derived from
+ * every event rather than accumulated, so no missed event can strand it on screen.
  */
 import { describe, expect, it } from "vitest";
 import {
+  dropRegionAction,
   guardWindowDragOver,
   guardWindowDrop,
   isFileDrag,
-  nextDragDepth,
   splitDroppedFiles,
 } from "../src/lib/file-drop";
-import type { DragGuardEvent } from "../src/lib/file-drop";
+import type { DragGuardEvent, DragSignal } from "../src/lib/file-drop";
 
 describe("isFileDrag", () => {
   it("recognizes an OS file drag by the Files type, alone or among others", () => {
@@ -39,35 +41,93 @@ describe("isFileDrag", () => {
   });
 });
 
-describe("nextDragDepth", () => {
-  it("counts nested enter/leave pairs so internal boundary crossings keep the overlay up", () => {
-    // Enter the window, then cross into a child (enter fires before the parent's leave).
-    let depth = nextDragDepth(0, "enter", true);
-    expect(depth).toBe(1);
-    depth = nextDragDepth(depth, "enter", true);
-    expect(depth).toBe(2);
-    depth = nextDragDepth(depth, "leave", true);
-    expect(depth).toBe(1); // still over the window → overlay stays
-    depth = nextDragDepth(depth, "leave", true);
-    expect(depth).toBe(0); // genuinely left the window → overlay hides
+describe("dropRegionAction", () => {
+  const INSIDE = true;
+  const OUTSIDE = false;
+  const FILES = true;
+
+  it("shows the overlay and claims the drag while a file drag is over the chat area", () => {
+    // Claiming (preventDefault) is also what makes the browser deliver a drop here at all.
+    expect(dropRegionAction("over", FILES, INSIDE)).toEqual({
+      active: true,
+      claim: true,
+      accept: false,
+    });
   });
 
-  it("never moves for a non-file drag, in either direction", () => {
-    expect(nextDragDepth(0, "enter", false)).toBe(0);
-    expect(nextDragDepth(2, "enter", false)).toBe(2);
-    expect(nextDragDepth(2, "leave", false)).toBe(2);
+  it("attaches a file released inside the chat area, and hides the overlay with it", () => {
+    expect(dropRegionAction("drop", FILES, INSIDE)).toEqual({
+      active: false,
+      claim: true,
+      accept: true,
+    });
   });
 
-  it("clamps at 0 on an unpaired leave instead of going negative", () => {
-    // A negative depth would make the NEXT drag's first enter land on 0 → overlay never shows.
-    expect(nextDragDepth(0, "leave", true)).toBe(0);
+  it("takes nothing from a drop outside the chat area — the sidebar, the top bar, a docked panel", () => {
+    // The whole point of the region: the app-shell guard still cancels the browser's
+    // navigate-to-file for this drop (see the guard tests below), but the composer gets
+    // nothing and no overlay was ever shown.
+    expect(dropRegionAction("drop", FILES, OUTSIDE)).toEqual({
+      active: false,
+      claim: false,
+      accept: false,
+    });
+    expect(dropRegionAction("over", FILES, OUTSIDE)).toEqual({
+      active: false,
+      claim: false,
+      accept: false,
+    });
   });
 
-  it("drop and dragend reset outright, recovering from any missed dragleave", () => {
-    expect(nextDragDepth(3, "drop", true)).toBe(0);
-    expect(nextDragDepth(3, "end", true)).toBe(0);
-    // Reset is unconditional — it ends the whole drag, whatever the event's own types said.
-    expect(nextDragDepth(3, "drop", false)).toBe(0);
+  it("ignores non-file drags wherever they are, so native behavior survives", () => {
+    // Dragging selected text into the composer, or a sidebar session reorder crossing the
+    // chat area: no overlay, and above all no claim — claiming would swallow the text drop.
+    const signals: DragSignal[] = ["over", "leave", "drop", "end"];
+    for (const signal of signals) {
+      expect(dropRegionAction(signal, false, INSIDE)).toEqual({
+        active: false,
+        claim: false,
+        accept: false,
+      });
+    }
+  });
+
+  it("keeps the overlay up when a dragleave only crossed into a child element", () => {
+    // dragleave fires for every element boundary; `inside` is the RELATED target, so a leave
+    // heading somewhere still inside the region changes nothing.
+    expect(dropRegionAction("leave", FILES, INSIDE).active).toBe(true);
+  });
+
+  it("hides the overlay when the drag leaves the region or the window", () => {
+    // Leaving for the sidebar, and leaving the window entirely (relatedTarget null → outside)
+    // are the same answer.
+    expect(dropRegionAction("leave", FILES, OUTSIDE).active).toBe(false);
+    // A dragleave is never claimed — there is nothing to allow or cancel about a departure.
+    expect(dropRegionAction("leave", FILES, INSIDE).claim).toBe(false);
+  });
+
+  it("ends the overlay on dragend whatever the drag was", () => {
+    expect(dropRegionAction("end", FILES, INSIDE)).toEqual({
+      active: false,
+      claim: false,
+      accept: false,
+    });
+  });
+
+  it("is a pure function of the current event, so no missed event can strand the overlay", () => {
+    // The regression this replaces: a dragenter/dragleave depth counter drifts permanently
+    // out of balance if one dragleave is missed (a drag that ends outside the browser fires
+    // neither drop nor dragend), leaving the overlay stuck. Here the answer never depends on
+    // history — a lone "over" inside is enough to show it, a lone one outside to hide it,
+    // in any order and any number of times.
+    const replay: DragSignal[] = ["leave", "leave", "over", "drop", "leave", "end", "over"];
+    for (const signal of replay) {
+      expect(dropRegionAction(signal, FILES, INSIDE).active).toBe(
+        signal !== "drop" && signal !== "end",
+      );
+    }
+    expect(dropRegionAction("over", FILES, INSIDE).active).toBe(true);
+    expect(dropRegionAction("over", FILES, OUTSIDE).active).toBe(false);
   });
 });
 
@@ -106,7 +166,10 @@ function guardEvent(
 }
 
 describe("app-shell drop guard", () => {
-  it("cancels an unclaimed file drag: no-drop cursor on dragover, no navigation on drop", () => {
+  it("cancels a file drag outside the chat area: no-drop cursor, no navigation, nothing attached", () => {
+    // The deliberate remainder of scoping the zone down: dropping a file on the sidebar must
+    // do NOTHING — not open the file in the tab, which is the browser's default and would
+    // discard the running app. Silent by design: this path has no overlay and no toast.
     const over = guardEvent(["Files"]);
     guardWindowDragOver(over);
     expect(over.prevented).toBe(true);
@@ -114,10 +177,13 @@ describe("app-shell drop guard", () => {
     const drop = guardEvent(["Files"]);
     guardWindowDrop(drop);
     expect(drop.prevented).toBe(true);
+    // And the region agrees the composer gets nothing from it.
+    expect(dropRegionAction("drop", true, false).accept).toBe(false);
   });
 
-  it("stands aside when a drop zone already claimed the drag (defaultPrevented)", () => {
-    // The composer's FileDropZone claimed it: the guard must not overwrite its copy cursor.
+  it("stands aside when the chat area already claimed the drag (defaultPrevented)", () => {
+    // The two are window listeners in registration order, so the guard must not overwrite the
+    // zone's copy cursor with its no-drop one when it happens to run second.
     const over = guardEvent(["Files"], true);
     guardWindowDragOver(over);
     expect(over.prevented).toBe(false);

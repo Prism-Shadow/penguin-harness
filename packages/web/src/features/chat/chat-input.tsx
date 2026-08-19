@@ -39,9 +39,9 @@
  * session scratchpad and appends an `[attached file: <path>]` line to the message, so the model
  * opens them by path), and goal mode; selected files show as removable chips above the text
  * body, next to the image thumbnails, and — like images — an attachments-only message is
- * sendable with no text at all. Dragging files onto the window feeds the same two intakes
+ * sendable with no text at all. Dragging files onto the chat area feeds the same two intakes
  * (images → paste pipeline, other files → attachments; see FileDropZone/addDroppedFiles),
- * with a full-window overlay while the drag is over the page.
+ * with an overlay bounded to that region while the drag is over it.
  * The bottom toolbar provides a searchable multi-select skills dropdown (styled like the model
  * selector: a top search box filtering by name and localized description, plus a checklist;
  * clicking a row toggles its selection without closing the menu; the button = book icon + label +
@@ -1913,7 +1913,7 @@ export function ChatInput({
   };
 
   /**
-   * Files dropped onto the window (see FileDropZone): one batch, routed into the SAME two
+   * Files dropped onto the chat area (see FileDropZone): one batch, routed into the SAME two
    * intakes the "+" menu and paste use — images join the pasted-image pipeline, everything
    * else joins the file-attachment pipeline (10MB cap, same rejection toast). Goal mode takes
    * images but not files (nothing folds a file into the re-injected objective — the "+" menu
@@ -1941,7 +1941,8 @@ export function ChatInput({
     <div className="relative" ref={anchorRef}>
       {/* Drag-and-drop upload: mounted with the composer (chat page and draft page alike, and
           kept while a Task runs), so dropping works exactly when there is a composer to attach
-          to. Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
+          to — but bounded to the enclosing ChatDropRegion, so only the chat area reacts.
+          Dropped files go through addDroppedFiles into the same intake as the "+" menu. */}
       <FileDropZone onFiles={addDroppedFiles} />
       {/* Slash command menu (triggered by typing /; /compact plus one entry per installed skill).
           Height is capped to the room measured above the composer (see upwardMaxH) with internal

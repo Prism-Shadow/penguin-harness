@@ -60,6 +60,7 @@ import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
@@ -1577,7 +1578,12 @@ export function ChatPage() {
 
       {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+            covers the conversation and the composer in both branches below, and nothing else
+            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
+            bounds the drop overlay to this column. */}
+        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
             // selection panel; the Session is only created once the first message is sent. Keyed
@@ -1682,7 +1688,7 @@ export function ChatPage() {
               )}
             </div>
           )}
-        </div>
+        </ChatDropRegion>
 
         {selected && (
           <SubagentsPanel

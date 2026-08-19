@@ -1221,7 +1221,7 @@ Benchmark：
     removeFile: "移除文件",
     /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
     attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
-    /** Full-window overlay while files are dragged over the page (drag-and-drop upload). */
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
     dropFilesTitle: "松开以添加附件",
     dropFilesDesc: "图片与文件将添加到输入框",
     /** Toast when non-image files are dropped in goal mode (the objective carries images only). */

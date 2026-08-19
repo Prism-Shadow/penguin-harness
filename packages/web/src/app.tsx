@@ -2,9 +2,11 @@
  * App root component: Locale -> Theme -> Auth -> LocaleScope -> Router provider composition.
  * LocaleScope (a remount boundary) sits inside AuthProvider: switching language rebuilds the UI tree without
  * re-fetching auth, avoiding a full-screen white flash from RequireAuth briefly seeing user=undefined.
- * Also installs the app-wide file-drop guard: a file dropped where no drop zone claimed it
- * (the composer's FileDropZone is the only one) must not trigger the browser's default
- * navigate-to-file, which would silently replace the running app.
+ * Also installs the app-wide file-drop guard: a file dropped outside the chat area — the only
+ * region that claims file drags (features/chat/drop-zone.tsx) — must not trigger the browser's
+ * default navigate-to-file, which would silently replace the running app and any unsent draft.
+ * The guard is deliberately silent: no overlay, no attachment, no toast. It does not make a
+ * drop on the sidebar do something; it makes it do nothing.
  */
 import { useEffect } from "react";
 import { LocaleProvider, LocaleScope } from "./state/locale";
@@ -15,8 +17,10 @@ import { Toaster } from "./components/ui/toast";
 import { guardWindowDragOver, guardWindowDrop } from "./lib/file-drop";
 
 export function App() {
-  // Window listeners run after any React drop-zone handler on the bubble path, so the guard
-  // only acts on file drags nothing claimed (see lib/file-drop.ts).
+  // The guard reads `defaultPrevented` rather than assuming it runs last: the chat area's
+  // drop zone is a window listener too, so the two fire in registration order. Both orders
+  // converge — whichever runs second either finds the drag already claimed and bails, or
+  // upgrades the no-drop cursor to copy (see lib/file-drop.ts).
   useEffect(() => {
     window.addEventListener("dragover", guardWindowDragOver);
     window.addEventListener("drop", guardWindowDrop);
