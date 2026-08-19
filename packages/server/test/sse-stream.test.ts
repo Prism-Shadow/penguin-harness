@@ -119,13 +119,14 @@ describe("sse-stream", () => {
     await t.deps.manager.startTask(SID, [userText("go")]);
     await waitFor(() => t.deps.manager.pendingApprovalCount(SID) === 1);
 
-    const frames = await readSseFrames(await getStream(), 2);
+    const frames = await readSseFrames(await getStream(), 3);
     expect(JSON.parse(frames[0]!.data)).toEqual({
       type: "task_state",
       state: "running",
       queued: 0,
     });
-    const approval = JSON.parse(frames[1]!.data) as {
+    expect(JSON.parse(frames[1]!.data)).toEqual({ type: "subagent_state", subagents: [] });
+    const approval = JSON.parse(frames[2]!.data) as {
       type: string;
       toolCall: { payload: { tool_call_id: string } };
     };
@@ -140,19 +141,21 @@ describe("sse-stream", () => {
     t.deps.channels.get(SID).publish(userText("old event"));
     const frames = await readSseFrames(
       await getStream({ "Last-Event-ID": "deadbeef-1" }), // guaranteed to differ from the current channel epoch
-      2,
+      3,
     );
     expect(JSON.parse(frames[0]!.data)).toEqual({ type: "resync_required" });
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
+    expect(JSON.parse(frames[2]!.data)).toEqual({ type: "subagent_state", subagents: [] });
   });
 
   it("FD-2: same-epoch Last-Event-ID hitting the buffer → replays later events, then the task_state snapshot", async () => {
     const channel = t.deps.channels.get(SID);
     const first = channel.publish(userText("m1"));
     channel.publish(userText("m2"));
-    const frames = await readSseFrames(await getStream({ "Last-Event-ID": first.id }), 2);
+    const frames = await readSseFrames(await getStream({ "Last-Event-ID": first.id }), 3);
     expect(frames[0]!.event).toBeUndefined(); // replayed OmniMessage
     expect((JSON.parse(frames[0]!.data) as { payload: { text: string } }).payload.text).toBe("m2");
     expect(JSON.parse(frames[1]!.data)).toEqual({ type: "task_state", state: "idle", queued: 0 });
+    expect(JSON.parse(frames[2]!.data)).toEqual({ type: "subagent_state", subagents: [] });
   });
 });

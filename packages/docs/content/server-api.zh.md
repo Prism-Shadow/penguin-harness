@@ -187,6 +187,8 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
+| POST | /subagents/:childSessionId/messages | 向保留中的子 Session 发送 `{text}`：运行中作为纠偏消息，空闲时在同一上下文中启动后续轮次 → 202 `{delivery: "steered" | "started"}` |
+| POST | /subagents/:childSessionId/abort | 只中断子 Session 当前轮次而不销毁其上下文：触发时 202，已经空闲时 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
 | GET | /files?path= | 浏览 Workspace 目录 |
@@ -220,7 +222,7 @@ interface MessagesResponse {
 }
 ```
 
-`cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
+`cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。只有父 Session 与其保留的全部子 Session 都空闲时才不携带 `live`，因此父 Task 已返回后刷新页面也不会丢失后台子智能体尚未闭合的流式片段。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 
@@ -297,6 +299,7 @@ Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方�
 export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
+  | { type: "subagent_state"; subagents: SessionSubagentInfo[] }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
@@ -310,6 +313,7 @@ export type ServerEvent =
 | --- | --- |
 | approval_request | 工具调用升级为人工审批时发出：always-ask 下的所有调用，以及 read-only 下 rw / 未知权限的调用；重连时未决审批会重发 |
 | task_state | Session 运行状态翻转（idle / running / compacting） |
+| subagent_state | 保留中的子 Session 权威生命周期快照发生变化；订阅时也会发送，子 Session 恢复运行后界面不会继续显示「已完成」 |
 | session_title | 首轮后模型生成的标题已持久化 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
@@ -324,7 +328,7 @@ export type ServerEvent =
 - 每通道维护有界重放缓冲（最近 10,000 条事件或 8MB）；
 - 携带 `Last-Event-ID` 重连时，命中缓冲则补发缺口；未命中则先发 `resync_required`，客户端重新拉取 `/messages` 后继续消费；
 - 每 20 秒写一条心跳注释行；
-- 事件次序：带 `Last-Event-ID` 重连时，**补发的缺口(或 `resync_required`)最先送达**，随后才是初始事件——权威的 `task_state` 快照与未决的 approval_request，再进入实时流；全新连接(无 `Last-Event-ID`)不重放缓冲，首个事件即为 `task_state` 快照。
+- 事件次序：带 `Last-Event-ID` 重连时，**补发的缺口(或 `resync_required`)最先送达**，随后才是初始事件——权威的 `task_state`、`subagent_state` 快照与未决的 approval_request，再进入实时流；全新连接(无 `Last-Event-ID`)不重放缓冲，前两条事件依次为 `task_state` 与 `subagent_state` 快照。
 
 ### 推荐客户端模式
 

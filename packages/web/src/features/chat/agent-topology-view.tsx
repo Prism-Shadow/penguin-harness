@@ -52,7 +52,12 @@ export function AgentTopologyView({
         {layout.nodes.map(({ node, x, y }) => {
           const label = labelFor(node);
           const selected = node.sessionId === selectedId;
-          const stateLabel = node.running ? S.subagentPanel.nodeRunning : S.subagentPanel.nodeDone;
+          const stateLabel =
+            node.status === "stopping"
+              ? S.subagentPanel.nodeStopping
+              : node.running
+                ? S.subagentPanel.nodeRunning
+                : S.subagentPanel.nodeDone;
           // The node renders the description truncated on its second line; the tooltip carries
           // the full sentence, which is the only place it appears untruncated.
           const tooltip =

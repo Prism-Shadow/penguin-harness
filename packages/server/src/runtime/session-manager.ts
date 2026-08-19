@@ -41,6 +41,7 @@ import {
 import type {
   ApproveFn,
   BackgroundCommandInfo,
+  BackgroundSubagentInfo,
   CompactAvailability,
   OmniMessage,
   ProxyEnvPolicy,
@@ -49,7 +50,12 @@ import type {
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type { PendingSteeringInfo, ServerEvent, SessionStatus } from "../api/types.js";
+import type {
+  PendingSteeringInfo,
+  ServerEvent,
+  SessionStatus,
+  SessionSubagentInfo,
+} from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
@@ -110,6 +116,20 @@ export interface RuntimeSession {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  listSubagents?(): BackgroundSubagentInfo[];
+  sendSubagentMessage?(
+    sessionId: string,
+    prompt: string,
+  ): "steered" | "started" | "not_found" | "not_running" | "stopping";
+  interruptSubagent?(sessionId: string): boolean;
+  interruptAllSubagents?(): number;
+  setSubagentApprovalSink?(approve: ApproveFn | null): void;
+  setSubagentEventSink?(
+    sink: {
+      message: (message: OmniMessage) => void;
+      change: () => void;
+    } | null,
+  ): void;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -388,6 +408,8 @@ function nestedAssistantText(msg: OmniMessage): { sessionId: string; text: strin
 
 export class SessionManager {
   private readonly entries = new Map<string, RuntimeEntry>();
+  /** Error watchers for child rounds that continue outside the parent's drive loop. */
+  private readonly backgroundSubagentWatchers = new Map<string, StreamErrorWatcher>();
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
   private readonly locks = new Map<string, Promise<unknown>>();
   private readonly log: (line: string) => void;
@@ -473,7 +495,7 @@ export class SessionManager {
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
-    this.entries.set(row.sessionId, {
+    const entry: RuntimeEntry = {
       sessionId: row.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
@@ -490,7 +512,9 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
-    });
+    };
+    this.entries.set(row.sessionId, entry);
+    this.bindSubagentHost(entry);
   }
 
   /**
@@ -929,6 +953,55 @@ export class SessionManager {
     return true;
   }
 
+  listSubagents(sessionId: string): SessionSubagentInfo[] {
+    const raw = this.entries.get(sessionId)?.session.listSubagents?.() ?? [];
+    return raw.map((child) => ({
+      sessionId: child.sessionId,
+      status: child.status,
+      startedAt: child.startedAt === null ? null : new Date(child.startedAt).toISOString(),
+      endedAt: child.endedAt === null ? null : new Date(child.endedAt).toISOString(),
+    }));
+  }
+
+  hasActiveSubagents(sessionId: string): boolean {
+    return this.listSubagents(sessionId).some((child) => child.status !== "idle");
+  }
+
+  sendSubagentMessage(
+    parentSessionId: string,
+    childSessionId: string,
+    prompt: string,
+  ): "steered" | "started" {
+    const entry = this.entries.get(parentSessionId);
+    const result = entry?.session.sendSubagentMessage?.(childSessionId, prompt) ?? "not_found";
+    if (result === "steered" || result === "started") {
+      entry!.lastActivityMs = Date.now();
+      return result;
+    }
+    const detail = {
+      not_found: [404, "subagent_not_found", "This child Session is not retained by the parent."],
+      stopping: [
+        409,
+        "subagent_stopping",
+        "This child Session is still stopping; try again shortly.",
+      ],
+      not_running: [
+        409,
+        "subagent_not_steerable",
+        "This child Session cannot accept a message right now.",
+      ],
+    }[result] as [number, string, string];
+    throw new HttpError(detail[0], detail[1], detail[2]);
+  }
+
+  interruptSubagent(parentSessionId: string, childSessionId: string): boolean {
+    const entry = this.entries.get(parentSessionId);
+    if (!entry) return false;
+    const interrupted = entry.session.interruptSubagent?.(childSessionId) ?? false;
+    if (interrupted) entry.lastActivityMs = Date.now();
+    return interrupted;
+  }
+
   /**
    * Background command processes of a LOADED session (empty when the entry is not in
    * the active table — a resumed entry starts with a fresh environment and can only
@@ -955,6 +1028,13 @@ export class SessionManager {
    * unreachable from every UI, running forever).
    */
   private disposeRemoved(entry: RuntimeEntry): void {
+    // The entry no longer owns a public runtime surface. Detach the persistent child
+    // callbacks immediately so a child converging after removal cannot publish onto a
+    // deleted Session channel or recreate an error watcher.
+    entry.session.setSubagentApprovalSink?.(null);
+    entry.session.setSubagentEventSink?.(null);
+    this.closeBackgroundSubagentWatchers(entry.sessionId);
+    this.liveTail.clear(entry.sessionId);
     const dispose = (): void => entry.session.dispose?.();
     if (entry.running) void entry.running.then(dispose, dispose);
     else dispose();
@@ -1038,16 +1118,24 @@ export class SessionManager {
     clearInterval(this.sweepTimer);
     const pending: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
-      if (!entry.abort) continue;
       entry.approvals.denyAll();
-      entry.abort.abort();
+      entry.abort?.abort();
+      // A child round can outlive its parent's Task, so it must also receive shutdown
+      // even when the parent entry itself is already idle.
+      entry.session.interruptAllSubagents?.();
       if (entry.running) pending.push(entry.running);
     }
-    if (pending.length === 0) return;
-    await Promise.race([
-      Promise.allSettled(pending).then(() => undefined),
-      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
-    ]);
+    if (pending.length > 0) {
+      await Promise.race([
+        Promise.allSettled(pending).then(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+      ]);
+    }
+    for (const entry of this.entries.values()) {
+      entry.session.setSubagentApprovalSink?.(null);
+      entry.session.setSubagentEventSink?.(null);
+    }
+    this.closeAllBackgroundSubagentWatchers();
   }
 
   /**
@@ -1068,6 +1156,11 @@ export class SessionManager {
       // environment, so the process list and its stop control would go blind while the
       // OS process kept running. Exited-but-listed processes don't pin anything.
       if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
+      // Retained children are addressable from the Agents panel (idle children can receive a
+      // follow-up); keep their owning runtime while the registry owns any of them. The
+      // registry reaps stale children on its own timer, after which a later server sweep
+      // can release this entry normally.
+      if ((entry.session.listSubagents?.().length ?? 0) > 0) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -1139,7 +1232,10 @@ export class SessionManager {
       if (
         existing.status !== "idle" ||
         existing.running !== null ||
-        existing.approvals.size !== 0
+        existing.approvals.size !== 0 ||
+        // The parent runtime owns the only safe control path to retained children.
+        // Keep it intact across config invalidation until that registry naturally empties.
+        (existing.session.listSubagents?.().length ?? 0) > 0
       ) {
         return existing;
       }
@@ -1187,7 +1283,98 @@ export class SessionManager {
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
+    this.bindSubagentHost(entry);
     return entry;
+  }
+
+  /** Connect the parent Session's child registry to Web approvals, SSE and usage persistence. */
+  private bindSubagentHost(entry: RuntimeEntry): void {
+    const approve = makeApprove({
+      getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
+      toolPermission: (name) => entry.session.toolPermission(name),
+      registry: entry.approvals,
+      publishRequest: (pending) =>
+        this.publishEvent(entry, {
+          type: "approval_request",
+          toolCall: pending.toolCall,
+          ...(pending.origin !== undefined ? { origin: pending.origin } : {}),
+        }),
+    });
+    entry.session.setSubagentApprovalSink?.(approve);
+    entry.session.setSubagentEventSink?.({
+      message: (message) => this.observeBackgroundSubagentMessage(entry, message),
+      change: () => this.publishSubagentState(entry),
+    });
+  }
+
+  private closeBackgroundSubagentWatchers(parentSessionId: string): void {
+    const prefix = `${parentSessionId}\0`;
+    for (const [key, watcher] of this.backgroundSubagentWatchers) {
+      if (!key.startsWith(prefix)) continue;
+      watcher.close();
+      this.backgroundSubagentWatchers.delete(key);
+    }
+  }
+
+  private closeAllBackgroundSubagentWatchers(): void {
+    for (const watcher of this.backgroundSubagentWatchers.values()) watcher.close();
+    this.backgroundSubagentWatchers.clear();
+  }
+
+  private publishSubagentState(entry: RuntimeEntry): void {
+    entry.lastActivityMs = Date.now();
+    const states = this.listSubagents(entry.sessionId);
+    for (const [key, watcher] of this.backgroundSubagentWatchers) {
+      const prefix = `${entry.sessionId}\0`;
+      if (!key.startsWith(prefix)) continue;
+      const childSessionId = key.slice(prefix.length);
+      if (states.some((child) => child.sessionId === childSessionId && child.status !== "idle")) {
+        continue;
+      }
+      watcher.close();
+      this.backgroundSubagentWatchers.delete(key);
+    }
+    // A background child can outlive the parent Task. Once the final child round ends there
+    // is no stream left that could continue an open fragment, so retire its refresh snapshot.
+    if (entry.status === "idle" && !this.hasActiveSubagents(entry.sessionId)) {
+      this.liveTail.clear(entry.sessionId);
+    }
+    this.publishEvent(entry, {
+      type: "subagent_state",
+      subagents: states,
+    });
+  }
+
+  /** Child output outside a parent tool window still belongs on the parent's live channel. */
+  private observeBackgroundSubagentMessage(entry: RuntimeEntry, msg: OmniMessage): void {
+    this.liveTail.observe(entry.sessionId, msg);
+    this.deps.channels.get(entry.sessionId).publish(msg);
+    const ctx: UsageContext = {
+      projectId: entry.projectId,
+      agentId: entry.agentId,
+      sessionId: entry.sessionId,
+      provider: entry.provider,
+      modelId: entry.modelId,
+    };
+    if (this.deps.errors) {
+      const childSessionId = msg.origin?.at(-1) ?? entry.sessionId;
+      const child = this.deps.sessions.findById(childSessionId);
+      const key = `${entry.sessionId}\0${childSessionId}`;
+      let watcher = this.backgroundSubagentWatchers.get(key);
+      if (!watcher) {
+        watcher = new StreamErrorWatcher(this.deps.errors, {
+          projectId: entry.projectId,
+          agentId: child?.agentId ?? entry.agentId,
+          sessionId: childSessionId,
+        });
+        this.backgroundSubagentWatchers.set(key, watcher);
+      }
+      watcher.observe(msg);
+    }
+    void this.deps.recorder.record(ctx, msg).catch((err) => {
+      this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.deps.errors?.record({ source: "usage", err, ctx, code: "usage_insert_failed" });
+    });
   }
 
   /**
@@ -1371,9 +1558,10 @@ export class SessionManager {
     } finally {
       // Wrap-up: persist any still-pending LLM failure and clear the tool-name cache (the watcher's state doesn't carry across runs).
       watcher?.close();
-      // The run is over: no fragment will ever continue, so drop the live tail before the
-      // idle flip (GET /messages stops attaching `live` the moment status reads idle).
-      this.liveTail.clear(entry.sessionId);
+      // Parent fragments cannot continue after this drive. A child that backgrounded out of
+      // run_subagent still can, however, and GET /messages keeps serving that live tail until
+      // the final active child becomes idle (publishSubagentState clears it then).
+      if (!this.hasActiveSubagents(entry.sessionId)) this.liveTail.clear(entry.sessionId);
       // The pending holds are NOT cleared here: a run aborted mid-bootstrap wrote nothing
       // to the Trace, so its held input (and the aborted connect pair) are the only copy
       // a reload can show until the next run carries the input forward and persists it.

@@ -11,18 +11,18 @@
  *
  * The two-phase semantics mirror `exec_command`: within the `yield_time_ms` window, child-session
  * messages are forwarded live (tagged with origin, so the frontend can see the child Agent's tool
- * calls and token usage) and the child Agent's text deltas are copied as this tool's output; if
- * the child Agent finishes within the window, its terminal state is returned and the child
- * session is released; if it's still running once the window expires, it's registered as a
- * background session, returning `subagent_id` for subsequent access the same way as
- * `input_command` (polling / appending a Prompt, see input-subagent.ts).
+ * calls and token usage) and the child Agent's text deltas are copied as this tool's output. The
+ * child is registered as soon as it is created so the host can control it even inside the
+ * foreground window; whether it finishes there or continues in the background, its
+ * `subagent_id` remains available for polling and follow-up prompts (see input-subagent.ts).
  *
  * Approval: `run_subagent` itself is a read-write tool (`rw`), so its invocation requires Human
  * approval; the child session's tool approval requests are forwarded to the same Human within
  * the window via the session's approval queue (tagged with origin), and queued for the next
- * access while running in the background. An interruption within the startup window kills the
- * child session per exec_command semantics; precheck errors such as exceeding the depth limit or
- * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
+ * access while running in the background. Interrupting the parent stops the child's current run
+ * but preserves its Session context for a later follow-up; precheck errors such as exceeding the
+ * depth limit or a nonexistent agent are expressed by the runner as a throw, and collapsed to
+ * failed.
  * Docs: /docs/tools § "Subagents".
  */
 import { partialToolCallOutput } from "../../omnimessage/index.js";
@@ -124,10 +124,13 @@ export function createSubagentTool(
         return { stopReason: "failed" };
       }
 
-      // An interruption within the startup window kills the child session (consistent with
-      // exec_command); once switched to background, this listener is removed in `finally`.
-      const onAbort = (): void => session.kill();
-      let registered = false;
+      // Register immediately, not only after the yield window: the host UI identifies children
+      // by child Session id and must be able to steer/stop a foreground child too.
+      const id = manager.register(session);
+      // An interruption stops this run but keeps the child Session resumable.
+      const onAbort = (): void => {
+        session.interruptRun();
+      };
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
         session.startRun(prompt);
@@ -140,10 +143,8 @@ export function createSubagentTool(
 
         if (signal?.aborted) return { stopReason: "aborted" };
         if (session.running) {
-          // Still running once the window expires: register as a background session, returning
-          // subagent_id for input_subagent to continue accessing it.
-          const id = manager.register(session);
-          registered = true;
+          // Still running once the window expires: return the already-registered id so
+          // input_subagent can continue accessing it.
           return {
             stopReason: "completed",
             note:
@@ -152,12 +153,16 @@ export function createSubagentTool(
               approvalHint(session),
           };
         }
-        // Finished within the window: report the terminal state; releasing the child session is
-        // handled uniformly in `finally` (never registered, so no subagent_id).
-        return resultForSubagentExit(session.exit);
+        // Finished within the window: report the terminal state and keep the registered child
+        // available for a later follow-up in the same context.
+        const result = resultForSubagentExit(session.exit);
+        const idleHint = `[subagent idle with subagent_id ${id}; send a follow-up prompt to continue]`;
+        return {
+          ...result,
+          note: result.note !== undefined ? `${result.note} ${idleHint}` : idleHint,
+        };
       } finally {
         signal?.removeEventListener("abort", onAbort);
-        if (!registered) session.kill();
       }
     },
   };

@@ -20,17 +20,24 @@
  * highlighted node.
  */
 import { useEffect, useMemo, useState } from "react";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { FormEvent } from "react";
+import type { SessionInfo, SessionSubagentInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { apiErrorText } from "../../lib/api-error";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
+import { Textarea } from "../../components/ui/input";
 import { StatusIcon } from "../../components/ui/status-icon";
+import { toastError } from "../../components/ui/toast";
+import { postSubagentAbort, postSubagentMessage } from "../../api/endpoints";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
   extractTopology,
   extractTopologyForChild,
+  mergeTopologyRuntimeState,
   modelAtOrigin,
   resolveAgentLabel,
   shortSessionId,
@@ -51,6 +58,7 @@ export function SubagentsView({
   model,
   version,
   taskRunning,
+  subagents,
   ctx,
   focusRequest,
   taskScope,
@@ -60,6 +68,8 @@ export function SubagentsView({
   /** View-model version (repaint signal): keys the topology recompute and drives MessageStream's auto-follow. */
   version: number;
   taskRunning: boolean;
+  /** Authoritative states for children still retained by the parent runtime. */
+  subagents: SessionSubagentInfo[];
   /** Main-session render context (origin []): the child conversation derives its own from it. */
   ctx: StreamRenderContext;
   focusRequest: Selection | null;
@@ -69,6 +79,9 @@ export function SubagentsView({
   const { agents } = useProject();
   const { sessions } = useSessions();
   const [selected, setSelected] = useState<Selection | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   // A chip click focuses that child (fresh-object identity: re-clicking the same chip re-fires).
   useEffect(() => {
@@ -77,17 +90,17 @@ export function SubagentsView({
     }
   }, [focusRequest]);
 
-  const nodes = useMemo(
-    () =>
+  const nodes = useMemo(() => {
+    const inferred =
       // A pinned scope (chip click) shows THAT Task's graph — historical or latest alike; when
       // its anchor is no longer referenced in the stream, fall back to the latest Task.
       (taskScope
         ? extractTopologyForChild(model, session.sessionId, taskRunning, taskScope.anchorSessionId)
-        : null) ?? extractTopology(model, session.sessionId, taskRunning),
+        : null) ?? extractTopology(model, session.sessionId, taskRunning);
+    return mergeTopologyRuntimeState(inferred, subagents);
     // version is the model's change signal (items mutate in place).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model, version, session.sessionId, taskRunning, taskScope],
-  );
+  }, [model, version, session.sessionId, taskRunning, taskScope, subagents]);
 
   // No explicit selection yet: auto-focus the displayed Task's first child (null when none spawned).
   const firstChild = nodes.find((n) => n.depth > 0) ?? null;
@@ -117,7 +130,45 @@ export function SubagentsView({
           sessions,
         ) ?? S.chat.subagent)
       : "";
-  const activeRunning = activeNode?.running ?? false;
+  const activeState = active
+    ? (subagents.find((child) => child.sessionId === active.sessionId)?.status ??
+      (activeNode?.running ? "running" : "idle"))
+    : "idle";
+  const activeRunning = activeState !== "idle";
+  const activeControllable = active
+    ? subagents.some((child) => child.sessionId === active.sessionId)
+    : false;
+
+  useEffect(() => {
+    if (activeState !== "stopping") setStopping(false);
+  }, [activeState]);
+
+  const submitMessage = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!active || !activeControllable || activeState === "stopping" || sending) return;
+    const text = draft.trim();
+    if (!text) return;
+    setSending(true);
+    try {
+      await postSubagentMessage(session.sessionId, active.sessionId, text);
+      setDraft("");
+    } catch (err) {
+      toastError(apiErrorText(err));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const stopActive = async (): Promise<void> => {
+    if (!active || !activeControllable || activeState !== "running" || stopping) return;
+    setStopping(true);
+    try {
+      await postSubagentAbort(session.sessionId, active.sessionId);
+    } catch (err) {
+      setStopping(false);
+      toastError(apiErrorText(err));
+    }
+  };
 
   // Same derivation the subagent card used: the child conversation's approval keys and
   // "Reasoning & Tools" running state follow the child's chain and its own running flag.
@@ -182,7 +233,26 @@ export function SubagentsView({
               {shortSessionId(active.sessionId)}
             </span>
             {activeRunning && (
-              <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
+              <StatusIcon
+                state="running"
+                size={10}
+                label={
+                  activeState === "stopping" ? S.subagentPanel.nodeStopping : S.chat.subagentRunning
+                }
+              />
+            )}
+            {activeControllable && activeRunning && (
+              <Button
+                size="sm"
+                variant="danger"
+                className="ml-auto shrink-0"
+                disabled={activeState === "stopping" || stopping}
+                onClick={() => void stopActive()}
+              >
+                {activeState === "stopping" || stopping
+                  ? S.subagentPanel.stopPending
+                  : S.subagentPanel.stop}
+              </Button>
             )}
           </div>
           <div className="min-h-0 flex-1">
@@ -196,6 +266,45 @@ export function SubagentsView({
               />
             )}
           </div>
+          {activeControllable && (
+            <form
+              onSubmit={(event) => void submitMessage(event)}
+              className="flex shrink-0 items-end gap-2 border-t border-gray-100 p-2 dark:border-gray-800/60"
+            >
+              <Textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                rows={2}
+                size="sm"
+                disabled={activeState === "stopping" || sending}
+                placeholder={
+                  activeRunning
+                    ? S.subagentPanel.messageRunningPlaceholder
+                    : S.subagentPanel.messageIdlePlaceholder
+                }
+                aria-label={
+                  activeRunning
+                    ? S.subagentPanel.messageRunningPlaceholder
+                    : S.subagentPanel.messageIdlePlaceholder
+                }
+                className="max-h-28 min-h-14 resize-none"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                variant="primary"
+                disabled={!draft.trim() || activeState === "stopping" || sending}
+              >
+                {S.subagentPanel.send}
+              </Button>
+            </form>
+          )}
         </>
       )}
     </div>

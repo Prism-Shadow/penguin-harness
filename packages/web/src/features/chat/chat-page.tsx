@@ -1693,6 +1693,7 @@ export function ChatPage() {
             model={panelModel}
             version={stream.version}
             taskRunning={stream.taskState !== "idle"}
+            subagents={stream.subagents}
             ctx={ctx}
           />
         )}

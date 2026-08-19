@@ -36,6 +36,7 @@ import {
   latestTaskHasSubagent,
   latestTaskStart,
   layoutTopology,
+  mergeTopologyRuntimeState,
   modelAtOrigin,
   NODE_H,
   NODE_W,
@@ -172,6 +173,55 @@ describe("extractTopology", () => {
 
     spawnChild(m, "t2", "child2");
     expect(extractTopology(m, "root", true).map((n) => n.sessionId)).toEqual(["root", "child2"]);
+  });
+});
+
+describe("mergeTopologyRuntimeState", () => {
+  it("lets live runtime state override a settled tool card and restore ticking after follow-up", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnChild(m, "t1", "child1");
+    pushMessage(m, toolCallOutput({ output: "done", toolCallId: "t1" }));
+    const inferred = extractTopology(m, "root", false);
+    expect(inferred[1]!.running).toBe(false);
+
+    const merged = mergeTopologyRuntimeState(inferred, [
+      {
+        sessionId: "child1",
+        status: "running",
+        startedAt: "2026-08-14T01:00:00.000Z",
+        endedAt: null,
+      },
+    ]);
+    expect(merged[1]).toMatchObject({ running: true, status: "running" });
+    expect(merged[1]!.startedMs).toBe(Date.parse("2026-08-14T01:00:00.000Z"));
+  });
+
+  it("marks stopping as active and freezes an idle follow-up at the runtime timestamps", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("go"));
+    spawnChild(m, "t1", "child1");
+    const inferred = extractTopology(m, "root", true);
+    expect(
+      mergeTopologyRuntimeState(inferred, [
+        {
+          sessionId: "child1",
+          status: "stopping",
+          startedAt: "2026-08-14T01:00:00.000Z",
+          endedAt: null,
+        },
+      ])[1],
+    ).toMatchObject({ running: true, status: "stopping" });
+
+    const idle = mergeTopologyRuntimeState(inferred, [
+      {
+        sessionId: "child1",
+        status: "idle",
+        startedAt: "2026-08-14T01:00:00.000Z",
+        endedAt: "2026-08-14T01:00:09.000Z",
+      },
+    ]);
+    expect(idle[1]).toMatchObject({ running: false, status: "idle", elapsedMs: 9000 });
   });
 });
 

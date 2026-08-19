@@ -61,7 +61,7 @@ function runnerOf(
   return {
     async spawn(input) {
       spawnSpy?.(input);
-      const handle: SubagentHandle = { sessionId: HOP, run, dispose() {} };
+      const handle: SubagentHandle = { sessionId: HOP, run, steer: () => false, dispose() {} };
       return handle;
     },
   };
@@ -324,6 +324,162 @@ describe("run_subagent tool (foreground)", () => {
 });
 
 describe("run_subagent backgrounding + input_subagent", () => {
+  it("registers a foreground child immediately so the host can steer, stop, and restart it", async () => {
+    const prompts: string[] = [];
+    const steered: string[] = [];
+    const runSignals: AbortSignal[] = [];
+    const runner: SubagentRunner = {
+      async spawn() {
+        return {
+          sessionId: HOP,
+          steer(prompt) {
+            steered.push(prompt);
+            return true;
+          },
+          run: async function* ({ prompt, signal }: RunInput): AsyncGenerator<OmniMessage> {
+            prompts.push(prompt);
+            runSignals.push(signal!);
+            yield withOrigin(partialText("delta", prompt), HOP);
+            if (prompt === "first") await aborted(signal);
+          },
+          dispose() {},
+        };
+      },
+    };
+    const { services, manager } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    // Keep the real run_subagent collection window open. The child must already be visible to
+    // host controls; registering only after this promise settles would make the assertions below
+    // time out and catch the original regression.
+    const execution = collectWithReturn(
+      tool.execute({ prompt: "first", yield_time_ms: 10_000 }, CTX),
+    );
+    await until(() => prompts.length === 1);
+
+    expect(manager.list()[0]).toMatchObject({ sessionId: HOP, status: "running" });
+    expect(manager.sendMessage(HOP, "correct course")).toBe("steered");
+    expect(steered).toEqual(["correct course"]);
+    expect(manager.interrupt(HOP)).toBe(true);
+    expect(manager.list()[0]!.status).toBe("stopping");
+    const { result } = await execution;
+    expect(result).toMatchObject({ stopReason: "failed" });
+    expect(result?.note).toContain("subagent interrupted by user");
+    expect(runSignals[0]!.aborted).toBe(true);
+    expect(manager.list()[0]!.status).toBe("idle");
+
+    expect(manager.sendMessage(HOP, "continue")).toBe("started");
+    await until(() => prompts.length === 2 && manager.list()[0]?.status === "idle");
+    expect(prompts).toEqual(["first", "continue"]);
+    expect(runSignals[1]).not.toBe(runSignals[0]);
+    expect(runSignals[1]!.aborted).toBe(false);
+  });
+
+  it("retains a child that finishes in the foreground and reuses the same Session", async () => {
+    const prompts: string[] = [];
+    let spawnCount = 0;
+    const runner: SubagentRunner = {
+      async spawn() {
+        spawnCount += 1;
+        return {
+          sessionId: HOP,
+          steer: () => false,
+          run: async function* ({ prompt }: RunInput): AsyncGenerator<OmniMessage> {
+            prompts.push(prompt);
+            yield withOrigin(partialText("delta", `answer:${prompt}`), HOP);
+          },
+          dispose() {},
+        };
+      },
+    };
+    const { services, manager } = makeServices(runner);
+    const tool = createSubagentTool(DEF, services);
+    const { result } = await collectWithReturn(
+      tool.execute({ prompt: "first", yield_time_ms: 10_000 }, CTX),
+    );
+
+    const id = extractSubagentId(result);
+    expect(result).toMatchObject({ stopReason: "completed" });
+    expect(result?.note).toContain(`subagent idle with subagent_id ${id}`);
+    expect(manager.get(id)?.sessionId).toBe(HOP);
+    expect(manager.list()).toEqual([expect.objectContaining({ sessionId: HOP, status: "idle" })]);
+
+    expect(manager.sendMessage(HOP, "follow-up")).toBe("started");
+    await until(() => prompts.length === 2 && manager.list()[0]?.status === "idle");
+    expect(prompts).toEqual(["first", "follow-up"]);
+    expect(spawnCount).toBe(1);
+    expect(manager.get(id)?.sessionId).toBe(HOP);
+  });
+
+  it("routes messages to the host only outside a tool collection window", async () => {
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const hosted: string[] = [];
+    const session = new ManagedSubagentSession({
+      sessionId: HOP,
+      steer: () => false,
+      run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        });
+        yield withOrigin(partialText("delta", "collected"), HOP);
+        await new Promise<void>((resolve) => {
+          releaseSecond = resolve;
+        });
+        yield withOrigin(partialText("delta", "hosted"), HOP);
+        await aborted(signal);
+      },
+      dispose() {},
+    });
+    session.setEventSink({
+      message: (message) => hosted.push((message.payload as { text?: string }).text ?? ""),
+      change: () => {},
+    });
+    session.startRun("go");
+    await until(() => releaseFirst !== undefined);
+    const detach = session.attachMessageCollector();
+    releaseFirst();
+    await until(() => session.hasPending);
+    expect(hosted).toEqual([]);
+    expect(session.drainMessages()).toHaveLength(1);
+    detach();
+    releaseSecond();
+    await until(() => hosted.length === 1);
+    expect(hosted).toEqual(["hosted"]);
+    expect(session.drainMessages()).toEqual([]);
+  });
+
+  it("hands a collector's undrained race-window tail to the host when it detaches", async () => {
+    let release!: () => void;
+    const hosted: string[] = [];
+    const session = new ManagedSubagentSession({
+      sessionId: HOP,
+      steer: () => false,
+      run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        yield withOrigin(partialText("delta", "tail"), HOP);
+        await aborted(signal);
+      },
+      dispose() {},
+    });
+    session.setEventSink({
+      message: (message) => hosted.push((message.payload as { text?: string }).text ?? ""),
+      change: () => {},
+    });
+    session.startRun("go");
+    await until(() => release !== undefined);
+    const detach = session.attachMessageCollector();
+    release();
+    await until(() => session.hasPending);
+
+    detach();
+
+    expect(hosted).toEqual(["tail"]);
+    expect(session.drainMessages()).toEqual([]);
+    session.kill();
+  });
+
   /** A child Agent whose first-turn task is stuck on a gate: after backgrounding, the test
    *  controls when it finishes. */
   function gatedChild(): {
@@ -477,6 +633,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     for (let i = 0; i < 8; i += 1) {
       const session = new ManagedSubagentSession({
         sessionId: `session-occupy-0000000${i}`,
+        steer: () => false,
         // eslint-disable-next-line require-yield
         run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
           await aborted(signal);
@@ -525,6 +682,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
     let emitSecond: (() => void) | null = null;
     const session = new ManagedSubagentSession({
       sessionId: HOP,
+      steer: () => false,
       run: async function* ({ signal }: RunInput): AsyncGenerator<OmniMessage> {
         yield withOrigin(partialText("delta", "first"), HOP);
         await new Promise<void>((resolve) => {

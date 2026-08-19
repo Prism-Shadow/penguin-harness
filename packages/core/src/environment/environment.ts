@@ -29,6 +29,7 @@ import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
+  ApproveFn,
   BackgroundCommandInfo,
   EnvironmentConfig,
   EnvironmentInterface,
@@ -167,6 +168,32 @@ export class Environment implements EnvironmentInterface {
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.commandSessions.kill(processId);
+  }
+
+  listSubagents() {
+    return this.subagentSessions.list();
+  }
+
+  sendSubagentMessage(sessionId: string, prompt: string) {
+    return this.subagentSessions.sendMessage(sessionId, prompt);
+  }
+
+  interruptSubagent(sessionId: string): boolean {
+    return this.subagentSessions.interrupt(sessionId);
+  }
+
+  interruptAllSubagents(): number {
+    return this.subagentSessions.interruptAll();
+  }
+
+  setSubagentApprovalSink(approve: ApproveFn | null): void {
+    this.subagentSessions.setApprovalSink(approve);
+  }
+
+  setSubagentEventSink(
+    sink: { message: (message: OmniMessage) => void; change: () => void } | null,
+  ): void {
+    this.subagentSessions.setEventSink(sink);
   }
 
   /**

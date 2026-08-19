@@ -65,7 +65,7 @@ export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptio
     const unsubscribe = channel.subscribe(listener);
     // Subscribe first (to avoid dropping events in a race with broadcasts), then replay
     // synchronously — event order: buffered replay (or resync_required) -> initial events
-    // (task_state snapshot / pending approvals / hello) -> live stream.
+    // (task_state + subagent_state snapshots / pending approvals / hello) -> live stream.
     if (lastEventIdHeader !== undefined) {
       const replay = channel.replayAfter(lastEventIdHeader);
       if (!replay.hit) {

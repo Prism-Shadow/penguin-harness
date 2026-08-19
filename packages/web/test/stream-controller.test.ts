@@ -21,6 +21,7 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   PendingSteeringInfo,
+  SessionSubagentInfo,
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
@@ -45,6 +46,7 @@ interface Harness {
   controller: StreamController;
   states: SessionStatus[];
   pendingSteering: PendingSteeringInfo[][];
+  subagents: SessionSubagentInfo[][];
   errors: Array<string | null>;
   loadings: boolean[];
   loadCalls: () => number;
@@ -71,6 +73,7 @@ function createHarness(): Harness {
   }> = [];
   const states: SessionStatus[] = [];
   const pendingSteering: PendingSteeringInfo[][] = [];
+  const subagents: SessionSubagentInfo[][] = [];
   const errors: Array<string | null> = [];
   const loadings: boolean[] = [];
   const pageArgs: Array<MessagesPageQuery | undefined> = [];
@@ -89,6 +92,7 @@ function createHarness(): Harness {
       }),
     onTaskState: (s) => states.push(s),
     onPendingSteering: (items) => pendingSteering.push(items),
+    onSubagents: (items) => subagents.push(items),
     onLoading: (l) => loadings.push(l),
     onError: (e) => errors.push(e),
     onModelChange: () => {},
@@ -99,6 +103,7 @@ function createHarness(): Harness {
     controller,
     states,
     pendingSteering,
+    subagents,
     errors,
     loadings,
     loadCalls: () => calls,
@@ -234,6 +239,28 @@ describe("in-stream task_state is the authoritative running state (history-closi
       (item) => item.kind === "task_stats",
     ) as TaskStatsItem[];
     expect(stats.map((item) => item.assistantText)).toEqual(["answer", "follow-up answer"]);
+  });
+});
+
+describe("subagent_state", () => {
+  it("reports every authoritative child snapshot during buffering and live phases", async () => {
+    const h = createHarness();
+    const load = h.controller.load();
+    const running: SessionSubagentInfo = {
+      sessionId: "child-1",
+      status: "running",
+      startedAt: "2026-08-14T01:00:00.000Z",
+      endedAt: null,
+    };
+    h.controller.handleServer({ type: "subagent_state", subagents: [running] });
+    expect(h.subagents).toEqual([[running]]);
+    h.resolveLoad([]);
+    await load;
+    h.controller.handleServer({
+      type: "subagent_state",
+      subagents: [{ ...running, status: "idle", endedAt: "2026-08-14T01:00:02.000Z" }],
+    });
+    expect(h.subagents.at(-1)?.[0]?.status).toBe("idle");
   });
 });
 

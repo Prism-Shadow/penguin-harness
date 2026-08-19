@@ -189,6 +189,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 - The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level, and Workspace — never the Project defaults.
 - The child Session inherits the parent Agent's approval callback, so the approval mode follows the parent.
 - The child Session gets its own Trace, linked from the parent by a `subagent` pointer event; child messages stream back into the parent flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
+- Interrupting a parent Task interrupts every currently running child, including one that already backgrounded out of `run_subagent`. A direct child interrupt stops only its current round: the Session and context stay retained, so `input_subagent` or the Web agents panel can continue it later with another prompt.
 
 ### Image tools
 

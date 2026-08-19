@@ -5,7 +5,7 @@
  * is SubagentsView (latest-Task call graph + the selected child conversation), keyed by session
  * so node selection resets on session switch.
  */
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionSubagentInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { Sheet } from "../../components/ui/sheet";
@@ -27,6 +27,7 @@ export function SubagentsPanel({
   model,
   version,
   taskRunning,
+  subagents,
   ctx,
 }: {
   session: SessionInfo;
@@ -34,6 +35,7 @@ export function SubagentsPanel({
   model: StreamModel;
   version: number;
   taskRunning: boolean;
+  subagents: SessionSubagentInfo[];
   ctx: StreamRenderContext;
 }) {
   const view = (
@@ -43,6 +45,7 @@ export function SubagentsPanel({
       model={model}
       version={version}
       taskRunning={taskRunning}
+      subagents={subagents}
       ctx={ctx}
       focusRequest={panel.focusRequest}
       taskScope={panel.taskScope}

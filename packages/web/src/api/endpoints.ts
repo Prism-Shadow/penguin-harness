@@ -71,6 +71,7 @@ import type {
   SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
+  SubagentMessageResponse,
   RetryNowResponse,
   SteerRequest,
   TaskCreateRequest,
@@ -450,6 +451,20 @@ export const postAbort = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/** Steers a running child, or starts a follow-up round on the same child Session when idle. */
+export const postSubagentMessage = (sessionId: string, childSessionId: string, text: string) =>
+  apiFetch<SubagentMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/messages`,
+    { method: "POST", body: { text } },
+  );
+
+/** Interrupts only the child's current round; its Session/context remains available for follow-up. */
+export const postSubagentAbort = (sessionId: string, childSessionId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/abort`,
+    { method: "POST", body: {} },
+  );
 
 /** "Retry now" on the reconnect countdown: skips the remaining backoff wait server-side (skipped:false is the benign "no wait in progress" case — e.g. the timer elapsed in a race — never an error). */
 export const postRetryNow = (sessionId: string) =>

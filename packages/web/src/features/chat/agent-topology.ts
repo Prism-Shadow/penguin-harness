@@ -20,6 +20,7 @@
  * text measurement; graphs are small (≲15 nodes) and the view scrolls horizontally on overflow.
  */
 import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
+import type { SessionSubagentInfo } from "@prismshadow/penguin-server/api";
 
 export interface TopologyNode {
   sessionId: string;
@@ -29,6 +30,8 @@ export interface TopologyNode {
   description: string | null;
   /** Still running — the spawning card's output hasn't completed (root: the Task's own running state; a standalone item has no card, so it reads as done). */
   running: boolean;
+  /** Runtime lifecycle state when the server still retains this child; absent for historical/fallback nodes. */
+  status?: SessionSubagentInfo["status"];
   /** 0 = the main session; +1 per spawn hop. */
   depth: number;
   /** Origin chain used to render this node's conversation as ctx.origin (ends with this node's own session id; empty for the root). */
@@ -159,6 +162,37 @@ export function extractTopologyForChild(
   }
   return extractFromSlice(items.slice(start, end), rootSessionId, {
     running: end === items.length && taskRunning,
+  });
+}
+
+/**
+ * Overlay the runtime's authoritative child state onto topology inferred from tool cards.
+ * The fallback remains useful for old servers and historical children no longer retained in
+ * memory; a live entry always wins, including an idle child that has just been restarted.
+ */
+export function mergeTopologyRuntimeState(
+  nodes: readonly TopologyNode[],
+  states: readonly SessionSubagentInfo[],
+): TopologyNode[] {
+  if (states.length === 0) return [...nodes];
+  const byId = new Map(states.map((state) => [state.sessionId, state]));
+  return nodes.map((node) => {
+    if (node.depth === 0) return node;
+    const state = byId.get(node.sessionId);
+    if (!state) return node;
+    const startedMs = state.startedAt === null ? undefined : Date.parse(state.startedAt);
+    const endedMs = state.endedAt === null ? undefined : Date.parse(state.endedAt);
+    const validStarted = startedMs !== undefined && Number.isFinite(startedMs);
+    const validEnded = endedMs !== undefined && Number.isFinite(endedMs);
+    return {
+      ...node,
+      status: state.status,
+      running: state.status !== "idle",
+      ...(validStarted ? { startedMs } : {}),
+      ...(state.status === "idle" && validStarted && validEnded
+        ? { elapsedMs: Math.max(0, endedMs - startedMs) }
+        : {}),
+    };
   });
 }
 

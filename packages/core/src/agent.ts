@@ -670,6 +670,9 @@ export class Agent {
         let metaSent = false;
         return {
           sessionId: hop,
+          steer(prompt: string) {
+            return childSession.steer([userText(prompt)]);
+          },
           async *run({ prompt, signal, approve }) {
             if (!metaSent) {
               metaSent = true;

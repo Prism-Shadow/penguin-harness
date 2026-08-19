@@ -36,6 +36,7 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   PendingSteeringInfo,
+  SessionSubagentInfo,
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
@@ -121,6 +122,8 @@ export interface StreamControllerDeps {
   onQueuedFollowUps?: (count: number) => void;
   /** Undelivered steering messages carried on task_state events (absent = none): keeps the composer's "steering queued" hint alive across reloads. */
   onPendingSteering?: (items: PendingSteeringInfo[]) => void;
+  /** Authoritative lifecycle snapshots for retained child Sessions. */
+  onSubagents?: (items: SessionSubagentInfo[]) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -296,6 +299,10 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           clearPending();
           deps.onModelChange();
         }
+        return;
+      }
+      case "subagent_state": {
+        deps.onSubagents?.(ev.subagents);
         return;
       }
       case "resync_required": {
@@ -606,6 +613,11 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           deps.onTaskState(ev.state);
           deps.onQueuedFollowUps?.(ev.queued ?? 0);
           deps.onPendingSteering?.(ev.pendingSteering ?? []);
+        } else if (ev.type === "subagent_state") {
+          // Like task_state, this is authoritative UI state and should be visible while the
+          // history fetch is still in flight; replaying it later is harmless and preserves
+          // ordering relative to any following child messages.
+          deps.onSubagents?.(ev.subagents);
         }
         buffer.push({ kind: "server", ev, id: eventId });
         return;

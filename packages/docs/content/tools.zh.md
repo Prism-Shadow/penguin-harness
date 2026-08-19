@@ -187,6 +187,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 - 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level 与 Workspace 均继承父级，而非 Project 默认值。
 - 子 Session 继承父 Agent 的审批回调，审批模式随父生效。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
+- 中断父 Task 会级联中断当前仍在运行的全部子 Session，包括已经从 `run_subagent` 转入后台的子 Session。单独中断某个子 Session 只停止它的当前轮次，不销毁 Session 与上下文，之后仍可通过 `input_subagent` 或 Web 智能体面板追加 Prompt 继续。
 
 ### 图像工具
 

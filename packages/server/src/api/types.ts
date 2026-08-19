@@ -1075,6 +1075,18 @@ export interface SessionProcessesResponse {
   processes: SessionProcessInfo[];
 }
 
+/** One live child Session retained by its parent Session's in-memory runtime. */
+export interface SessionSubagentInfo {
+  sessionId: string;
+  status: "running" | "stopping" | "idle";
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+export interface SubagentMessageResponse {
+  delivery: "steered" | "started";
+}
+
 // ---------------------------------------------------------------------------
 // SSE server events (OmniMessage uses the default event, only server_event here)
 // ---------------------------------------------------------------------------
@@ -1094,6 +1106,8 @@ export type ServerEvent =
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
     }
+  /** Live lifecycle snapshot for children retained by this parent Session. */
+  | { type: "subagent_state"; subagents: SessionSubagentInfo[] }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */

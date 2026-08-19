@@ -22,6 +22,7 @@ export async function* collectWindow(
   const delta = (output: string): OmniMessage =>
     partialToolCallOutput({ eventType: "delta", output, toolCallId });
   const detach = approve ? session.attachApprovalSink(approve) : null;
+  const detachMessages = session.attachMessageCollector();
   // abort only ends this window (whether to kill the child session is up to the caller);
   // wakes up a pending waitWake so it returns immediately.
   const onAbort = (): void => session.wakeup();
@@ -48,5 +49,6 @@ export async function* collectWindow(
   } finally {
     signal?.removeEventListener("abort", onAbort);
     detach?.();
+    detachMessages();
   }
 }

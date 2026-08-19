@@ -57,7 +57,8 @@ export class ManagedSubagentSession {
   lastUsed: number = Date.now();
 
   private readonly handle: SubagentHandle;
-  private readonly abortCtrl = new AbortController();
+  /** One AbortController per run: interrupting a round must not permanently poison later follow-ups. */
+  private abortCtrl: AbortController | null = null;
 
   private messages: OmniMessage[] = [];
   private readonly textBuffer = new CappedTextBuffer(OUTPUT_BUFFER_CAP, "earlier subagent output");
@@ -65,14 +66,22 @@ export class ManagedSubagentSession {
   private isRunning = false;
   private exitInfo: SubagentExit | null = null;
   private killed = false;
+  private interruptRequested = false;
+  private runStartedAt: number | null = null;
+  private runEndedAt: number | null = null;
 
   private readonly approvals: PendingApproval[] = [];
   private sink: { approve: ApproveFn; detached: Promise<void> } | null = null;
+  /** Host-level fallback (the Web server keeps background approvals actionable after a tool window closes). */
+  private defaultApprove: ApproveFn | null = null;
   private sinkEpoch = 0;
   private pumpingApprovals = false;
 
   // Single wake point: new message / run finished / new approval request all wake a waiting waitWake through it.
   private readonly wakeSignal = new WakeSignal();
+  private messageSink: ((message: OmniMessage) => void) | null = null;
+  private changeSink: (() => void) | null = null;
+  private activeCollectors = 0;
 
   constructor(handle: SubagentHandle) {
     this.handle = handle;
@@ -86,6 +95,18 @@ export class ManagedSubagentSession {
   /** Whether a round of the task is currently running. */
   get running(): boolean {
     return this.isRunning;
+  }
+
+  get stopping(): boolean {
+    return this.isRunning && this.interruptRequested;
+  }
+
+  get startedAt(): number | null {
+    return this.runStartedAt;
+  }
+
+  get endedAt(): number | null {
+    return this.runEndedAt;
   }
 
   /** Terminal state of the most recent run; null if no round has ever completed. */
@@ -112,8 +133,48 @@ export class ManagedSubagentSession {
     if (this.killed) throw new Error("subagent session disposed");
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
+    this.interruptRequested = false;
     this.exitInfo = null;
-    void this.pump(prompt);
+    this.runStartedAt = Date.now();
+    this.runEndedAt = null;
+    const abortCtrl = new AbortController();
+    this.abortCtrl = abortCtrl;
+    this.changeSink?.();
+    void this.pump(prompt, abortCtrl);
+  }
+
+  /** Mid-run correction from a host UI. The child Session decides whether it is steerable yet. */
+  steer(prompt: string): boolean {
+    if (this.killed || !this.isRunning || this.interruptRequested) return false;
+    return this.handle.steer?.(prompt) ?? false;
+  }
+
+  setEventSink(sink: { message: (message: OmniMessage) => void; change: () => void } | null): void {
+    this.messageSink = sink?.message ?? null;
+    this.changeSink = sink?.change ?? null;
+  }
+
+  /** Marks a tool collection window; outside one, the host sink receives messages directly. */
+  attachMessageCollector(): () => void {
+    this.activeCollectors += 1;
+    let detached = false;
+    return () => {
+      if (detached) return;
+      detached = true;
+      this.activeCollectors = Math.max(0, this.activeCollectors - 1);
+      // A message can arrive after collectWindow's final drain but before its finally block
+      // detaches. Hand that race-window tail to the long-lived host instead of leaving it
+      // invisible until a later input_subagent poll.
+      if (this.activeCollectors === 0 && this.messageSink) {
+        for (const message of this.drainMessages()) this.messageSink(message);
+      }
+    };
+  }
+
+  /** Installs/removes the host's fallback approval sink without disturbing an active tool window. */
+  setDefaultApprovalSink(approve: ApproveFn | null): void {
+    this.defaultApprove = approve;
+    void this.pumpApprovals();
   }
 
   /** Takes the buffered child-session messages (already tagged with origin, for the parent tool to forward). */
@@ -156,18 +217,34 @@ export class ManagedSubagentSession {
     return () => {
       if (this.sinkEpoch === epoch) this.sink = null;
       onDetach();
+      // A host fallback may now be able to service requests that arrived during/after the
+      // transient tool window.
+      void this.pumpApprovals();
     };
+  }
+
+  /** Stops only the current run, preserving the child Session and its context for a follow-up. */
+  interruptRun(): boolean {
+    if (this.killed || !this.isRunning || this.interruptRequested) return false;
+    this.interruptRequested = true;
+    for (const req of [...this.approvals]) this.settle(req, "deny");
+    this.abortCtrl?.abort();
+    this.wakeSignal.notify();
+    this.changeSink?.();
+    return true;
   }
 
   /** Cleanup: aborts the current run, denies pending approvals, releases child Session resources; idempotent. */
   kill(): void {
     if (this.killed) return;
     this.killed = true;
-    this.abortCtrl.abort();
+    this.interruptRequested = true;
+    this.abortCtrl?.abort();
     for (const req of [...this.approvals]) this.settle(req, "deny");
     // If running, released by pump's finally after it finishes; otherwise released immediately.
     if (!this.isRunning) this.handle.dispose();
     this.wakeSignal.notify();
+    this.changeSink?.();
   }
 
   /** Synchronous hard-kill path: the child Session runs in-process with no separate OS resources, so this is equivalent to `kill`. */
@@ -180,13 +257,13 @@ export class ManagedSubagentSession {
   // -------------------------------------------------------------------------
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
-  private async pump(prompt: string): Promise<void> {
+  private async pump(prompt: string, abortCtrl: AbortController): Promise<void> {
     let wroteAny = false;
     let childAbort: string | null = null;
     try {
       for await (const msg of this.handle.run({
         prompt,
-        signal: this.abortCtrl.signal,
+        signal: abortCtrl.signal,
         approve: this.childApprove,
       })) {
         this.bufferMessage(msg);
@@ -215,7 +292,9 @@ export class ManagedSubagentSession {
         }
         this.wakeSignal.notify();
       }
-      if (childAbort !== null) {
+      if (abortCtrl.signal.aborted && childAbort === null) {
+        this.exitInfo = { status: "failed", note: "[subagent interrupted by user]" };
+      } else if (childAbort !== null) {
         this.exitInfo = { status: "failed", note: `[subagent aborted: ${childAbort}]` };
       } else if (!wroteAny) {
         this.exitInfo = {
@@ -230,12 +309,19 @@ export class ManagedSubagentSession {
       this.exitInfo = { status: "failed", note: `[subagent error: ${message}]` };
     } finally {
       this.isRunning = false;
+      this.runEndedAt = Date.now();
+      if (this.abortCtrl === abortCtrl) this.abortCtrl = null;
       if (this.killed) this.handle.dispose();
       this.wakeSignal.notify();
+      this.changeSink?.();
     }
   }
 
   private bufferMessage(msg: OmniMessage): void {
+    if (this.activeCollectors === 0 && this.messageSink) {
+      this.messageSink(msg);
+      return;
+    }
     this.messages.push(msg);
     // Overflow drops the oldest: only affects frontend replay — the child Session's Trace and text buffer are unaffected.
     if (this.messages.length > MESSAGE_BUFFER_CAP) this.messages.shift();
@@ -279,17 +365,21 @@ export class ManagedSubagentSession {
     if (this.pumpingApprovals) return;
     this.pumpingApprovals = true;
     try {
-      while (this.sink && this.approvals.length > 0) {
+      while ((this.sink || this.defaultApprove) && this.approvals.length > 0) {
         const sink = this.sink;
+        const approve = sink?.approve ?? this.defaultApprove!;
         const req = this.approvals[0]!;
-        const answer = sink.approve(req.toolCall).then(
+        const answer = approve(req.toolCall).then(
           (d) => this.settle(req, d),
           () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
         );
-        await Promise.race([answer, sink.detached]);
+        // A transient sink can detach while Human is deciding; the default sink is persistent,
+        // so it simply awaits the answer.
+        if (sink) await Promise.race([answer, sink.detached]);
+        else await answer;
         if (req.settled) continue;
-        if (this.sink && this.sink !== sink) continue; // The sink was replaced by a new call: retry with the new sink
-        break; // The sink was detached and still unresolved: stay queued for the next sink
+        if (this.sink !== sink) continue; // The transient sink changed: retry with the new effective sink
+        break;
       }
     } finally {
       this.pumpingApprovals = false;
