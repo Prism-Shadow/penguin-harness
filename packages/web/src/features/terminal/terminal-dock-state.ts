@@ -6,6 +6,14 @@
  * each pane remembers which of its terminals it is showing. One `visible` flag hides and
  * restores the whole arrangement (Ctrl+`), so a toggle never loses the layout.
  *
+ * The arrangement is SCOPED to the conversation it was opened in. Switching Sessions
+ * switches the whole dock with it — a Session that never opened a terminal shows none, and
+ * coming back restores the panes and tabs that were there. The shells themselves are
+ * per-user and keep running regardless; a scope only decides which of them are on screen
+ * here. Pages with no Session of their own (settings, Agents, …) keep the last one's dock
+ * rather than blanking it, since navigating to a settings page is not leaving the
+ * conversation.
+ *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar and the global hotkey flip visibility, AppLayout renders a pane per open edge,
  * and the drag/drop interactions inside any pane reshape the arrangement. Everything
@@ -13,11 +21,12 @@
  * behind them survive server-side.
  */
 
-const VISIBLE_KEY = "penguin.terminal.dockOpen";
-const PANES_KEY = "penguin.terminal.dockPanes";
+/** Every scope's arrangement, in one entry: `Record<scope, DockScopeState>`. */
+const DOCK_KEY = "penguin.terminal.dock";
+/** How wide/tall the user likes a pane is one preference, not one per conversation. */
 const RATIOS_KEY = "penguin.terminal.dockRatios";
-const ASSIGN_KEY = "penguin.terminal.paneAssignments";
-const CURRENTS_KEY = "penguin.terminal.paneCurrents";
+/** Scopes kept in storage; past that, the least recently touched conversations age out. */
+const MAX_SCOPES = 40;
 
 /** Which edge of the content area a pane occupies. */
 export type DockPosition = "top" | "bottom" | "left" | "right";
@@ -48,7 +57,10 @@ function clampRatio(value: number): number {
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw === null ? fallback : (JSON.parse(raw) as T);
+    if (raw === null) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    // `null` parses fine and then blows up on the first property read.
+    return typeof parsed === "object" && parsed !== null ? (parsed as T) : fallback;
   } catch {
     return fallback;
   }
@@ -62,26 +74,6 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-let visible = ((): boolean => {
-  try {
-    return localStorage.getItem(VISIBLE_KEY) === "1";
-  } catch {
-    return false;
-  }
-})();
-
-let panes: DockPosition[] = readJson<DockPosition[]>(PANES_KEY, []).filter((p): p is DockPosition =>
-  POSITIONS.includes(p),
-);
-
-let ratios: Partial<Record<DockPosition, number>> = readJson(RATIOS_KEY, {});
-
-/** terminalId -> pane. Unassigned terminals belong to the primary (first open) pane. */
-let assignments: Record<string, DockPosition> = readJson(ASSIGN_KEY, {});
-
-/** Which terminal each pane is showing. */
-let currents: Partial<Record<DockPosition, string>> = readJson(CURRENTS_KEY, {});
-
 /**
  * Last failure while resolving/creating a pane's shell (not persisted). Shown in the pane
  * body: a blank panel with the cause swallowed is indistinguishable from "working" — the
@@ -89,6 +81,106 @@ let currents: Partial<Record<DockPosition, string>> = readJson(CURRENTS_KEY, {})
  * anywhere said so.
  */
 let paneErrors: Partial<Record<DockPosition, string>> = {};
+
+/** One conversation's arrangement — everything `setDockScope` swaps. */
+interface DockScopeState {
+  visible: boolean;
+  panes: DockPosition[];
+  /** terminalId -> pane. This is also the MEMBERSHIP list: an id absent here is not shown. */
+  assignments: Record<string, DockPosition>;
+  /** Which terminal each pane is showing. */
+  currents: Partial<Record<DockPosition, string>>;
+}
+
+function emptyScope(): DockScopeState {
+  return { visible: false, panes: [], assignments: {}, currents: {} };
+}
+
+/**
+ * The scope the dock belongs to before any conversation is open — the login screen, a
+ * settings page reached directly by URL. A real Session id never collides with it.
+ */
+const NO_SESSION_SCOPE = "~none";
+
+/**
+ * One stored scope, made safe to use. Storage is user-writable and survives across
+ * versions, so a malformed entry has to degrade to an empty dock — this runs at module
+ * load, where a throw would take the whole app down with it.
+ */
+function sanitizeScope(raw: unknown): DockScopeState {
+  const state = (raw ?? {}) as Partial<DockScopeState>;
+  const panes = Array.isArray(state.panes)
+    ? state.panes.filter((p): p is DockPosition => POSITIONS.includes(p))
+    : [];
+  const entries = (value: unknown): Array<[string, unknown]> =>
+    typeof value === "object" && value !== null ? Object.entries(value) : [];
+  return {
+    visible: state.visible === true,
+    panes,
+    assignments: Object.fromEntries(
+      entries(state.assignments).filter((entry): entry is [string, DockPosition] =>
+        POSITIONS.includes(entry[1] as DockPosition),
+      ),
+    ),
+    currents: Object.fromEntries(
+      entries(state.currents).filter(
+        (entry): entry is [DockPosition, string] =>
+          POSITIONS.includes(entry[0] as DockPosition) && typeof entry[1] === "string",
+      ),
+    ),
+  };
+}
+
+let scopes: Record<string, DockScopeState> = Object.fromEntries(
+  Object.entries(readJson<Record<string, unknown>>(DOCK_KEY, {})).map(([key, value]) => [
+    key,
+    sanitizeScope(value),
+  ]),
+);
+let scope = NO_SESSION_SCOPE;
+
+let ratios: Partial<Record<DockPosition, number>> = readJson(RATIOS_KEY, {});
+
+// Unpacked into locals rather than read through `scopes[scope]` everywhere: the reads are
+// on every render path, and the stable references are what let `openPanes()` be a valid
+// useSyncExternalStore snapshot.
+let { visible, panes, assignments, currents } = scopes[scope] ?? emptyScope();
+
+/** Writes the live locals back into the scope map and persists it. */
+function persist(): void {
+  const state: DockScopeState = { visible, panes, assignments, currents };
+  // An untouched scope is not worth a storage entry: visiting a conversation without ever
+  // opening a terminal would otherwise leave one behind for every conversation visited.
+  if (panes.length === 0 && Object.keys(assignments).length === 0) {
+    const { [scope]: _dropped, ...rest } = scopes;
+    scopes = rest;
+  } else {
+    // Re-inserted last so key order is least-recently-touched first, which is what the cap
+    // below evicts by.
+    const { [scope]: _previous, ...rest } = scopes;
+    scopes = { ...rest, [scope]: state };
+  }
+  const keys = Object.keys(scopes);
+  if (keys.length > MAX_SCOPES) {
+    scopes = Object.fromEntries(keys.slice(keys.length - MAX_SCOPES).map((k) => [k, scopes[k]!]));
+  }
+  writeJson(DOCK_KEY, scopes);
+}
+
+/**
+ * Points the dock at a conversation. Everything on screen changes with it; the shells
+ * behind the tabs are untouched, so switching away and back costs nothing.
+ */
+export function setDockScope(next: string | null): void {
+  const target = next ?? NO_SESSION_SCOPE;
+  if (target === scope) return;
+  persist();
+  scope = target;
+  ({ visible, panes, assignments, currents } = scopes[scope] ?? emptyScope());
+  // Transient and about a pane that is no longer on screen.
+  paneErrors = {};
+  notify();
+}
 
 const listeners = new Set<() => void>();
 let version = 0;
@@ -114,19 +206,10 @@ export function isTerminalDockOpen(): boolean {
   return visible && panes.length > 0;
 }
 
-function persistVisible(next: boolean): void {
-  visible = next;
-  try {
-    localStorage.setItem(VISIBLE_KEY, next ? "1" : "0");
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
-}
-
 export function setTerminalDockOpen(next: boolean): void {
-  persistVisible(next);
+  visible = next;
   if (next && panes.length === 0) panes = ["bottom"];
-  writeJson(PANES_KEY, panes);
+  persist();
   notify();
 }
 
@@ -160,11 +243,9 @@ export function primaryPane(): DockPosition {
 }
 
 export function ensurePaneOpen(position: DockPosition): void {
-  persistVisible(true);
-  if (!panes.includes(position)) {
-    panes = [...panes, position];
-    writeJson(PANES_KEY, panes);
-  }
+  visible = true;
+  if (!panes.includes(position)) panes = [...panes, position];
+  persist();
   notify();
 }
 
@@ -175,9 +256,7 @@ export function ensurePaneOpen(position: DockPosition): void {
 export function closePane(position: DockPosition): void {
   if (!panes.includes(position)) return;
   panes = panes.filter((p) => p !== position);
-  writeJson(PANES_KEY, panes);
   delete currents[position];
-  writeJson(CURRENTS_KEY, currents);
   const fallback = panes[0];
   assignments = Object.fromEntries(
     Object.entries(assignments).flatMap(([id, pane]) => {
@@ -185,8 +264,8 @@ export function closePane(position: DockPosition): void {
       return fallback ? [[id, fallback]] : [];
     }),
   );
-  writeJson(ASSIGN_KEY, assignments);
-  if (panes.length === 0) persistVisible(false);
+  if (panes.length === 0) visible = false;
+  persist();
   notify();
 }
 
@@ -215,33 +294,73 @@ export function resetPaneRatio(position: DockPosition): void {
 
 // --------------------------------------------------------------------- pane assignments
 
-/** The pane a terminal belongs to (its assigned pane while open, else the primary one). */
-export function paneOfTerminal(id: string): DockPosition {
+/**
+ * The pane a terminal is shown in, or null when this scope does not hold it at all.
+ *
+ * Membership is explicit — a terminal belongs to the conversation it was opened in, not to
+ * whichever dock happens to be on screen. Falling back to the primary pane for an unknown
+ * id is what would leak every other conversation's shells into this one's tab strip.
+ * (An id assigned to a pane that is no longer open does re-home to the primary: that pane
+ * closed, but the terminal is still this scope's.)
+ */
+export function paneOfTerminal(id: string): DockPosition | null {
   const assigned = assignments[id];
-  return assigned !== undefined && panes.includes(assigned) ? assigned : primaryPane();
+  if (assigned === undefined) return null;
+  return panes.includes(assigned) ? assigned : primaryPane();
+}
+
+/**
+ * Whether this scope holds a terminal at all — the badge on the toolbar's terminal trigger
+ * counts these, so it agrees with what opening the panel actually shows. Terminals the
+ * other conversations hold are still live, and still listed in the toolbar's menu.
+ */
+export function holdsTerminal(id: string): boolean {
+  return assignments[id] !== undefined;
 }
 
 /** Moves a terminal to a pane (opening it if needed) and shows it there. */
 export function assignTerminalToPane(id: string, position: DockPosition): void {
   ensurePaneOpen(position);
   assignments = { ...assignments, [id]: position };
-  writeJson(ASSIGN_KEY, assignments);
+  persist();
   setPaneCurrent(position, id);
 }
 
-/** Brings a terminal on screen: its pane opens (dock and all) showing it. */
+/**
+ * Brings a terminal on screen: its pane opens (dock and all) showing it. A terminal this
+ * scope does not hold — one opened in another conversation, picked from the toolbar's
+ * list — joins the primary pane, which is what asking to see it here means.
+ */
 export function showTerminal(id: string): void {
   const position = paneOfTerminal(id);
+  if (position === null) {
+    assignTerminalToPane(id, primaryPane());
+    return;
+  }
   ensurePaneOpen(position);
   setPaneCurrent(position, id);
 }
 
-/** Drops assignment entries for terminals that no longer exist. */
+/**
+ * Drops assignment entries for terminals that no longer exist — across every scope, not
+ * just the one on screen: a dead shell's id would otherwise sit in an inactive
+ * conversation's arrangement until that conversation aged out of storage.
+ */
 export function pruneAssignments(liveIds: ReadonlySet<string>): void {
-  const next = Object.fromEntries(Object.entries(assignments).filter(([id]) => liveIds.has(id)));
-  if (Object.keys(next).length === Object.keys(assignments).length) return;
-  assignments = next;
-  writeJson(ASSIGN_KEY, assignments);
+  let changed = false;
+  for (const [key, state] of Object.entries(scopes)) {
+    const kept = Object.entries(state.assignments).filter(([id]) => liveIds.has(id));
+    if (kept.length === Object.keys(state.assignments).length) continue;
+    scopes = { ...scopes, [key]: { ...state, assignments: Object.fromEntries(kept) } };
+    changed = true;
+  }
+  const kept = Object.entries(assignments).filter(([id]) => liveIds.has(id));
+  if (kept.length !== Object.keys(assignments).length) {
+    assignments = Object.fromEntries(kept);
+    changed = true;
+  }
+  if (!changed) return;
+  persist();
   notify();
 }
 
@@ -269,7 +388,7 @@ export function setPaneCurrent(position: DockPosition, id: string | null): void 
   }
   if (id === null) delete currents[position];
   else currents = { ...currents, [position]: id };
-  writeJson(CURRENTS_KEY, currents);
+  persist();
   notify();
 }
 
@@ -277,23 +396,11 @@ export function setPaneCurrent(position: DockPosition, id: string | null): void 
  * Moves a whole pane to another edge: every terminal of the source pane (and its shown
  * terminal) lands on the target, merging with anything already there; the source closes.
  *
- * `memberIds` is the caller's live tab list for the source pane. It matters because
- * membership can be IMPLICIT — an unassigned terminal belongs to the primary pane without
- * an `assignments` entry — and this store does not know the live terminal list. Without
- * it, moving the primary pane would leave its unassigned tabs behind (they would silently
- * re-home to whichever pane becomes primary next).
  */
-export function movePane(from: DockPosition, to: DockPosition, memberIds: string[] = []): void {
+export function movePane(from: DockPosition, to: DockPosition): void {
   if (from === to) return;
   const shown = currents[from] ?? null;
-  const movedIds = [
-    ...new Set([
-      ...memberIds.filter((id) => paneOfTerminal(id) === from),
-      ...Object.entries(assignments)
-        .filter(([, pane]) => pane === from)
-        .map(([id]) => id),
-    ]),
-  ];
+  const movedIds = Object.keys(assignments).filter((id) => paneOfTerminal(id) === from);
   // A same-orientation move carries the pane's size along ("keep the ratio"): the user
   // sized THIS pane, and it is the same pane on the other edge. Cross-orientation moves
   // and merges into an existing pane keep the target's own size.
@@ -310,11 +417,9 @@ export function movePane(from: DockPosition, to: DockPosition, memberIds: string
     ...assignments,
     ...Object.fromEntries(movedIds.map((id) => [id, to])),
   };
-  writeJson(ASSIGN_KEY, assignments);
   panes = panes.filter((p) => p !== from);
-  writeJson(PANES_KEY, panes);
   delete currents[from];
   if (shown) currents = { ...currents, [to]: shown };
-  writeJson(CURRENTS_KEY, currents);
+  persist();
   notify();
 }

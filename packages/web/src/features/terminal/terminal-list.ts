@@ -1,6 +1,8 @@
 /**
- * The user's live terminals, as a tiny module-level store — the dock's tab strip renders
- * this list, and the toolbar badge (panels-toolbar.tsx) shows its length.
+ * The user's live terminals, as a tiny module-level store. Every shell the user has is in
+ * here, whichever conversation it was opened in: the dock's tab strip and the toolbar's
+ * badge narrow it to the ones the current scope holds (terminal-dock-state.ts), while the
+ * toolbar's terminal menu lists all of them, so any shell can be pulled into view here.
  *
  * The server is the source of truth (`GET /api/terminals`, alive only); this store decides
  * *when* to look. There is no push channel for terminal lifecycle yet, so:
@@ -111,10 +113,6 @@ export function liveTerminals(): TerminalInfo[] {
 /** Whether this server serves the terminal API at all (false on an older runtime). */
 export function terminalApiSupported(): boolean {
   return !unsupported;
-}
-
-export function liveTerminalCount(): number {
-  return terminals.length;
 }
 
 /** Re-reads the list from the server; concurrent calls share one request. */

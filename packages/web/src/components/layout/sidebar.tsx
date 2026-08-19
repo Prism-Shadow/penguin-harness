@@ -2270,6 +2270,8 @@ function SessionRow({
       >
         <button
           type="button"
+          data-testid="session-row"
+          data-session-id={s.sessionId}
           // A press-and-hold that opened the context menu must not also open the Session:
           // touch screens replay the held press as a click once the finger lifts.
           onClick={() => {

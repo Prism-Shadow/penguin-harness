@@ -433,14 +433,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
     onEnd: (_payload, dragged) => {
       const candidate = headerDragState.candidate;
       clearHeaderDrag();
-      if (dragged && candidate && candidate !== position)
-        movePane(
-          position,
-          candidate,
-          // The pane's live tabs: movePane cannot see implicit (unassigned-to-primary)
-          // membership on its own — without this list those tabs would not move along.
-          paneTerminals.map((t) => t.id),
-        );
+      if (dragged && candidate && candidate !== position) movePane(position, candidate);
     },
     onCancel: clearHeaderDrag,
   });

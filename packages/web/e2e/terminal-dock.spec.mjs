@@ -871,3 +871,37 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
     )
     .toBe(0);
 });
+
+test("the dock belongs to its Session: switching hides it, coming back restores it", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const first = await createSession(page.request, projectId);
+  const second = await createSession(page.request, projectId);
+
+  await page.goto(`${BASE}/chat/${first}`);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "SCOPED_SHELL_UP");
+  await runInDock(page, "echo SCOPED_MARKER");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SCOPED_MARKER");
+
+  // The other conversation never opened a terminal, so it has none to show — the shell
+  // itself keeps running, it is just not this conversation's.
+  await page.locator(`[data-testid="session-row"][data-session-id="${second}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/chat/${second}$`));
+  await expect(dock(page)).toBeHidden();
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.filter((t) => t.alive)).toHaveLength(1);
+
+  // Back: the same pane, the same shell, the same screen.
+  await page.locator(`[data-testid="session-row"][data-session-id="${first}"]`).click();
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SCOPED_MARKER");
+});

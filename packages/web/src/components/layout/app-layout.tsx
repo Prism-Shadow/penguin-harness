@@ -4,7 +4,7 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -26,6 +26,7 @@ import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool"
 import {
   dockStateVersion,
   isTerminalDockOpen,
+  setDockScope,
   openPanes,
   subscribeTerminalDock,
 } from "../../features/terminal/terminal-dock-state";
@@ -179,6 +180,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  // The terminal dock belongs to the conversation it was opened in, so switching Sessions
+  // switches the arrangement with it. Pages with no Session of their own leave the scope
+  // where it was — visiting Settings is not leaving the conversation. Layout effect, not a
+  // plain one: it has to land before the panes below paint, or the outgoing conversation's
+  // dock flashes on the incoming one.
+  const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
+  useLayoutEffect(() => {
+    if (dockScope !== null) setDockScope(dockScope);
+  }, [dockScope]);
   // Any dock-state change (panes opening/closing/moving) re-renders the slots below.
   useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
   const dockVisible = isTerminalDockOpen();
