@@ -95,7 +95,100 @@ export function longPressMoved(from: Point, to: Point): boolean {
   );
 }
 
-/** Is a dismiss arriving inside the post-long-press grace window (see LONG_PRESS_SETTLE_MS)? */
-export function withinSettleWindow(openedAtMs: number, nowMs: number): boolean {
-  return nowMs - openedAtMs < LONG_PRESS_SETTLE_MS;
+/** Is a dismiss arriving inside the grace window that started at `fromMs` (see LONG_PRESS_SETTLE_MS)? */
+export function withinSettleWindow(fromMs: number, nowMs: number): boolean {
+  return nowMs - fromMs < LONG_PRESS_SETTLE_MS;
+}
+
+/**
+ * The gesture's lifecycle, as a pure reducer.
+ *
+ * A press-and-hold is not one event but a sequence, and the sequence is where this gets
+ * subtle: the browser may raise its own `contextmenu` mid-hold and beat our timer to it,
+ * and when the finger finally lifts the screen replays the whole press as compatibility
+ * mouse events — a `mousedown` that lands on the row (which the menu reads as an outside
+ * click) and a `click` on the row's button (which would open the conversation). Both
+ * arrive at **lift**, not at open, so the grace period is measured from the lift.
+ *
+ * Keeping this out of the hook is what makes it testable at all: the component half needs
+ * a DOM, this needs only an ordered list of events.
+ */
+export interface HoldState {
+  /** Pointer type of the gesture in flight ("" between gestures). */
+  pointer: string;
+  /** A press-and-hold owns the open menu, so its replayed click and mousedown are still expected. */
+  held: boolean;
+  /** Start of the grace period in which a dismiss is ignored. */
+  settleFrom: number;
+}
+
+export const IDLE_HOLD: HoldState = { pointer: "", held: false, settleFrom: 0 };
+
+export type HoldEvent =
+  | { kind: "pointerdown"; pointerType: string }
+  /** The press-and-hold timer elapsed. */
+  | { kind: "hold"; at: number }
+  /** The browser raised its own contextmenu (a right-click, or a hold it timed itself). */
+  | { kind: "nativemenu"; at: number }
+  | { kind: "pointerup"; at: number }
+  /** The menu asked to close (Escape, outside click, scroll). */
+  | { kind: "dismiss"; at: number }
+  /** The row's button was activated. */
+  | { kind: "click" };
+
+export interface HoldOutcome {
+  state: HoldState;
+  /** `"held"` anchors at the pressed point, `"event"` by the event's own rule, null opens nothing. */
+  open: "held" | "event" | null;
+  close: boolean;
+  /** Swallow the row's activation — this click is the one the hold replayed. */
+  swallow: boolean;
+}
+
+const OUTCOME = { open: null, close: false, swallow: false } as const;
+
+export function reduceHold(state: HoldState, event: HoldEvent): HoldOutcome {
+  switch (event.kind) {
+    case "pointerdown":
+      // Cleared for every gesture, mouse included: a flag left set by a hold whose replayed
+      // click never arrived must not swallow the next real tap.
+      return { ...OUTCOME, state: { ...state, pointer: event.pointerType, held: false } };
+    case "hold":
+      return {
+        ...OUTCOME,
+        state: { ...state, held: true, settleFrom: event.at },
+        open: "held",
+      };
+    case "nativemenu":
+      // Our timer already opened it; don't re-anchor the menu out from under the finger.
+      if (state.held) return { ...OUTCOME, state };
+      // The browser timed the hold before we did — it is still a hold, and its replayed
+      // events still have to be absorbed.
+      if (isLongPressPointer(state.pointer))
+        return {
+          ...OUTCOME,
+          state: { ...state, held: true, settleFrom: event.at },
+          open: "event",
+        };
+      return { ...OUTCOME, state, open: "event" };
+    case "pointerup":
+      // The lift is when the replayed events start arriving, so the grace period starts here
+      // rather than when the menu opened — a user who reads the menu before lifting would
+      // otherwise have it dismissed by their own finger.
+      return {
+        ...OUTCOME,
+        state: {
+          ...state,
+          pointer: "",
+          settleFrom: state.held ? event.at : state.settleFrom,
+        },
+      };
+    case "dismiss":
+      if (state.held && withinSettleWindow(state.settleFrom, event.at))
+        return { ...OUTCOME, state };
+      return { ...OUTCOME, state: { ...state, held: false }, close: true };
+    case "click":
+      if (!state.held) return { ...OUTCOME, state };
+      return { ...OUTCOME, state: { ...state, held: false }, swallow: true };
+  }
 }

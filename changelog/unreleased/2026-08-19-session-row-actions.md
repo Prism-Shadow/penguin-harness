@@ -11,7 +11,7 @@ Hovering a conversation row in the chat sidebar had come to reveal a single elli
 
 ## The hover pair
 
-- Hovering a row (or reaching it with keyboard focus) swaps the trailing last-active time for archive/unarchive and delete, one click each. Delete keeps its red treatment on hover.
+- Hovering a row swaps the trailing last-active time for archive/unarchive and delete, one click each; delete keeps its red treatment. Tabbing onto either button reveals that button, so the pair stays reachable without a pointer.
 - The slot reserves the pair's width, so rows with no last-active time no longer let the icons overhang the title, and the icons still line up in one column down the list.
 - The buttons take pointer events only while they are actually revealed, so the row's right end holds no invisible tap target on a touch screen — where a hover-gated button never becomes visible at all.
 

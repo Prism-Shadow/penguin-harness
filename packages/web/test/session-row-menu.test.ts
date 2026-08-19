@@ -81,11 +81,16 @@ describe("the hover buttons' CSS contract", () => {
 
   it("gates pointer events on the same conditions as visibility, leaving no phantom tap target", () => {
     expect(source).toContain("pointer-events-none");
-    // Both reveal paths must re-arm the click, or the buttons would be visible and dead.
-    expect(source).toContain("group-hover:pointer-events-auto");
-    expect(source).toContain("focus-visible:pointer-events-auto");
-    expect(source).toContain("group-hover:opacity-100");
-    expect(source).toContain("focus-visible:opacity-100");
+    // Both reveal paths must re-arm the click, or the buttons would be visible and dead —
+    // and each reveal must pair with its own pointer-events grant, since either half alone
+    // yields a button that is visible-but-dead or invisible-but-tappable.
+    for (const on of ["group-hover", "focus"]) {
+      expect(source).toContain(`${on}:pointer-events-auto`);
+      expect(source).toContain(`${on}:opacity-100`);
+    }
+    // `focus`, not `focus-visible`: the time span it swaps with hides on plain
+    // focus-within, and the two conditions have to agree or the slot goes blank.
+    expect(source).not.toContain("focus-visible:opacity-100");
   });
 });
 
@@ -134,13 +139,13 @@ describe("sessionRowMenuItem", () => {
     expect(sessionRowMenuItem("archive", RESTING).label).toBe(en.chat.archiveSession);
     expect(sessionRowMenuItem("delete", RESTING).label).toBe(en.chat.deleteSession);
     expect(sessionRowMenuItem("rename", RESTING).label).toBe(en.chat.renameSession);
-    // The hover buttons are icon-only: their label IS their accessible name, so an
-    // untranslated one would leave a nameless button on the row.
+    // The hover buttons are icon-only, so their label IS their accessible name: an English
+    // row must not fall back to the zh catalog and leave a Chinese name on the button.
     for (const action of HOVER_ROW_ACTIONS) {
-      expect(sessionRowMenuItem(action, RESTING).label).toBeTruthy();
-      setActiveStrings(zh);
-      expect(sessionRowMenuItem(action, RESTING).label).toBeTruthy();
-      setActiveStrings(en);
+      const label = sessionRowMenuItem(action, RESTING).label;
+      expect(label).toBeTruthy();
+      expect(label).not.toBe(sessionRowMenuItem(action, RESTING).icon);
+      expect(Object.values(zh.chat)).not.toContain(label);
     }
   });
 });

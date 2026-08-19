@@ -12,6 +12,9 @@
  * its glyphs from the same map the two-icon header toggle uses, so a mode cannot end up
  * wearing one icon in the toggle and another in the menu.
  */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   AGENT_GROUP_ICON,
@@ -44,11 +47,19 @@ describe("list-options glyphs", () => {
     expect(SORT_MODE_ICONS).toEqual({ recent: CLOCK_ICON, manual: REORDER_ICON });
   });
 
-  it("covers every option of both menus exactly once", () => {
-    const groupModes: GroupMode[] = ["workspace", "agent"];
-    const sortModes: SessionSortMode[] = ["recent", "manual"];
-    expect(Object.keys(GROUP_MODE_ICONS).sort()).toEqual([...groupModes].sort());
-    expect(Object.keys(SORT_MODE_ICONS).sort()).toEqual([...sortModes].sort());
+  it("is what the menu rows and the header toggle both actually render", () => {
+    // The claim worth pinning is not the map's contents but that nothing re-picks an icon
+    // beside it: a hardcoded glyph at either call site is how the toggle and the menu would
+    // drift apart. Node-only suite, so this reads the sources (title-reveal.test.ts).
+    const read = (p: string) =>
+      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), p), "utf8");
+    const sidebar = read("../src/components/layout/sidebar.tsx");
+    for (const mode of ["workspace", "agent"] satisfies GroupMode[])
+      expect(sidebar).toContain(`icon={GROUP_MODE_ICONS.${mode}}`);
+    for (const mode of ["recent", "manual"] satisfies SessionSortMode[])
+      expect(sidebar).toContain(`icon={SORT_MODE_ICONS.${mode}}`);
+    // The header toggle reads the same map rather than the raw constants.
+    expect(read("../src/components/ui/group-list.tsx")).toContain("GROUP_MODE_ICONS.workspace");
   });
 
   it("gives all four rows glyphs that differ, so an icon distinguishes rather than decorates", () => {

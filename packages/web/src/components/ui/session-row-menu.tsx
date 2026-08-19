@@ -171,7 +171,7 @@ export function SessionRowHoverActions({
             title={item.label}
             aria-label={item.label}
             onClick={() => onRun(action)}
-            className={`pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 ${
+            className={`pointer-events-none flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 opacity-0 transition-all duration-150 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 ${
               item.danger
                 ? "hover:text-red-600 dark:hover:text-red-400"
                 : "hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"

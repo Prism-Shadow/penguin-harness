@@ -15,8 +15,10 @@
  * row. Nothing is bound to `document` or `window` — right-clicking anywhere else in the
  * app still gets the browser's own menu.
  *
- * The rules it applies (which gesture, which anchor, how much slop) are pure and live in
- * `lib/context-menu.ts`.
+ * This half owns only the DOM: element rects, the hold timer, and dispatching events.
+ * Every decision — which gesture counts, which anchor, whether a dismiss is believed —
+ * is pure and lives in `lib/context-menu.ts`, where the sequences can be tested without
+ * a DOM.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
@@ -25,15 +27,16 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  IDLE_HOLD,
   LONG_PRESS_MS,
   contextMenuAnchor,
   isContextMenuKey,
   isLongPressPointer,
   longPressMoved,
   pointerAnchor,
-  withinSettleWindow,
+  reduceHold,
 } from "../../lib/context-menu";
-import type { AnchorRect } from "../../lib/context-menu";
+import type { AnchorRect, HoldEvent, HoldState } from "../../lib/context-menu";
 
 /** Handlers the owning row spreads onto its container element. */
 export interface ContextMenuRowProps {
@@ -41,8 +44,8 @@ export interface ContextMenuRowProps {
   onKeyDown: (e: ReactKeyboardEvent) => void;
   onPointerDown: (e: ReactPointerEvent) => void;
   onPointerMove: (e: ReactPointerEvent) => void;
-  onPointerUp: () => void;
-  onPointerCancel: () => void;
+  onPointerUp: (e: ReactPointerEvent) => void;
+  onPointerCancel: (e: ReactPointerEvent) => void;
 }
 
 export interface RowContextMenu {
@@ -70,11 +73,9 @@ export function useRowContextMenu(): RowContextMenu {
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressFrom = useRef<{ x: number; y: number } | null>(null);
-  /** A press-and-hold opened the menu: swallow the replayed click, and hold off the dismiss. */
-  const heldOpen = useRef(false);
-  const openedAt = useRef(0);
+  const hold = useRef<HoldState>(IDLE_HOLD);
 
-  const cancelPress = useCallback(() => {
+  const cancelTimer = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
@@ -85,7 +86,7 @@ export function useRowContextMenu(): RowContextMenu {
   // A row can unmount mid-press — the list re-renders on every session patch, and the
   // sidebar itself unmounts on navigation — so a pending hold has to die with it rather
   // than fire into a component that is gone.
-  useEffect(() => cancelPress, [cancelPress]);
+  useEffect(() => cancelTimer, [cancelTimer]);
 
   /** The row's own box, in viewport coordinates (the keyboard path's anchor). */
   const rowRect = useCallback((): AnchorRect => {
@@ -95,76 +96,98 @@ export function useRowContextMenu(): RowContextMenu {
       : { top: 0, bottom: 0, left: 0, right: 0 };
   }, []);
 
-  const openAt = useCallback((at: AnchorRect) => {
-    openedAt.current = Date.now();
-    setAnchor(at);
+  /** Run one gesture event through the pure lifecycle and apply what it asks for. */
+  const dispatch = useCallback((event: HoldEvent, eventAnchor?: AnchorRect) => {
+    const out = reduceHold(hold.current, event);
+    hold.current = out.state;
+    if (out.open === "held") {
+      const at = pressFrom.current;
+      if (at) setAnchor(pointerAnchor(at.x, at.y));
+    } else if (out.open === "event" && eventAnchor) {
+      setAnchor(eventAnchor);
+    }
+    if (out.close) setAnchor(null);
+    return out;
   }, []);
 
-  const close = useCallback(() => {
-    heldOpen.current = false;
-    setAnchor(null);
-  }, []);
+  /**
+   * Did this event actually come from the row, rather than from the menu panel?
+   * React propagates events through its own tree, and the Dropdown's portal is a React
+   * child of this row — so without this check, right-clicking a menu item would bubble
+   * back here and jump the open menu to sit under the cursor. The panel is mounted on
+   * `document.body`, so it fails a DOM containment test while any real row child passes.
+   */
+  const fromRow = (e: { currentTarget: unknown; target: unknown }): boolean => {
+    const host = e.currentTarget as Node | null;
+    return host instanceof Node && host.contains(e.target as Node);
+  };
 
   const rowProps: ContextMenuRowProps = {
     onContextMenu: (e) => {
+      if (!fromRow(e)) return;
       // The whole of this feature's native-menu suppression: scoped to events raised
       // inside this row, never registered globally.
       e.preventDefault();
-      // Android replays a held press as a native contextmenu on top of our own timer;
-      // the hold already opened the menu, so don't re-anchor it out from under the finger.
-      if (heldOpen.current) return;
-      openAt(contextMenuAnchor(e, rowRect()));
+      dispatch({ kind: "nativemenu", at: Date.now() }, contextMenuAnchor(e, rowRect()));
+      // The browser may have timed the hold itself; our own timer must not fire on top.
+      if (hold.current.held) cancelTimer();
     },
     onKeyDown: (e) => {
+      if (!fromRow(e)) return;
       if (!isContextMenuKey(e)) return;
       // Also stops the browser synthesizing its own contextmenu from this chord where it
       // does that, so the menu opens exactly once.
       e.preventDefault();
-      openAt(rowRect());
+      setAnchor(rowRect());
     },
     onPointerDown: (e) => {
-      // Cleared for every gesture, mouse included: a flag left set by a hold that never
-      // produced its replayed click must not swallow the next real tap.
-      heldOpen.current = false;
+      if (!fromRow(e)) return;
+      dispatch({ kind: "pointerdown", pointerType: e.pointerType });
       if (!isLongPressPointer(e.pointerType)) return;
       const x = e.clientX;
       const y = e.clientY;
       pressFrom.current = { x, y };
       timer.current = setTimeout(() => {
         timer.current = null;
-        heldOpen.current = true;
-        openAt(pointerAnchor(x, y));
+        dispatch({ kind: "hold", at: Date.now() });
       }, LONG_PRESS_MS);
     },
     onPointerMove: (e) => {
       const from = pressFrom.current;
       if (from === null) return;
-      if (longPressMoved(from, { x: e.clientX, y: e.clientY })) cancelPress();
+      if (longPressMoved(from, { x: e.clientX, y: e.clientY })) cancelTimer();
     },
-    onPointerUp: cancelPress,
-    onPointerCancel: cancelPress,
+    onPointerUp: () => {
+      cancelTimer();
+      dispatch({ kind: "pointerup", at: Date.now() });
+    },
+    onPointerCancel: () => {
+      cancelTimer();
+      dispatch({ kind: "pointerup", at: Date.now() });
+    },
   };
 
+  const close = useCallback(() => {
+    hold.current = { ...hold.current, held: false };
+    setAnchor(null);
+  }, []);
+
   return {
-    rowRef: (el) => {
+    rowRef: useCallback((el: HTMLElement | null) => {
       row.current = el;
-    },
+    }, []),
     rowProps,
     open: anchor !== null,
     setOpen: (v) => {
       if (v) return;
-      // See LONG_PRESS_SETTLE_MS: the compatibility mousedown a touch screen replays when
-      // the finger lifts lands on the row, which the Dropdown reads as an outside click.
-      if (heldOpen.current && withinSettleWindow(openedAt.current, Date.now())) return;
-      close();
+      // The dismiss is only believed outside the post-lift grace window: a touch screen
+      // replays the held press as a mousedown on the row, which the Dropdown reads as an
+      // outside click on the menu that same gesture just opened.
+      dispatch({ kind: "dismiss", at: Date.now() });
     },
     anchor,
     returnFocus: () => row.current?.querySelector<HTMLElement>("button") ?? null,
-    consumeLongPressClick: () => {
-      if (!heldOpen.current) return false;
-      heldOpen.current = false;
-      return true;
-    },
+    consumeLongPressClick: () => dispatch({ kind: "click" }).swallow,
     close,
   };
 }

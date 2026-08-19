@@ -251,11 +251,17 @@ export function Dropdown({
       if (anchorRect) setOpenRef.current(false);
       else place();
     };
+    // A resize moves the same anchor point out from under the panel, so it dismisses for
+    // the same reason a scroll does.
+    const onResize = () => {
+      if (anchorRect) setOpenRef.current(false);
+      else place();
+    };
     window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", place);
+    window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", place);
+      window.removeEventListener("resize", onResize);
     };
   }, [open, portal, place, anchorRect]);
 

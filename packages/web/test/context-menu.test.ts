@@ -21,6 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  IDLE_HOLD,
   LONG_PRESS_MS,
   LONG_PRESS_SETTLE_MS,
   LONG_PRESS_SLOP_PX,
@@ -30,8 +31,10 @@ import {
   isPointerContextMenu,
   longPressMoved,
   pointerAnchor,
+  reduceHold,
   withinSettleWindow,
 } from "../src/lib/context-menu";
+import type { HoldEvent } from "../src/lib/context-menu";
 
 const ROW = { top: 100, bottom: 132, left: 8, right: 260 };
 
@@ -95,20 +98,130 @@ describe("press-and-hold (the touch path)", () => {
     expect(longPressMoved(from, { x: 100 - LONG_PRESS_SLOP_PX - 1, y: 200 })).toBe(true);
   });
 
-  it("waits long enough not to fire on a tap, and settles before a dismiss is believed", () => {
-    // A tap is well under the hold, and the replayed compatibility click that follows a
-    // hold arrives inside the settle window rather than after it.
+  it("waits long enough not to fire on an ordinary tap", () => {
     expect(LONG_PRESS_MS).toBeGreaterThanOrEqual(400);
     expect(LONG_PRESS_SETTLE_MS).toBeGreaterThan(0);
-    expect(LONG_PRESS_SETTLE_MS).toBeLessThan(LONG_PRESS_MS);
   });
 
-  it("ignores the dismiss a touch screen replays right after the hold, then stops ignoring", () => {
+  it("ignores a dismiss inside the grace window that started at the given moment", () => {
     const opened = 10_000;
     expect(withinSettleWindow(opened, opened)).toBe(true);
     expect(withinSettleWindow(opened, opened + LONG_PRESS_SETTLE_MS - 1)).toBe(true);
     expect(withinSettleWindow(opened, opened + LONG_PRESS_SETTLE_MS)).toBe(false);
     expect(withinSettleWindow(opened, opened + 5_000)).toBe(false);
+  });
+});
+
+/**
+ * The gesture lifecycle, driven as ordered sequences. This is where the interesting bugs
+ * live — every one of the cases below is a real touch sequence, not a synthetic one — and
+ * it is only reachable from a node-only suite because the decisions were kept pure.
+ */
+describe("reduceHold", () => {
+  /** Feed a sequence, returning each step's outcome. */
+  const play = (events: HoldEvent[]) => {
+    let state = IDLE_HOLD;
+    return events.map((e) => {
+      const out = reduceHold(state, e);
+      state = out.state;
+      return out;
+    });
+  };
+
+  it("opens on the hold and swallows the click the lift replays", () => {
+    const [, held, , click] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      { kind: "pointerup", at: 1_200 },
+      { kind: "click" },
+    ]);
+    expect(held!.open).toBe("held");
+    expect(click!.swallow).toBe(true);
+  });
+
+  it("measures the grace window from the LIFT, so reading the menu before lifting is safe", () => {
+    // The whole point: the menu opens at 1s and the user studies it for two seconds before
+    // lifting. The compatibility mousedown arrives at the lift, not at the open — anchoring
+    // the window to the open time would dismiss the menu the gesture just produced.
+    const [, , , dismiss] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      { kind: "pointerup", at: 3_000 },
+      { kind: "dismiss", at: 3_010 },
+    ]);
+    expect(dismiss!.close).toBe(false);
+  });
+
+  it("believes a dismiss once the replayed events can no longer be in flight", () => {
+    const [, , , dismiss] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      { kind: "pointerup", at: 3_000 },
+      { kind: "dismiss", at: 3_000 + LONG_PRESS_SETTLE_MS },
+    ]);
+    expect(dismiss!.close).toBe(true);
+  });
+
+  it("treats a native contextmenu raised during a touch hold as the hold itself", () => {
+    // Android raises its own contextmenu mid-hold and can beat our timer to it. If that is
+    // not recognized as a hold, the lift's replayed click falls through and opens the
+    // conversation on top of the menu.
+    const [, native, , click] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "nativemenu", at: 1_000 },
+      { kind: "pointerup", at: 1_100 },
+      { kind: "click" },
+    ]);
+    expect(native!.open).toBe("event");
+    expect(native!.state.held).toBe(true);
+    expect(click!.swallow).toBe(true);
+  });
+
+  it("does not re-anchor an already-held menu when the browser raises its own afterwards", () => {
+    const [, , native] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      { kind: "nativemenu", at: 1_050 },
+    ]);
+    expect(native!.open).toBeNull();
+  });
+
+  it("leaves a mouse right-click free of hold semantics", () => {
+    const [, native, dismiss, click] = play([
+      { kind: "pointerdown", pointerType: "mouse" },
+      { kind: "nativemenu", at: 1_000 },
+      { kind: "dismiss", at: 1_010 },
+      { kind: "click" },
+    ]);
+    expect(native!.open).toBe("event");
+    expect(native!.state.held).toBe(false);
+    // No grace window for a mouse: the very next outside click closes the menu.
+    expect(dismiss!.close).toBe(true);
+    expect(click!.swallow).toBe(false);
+  });
+
+  it("clears a hold flag left over from a gesture whose replayed click never came", () => {
+    const [, , down, click] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      // No click followed; the next gesture starts clean rather than eating its tap.
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "click" },
+    ]);
+    expect(down!.state.held).toBe(false);
+    expect(click!.swallow).toBe(false);
+  });
+
+  it("swallows only one click per hold", () => {
+    const [, , , first, second] = play([
+      { kind: "pointerdown", pointerType: "touch" },
+      { kind: "hold", at: 1_000 },
+      { kind: "pointerup", at: 1_100 },
+      { kind: "click" },
+      { kind: "click" },
+    ]);
+    expect(first!.swallow).toBe(true);
+    expect(second!.swallow).toBe(false);
   });
 });
 
@@ -136,22 +249,30 @@ describe("native-menu suppression scope", () => {
     expect(global.map(([path]) => path)).toEqual([]);
   });
 
-  it("suppresses the native menu in exactly one place: the hook a row spreads onto itself", () => {
-    const handlers = sourceFiles()
-      .filter(([, src]) => src.includes("onContextMenu"))
-      .map(([path]) => path)
-      .sort();
-    // The hook defines the handler; the sidebar row receives it via {...ctx.rowProps}.
-    expect(handlers).toEqual(["components/ui/context-menu.tsx"]);
-  });
-
-  it("scopes the row's handlers to the row element, not to a document-level listener", () => {
+  it("calls preventDefault inside the contextmenu handler itself, not somewhere adjacent", () => {
+    // Tied to the handler rather than to the file: preventDefault also appears in
+    // onKeyDown, so file-level presence would prove nothing about the native menu.
     const hook = sourceFiles().find(([path]) => path === "components/ui/context-menu.tsx");
     expect(hook).toBeDefined();
+    const handler = /onContextMenu:\s*\(e\)\s*=>\s*\{([\s\S]*?)\n {4}\},/.exec(hook![1]);
+    expect(handler).not.toBeNull();
+    expect(handler![1]).toContain("e.preventDefault()");
+  });
+
+  it("ignores events that bubbled out of the portaled panel rather than the row", () => {
+    // React propagates through its own tree, so the Dropdown's body portal — a React child
+    // of the row — would otherwise re-anchor the open menu when one of its items is
+    // right-clicked. A DOM containment check separates the two trees.
+    const hook = sourceFiles().find(([path]) => path === "components/ui/context-menu.tsx");
     const src = hook![1];
-    expect(src).toContain("e.preventDefault()");
-    expect(src).not.toContain("document.addEventListener");
-    expect(src).not.toContain("window.addEventListener");
+    expect(src).toContain("host.contains(e.target as Node)");
+    for (const handler of ["onContextMenu", "onKeyDown", "onPointerDown"]) {
+      const body = new RegExp(`${handler}:\\s*\\(e\\)\\s*=>\\s*\\{([\\s\\S]*?)\\n {4}\\},`).exec(
+        src,
+      );
+      expect(body, `${handler} should exist`).not.toBeNull();
+      expect(body![1], `${handler} should guard on fromRow`).toContain("if (!fromRow(e)) return;");
+    }
   });
 
   it("gives the sidebar row all three openers, so the menu is not mouse-only", () => {

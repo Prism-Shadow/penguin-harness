@@ -2112,7 +2112,8 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 /**
  * Single Session row: title + pinned indicator + status dot/approval badge, and one
  * trailing slot that swaps its content — at rest it shows the compact last-active time,
- * on row hover / keyboard focus it shows archive and delete as direct icon buttons.
+ * on row hover — or on either of them taking focus — it shows archive and delete as
+ * direct icon buttons.
  * That pair is the affordance every release up to v0.2.2 shipped (as icon buttons in
  * exactly this slot), restored here: the 0.3 line had replaced it with an ellipsis
  * dropdown carrying pin / rename / archive / delete, which cost two clicks for the two
@@ -2183,6 +2184,16 @@ function SessionRow({
       delete: onDelete,
     };
     handler[action](s);
+  };
+  /**
+   * Menu items hand focus back to the row before acting: the panel unmounts under the
+   * user, and the context menu is the only keyboard route to pin and rename, so a
+   * Shift+F10 → Enter user would otherwise be dropped onto <body> and lose their place in
+   * the list. Actions that open a dialog (rename, delete) take focus from there as usual.
+   */
+  const runFromMenu = (action: SessionRowAction) => {
+    ctx.returnFocus()?.focus();
+    run(action);
   };
   const rowState = { archived: s.archived, pinned };
   return (
@@ -2309,7 +2320,11 @@ function SessionRow({
           menuClass="w-36"
           button={null}
         >
-          <SessionRowMenuRows actions={contextMenuActions(canPin)} state={rowState} onRun={run} />
+          <SessionRowMenuRows
+            actions={contextMenuActions(canPin)}
+            state={rowState}
+            onRun={runFromMenu}
+          />
         </Dropdown>
       </div>
     </li>
