@@ -13,7 +13,7 @@ Until now exactly one row in the sidebar was telling the truth, and that was the
 
 Session status now rides the user-level event stream, so every row is live. A turning hourglass means running. A green dot means it finished and you have not looked at it since. Nothing at all means you have.
 
-![Three sidebar rows showing an unread green dot, no marker, and a running hourglass](/blog-assets/penguinharness-0-2-3-sidebar-status-zh.png)
+![Three sidebar rows showing an unread green dot, no marker, and a running hourglass](/blog-assets/penguinharness-0-2-3-sidebar-status-en.png)
 
 There was a trap hiding under that. Whether a Session has ever run is a field on the server's list row, and the event only updated the status, not that field. So a Session running its very first task went blank the moment the hourglass stopped. The field now travels with the status, and a first run settles onto the dot like any other.
 
@@ -21,11 +21,11 @@ There was a trap hiding under that. Whether a Session has ever run is a field on
 
 Context compaction used to be a blank stretch in the conversation. You knew it had happened. Now it is a row you can open, collapsed by default, the same way thinking is collapsed inside a task group.
 
-![A settled compaction row, collapsed](/blog-assets/penguinharness-0-2-3-compaction-collapsed-zh.png)
+![A settled compaction row, collapsed](/blog-assets/penguinharness-0-2-3-compaction-collapsed-en.png)
 
 The summary streams in as it is written, so you can expand it and read exactly what the agent decided to keep.
 
-![The expanded compaction summary, with task, confirmed findings, next steps and caveats](/blog-assets/penguinharness-0-2-3-compaction-expanded-zh.png)
+![The expanded compaction summary, with task, confirmed findings, next steps and caveats](/blog-assets/penguinharness-0-2-3-compaction-expanded-en.png)
 
 The timing changed too. When compaction triggers after the model has produced a tool call, it now waits for the tools to finish and compacts with their results in hand, instead of folding an unfinished exchange into the request. Quit the client mid-compaction and that round is marked failed, with its half-written content discarded on load. A round that clears the context rather than summarizing it no longer calls itself compaction; it says Clear.
 
@@ -35,11 +35,11 @@ One recurring complaint is fixed as well. After restarting the client, a convers
 
 When a conversation goes sideways you used to have two options, live with it or start over. Every completed reply now carries a fork control, sitting next to copy.
 
-![The reply action row, with fork beside copy](/blog-assets/penguinharness-0-2-3-session-fork-actions-zh.png)
+![The reply action row, with fork beside copy](/blog-assets/penguinharness-0-2-3-session-fork-actions-en.png)
 
 It asks first. On confirm it copies the conversation up to that reply into a new Session and leaves the original alone.
 
-![The confirmation dialog shown before forking](/blog-assets/penguinharness-0-2-3-session-fork-confirm-zh.png)
+![The confirmation dialog shown before forking](/blog-assets/penguinharness-0-2-3-session-fork-confirm-en.png)
 
 ## A queued message can be pulled back
 
@@ -51,11 +51,11 @@ Recall and the engine's own dequeue are mutually exclusive, so a message is neve
 
 AgentHub 0.4.4 added a `max` tier, so the ladder is now low, medium, high, xhigh, max.
 
-![The thinking-level dropdown](/blog-assets/penguinharness-0-2-3-thinking-level-menu-zh.png)
+![The thinking-level dropdown](/blog-assets/penguinharness-0-2-3-thinking-level-menu-en.png)
 
 Changing the level mid-conversation now asks first. Some providers implement thinking levels by injecting a different prompt prefix at the very front of the request, so switching part-way through invalidates the prefix cache over the whole history and the next request re-bills all of it at the uncached rate. The dialog offers three ways out: compact first and then switch, switch anyway, or cancel.
 
-![The confirmation shown when switching thinking level mid-conversation](/blog-assets/penguinharness-0-2-3-thinking-level-switch-guard-zh.png)
+![The confirmation shown when switching thinking level mid-conversation](/blog-assets/penguinharness-0-2-3-thinking-level-switch-guard-en.png)
 
 The level you pick is stored on the Session, so it survives a refresh and shows up in a second tab.
 
@@ -63,7 +63,7 @@ The level you pick is stored on the Session, so it survives a refresh and shows 
 
 Since 0.4.2 AgentHub has carried three generic protocol clients — OpenAI Responses, Anthropic Messages, and OpenAI Chat Completions. You no longer have to work out which one your endpoint speaks. The detect action probes them in that order and takes the first that answers in its shape, then fills the protocol picker in for you. With no key typed it falls back to the environment variable, and when nothing matches you get one short message telling you to check the API key and the base URL.
 
-![The detect action at the top right of the base URL field, and the in-field picker listing the three protocols with the path each appends](/blog-assets/penguinharness-0-2-3-model-add-protocol-zh.png)
+![The detect action at the top right of the base URL field, and the in-field picker listing the three protocols with the path each appends](/blog-assets/penguinharness-0-2-3-model-add-protocol-en.png)
 
 Vision support can be detected the same way. It sends a 1×1 image; a normal answer turns the setting on, an explicit image-related rejection turns it off, and anything else leaves your setting alone. That probe costs a real API call, so it only runs when you ask for it and never on save.
 
