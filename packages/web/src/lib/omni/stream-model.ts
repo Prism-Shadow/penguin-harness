@@ -29,10 +29,12 @@
  *     events aren't rendered (Request duration is covered by Trace
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
- *   - Compaction-internal messages (history rebuild): model_msg within a
+ *   - Compaction-internal messages: model_msg within a
  *     compaction_begin↔end range (the compaction prompt and summary output)
- *     are never rendered and never counted toward Task segmentation — aligned
- *     with the live stream (which only pushes the event pair + token_usage);
+ *     are never rendered as transcript items and never counted toward Task
+ *     segmentation; the summary's own text (live partial_text fragments, or
+ *     the span's complete assistant text on rebuild) accumulates onto the
+ *     running compaction banner instead (issue #290);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -259,10 +261,10 @@ export interface CompactionItem {
   durationMs?: number;
   /**
    * Raw text of the summary the compaction request is generating (issue #290): accumulated
-   * live from `compaction_delta` events, and rebuilt identically on history replay from the
-   * compaction span's complete assistant text — the banner shows the summary being written
-   * and keeps it readable after a reload. Raw model output (summary tags included; the
-   * banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   * live from the span's own partial_text fragments, and rebuilt identically on history
+   * replay from the span's complete assistant text — the banner shows the summary being
+   * written and keeps it readable after a reload. Raw model output (summary tags included;
+   * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
    */
   summaryText?: string;
 }
@@ -573,21 +575,25 @@ export function pushMessage(
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
-    // (the compaction prompt, summary output): never rendered, never
-    // counted toward Task segmentation — aligned with the live stream
-    // (which only pushes the event pair, compaction_delta text and token_usage). Only
-    // encountered during history rebuild.
+    // (the compaction prompt, summary output): never rendered as transcript items, never
+    // counted toward Task segmentation. The summary being written is the one exception
+    // (issue #290): live it arrives as its own partial_text fragments (the engine forwards
+    // them between the paired events; the complete text stays off the stream once partials
+    // carried it), and history rebuild reads the identical content back from the span's
+    // complete assistant text — both accumulate onto the running banner, so a reload shows
+    // the same text the live viewer watched being written.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
+      if (isPartialPayload(msg.payload)) {
+        const p = msg.payload as { type?: string; text?: string };
+        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text);
+        // Partials never advance lastTs (same rule as the normal path below).
+        return;
+      }
       advanceLastTs(model, msg.timestamp);
-      // Replay parity for the banner's summary text (issue #290): the span's complete
-      // assistant text is exactly what the live path streamed as compaction_delta events,
-      // so a reload shows the same text the live viewer watched being written.
-      if (!isPartialPayload(msg.payload)) {
-        const p = msg.payload as { type?: string; role?: string; text?: string };
-        if (p.type === "text" && p.role === "assistant" && p.text) {
-          appendCompactionSummaryText(model, p.text);
-        }
+      const p = msg.payload as { type?: string; role?: string; text?: string };
+      if (p.type === "text" && p.role === "assistant" && p.text) {
+        appendCompactionSummaryText(model, p.text);
       }
       return;
     }
@@ -1450,12 +1456,6 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         running: true,
         ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
       });
-      return;
-    }
-    case "compaction_delta": {
-      // Streamed summary text (issue #290): accumulate onto the running banner. Without a
-      // running banner (mid-stream join that missed the begin) there is nowhere to show it.
-      appendCompactionSummaryText(model, p.text);
       return;
     }
     case "compaction_end": {

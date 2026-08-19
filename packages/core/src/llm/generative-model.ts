@@ -1353,32 +1353,6 @@ export class GenerativeModel implements LLMInterface {
   }
 
   /**
-   * Appends one closed exchange to the AgentHub history without issuing a request (see
-   * LLMInterface.appendExchange): the merged user-side group, then a short assistant text
-   * closing it. The reply must be non-empty — providers reject empty assistant content
-   * (e.g. Anthropic's non-empty text-block rule), and this history is replayed to them on
-   * the next request. History can only be appended to, never rewritten, so the provider's
-   * prompt-cache prefix stays valid. The input-size tracker advances by the same character
-   * heuristic ordinary requests use, keeping the output-cap clamp honest.
-   *
-   * The appended exchange is **live-object state only** — it is not written to Trace
-   * (synthetic content never is), so a Session resumed from Trace rebuilds an equivalent
-   * but not byte-identical history (the outputs replay into the next committed turn's
-   * input instead). Both shapes keep every tool_use/tool_result pair intact.
-   */
-  appendExchange(userMessages: OmniMessage[], assistantText: string): void {
-    if (userMessages.length === 0 || assistantText === "") {
-      throw new Error("appendExchange requires user messages and a non-empty assistant reply");
-    }
-    const history = this.client.getHistory();
-    history.push(mergeOmniToUniMessage(userMessages));
-    history.push({ role: "assistant", content_items: [{ type: "text", text: assistantText }] });
-    this.client.setHistory(history);
-    this.lastRequestTotal +=
-      approximateMessagesTokens(userMessages) + approximateTokens(assistantText);
-  }
-
-  /**
    * Opens the underlying AgentHub stream (a testing seam): defaults to
    * `streamingResponseStateful`; unit tests can subclass and override this method, feeding in a
    * controlled UniEvent stream to verify the outcome classification for timeout/network

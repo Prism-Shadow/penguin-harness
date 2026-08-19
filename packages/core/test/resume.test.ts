@@ -410,38 +410,4 @@ describe("setHistory injection", () => {
     const client = (model as unknown as { client: { getHistory(): unknown[] } }).client;
     expect(client.getHistory()).toHaveLength(2);
   });
-
-  it("GenerativeModel.appendExchange appends a closed user/assistant exchange to the history", () => {
-    const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
-    model.setHistory([userText("hello"), assistantText("hi")]);
-    model.appendExchange(
-      [
-        {
-          ...userText("ignored-shape"),
-          payload: {
-            type: "tool_call_output",
-            role: "user",
-            output: "out",
-            tool_call_id: "tc1",
-            stop_reason: "completed",
-          },
-        } as OmniMessage,
-      ],
-      "(paused)",
-    );
-    interface HistoryEntry {
-      role: string;
-      content_items: Array<{ type: string; text?: string }>;
-    }
-    const client = (model as unknown as { client: { getHistory(): HistoryEntry[] } }).client;
-    const history = client.getHistory();
-    expect(history).toHaveLength(4);
-    expect(history[2]!.role).toBe("user");
-    expect(history[2]!.content_items.map((c) => c.type)).toEqual(["tool_result"]);
-    expect(history[3]!.role).toBe("assistant");
-    expect(history[3]!.content_items).toEqual([{ type: "text", text: "(paused)" }]);
-    // The guard: an empty reply would be rejected by providers (non-empty content rules).
-    expect(() => model.appendExchange([userText("x")], "")).toThrow(/non-empty/);
-    expect(() => model.appendExchange([], "(paused)")).toThrow(/user messages/);
-  });
 });

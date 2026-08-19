@@ -275,11 +275,6 @@ interface CompactionBeginPayload {
   turns: number;              // cumulative turns at trigger time
 }
 
-interface CompactionDeltaPayload {
-  type: "compaction_delta";   // streamed summary text between the paired compaction
-  text: string;               // events; stream-only — never written to Trace (history
-}                             // rebuild recovers the text from the compaction span)
-
 interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;

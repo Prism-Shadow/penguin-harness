@@ -900,6 +900,10 @@ export class StreamRenderer {
   }
 
   private handlePartialText(p: PartialTextPayload): void {
+    // Between the paired compaction events the stream carries the summary being written as
+    // ordinary partial_text (issue #290): the CLI keeps its one-line compaction progress and
+    // stays quiet — the Web banner is where the streamed text shows.
+    if (this.compactionActive) return;
     if (p.event_type === "stop") {
       this.finishLine();
       return;

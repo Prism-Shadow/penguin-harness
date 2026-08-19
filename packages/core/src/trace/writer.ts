@@ -62,11 +62,6 @@ function formatIndex(index: number): string {
  */
 function isRecordable(msg: OmniMessage): boolean {
   if (msg.origin && msg.origin.length > 0) return false;
-  // compaction_delta is stream-only progress (like partial_*): the compaction request's
-  // complete output is already recorded inside the compaction span, so persisting the
-  // deltas would duplicate it — and history rebuild reconstructs the same text from the
-  // span (see the Web reducer). Excluded here structurally so no writer path can leak it.
-  if ((msg.payload as { type?: string }).type === "compaction_delta") return false;
   return isCompleteModelMessage(msg) || isEventMessage(msg) || isSessionMeta(msg);
 }
 

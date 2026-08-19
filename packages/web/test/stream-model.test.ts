@@ -9,7 +9,6 @@ import {
   approvalDecision,
   assistantText,
   compactionBegin,
-  compactionDelta,
   compactionEnd,
   imageUrlMessage,
   mcpConnectBegin,
@@ -506,22 +505,31 @@ describe("approvals and events", () => {
     expect(banner.durationMs).toBe(4500);
   });
 
-  it("compaction_delta accumulates the streamed summary onto the running banner (issue #290)", () => {
+  it("the span's partial_text accumulates the streamed summary onto the running banner (issue #290)", () => {
     const m = createStreamModel();
     pushMessage(
       m,
       compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
     );
     const banner = items(m)[0] as CompactionItem;
-    pushMessage(m, compactionDelta("[summary]the "));
-    pushMessage(m, compactionDelta("plan[/summary]"));
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]the "));
+    pushMessage(m, partialText("delta", "plan[/summary]"));
+    pushMessage(m, partialText("stop"));
     expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // The span's text renders no transcript item of its own.
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(0);
     pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
     // The accumulated text survives the end: the settled banner still shows the summary.
     expect(banner.summaryText).toBe("[summary]the plan[/summary]");
-    // An orphan delta after the span (no running banner) is dropped, not appended.
-    pushMessage(m, compactionDelta("stray"));
+    // After the span, partial_text is ordinary model output again — it opens an assistant
+    // text item instead of appending to the settled banner.
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "next answer"));
     expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    const after = items(m).filter((i) => i.kind === "assistant_text") as AssistantTextItem[];
+    expect(after).toHaveLength(1);
+    expect(after[0]!.text).toBe("next answer");
   });
 
   it("history replay rebuilds the banner's summary text from the compaction span's assistant output", () => {

@@ -1,22 +1,14 @@
-# Compaction: mid-Task continuity, dangling-span healing, and streamed summaries
+# Compaction: dangling-span healing, interruption-flow failures, and streamed summaries
 
 - **Date:** 2026-08-18
 - **Type:** fix
-- **Scope:** `core`, `server`, `web`
+- **Scope:** `core`, `server`, `web`, `cli`
 - **PR:** [#329](https://github.com/Prism-Shadow/penguin-harness/pull/329)
 - **Issue:** [#288](https://github.com/Prism-Shadow/penguin-harness/issues/288), [#290](https://github.com/Prism-Shadow/penguin-harness/issues/290)
 
 [中文版](2026-08-18-compaction-continuity-and-streaming.zh.md)
 
-Three compaction defects were fixed and the compaction banner gained live summary text. A mid-Task compaction now closes the turn's pending tool exchange before it compacts, so the agent loop resumes afterwards; a compaction span left open by a process death is healed when the session resumes, so messages sent after a compaction survive a reload and stale `(unknown tool)` cards are gone; and the summary reaches the Web App as it is written, through a new `compaction_delta` event.
-
-## The pending exchange is closed before compacting
-
-A mid-Task compaction used to fold the turn's freshly arrived tool results into the compaction request itself. Riding an open tool exchange, the model often kept working the task instead of summarizing, and each such response burned a retry while absorbing the folded outputs into the old context ([#85](https://github.com/Prism-Shadow/penguin-harness/issues/85)'s carry rule). An abandoned compaction then either ended the run empty-handed or continued with bare `[tool error]` repair outputs.
-
-- A new optional `LLMInterface.appendExchange` — implemented by `GenerativeModel` over AgentHub's history — commits the turn's tool outputs as their own completed exchange, closed by a short synthetic assistant reply (non-empty, because providers reject empty assistant content). The compaction Prompt then arrives as a fresh user turn, pairing stays intact, and a rejected attempt can no longer absorb the outputs. The append never rewrites history, so the provider's prompt-cache prefix survives; on success the old object is discarded, so the closing reply costs nothing.
-- Manual `/compact` keeps the fold: its input is interruption carry-over, which can mix flatten text with structured outputs rather than one closeable exchange. LLM implementations without `appendExchange` keep the fold too.
-- A failed mid-Task compaction synthesizes a continuation input when the absorbed outputs left nothing task-bearing to send — a `[compaction_failed]` note, model-only and never yielded or persisted, riding after any repair outputs — so the run continues on the original context instead of ending.
+Two compaction defects were fixed and the compaction banner gained live summary text. A compaction span left open by a process death is healed when the session resumes, so messages sent after a compaction survive a reload and stale `(unknown tool)` cards are gone; an abandoned compaction now ends the run through the ordinary interruption flow and is made up at the next trigger; and the summary reaches the Web App as it is written, carried by the span's own text messages rather than a new event type.
 
 ## Dangling compaction spans heal on resume
 
@@ -26,9 +18,17 @@ A process death mid-compaction left a `compaction_begin` with no matching end in
 - The readers additionally close a stale span themselves on the unambiguous signals — another `compaction_begin` (spans never nest), an `abort` event (the engine always closes the pair first), and a rotation's `session_meta` — in the Web reducer, the server's window scanner and the Trace analysis pass, keeping traces damaged before the heal readable.
 - The server's scanner cache version was bumped (`CACHE_VERSION` 2), so cached `page_stats` records are recomputed under the new boundary rules.
 
+## An abandoned compaction ends the run and is made up later
+
+A mid-Task compaction that failed used to leave the loop in an ill-defined state: the run either ended empty-handed right after the compaction, or continued on bare `[tool error]` repair outputs the model had no instruction to act on.
+
+- A failed or aborted mid-Task compaction now ends the run the way any interruption does: the turn's pending state is held as carry-over under the existing committed/not-committed rule ([#85](https://github.com/Prism-Shadow/penguin-harness/issues/85)), an `abort` event closes the run (`compaction failed` for the failure case), and the next message resends that carry-over merged with the user's input — where the still-standing threshold triggers the compaction again.
+- At a Task boundary a failed compaction keeps the original context and simply ends the run, as before.
+
 ## The compaction summary streams live
 
-The compaction request's raw messages stay Trace-only, but the text it generates is forwarded as a new stream-only `compaction_delta` event between the paired compaction events.
+The compaction request's raw messages stay Trace-only, with one exception: the summary being generated rides the output stream as ordinary `partial_text` (or the complete `text`, for LLM implementations that stream nothing), positioned between the paired compaction events. No new protocol type is involved, and the Trace is unchanged.
 
-- The Web App's compaction banner shows the summary being written under its header, tail-clamped and with tags stripped by the same lenient extractor core uses, then folds the full text into an expandable body once the compaction settles.
-- Deltas are never written to Trace — the Writer refuses them structurally — and a history rebuild reconstructs the same text from the compaction span's recorded assistant output, so a reload shows what the live viewer saw.
+- The Web App's compaction banner shows the summary being written under its header, tail-clamped and with tags stripped by the same lenient extractor core uses, then folds the full text into an expandable body once the compaction settles. A history rebuild reads the same text back from the span's recorded assistant output, so a reload shows what the live viewer saw.
+- Because the text is an ordinary streamed message, the server's live tail seeds it too: joining or refreshing mid-compaction picks up the summary prefix generated so far instead of starting blank.
+- The CLI keeps its one-line compaction progress and prints none of the streamed summary.

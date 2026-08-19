@@ -4,9 +4,10 @@
  * wall time once settled, failures on a single line.
  *
  * The streamed summary (issue #290): while the compaction request writes its summary, the
- * text arrives as `compaction_delta` events accumulated onto `item.summaryText` — the
- * running banner shows the tail of it live under the header (the same text a history
- * rebuild reconstructs from the compaction span, so a reload agrees with the live view);
+ * text arrives as the span's own partial_text fragments accumulated onto
+ * `item.summaryText` — the running banner shows the tail of it live under the header (the
+ * same text a history rebuild reads back from the compaction span, so a reload agrees with
+ * the live view);
  * once settled, the full text folds into the banner's expandable body. Summary tags are
  * stripped for display via the same lenient extractor core uses to adopt the summary.
  *
