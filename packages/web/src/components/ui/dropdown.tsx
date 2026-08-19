@@ -22,6 +22,14 @@
  * items (wrapping), and closing via Escape returns focus to the trigger — without this a
  * keyboard user could open a menu and never reach its contents, which is exactly what
  * happened when the sidebar's row actions moved from bare buttons into these panels.
+ *
+ * `anchorRect` turns the same panel into a context menu: placement measures the given
+ * viewport box instead of the container's own, so the menu can hang off the point a
+ * secondary click landed on while everything else — the dismiss stack, focus handling,
+ * edge clamping and flip — stays shared with every other menu. A virtual anchor is a
+ * position rather than an element, so scrolling **dismisses** such a panel instead of
+ * re-placing it: the point it was anchored to has moved out from under it, and there is
+ * no trigger left to follow.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -47,6 +55,8 @@ export function Dropdown({
   menuStyle,
   className,
   portal,
+  anchorRect,
+  returnFocus,
   onEscape,
 }: {
   button: ReactNode;
@@ -61,6 +71,18 @@ export function Dropdown({
   className?: string;
   /** Render the panel through a body portal at fixed viewport coordinates, escaping any clipping ancestor. */
   portal?: DropdownPortal;
+  /**
+   * Place the panel against this viewport box instead of the container's own — a context
+   * menu opened at the pointer, where the "trigger" is a whole row rather than a button.
+   * Requires `portal`. While set, scrolling dismisses the panel rather than re-placing it.
+   */
+  anchorRect?: { top: number; bottom: number; left: number; right: number } | null;
+  /**
+   * Element to focus when Escape closes the panel. Defaults to the first button inside
+   * the container, which is the trigger for an ordinary dropdown; a context menu has no
+   * trigger of its own and points this at the row it was opened from.
+   */
+  returnFocus?: () => HTMLElement | null;
   /**
    * When provided, the window-level Escape calls this instead of setOpen(false) — for panels
    * whose close-request semantics differ from a plain dismiss (e.g. an editor where outside
@@ -80,8 +102,8 @@ export function Dropdown({
 
   /** The caller-rendered trigger's button element (focus target when Escape closes the menu). */
   const triggerButton = useCallback(
-    () => ref.current?.querySelector<HTMLElement>("button") ?? null,
-    [],
+    () => returnFocus?.() ?? ref.current?.querySelector<HTMLElement>("button") ?? null,
+    [returnFocus],
   );
 
   /** The panel's focusable items, in DOM order (menu rows, and any input/link a panel carries). */
@@ -172,7 +194,9 @@ export function Dropdown({
       setPos(null);
       return;
     }
-    const rect = ref.current.getBoundingClientRect();
+    // A virtual anchor (context menu) is already in viewport coordinates; otherwise the
+    // container's own box is the trigger.
+    const rect = anchorRect ?? ref.current.getBoundingClientRect();
     // offsetWidth/offsetHeight, not the bounding rect: the panel plays a pop-in scale
     // animation, and a mid-animation rect reports a smaller box — which would under-clamp the
     // left edge and let the settled panel overrun the viewport. The offset box is untransformed.
@@ -200,7 +224,16 @@ export function Dropdown({
         : { top: rect.bottom + PANEL_GAP }),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, portal?.direction, portal?.align, children]);
+  }, [
+    open,
+    portal?.direction,
+    portal?.align,
+    children,
+    anchorRect?.top,
+    anchorRect?.left,
+    anchorRect?.bottom,
+    anchorRect?.right,
+  ]);
 
   useLayoutEffect(place, [place]);
 
@@ -213,7 +246,10 @@ export function Dropdown({
     if (!open || !portal) return;
     const onScroll = (e: Event) => {
       if (panelRef.current?.contains(e.target as Node)) return;
-      place();
+      // A pointer-anchored panel has nothing left to follow once the content under the
+      // pointer moves, so it dismisses instead (the usual context-menu behavior).
+      if (anchorRect) setOpenRef.current(false);
+      else place();
     };
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", place);
@@ -221,7 +257,7 @@ export function Dropdown({
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, portal, place]);
+  }, [open, portal, place, anchorRect]);
 
   // Portaled panels sit at z-[60], above a Modal's z-50 overlay (a body portal appended
   // after the overlay would otherwise paint UNDER it and be unclickable); in-flow panels

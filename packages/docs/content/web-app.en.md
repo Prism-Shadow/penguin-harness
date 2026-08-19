@@ -37,6 +37,17 @@ A new conversation starts as a draft: pick the Agent, the Workspace (via a serve
 
 There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-only tools pass), and `always-ask`. See [Tools and Approvals](/tools).
 
+### The Conversation List
+
+The sidebar's conversation list groups by Workspace or by Agent. Grouping and sort order are switched in the **List options** menu (the sliders icon in the section header), where each option carries its own icon: a folder for Workspace grouping, the Agent glyph for Agent grouping, a clock for most-recent order, and up/down arrows for the drag-reordered manual order.
+
+A row's actions come at two levels:
+
+- **Hovering** a row (or focusing it from the keyboard) replaces the trailing last-active time with two icon buttons — archive and delete;
+- **Right-clicking** a row opens the full menu at the pointer: pin, rename, archive, delete. A **long press** on touch and **Shift+F10** on the keyboard open the same menu, since neither hover nor a secondary click exists there. Escape, a click elsewhere, or scrolling the list dismisses it; the browser's own context menu is taken over on conversation rows only, and stays as usual everywhere else on the page.
+
+Pinning is offered only in the active list — the archived, subagent and scheduled folders leave it out — and a pinned conversation sorts to the top of its group. The choice is remembered per Project in the browser.
+
 ### Streaming Rendering
 
 - Model text renders token by token; thinking blocks are collapsible;
