@@ -31,13 +31,9 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay, formatRelativeShort } from "../../lib/format";
-import { sessionActivity } from "../../lib/session-activity";
-import {
-  forgetSession,
-  isSessionUnread,
-  noteSessionSeen,
-  useSessionSeen,
-} from "../../lib/session-seen";
+import { sessionRowActivity } from "../../lib/session-activity";
+import type { SessionActivity } from "../../lib/session-activity";
+import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -282,8 +278,7 @@ const DRAFTS_GROUP_KEY = "\0drafts";
  * has settled (vivid until the user opens it again, muted after). A Session that has never run
  * shows nothing at all — see sessionActivity.
  */
-function StatusGlyph({ session, unread }: { session: SessionInfo; unread: boolean }) {
-  const activity = sessionActivity(session.status, session.hasTrace, unread);
+function StatusGlyph({ activity }: { activity: SessionActivity }) {
   // Reserve the glyph's box even when there is no glyph: the row is a flex line whose title
   // truncates into whatever space is left, so letting the slot collapse would re-flow the title
   // of every never-run row (and again the moment its first run starts).
@@ -935,15 +930,9 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
-            // The open conversation is never unread — the user is looking at it. The chat page
-            // reaches the same conclusion by stamping the marker once a run settles under the
-            // user's eyes, but it does so in an effect, one tick after the run-end event moved
-            // this row's lastActiveAt: deciding it here from what is on screen keeps the glyph
-            // from flashing unread for that tick.
-            unread={
-              s.sessionId !== activeSessionId &&
-              isSessionUnread(sessionSeen, s.sessionId, s.lastActiveAt)
-            }
+            // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so
+            // the whole transition sequence is testable without a DOM.
+            activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -2138,7 +2127,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 function SessionRow({
   s,
   active,
-  unread,
+  activity,
   pinned,
   canPin = false,
   lastActive,
@@ -2158,8 +2147,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
-  /** Whether the Session has run since the user last opened it (drives the completed glyph's tone). */
-  unread: boolean;
+  /** Busy / settled-read / settled-unread / never-ran, already resolved by sessionRowActivity. */
+  activity: SessionActivity;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2256,7 +2245,7 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusGlyph session={s} unread={unread} />
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

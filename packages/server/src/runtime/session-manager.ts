@@ -1714,14 +1714,21 @@ export class SessionManager {
     const notify = this.deps.notifyProjectUsers;
     if (!notify) return;
     let lastActiveAt: string;
+    let hasTrace: boolean;
     try {
-      // Read back rather than reconstruct: both flips are published immediately after the row
-      // write that stamps them (drive's markDriven at run start, touchLastActive in its
-      // finally), so this is exactly what a list fetch would return right now — no clock of
-      // ours has to agree with the one that wrote it.
+      // Read the stamp back rather than reconstruct it: the run-end flip is published right
+      // after the write that stamps it (touchLastActive in drive's finally), so this is what a
+      // list fetch would return right now and no clock of ours has to agree with the one that
+      // wrote it.
       const row = this.deps.sessions.findById(entry.sessionId);
       if (!row) return; // Row already deleted: no list row left to light up.
       lastActiveAt = row.lastActiveAt;
+      // A running Session has by definition started a Task, whatever the row cache says yet:
+      // markDriven (which sets has_trace) runs inside drive(), and startTask has already
+      // published the first "running" by then. Reporting the raw flag there would tell a client
+      // the Session has never run at the exact moment it visibly is running — and a client that
+      // believed it would draw the hourglass, then nothing at all once the run settled.
+      hasTrace = row.hasTrace === true || state !== "idle";
     } catch {
       // Same failure touchRow guards against (DB handle closed by shutdown while a run
       // outlives its drain window). A list badge is never worth breaking a run's finally over.
@@ -1732,6 +1739,7 @@ export class SessionManager {
       sessionId: entry.sessionId,
       state,
       lastActiveAt,
+      hasTrace,
     });
   }
 

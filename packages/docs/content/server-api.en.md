@@ -306,7 +306,7 @@ export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
-  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string }
+  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -320,7 +320,7 @@ export type ServerEvent =
 | approval_request | A tool call escalated to human approval: every call under always-ask, plus rw / unknown-permission calls under read-only; pending approvals are resent on reconnect |
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
-| session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId` and carrying the row's `lastActiveAt` as just stamped, so a Session list stays live for every row and not only the conversation a client has open. Published to the user channels of the Project's owner and members |
+| session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |

@@ -123,11 +123,29 @@ describe("session_state on the user channel", () => {
     expect(Date.parse(settled.lastActiveAt)).toBeGreaterThan(Date.parse(INSERTED_AT));
   });
 
+  it("carries hasTrace true from the very first flip of a Session that had never run", async () => {
+    // The row is inserted without has_trace, exactly as a freshly created conversation is. The
+    // "running" flip is published by startTask BEFORE drive's markDriven sets the column, so
+    // the raw cache would say false at that moment; the event reports the truth instead. A
+    // client that believed the raw flag would draw the hourglass and then nothing at all.
+    expect(t.deps.sessionsRepo.findById(SID)!.hasTrace).toBe(false);
+    await runTask();
+    expect(boxes.owner.states().map((e) => e.hasTrace)).toEqual([true, true]);
+    expect(t.deps.sessionsRepo.findById(SID)!.hasTrace).toBe(true);
+  });
+
   it("says nothing about the composer state the Session channel owns", async () => {
     await runTask();
-    // queued / pendingSteering belong to the conversation being watched, not to a list row.
+    // queued / pendingSteering / pendingFollowUps belong to the conversation being watched,
+    // not to a list row.
     for (const e of boxes.owner.states()) {
-      expect(Object.keys(e).sort()).toEqual(["lastActiveAt", "sessionId", "state", "type"]);
+      expect(Object.keys(e).sort()).toEqual([
+        "hasTrace",
+        "lastActiveAt",
+        "sessionId",
+        "state",
+        "type",
+      ]);
     }
   });
 

@@ -69,16 +69,26 @@ interface SessionsContextValue {
   replace: (session: SessionInfo) => void;
   /**
    * Live run status of one row — from the open Session's own stream (`task_state`), and from
-   * the user channel (`session_state`) for every row this tab is not subscribed to.
-   * `lastActiveAt` is the server's row stamp, carried only by the user-channel event.
+   * the user channel (`session_state`) for every row this tab is not subscribed to. `row` is
+   * the server's own fields riding the user-channel event; the Session stream has none to give.
    */
-  setStatus: (sessionId: string, status: SessionStatus, lastActiveAt?: string) => void;
+  setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
   /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
   showCliSessions: boolean;
   /** Flip the CLI-session preference: persists it and refetches the whole list under the new filter. */
   setShowCliSessions: (value: boolean) => void;
+}
+
+/**
+ * The row fields a `session_state` event carries alongside the status, straight from the
+ * server's row. Both are needed to draw the glyph without refetching the list: `lastActiveAt`
+ * decides read vs unread against the seen marker, and `hasTrace` decides settled vs never-ran.
+ */
+export interface LiveRowFields {
+  lastActiveAt: string;
+  hasTrace: boolean;
 }
 
 const SessionsContext = createContext<SessionsContextValue | null>(null);
@@ -121,7 +131,7 @@ interface SessionsStoreState {
   add: (session: SessionInfo) => void;
   remove: (sessionId: string) => void;
   replace: (session: SessionInfo) => void;
-  setStatus: (sessionId: string, status: SessionStatus, lastActiveAt?: string) => void;
+  setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
   setShowCliSessions: (value: boolean) => void;
 }
@@ -347,28 +357,48 @@ export function createSessionsStore() {
       },
 
       /**
-       * The open Session's stream calls this with two arguments: it has no fresher row stamp
-       * to offer than the one the list already holds. The user-channel `session_state` event
-       * calls it with three, and that third one is what makes a background completion legible:
-       * the read/unread split compares the row's `lastActiveAt` against the seen marker
-       * (session-seen.ts), so without the server's new stamp a Session that finished while the
-       * user was elsewhere would settle into the muted "already read" glyph — the exact case
-       * the user needs to notice.
+       * A status flip changes more of the row than the status, because the glyph is drawn from
+       * three fields, not one (see session-activity.ts). The user-channel `session_state` event
+       * carries the other two from the server's own row; the open Session's stream calls this
+       * with two arguments, having none to give.
+       *
+       * - `lastActiveAt` is what makes a background completion legible: the read/unread split
+       *   compares it against the seen marker (session-seen.ts), so without the server's new
+       *   stamp a Session that finished while the user was elsewhere would settle into the
+       *   muted "already read" glyph — the exact case the user needs to notice.
+       * - `hasTrace` is what keeps a FIRST run from settling into nothing at all. It separates
+       *   "finished" from "never ran", and a Session running its first Task still has the
+       *   `false` its list row was fetched with: the hourglass shows (status wins), and then
+       *   the moment it stops the row would go blank.
+       *
+       * `hasTrace` is therefore treated as monotonic, and a live status is itself proof the
+       * Session has run — server-side it is a one-way cache (`has_trace = 1`, never cleared)
+       * set at run start, and a running Session has by definition started a Task. That second
+       * half is what keeps the two callers consistent: the Session stream carries no flag, so
+       * on its own it would settle a first run into a blank row until the next list fetch.
        *
        * An id no loaded page holds is dropped rather than turned into a row: the event names a
        * Session, it does not describe one, and a row invented from a status and a timestamp
        * would have no title, Agent or Workspace to render. That same drop is what filters
        * another Project's Sessions — this store only ever holds the current Project's rows.
        */
-      setStatus: (sessionId, status, lastActiveAt) => {
+      setStatus: (sessionId, status, row) => {
         const prev = get().sessions;
         const target = prev.find((s) => s.sessionId === sessionId);
         if (!target) return;
-        const nextActiveAt = lastActiveAt ?? target.lastActiveAt;
-        if (target.status === status && target.lastActiveAt === nextActiveAt) return;
+        const lastActiveAt = row?.lastActiveAt ?? target.lastActiveAt;
+        const live = status === "running" || status === "compacting";
+        const hasTrace = target.hasTrace || row?.hasTrace === true || live;
+        if (
+          target.status === status &&
+          target.lastActiveAt === lastActiveAt &&
+          target.hasTrace === hasTrace
+        ) {
+          return;
+        }
         set({
           sessions: prev.map((s) =>
-            s.sessionId === sessionId ? { ...s, status, lastActiveAt: nextActiveAt } : s,
+            s.sessionId === sessionId ? { ...s, status, lastActiveAt, hasTrace } : s,
           ),
         });
       },
@@ -419,7 +449,10 @@ export function applyUserEvent(
   // another tab, a schedule, a subagent — would otherwise sit on whatever status the last list
   // fetch happened to return.
   if (ev.type === "session_state") {
-    store.getState().setStatus(ev.sessionId, ev.state, ev.lastActiveAt);
+    store.getState().setStatus(ev.sessionId, ev.state, {
+      lastActiveAt: ev.lastActiveAt,
+      hasTrace: ev.hasTrace,
+    });
     return;
   }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips

@@ -1,4 +1,6 @@
-import type { SessionStatus } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, SessionStatus } from "@prismshadow/penguin-server/api";
+import { isSessionUnread } from "./session-seen";
+import type { SessionSeenState } from "./session-seen";
 
 /**
  * Visual state carried by a Session row / chat header.
@@ -30,4 +32,31 @@ export function sessionActivity(
   if (status === "compacting") return "compacting";
   if (!hasTrace) return null;
   return unread ? "completedUnread" : "completed";
+}
+
+/** The subset of a row this function needs (a whole SessionInfo satisfies it). */
+export type SessionActivityRow = Pick<
+  SessionInfo,
+  "sessionId" | "status" | "hasTrace" | "lastActiveAt"
+>;
+
+/**
+ * The glyph one Session ROW draws: `sessionActivity` plus the two things only the list knows —
+ * whether the user has looked at this Session since it last ran, and whether it is the
+ * conversation currently open.
+ *
+ * The open conversation is never unread: the user is looking at it. The chat page reaches the
+ * same conclusion by stamping the seen marker once a run settles under the user's eyes, but it
+ * does so in an effect, one tick after the run-end event moved the row's `lastActiveAt` —
+ * deciding it here from what is on screen keeps the glyph from flashing unread for that tick.
+ */
+export function sessionRowActivity(
+  session: SessionActivityRow,
+  seen: SessionSeenState,
+  activeSessionId: string | null,
+): SessionActivity {
+  const unread =
+    session.sessionId !== activeSessionId &&
+    isSessionUnread(seen, session.sessionId, session.lastActiveAt);
+  return sessionActivity(session.status, session.hasTrace, unread);
 }
