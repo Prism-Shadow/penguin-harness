@@ -1,5 +1,12 @@
 # Core: a tighter default system prompt, a reply-language rule, and a shared tooling directory
 
+- **Date:** 2026-07-29
+- **Type:** refactor
+- **Scope:** `core`, `docs`
+- **PR:** [#120](https://github.com/Prism-Shadow/penguin-harness/pull/120)
+
+[中文版](2026-07-29-default-system-prompt.zh.md)
+
 The built-in Agent template is re-read by the model on every turn, and had grown wordy in exactly the sections that repeat most. It loses about a tenth of its words (1087 → 969) with no rule going with them, and two behaviours the prompt never stated are now in it.
 
 ## What the trim changed

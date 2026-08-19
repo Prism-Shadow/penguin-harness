@@ -29,6 +29,7 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@types/node": "^24.0.0",
     "concurrently": "^10.0.4",
+    "esbuild": "^0.28.1",
     "prettier": "^3.9.4",
     "tsx": "^4.20.0",
     "typescript": "^5.6.0",

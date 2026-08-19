@@ -147,6 +147,9 @@ export const zh = {
     admin: "管理员",
     defaultAdminNote:
       "首次使用请以内置管理员 admin 登录，初始密码在服务端首次启动时打印（形如 penguin-1234），登录后请尽快修改密码",
+    /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
+    forgotAdminNote:
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
   },
 
   account: {
@@ -1432,8 +1435,7 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
-      invalid_proxy_url:
-        "代理地址无效：应为 http://主机[:端口]、https://主机[:端口] 或 主机[:端口]。",
+      invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },

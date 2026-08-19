@@ -65,6 +65,14 @@ export interface ServerConfig {
    * it starts the server with PORT=0.
    */
   portFile: string | null;
+  /**
+   * Trust `x-forwarded-proto` from the request (PENGUIN_TRUST_PROXY=1). Off by default:
+   * the header is caller-supplied, so on a non-loopback bind an untrusted caller could
+   * set it to `https` to walk through the hot-update network gate (hmr/routes.ts) while
+   * actually speaking plaintext. Enable this only behind a reverse proxy that terminates
+   * TLS and either sets or strips the header itself before it reaches this process.
+   */
+  trustProxy: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -102,7 +110,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -136,5 +144,6 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     authSessionRenewMs: 6 * DAY_MS,
     desktopToken,
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
+    trustProxy: env.PENGUIN_TRUST_PROXY === "1",
   };
 }

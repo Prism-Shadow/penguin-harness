@@ -1,5 +1,12 @@
 # Models: Inkling and Fireworks DeepSeek V4 Flash 0731 join; gateway GLM-5.1 delisted
 
+- **Date:** 2026-08-06
+- **Type:** feature
+- **Scope:** `model-catalog`, `skills`, `docs`
+- **PR:** [#220](https://github.com/Prism-Shadow/penguin-harness/pull/220), [#230](https://github.com/Prism-Shadow/penguin-harness/pull/230)
+
+[中文版](2026-08-06-model-catalog-inkling-dsv4-flash-0731.zh.md)
+
 Prices and specs read from each model's provider page on 2026-08-06.
 
 ## New models

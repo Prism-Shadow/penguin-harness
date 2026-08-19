@@ -10,6 +10,8 @@ export default defineConfig({
     "src/omnimessage/markers/index.ts",
     "src/interfaces.ts",
     "src/state/model-catalog.ts",
+    // Hot-update kernel: zero-dependency subpath so web can bundle it directly.
+    "src/kernel/index.ts",
   ],
   format: ["esm"],
   target: "node20",

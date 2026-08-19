@@ -14,11 +14,12 @@
  * Ids are `draft-<8 hex>`: real Session ids start with `session-` and the new-chat route
  * uses the literal `new`, so the chat route dispatches on the prefix alone.
  *
- * The in-memory copy is a module-level store (useSyncExternalStore) so the sidebar list
+ * The in-memory copy is a module-level store so the sidebar list
  * and the draft page react to every mutation in this tab; parseDraft validates each
  * entry's content field-by-field on load, exactly like the caches it mirrors.
  */
-import { useSyncExternalStore } from "react";
+import { useStore } from "zustand/react";
+import { createStore } from "zustand/vanilla";
 import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache, DraftStorage } from "./draft-cache";
 
@@ -68,8 +69,12 @@ function parseEntries(raw: string | null): DraftSessionEntry[] {
 
 // —— Module-level store: storage key → entries, every subscriber re-renders on change ——
 
-const cache = new Map<string, DraftSessionEntry[]>();
-const listeners = new Set<() => void>();
+// The Map doubles as the lazy parse cache: readEntries seeds a missing key IN PLACE (no new
+// reference, no notification — it may run inside a render via useDraftSessions' selector),
+// while writeEntries swaps in a new Map so subscribers are notified.
+const draftsStore = createStore<{ cache: Map<string, DraftSessionEntry[]> }>(() => ({
+  cache: new Map(),
+}));
 const EMPTY: DraftSessionEntry[] = [];
 
 function storageOf(injected?: DraftStorage): DraftStorage | null {
@@ -82,6 +87,7 @@ function storageOf(injected?: DraftStorage): DraftStorage | null {
 }
 
 function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
+  const { cache } = draftsStore.getState();
   const hit = cache.get(key);
   if (hit) return hit;
   const s = storageOf(storage);
@@ -98,7 +104,6 @@ function readEntries(key: string, storage?: DraftStorage): DraftSessionEntry[] {
 }
 
 function writeEntries(key: string, entries: DraftSessionEntry[], storage?: DraftStorage): void {
-  cache.set(key, entries);
   const s = storageOf(storage);
   if (s) {
     try {
@@ -108,12 +113,7 @@ function writeEntries(key: string, entries: DraftSessionEntry[], storage?: Draft
       // Quota/private mode: the in-memory copy still serves this tab.
     }
   }
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  draftsStore.setState((prev) => ({ cache: new Map(prev.cache).set(key, entries) }));
 }
 
 /** Reactive list of a user × Project's parked drafts, newest first (EMPTY constant when signed out / none). */
@@ -121,10 +121,8 @@ export function useDraftSessions(
   userId: string | null,
   projectId: string | null,
 ): DraftSessionEntry[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => (userId && projectId ? readEntries(draftSessionsKey(userId, projectId)) : EMPTY),
-    () => EMPTY,
+  return useStore(draftsStore, () =>
+    userId && projectId ? readEntries(draftSessionsKey(userId, projectId)) : EMPTY,
   );
 }
 

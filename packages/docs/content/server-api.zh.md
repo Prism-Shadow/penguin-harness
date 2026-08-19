@@ -79,8 +79,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 
 - `proxyForApp`（「应用程序使用代理」，默认开）治理服务端自身出网（LLM 请求、更新检查、图片抓取）：开且填写了 `proxyUrl` → http 与 https 流量都走该地址，**优先于代理环境变量**——无需配置任何环境变量；开但未填地址 → 遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（大小写并存）；关 → 一律直连。
-- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
-- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 `http://主机[:端口]`、`https://主机[:端口]` 与裸 `主机[:端口]`（规范化为 `http://主机[:端口]`——只存储规范化后的值，响应回显存储形态）；其余一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
+- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值（`socks5://` 地址原样注入——各工具对这些变量中的 SOCKS URL 支持程度不一）；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
+- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 undici dispatcher 认可的代理 URL——`http://`、`https://` 与（undici 实验性支持的）`socks5://`/`socks://` 地址，允许携带凭据——以及裸 `主机[:端口]`（规范化为 `http://主机[:端口]`）；只存储规范化后的值，响应回显存储形态。其余（无法解析，或 undici 拒绝的协议如 `socks4://`）一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
 
 任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
 
