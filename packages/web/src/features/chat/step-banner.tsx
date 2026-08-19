@@ -24,6 +24,7 @@ export function StepBanner({
   detail,
   liveSinceMs,
   durationMs,
+  liveBody,
   children,
 }: {
   state: RunState;
@@ -35,6 +36,13 @@ export function StepBanner({
   liveSinceMs?: number;
   /** Settled wall time once finished. */
   durationMs?: number;
+  /**
+   * Always-visible body below the header (no chevron): streaming progress content while
+   * the step runs (e.g. the compaction summary being written). Mutually independent from
+   * `children` — a banner typically shows `liveBody` while running and swaps to the
+   * expandable `children` once settled.
+   */
+  liveBody?: ReactNode;
   /** Expandable body; its presence adds the chevron (collapsed by default). */
   children?: ReactNode;
 }) {
@@ -109,6 +117,9 @@ export function StepBanner({
         <div className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left dark:bg-gray-900">
           {header}
         </div>
+      )}
+      {liveBody !== undefined && liveBody !== null && (
+        <div className="anim-fade border-t border-gray-200 dark:border-gray-800">{liveBody}</div>
       )}
       {expandable && open && (
         <div className="anim-fade divide-y divide-gray-100 border-t border-gray-200 dark:divide-gray-800/60 dark:border-gray-800">

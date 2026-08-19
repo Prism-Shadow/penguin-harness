@@ -27,6 +27,11 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   assistantText,
+  compactionBegin,
+  compactionEnd,
+  partialText,
+  requestBegin,
+  requestEnd,
   sessionMeta,
   thinkingMessage,
   tokenUsage,
@@ -49,11 +54,16 @@ import type {
   LLMInterface,
   LLMOutcome,
 } from "../src/interfaces.js";
-import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-engine.js";
+import {
+  COMPACTION_FAILED_NOTE,
+  COMPACTION_PAUSE_REPLY,
+  ContextEngine,
+  SUMMARY_RETRY_GUIDANCE,
+} from "../src/engine/context-engine.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
 import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/agenthub";
-import { Writer, readTrace } from "../src/trace/index.js";
+import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -921,14 +931,16 @@ describe("context compaction", () => {
     expect(closureRepairs).toEqual([]);
   });
 
-  it("mid-task: a committed rejection absorbs the turn's tool outputs — retries never resend them, and an empty-handed abandonment ends the run", async () => {
+  it("mid-task: a committed rejection absorbs the turn's tool outputs — retries never resend them, and an empty-handed abandonment resumes with the continuation note", async () => {
     // Issue #85, strict-provider scenario: the first committed attempt puts the turn's tool
     // outputs (folded into the compaction input) into the old LLM object's history. From then
     // on the retries must carry only the repairs and the Prompt — resending the outputs would
     // be rejected as stale tool_results — and after the compaction is abandoned the
     // continuation must not resend them either. Here the final rejection is empty (no repairs
-    // left to deliver) and no steering is queued, so the run ends at the failure: the context
-    // is intact and the next prompt continues from the committed state.
+    // left to deliver) and no steering is queued, so nothing task-bearing remains: the loop
+    // synthesizes the continuation note and keeps running instead of ending the run right
+    // after the compaction (issue #288 — the loop must always resume after an in-run
+    // compaction); the context is intact and the model continues from the committed state.
     const llm1 = new ScriptedLLM(
       [
         // Turn 1: a tool call, over the threshold -> mid-task compaction.
@@ -947,8 +959,10 @@ describe("context compaction", () => {
         { messages: [thinkingMessage("blank 3")] },
         { messages: [thinkingMessage("blank 4")] },
         { messages: [thinkingMessage("blank 5")] },
-        // Next run after the abandonment: served by the same instance, plain prompt.
+        // Continuation after the abandonment: the note turn (under the threshold, no tools).
         { messages: [assistantText("continuing"), usage(60, 900)] },
+        // Next run: served by the same instance, plain prompt.
+        { messages: [assistantText("next task"), usage(70, 970)] },
       ],
       "llm1",
     );
@@ -972,10 +986,11 @@ describe("context compaction", () => {
     const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
 
     expect(compactionEvents(out1)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
-    // The run ends at the empty-handed abandonment without an abort: the compaction failure
-    // is the whole story.
+    // The abandonment does not end the run: the loop resumes on the continuation note, so
+    // the task's final reply follows the compaction failure without an abort.
     expect(payloadTypes(out1)).not.toContain("abort");
-    expect(llm1.calls).toHaveLength(6);
+    expect(out1.map((m) => (m.payload as { text?: string }).text)).toContain("continuing");
+    expect(llm1.calls).toHaveLength(7);
     // Attempt 1 folds the turn's tool output in; attempt 2 carries the repair + note + Prompt
     // but NOT the absorbed output; attempts 3-5 are note + Prompt.
     expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
@@ -987,6 +1002,8 @@ describe("context compaction", () => {
     for (let attempt = 3; attempt <= 5; attempt += 1) {
       expect(llm1.calls[attempt]!.map(textOf)).toEqual([SUMMARY_RETRY_GUIDANCE, "COMPACT NOW"]);
     }
+    // The continuation input is the synthesized note alone — never the absorbed outputs.
+    expect(llm1.calls[6]!.map(textOf)).toEqual([COMPACTION_FAILED_NOTE]);
     // Original context kept: no LLM swap, no Trace rotation.
     expect(created).toBe(0);
     expect(trace.currentPath()).toBe(oldPath);
@@ -994,14 +1011,15 @@ describe("context compaction", () => {
     // The next run continues from the committed state: the absorbed outputs are not resent
     // and nothing was stashed (the final rejection was empty).
     await collect(engine.run([userText("task two")], { approve: allowAll }));
-    expect(llm1.calls[6]!.map(textOf)).toEqual(["task two"]);
+    expect(llm1.calls[7]!.map(textOf)).toEqual(["task two"]);
   });
 
-  it("mid-task: abandonment with a trailing tool-calling rejection continues the task with the repair alone", async () => {
+  it("mid-task: abandonment with a trailing tool-calling rejection continues the task with the repair plus the continuation note", async () => {
     // Any committed attempt absorbs — here the FIRST (empty) rejection commits the turn
     // outputs, and the FINAL rejection leaves unanswered tool calls. The continuation after
-    // the failure delivers exactly the stashed repairs (never the absorbed outputs), keeping
-    // the live object's history well-formed while the task keeps running.
+    // the failure delivers exactly the stashed repairs (never the absorbed outputs) followed
+    // by the continuation note — the repairs alone carry no task instruction (issue #288) —
+    // keeping the live object's history well-formed while the task keeps running.
     const llm1 = new ScriptedLLM(
       [
         {
@@ -1036,14 +1054,15 @@ describe("context compaction", () => {
     for (let attempt = 2; attempt <= 5; attempt += 1) {
       expect(llm1.calls[attempt]!.map(textOf)).toEqual([SUMMARY_RETRY_GUIDANCE, "COMPACT NOW"]);
     }
-    // The continuation input is the repair answering c5 — nothing else: no absorbed outputs,
-    // no prompt.
-    expect(payloadTypes(llm1.calls[6]!)).toEqual(["tool_call_output"]);
+    // The continuation input is the repair answering c5 followed by the continuation note —
+    // no absorbed outputs, no prompt (the repair keeps pairing; the note carries the task).
+    expect(payloadTypes(llm1.calls[6]!)).toEqual(["tool_call_output", "text"]);
     const cont = llm1.calls[6]![0]!.payload as { tool_call_id: string; output: string };
     expect(cont.tool_call_id).toBe("c5");
     expect(cont.output).toBe(
       "[tool error] the compaction request expects a summary, not tool calls",
     );
+    expect(textOf(llm1.calls[6]![1]!)).toBe(COMPACTION_FAILED_NOTE);
     // The task finished on the continuation; the stash is spent for later runs.
     expect(out.map((m) => (m.payload as { text?: string }).text)).toContain("recovered");
     await collect(engine.run([userText("again")], { approve: allowAll }));
@@ -1598,5 +1617,250 @@ describe("context compaction", () => {
     expect(events[1]).toMatchObject({ type: "compaction_end", status: "aborted" });
     // Interrupt cleanup: the tool output is held as carry-over per case A, and the run wraps up with an abort event.
     expect(payloadTypes(out)).toContain("abort");
+  });
+});
+
+/**
+ * ScriptedLLM that also supports appendExchange (the closed-exchange path of issue #288),
+ * recording every appended exchange for assertions.
+ */
+class ExchangeScriptedLLM extends ScriptedLLM {
+  appended: Array<{ userMessages: OmniMessage[]; assistantText: string }> = [];
+  appendExchange(userMessages: OmniMessage[], assistantText: string): void {
+    this.appended.push({ userMessages, assistantText });
+  }
+}
+
+describe("mid-task compaction closes the pending tool exchange (issue #288)", () => {
+  let traces: string;
+
+  beforeEach(async () => {
+    traces = await mkdtemp(join(tmpdir(), "penguin-compaction-x-"));
+  });
+
+  afterEach(async () => {
+    await rm(traces, { recursive: true, force: true });
+  });
+
+  it("commits the turn's outputs with the pause reply first; the compaction prompt rides alone", async () => {
+    const llm1 = new ExchangeScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        // Compaction request: prompt only (the outputs were committed by appendExchange).
+        { messages: [assistantText("[summary]continue: step 2[/summary]"), usage(160, 320)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM(
+      [{ messages: [assistantText("task done"), usage(30, 360)] }],
+      "llm2",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => llm2,
+    });
+
+    const out = await collect(engine.run([userText("do task")], { approve: allowAll }));
+
+    // The pending exchange was closed before the request: the turn's tool output plus the
+    // non-empty pause reply were appended to the OLD object's history.
+    expect(llm1.appended).toHaveLength(1);
+    expect(payloadTypes(llm1.appended[0]!.userMessages)).toEqual(["tool_call_output"]);
+    expect(
+      (llm1.appended[0]!.userMessages[0]!.payload as { tool_call_id?: string }).tool_call_id,
+    ).toBe("ct");
+    expect(llm1.appended[0]!.assistantText).toBe(COMPACTION_PAUSE_REPLY);
+    // The compaction request carries the Prompt alone — no folded outputs.
+    expect(llm1.calls).toHaveLength(2);
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    // The loop resumes on the new context: the summary is its first input, the task finishes.
+    expect(llm2.calls).toHaveLength(1);
+    expect(llm2.calls[0]!.map(textOf)).toEqual([
+      "[context_summary]\ncontinue: step 2\n[/context_summary]",
+    ]);
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain("task done");
+  });
+
+  it("a failed compaction resumes the task on the continuation note; the committed outputs are never resent", async () => {
+    const llm1 = new ExchangeScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "ct" }), usage(150, 150)],
+        },
+        // Two transport failures exhaust compactionMaxReconnects: 1.
+        { messages: [], outcome: { status: "timeout" } },
+        { messages: [], outcome: { status: "timeout" } },
+        // Continuation turn: the note alone (under the threshold, the task wraps up).
+        { messages: [assistantText("wrapped up on the old context"), usage(60, 400)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+      compactionMaxReconnects: 1,
+      reconnectBackoffMs: 1,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+
+    expect(compactionEvents(out)[1]).toMatchObject({ type: "compaction_end", status: "failed" });
+    // The exchange was appended exactly once; retries resend the Prompt alone; the
+    // continuation is the note — the committed outputs are never on the wire again.
+    expect(llm1.appended).toHaveLength(1);
+    expect(llm1.calls).toHaveLength(4);
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    expect(llm1.calls[2]!.map(textOf)).toEqual(["COMPACT NOW"]);
+    expect(llm1.calls[3]!.map(textOf)).toEqual([COMPACTION_FAILED_NOTE]);
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain(
+      "wrapped up on the old context",
+    );
+    expect(payloadTypes(out)).not.toContain("abort");
+  });
+
+  it("manual compaction keeps the fold (carry-over is not a closeable exchange)", async () => {
+    const llm1 = new ExchangeScriptedLLM(
+      [
+        { messages: [assistantText("first answer"), usage(50, 50)] },
+        { messages: [assistantText("[summary]manual[/summary]"), usage(60, 110)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxContextLength: 100000 }),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+    });
+    await collect(engine.run([userText("hi")], { approve: allowAll }));
+
+    await collect(engine.compact());
+    // No exchange was appended even though the LLM supports it: manual compaction folds.
+    expect(llm1.appended).toHaveLength(0);
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
+  });
+});
+
+describe("compaction summary streaming (issue #290)", () => {
+  let traces: string;
+
+  beforeEach(async () => {
+    traces = await mkdtemp(join(tmpdir(), "penguin-compaction-s-"));
+  });
+
+  afterEach(async () => {
+    await rm(traces, { recursive: true, force: true });
+  });
+
+  const deltaTexts = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .filter((m) => (m.payload as { type?: string }).type === "compaction_delta")
+      .map((m) => (m.payload as { text?: string }).text ?? "");
+
+  it("streams partial_text fragments as compaction_delta events between the paired events, never into the Trace", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            partialText("start"),
+            partialText("delta", "[summary]the "),
+            partialText("delta", "plan[/summary]"),
+            partialText("stop"),
+            assistantText("[summary]the plan[/summary]"),
+            usage(160, 310),
+          ],
+        },
+      ],
+      "llm1",
+    );
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_stream" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+    });
+    const oldPath = trace.currentPath();
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    // Deltas mirror the streamed fragments exactly — the complete text does not re-emit.
+    expect(deltaTexts(out)).toEqual(["[summary]the ", "plan[/summary]"]);
+    // Positioned between the paired compaction events.
+    const types = payloadTypes(out);
+    const begin = types.indexOf("compaction_begin");
+    const end = types.indexOf("compaction_end");
+    const firstDelta = types.indexOf("compaction_delta");
+    const lastDelta = types.lastIndexOf("compaction_delta");
+    expect(firstDelta).toBeGreaterThan(begin);
+    expect(lastDelta).toBeLessThan(end);
+    // Stream-only: the Trace records the compaction dialogue, never the deltas.
+    const recorded = await readTrace(oldPath);
+    expect(payloadTypes(recorded)).not.toContain("compaction_delta");
+  });
+
+  it("an LLM that yields only complete text still streams one delta per text", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]whole[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    expect(deltaTexts(out)).toEqual(["[summary]whole[/summary]"]);
+  });
+});
+
+describe("dangling compaction spans (issue #288)", () => {
+  it("resumeTrace reports an unmatched compaction_begin for the resume path to heal", () => {
+    const dangling = resumeTrace([
+      metaMessage,
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      usage(150, 150),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+    ]);
+    expect(dangling.danglingCompaction).toEqual({ reason: "context", mode: "summarize" });
+
+    // A matched pair reports nothing — no heal write on healthy traces.
+    const closed = resumeTrace([
+      metaMessage,
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      usage(150, 150),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      requestEnd("aborted"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
+    ]);
+    expect(closed.danglingCompaction).toBeUndefined();
   });
 });

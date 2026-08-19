@@ -47,7 +47,7 @@ import {
   formatSessionId,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { userText, withOrigin } from "./omnimessage/index.js";
+import { compactionEnd, userText, withOrigin } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   MessageOrigin,
@@ -483,6 +483,24 @@ export class Agent {
       dateDir: located.dateDir,
       startIndex: located.index,
     });
+
+    // Heal a compaction span the previous process left dangling (a compaction_begin with no
+    // end — crash, kill, or a shutdown that outran the drive): every stateless reader (the
+    // Web reducer, the server's window scanner) hides messages between the pair as
+    // compaction-internal, so continuing this file behind a dangling begin would make
+    // everything the user sends after the compaction vanish on reload — and once a later
+    // compaction_end closed the wedge mid-Task, tool outputs rendered without their
+    // swallowed calls as "unknown tool" cards (issue #288). Appending the aborted closure
+    // makes the file well-formed for every reader before any new record lands. Best-effort
+    // like every Trace write: a failure here must not block the resume itself.
+    if (resumed.danglingCompaction) {
+      try {
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "aborted" }));
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[trace] dangling-compaction heal failed: ${detail}\n`);
+      }
+    }
 
     return new Session({
       // Invariants only — meta writes never contain a thinking level.

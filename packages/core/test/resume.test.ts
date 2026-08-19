@@ -16,6 +16,7 @@ import { createAgent } from "../src/index.js";
 import {
   abortEvent,
   assistantText,
+  compactionBegin,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -172,6 +173,42 @@ describe("agent.resumeSession", () => {
     expect(
       (session.resumedHistory ?? []).map((m) => (m.payload as { type?: string }).type),
     ).toEqual(["text", "text", "abort"]);
+  });
+
+  it("heals a dangling compaction span by appending the aborted closure (issue #288)", async () => {
+    // The previous process died while a compaction ran: the shard ends inside the span
+    // (begin + prompt + an unfinished request). Without the closure, every stateless reader
+    // (the Web reducer, the server's window scanner) hides everything appended after the
+    // dangling begin as compaction-internal — the messages the user sends after resuming
+    // vanish on reload.
+    const agent = await createAgent({});
+    const file = await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      tokenUsage(usage(150), usage(150)),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    session.dispose();
+    const healed = await readTrace(file);
+    const last = healed[healed.length - 1]!;
+    expect(last.payload).toMatchObject({
+      type: "compaction_end",
+      reason: "context",
+      mode: "summarize",
+      status: "aborted",
+    });
+
+    // Healing is idempotent: a second resume sees the matched pair and appends nothing.
+    const again = await agent.resumeSession({ sessionId: SID });
+    again.dispose();
+    expect((await readTrace(file)).length).toBe(healed.length);
   });
 
   it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {
@@ -372,5 +409,39 @@ describe("setHistory injection", () => {
     model.setHistory([userText("hello"), assistantText("hi")]);
     const client = (model as unknown as { client: { getHistory(): unknown[] } }).client;
     expect(client.getHistory()).toHaveLength(2);
+  });
+
+  it("GenerativeModel.appendExchange appends a closed user/assistant exchange to the history", () => {
+    const model = new GenerativeModel({ modelId: "claude-sonnet-4-6", tools: [] });
+    model.setHistory([userText("hello"), assistantText("hi")]);
+    model.appendExchange(
+      [
+        {
+          ...userText("ignored-shape"),
+          payload: {
+            type: "tool_call_output",
+            role: "user",
+            output: "out",
+            tool_call_id: "tc1",
+            stop_reason: "completed",
+          },
+        } as OmniMessage,
+      ],
+      "(paused)",
+    );
+    interface HistoryEntry {
+      role: string;
+      content_items: Array<{ type: string; text?: string }>;
+    }
+    const client = (model as unknown as { client: { getHistory(): HistoryEntry[] } }).client;
+    const history = client.getHistory();
+    expect(history).toHaveLength(4);
+    expect(history[2]!.role).toBe("user");
+    expect(history[2]!.content_items.map((c) => c.type)).toEqual(["tool_result"]);
+    expect(history[3]!.role).toBe("assistant");
+    expect(history[3]!.content_items).toEqual([{ type: "text", text: "(paused)" }]);
+    // The guard: an empty reply would be rejected by providers (non-empty content rules).
+    expect(() => model.appendExchange([userText("x")], "")).toThrow(/non-empty/);
+    expect(() => model.appendExchange([], "(paused)")).toThrow(/user messages/);
   });
 });

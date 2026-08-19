@@ -257,6 +257,14 @@ export interface CompactionItem {
   beginTsMs?: number;
   /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
   durationMs?: number;
+  /**
+   * Raw text of the summary the compaction request is generating (issue #290): accumulated
+   * live from `compaction_delta` events, and rebuilt identically on history replay from the
+   * compaction span's complete assistant text — the banner shows the summary being written
+   * and keeps it readable after a reload. Raw model output (summary tags included; the
+   * banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   */
+  summaryText?: string;
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -567,10 +575,20 @@ export function pushMessage(
     // Internal messages within a compaction range (between begin and end)
     // (the compaction prompt, summary output): never rendered, never
     // counted toward Task segmentation — aligned with the live stream
-    // (which only pushes the event pair and token_usage). Only encountered during history rebuild.
+    // (which only pushes the event pair, compaction_delta text and token_usage). Only
+    // encountered during history rebuild.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
       advanceLastTs(model, msg.timestamp);
+      // Replay parity for the banner's summary text (issue #290): the span's complete
+      // assistant text is exactly what the live path streamed as compaction_delta events,
+      // so a reload shows the same text the live viewer watched being written.
+      if (!isPartialPayload(msg.payload)) {
+        const p = msg.payload as { type?: string; role?: string; text?: string };
+        if (p.type === "text" && p.role === "assistant" && p.text) {
+          appendCompactionSummaryText(model, p.text);
+        }
+      }
       return;
     }
     if (isPartialPayload(msg.payload)) {
@@ -591,7 +609,12 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta: never rendered as an item. For the main session it carries nothing the view
+  // session_meta: never rendered as an item. A session_meta arriving while a compaction
+  // span is open can only be a rotation replay whose closing compaction_end was lost (a
+  // crash-torn tail): close the stale span so the new context's messages render instead of
+  // being swallowed as compaction-internal (issue #288).
+  if (msg.type === "session_meta") closeStaleCompaction(model);
+  // For the main session it carries nothing the view
   // model needs (identity/config are all surfaced through the Session DTO). For a NESTED child
   // session no DTO is loaded here, so capture the identity the subagents panel needs (which
   // agent runs this child, on which model) — a rewritten session_meta (file rotation) simply
@@ -1343,6 +1366,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "abort": {
+      // The engine always closes the compaction pair before emitting abort: an abort seen
+      // while a span is still open means the compaction_end was lost (a shutdown that
+      // outran the drive) — close the stale span so later messages aren't swallowed as
+      // compaction-internal (issue #288).
+      closeStaleCompaction(model);
       // In-flight tools won't get any more output after an interruption (a
       // placeholder resend goes only to the model, never written to Trace): finalize the executing cards.
       closeExecutingToolCards(model);
@@ -1408,6 +1436,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
       return;
     }
     case "compaction_begin": {
+      // Compaction spans never nest: a begin arriving while one is already open means the
+      // previous span's end was lost (a process death mid-compaction wrote no closure —
+      // issue #288). Close the stale banner as aborted first, so this span's end doesn't
+      // resolve the wrong banner and the wedge never outlives the next compaction.
+      closeStaleCompaction(model);
       beginCompaction(model.stats);
       model.items.push({
         kind: "compaction",
@@ -1417,6 +1450,12 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         running: true,
         ...(tsMs !== undefined ? { beginTsMs: tsMs } : {}),
       });
+      return;
+    }
+    case "compaction_delta": {
+      // Streamed summary text (issue #290): accumulate onto the running banner. Without a
+      // running banner (mid-stream join that missed the begin) there is nowhere to show it.
+      appendCompactionSummaryText(model, p.text);
       return;
     }
     case "compaction_end": {
@@ -1547,6 +1586,34 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
     if (item.kind === "compaction" && item.running) return item;
   }
   return null;
+}
+
+/** Appends streamed/replayed summary text onto the running compaction banner (no-op without one). */
+function appendCompactionSummaryText(model: StreamModel, text: string): void {
+  if (!text) return;
+  const item = findLastRunningCompaction(model);
+  if (item) item.summaryText = (item.summaryText ?? "") + text;
+}
+
+/**
+ * Closes a compaction span whose `compaction_end` never arrived (a process death or a
+ * shutdown that outran the drive wrote no closure — issue #288). Without this, everything
+ * after the dangling begin replays as compaction-internal: user messages sent after the
+ * compaction vanish on reload, and once a later compaction_end un-wedged the state
+ * mid-Task, tool outputs rendered without their swallowed calls as "unknown tool" cards.
+ * Called from the three unambiguous no-span-can-continue signals — another
+ * compaction_begin, an abort event, and a rotation's session_meta; a no-op while no span
+ * is open. (The core additionally heals the persisted trace on resume; this rule keeps
+ * already-damaged traces readable.)
+ */
+function closeStaleCompaction(model: StreamModel): void {
+  if (!model.stats.compactionActive) return;
+  endCompaction(model.stats, "aborted");
+  const item = findLastRunningCompaction(model);
+  if (item) {
+    item.running = false;
+    item.status ??= "aborted";
+  }
 }
 
 function findLastWaitingReconnect(model: StreamModel): ReconnectItem | null {

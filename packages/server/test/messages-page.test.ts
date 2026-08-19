@@ -15,6 +15,7 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  abortEvent,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -199,6 +200,63 @@ describe("messages windowed reads", () => {
     expect(older.before).toBeUndefined();
     const full = await service.readMessages(P, A, S);
     expect([...older.messages, ...tail.messages]).toEqual(full);
+  });
+
+  it("a healed dangling compaction span keeps the conversation after it visible (issue #288)", async () => {
+    // A process death mid-compaction left compaction_begin with no end; core's resume
+    // appends the aborted closure before the session continues the shard. The scanner must
+    // treat everything after the closure as ordinary conversation again — before the fix,
+    // the dangling begin kept `compactionActive` set for the rest of the shard and every
+    // later prompt vanished from the window (no boundary, no unit, no messages).
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at(
+        "2026-07-20T10:01:00.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 1 }),
+      ),
+      at("2026-07-20T10:01:01.000Z", userText("COMPACT NOW")),
+      at("2026-07-20T10:01:02.000Z", requestBegin()),
+      // ...process died; the healed resume appended the closure:
+      at(
+        "2026-07-20T10:01:30.000Z",
+        compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
+      ),
+      ...turn(2, 2, 2000),
+    ]);
+
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    // The post-crash prompt is a unit of its own and stays visible.
+    expect(userTexts(tail.messages)).toEqual(["q2"]);
+    expect(tail.prior.turns).toBe(1);
+
+    // The windows still tile the transcript exactly.
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      limit: 10,
+    });
+    const full = await service.readMessages(P, A, S);
+    expect([...older.messages, ...tail.messages]).toEqual(full);
+  });
+
+  it("an unhealed dangling span closes at an abort event; the prompt after it still cuts a window", async () => {
+    // Shutdown race: the abort event reached the Trace but the compaction_end write lost —
+    // the abort itself proves the span is over (the engine always closes the pair first).
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at(
+        "2026-07-20T10:01:00.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 1 }),
+      ),
+      at("2026-07-20T10:01:01.000Z", userText("COMPACT NOW")),
+      at("2026-07-20T10:01:02.000Z", abortEvent("shutdown")),
+      ...turn(2, 2, 2000),
+    ]);
+
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(tail.messages)).toEqual(["q2"]);
   });
 
   it("cuts are pairing-safe: a tool_call and its output never split, steering images stay with their chip", async () => {

@@ -350,6 +350,20 @@ export interface CompactionBeginPayload {
 }
 
 /**
+ * Streamed compaction progress (issue #290): incremental text of the summary the compaction
+ * request is generating, emitted between `compaction_begin` and `compaction_end` so the
+ * frontend can show the summary being written instead of a silent banner. **Stream-only** —
+ * never written to Trace (the compaction request's complete output is already recorded
+ * inside the compaction span; history rebuild reconstructs the same text from it, see the
+ * Web reducer). Deltas concatenate across the compaction's attempts in emission order.
+ */
+export interface CompactionDeltaPayload {
+  type: "compaction_delta";
+  /** Incremental raw model text (summary tags included; display layers strip them). */
+  text: string;
+}
+
+/**
  * Inherits the shared RetryDetail block: `attempt` is the final attempt's 1-based ordinal
  * (failed attempts and retries included — stamped by summarize mode), `error_message` is
  * the last failure's detail (present only when `status` is `failed`), and `retry_in_ms` is
@@ -485,6 +499,7 @@ export type EventPayload =
   | RequestEndPayload
   | TokenUsagePayload
   | CompactionBeginPayload
+  | CompactionDeltaPayload
   | CompactionEndPayload
   | GoalFinishedPayload
   | SubagentPayload

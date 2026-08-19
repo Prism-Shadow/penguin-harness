@@ -9,6 +9,7 @@ import type {
   ApprovalDecision,
   ApprovalDecisionPayload,
   CompactionBeginPayload,
+  CompactionDeltaPayload,
   CompactionEndPayload,
   CompactionMode,
   CompactionReason,
@@ -311,6 +312,11 @@ export function compactionBegin(args: {
     context: args.context,
     turns: args.turns,
   });
+}
+
+/** compaction progress event: incremental summary text streamed between the paired compaction events (stream-only, never written to Trace; see CompactionDeltaPayload). */
+export function compactionDelta(text: string): OmniMessage<CompactionDeltaPayload> {
+  return event({ type: "compaction_delta", text });
 }
 
 /** compaction end event: carries the compaction result (non-`completed` means compaction was abandoned and the original context is kept), plus its share of the RetryDetail block (final attempt ordinal; last error_message detail on failures). */

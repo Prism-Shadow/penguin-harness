@@ -265,6 +265,11 @@ interface CompactionBeginPayload {
   turns: number;              // 触发时的累计轮数
 }
 
+interface CompactionDeltaPayload {
+  type: "compaction_delta";   // 成对压缩事件之间流式输出的摘要文本;只走流、
+  text: string;               // 不写 Trace(历史重建从压缩区间的记录恢复同一文本)
+}
+
 interface CompactionEndPayload {
   type: "compaction_end";
   reason: CompactionReason;

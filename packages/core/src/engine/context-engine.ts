@@ -34,6 +34,7 @@ import {
   approvalDecision,
   assistantText,
   compactionBegin,
+  compactionDelta,
   compactionEnd,
   emptyTokenCounts,
   isCompleteModelMessage,
@@ -259,6 +260,31 @@ export const SUMMARY_RETRY_GUIDANCE =
   "Your previous reply was not a usable summary. Reply again with text only, no tool " +
   "calls, in exactly this format and nothing after it:\n\n" +
   "[summary]put the summary text here...[/summary]";
+
+/**
+ * The short assistant reply that closes the pending tool exchange before a mid-Task
+ * compaction request (issue #288): the turn's tool outputs are committed to the old LLM
+ * object's history followed by this reply (see LLMInterface.appendExchange), so the
+ * compaction Prompt arrives as a fresh user turn instead of riding an open exchange — the
+ * model then writes the summary instead of continuing the task. Non-empty on purpose:
+ * providers reject empty assistant content (e.g. Anthropic's non-empty text-block rule).
+ * On a successful compaction the old object is discarded, so the reply costs nothing; on
+ * a failed one it stays in the kept context as a benign pause note. Exported for tests.
+ */
+export const COMPACTION_PAUSE_REPLY = "(paused to compact the context)";
+
+/**
+ * Continuation input synthesized when a failed mid-Task compaction absorbed the turn's
+ * tool outputs and nothing task-bearing remains to send (issue #288): before this, the
+ * engine ended the run empty-handed — the loop stopped right after the compaction — or
+ * continued with bare repair outputs the model had no instruction to act on. Sent to the
+ * model only (never yielded to the stream, never written to Trace — the same rule as every
+ * synthetic carry-over), so the task always resumes after an in-run compaction. Exported
+ * for tests.
+ */
+export const COMPACTION_FAILED_NOTE =
+  "[compaction_failed] Context compaction was abandoned; the conversation continues on " +
+  "the original context. Continue the task from where it left off.";
 
 /** Result of executing one LLM turn (the return value of runTurn). */
 interface TurnResult {
@@ -712,6 +738,9 @@ export class ContextEngine {
       // Outputs this turn still owes the model: dropped when a committed compaction attempt
       // consumes them into history (the two-case carry rule below, issue #85).
       let turnOutputs = turn.toolOutputs;
+      // A mid-Task compaction failed after absorbing the turn's outputs: the continuation
+      // below must synthesize a task-bearing input instead of ending the run (issue #288).
+      let compactionFailedMidTask = false;
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.deps.compaction!.mode;
@@ -728,6 +757,10 @@ export class ContextEngine {
             compactionReason,
             midTask ? turn.toolOutputs : [],
             signal,
+            // Mid-Task the pending tool exchange is closed FIRST when the LLM supports it
+            // (issue #288): the outputs are committed with a short closing reply, and the
+            // compaction Prompt rides alone as a fresh user turn.
+            { closeExchange: midTask },
           );
           if (result.status === "aborted") {
             // User interrupted compaction: keep the original context. The carry rule is the
@@ -777,6 +810,7 @@ export class ContextEngine {
             turnOutputs = [];
           }
           // else: nothing committed — the outputs are untouched and resent below as always.
+          compactionFailedMidTask = midTask;
         }
       }
 
@@ -794,9 +828,15 @@ export class ContextEngine {
       const stashed = this.pendingCarryOver;
       this.pendingCarryOver = [];
       nextInput = [...stashed, ...turnOutputs, ...steering];
-      // Mid-task, but a committed compaction consumed the outputs and nothing else remains
-      // to send: the run ends here — the failure was surfaced via compaction_end(failed),
-      // the context is intact, and the next prompt continues from the committed state.
+      // Mid-Task, but a failed compaction absorbed the turn's outputs and no task-bearing
+      // input remains (only the repair stash, or nothing at all): synthesize the
+      // continuation note so the loop always resumes the task (issue #288 — before this
+      // the run ended empty-handed right after the compaction, or continued with bare
+      // repair outputs the model had no instruction to act on). The note is sent to the
+      // model only, like every synthetic carry-over: never yielded, never persisted.
+      if (compactionFailedMidTask && turnOutputs.length === 0 && steering.length === 0) {
+        nextInput = [...nextInput, userText(COMPACTION_FAILED_NOTE)];
+      }
       if (nextInput.length === 0) return;
     }
   }
@@ -1295,12 +1335,41 @@ export class ContextEngine {
     reason: CompactionReason,
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
+    opts?: {
+      /**
+       * Close the pending tool exchange BEFORE the compaction request (mid-Task auto
+       * compaction, issue #288): the outputs are committed to the old object's history with
+       * a short closing reply (LLMInterface.appendExchange), and the compaction Prompt
+       * rides alone as a fresh user turn — the model then summarizes instead of continuing
+       * the task, and a rejected attempt can no longer absorb the outputs. Falls back to
+       * the fold when the LLM implementation lacks appendExchange. Manual compaction keeps
+       * the fold: its folded input is interruption carry-over, which can mix flatten text
+       * with structured outputs — not a single closeable exchange.
+       */
+      closeExchange?: boolean;
+    },
   ): AsyncGenerator<OmniMessage, CompactionResult> {
     const settings = this.deps.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
-    // Compaction request input: this turn's tool results (mid-Task) or leftover interruption
-    // carry-over, plus the compaction Prompt. The compaction exchange is written to the old
+    // Close the pending exchange first when requested and supported: the turn's outputs
+    // become their own completed exchange on the live object (append-only, so the
+    // provider's prompt-cache prefix stays valid). From the callers' perspective this IS a
+    // commit — the outputs now live in history and must never be resent — so `committed`
+    // starts true on this path. Not written to Trace (synthetic content never is): replay
+    // rebuilds an equivalent pairing by folding the persisted outputs into the compaction
+    // turn's input span instead.
+    const closeExchange =
+      opts?.closeExchange === true &&
+      pendingToolOutputs.length > 0 &&
+      typeof this.llm.appendExchange === "function";
+    if (closeExchange) {
+      this.llm.appendExchange!(pendingToolOutputs, COMPACTION_PAUSE_REPLY);
+    }
+
+    // Compaction request input: this turn's tool results (mid-Task, unless the exchange was
+    // closed above) or leftover interruption carry-over, plus the compaction Prompt. The
+    // compaction exchange is written to the old
     // Trace (traceable but not pushed to the user); tool results were already written when
     // executed and aren't recorded again, while carry-over's not-yet-written synthetic content
     // (flatten text, backfilled placeholders) and the compaction Prompt are written now.
@@ -1308,15 +1377,17 @@ export class ContextEngine {
     // The resend base: shrinks to the Prompt alone once an attempt commits — the folded turn
     // input then lives in the old LLM object's history, and resending it would make strict
     // providers reject the request over duplicate/stale tool_results (issue #85).
-    let base = [...pendingToolOutputs, prompt];
+    let base = closeExchange ? [prompt] : [...pendingToolOutputs, prompt];
     let input = base;
     await this.write(prompt);
 
-    // Whether any attempt was committed by AgentHub (only `completed` commits: timeout and
+    // Whether the folded input was absorbed into the old object's history — true once any
+    // attempt was committed by AgentHub (only `completed` commits: timeout and
     // malformed end an incomplete stream, and failed/auth/aborted throw or cut off before a
-    // clean end — none of those reach the stateful commit). Returned as `committed`: the
-    // callers' two-case carry rule branches on it.
-    let committed = false;
+    // clean end — none of those reach the stateful commit), and true from the start when
+    // the exchange was closed above (the append is itself the commit). Returned as
+    // `committed`: the callers' two-case carry rule branches on it.
+    let committed = closeExchange;
     // Synthesized outputs answering the latest unusable attempt's tool calls, not yet carried
     // by a committed request: prepended to the retry input, and stashed as carry-over should
     // the compaction be abandoned first (see stashRepairs).
@@ -1340,7 +1411,7 @@ export class ContextEngine {
         );
         return { status: "aborted", committed };
       }
-      const attempt = await this.runCompactionRequest(input, signal, reconnects);
+      const attempt = yield* this.runCompactionRequest(input, signal, reconnects);
       attempts += 1;
       // Every attempt's token_usage is pushed to the Human output stream (already written to
       // Trace in runCompactionRequest, so it's only yielded here, never rewritten): the frontend
@@ -1473,8 +1544,11 @@ export class ContextEngine {
    * same frozen config as every other turn (the toolset is deliberately identical: a changed
    * tool list would change the request prefix and invalidate the provider's prompt cache at
    * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
-   * output but **does not push it to the Human output stream** (except `token_usage` —
-   * captured and handed back via the return value for summarizeContext to yield); complete
+   * output; raw model messages are **not pushed to the Human output stream** (`token_usage`
+   * is captured and handed back via the return value for summarizeContext to yield), but the
+   * text being generated IS streamed out as `compaction_delta` events (issue #290) so the
+   * frontend can show the summary while it is written — deltas are stream-only, never
+   * written to Trace (the complete output below already records the text); complete
    * messages and events are written to the old Trace; complete text segments are collected as
    * the compaction output, and `toolCalls` collects the response's real tool requests (never
    * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
@@ -1482,19 +1556,22 @@ export class ContextEngine {
    * Token usage is counted into the Session
    * cumulative totals (recorded via observeTokenUsage, for the new object to carry forward).
    */
-  private async runCompactionRequest(
+  private async *runCompactionRequest(
     input: OmniMessage[],
     signal?: AbortSignal,
     /** Transport retries already performed by the compaction loop (its request_end announces the next planned backoff too). */
     reconnectsSoFar = 0,
-  ): Promise<{
-    status: StopReason;
-    text: string;
-    toolCalls: OmniMessage<ToolCallPayload>[];
-    usage: OmniMessage | null;
-    /** Error detail (LLMOutcome.errorMessage) on non-completed statuses — becomes compaction_end.error_message when this failure ends the compaction. */
-    errorMessage?: string;
-  }> {
+  ): AsyncGenerator<
+    OmniMessage,
+    {
+      status: StopReason;
+      text: string;
+      toolCalls: OmniMessage<ToolCallPayload>[];
+      usage: OmniMessage | null;
+      /** Error detail (LLMOutcome.errorMessage) on non-completed statuses — becomes compaction_end.error_message when this failure ends the compaction. */
+      errorMessage?: string;
+    }
+  > {
     // The compaction request is itself an ordinary Request, emitting paired request events —
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
     // invisible to Human.
@@ -1506,6 +1583,11 @@ export class ContextEngine {
     let text = "";
     const toolCalls: OmniMessage<ToolCallPayload>[] = [];
     let usage: OmniMessage | null = null;
+    // Whether this attempt streamed partial_text: real LLM objects stream the summary as
+    // partial deltas (each forwarded as a compaction_delta), and the complete text message
+    // that follows must not re-emit the same content; an implementation that yields only
+    // complete messages gets one delta per complete text instead.
+    let sawPartialText = false;
     for (;;) {
       const res = await gen.next();
       if (res.done) {
@@ -1546,9 +1628,24 @@ export class ContextEngine {
       const msg = res.value;
       await this.write(msg);
       if (this.observeTokenUsage(msg)) usage = msg;
+      // Streamed compaction progress (issue #290): forward the text being generated as
+      // compaction_delta events — partial_text fragments verbatim (start and delta alike,
+      // mirroring the live-tail accumulation rule), or the complete text when no partials
+      // streamed. Rejected attempts stream too: the frontend shows whatever the compaction
+      // request is really producing, and history rebuild reconstructs the same
+      // concatenation from the span's complete assistant text.
+      {
+        const p = msg.payload as { type?: string; text?: string };
+        if (p.type === "partial_text" && typeof p.text === "string" && p.text !== "") {
+          sawPartialText = true;
+          yield compactionDelta(p.text);
+        }
+      }
       if (isCompleteModelMessage(msg)) {
         if (msg.payload.type === "text") {
-          text += (msg.payload as TextPayload).text;
+          const body = (msg.payload as TextPayload).text;
+          text += body;
+          if (!sawPartialText && body !== "") yield compactionDelta(body);
         } else if (msg.payload.type === "tool_call") {
           // Same filter as the turn loop: a tool_call synthesized to close out an interruption
           // carries a non-completed stop_reason — it is structural closure, not a real request,

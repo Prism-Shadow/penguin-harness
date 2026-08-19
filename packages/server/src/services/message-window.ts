@@ -45,7 +45,7 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
 /** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -293,6 +293,9 @@ export async function scanMessages(
       touchTask(state, ms);
       const t = p.type;
       if (t === "compaction_begin") {
+        // Spans never nest: a begin while one is open means the previous span's end was
+        // lost (a crash mid-compaction) — the reducer closes the stale banner and opens a
+        // new one; state-wise the span simply stays active here.
         state.compactionActive = true;
         breakRuns(state); // the compaction banner is an item
         continue;
@@ -303,6 +306,10 @@ export async function scanMessages(
         continue;
       }
       if (t === "abort") {
+        // An abort while a span is open means its compaction_end was lost (the engine
+        // always closes the pair first): the reducer closes the stale span — mirror it, or
+        // everything after would stay swallowed as compaction-internal (issue #288).
+        state.compactionActive = false;
         breakRuns(state); // the interruption marker is an item
         continue;
       }
@@ -350,7 +357,10 @@ export async function scanMessages(
       // approval_decision / request_begin / unexpanded pointers: no items, no run change.
       continue;
     }
-    // session_meta: no item (steering window already closed above).
+    // session_meta: no item (steering window already closed above). Arriving while a span
+    // is open it can only be a rotation whose closing compaction_end was torn away: close
+    // the stale span, mirroring the reducer (issue #288).
+    if (msg.type === "session_meta") state.compactionActive = false;
   }
 }
 

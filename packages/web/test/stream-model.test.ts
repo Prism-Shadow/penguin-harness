@@ -9,6 +9,7 @@ import {
   approvalDecision,
   assistantText,
   compactionBegin,
+  compactionDelta,
   compactionEnd,
   imageUrlMessage,
   mcpConnectBegin,
@@ -503,6 +504,143 @@ describe("approvals and events", () => {
     );
     const banner = items(m)[0] as CompactionItem;
     expect(banner.durationMs).toBe(4500);
+  });
+
+  it("compaction_delta accumulates the streamed summary onto the running banner (issue #290)", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    pushMessage(m, compactionDelta("[summary]the "));
+    pushMessage(m, compactionDelta("plan[/summary]"));
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    // The accumulated text survives the end: the settled banner still shows the summary.
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // An orphan delta after the span (no running banner) is dropped, not appended.
+    pushMessage(m, compactionDelta("stray"));
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+  });
+
+  it("history replay rebuilds the banner's summary text from the compaction span's assistant output", () => {
+    // Live, the deltas carried the text; the Trace records the same text as the span's
+    // complete assistant messages. A reload must show the same summary the live viewer saw.
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, assistantText("a1"));
+    pushMessage(m, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, userText("COMPACT NOW")); // the compaction prompt: user text, never summary material
+    pushMessage(m, requestBegin());
+    pushMessage(m, thinkingMessage("planning")); // thinking is not summary text either
+    pushMessage(m, assistantText("[summary]the plan[/summary]"));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // Span-internal messages still render nothing of their own.
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+  });
+
+  it("a dangling compaction span no longer swallows the conversation that follows (issue #288)", () => {
+    // A process death mid-compaction leaves compaction_begin with no end; the resumed
+    // session appends new turns to the same shard. The stale span must close at the next
+    // unambiguous signal instead of hiding everything after it forever.
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, userText("COMPACT NOW"));
+    pushMessage(m, requestBegin());
+    // ...process died here; the healed resume appends the aborted closure:
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }));
+    // The conversation continues and must render.
+    pushMessage(m, userText("q2 after the crash"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, toolCallOutput({ output: "ok", toolCallId: "t1" }));
+    const kinds = items(m).map((i) => i.kind);
+    expect(kinds).toContain("user_text");
+    const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
+    expect(users.map((u) => u.text)).toContain("q2 after the crash");
+    // The tool card carries its real name — no "(unknown tool)" orphan output card.
+    const cards = items(m).filter((i) => i.kind === "tool_call") as ToolCallItem[];
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.name).toBe("exec");
+    expect(cards[0]!.output).toBe("ok");
+  });
+
+  it("an unhealed dangling span closes at the next compaction_begin; the stale banner settles aborted", () => {
+    // Damaged traces from before the resume-side heal: the wedge must not outlive the next
+    // compaction — its begin closes the stale span, and the new span pairs with the new end.
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, userText("COMPACT NOW"));
+    pushMessage(m, requestBegin());
+    // (no end — crash) ... resumed conversation, swallowed under the old rule, then the
+    // context re-triggers compaction:
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1200, turns: 1 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    const banners = items(m).filter((i) => i.kind === "compaction") as CompactionItem[];
+    expect(banners).toHaveLength(2);
+    expect(banners[0]).toMatchObject({ running: false, status: "aborted" });
+    expect(banners[1]).toMatchObject({ running: false, status: "completed" });
+    // The span state is closed: what follows renders normally.
+    pushMessage(m, userText("q2")); // merged with the summary in real traces; a plain prompt here
+    expect(
+      (items(m).filter((i) => i.kind === "user_text") as UserTextItem[]).map((u) => u.text),
+    ).toContain("q2");
+  });
+
+  it("an abort while a compaction span is open closes the stale span (shutdown race)", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, abortEvent("shutdown"));
+    const banner = items(m)[1] as CompactionItem;
+    expect(banner.running).toBe(false);
+    expect(banner.status).toBe("aborted");
+    // Later conversation renders.
+    pushMessage(m, userText("q2"));
+    expect(
+      (items(m).filter((i) => i.kind === "user_text") as UserTextItem[]).map((u) => u.text),
+    ).toContain("q2");
+  });
+
+  it("a rotation's session_meta while a span is open closes the stale span (torn closure)", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    // The completed compaction_end was torn off the old shard's tail; the next shard's
+    // session_meta arrives directly.
+    pushMessage(m, meta("s1"));
+    pushMessage(m, userText("q2"));
+    expect(
+      (items(m).filter((i) => i.kind === "user_text") as UserTextItem[]).map((u) => u.text),
+    ).toContain("q2");
   });
 
   it("mcp connect row: end sums the discovered-tool count, keeps per-server outcomes, and derives the wall time", () => {

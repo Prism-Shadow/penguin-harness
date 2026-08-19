@@ -204,6 +204,18 @@ export interface LLMOutcome {
  */
 export interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  /**
+   * Appends one closed exchange to the object's history **without issuing a request**:
+   * `userMessages` (all user-side, e.g. a turn's tool_call_output batch) followed by a short
+   * assistant reply closing it. Used by mid-Task compaction (issue #288): the pending tool
+   * results are committed as their own completed exchange first, so the compaction Prompt
+   * arrives as a fresh user turn instead of riding an open tool exchange — the model then
+   * summarizes instead of continuing the task, and a rejected compaction attempt can no
+   * longer absorb the turn's outputs. Appending (never rewriting) keeps the provider's
+   * prompt-cache prefix valid. Optional: when absent, the engine falls back to folding the
+   * outputs into the compaction request itself.
+   */
+  appendExchange?(userMessages: OmniMessage[], assistantText: string): void;
 }
 
 // ---------------------------------------------------------------------------
