@@ -2194,6 +2194,8 @@ function SessionRow({
       >
         <button
           type="button"
+          data-testid="session-row"
+          data-session-id={s.sessionId}
           onClick={() => onOpen(s)}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >

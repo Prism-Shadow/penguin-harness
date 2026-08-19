@@ -16,14 +16,15 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
-import { showTerminal, toggleTerminalDock } from "../terminal/terminal-dock-state";
-import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
 import {
-  liveTerminalCount,
-  liveTerminals,
-  subscribeTerminals,
-  terminalApiSupported,
-} from "../terminal/terminal-list";
+  dockStateVersion,
+  holdsTerminal,
+  showTerminal,
+  subscribeTerminalDock,
+  toggleTerminalDock,
+} from "../terminal/terminal-dock-state";
+import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
+import { liveTerminals, subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -223,7 +224,11 @@ function TerminalListMenu({ onPick }: { onPick: (id: string) => void }) {
 
 export function PanelsToolbar(props: PanelsToolbarProps) {
   const terminalOpen = useTerminalDockOpen();
-  const terminalCount = useSyncExternalStore(subscribeTerminals, liveTerminalCount);
+  // This conversation's terminals, not every live shell: the dock is scoped to the Session
+  // (terminal-dock-state.ts), so a global count would promise tabs the panel does not show.
+  const allTerminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
+  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
+  const terminalCount = allTerminals.filter((t) => holdsTerminal(t.id)).length;
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
   const createMenu = useHoverMenu();
   const terminalMenu = useHoverMenu();
