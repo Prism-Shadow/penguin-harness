@@ -10,7 +10,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 - Stack: Hono + @hono/node-server, requires Node >= 24;
 - Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin/data`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
 - Binding: defaults to `127.0.0.1:7364`, adjustable via the `PORT` / `HOST` environment variables;
-- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at 20MB — counted as the body is read, so a request that declares no length (chunked) is capped just the same;
+- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at a size **derived from the attachment budget** rather than fixed — attachments ride the request as base64 `data:` URLs (4/3 inflation), so the cap is `base64(attachmentTotalMb) + headroom for one inline image and the JSON framing`, about 190MB at the default 120MB total and falling again if an admin lowers it. It is counted as the body is read, so a request that declares no length (chunked) is capped just the same;
 - Errors share a single shape:
 
 ```text
@@ -73,7 +73,7 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
+| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
@@ -81,6 +81,13 @@ The proxy settings are two independent switches sharing one optional explicit ad
 - `proxyForApp` ("application uses the proxy", default on) governs the server's own outbound traffic (LLM requests, the update check, image fetches): on with `proxyUrl` set → that address for both http and https, **taking precedence over the proxy environment variables** — no environment variable needs to be configured; on without an address → the environment variables HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings); off → always direct.
 - `proxyForAgent` ("agent environment uses the proxy", default on) governs agent command subprocess environments: on with `proxyUrl` set → `HTTP_PROXY` / `HTTPS_PROXY` (plus lowercase twins) are injected as that address together with the merged NO_PROXY, overriding inherited values (a `socks5://` address is injected verbatim — tools vary in accepting SOCKS URLs in these variables); on without an address → the host environment passes through unchanged; off → the proxy variables are stripped (NO_PROXY is kept).
 - `proxyUrl` (default null = follow the environment variables) is the shared explicit address. Validation on PUT: the value is trimmed; empty or null clears the address; accepted are the proxy URLs undici's dispatcher takes — `http://`, `https://` and (experimental in undici) `socks5://` / `socks://` addresses, credentials allowed — plus bare `host[:port]` (normalized to `http://host[:port]`); only normalized values are stored, and the response echoes the stored form. Anything else — unparseable, or a scheme undici refuses, such as `socks4://` — is `400` with code `invalid_proxy_url`, and the rejected PUT writes nothing.
+
+The upload limits are two whole-MB integers governing composer file attachments; both apply to the next request with no restart (the validators and the body cap read them per request):
+
+- `attachmentMaxMb` (default 100) is the per-file cap — a larger file is `413` `file_too_large`.
+- `attachmentTotalMb` (default 120) is the per-message total of decoded bytes — `413` `payload_too_large` beyond it.
+- Validation on PUT: each must be an integer between 1 and 200, and the **effective** total (the value in this PUT, or the stored one when this PUT does not change it) must not be below the effective per-file cap. Anything else is `400` with code `invalid_attachment_limit`, and the rejected PUT writes nothing.
+- Not settable: the per-message file count (20) and the inline-image cap (20MB, `413` `image_too_large`). An inline image is written into the Trace and re-read on every history page and resume, so it deliberately does not follow the attachment cap up; `GET /api/me` reports all of these under `uploadLimits` so a client can pre-check a pick against the numbers actually in force.
 
 In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied).
 
@@ -275,10 +282,11 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs
-  // File attachment: base64 data: URL, ≤10MB each (413 file_too_large beyond that), at most 20
-  // per request and 12MB of decoded bytes in total (413 too_many_files / payload_too_large;
-  // all three are checked before anything is written). The server writes it into the Session
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs, ≤20MB (413 image_too_large)
+  // File attachment: base64 data: URL, by default ≤100MB each (413 file_too_large beyond that),
+  // at most 20 per request and 120MB of decoded bytes in total (413 too_many_files /
+  // payload_too_large; all three are checked before anything is written). The two sizes are
+  // admin-settable (PUT /api/admin/settings) and reported by GET /api/me. The server writes it into the Session
   // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
   // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
   // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes

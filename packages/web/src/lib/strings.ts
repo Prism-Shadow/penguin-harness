@@ -44,6 +44,16 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Admin-only user-menu row opening the upload-limits dialog. */
+    uploadLimitsMenu: "上传限制",
+    uploadLimitsDialogTitle: "上传限制",
+    /** The dialog's two number fields, both in whole MB. */
+    attachmentMaxMb: "单个附件上限（MB）",
+    attachmentTotalMb: "单条消息附件合计上限（MB）",
+    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
+    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
+      `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
+      `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
@@ -1298,8 +1308,12 @@ Benchmark：
     uploadFile: "上传文件",
     uploadFileDesc: "文件存入会话临时目录，模型按路径读取",
     removeFile: "移除文件",
-    /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
-    attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
+    /**
+     * Toast for a picked file rejected before reading. The limit is admin-settable and differs
+     * between file attachments and inline images, so it is passed in rather than written here.
+     */
+    attachmentTooLarge: (name: string, limitMb: number): string =>
+      `${name} 超过 ${limitMb}MB 上限，未添加。`,
     /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
     dropFilesTitle: "松开以添加附件",
     dropFilesDesc: "图片与文件将添加到输入框",
@@ -1512,6 +1526,7 @@ Benchmark：
       file_too_large: "文件过大。",
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
+      image_too_large: "图片过大，无法随对话发送。",
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       not_a_dir: "该路径不是目录。",
@@ -1537,6 +1552,7 @@ Benchmark：
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
+      invalid_attachment_limit: "上传限制无效：请填写允许范围内的整数 MB，且合计不低于单个上限。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
       trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",

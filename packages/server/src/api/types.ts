@@ -91,6 +91,39 @@ export interface MeResponse {
    * token) may omit it.
    */
   sessionVia: "password" | "desktop";
+  /**
+   * The upload limits currently in force, so the composer can refuse an oversize pick before
+   * reading it and can name the real number in the message. They are admin-settable and ride
+   * `/api/me` rather than `/api/admin/settings` because every user's composer needs them, not
+   * just an admin's.
+   */
+  uploadLimits: UploadLimits;
+}
+
+/**
+ * Upload limits as the web app sees them: whole MB, the same unit the admin form uses, so the
+ * number in the error message is the number the admin typed.
+ */
+export interface UploadLimits {
+  /** Per-file cap for composer file attachments. */
+  attachmentMaxMb: number;
+  /** Per-message total of decoded attachment bytes. */
+  attachmentTotalMb: number;
+  /** Per-message file count. Fixed server-side, not admin-settable. */
+  attachmentMaxCount: number;
+  /**
+   * Per-image cap for images that ride the conversation inline. Fixed server-side and
+   * deliberately far below the attachment cap — an inline image enters the conversation and the
+   * Trace, where its size is paid again on every history page and every resume.
+   */
+  imageMaxMb: number;
+  /**
+   * The range the two admin-settable limits may be set to. Carried here so the admin form states
+   * the real bounds without compiling its own copy of them — the server is the only place that
+   * decides how large an upload it can survive.
+   */
+  attachmentLimitMinMb: number;
+  attachmentLimitMaxMb: number;
 }
 
 export interface PasswordChangeRequest {
@@ -153,6 +186,18 @@ export interface ServerSettings {
    * precedence over HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
    */
   proxyUrl: string | null;
+  /**
+   * Per-file cap for composer file attachments, in whole MB (default 100). Applies to the very
+   * next upload — the validators read it per request, nothing is snapshotted at boot.
+   */
+  attachmentMaxMb: number;
+  /**
+   * Per-message total of decoded attachment bytes, in whole MB (default 120). Never below
+   * `attachmentMaxMb`, so a message may always carry one full-size attachment. The global request
+   * body cap is derived from this value (base64 inflates it by 4/3, plus headroom for one inline
+   * image and the JSON framing), which is why raising it needs no separate setting.
+   */
+  attachmentTotalMb: number;
 }
 
 export interface ServerSettingsResponse {
@@ -171,6 +216,19 @@ export interface ServerSettingsUpdateRequest {
    * (follow the environment variables); anything else is 400 `invalid_proxy_url`.
    */
   proxyUrl?: string | null;
+  /**
+   * New per-file attachment cap in whole MB. Must be an integer between 1 and 200; anything else
+   * — a fraction, a string, 102400 for "100GB" — is 400 `invalid_attachment_limit` and writes
+   * nothing.
+   */
+  attachmentMaxMb?: number;
+  /**
+   * New per-message total attachment cap in whole MB. Same 1..200 integer range, and additionally
+   * must not be below the *effective* per-file cap (the value in the same PUT, or the stored one
+   * when this PUT does not change it) — a total below the per-file cap would make a legal single
+   * attachment unsendable. Violations are 400 `invalid_attachment_limit`.
+   */
+  attachmentTotalMb?: number;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -1079,14 +1137,22 @@ export interface MessagesResponse {
  */
 export type TaskInputPart =
   | { type: "text"; text: string }
+  /**
+   * An image that rides the conversation inline, as a base64 `data:` URL or an http(s) URL.
+   * A data URL is capped at 20MB (413 `image_too_large`) — a fixed limit that does NOT follow
+   * the admin-settable attachment cap, because an inline image is written into the Trace and
+   * read back on every history page and every resume.
+   */
   | { type: "image_url"; imageUrl: string }
   /**
    * File attachment (the composer's "+" menu): `dataUrl` is a base64 `data:` URL of the
-   * file's bytes, capped at 10MB each (413 `file_too_large` beyond that; the request as a
-   * whole still has to fit the global 20MB body limit). The server writes it into the
-   * Session scratchpad under a sanitized name and appends an `[attached file: <path>]` line
-   * to the message text — the bytes never enter the conversation, the model opens the file
-   * by path. `fileName` is the original name (no path separators, no `..`).
+   * file's bytes, capped per file and per message by the admin-settable upload limits
+   * (defaults 100MB / 120MB; 413 `file_too_large` / `payload_too_large` / `too_many_files`,
+   * and the request as a whole still has to fit the body cap those limits derive). The
+   * server writes it into the Session scratchpad under a sanitized name and appends an
+   * `[attached file: <path>]` line to the message text — the bytes never enter the
+   * conversation, the model opens the file by path. `fileName` is the original name (no path
+   * separators, no `..`).
    */
   | { type: "file"; fileName: string; dataUrl: string };
 
