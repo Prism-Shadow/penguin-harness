@@ -3,6 +3,7 @@
 - **Date:** 2026-08-19
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#340](https://github.com/Prism-Shadow/penguin-harness/pull/340)
 
 [English](2026-08-19-thinking-label-and-compaction-notice.md)
 
