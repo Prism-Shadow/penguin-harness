@@ -441,7 +441,7 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：接口协议可按 base URL 自动检测或手动选择（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义：接口协议可手动选择，填好 API Key 后也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
@@ -489,18 +489,21 @@ export const zh = {
       "openai-chat": "OpenAI Chat Completions",
     } as Record<string, string | undefined>,
     /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
-    protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换或重新自动检测。`,
-    detectProtocol: "自动检测",
-    /** Description under the picker's auto-detect row, and the reason line when it is unavailable. */
+    protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
+    /** Detect button at the base URL field's top-right. */
+    detectProtocol: "检测协议",
+    /** Hover title on the detect button when it is available. */
     detectProtocolHint: "探测 base URL，采用它实际提供的协议",
+    /** Reason line when detection is unavailable: the API key gates it. */
+    detectNeedsKey: "请先填写 API Key 才能检测协议",
     detectNeedsUrl: "请先填写完整的 http(s) base URL",
-    detecting: "正在检测协议…",
+    detecting: "检测中…",
     detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
     detectNone: "三种协议均未识别：请检查 base URL，或手动选择协议",
     detectFailed: (msg: string): string => `协议检测失败：${msg}`,
     /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
     addProtocolHintDetect:
-      "填入 base URL 后自动检测接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可手动选择",
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可填好 API Key 与 base URL 后点“检测协议”自动识别",
     addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",

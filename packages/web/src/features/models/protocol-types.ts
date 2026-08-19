@@ -45,3 +45,23 @@ export function detectableBaseUrl(baseUrl: string): boolean {
     return false;
   }
 }
+
+/** Why protocol detection is unavailable right now, or null when it can run. */
+export type ProtocolDetectBlocker = "key" | "url";
+
+/**
+ * Detection preconditions, in the order the dialog states them. The API key comes first
+ * and is a hard gate: every probe authenticates exactly as the saved client would, so
+ * offering detection before the model has a key would mostly produce auth-shaped
+ * verdicts the user cannot act on. `hasApiKey` is the dialog's existing notion of "this
+ * row has, or will have after this edit, a key" — a freshly typed one **or** a stored
+ * one, so editing an existing model never demands the key be re-entered.
+ */
+export function protocolDetectBlocker(
+  hasApiKey: boolean,
+  baseUrl: string,
+): ProtocolDetectBlocker | null {
+  if (!hasApiKey) return "key";
+  if (!detectableBaseUrl(baseUrl)) return "url";
+  return null;
+}

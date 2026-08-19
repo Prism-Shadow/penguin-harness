@@ -76,8 +76,8 @@ import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./m
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
-  detectableBaseUrl,
   isGenericProtocolClientType,
+  protocolDetectBlocker,
   protocolSelectorValue,
 } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
@@ -1189,17 +1189,22 @@ function ModelDialog({
   };
 
   /**
-   * Protocol auto-detection: POST /models/detect probes the base URL for the three
-   * generic protocols (openai-responses → ant-messages → openai-chat, first hit wins)
-   * and applies the result to the form's clientType. Credentials mirror the connectivity
-   * test: a newly typed key is sent; otherwise (unless "clear" is checked) the paired
-   * reference lets the server fall back to the stored key — the plaintext never reaches
-   * the frontend. Detection is assistive and non-blocking: a stale run (superseded by a
-   * manual pick or a newer run) discards its result instead of clobbering the form.
+   * Protocol detection: POST /models/detect probes the base URL for the three generic
+   * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
+   * the result to the form's clientType. Credentials mirror the connectivity test: a newly
+   * typed key is sent; otherwise (unless "clear" is checked) the paired reference lets the
+   * server fall back to the stored key — the plaintext never reaches the frontend. Which
+   * is why an API key is a precondition (see protocolDetectBlocker): the probes
+   * authenticate as the saved client would, so without a key they mostly report auth
+   * failures the user cannot act on. Detection is assistive and non-blocking: a stale run
+   * (superseded by a manual pick or a newer run) discards its result instead of clobbering
+   * the form.
    */
   const runDetect = async () => {
+    // Re-checked here, not just on the button: the same preconditions must hold for every
+    // entry point (button, blur), and the key can be taken away between render and click.
+    if (protocolDetectBlocker(hasKey(form), form.baseUrl) !== null) return;
     const baseUrl = form.baseUrl.trim();
-    if (!detectableBaseUrl(baseUrl)) return;
     const seq = ++detectSeq.current;
     lastDetectedUrl.current = baseUrl;
     setDetecting(true);
@@ -1266,6 +1271,12 @@ function ModelDialog({
   // A viewer without edit rights gets the plain grey suffix: the picker would offer writes
   // the save path rejects anyway.
   const showProtocolPicker = showProtocolSelector && canEdit;
+  // Detection preconditions (per maintainer: the API key gates it). hasKey covers both a
+  // freshly typed key and one already stored for this model — editing an existing entry
+  // must not demand the key be re-entered — and honours the "clear key" checkbox, which
+  // takes the key away again. null = the run is allowed.
+  const detectBlocker = protocolDetectBlocker(hasKey(form), form.baseUrl);
+  const canDetect = showProtocolPicker && detectBlocker === null;
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
@@ -1701,18 +1712,60 @@ function ModelDialog({
             typing). Reuses the unit-adornment idiom of the context window / max tokens fields
             below; the error text sits outside the relative wrapper (see Input.invalid).
 
-            For custom / user-defined groups that suffix IS the protocol control (see
+            For custom / user-defined groups that suffix IS the protocol SELECTOR (see
             protocol-suffix.tsx): the path is one-to-one with the three generic protocol
-            clients, so selection and auto-detection reuse it instead of taking a form row of
-            their own. Elsewhere (preset groups, read-only viewers) it stays the plain grey
-            label it has always been.
+            clients, so picking one reuses it instead of taking a form row of its own.
+            Elsewhere (preset groups, read-only viewers) it stays the plain grey label it has
+            always been.
+
+            The detect ACTION sits at this field's top-right instead, next to the label — the
+            same idiom as the API key field's "get API key" link above (per maintainer). It is
+            gated on the API key, and a disabled row buried inside the suffix menu could not
+            say so where the user is looking.
 
             A <div>, not a <label>: the picker is a <button>, and a label may not contain a
             second labelable element besides its control — the click would fire the button AND
             re-focus the input. Same shape as the API key block above; the input carries an
             aria-label so it stays named. */}
         <div className="block">
-          <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+          {showProtocolPicker ? (
+            <span className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.baseUrl}
+                {baseUrlRequired && (
+                  <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+                    *
+                  </span>
+                )}
+              </span>
+              {/* Disabled rather than hidden: the affordance has to stay visible for its
+                  reason line below to make sense. Its own busy label keeps the state
+                  legible without relying on the suffix trigger's small spinner. */}
+              <button
+                type="button"
+                disabled={!canDetect || detecting}
+                onClick={() => void runDetect()}
+                title={
+                  detectBlocker === "key"
+                    ? S.models.detectNeedsKey
+                    : detectBlocker === "url"
+                      ? S.models.detectNeedsUrl
+                      : S.models.detectProtocolHint
+                }
+                className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+              >
+                {detecting && (
+                  <span
+                    aria-hidden
+                    className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                  />
+                )}
+                {detecting ? S.models.detecting : S.models.detectProtocol}
+              </button>
+            </span>
+          ) : (
+            <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+          )}
           <div className="relative">
             <Input
               size="sm"
@@ -1728,14 +1781,15 @@ function ModelDialog({
                 setDetectResult(null);
                 set({ baseUrl: e.target.value });
               }}
-              // Auto-detection on leaving the field (custom / user-defined groups): only
-              // a probeable URL the user actually changed in this dialog triggers a run —
-              // typing never fires requests, a click-through must not rewrite a working
-              // entry's protocol, and the picker's "auto-detect" row re-runs at will.
+              // Detection on leaving the field (custom / user-defined groups): only a URL
+              // the user actually changed in this dialog triggers a run — typing never
+              // fires requests, and a click-through must not rewrite a working entry's
+              // protocol. `canDetect` carries the API key gate too, so nothing fires while
+              // the model has no key; the top-right button is then the only way in, once
+              // the key is there.
               onBlur={() => {
-                if (!showProtocolPicker || detecting) return;
+                if (!canDetect || detecting) return;
                 const bu = form.baseUrl.trim();
-                if (!detectableBaseUrl(bu)) return;
                 if (bu === form.originalBaseUrl || bu === lastDetectedUrl.current) return;
                 void runDetect();
               }}
@@ -1760,8 +1814,6 @@ function ModelDialog({
                   path={protocolPath}
                   detecting={detecting}
                   tone={detectResult === null ? null : detectResult.kind === "ok" ? "ok" : "warn"}
-                  canDetect={detectableBaseUrl(form.baseUrl)}
-                  onDetect={() => void runDetect()}
                   onPick={pickProtocol}
                 />
               </div>
@@ -1772,6 +1824,15 @@ function ModelDialog({
             )}
           </div>
           {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
+          {/* Why the detect button above is greyed out. Shares the field's message slot with
+              the verdict below and yields to it: a verdict only exists after a run, which
+              means detection was available at the time. Muted, one line — a precondition,
+              not an error. */}
+          {showProtocolPicker && detectBlocker !== null && !detectResult && (
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              {detectBlocker === "key" ? S.models.detectNeedsKey : S.models.detectNeedsUrl}
+            </p>
+          )}
           {/* Detection verdict, in the field's own message slot rather than a row of its own:
               nothing renders until a run has actually happened, and a success line is worth
               one line because the picker only shows the path, not the protocol's name. */}

@@ -5,11 +5,17 @@
  *
  * The suffix already displayed the very thing this control selects: the path the AgentHub
  * client appends to the base URL (`/responses` / `/v1/messages` / `/chat/completions`),
- * which is one-to-one with the three generic protocol clients. So protocol selection and
- * auto-detection reuse that component rather than occupying a form row of their own: the
- * trigger keeps showing the live path, and clicking it opens a menu whose first row re-runs
- * auto-detection and whose remaining rows are the three protocols (name as the row title,
- * the appended path as its description) — the manual override.
+ * which is one-to-one with the three generic protocol clients. So protocol selection
+ * reuses that component rather than occupying a form row of their own: the trigger keeps
+ * showing the live path, and clicking it opens a menu of the three protocols (name as the
+ * row title, the appended path as its description) — the manual override.
+ *
+ * Selection only. The detect ACTION lives at the base URL field's top-right, next to its
+ * label (per maintainer: same placement idiom as the API key field's "get API key" link),
+ * because detection is gated on the API key and a disabled menu row cannot carry that
+ * reason where the user is looking. This menu still *reflects* a run in progress — the
+ * trigger spins, and an inconclusive run tints it amber — since the value being determined
+ * is the one it displays.
  *
  * Built on the shared Dropdown primitive in portal mode, which is what makes this safe
  * inside a Modal at phone widths: the panel is mounted on document.body at fixed viewport
@@ -40,20 +46,16 @@ export function ProtocolSuffixMenu({
   path,
   detecting,
   tone,
-  canDetect,
-  onDetect,
   onPick,
 }: {
   /** Protocol the selector currently represents (legacy `openai` / empty display as openai-chat). */
   value: ProtocolClientType;
   /** Path text on the trigger — the live suffix, kept identical to what the read-only span showed. */
   path: string;
+  /** A detection run is in flight (started from the field's top-right button). */
   detecting: boolean;
   /** `warn` paints the trigger amber (nothing matched / detection failed); the wording lives below the field. */
   tone: ProtocolDetectTone;
-  /** Base URL is an absolute http(s) URL, i.e. worth probing. */
-  canDetect: boolean;
-  onDetect: () => void;
   onPick: (clientType: ProtocolClientType) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -98,33 +100,6 @@ export function ProtocolSuffixMenu({
       }
     >
       <div role="menu">
-        {/* Re-run auto-detection. Detection also fires on its own when the base URL changes
-            (see the field's onBlur); this row is the explicit "try again", and it states why
-            it is unavailable rather than just greying out. */}
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!canDetect || detecting}
-          onClick={() => {
-            setOpen(false);
-            onDetect();
-          }}
-          className={`block ${menuRowClass} hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800`}
-        >
-          <span className="flex items-center gap-1.5 text-xs font-medium text-brand-600 dark:text-brand-300">
-            {detecting && (
-              <span
-                aria-hidden
-                className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
-              />
-            )}
-            {detecting ? S.models.detecting : S.models.detectProtocol}
-          </span>
-          <span className="mt-0.5 block text-[11px] text-gray-500 dark:text-gray-500">
-            {canDetect ? S.models.detectProtocolHint : S.models.detectNeedsUrl}
-          </span>
-        </button>
-        <div role="separator" className="my-1 border-t border-gray-200 dark:border-gray-700" />
         {PROTOCOL_CLIENT_TYPES.map((t) => {
           const selected = t === value;
           return (

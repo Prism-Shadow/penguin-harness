@@ -1,8 +1,9 @@
 /**
  * Custom-model protocol detection UI logic: the generic protocol client-type family
- * (selector visibility / value mapping / base-URL probe gating) and the protocol-path
- * suffix for the new client types. The probing itself is server-side (see the server
- * package's protocol-detect tests); these are the pure helpers the dialog composes.
+ * (selector visibility / value mapping), the detect preconditions (API key, then a
+ * probeable base URL) and the protocol-path suffix for the new client types. The probing
+ * itself is server-side (see the server package's protocol-detect tests); these are the
+ * pure helpers the dialog composes.
  */
 import { describe, expect, it } from "vitest";
 import { clientTypeAfterProviderChange } from "../src/features/models/models-page";
@@ -10,6 +11,7 @@ import {
   PROTOCOL_CLIENT_TYPES,
   detectableBaseUrl,
   isGenericProtocolClientType,
+  protocolDetectBlocker,
   protocolSelectorValue,
 } from "../src/features/models/protocol-types";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
@@ -63,11 +65,34 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("custom", "openai")).toBe("openai");
   });
 
-  it("still pins vendor-specific or empty types to openai when moving to Custom, and never touches other groups", () => {
-    expect(clientTypeAfterProviderChange("custom", "")).toBe("openai");
-    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai");
+  it("still pins vendor-specific or empty types to openai-chat when moving to Custom, and never touches other groups", () => {
+    expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
+    expect(clientTypeAfterProviderChange("custom", "claude-5")).toBe("openai-chat");
     expect(clientTypeAfterProviderChange("google", "openai")).toBe("openai");
     expect(clientTypeAfterProviderChange("my-group", "ant-messages")).toBe("ant-messages");
+  });
+});
+
+describe("protocolDetectBlocker (detection is gated on the API key)", () => {
+  const url = "https://api.example.com/v1";
+
+  it("reports the missing API key first — a probeable URL alone is not enough", () => {
+    expect(protocolDetectBlocker(false, url)).toBe("key");
+    // Key missing AND url missing: the key is the reason stated, since it is the gate the
+    // user hits first (the API key field sits above the base URL field).
+    expect(protocolDetectBlocker(false, "")).toBe("key");
+    expect(protocolDetectBlocker(false, "not-a-url")).toBe("key");
+  });
+
+  it("falls through to the URL precondition once a key is available", () => {
+    expect(protocolDetectBlocker(true, "")).toBe("url");
+    expect(protocolDetectBlocker(true, "api.example.com/v1")).toBe("url");
+    expect(protocolDetectBlocker(true, "ftp://example.com")).toBe("url");
+  });
+
+  it("allows the run only when a key and a probeable base URL are both present", () => {
+    expect(protocolDetectBlocker(true, url)).toBeNull();
+    expect(protocolDetectBlocker(true, " http://127.0.0.1:8000/v1 ")).toBeNull();
   });
 });
 
