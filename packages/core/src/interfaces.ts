@@ -134,6 +134,14 @@ export interface GenerativeModelConfig {
    * llm/context-limits.ts) so small-window models never fail provider validation.
    */
   maxTokens?: number;
+  /**
+   * Per-model fast mode (from the model entry's `fast_mode` annotation): when true, every
+   * request opts into the provider's faster serving tier at premium pricing (AgentHub
+   * UniConfig `fast_mode`). Off by default. Models without a fast tier reject the parameter
+   * before any network I/O (AgentHub `UnsupportedParameterError`); `streamGenerate` reports
+   * that as a permanent `failed` outcome so the engine surfaces it instead of retrying.
+   */
+  fastMode?: boolean;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
   /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
@@ -190,6 +198,15 @@ export interface LLMOutcome {
    * can show the real reason behind a retried request.
    */
   errorMessage?: string;
+  /**
+   * Marks a `failed` outcome as deterministic: a client-side rejection thrown before any
+   * network I/O (currently AgentHub's `UnsupportedParameterError` for `fast_mode` on a model
+   * without a fast tier), which the identical request can never retry into working. The
+   * engine skips the reconnect ladder for it and aborts the run with `errorMessage` — the
+   * same terminal handling as `auth`, but the fix is a config change (turn off fast mode for
+   * the model), not a credential update, so it stays a `failed` and hosts don't gate input.
+   */
+  permanent?: boolean;
 }
 
 /**

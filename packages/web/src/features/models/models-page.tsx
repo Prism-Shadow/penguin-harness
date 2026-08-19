@@ -194,6 +194,12 @@ export interface RowState {
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
+  /**
+   * Per-model fast mode (premium faster serving tier, AgentHub `fast_mode`): off by default;
+   * user-only, never preset by the catalog, editable on every model (preset ones included).
+   * Models without a fast tier reject requests carrying it, hence the standing hint while ON.
+   */
+  fastMode: boolean;
   /** AgentHub client protocol: defaults for preset models (auto-routed), "openai" for new custom models; kept as-is, not user-editable. */
   clientType: string;
   cacheRead: string;
@@ -286,6 +292,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
     vision: m.vision !== false,
     contextWindow: m.contextWindow !== undefined ? String(m.contextWindow) : "",
     maxTokens: m.maxTokens !== undefined ? String(m.maxTokens) : "",
+    fastMode: m.fastMode === true,
     clientType: m.clientType ?? "",
     cacheRead: m.pricing ? String(m.pricing.cacheRead) : "",
     cacheWrite: m.pricing ? String(m.pricing.cacheWrite) : "",
@@ -319,6 +326,8 @@ function rowToEntry(row: RowState): ModelUpdateEntry {
   // Output cap ("" = inherit the Agent setting): submitted only when filled; omitting clears the stored annotation.
   const mt = Number(row.maxTokens.trim());
   if (row.maxTokens.trim() && Number.isFinite(mt) && mt > 0) entry.maxTokens = mt;
+  // Off by default: submitted only when enabled (omitting clears the stored annotation; the server never persists false).
+  if (row.fastMode) entry.fastMode = true;
   const cr = Number(row.cacheRead.trim());
   const cwr = Number(row.cacheWrite.trim());
   const out = Number(row.output.trim());
@@ -1088,6 +1097,7 @@ function ModelDialog({
       vision: true,
       contextWindow: "",
       maxTokens: "",
+      fastMode: false,
       clientType: vendorAdd ? "" : "openai",
       cacheRead: "",
       cacheWrite: "",
@@ -1147,6 +1157,10 @@ function ModelDialog({
       if (key) body.apiKey = key;
       else if (form.clearApiKey) body.clearApiKey = true;
       if (form.clientType.trim()) body.clientType = form.clientType.trim();
+      // Like base URL, the form's current value is always sent (not just when true): an
+      // unsaved toggle-off must override a stored fast_mode=true, so the probe tests
+      // exactly the draft's serving tier.
+      body.fastMode = form.fastMode;
       const res = await api.testModel(projectId, body);
       if (res.ok) toastSuccess(S.models.testOk(res.latencyMs ?? 0));
       else toastError(S.models.testFailed(res.message ?? ""));
@@ -1758,6 +1772,32 @@ function ModelDialog({
             )}
           </div>
         )}
+
+        {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
+            pricing), editable on every model — preset ones included, since the built-in
+            catalog carries no fast-tier flag. Same inline-switch shape as vision; the one
+            small muted line appears in the non-default (ON) state: what it buys, and that
+            models without a fast tier reject requests carrying it. The label's hover title
+            reveals the same text before toggling. */}
+        <div>
+          <label
+            className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+            title={S.models.fastModeHint}
+          >
+            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+              {S.models.fastMode}
+            </span>
+            <Switch
+              checked={form.fastMode}
+              disabled={!canEdit}
+              onChange={(fastMode) => set({ fastMode })}
+              aria-label={S.models.fastMode}
+            />
+          </label>
+          {form.fastMode && (
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{S.models.fastModeHint}</p>
+          )}
+        </div>
       </div>
 
       {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}

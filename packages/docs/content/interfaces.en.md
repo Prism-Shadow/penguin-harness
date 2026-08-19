@@ -54,6 +54,9 @@ interface LLMOutcome {
   message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
                         // concrete error was caught — carried onto request_end so the
                         // errors panel shows the real reason behind a retried request
+  permanent?: boolean;  // marks a failed as deterministic (client-side rejection thrown before
+                        // any network I/O, e.g. fast_mode on a model without a fast tier):
+                        // the engine aborts with the message instead of retrying
 }
 ```
 
@@ -62,7 +65,7 @@ interface LLMOutcome {
 | `completed` | finished normally (token_usage already emitted) | proceed |
 | `timeout` | timeout / transport disconnect | auto-reconnect within the run |
 | `malformed` | response parse failure | auto-reconnect within the run |
-| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed` |
+| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed`. Exception: with `permanent: true` (a deterministic client-side rejection, e.g. fast mode on a model without a fast tier) the run stops immediately with the message |
 | `aborted` | user interrupt | stop, hand back to the user |
 | `auth` | credentials rejected | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated |
 
@@ -82,6 +85,7 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
   maxTokens?: number;
+  fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh"
   requestTimeoutMs?: number;       // per-Request timeout, default 120000; <=0 disables
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)

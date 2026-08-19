@@ -17,6 +17,7 @@ function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "model
     vision: true,
     contextWindow: "",
     maxTokens: "",
+    fastMode: false,
     clientType: "",
     cacheRead: "",
     cacheWrite: "",

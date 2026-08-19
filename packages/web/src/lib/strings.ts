@@ -485,6 +485,10 @@ export const zh = {
     vision: "支持视觉",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
+    /** Switch label for the per-model fast mode (the provider's premium faster serving tier). */
+    fastMode: "快速模式",
+    /** Shown while the fast-mode switch is ON (and as the label's hover title): what it buys, and that models without a fast tier reject requests carrying it. */
+    fastModeHint: "输出更快、按溢价计费；仅部分模型支持，不支持的模型会拒绝请求",
     visionBadge: "视觉",
     /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
     freeBadge: "免费",

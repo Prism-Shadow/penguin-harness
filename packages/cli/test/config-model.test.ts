@@ -303,6 +303,59 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect((await entryOf())?.max_tokens).toBe(8000);
   });
 
+  it("--fast-mode round-trips as fast_mode=true; --no-fast-mode clears it; neither keeps current", async () => {
+    const entryOf = async () => {
+      const parsed = parseToml(
+        await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
+      ) as { models: Array<Record<string, unknown>> };
+      return parsed.models.find((m) => m.provider === "custom" && m.model_id === "fast-1");
+    };
+    const add = await runModel([
+      "add",
+      "--model-id",
+      "fast-1",
+      "--provider",
+      "custom",
+      "--base-url",
+      "http://127.0.0.1:8000/v1",
+      "--fast-mode",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(add.code).toBe(0);
+    expect((await entryOf())?.fast_mode).toBe(true);
+
+    // Upsert without either flag keeps the annotation (same merge policy as --vision).
+    const keep = await runModel([
+      "add",
+      "--model-id",
+      "fast-1",
+      "--provider",
+      "custom",
+      "--context-window",
+      "32768",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(keep.code).toBe(0);
+    expect((await entryOf())?.fast_mode).toBe(true);
+
+    // --no-fast-mode clears the stored annotation entirely: only `true` is ever persisted
+    // (absent = off), so no `fast_mode = false` is written either.
+    const off = await runModel([
+      "add",
+      "--model-id",
+      "fast-1",
+      "--provider",
+      "custom",
+      "--no-fast-mode",
+      "--root",
+      tmpRoot,
+    ]);
+    expect(off.code).toBe(0);
+    expect("fast_mode" in ((await entryOf()) ?? {})).toBe(false);
+  });
+
   it("model default sets the default model under the --root data root (--model-id upstream id + --provider as a pair)", async () => {
     const set = await runModel([
       "default",

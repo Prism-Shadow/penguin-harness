@@ -129,6 +129,9 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     // Tri-state: --vision marks it supported / --no-vision marks it unsupported / neither given keeps the existing value (defaults to supported).
     .option("--vision", t.config.addVision)
     .option("--no-vision", t.config.addNoVision)
+    // Tri-state like --vision: --fast-mode enables it / --no-fast-mode clears it / neither keeps the existing value (defaults to off; only `true` is persisted).
+    .option("--fast-mode", t.config.addFastMode)
+    .option("--no-fast-mode", t.config.addNoFastMode)
     .option("--price-cache-read <n>", t.config.addPriceCacheRead, parseFloatArg)
     .option("--price-cache-write <n>", t.config.addPriceCacheWrite, parseFloatArg)
     .option("--price-output <n>", t.config.addPriceOutput, parseFloatArg)
@@ -181,6 +184,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
           ...(clientType !== undefined ? { client_type: clientType } : {}),
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
+          ...(opts.fastMode !== undefined ? { fast_mode: opts.fastMode } : {}),
           ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
           ...(opts.apiKey !== undefined ? { api_key: opts.apiKey } : {}),
           ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),

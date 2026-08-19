@@ -511,6 +511,9 @@ export const en: Strings = {
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
     vision: "Vision support",
     visionOffProxyHint: "Images are read via the vision proxy model",
+    fastMode: "Fast mode",
+    fastModeHint:
+      "Faster output at premium pricing; supported models only — models without a fast tier reject requests",
     visionBadge: "Vision",
     freeBadge: "Free",
     visionModelBadge: "Proxy vision",

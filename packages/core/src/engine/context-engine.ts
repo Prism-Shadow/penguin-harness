@@ -360,7 +360,9 @@ function downgradeCarriedGoalInput(msg: OmniMessage): OmniMessage {
 
 /**
  * LLM outcomes that reconnect in-run — everything but `auth`, which cannot be retried into
- * working. `failed` is included on purpose: the classifier producing it is an allowlist of
+ * working, and a `failed` carrying `permanent: true` (a deterministic client-side rejection,
+ * see LLMOutcome.permanent), which the turn loop aborts on before consulting this set.
+ * `failed` is otherwise included on purpose: the classifier producing it is an allowlist of
  * known transport codes and message vocabulary, so a gateway phrasing a transient fault its
  * own way lands here; retrying a genuinely permanent error costs the ladder and ends the same
  * way, while aborting a transient one destroys the turn.
@@ -661,6 +663,18 @@ export class ContextEngine {
           yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
           return;
         }
+        // A permanent `failed` is the other non-retried terminal: a deterministic
+        // client-side rejection thrown before any network I/O (fast_mode on a model
+        // without a fast tier — see LLMOutcome.permanent), where the identical request can
+        // never succeed and the fix is a config change. The general retry-everything
+        // rationale below doesn't apply: this isn't a gateway phrasing a transient fault
+        // its own way, it's AgentHub's own typed error, so the ladder would only delay the
+        // actionable message.
+        if (turn.outcome.status === "failed" && turn.outcome.permanent) {
+          this.pendingCarryOver = this.buildCarryOver(attemptInput, turn);
+          yield* this.emitAbort(`llm request error: ${turn.outcome.errorMessage ?? "unknown"}`);
+          return;
+        }
         // Completed normally.
         if (turn.outcome.status === "completed") break;
 
@@ -888,6 +902,9 @@ export class ContextEngine {
     cap: number,
     retries: readonly StopReason[],
   ): number | undefined {
+    // A permanent failure is aborted on, never retried (see the turn loop): announcing a
+    // countdown for it would be a lie.
+    if (outcome.permanent) return undefined;
     if (!retries.includes(outcome.status)) return undefined;
     if (reconnectsSoFar >= cap) return undefined;
     return reconnectDelayMs(

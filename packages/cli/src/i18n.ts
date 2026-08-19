@@ -50,6 +50,8 @@ export interface Messages {
     addClientType: string;
     addVision: string;
     addNoVision: string;
+    addFastMode: string;
+    addNoFastMode: string;
     addPriceCacheRead: string;
     addPriceCacheWrite: string;
     addPriceOutput: string;
@@ -331,6 +333,9 @@ const en: Messages = {
     addClientType: "AgentHub client type (e.g. openai); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
+    addFastMode:
+      "Enable fast mode: faster output at premium pricing (models without a fast tier reject requests carrying it)",
+    addNoFastMode: "Disable fast mode (the default); omit both to keep current",
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
     addPriceCacheWrite: "Price per 1M tokens: cache write (USD)",
     addPriceOutput: "Price per 1M tokens: output (USD)",
@@ -590,6 +595,8 @@ const zh: Messages = {
     addClientType: "AgentHub 客户端协议（如 openai）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
+    addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",
+    addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
     addPriceCacheRead: "每百万 token 价格：缓存读取（USD）",
     addPriceCacheWrite: "每百万 token 价格：缓存写入（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",

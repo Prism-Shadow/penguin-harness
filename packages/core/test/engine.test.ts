@@ -1909,6 +1909,73 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
   });
 
+  it("a permanent failed (fast-mode rejection) stops the run without burning the ladder", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // GenerativeModel marks AgentHub's fast_mode UnsupportedParameterError as a permanent
+      // failed (see llm.test.ts): thrown before any network I/O, deterministic for the
+      // session's frozen config, so retrying the identical request can never succeed. The
+      // engine must abort with the actionable message instead of costing the ladder.
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return {
+          status: "failed" as const,
+          permanent: true,
+          errorMessage:
+            "Kimi does not support fast mode. Fast mode is enabled for this model; " +
+            "turn it off in the model settings to use this model.",
+        };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 3, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(1); // Deterministic client-side rejection: one attempt, no reconnects.
+    // The classification stays an honest `failed` on the wire (not auth: hosts must not
+    // gate input for a credential fix — the fix is the model's fast-mode setting).
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect((end!.payload as { status?: string }).status).toBe("failed");
+    // No planned retry is announced: the frontend must not render a countdown for a
+    // retry that never comes.
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect(abort).toBeDefined();
+    const reason = (abort!.payload as { reason?: string }).reason ?? "";
+    expect(reason).toContain("llm request error");
+    expect(reason).toContain("turn it off in the model settings");
+  });
+
+  it("a plain failed outcome (no permanent flag) still takes the ladder", async () => {
+    // The permanent flag is opt-in and narrowly scoped: an ordinary failed without it keeps
+    // the retry-everything policy (the classifier is an allowlist; a gateway phrasing a
+    // transient fault its own way must still reconnect).
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) return { status: "failed" as const, errorMessage: "flaky gateway" };
+        yield assistantText("recovered");
+        return { status: "completed" as const };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      reconnectBackoffMs: 0,
+    });
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(2);
+    expect(all.find((m) => (m.payload as { type?: string }).type === "abort")).toBeUndefined();
+  });
+
   it("a bare 403 (classified failed) retries within the default cap and succeeds", async () => {
     let calls = 0;
     const llm: LLMInterface = {

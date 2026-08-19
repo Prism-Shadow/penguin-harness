@@ -26,6 +26,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `client_type` | 协议提示(如 `openai`)；缺省由 AgentHub 按 model id 推断 |
 | `display_name` | 显示名 |
 | `vision` | 是否支持图像输入，默认 true |
+| `fast_mode` | 可选的快速模式（默认关闭）：让该模型的会话请求进入厂商的快速推理档位，按溢价计费。只会持久化 `true`——Web 整表保存时省略该字段即清除。没有 fast 档位的模型会拒绝携带该参数的请求（见 [快速模式](#快速模式)） |
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | 内联凭证，可留空；留空时 AgentHub 回退读环境变量 |
 
@@ -90,6 +91,20 @@ api_key = "sk-..."
 对于 MiniMax M3，`none` 会直接映射为 `reasoning.effort = "none"`。
 
 思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区拾取器只列出各档位，初始即显示 Agent 配置的档位——用户未手动选择时自动跟随配置下发（请求不携带档位，配置的修改持续生效）；选定某档后即固定为该会话的档位，随之后每次发送携带（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
+
+## 快速模式
+
+每个模型条目都可以选择进入厂商的快速推理档位（Web 模型弹窗中的「快速模式」开关、`penguin config model add` 的 `--fast-mode` / `--no-fast-mode`，或条目里的 `fast_mode = true`）。默认关闭；既有配置不受影响。
+
+开启后，会话请求携带 AgentHub 的 `fast_mode` 参数：OpenAI 协议 client 发送 `service_tier: "priority"`，Anthropic 协议 client 发送 `speed: "fast"` 并附带 fast-mode beta 请求头。快速档位按厂商的溢价价目计费，而条目记录的按 Token 单价不会随之调整——不上调三档价格的话，快速模式用量的成本统计会偏低。
+
+是否支持取决于模型与厂商，目录中没有能力标志，因此每个模型都提供该开关：
+
+- AgentHub client 没有 fast 档位的模型（Gemini、GLM、Kimi、DeepSeek，以及 Bedrock 上或 Claude 4.6 系列 id 的 Claude）会在**发起网络请求之前**拒绝该参数。该轮会话立即结束，错误信息带上厂商原文与设置入口指引——确定性的拒绝不会重试。
+- Anthropic 的 fast mode 是限部分 Opus 模型的 research preview：未获授权的组织在请求时会收到 429 限流错误。
+- 部分 OpenAI 兼容服务端会直接忽略该参数，按标准档位处理。
+
+连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`describe_image` 代读）不携带快速模式——只有会话自身的请求携带。
 
 ## 模型与 Agent 解耦
 

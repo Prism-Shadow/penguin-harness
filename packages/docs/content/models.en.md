@@ -26,6 +26,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `client_type` | Protocol hint (e.g. `openai`); inferred by AgentHub from the model id when omitted |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
+| `fast_mode` | Optional fast mode (off by default): opts the model's session requests into the provider's faster serving tier at premium pricing. Only `true` is ever persisted — omitting the field on a Web full-table save clears it. Models without a fast tier reject requests carrying it (see [Fast mode](#fast-mode)) |
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
 
@@ -90,6 +91,20 @@ A local inference server is just a `custom` entry: `client_type = "openai"`, `ba
 For MiniMax M3, `none` maps directly to `reasoning.effort = "none"`.
 
 Five levels: `none | low | medium | high | xhigh`, configured per Agent as `model.thinking_level` in `system_config.yaml`, default medium. The Web pickers offer `low` and above only (many models cannot disable thinking; `none` stays a valid stored value and still displays). The chat draft view offers a quick picker next to the model selector: a picked level is written back to the selected Agent's setting immediately (the switched-to level becomes that Agent's new default and applies from the next session). Inside an active session the thinking level is a **per-turn parameter**: the composer's picker lists only the levels and starts out showing the Agent config's level — while the user hasn't picked one it auto-follows the config (sends omit the level, so config edits keep taking effect); once picked, the level sticks for that session and rides on every subsequent send (it applies to that session's subsequent Tasks only and never writes back to the Agent config). See [Configuration](/configuration).
+
+## Fast mode
+
+Each model entry can opt into the provider's faster serving tier ("Fast mode" toggle in the Web model dialog, `--fast-mode` / `--no-fast-mode` on `penguin config model add`, `fast_mode = true` in the entry). Off by default; existing configs are unaffected.
+
+When enabled, session requests carry AgentHub's `fast_mode` flag: OpenAI-protocol clients send `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"` with the fast-mode beta header. Fast tiers are billed at the provider's premium price list, and the recorded per-token pricing does not adjust for it — costs shown for fast-mode usage are underestimated unless you raise the entry's price buckets.
+
+Support is model/provider dependent and there is no capability flag in the catalog, so the toggle is offered on every model:
+
+- Models whose AgentHub client has no fast tier (Gemini, GLM, Kimi, DeepSeek, and Claude on Bedrock or Claude 4.6 ids) reject the parameter **before any network request**. The session ends that turn immediately with the provider's message plus a pointer to the setting — a deterministic rejection is not retried.
+- Anthropic's fast mode is a research preview limited to certain Opus models; organizations without access receive a 429 rate-limit error at request time.
+- Some OpenAI-compatible servers simply ignore the flag and serve at the standard tier.
+
+The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `describe_image` proxy reads) never carry fast mode — only the session's own requests do.
 
 ## Models decoupled from Agents
 

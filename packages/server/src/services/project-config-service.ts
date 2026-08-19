@@ -403,6 +403,11 @@ export class ProjectConfigService {
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     const clientType = req.clientType ?? optStr(entry.client_type);
+    // Fast mode follows the form draft like baseUrl (the frontend always sends the current
+    // toggle), falling back to the stored annotation: the probe then exercises exactly the
+    // serving tier sessions would use, so a model rejecting fast_mode fails the test with
+    // the actionable message before the config is saved.
+    const fastMode = req.fastMode ?? entry.fast_mode === true;
 
     const startedAt = Date.now();
     try {
@@ -417,6 +422,7 @@ export class ProjectConfigService {
         ...(apiKey ? { apiKey } : {}),
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
+        ...(fastMode ? { fastMode: true } : {}),
         tools: [],
         thinkingLevel: "none",
         // Speed mode pairs a raised cap with a prompt that keeps generating (see
@@ -508,6 +514,8 @@ export class ProjectConfigService {
         const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
         // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
         const maxTokens = optNum(m.max_tokens);
+        // Fast mode: TOML annotation only (user-owned); only `true` is reported — absent = off.
+        const fastMode = m.fast_mode === true ? true : undefined;
         // Display name: the explicit TOML field (user-edited) takes priority, then the built-in catalog.
         const displayName = optStr(m.display_name) ?? cat?.displayName;
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
@@ -528,6 +536,7 @@ export class ProjectConfigService {
           ...(clientType ? { clientType } : {}),
           ...(vision !== undefined ? { vision } : {}),
           ...(maxTokens !== undefined ? { maxTokens } : {}),
+          ...(fastMode !== undefined ? { fastMode } : {}),
           ...(envKey ? { envKey } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
@@ -605,6 +614,7 @@ export class ProjectConfigService {
       delete next.client_type;
       delete next.vision;
       delete next.max_tokens;
+      delete next.fast_mode;
       delete next.pricing;
       delete next.display_name;
       // Leftover key from the old concatenated format (request_model_id): defensively stripped, never written to disk again.
@@ -624,6 +634,8 @@ export class ProjectConfigService {
       if (entry.vision !== undefined) next.vision = entry.vision;
       // Inherit-the-Agent-value by default: only written to disk when explicitly annotated (omitted on a full-table PUT = the annotation is cleared).
       if (entry.maxTokens !== undefined) next.max_tokens = entry.maxTokens;
+      // Off by default: only `true` is written to disk (absent = off); omitted or false clears the annotation.
+      if (entry.fastMode === true) next.fast_mode = true;
       if (entry.pricing !== undefined) {
         next.pricing = {
           unit: "usd_per_mtok",

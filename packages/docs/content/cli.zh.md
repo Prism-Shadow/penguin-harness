@@ -89,6 +89,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--max-tokens <n>` | 该模型的最大输出长度（正整数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用；小上下文模型建议调低 |
 | `--client-type <type>` | 客户端协议类型 |
 | `--vision` / `--no-vision` | 标记是否支持视觉输入 |
+| `--fast-mode` / `--no-fast-mode` | 开启 / 关闭快速模式（输出更快、按溢价计费；默认关闭——没有 fast 档位的模型会拒绝携带该参数的请求）。两者都不给则保留原值 |
 | `--price-cache-read <n>` | 缓存读价格 |
 | `--price-cache-write <n>` | 缓存写价格 |
 | `--price-output <n>` | 输出价格 |

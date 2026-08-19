@@ -88,6 +88,18 @@ describe("toRow (DTO → row edit state)", () => {
     const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
     expect(plain.maxTokens).toBe("");
   });
+
+  it("carries the per-model fast mode through; absent = off (the toggle's default)", () => {
+    const fast = toRow({
+      provider: "custom",
+      modelId: "local-qwen",
+      fastMode: true,
+      isDefault: false,
+    });
+    expect(fast.fastMode).toBe(true);
+    const plain = toRow({ provider: "custom", modelId: "local-qwen", isDefault: false });
+    expect(plain.fastMode).toBe(false);
+  });
 });
 
 describe("nextPointers (where the default/vision-agent model pointers land after save; always paired)", () => {

@@ -828,6 +828,12 @@ export class Agent {
           ? { contextWindow: modelEntry.context_window }
           : {}),
         ...(maxTokens !== undefined ? { maxTokens } : {}),
+        // Fast mode is a session-request annotation: it rides llmConfig (and therefore the
+        // post-compaction rebuild), while the bare/meta LLM below and the vision describer
+        // deliberately skip it — their background requests gain nothing user-facing from a
+        // premium tier, and skipping keeps them working (titles included) even while the
+        // annotation is enabled on a model that rejects it.
+        ...(modelEntry.fast_mode === true ? { fastMode: true } : {}),
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         ...(this.state.systemConfig.model?.timeoutMs !== undefined
           ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
