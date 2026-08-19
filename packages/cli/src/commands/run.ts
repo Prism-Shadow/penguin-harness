@@ -4,7 +4,7 @@
  *   penguin run -m <msg> [--model-id <id> --provider <group>] [--workspace <path>]
  *               [--project-id <id>] [--agent-id <id>]
  *               [--approve <allow-all|deny-all|read-only|always-ask>]
- *               [--goal [budget]]
+ *               [--thinking <low|medium|high|xhigh>] [--goal [budget]]
  *
  * Uses the current directory when Workspace is unspecified; uses the Project's default model
  * when model is unspecified. A model reference is always an explicit `(provider, model_id)`
@@ -14,6 +14,10 @@
  * `--goal` switches to goal mode: `-m` becomes the objective and the run loops until the
  * goal reaches a terminal state (optional value = token budget, e.g. `--goal 500k`); only a
  * completed goal exits 0.
+ * `--thinking` pins the Session's thinking level at creation (subagent sessions follow it);
+ * omitted, the Agent's configured level applies. Tool output is never collapsed here —
+ * `penguin run` output feeds pipes and nested CLIs, so every line must survive (the
+ * collapsed display is a chat-REPL affair).
  * Docs: /docs/cli § "penguin run".
  */
 import type { Command } from "commander";
@@ -21,6 +25,7 @@ import { UNLIMITED_BUDGET, createAgent, userText, VERSION } from "@prismshadow/p
 import { StreamRenderer } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { parseTokenBudget } from "../goal-command.js";
+import { resolveThinkingLevel } from "../thinking-command.js";
 import { denyActivePrompt, resolveApprovalMode } from "../approval.js";
 import type { Messages } from "../i18n.js";
 
@@ -35,6 +40,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)
     .option("--approve <mode>", t.common.approve)
+    .option("--thinking <level>", t.common.thinking)
     .option("--goal [budget]", t.run.goal)
     .action(async (opts) => {
       // The model reference is a pair: commander can only require each option on its own,
@@ -64,6 +70,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
         }
       }
       const mode = resolveApprovalMode(opts.approve, t);
+      const thinking = resolveThinkingLevel(opts.thinking, t);
 
       const agent = await createAgent({
         ...(opts.agentId ? { agentId: opts.agentId } : {}),
@@ -74,6 +81,7 @@ export function registerRunCommand(program: Command, t: Messages): void {
         workspaceDir: opts.workspace ?? process.cwd(),
         ...(opts.modelId ? { modelId: opts.modelId } : {}),
         ...(opts.provider ? { provider: opts.provider } : {}),
+        ...(thinking ? { thinkingLevel: thinking } : {}),
       });
 
       const out = process.stdout;

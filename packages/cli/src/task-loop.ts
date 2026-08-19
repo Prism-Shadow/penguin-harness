@@ -13,7 +13,13 @@
  * outcome summary read from the stream's terminal `goal_finished` event.
  */
 import { goalFinishedOf, isEventMessage, isGoalRoundInput } from "@prismshadow/penguin-core";
-import type { ApproveFn, GoalOutcome, OmniMessage, Session } from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  GoalOutcome,
+  OmniMessage,
+  Session,
+  ThinkingLevelName,
+} from "@prismshadow/penguin-core";
 import { dim, humanizeTokens } from "./render.js";
 import type { StreamRenderer } from "./render.js";
 import { makeApprove, promptApproval, type ApprovalMode } from "./approval.js";
@@ -24,6 +30,11 @@ export interface RunTaskOptions {
   mode?: ApprovalMode;
   /** Interrupt signal (Ctrl-C, etc.). */
   signal?: AbortSignal;
+  /**
+   * Per-run thinking-level override (`RunOptions.thinkingLevel`); omitted = the Session's
+   * construction-time default. In goal mode core reuses it for every round.
+   */
+  thinkingLevel?: ThinkingLevelName;
   renderer: StreamRenderer;
   /** The actual Q&A for interactive approval; defaults to the one-off `promptApproval`. */
   interactivePrompt?: ApproveFn;
@@ -115,6 +126,7 @@ export async function runTask(
     for await (const msg of session.run(prompt, {
       approve,
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
       ...(goal ? { goal: { budget: goal.budget } } : {}),
     })) {
       if (isEventMessage(msg) && msg.payload.type === "abort" && (msg.origin?.length ?? 0) === 0) {
