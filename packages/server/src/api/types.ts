@@ -548,7 +548,7 @@ export interface ChatDefaultsDto {
   /**
    * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
    * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
-   * "none" — only the four selectable tiers.
+   * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
 }
@@ -972,7 +972,7 @@ export interface SessionResponse {
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
   /**
-   * Pin this Session's thinking level (`none | low | medium | high | xhigh`, anything else
+   * Pin this Session's thinking level (`none | low | medium | high | xhigh | max`, anything else
    * is a 400). It applies to every later run of the Session that doesn't carry its own
    * level, and replaces the Agent-config fallback for this Session. There is no unpin:
    * the picker only offers concrete levels.
@@ -1090,7 +1090,7 @@ export interface TaskCreateRequest {
   input: TaskInputPart[];
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
-   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
+   * `none | low | medium | high | xhigh | max`, anything else is a 400). Omitted = falls back to
    * the Session's pinned level (`SessionInfo.thinkingLevel`) and, when that is unset too,
    * to the Agent config's `model.thinking_level`. A queued follow-up (`queueIfBusy`) keeps
    * its level and applies it when it auto-starts.

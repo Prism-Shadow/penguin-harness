@@ -13,12 +13,13 @@ const ENTRIES: ReadonlyArray<readonly [string, string]> = [
   ["medium", "Medium tier."],
   ["high", "High tier."],
   ["xhigh", "Extra-high tier."],
+  ["max", "Max tier."],
 ];
 
 describe("optionRows", () => {
   it("drops the '' inherit row and keeps dictionary order", () => {
     const rows = optionRows(ENTRIES);
-    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(rows.some((r) => r.value === "")).toBe(false);
   });
 

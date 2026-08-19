@@ -66,7 +66,14 @@ import {
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 
-const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
+const THINKING_LEVELS: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
 function asRecord(v: unknown): Record<string, unknown> {

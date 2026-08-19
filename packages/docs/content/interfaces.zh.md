@@ -86,7 +86,7 @@ interface GenerativeModelConfig {
   contextWindow?: number;
   maxTokens?: number;
   fastMode?: boolean;              // 单模型快速模式(AgentHub fast_mode;溢价快速档位),默认关闭
-  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh"
+  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // 单次 Request 超时,默认 120000;<=0 关闭
   toolCallIds?: ToolCallIdAllocator;   // Session 级 tool_call_id 唯一性登记表(压缩重建时传同一实例)
 }

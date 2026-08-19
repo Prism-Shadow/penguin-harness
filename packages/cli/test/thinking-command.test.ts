@@ -5,20 +5,42 @@ import {
   parseThinkingLevel,
 } from "../src/thinking-command.js";
 import type { ThinkingConfigSource } from "../src/thinking-command.js";
+import { getMessages } from "../src/i18n.js";
+import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 
 describe("parseThinkingLevel", () => {
-  it("accepts the four selectable tiers (trimmed, case-insensitive)", () => {
+  it("accepts every selectable tier (trimmed, case-insensitive)", () => {
     expect(parseThinkingLevel("low")).toBe("low");
     expect(parseThinkingLevel("medium")).toBe("medium");
     expect(parseThinkingLevel("  HIGH ")).toBe("high");
     expect(parseThinkingLevel("xhigh")).toBe("xhigh");
+    // "max" joined the ladder with AgentHub 0.4.4; the flag and /thinking accept it because
+    // both validate against core's DEFAULT_CHAT_THINKING_LEVELS, and the printed sets say so.
+    expect(parseThinkingLevel("MAX")).toBe("max");
   });
 
   it('rejects "none" (a valid stored value but never selectable, mirroring the web picker) and garbage', () => {
     expect(parseThinkingLevel("none")).toBeNull();
     expect(parseThinkingLevel("")).toBeNull();
-    expect(parseThinkingLevel("max")).toBeNull();
     expect(parseThinkingLevel("x-high")).toBeNull();
+  });
+});
+
+describe("the advertised tier set matches the accepted one", () => {
+  it("every tier the messages name is actually accepted, in both locales", () => {
+    // #322 spelled the ladder out in free text rather than deriving it, so widening the
+    // ladder in core silently desynced the printed set from the accepted one. Pin it.
+    for (const messages of [getMessages("en"), getMessages("zh")]) {
+      const printed = [
+        messages.common.thinking,
+        messages.thinkingCurrentDefault("low"),
+        messages.thinkingCurrentOverride("low", "medium"),
+        messages.thinkingInvalid("bogus"),
+      ].join(" ");
+      for (const level of DEFAULT_CHAT_THINKING_LEVELS) {
+        expect(printed).toContain(level);
+      }
+    }
   });
 });
 
@@ -43,8 +65,8 @@ describe("parseThinkingCommand", () => {
 
 describe("configuredThinkingLevel (display mirror of core's resolution chain)", () => {
   const source = (
-    agentLevel: "none" | "low" | "medium" | "high" | "xhigh" | undefined,
-    projectDefault: "low" | "medium" | "high" | "xhigh" | undefined,
+    agentLevel: "none" | "low" | "medium" | "high" | "xhigh" | "max" | undefined,
+    projectDefault: "low" | "medium" | "high" | "xhigh" | "max" | undefined,
   ): ThinkingConfigSource => ({
     state: { systemConfig: agentLevel ? { model: { thinking_level: agentLevel } } : {} },
     projectConfig: projectDefault ? { default_chat: { thinking_level: projectDefault } } : {},

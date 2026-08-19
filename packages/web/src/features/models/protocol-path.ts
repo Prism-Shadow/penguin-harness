@@ -1,7 +1,7 @@
 /**
  * Protocol-path suffix for the config dialog's base URL field: the path the AgentHub
  * client appends to a custom base URL, shown inside the field so the user knows which
- * endpoint shape the URL must serve. Verified against the vendored agenthub 0.4.2
+ * endpoint shape the URL must serve. Verified against the vendored agenthub 0.4.4
  * clients and the SDKs they construct:
  * - Anthropic direct (claude-* clients, `@anthropic-ai/sdk`): POST {base}/v1/messages —
  *   the SDK's default base URL (https://api.anthropic.com) carries no /v1; the request

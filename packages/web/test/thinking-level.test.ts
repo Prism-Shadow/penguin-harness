@@ -1,6 +1,6 @@
 /**
  * thinking-level.ts unit tests: the conversation-time pickers' short-name lookup and the
- * selectable list — both pickers offer only low/medium/high/xhigh (many models cannot disable
+ * selectable list — both pickers offer only low/medium/high/xhigh/max (many models cannot disable
  * thinking; there is no "follow config" row — the session picker auto-follows the Agent
  * config by initializing its display to it), while "none" stays a displayable stored value;
  * "" (internally "untouched"/no override) and a legacy meta's "default" resolve to null so
@@ -29,27 +29,29 @@ import type { ThinkingSwitchItem } from "../src/features/chat/thinking-level";
 
 /** Mirrors the shape of S.chat.thinkingLevelNames. */
 const NAMES: Readonly<Record<string, string>> = {
-  none: "None",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extreme High",
+  none: "none",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "xhigh",
+  max: "max",
 };
 
 describe("thinking level lists", () => {
-  it("offers only low/medium/high/xhigh — no 'none' (many models cannot disable thinking)", () => {
-    expect(SELECTABLE_THINKING_LEVELS).toEqual(["low", "medium", "high", "xhigh"]);
+  it("offers only low/medium/high/xhigh/max — no 'none' (many models cannot disable thinking)", () => {
+    expect(SELECTABLE_THINKING_LEVELS).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(SELECTABLE_THINKING_LEVELS).not.toContain("none");
   });
 
-  it("keeps all five stored levels displayable (a legacy 'none' is shown, never offered)", () => {
-    expect(THINKING_LEVELS).toEqual(["none", "low", "medium", "high", "xhigh"]);
+  it("keeps every stored level displayable (a legacy 'none' is shown, never offered)", () => {
+    expect(THINKING_LEVELS).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
     expect(THINKING_LEVELS.map((l) => thinkingLevelLabel(NAMES, l))).toEqual([
-      "None",
-      "Low",
-      "Medium",
-      "High",
-      "Extreme High",
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
     ]);
   });
 });
@@ -88,12 +90,13 @@ describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
     ["medium", "Medium tier."],
     ["high", "High tier."],
     ["xhigh", "Extra-high tier."],
+    ["max", "Max tier."],
   ];
 
   it("filters the '' inherit row and keeps dictionary order; no none row normally", () => {
-    for (const stored of [undefined, "", "medium", "xhigh"]) {
+    for (const stored of [undefined, "", "medium", "xhigh", "max"]) {
       const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", stored);
-      expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh"]);
+      expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "max"]);
       expect(rows.some((r) => r.value === "none")).toBe(false);
       expect(rows[0]).toMatchObject({
         triggerLabel: "low",
@@ -105,7 +108,7 @@ describe("thinkingLevelOptionsFor (agent-settings dropdown assembly)", () => {
 
   it("appends a display-only none row when the persisted config stores none (backward compat)", () => {
     const rows = thinkingLevelOptionsFor(OPTIONS, "legacy none", "none");
-    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "none"]);
+    expect(rows.map((r) => r.value)).toEqual(["low", "medium", "high", "xhigh", "max", "none"]);
     expect(rows.at(-1)).toEqual({
       value: "none",
       triggerLabel: "none",

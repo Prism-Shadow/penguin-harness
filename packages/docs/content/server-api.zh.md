@@ -268,8 +268,8 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 先回退到该 Session 固定的档位，再回退到 Agent 配置
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
+  // 本次 Task 的思考等级（逐轮参数，六档之一；非法值 400）；缺省 = 先回退到该 Session 固定的档位，再回退到 Agent 配置
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 type TaskInputPart =
   | { type: "text"; text: string }

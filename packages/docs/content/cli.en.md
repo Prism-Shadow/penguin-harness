@@ -27,7 +27,7 @@ penguin run -m "Summarize the code structure of this directory"
 | `--agent-id <id>` | Agent to use |
 | `--workspace <path>` | Workspace directory; defaults to the current directory and must exist |
 | `--approve <mode>` | Approval mode, see below |
-| `--thinking <level>` | Thinking level for the Session: `low` / `medium` / `high` / `xhigh`. Omitted, the configured chain applies (the Agent's `model.thinking_level`, else the Project's `default_chat.thinking_level`, else `medium`). Pinned at Session creation, so spawned subagent sessions follow it |
+| `--thinking <level>` | Thinking level for the Session: `low` / `medium` / `high` / `xhigh` / `max`. Omitted, the configured chain applies (the Agent's `model.thinking_level`, else the Project's `default_chat.thinking_level`, else `medium`). Pinned at Session creation, so spawned subagent sessions follow it |
 
 ## penguin chat
 
@@ -48,7 +48,7 @@ In-REPL commands:
 | `/compact` | Proactively compact the current context |
 | `/clear` | Start a fresh blank Session in place; the old Session stays on disk and can be resumed with `--resume` |
 | `/thinking` | Show the thinking level the next turn will run at, and whether it is this Session's default or an active per-turn override (which also names the default it overrides) |
-| `/thinking <level>` | Override the thinking level (`low` / `medium` / `high` / `xhigh`) for subsequent turns of this chat; never written back to the Agent config. The override applies to this Session's own turns only — subagent sessions are spawned with the level the Session was created with |
+| `/thinking <level>` | Override the thinking level (`low` / `medium` / `high` / `xhigh` / `max`) for subsequent turns of this chat; never written back to the Agent config. The override applies to this Session's own turns only — subagent sessions are spawned with the level the Session was created with |
 | `/verbose` | Toggle between collapsed and full tool output |
 | `/exit`, `/quit` | Quit |
 

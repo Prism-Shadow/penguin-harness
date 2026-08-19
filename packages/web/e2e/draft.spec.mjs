@@ -97,18 +97,20 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
-  // seeded default (medium, short name 中); the menu carries a title bar and the short-name
-  // rows 低/中/高/极高 only — no descriptions, no default row, and no 无 (many models cannot
-  // disable thinking); picking 高 writes straight through to the Agent config, so the session
-  // created on send runs with it and it becomes the Agent's new default.
+  // seeded default (medium); the menu carries a title bar and the rows 低/中/高/极高/最高
+  // only — no descriptions, no default row, and no 无 (many models cannot disable thinking).
+  // Each row is labelled with the wire value it sends, so the names read "高 (high)".
+  // Picking 高 (high) writes straight through to the Agent config, so the session created on
+  // send runs with it and it becomes the Agent's new default.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
-  await expect(thinkingBtn).toContainText("中");
+  await expect(thinkingBtn).toContainText("中 (medium)");
   await thinkingBtn.click();
   await expect(page.getByText("思考等级", { exact: true })).toBeVisible(); // menu title bar
-  await expect(page.getByRole("button", { name: "低", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "无", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "高", exact: true }).click();
-  await expect(thinkingBtn).toContainText("高");
+  await expect(page.getByRole("button", { name: "低 (low)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "最高 (max)", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "无 (none)", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
+  await expect(thinkingBtn).toContainText("高 (high)");
   await expect
     .poll(async () => {
       const cfg = await (
@@ -138,7 +140,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
   await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
-  await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高");
+  await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高 (high)");
   // Send: the Session is only created now, and the selections land faithfully in its meta.
   await page.getByRole("button", { name: "发送" }).click();
   await page.waitForURL(/\/chat\/session-/);
@@ -159,7 +161,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   ).json();
   const meta = replay.messages.find((m) => m.type === "session_meta");
   expect(meta?.payload?.thinking_level).toBeUndefined();
-  await expect(page.getByTitle("思考等级：高")).toBeVisible();
+  await expect(page.getByTitle("思考等级：高 (high)")).toBeVisible();
 
   // On a successful send the cache clears — except the model selection, which carries over as
   // the next conversation's default (switch-becomes-default, like the thinking level above).

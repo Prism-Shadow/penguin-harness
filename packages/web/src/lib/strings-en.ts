@@ -301,7 +301,11 @@ export const en: Strings = {
       ["high", "Enables a higher tier of extended reasoning; slower responses."],
       [
         "xhigh",
-        "Enables the highest tier of extended reasoning; identical to high on some models.",
+        "Enables an extended tier of reasoning beyond high; identical to high on some models.",
+      ],
+      [
+        "max",
+        "Enables the deepest tier of extended reasoning; slowest and identical to xhigh on some models.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     thinkingLevelNoneKept:
@@ -890,12 +894,14 @@ export const en: Strings = {
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
     thinkingLevel: "Thinking level",
+    /** Tier names for the thinking-level controls: the wire value itself, so the label names the value actually sent (per maintainer request). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
-      none: "None",
-      low: "Low",
-      medium: "Medium",
-      high: "High",
-      xhigh: "Extreme High",
+      none: "none",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
     },
     thinkingSwitchTitle: "Switch thinking level",
     thinkingSwitchBody: (to: string): string =>

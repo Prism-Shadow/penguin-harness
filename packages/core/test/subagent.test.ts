@@ -250,7 +250,7 @@ describe("run_subagent tool (foreground)", () => {
       );
       expect(result?.stopReason).toBe("failed");
       expect(ownDeltas(out)).toContain("invalid `thinking_level`");
-      expect(ownDeltas(out)).toContain("low / medium / high / xhigh");
+      expect(ownDeltas(out)).toContain("low / medium / high / xhigh / max");
       expect(spawned).toHaveLength(0);
     }
   });

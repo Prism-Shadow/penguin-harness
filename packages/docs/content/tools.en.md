@@ -172,7 +172,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   agent_id?: string;       // the child Agent; defaults to the current Agent
   model_id?: string;       // the child Session's model, paired with provider; omit both to inherit the parent Session's model
   provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
-  thinking_level?: string; // "low" | "medium" | "high" | "xhigh"; omit to inherit the parent Session's level
+  thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max"; omit to inherit the parent Session's level
   yield_time_ms?: number;  // foreground wait; default 300000
   description: string;     // required while call_description is on
 }

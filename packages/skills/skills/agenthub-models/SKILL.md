@@ -124,7 +124,7 @@ for await (const event of client.streamingResponseStateful({
 ```
 
 - Each `event` is a `UniEvent`: `event_type` is `start` | `delta` | `stop`, and `content_items` carry the increments.
-- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `XHIGH`), `tool_choice`, `prompt_caching`, `fast_mode` and `tools`.
+- `config` accepts `max_tokens`, `temperature`, `system_prompt`, `thinking_level` (the `ThinkingLevel` enum, `NONE` to `MAX`), `tool_choice`, `prompt_caching`, `fast_mode` and `tools`.
 - `streamingResponseStateful` keeps conversation history inside the client; manage it with `getHistory()` / `setHistory(history)` / `clearHistory()`. The stateless variant is `streamingResponse({ messages, config })`.
 
 ## Config parameters the model may reject
@@ -141,7 +141,7 @@ try {
 }
 ```
 
-- `thinking_level` never throws: every client maps each level onto the closest one the model supports. Kimi K3 reasons unconditionally, so `NONE` degrades to its lowest effort rather than disabling thinking; GLM-5.2 sends `reasoning_effort` alongside its `thinking` block and only `NONE` disables it. GLM-5.3 thinks unconditionally (`NONE` degrades to the light `low` effort) and clamps `reasoning_effort` to `low`/`high`/`max`; `gemini-3.7-*` clamps to `low`/`medium`/`high` (`NONE` degrades to `low`).
+- `thinking_level` never throws: every client maps each level onto the closest one the model supports, and `MAX` (the tier above `XHIGH`, added in AgentHub 0.4.4) degrades silently wherever the vendor has no such tier — Gemini and MiniMax M3 stop at `high`. Kimi K3 reasons unconditionally, so `NONE` degrades to its lowest effort rather than disabling thinking; GLM-5.2 sends `reasoning_effort` alongside its `thinking` block and only `NONE` disables it. GLM-5.3 thinks unconditionally (`NONE` degrades to the light `low` effort) and clamps `reasoning_effort` to `low`/`high`/`max`; `gemini-3.7-*` clamps to `low`/`medium`/`high` (`NONE` degrades to `low`). DeepSeek V4 accepts `low`/`high`/`max` and maps `medium` and `xhigh` onto `high` server-side, so since 0.4.4 `LOW` sends `low` (it sent `high`) and `XHIGH` sends `high` (it sent `max`).
 - `temperature` is rejected outright by Gemini 3.6/3.7 — those generations deprecated the sampling parameters, so the client refuses them instead of sending a value the API ignores. GPT-5.5/5.6, the whole Claude 4.6+ family (4.6 included since AgentHub 0.4.2), DeepSeek V4, Kimi K2.6 and Kimi K3 accept only the protocol default `1.0` and reject any other value. Gemini 3, GLM and the generic protocol clients (`openai-chat` / `openai-responses` / `ant-messages`) pass it through.
 - `tool_choice`: `"auto"` is safe everywhere. Claude accepts a single forced tool name; DeepSeek V4 and Kimi K2.6 allow `"auto"` / `"none"`; Kimi K3 adds `"required"` but refuses a specific tool (K2.x also rejects `"required"`); GLM only accepts `"auto"`.
 - `prompt_caching`: every client accepts `PromptCaching.ENABLE` and rejects the other values — caching is on by default and Kimi K3 caches context automatically.

@@ -27,7 +27,7 @@ penguin run -m "总结当前目录的代码结构"
 | `--agent-id <id>` | 指定 Agent |
 | `--workspace <path>` | Workspace 目录，默认当前目录，必须已存在 |
 | `--approve <mode>` | 审批模式，见下文 |
-| `--thinking <level>` | 本 Session 的思考等级：`low` / `medium` / `high` / `xhigh`。省略时按配置链取值（Agent 的 `model.thinking_level`，其次 Project 的 `default_chat.thinking_level`，最后 `medium`）。在 Session 创建时钉定，派生的子会话随之生效 |
+| `--thinking <level>` | 本 Session 的思考等级：`low` / `medium` / `high` / `xhigh` / `max`。省略时按配置链取值（Agent 的 `model.thinking_level`，其次 Project 的 `default_chat.thinking_level`，最后 `medium`）。在 Session 创建时钉定，派生的子会话随之生效 |
 
 ## penguin chat
 
@@ -48,7 +48,7 @@ REPL 内命令：
 | `/compact` | 主动压缩当前上下文 |
 | `/clear` | 原地开启全新空白 Session；原会话保留在磁盘上，仍可用 `--resume` 恢复 |
 | `/thinking` | 显示下一轮将使用的思考等级，并区分它是本 Session 的缺省值还是生效中的逐轮覆盖值（后者同时给出被覆盖的缺省值） |
-| `/thinking <level>` | 覆盖本次对话后续轮次的思考等级（`low` / `medium` / `high` / `xhigh`）；不会写回 Agent 配置。该覆盖只作用于本 Session 自己的轮次——派生的子会话仍按 Session 创建时的等级启动 |
+| `/thinking <level>` | 覆盖本次对话后续轮次的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；不会写回 Agent 配置。该覆盖只作用于本 Session 自己的轮次——派生的子会话仍按 Session 创建时的等级启动 |
 | `/verbose` | 在折叠与完整工具输出之间切换 |
 | `/exit`、`/quit` | 退出 |
 

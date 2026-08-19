@@ -269,9 +269,9 @@ Key request bodies (explicit keys):
 // POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
+  // Thinking level for this Task (a per-turn parameter, one of the six names; 400 otherwise);
   // omitted = falls back to the Session's pinned level, then to the Agent config
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 type TaskInputPart =
   | { type: "text"; text: string }

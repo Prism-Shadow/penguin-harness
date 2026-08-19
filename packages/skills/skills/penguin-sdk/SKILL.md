@@ -99,7 +99,7 @@ session.dispose();
 
 - `createSession({ workspaceDir, provider, modelId })` — `workspaceDir` must already exist (omit for a temporary workspace); the model reference is the `(provider, modelId)` pair, so pass both to pick a configured model or neither for the project default — passing one alone throws.
 - The `approve` callback gates every tool call; **omitting it denies everything**.
-- `opts.thinkingLevel` (`"none" | "low" | "medium" | "high" | "xhigh"`) overrides the agent's default (`model.thinking_level` in `system_config.yaml`) for this turn only — raise it for hard questions, drop it for latency-sensitive calls like titling or classification.
+- `opts.thinkingLevel` (`"none" | "low" | "medium" | "high" | "xhigh" | "max"`) overrides the agent's default (`model.thinking_level` in `system_config.yaml`) for this turn only — raise it for hard questions, drop it for latency-sensitive calls like titling or classification.
 - Session lifetime is the app's memory model: reuse one Session for a stateful chat (context accumulates, as above), create one per request for stateless QA (the RAG recipe below); either way call `session.dispose()` when done to release background processes.
 - An Agent's behavior is edited in its `agent_state/` files (system_config.yaml, AGENTS.md, skills/), not in code.
 

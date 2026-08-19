@@ -3,7 +3,7 @@
  *
  *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
- *                [--thinking <low|medium|high|xhigh>] [--verbose]
+ *                [--thinking <low|medium|high|xhigh|max>] [--verbose]
  *
  * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
  * goal mode (looping until the goal reaches a terminal state);
