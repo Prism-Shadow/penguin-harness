@@ -1088,12 +1088,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenAI (official USD pricing) --
   {
-    // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier; served
-    // by AgentHub 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
+    // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier, so the
+    // row names the Sol codename its siblings and the openai/gpt-5.6-sol row already show —
+    // the id stays bare, only the label says which variant this is; served by AgentHub
+    // 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
     // OpenRouter rows above, which carry the gateway's (currently discounted) rates instead
     // of this list price.
     modelId: "gpt-5.6",
-    displayName: "GPT-5.6",
+    displayName: "GPT-5.6 Sol",
     provider: "openai",
     contextWindow: 1050000,
     pricing: usd(0.5, 5, 30),

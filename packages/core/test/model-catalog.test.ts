@@ -458,8 +458,13 @@ describe("model-catalog", () => {
       sonnet5.pricing!.cache_write,
       sonnet5.pricing!.output,
     ]).toEqual([0.2, 2.5, 10]);
-    // The same model resold by a gateway keeps one display name across groups.
+    // The same model resold by a gateway keeps one display name across groups. The bare
+    // `gpt-5.6` id is the same tier OpenRouter spells `openai/gpt-5.6-sol`, so it displays
+    // that codename too rather than leaving the variant unnamed.
     for (const [directProvider, directId, gatewayProvider, gatewayId] of [
+      ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
+      ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
+      ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
       ["anthropic", "claude-fable-5", "openrouter", "anthropic/claude-fable-5"],
       ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
       ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
@@ -545,6 +550,9 @@ describe("model-catalog", () => {
     expect([...gateway].sort()).toEqual(
       [...direct.map((id) => (id === "gpt-5.6" ? "openai/gpt-5.6-sol" : `openai/${id}`))].sort(),
     );
+    // Because it is that tier, the alias is labelled with the sol codename its siblings and
+    // its gateway listing carry; the id users send stays bare.
+    expect(catalogEntryFor("openai", "gpt-5.6")!.displayName).toBe("GPT-5.6 Sol");
     // Direct rows are auto-routed by id (AgentHub 0.4.2's native gpt-5.6 client); only the
     // gateway rows pin a protocol, and they pin Responses.
     for (const m of MODEL_CATALOG.filter((m) => m.provider === "openai")) {
