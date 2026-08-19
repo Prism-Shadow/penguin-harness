@@ -40,6 +40,14 @@ export interface Manifest {
   cli?: { bundle: string };
   /** One gzip(JSON.stringify({ files })) artifact, restored straight into memory. */
   web?: { manifest: string };
+  /**
+   * Files the pushed platform needs as REAL files on disk, unpacked under this directory
+   * (relative to hmrDir). The web artifact stays in memory because it is only ever served
+   * as bytes; an asset is something the platform hands to the OS — a native `.node` the
+   * loader must resolve by path, a helper binary it execs — so it has to exist on the
+   * filesystem, with its exec bit intact.
+   */
+  assets?: { dir: string };
 }
 
 /** Reads and parses `<root>/hmr/harness.json`; null when missing or corrupt (nothing committed yet). */

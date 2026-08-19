@@ -154,6 +154,67 @@ async function readWebManifest() {
   return files;
 }
 
+/**
+ * Native packages that travel with a push, by name. A package listed here is only sent
+ * when it actually resolves from the server package, so this list is the whole of the
+ * coupling: a platform that starts needing a native module adds its name, and one that
+ * does not have it installed simply pushes nothing.
+ */
+const NATIVE_PACKAGES = ["node-pty"];
+
+/**
+ * Native modules the pushed platform needs as real files. A bundle cannot carry one: it is
+ * imported from the runtime's data root, where a package's own relative
+ * `build/Release/*.node` does not resolve. So the package ships whole — its JS, its
+ * prebuilds and any helper binaries — and the runtime unpacks it next to the bundle
+ * (hmr/host.ts's UpgradeAssets), where the package's normal resolution works again.
+ *
+ * `exec` carries the files whose exec bit must survive the trip: base64 has no mode, and a
+ * helper binary without it fails to spawn (node-pty's darwin `spawn-helper` is the case
+ * that forced this — it ships 0644 in the tarball).
+ */
+async function readNativeAssets() {
+  const files = {};
+  const exec = [];
+  for (const name of NATIVE_PACKAGES) {
+    let pkgDir;
+    try {
+      pkgDir = path.dirname(
+        require.resolve(`${name}/package.json`, {
+          paths: [path.join(ROOT, "packages", "server")],
+        }),
+      );
+    } catch {
+      continue; // not a dependency of this build: nothing to carry
+    }
+    // Only what the loader reads at runtime. `.pdb` files are Windows debug symbols that
+    // nothing ever loads and are 90% of node-pty's bytes (58 MB → 3 MB without them),
+    // which is the difference between a push that crosses an ssh tunnel and one that does
+    // not; `.lib` are link-time import libraries, equally never read at runtime.
+    const wanted = (rel) =>
+      !rel.endsWith(".pdb") &&
+      !rel.endsWith(".lib") &&
+      (rel === "package.json" ||
+        rel.startsWith("lib/") ||
+        rel.startsWith("build/Release/") ||
+        rel.startsWith("prebuilds/"));
+    for (const entry of await fsp.readdir(pkgDir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const abs = path.join(entry.parentPath, entry.name);
+      const rel = path.relative(pkgDir, abs).split(path.sep).join("/");
+      if (!wanted(rel)) continue;
+      const target = `node_modules/${name}/${rel}`;
+      files[target] = (await fsp.readFile(abs)).toString("base64");
+      // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit
+      // from this list, so push it regardless of how it looks on this machine.
+      if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
+        exec.push(target);
+      }
+    }
+  }
+  return { files, exec };
+}
+
 async function main() {
   if (skipWebBuild) {
     if (!fs.existsSync(path.join(WEB_DIST, "index.html"))) {
@@ -173,17 +234,21 @@ async function main() {
   await compileEntry(CLI_ENTRY, CLI_BUNDLE);
 
   const files = await readWebManifest();
+  const assets = await readNativeAssets();
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
         platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
         web: { files },
+        // Omitted rather than sent empty: an empty set would still content-address to a
+        // directory and leave an assets pointer in harness.json for nothing.
+        ...(Object.keys(assets.files).length > 0 ? { assets } : {}),
       }),
     ),
   );
   log(
-    `pushing ${Object.keys(files).length} web files + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
+    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );
 
   const cookie = await login();
