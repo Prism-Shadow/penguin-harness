@@ -3,7 +3,7 @@ title: Desktop app
 description: A double-click install that opens already signed in — the route that asks the least of a terminal.
 ---
 
-The full Web experience as a standalone application: it embeds the server and opens already signed in — no login page, no initial password to copy, and nothing to install from a command line. Builds are not signed yet, so macOS and Linux may each need one command the first time the system blocks the app; the box below carries it. It shares its data root with a [CLI install](/quickstart-cli), so the two can be mixed freely.
+The full Web experience as a standalone application: it embeds the server and opens already signed in — no login page, no initial password to copy, and nothing to install from a command line. The user menu leaves out **Change password** accordingly: the window signs itself in, so there is no password to type or to change. Builds are not signed yet, so macOS and Linux may each need one command the first time the system blocks the app; the box below carries it. It shares its data root with a [CLI install](/quickstart-cli), so the two can be mixed freely — if you later serve that root over the network with `penguin server`, give its admin a usable password first with `penguin server reset-admin-password` (server stopped), since the desktop app deliberately seeds one nobody can read.
 
 ## Download and install
 

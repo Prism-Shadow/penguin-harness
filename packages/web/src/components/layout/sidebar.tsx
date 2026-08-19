@@ -37,6 +37,7 @@ import { sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
+import { offersChangePassword } from "../../lib/account-menu";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
@@ -284,7 +285,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode } = useAuth();
+  const { user, logout, desktopMode, sessionVia } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
   const { lang, locale, setLang } = useLocale();
@@ -1756,16 +1757,25 @@ export function Sidebar({
             </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setChangePasswordOpen(true);
-              }}
-            >
-              {S.account.changePassword}
-            </button>
+            {/* Hidden in the desktop shell's own window: it signs in through the shell's
+                one-shot token rather than a login form, and the seed password of a
+                desktop-created root is fully random and never printed — there is no
+                password its holder has seen, or needs. Deliberately NOT keyed on
+                desktopMode alone: a browser signed into the same desktop-mode server over
+                loopback holds a password session that can, and still does, change it.
+                See offersChangePassword for the full rule. */}
+            {offersChangePassword({ desktopMode, sessionVia }) && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setChangePasswordOpen(true);
+                }}
+              >
+                {S.account.changePassword}
+              </button>
+            )}
             {/* Admin-only, server-global proxy settings: one menu row opening the
                 dialog (same idiom as Change password above) — the switch, address
                 input and their live-save semantics live in ProxySettingsDialog. */}
