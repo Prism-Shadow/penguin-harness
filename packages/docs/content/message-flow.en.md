@@ -103,7 +103,7 @@ Therefore **a renderer must never reconstruct the context from arrival order** �
 | --- | --- |
 | User interrupt | (messages produced so far) → the `abort` event — the last message before `run` returns; carry-over goes to the model context only, never streamed, never written to Trace |
 | Automatic reconnect | `request_end(failed \| timeout \| malformed)` → a fresh `request_begin` (up to 5 times, exponential backoff with a 30s ceiling; only `auth` skips the ladder); the `[turn_retried]` block is model-visible only |
-| Compaction | `compaction_begin` → the compaction request runs against the old context (its streamed output is **not** forwarded, only written to Trace) → that request's `token_usage` → `compaction_end(status)` |
+| Compaction | `compaction_begin` → the compaction request runs against the old context (its raw messages are written to Trace only, except the summary text being generated, which is forwarded as ordinary `partial_text`/`text` inside the span) → that request's `token_usage` → `compaction_end(status)` |
 | max_turns reached | a length notice → the run ends; unsubmitted input is kept as carry-over |
 | The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it) |
 | session_meta | never emitted on the main Session's stream (it lives in the Trace and the history API); a Subagent child stream's **first** message is the child's `session_meta` |

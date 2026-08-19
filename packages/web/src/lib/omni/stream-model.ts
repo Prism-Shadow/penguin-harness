@@ -29,10 +29,12 @@
  *     events aren't rendered (Request duration is covered by Trace
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
- *   - Compaction-internal messages (history rebuild): model_msg within a
+ *   - Compaction-internal messages: model_msg within a
  *     compaction_begin↔end range (the compaction prompt and summary output)
- *     are never rendered and never counted toward Task segmentation — aligned
- *     with the live stream (which only pushes the event pair + token_usage);
+ *     are never rendered as transcript items and never counted toward Task
+ *     segmentation; the summary's own text (live partial_text fragments, or
+ *     the span's complete assistant text on rebuild) accumulates onto the
+ *     running compaction banner instead (issue #290);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -257,6 +259,14 @@ export interface CompactionItem {
   beginTsMs?: number;
   /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
   durationMs?: number;
+  /**
+   * Raw text of the summary the compaction request is generating (issue #290): accumulated
+   * live from the span's own partial_text fragments, and rebuilt identically on history
+   * replay from the span's complete assistant text — the banner shows the summary being
+   * written and keeps it readable after a reload. Raw model output (summary tags included;
+   * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   */
+  summaryText?: string;
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -583,12 +593,26 @@ export function pushMessage(
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
-    // (the compaction prompt, summary output): never rendered, never
-    // counted toward Task segmentation — aligned with the live stream
-    // (which only pushes the event pair and token_usage). Only encountered during history rebuild.
+    // (the compaction prompt, summary output): never rendered as transcript items, never
+    // counted toward Task segmentation. The summary being written is the one exception
+    // (issue #290): live it arrives as its own partial_text fragments (the engine forwards
+    // them between the paired events; the complete text stays off the stream once partials
+    // carried it), and history rebuild reads the identical content back from the span's
+    // complete assistant text — both accumulate onto the running banner, so a reload shows
+    // the same text the live viewer watched being written.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
+      if (isPartialPayload(msg.payload)) {
+        const p = msg.payload as { type?: string; text?: string };
+        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text);
+        // Partials never advance lastTs (same rule as the normal path below).
+        return;
+      }
       advanceLastTs(model, msg.timestamp);
+      const p = msg.payload as { type?: string; role?: string; text?: string };
+      if (p.type === "text" && p.role === "assistant" && p.text) {
+        appendCompactionSummaryText(model, p.text);
+      }
       return;
     }
     if (isPartialPayload(msg.payload)) {
@@ -1468,6 +1492,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
+        // A compaction that did not complete produced no summary — only a half-written
+        // draft that was never adopted (a user quitting mid-compaction is the common case,
+        // closed as `failed` when the session next loads). Discard it rather than leave a
+        // truncated summary on screen implying the context was replaced by it.
+        if (p.status !== "completed") delete item.summaryText;
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1587,6 +1616,13 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
     if (item.kind === "compaction" && item.running) return item;
   }
   return null;
+}
+
+/** Appends streamed/replayed summary text onto the running compaction banner (no-op without one). */
+function appendCompactionSummaryText(model: StreamModel, text: string): void {
+  if (!text) return;
+  const item = findLastRunningCompaction(model);
+  if (item) item.summaryText = (item.summaryText ?? "") + text;
 }
 
 /**

@@ -499,6 +499,26 @@ describe("StreamRenderer", () => {
     );
   });
 
+  it("the summary streamed inside a compaction span stays off the terminal (issue #290)", () => {
+    // Between the paired events the stream now carries the summary being written as
+    // ordinary partial_text; the CLI keeps its one-line progress and prints none of it,
+    // while text after the span renders as usual.
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    r.handle(compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 3 }));
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "[summary]the plan"));
+    r.handle(partialText("delta", "[/summary]"));
+    r.handle(partialText("stop"));
+    r.handle(compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    r.handle(partialText("start"));
+    r.handle(partialText("delta", "back to the task"));
+    r.handle(partialText("stop"));
+    const out = stripAnsi(text());
+    expect(out).not.toContain("the plan");
+    expect(out).toContain("back to the task");
+  });
+
   it("compaction after the turn ends: the completion line shows its own cost, excluded from the turn stats delta; context not updated", () => {
     const { stream, text } = collector();
     const r = new StreamRenderer(stream, t);

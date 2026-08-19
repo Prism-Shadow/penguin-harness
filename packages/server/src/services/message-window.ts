@@ -298,7 +298,10 @@ export async function scanMessages(
         continue;
       }
       if (t === "compaction_end") {
-        // Closes the banner opened by the begin (no new item mid-window).
+        // Closes the banner opened by the begin (no new item mid-window). A compaction the
+        // user quit out of is closed as `failed` by the resume path before the session
+        // appends anything else (see core's resumeSession), so a span is never left open
+        // across the conversation that follows it.
         state.compactionActive = false;
         continue;
       }
