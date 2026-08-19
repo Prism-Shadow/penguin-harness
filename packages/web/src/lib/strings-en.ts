@@ -1071,8 +1071,9 @@ Scenarios:
     /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
     followUpQueuedItem: (content: string) =>
       `Follow-up queued — sent when this run finishes: ${content}`,
-    /** Recall button on a queued steering / follow-up line: withdraws the message back into the input box (#287). */
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
     recallQueued: "Recall",
+    /** Its tooltip: what the icon does, spelled out. */
     recallQueuedTitle: "Recall to the input box to edit and resend",
     send: "Send",
     stop: "Stop",

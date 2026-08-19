@@ -7,10 +7,11 @@ resent (#287).
 Details:
 
 - Every queued hint line above the composer (the undelivered-steering mirror and the new
-  per-entry follow-up list) carries a **Recall** button. Clicking it withdraws the message
-  server-side and restores its original content into the draft: the text lands in front of
-  whatever is currently typed, and images/file attachments come back as composer chips
-  (files are read back from the Session scratchpad, whose copies are then deleted). A
+  per-entry follow-up list) ends in a **recall** control — a curved-back arrow icon, named
+  "Recall" for screen readers and tooltipped with what it does. Clicking it withdraws the
+  message server-side and restores its original content into the draft: the text lands in
+  front of whatever is currently typed, and images/file attachments come back as composer
+  chips (files are read back from the Session scratchpad, whose copies are then deleted). A
   recalled follow-up also restores the per-turn thinking level it was queued with, and a
   recall that brings file attachments back releases a staged goal chip (a goal draft cannot
   carry files).
@@ -21,7 +22,10 @@ Details:
   queued follow-up's content next to the existing `queued` count.
 - A steering message that was already delivered to the model — and a follow-up that already
   auto-started — answers 409 `not_pending`: there is nothing left to take back, and the web
-  app surfaces that as a toast while the hint retires on its own.
+  app surfaces that as a toast while the hint retires on its own. Every recall re-broadcasts
+  `task_state`, so the hint line disappears in the other tabs too — including the tab that
+  originally sent the message, which drops its local "steering queued" bridge as soon as the
+  server's mirror has arrived.
 - Core: `ContextEngine`/`Session` gained `unsteer(input)`, withdrawing a queued steering
   input (matched by identity) before delivery; it refuses once the queue drained, which is
   what makes the recall race-safe against delivery.

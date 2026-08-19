@@ -1023,8 +1023,9 @@ Benchmark：
     followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
     /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
     followUpQueuedItem: (content: string) => `跟进消息已排队，本轮结束后自动发送：${content}`,
-    /** Recall button on a queued steering / follow-up line: withdraws the message back into the input box (#287). */
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
     recallQueued: "撤回",
+    /** Its tooltip: what the icon does, spelled out. */
     recallQueuedTitle: "撤回到输入框，编辑后重新发送",
     send: "发送",
     stop: "停止",
