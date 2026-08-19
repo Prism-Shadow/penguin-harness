@@ -22,6 +22,7 @@ import type {
   ApprovalMode,
   ModelRefDto,
   ModelsResponse,
+  SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -32,6 +33,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -49,17 +51,27 @@ import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton } from "../../components/ui/copy-button";
+import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { toastError } from "../../components/ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import {
+  compactionTally,
+  heldThinkingSwitch,
+  needsThinkingSwitchConfirm,
+  sessionThinkingLevel,
+  thinkingLevelLabel,
+} from "./thinking-level";
+import type { StagedThinkingSwitch } from "./thinking-level";
+import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
@@ -138,8 +150,9 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
- * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
- * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ * sections' values) with the shared CopyButton beside it. The copy feedback is the button's
+ * icon swapping to the check (#312, no "已复制" text) — the "Session id" label above never
+ * changes.
  */
 function SessionIdRow({ sessionId }: { sessionId: string }) {
   return (
@@ -149,12 +162,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton
-          text={sessionId}
-          label={S.chat.copySessionId}
-          showCopiedText
-          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
       </div>
     </div>
   );
@@ -293,12 +301,14 @@ export function ChatPage() {
   // Latest trace file path (single-session GET only — list rows don't carry it), fetched
   // when the details popover opens; null = none yet (brand-new session) or still loading.
   const [tracePath, setTracePath] = useState<string | null>(null);
-  // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
-  // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
-  // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
-  // Once the user picks a level it sticks for the session and rides on every subsequent
-  // postTask. Never written through to the Agent config (that behavior stays draft-only).
-  const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
+  // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
+  // providers key their prompt PREFIX on the thinking level, so switching with history in
+  // place invalidates the provider's prefix cache and the next request re-bills the whole
+  // history as uncached input. The pick is only applied on an explicit choice; null = no
+  // dialog, "ask" = dialog open, "compacting" = the user chose "compact, then switch" and
+  // the pick is held until the compaction completes. Logic in thinking-level.ts
+  // (needsThinkingSwitchConfirm / thinkingSwitchAfterCompaction).
+  const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanelRaw = useFilesPanel(routeSessionId);
@@ -448,6 +458,14 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  // The thinking level pinned on THIS Session, read straight off the Session row
+  // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
+  // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
+  // config's level while sends omit thinkingLevel (auto-follow — the server/core fallback
+  // applies, so Agent-config edits keep taking effect). A pin is DURABLE: it survives a
+  // reload, shows up in a second tab, and the server applies it to every later run of this
+  // Session. It is still never written through to the Agent config (that stays draft-only).
+  const turnThinkingLevel = selected?.thinkingLevel ?? "";
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -617,14 +635,17 @@ export function ChatPage() {
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the usage-fetch marker, the file-card existence cache, the
-  // per-turn thinking level (it's per-session UI state), and the popover's per-session
-  // data (process list / token buckets / trace path), avoiding stale data from the
-  // previous Session (Files panel state resets itself keyed on sessionId inside
-  // use-files-panel, and the cost hold re-keys itself on sessionId inside advanceCostStat).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, any
+  // thinking-level switch staged behind its dialog (per-session UI state — a compaction
+  // that self-heals to a new session id routes through here too and drops the held pick),
+  // and the popover's per-session data (process list / token buckets / trace path),
+  // avoiding stale data from the previous Session (Files panel state resets itself keyed
+  // on sessionId inside use-files-panel, and the cost hold re-keys itself inside
+  // advanceCostStat). The thinking level itself needs no reset — it is read off the
+  // selected Session row, so it changes with the session by construction.
   useEffect(() => {
     usageAppliedRef.current = null;
-    setTurnThinkingLevel("");
+    setThinkingSwitch(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
@@ -704,6 +725,14 @@ export function ChatPage() {
     };
   }, [projectId, selected, stream.taskState, infoOpen]);
 
+  // The currently selected Session, readable from an async callback that captured an older
+  // one (the process actions below): a state value read through a closure would be the value
+  // at click time, which is exactly what must not decide where a late response lands.
+  const selectedSessionIdRef = useRef<string | null>(selectedSessionId);
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
+
   // Background-process list: fetched on session entry, then kept fresh while it can still
   // change — during a run (a foreground command may promote to background at any moment),
   // while any listed process is still running (it can exit on its own), and while the
@@ -736,26 +765,57 @@ export function ChatPage() {
     };
   }, [selectedSessionId, stream.taskState, processesCanChange]);
 
-  // Stop one background process: the kill also removes it from the server-side registry,
-  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
-  // same outcome, not an error worth surfacing).
-  const onKillProcess = useCallback(
-    async (processId: string) => {
+  /**
+   * Shared body of the per-row process actions (Stop / Remove): one request at a time
+   * (procBusy), the statuses that only mean "the list was stale" swallowed instead of
+   * toasted, and the list refreshed however the request ended — the truth comes from the
+   * refresh, not from the response. The refresh is applied ONLY while its own session is
+   * still selected: switching sessions mid-request would otherwise paint the previous
+   * session's processes into the new session's card, and with the popover closed and
+   * nothing running there is no poll to correct it.
+   */
+  const runProcessAction = useCallback(
+    async (
+      processId: string,
+      request: (sessionId: string, processId: string) => Promise<void>,
+      staleStatuses: readonly number[],
+    ) => {
       if (!selected || procBusy !== null) return;
+      const sessionId = selected.sessionId;
       setProcBusy(processId);
       try {
-        await api.killSessionProcess(selected.sessionId, processId);
+        await request(sessionId, processId);
       } catch (e) {
-        if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+        if (!(e instanceof ApiError && staleStatuses.includes(e.status))) {
+          toastError(apiErrorText(e));
+        }
       } finally {
         setProcBusy(null);
         api
-          .getSessionProcesses(selected.sessionId)
-          .then((res) => setProcesses(res.processes))
+          .getSessionProcesses(sessionId)
+          .then((res) => {
+            if (selectedSessionIdRef.current === sessionId) setProcesses(res.processes);
+          })
           .catch(() => undefined);
       }
     },
     [selected, procBusy],
+  );
+
+  // Stop one background process: the kill also removes it from the server-side registry,
+  // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
+  // same outcome, not an error worth surfacing).
+  const onKillProcess = useCallback(
+    (processId: string) => runProcessAction(processId, api.killSessionProcess, [404]),
+    [runProcessAction],
+  );
+
+  // Remove one EXITED process entry from the list (#312; running rows offer Stop instead).
+  // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
+  // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
+  const onRemoveProcess = useCallback(
+    (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
+    [runProcessAction],
   );
 
   // Trace file path for the popover's trace row: the single-session GET is the only
@@ -1035,6 +1095,40 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  // Recall a queued message back into the composer (#287): the DELETE returns the original
+  // content (text / images / files) and the input area restores it as the draft. A 409
+  // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
+  // the queued hint retires on its own via the re-broadcast task_state.
+  const onRecallSteering = useCallback(
+    async (steerId: string) => {
+      if (!selected) return null;
+      try {
+        return await api.recallSteer(selected.sessionId, steerId);
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected],
+  );
+
+  const onRecallFollowUp = useCallback(
+    async (followUpId: string) => {
+      if (!selected) return null;
+      try {
+        const res = await api.recallFollowUp(selected.sessionId, followUpId);
+        // The follow-up was queued with a per-turn thinking level: restore it with the draft,
+        // so an unedited resend goes out exactly as it was queued.
+        if (res.thinkingLevel) setTurnThinkingLevel(res.thinkingLevel);
+        return res;
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected],
+  );
+
   const onApprove = useCallback(
     async (toolCallId: string, decision: "allow" | "deny", origin: string[]) => {
       if (!selected) return;
@@ -1066,16 +1160,125 @@ export function ChatPage() {
     [selected, modeSaving, replace],
   );
 
-  const onCompact = useCallback(async () => {
-    if (!selected) return;
+  // Starts a context compaction — the single path to the server for it (the composer's
+  // /compact command and the thinking-switch dialog's "compact, then switch" both come
+  // through here). Returns whether the request was ACCEPTED: the endpoint answers 202 and
+  // the compaction itself runs asynchronously, so a true here means "started", not
+  // "finished" — the outcome only shows up on the stream (see the staged-switch watcher).
+  // false means the server refused it (409 while a task runs / nothing to compact / …) and
+  // the reason has already been surfaced as a toast.
+  const runCompaction = useCallback(async (): Promise<boolean> => {
+    if (!selected) return false;
     try {
       // compact shares get-or-resume-or-heal with tasks: it can likewise self-heal to a new session_id.
       const res = await api.postCompact(selected.sessionId);
       await syncHealedSessionId(selected.sessionId, res.sessionId);
+      return true;
     } catch (e) {
       toastError(apiErrorText(e, { modelId: selected.modelId }));
+      return false;
     }
   }, [selected, syncHealedSessionId]);
+
+  // The composer's /compact command: unchanged behavior (fire it, errors land as a toast).
+  const onCompact = useCallback(async () => {
+    await runCompaction();
+  }, [runCompaction]);
+
+  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
+  // returned row into the session store (the picker reads it back from there). Modeled on
+  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // was, rather than showing a level the server does not have.
+  const applyTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (!selected) return;
+      void api
+        .patchSession(selected.sessionId, {
+          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+        })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        });
+    },
+    [selected, replace],
+  );
+
+  // Session picker pick: pinned directly while it cannot hurt (empty transcript, a re-pick
+  // of the displayed level, or right after a successful compaction), staged behind the
+  // confirm dialog otherwise — switching the level mid-chat costs prompt-cache hits over
+  // the whole history (issue #310), so the dialog offers compact-then-switch (recommended),
+  // switch anyway, or cancel. The transcript is always loaded when the picker is clickable
+  // (the composer only mounts once history load settles), so the live tail items are
+  // authoritative here.
+  const onPickTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (
+        needsThinkingSwitchConfirm(
+          stream.model.items,
+          sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
+          level,
+        )
+      ) {
+        setThinkingSwitch({ phase: "ask", level });
+      } else {
+        applyTurnThinkingLevel(level);
+      }
+    },
+    [stream.model, turnThinkingLevel, agentThinkingLevel, applyTurnThinkingLevel],
+  );
+
+  // Dialog choice 1 (recommended): compact first, then switch. The compaction is only
+  // STARTED here — POST /compact answers 202 — so the pick is held with a tally of the
+  // compactions already on record, and the watcher below releases it once a new one ends
+  // (either way it ends). Compaction cannot be started (nor queued) while the session is
+  // busy, so the dialog disables this choice unless idle; the guard here is the same rule.
+  const compactThenThinkingSwitch = useCallback(() => {
+    if (thinkingSwitch === null || stream.taskState !== "idle") return;
+    const staged: StagedThinkingSwitch = {
+      phase: "compacting",
+      level: thinkingSwitch.level,
+      baseline: compactionTally(stream.model.items),
+    };
+    setThinkingSwitch(staged);
+    toastInfo(S.chat.thinkingSwitchCompacting);
+    void runCompaction().then((ok) => {
+      // Refused (the toast already said why, e.g. nothing to compact): no compaction will
+      // ever settle, so hand the pick to the watcher below to release — the user asked to
+      // switch, and only the compaction half of that failed. A pick staged meanwhile owns
+      // the state instead.
+      if (!ok) {
+        setThinkingSwitch((cur) =>
+          cur === staged ? { phase: "settle", level: staged.level } : cur,
+        );
+      }
+    });
+  }, [thinkingSwitch, stream.taskState, stream.model, runCompaction]);
+
+  // Releases the pick held behind a running compaction: applied as soon as the compaction is
+  // over, whichever way it ended. A failed/aborted compaction is reported (the context was
+  // not rewritten, so this switch does cost cache hits) but never swallows the switch the
+  // user asked for. Runs on every stream version bump because the model's items are mutated
+  // in place.
+  useEffect(() => {
+    if (thinkingSwitch === null) return;
+    const next = heldThinkingSwitch(thinkingSwitch, stream.model.items);
+    if (next.act === "wait") return;
+    setThinkingSwitch(null);
+    applyTurnThinkingLevel(next.level);
+    if (next.notice === "compacted") {
+      toastSuccess(
+        S.chat.thinkingSwitchApplied(
+          thinkingLevelLabel(S.chat.thinkingLevelNames, next.level) ?? next.level,
+        ),
+      );
+    } else if (next.notice === "compaction-failed") {
+      toastError(S.chat.thinkingSwitchCompactFailed);
+    }
+    // notice "none": the compaction never started and runCompaction already said why.
+    // The items are read from the model per run; `version` is the change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
@@ -1212,18 +1415,22 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
+      pendingFollowUps={stream.pendingFollowUps}
+      onRecallFollowUp={onRecallFollowUp}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
-      // Display value: the user's pick for this session, else the Agent config's level
-      // (auto-follow while untouched; the send path uses the raw pick — see onSend).
-      turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
-      onChangeTurnThinkingLevel={setTurnThinkingLevel}
+      // Display value: the level pinned on this Session, else the Agent config's level
+      // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
+      turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
+      // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
+      onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
@@ -1497,8 +1704,9 @@ export function ChatPage() {
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole
-                  process group and the row drops on the follow-up refresh. Hidden entirely
-                  while there are none. */}
+                  process group and the row drops on the follow-up refresh; exited rows keep
+                  their "exited" label and carry a remove button that deletes the entry from
+                  the list (#312). Hidden entirely while there are none. */}
               {processes.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1534,9 +1742,26 @@ export function ChatPage() {
                             {procBusy === p.processId ? S.common.loading : S.chat.processStop}
                           </button>
                         ) : (
-                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                            {S.chat.processExited}
-                          </span>
+                          <>
+                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                              {S.chat.processExited}
+                            </span>
+                            {/* The row is the only handle on that process's captured
+                                output — removing the entry drops it from the runtime
+                                registry, so the model can no longer be asked to read it
+                                (input_command answers "unknown process_id"). No confirm
+                                step for a one-click tidy-up of a dead row, but the title
+                                says what leaves with it. */}
+                            <button
+                              type="button"
+                              title={S.chat.processRemoveHint}
+                              disabled={procBusy !== null}
+                              onClick={() => void onRemoveProcess(p.processId)}
+                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            >
+                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                            </button>
+                          </>
                         )}
                       </li>
                     ))}
@@ -1544,30 +1769,46 @@ export function ChatPage() {
                 </div>
               )}
               {/* Trace file, same section anatomy as the rows above (label + mono value):
-                  the path itself is the click target and SPA-navigates to the Trace page
-                  deep-linked to the owning Agent AND this Session (?agentId= focuses/expands
-                  the Agent group, ?sessionId= auto-selects — a Session beyond the first
-                  loaded page resolves via the Trace page's full-fetch fallback). Hidden
-                  until a trace exists (a brand-new session has no file to open); only
-                  reachable for a real Session — this whole header renders behind the
-                  `selected` guard, so a draft never shows it. */}
+                  the value is the file NAME on a single line (#312 — the full path wrapped
+                  over several lines; it now lives in the tooltip and the copy button, which
+                  copies the FULL path). The name itself is the click target and
+                  SPA-navigates to the Trace page deep-linked to the owning Agent AND this
+                  Session (?agentId= focuses/expands the Agent group, ?sessionId=
+                  auto-selects — a Session beyond the first loaded page resolves via the
+                  Trace page's full-fetch fallback). Hidden until a trace exists (a
+                  brand-new session has no file to open); only reachable for a real
+                  Session — this whole header renders behind the `selected` guard, so a
+                  draft never shows it. */}
               {tracePath !== null && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                     {S.chat.traceFile}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInfoOpen(false);
-                      navigate(
-                        `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                      );
-                    }}
-                    className="break-all text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-                  >
-                    {tracePath}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {/* Wrapper (not flex-1 on the button itself) keeps the click target no
+                        wider than the name while the copy button still sits at the row's
+                        right edge, mirroring the Session id row. */}
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        title={tracePath}
+                        onClick={() => {
+                          setInfoOpen(false);
+                          navigate(
+                            `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                          );
+                        }}
+                        className="max-w-full truncate text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
+                      >
+                        {pathFileName(tracePath)}
+                      </button>
+                    </div>
+                    <CopyButton
+                      text={tracePath}
+                      label={S.chat.copyTracePath}
+                      className={ROW_COPY_CLASS}
+                    />
+                  </div>
                 </div>
               )}
             </div>
@@ -1577,7 +1818,12 @@ export function ChatPage() {
 
       {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+            covers the conversation and the composer in both branches below, and nothing else
+            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
+            bounds the drop overlay to this column. */}
+        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
             // selection panel; the Session is only created once the first message is sent. Keyed
@@ -1682,7 +1928,7 @@ export function ChatPage() {
               )}
             </div>
           )}
-        </div>
+        </ChatDropRegion>
 
         {selected && (
           <SubagentsPanel
@@ -1720,6 +1966,40 @@ export function ChatPage() {
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.noCredentialBody}</p>
       </Modal>
+
+      {/* Mid-chat thinking-level switch confirmation (issue #310), three choices: compact
+          first and switch when it finishes (primary — the recommended, cheap path), switch
+          anyway (immediate, today's force path), or cancel (keeps the current level). The
+          compact choice is unavailable while the session is busy — the server only starts a
+          compaction on an idle session and does not queue it — and the body then says so.
+          After a successful compaction the guard lets a re-pick through without asking. */}
+      <ConfirmModal
+        open={thinkingSwitch?.phase === "ask"}
+        title={S.chat.thinkingSwitchTitle}
+        tone="primary"
+        confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        confirmDisabled={stream.taskState !== "idle"}
+        onConfirm={compactThenThinkingSwitch}
+        secondaryLabel={S.chat.thinkingSwitchConfirm}
+        onSecondary={() => {
+          if (thinkingSwitch !== null) applyTurnThinkingLevel(thinkingSwitch.level);
+          setThinkingSwitch(null);
+        }}
+        onClose={() => setThinkingSwitch(null)}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.chat.thinkingSwitchBody(
+            thinkingLevelLabel(S.chat.thinkingLevelNames, thinkingSwitch?.level) ??
+              thinkingSwitch?.level ??
+              "",
+          )}
+        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
+      </ConfirmModal>
     </div>
   );
 }

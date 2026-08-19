@@ -27,7 +27,7 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("moonshot", "")).toBe("/chat/completions");
   });
 
-  it("gateway groups always carry client_type openai and get /chat/completions", () => {
+  it("gateway groups always carry client_type openai-chat and get /chat/completions", () => {
     for (const provider of [
       "openrouter",
       "fireworks",
@@ -35,19 +35,33 @@ describe("protocolPathForModel", () => {
       "qwen-token-plan",
       "qwen-pay-as-you-go",
     ]) {
-      expect(protocolPathForModel(provider, "openai")).toBe("/chat/completions");
+      expect(protocolPathForModel(provider, "openai-chat")).toBe("/chat/completions");
     }
   });
 
   it("custom and user-defined groups get /chat/completions (with or without the explicit client type)", () => {
+    expect(protocolPathForModel("custom", "openai-chat")).toBe("/chat/completions");
+    // The deprecated bare "openai" alias (configs saved before AgentHub 0.4.2) means the same client.
     expect(protocolPathForModel("custom", "openai")).toBe("/chat/completions");
     // Legacy TOML entries in a user-defined group may lack client_type; the group still means the OpenAI protocol.
     expect(protocolPathForModel("myproxy", "")).toBe("/chat/completions");
   });
 
-  it("an explicit openai client type wins over vendor-group membership", () => {
-    expect(protocolPathForModel("anthropic", "openai")).toBe("/chat/completions");
-    expect(protocolPathForModel("google", "openai")).toBe("/chat/completions");
+  it("an explicit openai-chat client type wins over vendor-group membership", () => {
+    expect(protocolPathForModel("anthropic", "openai-chat")).toBe("/chat/completions");
+    expect(protocolPathForModel("google", "openai-chat")).toBe("/chat/completions");
+  });
+
+  it("the generic protocol clients (agenthub 0.4.2) map to their own endpoint shapes", () => {
+    // openai-responses contains "openai" but speaks the Responses API; ant-messages speaks
+    // the Anthropic Messages API — both must win over the generic openai substring match.
+    expect(protocolPathForModel("custom", "openai-responses")).toBe("/responses");
+    expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
+    expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
+    expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
+    // The built-in OpenRouter openai/* presets pin openai-responses, so the gateway's base
+    // URL must be hinted with /responses rather than the group's usual /chat/completions.
+    expect(protocolPathForModel("openrouter", "openai-responses")).toBe("/responses");
   });
 
   it("legacy explicit client types pin the family like auto-routing would", () => {

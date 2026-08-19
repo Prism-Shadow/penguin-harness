@@ -79,6 +79,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
       createdAt: row.createdAt,

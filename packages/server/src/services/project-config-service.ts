@@ -30,6 +30,7 @@ import {
   CHAT_APPROVAL_MODES,
   DEFAULT_CHAT_THINKING_LEVELS,
   GenerativeModel,
+  canonicalClientType,
   catalogEntryFor,
   defaultProjectConfig,
   projectConfigFromTable,
@@ -402,7 +403,9 @@ export class ProjectConfigService {
     const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
-    const clientType = req.clientType ?? optStr(entry.client_type);
+    // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
+    // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
+    const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
 
     const startedAt = Date.now();
     try {
@@ -497,7 +500,10 @@ export class ProjectConfigService {
                 output: optNum(pricing.output) ?? 0,
               }
             : undefined;
-        const clientType = optStr(m.client_type);
+        // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
+        // rename report the canonical spelling without a disk rewrite (the next models PUT
+        // persists it).
+        const clientType = canonicalClientType(optStr(m.client_type));
         const cat = catalogEntryFor(provider, modelId);
         // The env fallback is reported as-is: follows the same rule as
         // AgentHub routing — an explicit client_type takes priority (the openai
@@ -619,7 +625,9 @@ export class ProjectConfigService {
         next.display_name = entry.displayName;
       }
       if (entry.contextWindow !== undefined) next.context_window = entry.contextWindow;
-      if (entry.clientType) next.client_type = entry.clientType;
+      // Stored canonically: a client sending the deprecated "openai" alias persists
+      // "openai-chat" (see canonicalClientType).
+      if (entry.clientType) next.client_type = canonicalClientType(entry.clientType);
       // Treated as supported by default: only written to disk when explicitly annotated (both true/false are kept; false drives a frontend blocking hint).
       if (entry.vision !== undefined) next.vision = entry.vision;
       // Inherit-the-Agent-value by default: only written to disk when explicitly annotated (omitted on a full-table PUT = the annotation is cleared).

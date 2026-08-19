@@ -632,7 +632,6 @@ export const en: Strings = {
     editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
-    editCopied: "Copied",
     editOpenChat: "Open a new chat",
     delete: "Delete",
     deleteTitle: "Delete this memory?",
@@ -812,7 +811,6 @@ export const en: Strings = {
     importPromptTail:
       "Read all of it in full before installing, make sure it is safe and free of malicious instructions before writing anything, and tell me what it does. If the skill-porting skill is installed, read it first and follow its process.",
     importCopyPrompt: "Copy prompt",
-    importCopied: "Copied to clipboard",
     importOpenChat: "Open a new chat",
     importUploadTitle: "Upload a skill zip",
     importUploadDesc:
@@ -858,6 +856,17 @@ export const en: Strings = {
       high: "High",
       xhigh: "Extreme High",
     },
+    thinkingSwitchTitle: "Switch thinking level",
+    thinkingSwitchBody: (to: string): string =>
+      `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
+    thinkingSwitchBusyHint: "This conversation is still working — compaction has to wait for it.",
+    thinkingSwitchCompactFirst: "Compact, then switch",
+    thinkingSwitchConfirm: "Switch anyway",
+    thinkingSwitchCompacting: "Compacting the context — the thinking level switches when it ends.",
+    thinkingSwitchApplied: (to: string): string =>
+      `Context compacted; thinking level switched to "${to}".`,
+    thinkingSwitchCompactFailed:
+      "The compaction did not finish; the thinking level was switched anyway.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -1071,6 +1080,13 @@ Scenarios:
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) =>
       `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) =>
+      `Follow-up queued — sent when this run finishes: ${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "Recall",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "Recall to the input box to edit and resend",
     send: "Send",
     stop: "Stop",
     compact: "Compact context",
@@ -1131,12 +1147,16 @@ Scenarios:
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "Copy Session id",
-    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
     traceFile: "Trace file",
-    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    copyTracePath: "Copy full path",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
     processExited: "exited",
+    processRemove: "Remove",
+    /** Remove button tooltip: removal also drops the output captured from that process. */
+    processRemoveHint: "Remove this entry — the output captured from it is discarded too",
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
@@ -1271,6 +1291,11 @@ Scenarios:
     removeFile: "Remove file",
     attachmentTooLarge: (name: string): string =>
       `${name} exceeds the 10MB limit and was not attached.`,
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
+    dropFilesTitle: "Drop files to attach",
+    dropFilesDesc: "Images and files are added to the message draft",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -1466,6 +1491,7 @@ Scenarios:
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",
       file_not_found: "This file no longer exists.",
+      not_pending: "This message already went out and can no longer be recalled.",
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
@@ -1475,6 +1501,7 @@ Scenarios:
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
       task_in_progress: "This Session already has a task running.",
+      compacting: "This Session is compacting its context and is not accepting new input.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:

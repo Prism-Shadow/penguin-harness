@@ -66,9 +66,14 @@ test("background process appears in the details card and can be stopped", async 
   // rate in parens (from the recorded usage row).
   await expect(page.getByText(/总 Token/).first()).toBeVisible();
   await expect(page.getByText(/缓存命中率 \d+%/).first()).toBeVisible();
-  // Trace file row names the actual .jsonl path.
+  // Trace file row shows just the FILE NAME on one line (#312) — anchored match, a full
+  // path would not match — with the copy-full-path button beside it (its own coverage
+  // lives in the exited-process test below).
   await expect(page.getByText("轨迹文件")).toBeVisible();
-  await expect(page.getByText(/\.jsonl/).first()).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${sessionId}_\\d{3}\\.jsonl$`) }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "复制完整路径" })).toBeVisible();
 
   // The process list row: the command, its pid line, and a working stop button.
   await expect(page.getByText("会话进程")).toBeVisible();
@@ -87,4 +92,83 @@ test("background process appears in the details card and can be stopped", async 
     await page.request.get(`${BASE}/api/sessions/${sessionId}/processes`)
   ).json();
   expect(procs.processes).toEqual([]);
+});
+
+test("an exited process can be removed from the list; the trace row copies the full path and deep-links", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  // Same idempotent model setup as the first test, so this test can be rerun on its own.
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+          pricing: { cacheRead: 1, cacheWrite: 5, output: 10 },
+        },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+
+  const sess = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+    })
+  ).json();
+  const sessionId = sess.session.sessionId;
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  const ta = page.getByPlaceholder(/输入消息/);
+  await ta.waitFor();
+  // The mock's exit branch: `sleep 0.5` with a 300ms yield — promoted to background,
+  // exits on its own ~200ms later, leaving an EXITED entry in the list.
+  await ta.fill("background exit test");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(/Command finished/).first()).toBeVisible({ timeout: 30_000 });
+
+  // Open the details card. The exited row keeps its 已退出 label and gains a remove
+  // button (#312); running rows are the only ones with 停止. The generous timeout rides
+  // out one 15s poll interval in case the idle refresh still saw the process alive.
+  await page.locator('button[title="Session 信息"]').click();
+  await expect(page.getByText("会话进程")).toBeVisible();
+  const row = page.locator("li", { hasText: "sleep 0.5" }).first();
+  await expect(row.getByText("已退出")).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByRole("button", { name: "停止" })).toHaveCount(0);
+  await row.getByRole("button", { name: "移除" }).click();
+
+  // The removal deletes the entry: the whole section hides (no entries left) and the
+  // server-side list agrees.
+  await expect(page.getByText("会话进程")).toHaveCount(0, { timeout: 10_000 });
+  const procs = await (
+    await page.request.get(`${BASE}/api/sessions/${sessionId}/processes`)
+  ).json();
+  expect(procs.processes).toEqual([]);
+
+  // --- Trace file row actions (#312) ---
+  // Copy puts the FULL absolute path on the clipboard while the row shows only the name…
+  const traceName = page.getByRole("button", {
+    name: new RegExp(`^${sessionId}_\\d{3}\\.jsonl$`),
+  });
+  await expect(traceName).toBeVisible();
+  await page.getByRole("button", { name: "复制完整路径" }).click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(/\.jsonl$/);
+  expect(copied).toContain(`${sessionId}_`);
+  expect(copied.length).toBeGreaterThan((await traceName.textContent()).length);
+  expect(copied.endsWith(await traceName.textContent())).toBe(true);
+  // …and clicking the name deep-links into the Trace page focused on this session.
+  await traceName.click();
+  await expect(page).toHaveURL(new RegExp(`/traces\\?agentId=.*sessionId=`));
+  await expect(page.locator("main").getByText("轨迹观测").first()).toBeVisible({
+    timeout: 15_000,
+  });
 });

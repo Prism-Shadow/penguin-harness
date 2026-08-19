@@ -13,7 +13,7 @@ CLI 模式新增两项运行期控制，此前它们要么得去改 Agent 配置
 ## 思考等级
 
 - `penguin run --thinking <low|medium|high|xhigh>` 与 `penguin chat --thinking <level>` 在 Session 创建时钉定其思考等级，派生的子会话随之继承。省略时沿用原有的配置链：Agent 的 `model.thinking_level`，其次 Project 的 `default_chat.thinking_level`，最后 `medium`。
-- 在 chat REPL 中，`/thinking` 报出下一轮将使用的等级——并指明它是本 Session 的缺省值还是生效中的逐轮覆盖值，后者同时给出被覆盖的那个缺省值——`/thinking <level>` 则覆盖后续轮次。该覆盖是逐轮的 `RunOptions.thinkingLevel`，与 Web 端活动会话选择器保持一致，永不写回 Agent 配置；只有 Session 自身的等级才会传到派生的子会话。`--resume` 之下这个 flag 转而作为初始覆盖值生效，因为已恢复 Session 的构造参数是固定的。
+- 在 chat REPL 中，`/thinking` 报出下一轮将使用的等级——并指明它是本 Session 的缺省值还是生效中的逐轮覆盖值，后者同时给出被覆盖的那个缺省值——`/thinking <level>` 则覆盖后续轮次。该覆盖是逐轮的 `RunOptions.thinkingLevel`，与 Web 端活动会话选择器保持一致，永不写回 Agent 配置；只有 Session 自身的等级才会被派生的子会话继承（`run_subagent` 调用仍可自行指定 `thinking_level`）。`--resume` 之下这个 flag 转而作为初始覆盖值生效，因为已恢复 Session 的构造参数是固定的。
 - 可选等级复用 core 的 `DEFAULT_CHAT_THINKING_LEVELS`（不含 `none`，与 Web 选择器一致）；历史遗留的 `none` 仍按原样显示。
 
 ## 工具输出折叠
