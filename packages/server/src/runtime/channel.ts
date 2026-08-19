@@ -192,6 +192,18 @@ export class ChannelHub {
     return this.channels.get(key);
   }
 
+  /**
+   * Publishes to every live channel whose key starts with `prefix` — global
+   * notices (e.g. `user:` for "the web assets were hot-swapped, reload").
+   * Only reaches channels that exist (i.e. someone connected at least once);
+   * that is the right scope for a notice that only matters to live clients.
+   */
+  broadcast(prefix: string, data: unknown, event?: string): void {
+    for (const [key, ch] of this.channels) {
+      if (key.startsWith(prefix)) ch.publish(data, event);
+    }
+  }
+
   /** Reclaim idle channels (skips active Sessions: no reclaim even without a publish while awaiting approval); `now` is injectable for tests. */
   sweep(now: number = Date.now()): void {
     for (const [key, ch] of this.channels) {

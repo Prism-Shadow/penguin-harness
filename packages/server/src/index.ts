@@ -177,6 +177,7 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   console.log(`Received ${signal}, shutting down…`);
   deps.scheduler.stop();
   await deps.manager.shutdown(5000);
+  deps.hmr.dispose();
   deps.channels.dispose();
   ipv6Loopback?.close();
   server.close(() => {

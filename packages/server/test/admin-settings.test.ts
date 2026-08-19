@@ -112,11 +112,18 @@ describe("admin server settings", () => {
     expect(((await https.json()) as ServerSettingsResponse).settings.proxyUrl).toBe(
       "https://proxy.corp.example:3128",
     );
+    // socks5 rides through to undici's dispatcher untouched.
+    const socks = await putProxyUrl("socks5://proxy.corp.example:1080");
+    expect(socks.status).toBe(200);
+    expect(((await socks.json()) as ServerSettingsResponse).settings.proxyUrl).toBe(
+      "socks5://proxy.corp.example:1080",
+    );
   });
 
   it("PUT rejects a bad proxy address with invalid_proxy_url and stores nothing", async () => {
     await putProxyUrl("http://proxy.corp.example:8080");
-    for (const bad of ["socks5://proxy.corp.example:1080", "not a proxy", 42]) {
+    // socks4 parses as a URL but undici's dispatcher refuses to construct from it.
+    for (const bad of ["socks4://proxy.corp.example:1080", "not a proxy", 42]) {
       const res = await putProxyUrl(bad);
       expect(res.status).toBe(400);
       const body = (await res.json()) as { error: { code: string } };
