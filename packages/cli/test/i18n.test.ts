@@ -46,6 +46,20 @@ describe("getMessages", () => {
     expect(getMessages("en").config.langDesc).toContain("language");
     expect(getMessages("en").langSet("zh", "/x/.zshrc")).toContain("/x/.zshrc");
     expect(getMessages("zh").langInvalid("fr")).toContain("fr");
+    // Thinking-level control and tool-output collapsing (issue #305).
+    expect(getMessages("en").thinkingCurrent("medium")).toContain("medium");
+    expect(getMessages("zh").thinkingCurrent("medium")).toContain("medium");
+    expect(getMessages("en").thinkingSet("high")).toContain("high");
+    expect(getMessages("zh").thinkingSet("high")).toContain("high");
+    expect(getMessages("en").thinkingInvalid("none")).toContain('"none"');
+    expect(getMessages("zh").thinkingInvalid("none")).toContain('"none"');
+    expect(getMessages("en").toolOutputElided(42)).toContain("42");
+    expect(getMessages("zh").toolOutputElided(42)).toContain("42");
+    // The hints line teaches the two new commands in both languages.
+    expect(getMessages("en").chatHints()).toContain("/thinking");
+    expect(getMessages("en").chatHints()).toContain("/verbose");
+    expect(getMessages("zh").chatHints()).toContain("/thinking");
+    expect(getMessages("zh").chatHints()).toContain("/verbose");
   });
 
   it("header shows the version and Agent / Workspace / Model on their own lines", () => {

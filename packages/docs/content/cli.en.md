@@ -27,6 +27,7 @@ penguin run -m "Summarize the code structure of this directory"
 | `--agent-id <id>` | Agent to use |
 | `--workspace <path>` | Workspace directory; defaults to the current directory and must exist |
 | `--approve <mode>` | Approval mode, see below |
+| `--thinking <level>` | Thinking level for the Session: `low` / `medium` / `high` / `xhigh`. Omitted, the configured chain applies (the Agent's `model.thinking_level`, else the Project's `default_chat.thinking_level`, else `medium`). Pinned at Session creation, so spawned subagent sessions follow it |
 
 ## penguin chat
 
@@ -35,8 +36,9 @@ Interactive REPL; each input line starts a Task. Takes the same options as `run`
 | Option | Description |
 | --- | --- |
 | `--resume [sessionId]` | Resume a Session; without an id, resumes the Agent's latest Session |
+| `--verbose` | Show full tool output; by default long tool outputs are collapsed (see below) |
 
-With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
+With `--resume`, the Workspace and model are locked by the original Session and cannot be overridden via `--workspace` / `--model-id` / `--provider`. The thinking level is a per-turn parameter, so `--thinking` is still accepted: it becomes the initial `/thinking` override instead of a creation-time default. On exit, a copy-pastable `penguin chat --resume <sessionId>` command is printed.
 
 In-REPL commands:
 
@@ -45,7 +47,12 @@ In-REPL commands:
 | any text while a Task runs | Mid-run steering: queued and delivered to the model between turns as a `[user_steering]` user message (a `»` acknowledgment echoes the text); rendering is held while you type so streamed output doesn't scribble over the line. If the Task finishes first, the line is sent as the next normal prompt |
 | `/compact` | Proactively compact the current context |
 | `/clear` | Start a fresh blank Session in place; the old Session stays on disk and can be resumed with `--resume` |
+| `/thinking` | Show the thinking level the next turn will run at |
+| `/thinking <level>` | Override the thinking level (`low` / `medium` / `high` / `xhigh`) for subsequent turns of this chat; never written back to the Agent config |
+| `/verbose` | Toggle between collapsed and full tool output |
 | `/exit`, `/quit` | Quit |
+
+Long tool outputs (an `exec_command` result, a whole file from `read_file`) are collapsed by default so they don't flood the screen: the first 4 lines stream live, and when the output finishes an elision marker (`… (+N lines, /verbose for full output)`) plus the last 4 lines are printed; outputs of up to 9 lines are shown in full. This is display-only — the model, the Trace, and the Web App always receive the complete output. `/verbose` (or starting with `--verbose`) turns collapsing off for subsequent outputs; resumed history (`--resume`) is collapsed the same way. `penguin run` never collapses: its output feeds pipes and nested CLIs.
 
 Ctrl-C is state-dependent:
 

@@ -944,6 +944,146 @@ describe("renderHistory (resume)", () => {
   });
 });
 
+describe("tool-output collapsing (chat display; the Trace keeps the full text)", () => {
+  /** Streams one exec_command call and a `total`-line output through a renderer. */
+  function streamExec(r: StreamRenderer, total: number, id = "c9"): void {
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: id }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"x"}', toolCallId: id }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: id }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: id }));
+    for (let i = 1; i <= total; i++) {
+      r.handle(partialToolCallOutput({ eventType: "delta", output: `l${i}\n`, toolCallId: id }));
+    }
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: id }));
+  }
+
+  it("streams the head live, then settles marker + tail at stop; the hint names /verbose", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { collapseToolOutput: true });
+    streamExec(r, 12);
+    const s = stripAnsi(text());
+    // Head (first 4 lines) streamed live; l5..l8 hidden behind the marker; tail l9..l12.
+    expect(s).toBe(
+      "[tool-c9] exec_command <- $ x\n" +
+        "[tool-c9] exec_command -> l1\n" +
+        "[tool-c9] exec_command -> l2\n" +
+        "[tool-c9] exec_command -> l3\n" +
+        "[tool-c9] exec_command -> l4\n" +
+        `[tool-c9] exec_command -> ${t.toolOutputElided(4)}\n` +
+        "[tool-c9] exec_command -> l9\n" +
+        "[tool-c9] exec_command -> l10\n" +
+        "[tool-c9] exec_command -> l11\n" +
+        "[tool-c9] exec_command -> l12\n",
+    );
+  });
+
+  it("keeps short outputs untouched (up to head+tail+1 lines, no marker)", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { collapseToolOutput: true });
+    streamExec(r, 9);
+    const s = stripAnsi(text());
+    for (let i = 1; i <= 9; i++) expect(s).toContain(`exec_command -> l${i}\n`);
+    expect(s).not.toContain("/verbose");
+  });
+
+  it("default renderer (penguin run) never collapses", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t);
+    streamExec(r, 40);
+    const s = stripAnsi(text());
+    for (let i = 1; i <= 40; i++) expect(s).toContain(`exec_command -> l${i}\n`);
+    expect(s).not.toContain("/verbose");
+  });
+
+  it("setCollapseToolOutput(false) restores full output (the /verbose toggle)", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { collapseToolOutput: true });
+    r.setCollapseToolOutput(false);
+    streamExec(r, 12);
+    expect(stripAnsi(text())).toContain("exec_command -> l6\n");
+  });
+
+  it("a stream aborted before its stop still settles at endTask (held lines never vanish)", () => {
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { collapseToolOutput: true });
+    r.handle(partialToolCall({ eventType: "start", name: "exec_command", toolCallId: "c9" }));
+    r.handle(
+      partialToolCall({ eventType: "delta", name: "", arguments: '{"cmd":"x"}', toolCallId: "c9" }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: "c9" }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: "c9" }));
+    for (let i = 1; i <= 12; i++) {
+      r.handle(partialToolCallOutput({ eventType: "delta", output: `l${i}\n`, toolCallId: "c9" }));
+    }
+    // No stop delta: the turn aborted mid-stream; endTask must flush the held tail.
+    r.endTask(10);
+    const s = stripAnsi(text());
+    expect(s).toContain(t.toolOutputElided(4));
+    expect(s).toContain("exec_command -> l12\n");
+    expect(s).not.toContain("-> l5\n");
+  });
+
+  it("diff coloring survives collapsing for tail lines", () => {
+    vi.stubEnv("FORCE_COLOR", "1");
+    const { stream, text } = collector();
+    const r = new StreamRenderer(stream, t, { collapseToolOutput: true });
+    const id = "d9";
+    r.handle(partialToolCall({ eventType: "start", name: "edit_file", toolCallId: id }));
+    r.handle(
+      partialToolCall({
+        eventType: "delta",
+        name: "",
+        arguments: '{"file_path":"x.ts","old_string":"a","new_string":"b"}',
+        toolCallId: id,
+      }),
+    );
+    r.handle(partialToolCall({ eventType: "stop", name: "", toolCallId: id }));
+    r.handle(partialToolCallOutput({ eventType: "start", toolCallId: id }));
+    const body = Array.from({ length: 10 }, (_, i) => `ctx${i + 1}`);
+    r.handle(
+      partialToolCallOutput({
+        eventType: "delta",
+        output: `${body.join("\n")}\n-old\n+new\n`,
+        toolCallId: id,
+      }),
+    );
+    r.handle(partialToolCallOutput({ eventType: "stop", toolCallId: id }));
+    const raw = text();
+    expect(raw).toContain("\x1b[31m-old\x1b[0m");
+    expect(raw).toContain("\x1b[32m+new\x1b[0m");
+    expect(stripAnsi(raw)).toContain(t.toolOutputElided(4));
+  });
+
+  it("renderHistory collapses long tool outputs when asked (resume in chat)", () => {
+    const { stream, text } = collector();
+    const lines = Array.from({ length: 20 }, (_, i) => `l${i + 1}`).join("\n");
+    renderHistory(
+      [
+        toolCall({ name: "exec_command", arguments: '{"cmd":"ls"}', toolCallId: "call_653" }),
+        toolCallOutput({ output: lines, toolCallId: "call_653" }),
+      ],
+      stream,
+      t,
+      { collapseToolOutput: true },
+    );
+    const s = stripAnsi(text());
+    expect(s).toContain("[tool-653] exec_command -> l4\n");
+    expect(s).toContain(`[tool-653] exec_command -> ${t.toolOutputElided(12)}\n`);
+    expect(s).toContain("[tool-653] exec_command -> l17\n");
+    expect(s).toContain("[tool-653] exec_command -> l20\n");
+    expect(s).not.toContain("-> l5\n");
+  });
+
+  it("renderHistory leaves outputs whole by default", () => {
+    const { stream, text } = collector();
+    const lines = Array.from({ length: 20 }, (_, i) => `l${i + 1}`).join("\n");
+    renderHistory([toolCallOutput({ output: lines, toolCallId: "call_653" })], stream, t);
+    expect(stripAnsi(text())).toContain("-> l10\n");
+  });
+});
+
 describe("mid-run steering rendering ([user_steering] user messages)", () => {
   it("streaming: a complete [user_steering] user text renders as prefixed steering lines (other complete texts stay unrendered)", () => {
     const { stream, text } = collector();

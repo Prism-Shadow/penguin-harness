@@ -27,6 +27,7 @@ penguin run -m "总结当前目录的代码结构"
 | `--agent-id <id>` | 指定 Agent |
 | `--workspace <path>` | Workspace 目录，默认当前目录，必须已存在 |
 | `--approve <mode>` | 审批模式，见下文 |
+| `--thinking <level>` | 本 Session 的思考等级：`low` / `medium` / `high` / `xhigh`。省略时按配置链取值（Agent 的 `model.thinking_level`，其次 Project 的 `default_chat.thinking_level`，最后 `medium`）。在 Session 创建时钉定，派生的子会话随之生效 |
 
 ## penguin chat
 
@@ -35,8 +36,9 @@ penguin run -m "总结当前目录的代码结构"
 | 选项 | 说明 |
 | --- | --- |
 | `--resume [sessionId]` | 恢复指定 Session；省略 id 时恢复该 Agent 最近的 Session |
+| `--verbose` | 显示完整工具输出；缺省折叠过长的工具输出（见下文） |
 
-使用 `--resume` 时，Workspace 与模型由原 Session 锁定，不可再用 `--workspace` / `--model-id` / `--provider` 覆盖。退出时会打印可直接复制的 `penguin chat --resume <sessionId>` 命令。
+使用 `--resume` 时，Workspace 与模型由原 Session 锁定，不可再用 `--workspace` / `--model-id` / `--provider` 覆盖。思考等级是逐轮参数，`--resume` 下仍接受 `--thinking`：它作为初始的 `/thinking` 覆盖生效，而不是创建时的缺省值。退出时会打印可直接复制的 `penguin chat --resume <sessionId>` 命令。
 
 REPL 内命令：
 
@@ -45,7 +47,12 @@ REPL 内命令：
 | 运行中输入任意文字 | 运行中插话：排队后以 `[user_steering]` 用户消息随下一轮送达模型（`»` 确认行会回显文字）；输入期间渲染暂挂，流式输出不会打断正在输入的行。若 Task 恰好已结束，该行作为下一条普通消息发送 |
 | `/compact` | 主动压缩当前上下文 |
 | `/clear` | 原地开启全新空白 Session；原会话保留在磁盘上，仍可用 `--resume` 恢复 |
+| `/thinking` | 显示下一轮将使用的思考等级 |
+| `/thinking <level>` | 覆盖本次对话后续轮次的思考等级（`low` / `medium` / `high` / `xhigh`）；不会写回 Agent 配置 |
+| `/verbose` | 在折叠与完整工具输出之间切换 |
 | `/exit`、`/quit` | 退出 |
+
+过长的工具输出（`exec_command` 的结果、`read_file` 读回的整个文件）缺省折叠显示，避免刷屏：前 4 行照常流式打印，输出结束时打印省略标记（`……（另有 N 行，/verbose 显示完整输出）`）与最后 4 行；不超过 9 行的输出完整显示。这只是显示层截断——模型、Trace 与 Web App 收到的始终是完整输出。`/verbose`（或启动时加 `--verbose`）可关闭折叠、对后续输出生效；`--resume` 恢复的历史按同一规则折叠。`penguin run` 从不折叠：它的输出供管道与嵌套 CLI 消费。
 
 Ctrl-C 的行为依状态而定：
 

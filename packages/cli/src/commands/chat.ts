@@ -3,11 +3,16 @@
  *
  *   penguin chat [--model-id <id> --provider <group>] [--project-id <id>] [--agent-id <id>]
  *                [--workspace <path>] [--approve <allow-all|deny-all|read-only|always-ask>]
+ *                [--thinking <low|medium|high|xhigh>] [--verbose]
  *
  * Each line of input starts one conversation turn; `/goal[:<budget>] <objective>` runs
  * goal mode (looping until the goal reaches a terminal state);
  * `/compact` proactively compacts the context (reason=manual); `/clear` starts a fresh
- * blank Session in place (the old Session's Trace stays on disk, resumable); `/exit` or
+ * blank Session in place (the old Session's Trace stays on disk, resumable);
+ * `/thinking [<level>]` shows or overrides the thinking level for subsequent turns
+ * (see thinking-command.ts for the flag/command semantics); `/verbose` toggles
+ * tool-output collapsing (long outputs render head/tail + an elision marker by default —
+ * display only, the Trace keeps the full text; see output-collapse.ts); `/exit` or
  * `/quit` exits.
  * Uses the current directory when no Workspace is specified. A model reference is always an
  * explicit `(provider, model_id)` pair, so `--model-id` and `--provider` must be given
@@ -32,6 +37,7 @@ import type { Command } from "commander";
 import { createAgent, userText, VERSION } from "@prismshadow/penguin-core";
 import type {
   ApprovalDecision,
+  DefaultChatThinkingLevel,
   OmniMessage,
   Session,
   ToolCallPayload,
@@ -39,6 +45,11 @@ import type {
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { runTask } from "../task-loop.js";
 import { parseGoalCommand } from "../goal-command.js";
+import {
+  configuredThinkingLevel,
+  parseThinkingCommand,
+  resolveThinkingLevel,
+} from "../thinking-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
 import type { Messages } from "../i18n.js";
@@ -74,6 +85,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
     .option("--agent-id <id>", t.common.agentId)
     .option("--workspace <path>", t.common.workspace)
     .option("--approve <mode>", t.common.approve)
+    .option("--thinking <level>", t.common.thinking)
+    .option("--verbose", t.chat.verbose)
     .option("--resume [sessionId]", t.chat.resume)
     .action(async (opts) => {
       // The model reference is a pair: commander can only require each option on its own,
@@ -88,6 +101,10 @@ export function registerChatCommand(program: Command, t: Messages): void {
         return;
       }
       const mode = resolveApprovalMode(opts.approve, t);
+      const flagThinking = resolveThinkingLevel(opts.thinking, t);
+      // Tool-output collapsing (display only; the Trace keeps everything): on by default,
+      // `--verbose` starts with full output, `/verbose` toggles it mid-chat.
+      let verbose = opts.verbose === true;
       const out = process.stdout;
 
       const agent = await createAgent({
@@ -119,10 +136,23 @@ export function registerChatCommand(program: Command, t: Messages): void {
           workspaceDir: opts.workspace ?? process.cwd(),
           ...(opts.modelId ? { modelId: opts.modelId } : {}),
           ...(opts.provider ? { provider: opts.provider } : {}),
+          ...(flagThinking ? { thinkingLevel: flagThinking } : {}),
         });
       }
 
-      let renderer = new StreamRenderer(out, t);
+      // Thinking level shown/changed by `/thinking` (a per-turn run parameter, so it CAN
+      // change mid-session — unlike workspace/model):
+      // - `--thinking` on a new chat pins the Session default at creation (above), so
+      //   subagent sessions follow it; under `--resume` the Session already exists and the
+      //   flag becomes the initial per-turn override instead.
+      // - `/thinking <level>` sets the override; unset turns omit the parameter so core's
+      //   construction-time default applies (`sessionThinkingDefault` mirrors it for display).
+      let thinkingOverride: DefaultChatThinkingLevel | undefined =
+        opts.resume !== undefined ? flagThinking : undefined;
+      const sessionThinkingDefault = (): string =>
+        opts.resume === undefined && flagThinking ? flagThinking : configuredThinkingLevel(agent);
+
+      let renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
       // Tool schemas (each tool's call-line preview path) arrive on the stream as the
       // first run's tool_list_ready event — the toolset isn't known before then (MCP
       // servers connect lazily); the renderer registers them as they flow by.
@@ -136,7 +166,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
       // regular input.
       if (session.resumedHistory) {
         out.write(`${t.resumedBanner(session.sessionId, session.resumedHistory.length)}\n`);
-        renderHistory(session.resumedHistory, out, t);
+        renderHistory(session.resumedHistory, out, t, { collapseToolOutput: !verbose });
       }
 
       // TTY: raw mode + bracketed paste + PasteFilter; non-TTY (pipe/test): read stdin directly.
@@ -369,6 +399,28 @@ export function registerChatCommand(program: Command, t: Messages): void {
           if (text === "/exit" || text === "/quit") break;
           if (text.length === 0) continue;
 
+          // Instant local commands (no Task runs, state stays idle). Like every slash
+          // command they are recognized at the prompt only — typed mid-run they are
+          // steering text.
+          if (text === "/thinking" || text.startsWith("/thinking ")) {
+            const parsed = parseThinkingCommand(text);
+            if (!parsed.ok) {
+              out.write(`${t.error(t.thinkingInvalid(parsed.value))}\n`);
+            } else if (parsed.level === null) {
+              out.write(`${t.thinkingCurrent(thinkingOverride ?? sessionThinkingDefault())}\n`);
+            } else {
+              thinkingOverride = parsed.level;
+              out.write(`${t.thinkingSet(parsed.level)}\n`);
+            }
+            continue;
+          }
+          if (text === "/verbose") {
+            verbose = !verbose;
+            renderer.setCollapseToolOutput(!verbose);
+            out.write(`${verbose ? t.verboseOn() : t.verboseOff()}\n`);
+            continue;
+          }
+
           state = "running";
           taskAbort = new AbortController();
           try {
@@ -407,11 +459,12 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 workspaceDir: session.workspaceDir,
                 modelId: session.modelId,
                 provider: session.provider,
+                ...(flagThinking ? { thinkingLevel: flagThinking } : {}),
               });
               if (resumable) out.write(`${dim(t.resumeHint(resumeCommand(session.sessionId)))}\n`);
               session.dispose();
               session = next;
-              renderer = new StreamRenderer(out, t);
+              renderer = new StreamRenderer(out, t, { collapseToolOutput: !verbose });
               resumable = false;
               out.write(`${t.clearDone()}\n`);
             } else if (text === "/goal" || text.startsWith("/goal:") || text.startsWith("/goal ")) {
@@ -427,6 +480,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
                 await runTask(session, [userText(parsed.objective)], {
                   mode,
                   signal: taskAbort.signal,
+                  ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                   renderer,
                   interactivePrompt,
                   t,
@@ -438,6 +492,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
               await runTask(session, [userText(text)], {
                 mode,
                 signal: taskAbort.signal,
+                ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
                 renderer,
                 interactivePrompt,
                 t,
