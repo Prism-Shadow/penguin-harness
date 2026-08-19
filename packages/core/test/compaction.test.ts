@@ -55,6 +55,7 @@ import type {
   LLMOutcome,
 } from "../src/interfaces.js";
 import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-engine.js";
+import { Session } from "../src/session.js";
 import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { GenerativeModel } from "../src/llm/index.js";
 import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/agenthub";
@@ -1587,6 +1588,101 @@ describe("context compaction", () => {
     // (5) Compactable again once a round finishes in the new context.
     await collect(engine.run([userText("next")], { approve: allowAll }));
     expect(engine.compactability()).toBe("ok");
+  });
+
+  it("a resumed engine restores the turn count and the just-compacted reason", async () => {
+    // Trace replay hands these back through EngineInitialState. Without them the engine that a
+    // restart rebuilds starts from zero and reports a conversation-less context.
+    const withTurns = new ContextEngine({
+      llm: new ScriptedLLM([]),
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([]),
+      initialState: { sessionTurns: 4 },
+    });
+    expect(withTurns.compactability()).toBe("ok");
+
+    // Zero turns because the Trace ended on a completed compaction, not because nothing was said.
+    const justCompacted = new ContextEngine({
+      llm: new ScriptedLLM([]),
+      environment: fakeEnvironment,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([]),
+      initialState: { sessionTurns: 0, fromCompaction: true },
+    });
+    expect(justCompacted.compactability()).toBe("just_compacted");
+  });
+
+  it("a resumed Session compacts on request instead of silently doing nothing", async () => {
+    // A restart leaves the Session with real history on disk but no engine — that is built by
+    // the first run's bootstrap (ensureReady). A compaction asked for before anything has run
+    // must build it and fold the conversation: the caller has already been told compaction is
+    // available, so a silent no-op leaves it waiting for a banner that never arrives.
+    const resumedLLM = new ScriptedLLM([{ messages: [assistantText("[summary]s[/summary]")] }]);
+    const newContextLLM = new ScriptedLLM([]);
+    const written: OmniMessage[] = [];
+    const session = new Session({
+      meta: metaMessage.payload,
+      bootstrap: async () => ({ tools: [], llm: resumedLLM, mcp: [] }),
+      mcpServers: [],
+      environment: fakeEnvironment,
+      trace: {
+        write: async (msg) => {
+          written.push(msg);
+        },
+      },
+      createLLM: () => newContextLLM,
+      compaction: settings(),
+      // What agent.resumeSession derives from the Trace: three completed turns of history.
+      metaAlreadyWritten: true,
+      initialEngineState: { sessionTurns: 3, lastRequestTotal: 80 },
+      imagesDir: "/tmp/penguin-test-scratch",
+      modelHasVision: true,
+    });
+
+    expect(session.compactability()).toBe("ok");
+    const events = compactionEvents(await collect(session.compact()));
+    expect(events.map((e) => e.type)).toEqual(["compaction_begin", "compaction_end"]);
+    expect(events[1]).toMatchObject({ status: "completed" });
+    // The compaction request went to the LLM the bootstrap produced (the one resume seeds with
+    // the replayed history), so the summary folds the actual conversation.
+    expect(resumedLLM.calls).toHaveLength(1);
+    // Compaction reset the context, and the reason stays specific rather than falling back to
+    // "nothing said yet".
+    expect(session.compactability()).toBe("just_compacted");
+    session.dispose();
+  });
+
+  it("a never-run Session stays a strict no-op on compact, writing no Trace records", async () => {
+    // The guard the fix above must not loosen: a Session created in this process has no
+    // context, and compacting it must not bootstrap — trace records (session_meta /
+    // tool_list_ready) would make an untouched session look resumable.
+    let bootstrapped = false;
+    const written: OmniMessage[] = [];
+    const session = new Session({
+      meta: metaMessage.payload,
+      bootstrap: async () => {
+        bootstrapped = true;
+        return { tools: [], llm: new ScriptedLLM([]), mcp: [] };
+      },
+      mcpServers: [],
+      environment: fakeEnvironment,
+      trace: {
+        write: async (msg) => {
+          written.push(msg);
+        },
+      },
+      createLLM: () => new ScriptedLLM([]),
+      compaction: settings(),
+      imagesDir: "/tmp/penguin-test-scratch",
+      modelHasVision: true,
+    });
+
+    expect(session.compactability()).toBe("empty");
+    expect(await collect(session.compact())).toHaveLength(0);
+    expect(bootstrapped).toBe(false);
+    expect(written).toHaveLength(0);
+    session.dispose();
   });
 
   it("user abort during the compaction request keeps the context and carries tool outputs over", async () => {

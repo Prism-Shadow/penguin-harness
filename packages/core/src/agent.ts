@@ -557,6 +557,10 @@ export class Agent {
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
         pendingTraceRotation: resumed.contextClosed,
+        // A closed context is one a completed compaction opened: the same fact drives the
+        // deferred Trace rotation above and the "just compacted" compaction reason, but they
+        // are separate meanings and stay separate fields.
+        fromCompaction: resumed.contextClosed,
       },
       resumedHistory: resumed.renderMessages,
     });

@@ -150,6 +150,13 @@ export interface EngineInitialState {
   pendingSummary?: OmniMessage;
   /** Carried-over Session cumulative turn count. */
   sessionTurns?: number;
+  /**
+   * The resumed context was opened by a **completed** compaction (the Trace's last record is a
+   * completed `compaction_end`), so it is legitimately empty. Restores `fromCompaction`, which
+   * is what keeps `compactability()` answering "just compacted" rather than "nothing said yet"
+   * after a restart — both have zero turns and are not the same message to a user.
+   */
+  fromCompaction?: boolean;
   /** Carried-over Session cumulative token counts (handed to the new object when compaction swaps it in). */
   sessionTokens?: TokenCounts;
   /** Most recent token_usage's request.total (the context usage figure, keeps compaction threshold checks continuous). */
@@ -244,6 +251,32 @@ const carriesSteering = (m: OmniMessage): boolean => {
 
 /** Whether compaction is possible; when not `ok`, `compact()` is a no-op and yields no messages (see ContextEngine.compactability). */
 export type CompactAvailability = "ok" | "unsupported" | "empty" | "just_compacted";
+
+/** The context facts the availability rule reads (see `compactAvailability`). */
+export interface CompactabilityState {
+  /** Whether the compaction capability is configured at all (settings + the new-context LLM factory). */
+  configured: boolean;
+  /** Completed turns in the **current** context (reset by compaction, restored from Trace on resume). */
+  sessionTurns: number;
+  /** Whether the current context was opened by a completed compaction rather than by the user. */
+  fromCompaction: boolean;
+}
+
+/**
+ * The compaction-availability rule, stated once.
+ *
+ * Two callers answer the same question from different vantage points and must not drift apart:
+ * a live `ContextEngine` reads its own counters, while a `Session` resumed after a process
+ * restart has no engine yet (it is built by the first run's bootstrap) and answers from the
+ * state its Trace replay recovered. Duplicating the rule is how "restart the client and it
+ * claims there is nothing to compact" happens.
+ */
+export function compactAvailability(state: CompactabilityState): CompactAvailability {
+  if (!state.configured) return "unsupported";
+  if (state.sessionTurns > 0) return "ok";
+  // Both remaining cases have zero turns and mean completely different things to the user.
+  return state.fromCompaction ? "just_compacted" : "empty";
+}
 
 /**
  * Corrective note prepended to the re-sent compaction Prompt after a committed-but-unusable
@@ -448,6 +481,7 @@ export class ContextEngine {
       this.pendingCarryOver = init.carryOver ?? [];
       this.pendingSummary = init.pendingSummary ?? null;
       this.sessionTurns = init.sessionTurns ?? 0;
+      this.fromCompaction = init.fromCompaction ?? false;
       this.lastSessionTokens = init.sessionTokens ?? emptyTokenCounts();
       this.lastRequestTotal = init.lastRequestTotal ?? 0;
       this.pendingTraceRotation = init.pendingTraceRotation ?? false;
@@ -850,11 +884,16 @@ export class ContextEngine {
    *   - `just_compacted`: no new conversation since the last compaction. Both cases have
    *     `sessionTurns` === 0, but they mean two completely different things to the user and must
    *     not be conflated.
+   *
+   * The rule itself lives in `compactAvailability` so that a Session resumed after a restart —
+   * which has no engine yet — answers identically from its replayed state.
    */
   compactability(): CompactAvailability {
-    if (!this.deps.compaction || !this.deps.createLLM) return "unsupported";
-    if (this.sessionTurns > 0) return "ok";
-    return this.fromCompaction ? "just_compacted" : "empty";
+    return compactAvailability({
+      configured: Boolean(this.deps.compaction && this.deps.createLLM),
+      sessionTurns: this.sessionTurns,
+      fromCompaction: this.fromCompaction,
+    });
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {

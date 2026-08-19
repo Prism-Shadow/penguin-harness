@@ -71,15 +71,35 @@ import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
 
-/** 409 for when there's nothing to compact: give the specific reason rather than a one-size-fits-none message. */
+/**
+ * 409 for when there's nothing to compact: give the specific reason rather than a
+ * one-size-fits-none message.
+ *
+ * Each reason carries its **own code**, not just its own message. Clients localize by code
+ * (the Web's `apiErrorText` looks the code up in a table and falls back to the raw English
+ * message), so one shared code leaves exactly two bad options: flatten three unrelated
+ * explanations into one vague sentence, or let English prose reach a non-English UI. One code
+ * per sub-reason is how the rest of this API splits a refusal — `dir_not_absolute` /
+ * `dir_not_found` / `not_a_dir` are three codes for three ways of rejecting one directory.
+ */
 function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError {
-  const messages: Record<typeof why, string> = {
-    unsupported: "This Agent does not have context compaction configured.",
-    empty: "The current context has nothing to compact (no completed conversation turns yet).",
-    just_compacted:
-      "The context was just compacted and there is no new conversation since; no need to compact again.",
+  const reasons: Record<typeof why, { code: string; message: string }> = {
+    unsupported: {
+      code: "compaction_not_configured",
+      message: "This Agent does not have context compaction configured.",
+    },
+    empty: {
+      code: "nothing_to_compact",
+      message: "The current context has nothing to compact (no completed conversation turns yet).",
+    },
+    just_compacted: {
+      code: "already_compacted",
+      message:
+        "The context was just compacted and there is no new conversation since; no need to compact again.",
+    },
   };
-  return new HttpError(409, "nothing_to_compact", messages[why]);
+  const { code, message } = reasons[why];
+  return new HttpError(409, code, message);
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
