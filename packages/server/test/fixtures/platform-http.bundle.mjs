@@ -2,8 +2,9 @@
  * Test fixture: a pushed platform that SERVES HTTP.
  *
  * The point of the seam it exercises: this bundle adds `/api/demo/ping`, replaces the
- * runtime's `/api/version`, and tries (and fails) to claim `/api/hmr/platform` — none of which
- * the runtime knows anything about. It arrives as bytes over one HTTP push, with no rebuild.
+ * runtime's `/api/version`, answers `/api/demo/whoami` by claiming the runtime's identity
+ * capability, and tries (and fails) to claim `/api/hmr/platform` — none of which the runtime
+ * knows anything about. It arrives as bytes over one HTTP push, with no rebuild.
  *
  * Standalone on purpose, like the other fixtures: no kernel or arktype imports, only what an
  * independently built artifact can rely on.
@@ -37,7 +38,7 @@ const iface = {
 };
 
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: "http-fixture" }),
@@ -62,6 +63,26 @@ const impl = {
             status: 200,
             headers: { "content-type": "application/json" },
           });
+        }
+        if (url.pathname === "/api/demo/whoami") {
+          // The seam runs ahead of the auth middleware, so this bundle has no user in hand
+          // and claims the runtime's resolver instead of re-implementing session lookup.
+          // The key is spelled out rather than imported: it is a wire contract between the
+          // two layers, and this fixture is standalone like a real pushed artifact.
+          const identity = ctx.resources.claim("runtime:identity");
+          if (identity === undefined) {
+            return new Response(JSON.stringify({ error: "no identity capability" }), {
+              status: 501,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return identity(request).then(
+            (user) =>
+              new Response(JSON.stringify({ userId: user ? user.userId : null }), {
+                status: user ? 200 : 401,
+                headers: { "content-type": "application/json" },
+              }),
+          );
         }
         if (url.pathname === "/api/demo/boom") {
           throw new Error("deliberate platform failure");

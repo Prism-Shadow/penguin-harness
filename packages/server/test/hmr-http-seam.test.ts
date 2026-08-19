@@ -53,6 +53,22 @@ describe("platform HTTP seam", () => {
     await t.cleanup();
   });
 
+  it("a pushed platform authenticates through the runtime instead of re-implementing it", async () => {
+    expect((await pushPlatform(t.app, cookie, bundle)).status).toBe(200);
+
+    // Signed in: the platform's own endpoint knows who is calling, though the seam runs
+    // before the auth middleware and it never saw a cookie name or a session table.
+    const mine = await api.get("/api/demo/whoami");
+    expect(mine.status).toBe(200);
+    expect(await mine.json()).toEqual({ userId: "admin" });
+
+    // No cookie: the resolver answers null, and the platform decides what that means. What
+    // must NOT happen is an unattributable request reading as one from everybody.
+    const anonymous = await t.app.request("/api/demo/whoami");
+    expect(anonymous.status).toBe(401);
+    expect(await anonymous.json()).toEqual({ userId: null });
+  });
+
   it("a pushed platform adds a route the runtime has never heard of", async () => {
     // Before: nothing serves it, and no rebuild is going to happen in between.
     expect((await api.get("/api/demo/ping")).status).toBe(404);
