@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import xterm, { type Terminal } from "@xterm/headless";
 import pty, { type IPty } from "node-pty";
 import { TerminalInputModeTracker } from "./input-mode.js";
-import { ensureSpawnHelperExecutable } from "./spawn-helper.js";
+import { ensureSpawnHelperExecutable } from "../../terminal/spawn-helper.js";
 import {
   captureLines,
   renderRestoreAnsi,

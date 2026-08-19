@@ -17,9 +17,9 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { HttpError } from "../errors.js";
-import { badRequest, pathParam } from "../validate.js";
-import type { TerminalManager } from "../../terminal/manager.js";
+import { HttpError } from "../../http/errors.js";
+import { badRequest, pathParam } from "../../http/validate.js";
+import type { TerminalManager } from "./manager.js";
 
 /**
  * Key tokens accepted by POST /keys, so a caller can send Enter or Ctrl-C without

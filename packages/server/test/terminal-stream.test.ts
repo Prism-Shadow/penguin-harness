@@ -18,7 +18,7 @@ import {
   TerminalStreamOpcode,
   decodeTerminalFrame,
   encodeTerminalFrame,
-} from "../src/terminal/frames.js";
+} from "../src/platform/terminal/frames.js";
 
 const TEST_TIMEOUT = 20_000;
 
