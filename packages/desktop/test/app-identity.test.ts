@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { appIdentity, devDataRoot } from "../src/app-identity.js";
+import { appIdentity, desktopDataRoot, devDataRoot } from "../src/app-identity.js";
 
 const builderConfig = fs.readFileSync(
   fileURLToPath(new URL("../electron-builder.yml", import.meta.url)),
@@ -45,5 +45,69 @@ describe("devDataRoot", () => {
   it("is ~/.penguin/dev-data, apart from the release/CLI ~/.penguin/data", () => {
     expect(devDataRoot("/home/dev")).toBe(path.join("/home/dev", ".penguin", "dev-data"));
     expect(devDataRoot("/home/dev")).not.toBe(path.join("/home/dev", ".penguin", "data"));
+  });
+});
+
+/**
+ * The precedence rule #292 turns on. These pin the RULE, not the constants: flipping the
+ * packaged branch, dropping the PENGUIN_HOME precedence, or letting either form fall into
+ * the other's root has to fail here.
+ */
+describe("desktopDataRoot", () => {
+  const releaseRoot = path.join("/home/dev", ".penguin", "data");
+  const devRoot = path.join("/home/dev", ".penguin", "dev-data");
+  /** Stands in for core's resolveRoot, and records whether the rule consulted it. */
+  function stubRelease(): (() => string) & { calls: number } {
+    const fn = (): string => {
+      fn.calls += 1;
+      return releaseRoot;
+    };
+    fn.calls = 0;
+    return fn;
+  }
+
+  it("an explicit PENGUIN_HOME wins in both forms", () => {
+    for (const isPackaged of [true, false]) {
+      const release = stubRelease();
+      expect(
+        desktopDataRoot({
+          envHome: "/srv/elsewhere",
+          isPackaged,
+          homedir: "/home/dev",
+          releaseRoot: release,
+        }),
+      ).toBe("/srv/elsewhere");
+      // The explicit value short-circuits: core's resolver is never consulted.
+      expect(release.calls).toBe(0);
+    }
+  });
+
+  it("a packaged build with no PENGUIN_HOME shares the CLI's root via core's resolver", () => {
+    const release = stubRelease();
+    expect(
+      desktopDataRoot({
+        envHome: undefined,
+        isPackaged: true,
+        homedir: "/home/dev",
+        releaseRoot: release,
+      }),
+    ).toBe(releaseRoot);
+    // Delegated rather than re-derived, so ~/.penguin/data keeps one definition point.
+    expect(release.calls).toBe(1);
+  });
+
+  it("an unpackaged run with no PENGUIN_HOME takes the dev root, never the release one", () => {
+    const release = stubRelease();
+    const root = desktopDataRoot({
+      envHome: undefined,
+      isPackaged: false,
+      homedir: "/home/dev",
+      releaseRoot: release,
+    });
+    expect(root).toBe(devRoot);
+    // The #292 regression guard: a bare dev launch must not land on the release install's
+    // data root, where it would attach to the running release server via its server.lock.
+    expect(root).not.toBe(releaseRoot);
+    expect(release.calls).toBe(0);
   });
 });
