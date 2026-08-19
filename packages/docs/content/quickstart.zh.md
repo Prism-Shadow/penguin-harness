@@ -7,11 +7,11 @@ PenguinHarness 有三条入口，背后是同一个引擎，区别只在你以�
 
 | 路线 | 适合 | 需要用终端吗 |
 | --- | --- | --- |
-| [桌面端应用](/quickstart-desktop) | 想直接把 PenguinHarness 当成一个应用来用 | 不需要 |
+| [桌面端应用](/quickstart-desktop) | 想直接把 PenguinHarness 当成一个应用来用 | 仅在系统拦下首次启动时 |
 | [命令行与 Web 应用](/quickstart-cli) | 装到服务器或远程机器，或想要 `penguin` 命令 | 安装时用一次 |
 | [SDK](/quickstart-sdk) | 把引擎嵌进自己的 TypeScript 程序 | 需要 |
 
-拿不准就选[桌面端应用](/quickstart-desktop)：它步骤最少，而且换到另一条路线不用重来。
+拿不准就选[桌面端应用](/quickstart-desktop)：它步骤最少，而且换到另一条路线不用重来。目前的构建尚未签名，macOS 与 Linux 首次启动时可能需要执行一条命令，那一页里写了。
 
 ## 三条路线共用什么
 

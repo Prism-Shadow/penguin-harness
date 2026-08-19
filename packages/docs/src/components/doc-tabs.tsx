@@ -7,12 +7,14 @@
  * order — the pairing comes from the document, not from a separate list that could drift.
  * Arrow keys move between tabs, the roving tabindex keeping one stop for the whole strip.
  */
-import { Children, useRef, useState } from "react";
+import { Children, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 export function DocTabs({ labels, children }: { labels: string[]; children: ReactNode }) {
   const panels = Children.toArray(children);
   const [selected, setSelected] = useState(0);
+  // Pairing ids, so a screen reader can tell which tab owns the panel it is reading.
+  const groupId = useId();
   const stripRef = useRef<HTMLDivElement | null>(null);
   const active = Math.min(selected, labels.length - 1);
 
@@ -31,6 +33,8 @@ export function DocTabs({ labels, children }: { labels: string[]; children: Reac
             key={label}
             type="button"
             role="tab"
+            id={`${groupId}-tab-${index}`}
+            aria-controls={`${groupId}-panel-${index}`}
             aria-selected={index === active}
             tabIndex={index === active ? 0 : -1}
             onClick={() => setSelected(index)}
@@ -48,7 +52,13 @@ export function DocTabs({ labels, children }: { labels: string[]; children: Reac
           </button>
         ))}
       </div>
-      <div role="tabpanel">{panels[active]}</div>
+      <div
+        role="tabpanel"
+        id={`${groupId}-panel-${active}`}
+        aria-labelledby={`${groupId}-tab-${active}`}
+      >
+        {panels[active]}
+      </div>
     </div>
   );
 }

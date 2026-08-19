@@ -101,6 +101,28 @@ describe("docs search", () => {
     );
   });
 
+  it("keeps a fence inside a callout out of the index, grammar name and quote markers included", () => {
+    const markdown = [
+      "> [!INFO]- The system blocked the first launch?",
+      ">",
+      "> Grant it once and the app starts normally:",
+      ">",
+      "> ```bash",
+      "> chmod +x penguin-desktop-linux-x86_64.AppImage",
+      "> ```",
+    ].join("\n");
+
+    expect(markdownToSearchText(markdown)).toBe(
+      "The system blocked the first launch? Grant it once and the app starts normally: chmod +x penguin-desktop-linux-x86_64.AppImage",
+    );
+  });
+
+  it("leaves an unquoted fence's blockquote lines verbatim", () => {
+    const markdown = ["```markdown", "> a quoted line", "```"].join("\n");
+
+    expect(markdownToSearchText(markdown)).toBe("> a quoted line");
+  });
+
   it("removes paired formatting without changing literal identifier punctuation", () => {
     expect(
       markdownToSearchText(

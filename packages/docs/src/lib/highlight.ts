@@ -4,8 +4,9 @@
  * Built from `shiki/core` with only the languages this site actually writes, and with the
  * JavaScript RegExp engine rather than Oniguruma — that drops the WASM payload entirely,
  * and every grammar below was checked to highlight correctly under it. The highlighter is
- * created once, lazily, on the first code block: everything here lives behind a dynamic
- * import so it becomes its own chunk instead of weighing down the first paint.
+ * created once, lazily, on the first code block, and each grammar is registered only when a
+ * block actually uses it: everything here lives behind a dynamic import, so the core and each
+ * grammar become their own chunks instead of weighing down the first paint.
  *
  * Both themes are baked into one output using Shiki's dual-theme CSS variables, so the
  * light/dark toggle is a CSS switch (see styles.css) and never re-highlights.
@@ -47,6 +48,7 @@ const GRAMMARS: Record<string, keyof typeof LOADERS> = {
 };
 
 let highlighter: Promise<HighlighterCore> | null = null;
+const grammars = new Map<keyof typeof LOADERS, Promise<void>>();
 
 function loadHighlighter(): Promise<HighlighterCore> {
   highlighter ??= (async () => {
@@ -56,11 +58,28 @@ function loadHighlighter(): Promise<HighlighterCore> {
     ]);
     return createHighlighterCore({
       themes: [import("shiki/themes/github-light.mjs"), import("shiki/themes/github-dark.mjs")],
-      langs: Object.values(LOADERS).map((load) => load()),
+      // Grammars load per language, on the first block that needs one: starting from none
+      // is what keeps a page that only writes Bash from fetching all seven chunks.
+      langs: [],
       engine: createJavaScriptRegexEngine(),
     });
   })();
   return highlighter;
+}
+
+/** Registers a grammar once, sharing the in-flight load between blocks of the same language. */
+function loadGrammar(shiki: HighlighterCore, lang: keyof typeof LOADERS): Promise<void> {
+  let pending = grammars.get(lang);
+  if (!pending) {
+    // A failed load is not cached, so a later block can try again rather than inheriting
+    // a permanently rejected promise.
+    pending = shiki.loadLanguage(LOADERS[lang]()).catch((error: unknown) => {
+      grammars.delete(lang);
+      throw error;
+    });
+    grammars.set(lang, pending);
+  }
+  return pending;
 }
 
 /** Whether a fence language has a grammar — lets a caller skip the async path entirely. */
@@ -74,6 +93,7 @@ export async function highlight(code: string, language: string): Promise<string 
   if (!lang) return null;
   try {
     const shiki = await loadHighlighter();
+    await loadGrammar(shiki, lang);
     return shiki.codeToHtml(code, {
       lang,
       themes: { light: "github-light", dark: "github-dark" },

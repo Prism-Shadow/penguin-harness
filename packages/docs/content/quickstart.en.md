@@ -7,11 +7,11 @@ PenguinHarness has three ways in. They run the same engine; they differ only in 
 
 | Route | Best for | Terminal needed? |
 | --- | --- | --- |
-| [Desktop app](/quickstart-desktop) | Using PenguinHarness as a product, straight away | No |
+| [Desktop app](/quickstart-desktop) | Using PenguinHarness as a product, straight away | Only if the system blocks the first launch |
 | [CLI and Web App](/quickstart-cli) | Servers and remote machines, or wanting the `penguin` command | Once, to install |
 | [SDK](/quickstart-sdk) | Embedding the engine in your own TypeScript program | Yes |
 
-If you are unsure, take the [desktop app](/quickstart-desktop): it has the fewest steps, and moving to another route later costs you nothing.
+If you are unsure, take the [desktop app](/quickstart-desktop): it has the fewest steps, and moving to another route later costs you nothing. Builds are not signed yet, so macOS and Linux may need one command the first time — that page carries it.
 
 ## What all three share
 

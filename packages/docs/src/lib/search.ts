@@ -170,11 +170,21 @@ export function markdownToSearchText(markdown: string): string {
   const protectedLines: string[] = [];
   let fence = "";
   let fencedCode: string[] = [];
+  let quotedFence = false;
 
-  for (const line of lines) {
+  // A callout body is a blockquote, so its fences arrive as "> ```bash" and never match a
+  // fence opener that anchors at the line start. The prefix therefore comes off before the
+  // match, and off the body lines of a fence that opened quoted — otherwise the grammar name
+  // and the "> " markers reach the index as prose. A fence that opened unquoted keeps its
+  // lines verbatim, so a Markdown example quoting a blockquote is not rewritten.
+  const unquote = (line: string): string => line.replace(/^\s{0,3}(?:>[ \t]?)+/, "");
+
+  for (const raw of lines) {
+    const line: string = !fence || quotedFence ? unquote(raw) : raw;
     const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1] ?? "";
     if (!fence && marker) {
       fence = marker;
+      quotedFence = line !== raw;
       fencedCode = [];
       continue;
     }
