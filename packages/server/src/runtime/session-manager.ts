@@ -605,6 +605,23 @@ export class SessionManager {
   }
 
   /**
+   * Run a metadata operation at an idle Session boundary under the same mutex as Task and
+   * compaction starts. Session fork uses this to snapshot an append-only Trace without a Task
+   * beginning between its status check and final read. An uncached Session is idle by definition;
+   * unlike startTask this path deliberately does not load a heavyweight runtime.
+   */
+  async atIdleBoundary<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = this.entries.get(sessionId);
+      if (entry) this.assertIdle(entry);
+      return operation();
+    });
+  }
+
+  /**
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).

@@ -67,6 +67,8 @@ import type {
   SessionCategory,
   SessionCreateRequest,
   SessionCreateResponse,
+  SessionForkRequest,
+  SessionForkResponse,
   SessionPatchRequest,
   SessionResponse,
   SessionProcessesResponse,
@@ -403,6 +405,12 @@ export const createSession = (projectId: string, agentId: string, body: SessionC
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions`,
     { method: "POST", body },
   );
+
+export const forkSession = (sessionId: string, body: SessionForkRequest) =>
+  apiFetch<SessionForkResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/fork`, {
+    method: "POST",
+    body,
+  });
 
 export const getSession = (sessionId: string) =>
   apiFetch<SessionResponse>(`/api/sessions/${encodeURIComponent(sessionId)}`);

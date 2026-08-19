@@ -49,3 +49,19 @@ describe("runTask abort reporting", () => {
     expect(result.aborted).toBe(false);
   });
 });
+
+describe("runTask option forwarding", () => {
+  it("forwards the per-turn thinking level to session.run (omitted when unset)", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const session = {
+      async *run(_prompt: OmniMessage[], opts: Record<string, unknown>) {
+        seen.push(opts);
+      },
+      toolPermission: () => "rw",
+    } as unknown as Session;
+    await runTask(session, [], { renderer: silentRenderer(), t, thinkingLevel: "high" });
+    await runTask(session, [], { renderer: silentRenderer(), t });
+    expect(seen[0]!["thinkingLevel"]).toBe("high");
+    expect("thinkingLevel" in seen[1]!).toBe(false);
+  });
+});

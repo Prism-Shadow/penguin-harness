@@ -183,6 +183,7 @@ describe("rowToEntry (the persistence funnel)", () => {
     vision: true,
     contextWindow: "",
     maxTokens: "",
+    fastMode: false,
     clientType: "",
     cacheRead: "",
     cacheWrite: "",

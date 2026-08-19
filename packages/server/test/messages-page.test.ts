@@ -15,6 +15,7 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  abortEvent,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -197,6 +198,75 @@ describe("messages windowed reads", () => {
     });
     expect(userTexts(older.messages)).toEqual(["q1"]);
     expect(older.before).toBeUndefined();
+    const full = await service.readMessages(P, A, S);
+    expect([...older.messages, ...tail.messages]).toEqual(full);
+  });
+
+  it("a compaction the user quit out of keeps the conversation after it visible (issue #288)", async () => {
+    // The process died mid-compaction, leaving compaction_begin with no end; core's resume
+    // closes the span as `failed` before the session continues the shard. The scanner must
+    // treat everything after the closure as ordinary conversation again — before the fix,
+    // the unclosed begin kept `compactionActive` set for the rest of the shard and every
+    // later prompt vanished from the window (no boundary, no unit, no messages).
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at(
+        "2026-07-20T10:01:00.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 1 }),
+      ),
+      at("2026-07-20T10:01:01.000Z", userText("COMPACT NOW")),
+      at("2026-07-20T10:01:02.000Z", requestBegin()),
+      // ...process died; the resume closed the span before writing anything else:
+      at(
+        "2026-07-20T10:01:30.000Z",
+        compactionEnd({ reason: "context", mode: "summarize", status: "failed" }),
+      ),
+      ...turn(2, 2, 2000),
+    ]);
+
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    // The post-crash prompt is a unit of its own and stays visible.
+    expect(userTexts(tail.messages)).toEqual(["q2"]);
+    expect(tail.prior.turns).toBe(1);
+
+    // The windows still tile the transcript exactly.
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      limit: 10,
+    });
+    const full = await service.readMessages(P, A, S);
+    expect([...older.messages, ...tail.messages]).toEqual(full);
+  });
+
+  it("a mid-task compaction the user interrupted keeps its own turn's messages in the window", async () => {
+    // The user hit stop during a mid-task compaction: the engine closes the pair and ends
+    // the run with an abort, all inside the turn that q1 opened. The abort does not cut a
+    // window of its own, and the interrupted compaction stays attached to its turn.
+    await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+      sessionMeta(metaPayload()),
+      ...turn(0, 1, 1000),
+      at(
+        "2026-07-20T10:01:00.000Z",
+        compactionBegin({ reason: "context", mode: "summarize", context: 900, turns: 1 }),
+      ),
+      at("2026-07-20T10:01:01.000Z", userText("COMPACT NOW")),
+      at(
+        "2026-07-20T10:01:02.000Z",
+        compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
+      ),
+      at("2026-07-20T10:01:03.000Z", abortEvent("aborted during compaction")),
+      ...turn(2, 2, 2000),
+    ]);
+
+    const tail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+    expect(userTexts(tail.messages)).toEqual(["q2"]);
+    const older = await service.readMessagesPage(P, A, S, {
+      kind: "before",
+      cursor: decodeCursor(tail.before!)!,
+      limit: 10,
+    });
     const full = await service.readMessages(P, A, S);
     expect([...older.messages, ...tail.messages]).toEqual(full);
   });

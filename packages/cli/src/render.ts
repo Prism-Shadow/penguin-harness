@@ -65,6 +65,7 @@ import type {
   ToolDefinition,
 } from "@prismshadow/penguin-core";
 import { renderFileToolApprovalPayload, renderPartialToolCall } from "./tool-render.js";
+import { ToolOutputCollapser, collapseLines } from "./output-collapse.js";
 import { defaultMessages } from "./i18n.js";
 import type { Messages } from "./i18n.js";
 
@@ -188,6 +189,17 @@ export function formatAbort(p: AbortPayload, t: Messages, c: Palette = STDOUT_PA
   return dim(t.abortLabel(p.reason ?? undefined), c);
 }
 
+/** Options shared by history and streaming rendering. */
+export interface RenderOptions {
+  /**
+   * Collapse long tool outputs to head/tail lines plus a dim elision marker (see
+   * output-collapse.ts). Display only — the Trace keeps the full text. Default off, so
+   * `penguin run` (whose output feeds pipes and nested CLIs) stays complete; the chat
+   * REPL turns it on unless `--verbose`.
+   */
+  collapseToolOutput?: boolean;
+}
+
 /**
  * Statically renders resumed history messages (`--resume`: full-message semantics, no
  * partial_*, including interrupted messages and their markers). Uses the
@@ -199,6 +211,7 @@ export function renderHistory(
   messages: OmniMessage[],
   out: NodeJS.WritableStream,
   t: Messages = defaultMessages(),
+  opts: RenderOptions = {},
 ): void {
   const c = paletteFor(out);
   // tool_call_id -> tool name (keyed with the origin chain: parent/child ids may collide),
@@ -262,14 +275,30 @@ export function renderHistory(
         const name = toolNames.get(nameKey(msg, p.tool_call_id ?? ""));
         const label = name ? `${tag} ${name}` : tag;
         const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
-        for (const line of (p.output ?? "").split("\n")) {
+        const writeLine = (line: string): void => {
           const color = colorDiff ? diffLineColor(line[0], c) : null;
           out.write(
             color
               ? `${c.dim}${label} -> ${c.reset}${color}${line}${c.reset}\n`
               : `${c.dim}${label} -> ${c.reset}${line}\n`,
           );
+        };
+        // Collapsed history rendering keeps the same head/tail shape as the streaming
+        // collapse, so a resumed transcript doesn't re-flood the screen. An output ending
+        // in a newline splits into a trailing "" that the streaming collapser never counts
+        // (flush only buffers its partial line when non-empty) — drop it here too, so the
+        // same output reports the same hidden count live and on resume instead of spending
+        // one of the four tail rows on a blank gutter line. The uncollapsed path keeps it
+        // and renders exactly as before.
+        const lines = (p.output ?? "").split("\n");
+        const collapsed = opts.collapseToolOutput
+          ? collapseLines(lines.length > 1 && lines.at(-1) === "" ? lines.slice(0, -1) : lines)
+          : { head: lines, hidden: 0, tail: [] };
+        for (const line of collapsed.head) writeLine(line);
+        if (collapsed.hidden > 0) {
+          out.write(`${c.dim}${label} -> ${t.toolOutputElided(collapsed.hidden)}${c.reset}\n`);
         }
+        for (const line of collapsed.tail) writeLine(line);
         // Attached images aren't rendered by the terminal; print one placeholder line per image.
         for (const _ of p.images ?? []) {
           out.write(`${c.dim}${label} -> [image]${c.reset}\n`);
@@ -304,6 +333,10 @@ export class StreamRenderer {
   private readonly t: Messages;
   /** This renderer's palette, decided once at construction from the output stream and NO_COLOR/FORCE_COLOR/TERM (see supportsColor). */
   private readonly c: Palette;
+  /** Collapse long tool outputs to head/tail + a dim elision marker (see RenderOptions); toggled live by the chat REPL's `/verbose`. */
+  private collapseToolOutput: boolean;
+  /** Per-stream collapse state (keyed by tool_call_id), created lazily on the first output delta; settled and dropped at the stream's stop (endTask settles leftovers of aborted streams). */
+  private readonly toolOutCollapsers = new Map<string, ToolOutputCollapser>();
 
   /** Pending render queue: while the screen is held (a streaming segment is in progress / awaiting user input), messages queue up here. */
   private pending: OmniMessage[] = [];
@@ -429,10 +462,24 @@ export class StreamRenderer {
   /** The pending failure's attempt ordinal (request_end.attempt — the core's authoritative count, printed on the retry line). */
   private pendingRetryAttempt: number | undefined;
 
-  constructor(out: NodeJS.WritableStream = process.stdout, t: Messages = defaultMessages()) {
+  constructor(
+    out: NodeJS.WritableStream = process.stdout,
+    t: Messages = defaultMessages(),
+    opts: RenderOptions = {},
+  ) {
     this.out = out;
     this.t = t;
     this.c = paletteFor(out);
+    this.collapseToolOutput = opts.collapseToolOutput === true;
+  }
+
+  /**
+   * Turns tool-output collapsing on/off (the chat REPL's `/verbose` toggle). Commands are
+   * accepted only while the REPL is idle, so no stream is mid-collapse when this flips —
+   * it simply decides how subsequent outputs render.
+   */
+  setCollapseToolOutput(collapse: boolean): void {
+    this.collapseToolOutput = collapse;
   }
 
   handle(msg: OmniMessage): void {
@@ -900,6 +947,10 @@ export class StreamRenderer {
   }
 
   private handlePartialText(p: PartialTextPayload): void {
+    // Between the paired compaction events the stream carries the summary being written as
+    // ordinary partial_text (issue #290): the CLI keeps its one-line compaction progress and
+    // stays quiet — the Web banner is where the streamed text shows.
+    if (this.compactionActive) return;
     if (p.event_type === "stop") {
       this.finishLine();
       return;
@@ -1004,24 +1055,76 @@ export class StreamRenderer {
   }
 
   private handlePartialToolOutput(p: PartialToolCallOutputPayload): void {
+    const label = this.outputLabel(p.tool_call_id);
+    const name = this.toolNames.get(p.tool_call_id);
+    const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
     if (p.event_type === "stop") {
+      this.settleCollapser(p.tool_call_id, label, colorDiff);
       this.finishLine();
       return;
     }
     if (this.inDim) this.finishLine();
-    const label = this.outputLabel(p.tool_call_id);
-    const name = this.toolNames.get(p.tool_call_id);
-    const colorDiff = name !== undefined && DIFF_OUTPUT_TOOLS.has(name);
-    if (p.output) this.writeToolOutput(p.output, label, colorDiff);
+    if (p.output) {
+      if (this.collapseToolOutput) {
+        // Collapsed mode: the head lines stream through live; the rest is held back and
+        // settled at the stream's stop (elision marker + tail, see output-collapse.ts).
+        let collapser = this.toolOutCollapsers.get(p.tool_call_id);
+        if (!collapser) {
+          collapser = new ToolOutputCollapser();
+          this.toolOutCollapsers.set(p.tool_call_id, collapser);
+        }
+        const live = collapser.push(p.output);
+        if (live) this.writeToolOutput(live, label, colorDiff);
+      } else {
+        this.writeToolOutput(p.output, label, colorDiff);
+      }
+    }
     // Image delta (carried whole in a single delta): the terminal doesn't render the
     // image itself, so print one placeholder line per image, using the same gutter label
     // as the text output.
     if (p.images && p.images.length > 0) {
+      // Keep display order under collapsing: settle any held-back text before the image
+      // placeholders (text arriving after starts a fresh collapser — a new head allowance
+      // for this rare mixed text/image output).
+      this.settleCollapser(p.tool_call_id, label, colorDiff);
       this.finishLine();
       for (const _ of p.images) {
         this.out.write(`${this.c.dim}${label} -> [image]${this.c.reset}\n`);
       }
       this.lastLineKey = null;
+    }
+  }
+
+  /**
+   * Writes a collapsed stream's held-back remainder — the dim elision marker (when lines
+   * stay hidden) followed by the tail lines — and retires its collapse state. No-op for
+   * streams that never held anything back (short outputs, verbose mode).
+   */
+  private settleCollapser(toolCallId: string, label: string, colorDiff: boolean): void {
+    const collapser = this.toolOutCollapsers.get(toolCallId);
+    if (!collapser) return;
+    this.toolOutCollapsers.delete(toolCallId);
+    if (!collapser.hasBuffered()) return;
+    const { hidden, lines } = collapser.flush();
+    this.finishLine();
+    if (hidden > 0) {
+      this.out.write(
+        `${this.c.dim}${label} -> ${this.t.toolOutputElided(hidden)}${this.c.reset}\n`,
+      );
+    }
+    if (lines.length > 0) this.writeToolOutput(`${lines.join("\n")}\n`, label, colorDiff);
+    this.lastLineKey = null;
+  }
+
+  /** Settles every outstanding collapser (a stream aborted before its stop must not swallow its held-back tail); called by endTask. */
+  private settleAllCollapsers(): void {
+    for (const id of [...this.toolOutCollapsers.keys()]) {
+      const name = this.toolNames.get(id);
+      this.settleCollapser(
+        id,
+        this.outputLabel(id),
+        name !== undefined && DIFF_OUTPUT_TOOLS.has(name),
+      );
     }
   }
 
@@ -1088,6 +1191,9 @@ export class StreamRenderer {
     this.flushDeferredDecisions();
     this.holder = null;
     this.drain();
+    // A tool-output stream cut off before its stop (aborted turn) still has held-back
+    // collapsed lines: settle them here so nothing silently vanishes from the screen.
+    this.settleAllCollapsers();
     this.finishLine();
     // This task's elapsed time = first message -> last non-compaction request_end
     // (mid-turn compaction falls within the span and is counted; compaction after the

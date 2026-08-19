@@ -29,10 +29,12 @@
  *     events aren't rendered (Request duration is covered by Trace
  *     performance analysis); compaction_begin/end → a banner item;
  *     token_usage → fed into stats (task-stats.ts).
- *   - Compaction-internal messages (history rebuild): model_msg within a
+ *   - Compaction-internal messages: model_msg within a
  *     compaction_begin↔end range (the compaction prompt and summary output)
- *     are never rendered and never counted toward Task segmentation — aligned
- *     with the live stream (which only pushes the event pair + token_usage);
+ *     are never rendered as transcript items and never counted toward Task
+ *     segmentation; the summary's own text (live partial_text fragments, or
+ *     the span's complete assistant text on rebuild) accumulates onto the
+ *     running compaction banner instead (issue #290);
  *     user text prefixed with `[context_summary]` is a compaction-summary
  *     injection, treated as internal input (not rendered, doesn't start a new Task).
  *   - Task segmentation: a complete text/image message on the main
@@ -65,6 +67,7 @@ import type {
   StopReason,
   TokenUsagePayload,
 } from "@prismshadow/penguin-core/omnimessage";
+import type { TracePosition } from "@prismshadow/penguin-server/api";
 import {
   addLlmDuration,
   beginCompaction,
@@ -136,6 +139,8 @@ export interface AssistantTextItem {
    * timestamp — the same convention as Trace (which records the **completion** time).
    */
   atMs?: number;
+  /** Stable history coordinate, present after a history read (live replies resolve it on demand). */
+  tracePosition?: TracePosition;
 }
 
 export interface ThinkingItem {
@@ -257,6 +262,14 @@ export interface CompactionItem {
   beginTsMs?: number;
   /** Wall time derived from the begin/end message timestamps (absent on a mid-stream join). */
   durationMs?: number;
+  /**
+   * Raw text of the summary the compaction request is generating (issue #290): accumulated
+   * live from the span's own partial_text fragments, and rebuilt identically on history
+   * replay from the span's complete assistant text — the banner shows the summary being
+   * written and keeps it readable after a reload. Raw model output (summary tags included;
+   * the banner strips them for display); absent when nothing streamed (e.g. discard mode).
+   */
+  summaryText?: string;
 }
 
 /** One MCP tool for the connect row's expandable list (from tool_list_ready, `mcp__` entries only). */
@@ -319,6 +332,10 @@ export interface TaskStatsItem {
    * message is never rendered with its own separate footer (otherwise two copy buttons would appear in the same spot).
    */
   atMs?: number;
+  /** Final assistant record of this completed Task; used by Session fork. */
+  forkPosition?: TracePosition;
+  /** True only when the final assistant segment and its Request completed normally. */
+  forkable?: boolean;
 }
 
 export type ChatItem =
@@ -583,12 +600,26 @@ export function pushMessage(
   if (!isCompleteUserImage(msg)) model.openSteering = null;
   if (msg.type === "model_msg") {
     // Internal messages within a compaction range (between begin and end)
-    // (the compaction prompt, summary output): never rendered, never
-    // counted toward Task segmentation — aligned with the live stream
-    // (which only pushes the event pair and token_usage). Only encountered during history rebuild.
+    // (the compaction prompt, summary output): never rendered as transcript items, never
+    // counted toward Task segmentation. The summary being written is the one exception
+    // (issue #290): live it arrives as its own partial_text fragments (the engine forwards
+    // them between the paired events; the complete text stays off the stream once partials
+    // carried it), and history rebuild reads the identical content back from the span's
+    // complete assistant text — both accumulate onto the running banner, so a reload shows
+    // the same text the live viewer watched being written.
     if (model.stats.compactionActive) {
       touchTask(model, msg.timestamp);
+      if (isPartialPayload(msg.payload)) {
+        const p = msg.payload as { type?: string; text?: string };
+        if (p.type === "partial_text" && p.text) appendCompactionSummaryText(model, p.text);
+        // Partials never advance lastTs (same rule as the normal path below).
+        return;
+      }
       advanceLastTs(model, msg.timestamp);
+      const p = msg.payload as { type?: string; role?: string; text?: string };
+      if (p.type === "text" && p.role === "assistant" && p.text) {
+        appendCompactionSummaryText(model, p.text);
+      }
       return;
     }
     if (isPartialPayload(msg.payload)) {
@@ -599,7 +630,13 @@ export function pushMessage(
       // message's time" up to just before a complete thinking message, or the approximated historical duration would collapse to ~0ms.
       return;
     }
-    handleComplete(model, msg.payload as CompleteModelPayload, msg.timestamp, nowMs);
+    handleComplete(
+      model,
+      msg.payload as CompleteModelPayload,
+      msg.timestamp,
+      nowMs,
+      (msg as OmniMessage & { tracePosition?: TracePosition }).tracePosition,
+    );
     advanceLastTs(model, msg.timestamp);
     return;
   }
@@ -844,7 +881,9 @@ function finalizeOpenTask(model: StreamModel): void {
     id: nextId(model),
     stats,
     assistantText: reply.text,
+    forkable: reply.completed,
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
+    ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
   };
   // The stats row is inserted **before any trailing run of compaction banners**: compaction
   // is its own round, housekeeping outside this one, so it belongs after this round's ledger
@@ -865,18 +904,34 @@ function finalizeOpenTask(model: StreamModel): void {
  * timestamp of the **last** assistant text item — the stats row is this
  * round's reply's footer, and this is the timestamp it shows.
  */
-function collectTaskAssistant(model: StreamModel): { text: string; atMs?: number } {
+function collectTaskAssistant(model: StreamModel): {
+  text: string;
+  atMs?: number;
+  tracePosition?: TracePosition;
+  completed: boolean;
+} {
   const parts: string[] = [];
   let atMs: number | undefined;
+  let tracePosition: TracePosition | undefined;
+  let completed = false;
   for (let i = model.items.length - 1; i >= 0; i--) {
     const it = model.items[i]!;
     if (it.kind === "task_stats") break;
     if (it.kind === "assistant_text" && it.text.trim()) {
       parts.push(it.text);
-      if (atMs === undefined) atMs = it.atMs; // walking backward: the first hit is the last one
+      if (atMs === undefined) {
+        atMs = it.atMs; // walking backward: the first hit is the last one
+        tracePosition = it.tracePosition;
+        completed = it.stopReason === "completed";
+      }
     }
   }
-  return { text: parts.reverse().join("\n\n"), ...(atMs !== undefined ? { atMs } : {}) };
+  return {
+    text: parts.reverse().join("\n\n"),
+    ...(atMs !== undefined ? { atMs } : {}),
+    ...(tracePosition !== undefined ? { tracePosition } : {}),
+    completed,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1005,6 +1060,7 @@ function handleComplete(
   p: CompleteModelPayload,
   timestamp: string,
   nowMs: number,
+  tracePosition?: TracePosition,
 ): void {
   switch (p.type) {
     case "text": {
@@ -1072,6 +1128,7 @@ function handleComplete(
         target.streaming = false;
         const doneMs = tsOf(timestamp);
         if (doneMs !== undefined) target.atMs = doneMs; // the completion timestamp overrides the start placeholder
+        if (tracePosition !== undefined) target.tracePosition = tracePosition;
         if (p.stop_reason !== undefined) target.stopReason = p.stop_reason;
         if (target === model.openText) model.openText = null;
         model.pendingText = null;
@@ -1096,6 +1153,7 @@ function handleComplete(
         text: p.text,
         streaming: false,
         ...(doneMs !== undefined ? { atMs: doneMs } : {}),
+        ...(tracePosition !== undefined ? { tracePosition } : {}),
       };
       if (p.stop_reason !== undefined) item.stopReason = p.stop_reason;
       model.items.push(item);
@@ -1468,6 +1526,11 @@ function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?:
         if (tsMs !== undefined && item.beginTsMs !== undefined) {
           item.durationMs = Math.max(0, tsMs - item.beginTsMs);
         }
+        // A compaction that did not complete produced no summary — only a half-written
+        // draft that was never adopted (a user quitting mid-compaction is the common case,
+        // closed as `failed` when the session next loads). Discard it rather than leave a
+        // truncated summary on screen implying the context was replaced by it.
+        if (p.status !== "completed") delete item.summaryText;
       } else {
         // Mid-stream join (missed the begin): append a completed banner directly.
         const created: CompactionItem = {
@@ -1589,6 +1652,13 @@ function findLastRunningCompaction(model: StreamModel): CompactionItem | null {
   return null;
 }
 
+/** Appends streamed/replayed summary text onto the running compaction banner (no-op without one). */
+function appendCompactionSummaryText(model: StreamModel, text: string): void {
+  if (!text) return;
+  const item = findLastRunningCompaction(model);
+  if (item) item.summaryText = (item.summaryText ?? "") + text;
+}
+
 /**
  * Whether a compaction starting right now wraps the round up rather than interrupting it
  * mid-Task — the test for settling the round's stats row ahead of the banner.
@@ -1684,18 +1754,26 @@ function bindSubagent(model: StreamModel, sessionId: string, sub: StreamModel): 
 // Overlap dedup (connect-first + dedup)
 // ---------------------------------------------------------------------------
 
+/** Disk-only transport metadata must not make an otherwise identical SSE envelope look new. */
+function dedupKey(msg: OmniMessage): string {
+  const { tracePosition: _tracePosition, ...envelope } = msg as OmniMessage & {
+    tracePosition?: TracePosition;
+  };
+  return JSON.stringify(envelope);
+}
+
 /** Build a dedup index from the envelope JSON of history's **last `limit` messages**. */
 export function buildDedupIndex(messages: OmniMessage[], limit = 100): Set<string> {
   const index = new Set<string>();
   for (let i = Math.max(0, messages.length - limit); i < messages.length; i++) {
-    index.add(JSON.stringify(messages[i]));
+    index.add(dedupKey(messages[i]!));
   }
   return index;
 }
 
 /** Determine whether a complete message/event is exactly identical to history's envelope JSON (overlap dedup). */
 export function isDuplicate(index: Set<string>, msg: OmniMessage): boolean {
-  return index.has(JSON.stringify(msg));
+  return index.has(dedupKey(msg));
 }
 
 /**

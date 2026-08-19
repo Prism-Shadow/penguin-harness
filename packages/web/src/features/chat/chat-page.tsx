@@ -44,7 +44,13 @@ import {
 import { latestConversation } from "../../lib/session-grouping";
 import { sessionActivity } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
-import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
+import {
+  approvalKey,
+  createStreamModel,
+  finalizeHistory,
+  isModelAuthDead,
+  pushMessage,
+} from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
@@ -67,6 +73,7 @@ import {
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import {
@@ -275,6 +282,7 @@ export function ChatPage() {
     loading: sessionsLoading,
     reload: reloadSessions,
     add: addSession,
+    isDeleted: isSessionDeleted,
     replace,
     setStatus,
     setTitle,
@@ -576,6 +584,15 @@ export function ChatPage() {
   useEffect(() => {
     if (draft || !routeSessionId || sessionsLoading) return;
     if (sessions.some((s) => s.sessionId === routeSessionId)) return;
+    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
+    // lookup below could only 404 (and the server would record that as an error). Deleting
+    // the conversation you are looking at is the normal way to discard a Session fork, so
+    // this path runs on every such delete. Treat it as an already-failed probe, which
+    // releases the redirect effect below to move on to another conversation.
+    if (isSessionDeleted(routeSessionId)) {
+      setProbeFailedId(routeSessionId);
+      return;
+    }
     let cancelled = false;
     api.getSession(routeSessionId).then(
       (res) => {
@@ -588,7 +605,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [draft, routeSessionId, sessionsLoading, sessions, addSession]);
+  }, [draft, routeSessionId, sessionsLoading, sessions, addSession, isSessionDeleted]);
 
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
@@ -1323,6 +1340,44 @@ export function ChatPage() {
     navigate("/models");
   }, [navigate]);
 
+  const onFork = useCallback(
+    async (target: ForkTarget): Promise<void> => {
+      if (!selected) return;
+      try {
+        let position = target.position;
+        // Live SSE messages do not carry disk coordinates. Once the Task is idle, one history
+        // read resolves the just-finished footer onto the immutable Trace position; the fork
+        // request itself always sends that position, never display text or a timestamp.
+        if (position === undefined) {
+          const history = await api.getMessages(selected.sessionId);
+          const model = createStreamModel();
+          for (const message of history.messages) pushMessage(model, message);
+          finalizeHistory(model);
+          const match = [...model.items]
+            .reverse()
+            .find(
+              (item) =>
+                item.kind === "task_stats" &&
+                item.assistantText === target.assistantText &&
+                item.atMs === target.atMs &&
+                item.forkPosition !== undefined,
+            );
+          position = match?.kind === "task_stats" ? match.forkPosition : undefined;
+        }
+        if (position === undefined) {
+          toastError(S.chat.forkSessionFailed);
+          return;
+        }
+        const created = await api.forkSession(selected.sessionId, { position });
+        addSession(created.session);
+        navigate(`/chat/${created.session.sessionId}`);
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+      }
+    },
+    [selected, addSession, navigate],
+  );
+
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
   const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
@@ -1361,6 +1416,7 @@ export function ChatPage() {
     },
     workspace: selected?.workspace ?? null,
     statFiles,
+    onFork,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";

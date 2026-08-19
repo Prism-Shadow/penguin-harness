@@ -36,6 +36,8 @@ export interface Messages {
     root: string;
     workspace: string;
     approve: string;
+    /** run/chat's --thinking: the session's thinking level (selectable tiers only, mirrors the web picker). */
+    thinking: string;
   };
   config: {
     desc: string;
@@ -50,6 +52,9 @@ export interface Messages {
     addClientType: string;
     addVision: string;
     addNoVision: string;
+    addFastMode: string;
+    addNoFastMode: string;
+    fastModeUnsupported: (ref: string) => string;
     addPriceCacheRead: string;
     addPriceCacheWrite: string;
     addPriceOutput: string;
@@ -77,7 +82,12 @@ export interface Messages {
     /** run's --goal: goal mode, with an optional token budget value (`--goal 500k`). */
     goal: string;
   };
-  chat: { desc: string; resume: string };
+  chat: {
+    desc: string;
+    resume: string;
+    /** chat's --verbose: start with full tool output (collapsing off). */
+    verbose: string;
+  };
   serve: {
     serverDesc: string;
     webDesc: string;
@@ -224,6 +234,27 @@ export interface Messages {
   goalBudgetInvalid(value: string): string;
   /** run's --goal given an empty/whitespace -m (the objective must be non-empty text). */
   goalObjectiveEmpty(): string;
+  /**
+   * `/thinking` with no argument and no override in effect: the level the next turn will run
+   * at is the Session's own default (pinned by `--thinking` at creation, else the config chain).
+   */
+  thinkingCurrentDefault(level: string): string;
+  /**
+   * `/thinking` with no argument while a per-turn override is in effect: the level the next
+   * turn will run at, plus the Session default it overrides — the two are a real distinction
+   * (only the Session default reaches spawned subagent sessions).
+   */
+  thinkingCurrentOverride(level: string, sessionDefault: string): string;
+  /** `/thinking <level>` accepted: subsequent turns carry the override (never written to the config). */
+  thinkingSet(level: string): string;
+  /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
+  thinkingInvalid(value: string): string;
+  /** `/verbose` toggled on: tool output renders in full from here on. */
+  verboseOn(): string;
+  /** `/verbose` toggled off: long tool output is collapsed again from here on. */
+  verboseOff(): string;
+  /** Dim elision-marker line inside a collapsed tool output; `hidden` = lines not shown (>= 2). */
+  toolOutputElided(hidden: number): string;
   /** Prompt for an invalid --approve mode. */
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
@@ -315,6 +346,8 @@ const en: Messages = {
     workspace: "Workspace directory; must already exist (defaults to the current directory)",
     approve:
       "Approval mode: allow-all (auto-approve, default), deny-all (auto-reject), read-only (auto-approve read-only tools, prompt for the rest), always-ask (prompt per tool)",
+    thinking:
+      "Thinking level for this session: low, medium, high, or xhigh (defaults to the Agent's configured level)",
   },
   config: {
     desc: "Manage Project configuration",
@@ -332,6 +365,11 @@ const en: Messages = {
       "AgentHub client type (e.g. openai-chat); defaults by provider group when omitted",
     addVision: "Mark the model as supporting image input (vision)",
     addNoVision: "Mark the model as NOT supporting image input; omit both to keep current",
+    addFastMode:
+      "Enable fast mode: faster output at premium pricing (models without a fast tier reject requests carrying it)",
+    addNoFastMode: "Disable fast mode (the default); omit both to keep current",
+    fastModeUnsupported: (ref: string): string =>
+      `Warning: ${ref} cannot serve fast mode — AgentHub's client for it rejects the parameter, so its requests will fail. Re-run with --no-fast-mode to turn it off.`,
     addPriceCacheRead: "Price per 1M tokens: cache read (USD)",
     addPriceCacheWrite: "Price per 1M tokens: cache write (USD)",
     addPriceOutput: "Price per 1M tokens: output (USD)",
@@ -361,6 +399,8 @@ const en: Messages = {
     desc: "Open the interactive REPL",
     resume:
       "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session",
+    verbose:
+      "Show full tool output (by default long tool outputs are collapsed to their first and last lines; /verbose toggles it mid-chat)",
   },
   serve: {
     serverDesc:
@@ -455,7 +495,7 @@ const en: Messages = {
 
   header: headerEn,
   chatHints: () =>
-    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /exit to quit; and Ctrl-C interrupts the current conversation.",
+    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -507,6 +547,17 @@ const en: Messages = {
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
   goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
+  thinkingCurrentDefault: (level) =>
+    `[thinking] level: ${level} (this Session's default) — change with /thinking <low|medium|high|xhigh>`,
+  thinkingCurrentOverride: (level, sessionDefault) =>
+    `[thinking] level: ${level} (override for this chat's turns; this Session's default is ${sessionDefault}) — change with /thinking <low|medium|high|xhigh>`,
+  thinkingSet: (level) =>
+    `[thinking] level set to ${level} for this chat's subsequent turns (the Agent config is unchanged)`,
+  thinkingInvalid: (value) => `Invalid thinking level "${value}". Use low, medium, high, or xhigh.`,
+  verboseOn: () => "[verbose] on — tool output from here on shows in full",
+  verboseOff: () =>
+    "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
+  toolOutputElided: (hidden) => `… (+${hidden} lines, /verbose for full output)`,
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
@@ -576,6 +627,7 @@ const zh: Messages = {
     workspace: "Workspace 目录，须为已存在目录（默认当前目录）",
     approve:
       "审批模式：allow-all（全部放行，缺省）、deny-all（全部拒绝）、read-only（自动放行只读工具，其余仍逐个询问）、always-ask（逐个询问）",
+    thinking: "本会话的思考等级：low、medium、high 或 xhigh（缺省用 Agent 配置的等级）",
   },
   config: {
     desc: "管理 Project 配置",
@@ -591,6 +643,10 @@ const zh: Messages = {
     addClientType: "AgentHub 客户端协议（如 openai-chat）；缺省按 provider 分组的语义取值",
     addVision: "标注该模型支持图片输入（视觉）",
     addNoVision: "标注该模型不支持图片输入；两者都不给则保留原值",
+    addFastMode: "开启快速模式：输出更快、按溢价计费（不支持 fast 档位的模型会拒绝请求）",
+    addNoFastMode: "关闭快速模式（缺省即关闭）；两者都不给则保留原值",
+    fastModeUnsupported: (ref: string): string =>
+      `警告：${ref} 不支持快速模式——AgentHub 为它选用的 client 会拒绝该参数，其请求都会失败。请用 --no-fast-mode 重新执行以关闭。`,
     addPriceCacheRead: "每百万 token 价格：缓存读取（USD）",
     addPriceCacheWrite: "每百万 token 价格：缓存写入（USD）",
     addPriceOutput: "每百万 token 价格：输出（USD）",
@@ -619,6 +675,7 @@ const zh: Messages = {
     desc: "打开交互式 REPL",
     resume:
       "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session",
+    verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
   },
   serve: {
     serverDesc:
@@ -706,7 +763,7 @@ const zh: Messages = {
 
   header: headerZh,
   chatHints: () =>
-    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/exit 退出；Ctrl-C 中断对话。",
+    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
@@ -758,6 +815,15 @@ const zh: Messages = {
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
   goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
+  thinkingCurrentDefault: (level) =>
+    `[思考] 当前等级：${level}（本 Session 的缺省值）——用 /thinking <low|medium|high|xhigh> 修改`,
+  thinkingCurrentOverride: (level, sessionDefault) =>
+    `[思考] 当前等级：${level}（本次对话后续轮次的覆盖值；本 Session 缺省为 ${sessionDefault}）——用 /thinking <low|medium|high|xhigh> 修改`,
+  thinkingSet: (level) => `[思考] 等级已设为 ${level}，本次对话后续轮次生效（不改动 Agent 配置）`,
+  thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high 或 xhigh。`,
+  verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
+  verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
+  toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
   approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),

@@ -518,6 +518,22 @@ export const zh = {
     detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
+    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
+    fastMode: "快速模式",
+    /** Shown while the fast-mode switch is ON (and as the label's hover title): what it buys, and that the recorded prices do not follow the premium rate. */
+    fastModeHint: "输出更快，按厂商的溢价档位计费；成本中心仍按条目记录的标准单价统计",
+    /** Amber line under an ON switch on a model whose client rejects the parameter (a hand-edited config or a renamed id): the switch stays visible only so it can be turned off. */
+    fastModeUnsupported: "该模型不支持快速模式，请关闭，否则请求会失败",
+    /** Accessible name of the warning dialog raised when the fast-mode switch is turned ON. */
+    fastModeConfirmTitle: "开启快速模式",
+    /** Body of that warning: premium billing, and that the recorded prices do not follow it. */
+    fastModeConfirmBody:
+      "快速模式按厂商的溢价价目计费（MiniMax 为标准价的 1.5 倍，OpenAI 与 Anthropic 另有溢价价目表）。条目记录的按 Token 单价不会随之调整，成本中心会低估这部分用量。",
+    /** Extra paragraph shown only for Anthropic-protocol models: fast mode there is a gated research preview. */
+    fastModeConfirmPreview:
+      "Anthropic 的快速模式目前是限量的 research preview：在你的组织获得授权之前，请求会返回 429 限流错误。",
+    /** Badge on a model row whose fast mode is on: a standing premium-billing choice should be visible without opening the dialog. */
+    fastModeBadge: "快速",
     visionBadge: "视觉",
     /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
     freeBadge: "免费",
@@ -1240,6 +1256,10 @@ Benchmark：
     approvalWaiting: "待审批",
     copyCode: "复制代码",
     copyReply: "复制回复",
+    forkSession: "从这里分叉对话",
+    forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
+    forkSessionConfirmAction: "分叉",
+    forkSessionFailed: "无法定位这条回复，请刷新后重试。",
     copyMessage: "复制消息",
     deleteSession: "删除对话",
     renameSession: "重命名对话",
