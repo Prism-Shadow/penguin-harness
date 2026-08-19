@@ -407,7 +407,16 @@ export function registerChatCommand(program: Command, t: Messages): void {
             if (!parsed.ok) {
               out.write(`${t.error(t.thinkingInvalid(parsed.value))}\n`);
             } else if (parsed.level === null) {
-              out.write(`${t.thinkingCurrent(thinkingOverride ?? sessionThinkingDefault())}\n`);
+              // Name the source, not just the level: an override applies to this chat's turns
+              // only, while the Session default is also what spawned subagents inherit.
+              const sessionDefault = sessionThinkingDefault();
+              out.write(
+                `${
+                  thinkingOverride
+                    ? t.thinkingCurrentOverride(thinkingOverride, sessionDefault)
+                    : t.thinkingCurrentDefault(sessionDefault)
+                }\n`,
+              );
             } else {
               thinkingOverride = parsed.level;
               out.write(`${t.thinkingSet(parsed.level)}\n`);

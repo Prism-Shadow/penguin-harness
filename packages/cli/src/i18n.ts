@@ -231,15 +231,24 @@ export interface Messages {
   goalBudgetInvalid(value: string): string;
   /** run's --goal given an empty/whitespace -m (the objective must be non-empty text). */
   goalObjectiveEmpty(): string;
-  /** `/thinking` with no argument: the level the next turn will run at. */
-  thinkingCurrent(level: string): string;
-  /** `/thinking <level>` accepted: subsequent turns carry the override. */
+  /**
+   * `/thinking` with no argument and no override in effect: the level the next turn will run
+   * at is the Session's own default (pinned by `--thinking` at creation, else the config chain).
+   */
+  thinkingCurrentDefault(level: string): string;
+  /**
+   * `/thinking` with no argument while a per-turn override is in effect: the level the next
+   * turn will run at, plus the Session default it overrides — the two are a real distinction
+   * (only the Session default reaches spawned subagent sessions).
+   */
+  thinkingCurrentOverride(level: string, sessionDefault: string): string;
+  /** `/thinking <level>` accepted: subsequent turns carry the override (never written to the config). */
   thinkingSet(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
-  /** `/verbose` toggled on: tool output renders in full. */
+  /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
-  /** `/verbose` toggled off: long tool output is collapsed again. */
+  /** `/verbose` toggled off: long tool output is collapsed again from here on. */
   verboseOff(): string;
   /** Dim elision-marker line inside a collapsed tool output; `hidden` = lines not shown (>= 2). */
   toolOutputElided(hidden: number): string;
@@ -529,12 +538,16 @@ const en: Messages = {
   goalBudgetInvalid: (value) =>
     `Invalid token budget "${value}". Use a positive number with an optional k/m suffix (500k, 2m).`,
   goalObjectiveEmpty: () => "Goal mode requires a non-empty objective: pass it via -m.",
-  thinkingCurrent: (level) =>
-    `[thinking] level: ${level} — change with /thinking <low|medium|high|xhigh>`,
-  thinkingSet: (level) => `[thinking] level set to ${level} for subsequent turns`,
+  thinkingCurrentDefault: (level) =>
+    `[thinking] level: ${level} (this Session's default) — change with /thinking <low|medium|high|xhigh>`,
+  thinkingCurrentOverride: (level, sessionDefault) =>
+    `[thinking] level: ${level} (override for this chat's turns; this Session's default is ${sessionDefault}) — change with /thinking <low|medium|high|xhigh>`,
+  thinkingSet: (level) =>
+    `[thinking] level set to ${level} for this chat's subsequent turns (the Agent config is unchanged)`,
   thinkingInvalid: (value) => `Invalid thinking level "${value}". Use low, medium, high, or xhigh.`,
-  verboseOn: () => "[verbose] on — showing full tool output",
-  verboseOff: () => "[verbose] off — long tool output is collapsed (/verbose to toggle)",
+  verboseOn: () => "[verbose] on — tool output from here on shows in full",
+  verboseOff: () =>
+    "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
   toolOutputElided: (hidden) => `… (+${hidden} lines, /verbose for full output)`,
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
@@ -789,12 +802,14 @@ const zh: Messages = {
   goalBudgetInvalid: (value) =>
     `无效的 token 预算 "${value}"：应为正数，可带 k/m 后缀（500k、2m）。`,
   goalObjectiveEmpty: () => "目标模式需要非空的目标文本：请通过 -m 传入。",
-  thinkingCurrent: (level) =>
-    `[思考] 当前等级：${level}——用 /thinking <low|medium|high|xhigh> 修改`,
-  thinkingSet: (level) => `[思考] 等级已设为 ${level}，后续轮次生效`,
+  thinkingCurrentDefault: (level) =>
+    `[思考] 当前等级：${level}（本 Session 的缺省值）——用 /thinking <low|medium|high|xhigh> 修改`,
+  thinkingCurrentOverride: (level, sessionDefault) =>
+    `[思考] 当前等级：${level}（本次对话后续轮次的覆盖值；本 Session 缺省为 ${sessionDefault}）——用 /thinking <low|medium|high|xhigh> 修改`,
+  thinkingSet: (level) => `[思考] 等级已设为 ${level}，本次对话后续轮次生效（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high 或 xhigh。`,
-  verboseOn: () => "[verbose] 已开启——显示完整工具输出",
-  verboseOff: () => "[verbose] 已关闭——过长的工具输出将折叠（/verbose 切换）",
+  verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
+  verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,

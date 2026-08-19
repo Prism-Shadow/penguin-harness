@@ -73,11 +73,13 @@ function makeFakeAgent(opts?: {
   messages?: () => OmniMessage[];
 }) {
   const sessions: FakeSession[] = [];
-  const createSession = vi.fn(async (_createOpts: Record<string, unknown> = {}) => {
-    const session = makeFakeSession(`sess-${sessions.length + 1}`, opts?.messages ?? (() => []));
+  const track = (session: FakeSession): FakeSession => {
     sessions.push(session);
     return session;
-  });
+  };
+  const createSession = vi.fn(async (_createOpts: Record<string, unknown> = {}) =>
+    track(makeFakeSession(`sess-${sessions.length + 1}`, opts?.messages ?? (() => []))),
+  );
   const agent = {
     state: {
       agentId: "test-agent",
@@ -89,8 +91,12 @@ function makeFakeAgent(opts?: {
       ? { default_chat: { thinking_level: opts.projectLevel } }
       : {},
     createSession,
-    resumeSession: vi.fn(),
-    latestSessionId: vi.fn(async () => null),
+    // A resumed Session is a fully built Session like any other — it just isn't created by
+    // this run, which is exactly why --thinking cannot pin its construction-time level.
+    resumeSession: vi.fn(async (_resumeOpts: { sessionId: string }) =>
+      track(makeFakeSession("sess-old", opts?.messages ?? (() => []))),
+    ),
+    latestSessionId: vi.fn(async () => "sess-old"),
   };
   vi.mocked(createAgent).mockResolvedValue(
     agent as unknown as Awaited<ReturnType<typeof createAgent>>,
@@ -146,7 +152,7 @@ describe("chat /thinking (per-turn thinking level)", () => {
   it("bare /thinking shows the configured chain (agent explicit > project default > medium)", async () => {
     makeFakeAgent({ projectLevel: "high" });
     const out = await driveChat(["/thinking", "/exit"]);
-    expect(out).toContain(t.thinkingCurrent("high"));
+    expect(out).toContain(t.thinkingCurrentDefault("high"));
   });
 
   it("/thinking <level> overrides subsequent turns; invalid values change nothing", async () => {
@@ -158,11 +164,14 @@ describe("chat /thinking (per-turn thinking level)", () => {
       "second",
       "/thinking none",
       "third",
+      "/thinking",
       "/exit",
     ]);
     // Display before any override: the built-in medium (no agent/project level configured).
-    expect(out).toContain(t.thinkingCurrent("medium"));
+    expect(out).toContain(t.thinkingCurrentDefault("medium"));
     expect(out).toContain(t.thinkingSet("high"));
+    // Once overridden, the display says so and still names the Session default it overrides.
+    expect(out).toContain(t.thinkingCurrentOverride("high", "medium"));
     // "none" is not selectable (mirrors the web picker): error + the override stays "high".
     expect(out).toContain(t.error(t.thinkingInvalid("none")));
     const runs = sessions[0]!.runs;
@@ -176,7 +185,26 @@ describe("chat /thinking (per-turn thinking level)", () => {
     const { agent, sessions } = makeFakeAgent({ agentLevel: "low" });
     const out = await driveChat(["/thinking", "go", "/exit"], ["--thinking", "xhigh"]);
     expect(agent.createSession.mock.calls[0]![0]).toMatchObject({ thinkingLevel: "xhigh" });
-    expect(out).toContain(t.thinkingCurrent("xhigh"));
+    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
+    expect(sessions[0]!.runs[0]!.opts["thinkingLevel"]).toBeUndefined();
+  });
+
+  it("--resume turns --thinking into the initial per-turn override (the Session already exists)", async () => {
+    // A resumed Session's construction values are fixed, so the flag can only ride along as
+    // RunOptions.thinkingLevel — and the display must show it as an override of the resumed
+    // Session's own default (the config chain: agent explicit "low" here).
+    const { agent, sessions } = makeFakeAgent({ agentLevel: "low" });
+    const out = await driveChat(["/thinking", "go", "/exit"], ["--resume", "--thinking", "high"]);
+    expect(agent.createSession).not.toHaveBeenCalled();
+    expect(agent.resumeSession).toHaveBeenCalledWith({ sessionId: "sess-old" });
+    expect(out).toContain(t.thinkingCurrentOverride("high", "low"));
+    expect(sessions[0]!.runs[0]!.opts["thinkingLevel"]).toBe("high");
+  });
+
+  it("--resume without --thinking runs on the resumed Session's own default (no override)", async () => {
+    const { sessions } = makeFakeAgent({ projectLevel: "xhigh" });
+    const out = await driveChat(["/thinking", "go", "/exit"], ["--resume"]);
+    expect(out).toContain(t.thinkingCurrentDefault("xhigh"));
     expect(sessions[0]!.runs[0]!.opts["thinkingLevel"]).toBeUndefined();
   });
 

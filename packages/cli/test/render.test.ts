@@ -1076,6 +1076,31 @@ describe("tool-output collapsing (chat display; the Trace keeps the full text)",
     expect(s).not.toContain("-> l5\n");
   });
 
+  it("renderHistory reports the same hidden count as the live stream for a newline-terminated output", () => {
+    // Real tool output (exec_command streams the process bytes verbatim) ends in a newline;
+    // the trailing "" of the split must not be counted as a hidden line, nor eat a tail row.
+    const body = Array.from({ length: 12 }, (_, i) => `l${i + 1}`);
+    const live = collector();
+    const r = new StreamRenderer(live.stream, t, { collapseToolOutput: true });
+    streamExec(r, 12);
+    const history = collector();
+    renderHistory(
+      [
+        toolCall({ name: "exec_command", arguments: '{"cmd":"x"}', toolCallId: "call_0c9" }),
+        toolCallOutput({ output: `${body.join("\n")}\n`, toolCallId: "call_0c9" }),
+      ],
+      history.stream,
+      t,
+      { collapseToolOutput: true },
+    );
+    const historyText = stripAnsi(history.text());
+    expect(historyText).toContain(`exec_command -> ${t.toolOutputElided(4)}\n`);
+    expect(historyText).toContain("exec_command -> l12\n");
+    // No blank gutter row wasted on the trailing newline, and the live render agrees.
+    expect(historyText).not.toContain("exec_command -> \n");
+    expect(stripAnsi(live.text())).toContain(`exec_command -> ${t.toolOutputElided(4)}\n`);
+  });
+
   it("renderHistory leaves outputs whole by default", () => {
     const { stream, text } = collector();
     const lines = Array.from({ length: 20 }, (_, i) => `l${i + 1}`).join("\n");

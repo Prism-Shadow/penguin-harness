@@ -47,8 +47,15 @@ describe("getMessages", () => {
     expect(getMessages("en").langSet("zh", "/x/.zshrc")).toContain("/x/.zshrc");
     expect(getMessages("zh").langInvalid("fr")).toContain("fr");
     // Thinking-level control and tool-output collapsing (issue #305).
-    expect(getMessages("en").thinkingCurrent("medium")).toContain("medium");
-    expect(getMessages("zh").thinkingCurrent("medium")).toContain("medium");
+    expect(getMessages("en").thinkingCurrentDefault("medium")).toContain("medium");
+    expect(getMessages("zh").thinkingCurrentDefault("medium")).toContain("medium");
+    // The override form names both levels, so the distinction is readable in either locale.
+    for (const lang of ["en", "zh"] as const) {
+      const shown = getMessages(lang).thinkingCurrentOverride("high", "low");
+      expect(shown).toContain("high");
+      expect(shown).toContain("low");
+      expect(shown).not.toBe(getMessages(lang).thinkingCurrentDefault("high"));
+    }
     expect(getMessages("en").thinkingSet("high")).toContain("high");
     expect(getMessages("zh").thinkingSet("high")).toContain("high");
     expect(getMessages("en").thinkingInvalid("none")).toContain('"none"');

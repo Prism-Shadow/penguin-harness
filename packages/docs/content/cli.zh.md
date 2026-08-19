@@ -47,8 +47,8 @@ REPL 内命令：
 | 运行中输入任意文字 | 运行中插话：排队后以 `[user_steering]` 用户消息随下一轮送达模型（`»` 确认行会回显文字）；输入期间渲染暂挂，流式输出不会打断正在输入的行。若 Task 恰好已结束，该行作为下一条普通消息发送 |
 | `/compact` | 主动压缩当前上下文 |
 | `/clear` | 原地开启全新空白 Session；原会话保留在磁盘上，仍可用 `--resume` 恢复 |
-| `/thinking` | 显示下一轮将使用的思考等级 |
-| `/thinking <level>` | 覆盖本次对话后续轮次的思考等级（`low` / `medium` / `high` / `xhigh`）；不会写回 Agent 配置 |
+| `/thinking` | 显示下一轮将使用的思考等级，并区分它是本 Session 的缺省值还是生效中的逐轮覆盖值（后者同时给出被覆盖的缺省值） |
+| `/thinking <level>` | 覆盖本次对话后续轮次的思考等级（`low` / `medium` / `high` / `xhigh`）；不会写回 Agent 配置。该覆盖只作用于本 Session 自己的轮次——派生的子会话仍按 Session 创建时的等级启动 |
 | `/verbose` | 在折叠与完整工具输出之间切换 |
 | `/exit`、`/quit` | 退出 |
 

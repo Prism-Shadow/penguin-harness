@@ -284,10 +284,15 @@ export function renderHistory(
           );
         };
         // Collapsed history rendering keeps the same head/tail shape as the streaming
-        // collapse, so a resumed transcript doesn't re-flood the screen.
+        // collapse, so a resumed transcript doesn't re-flood the screen. An output ending
+        // in a newline splits into a trailing "" that the streaming collapser never counts
+        // (flush only buffers its partial line when non-empty) — drop it here too, so the
+        // same output reports the same hidden count live and on resume instead of spending
+        // one of the four tail rows on a blank gutter line. The uncollapsed path keeps it
+        // and renders exactly as before.
         const lines = (p.output ?? "").split("\n");
         const collapsed = opts.collapseToolOutput
-          ? collapseLines(lines)
+          ? collapseLines(lines.length > 1 && lines.at(-1) === "" ? lines.slice(0, -1) : lines)
           : { head: lines, hidden: 0, tail: [] };
         for (const line of collapsed.head) writeLine(line);
         if (collapsed.hidden > 0) {

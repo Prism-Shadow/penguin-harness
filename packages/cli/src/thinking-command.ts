@@ -14,7 +14,9 @@
  *   where `--workspace` / `--model-id` are not).
  * - `/thinking <level>` sets a per-turn override carried on every subsequent run
  *   (`RunOptions.thinkingLevel`); it never writes back to the Agent config.
- * - `/thinking` bare shows the level the next turn will run at.
+ * - `/thinking` bare shows the level the next turn will run at, and names its source: the
+ *   Session's own default, or the per-turn override (plus the default it replaces). The two
+ *   differ in reach — only the Session's level is inherited by spawned subagent sessions.
  */
 import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
 import type { DefaultChatThinkingLevel, ThinkingLevelName } from "@prismshadow/penguin-core";
