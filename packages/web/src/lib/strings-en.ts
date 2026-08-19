@@ -1027,7 +1027,10 @@ Scenarios:
     } as Record<string, string>,
     statusRunning: "Running",
     statusCompacting: "Compacting",
+    /** Settled Session whose last reply the user has already seen. */
     statusCompleted: "Done",
+    /** Settled Session that finished since the user last opened it. */
+    statusCompletedUnread: "Done, unread",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

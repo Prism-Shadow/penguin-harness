@@ -983,7 +983,10 @@ Benchmark：
     } as Record<string, string>,
     statusRunning: "运行中",
     statusCompacting: "压缩中",
+    /** Settled Session whose last reply the user has already seen. */
     statusCompleted: "运行完毕",
+    /** Settled Session that finished since the user last opened it. */
+    statusCompletedUnread: "运行完毕，未读",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

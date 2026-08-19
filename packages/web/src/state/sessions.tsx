@@ -41,7 +41,6 @@ import {
   sessionCategory,
   splitPage,
 } from "../lib/session-grouping";
-import { advanceCompletionHighlights, dismissCompletionHighlight } from "../lib/session-activity";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -69,10 +68,6 @@ interface SessionsContextValue {
   replace: (session: SessionInfo) => void;
   /** Live stream task_state → list badge. */
   setStatus: (sessionId: string, status: SessionStatus) => void;
-  /** Active→idle transitions observed in this app lifetime, kept highlighted until reopened. */
-  recentlyCompleted: ReadonlySet<string>;
-  /** Opening a Session acknowledges and clears its transient completion highlight. */
-  dismissCompletion: (sessionId: string) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
   /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
@@ -106,8 +101,6 @@ interface SessionsStoreState {
   agentIds: string[];
 
   sessions: SessionInfo[];
-  /** Active→idle transitions observed in this app lifetime; cleared by reopening the Session. */
-  recentlyCompleted: ReadonlySet<string>;
   /** pageKey → that pair's paging cursor; a key is present iff its first page has been fetched. */
   pageState: ReadonlyMap<string, PagePosition>;
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
@@ -124,7 +117,6 @@ interface SessionsStoreState {
   remove: (sessionId: string) => void;
   replace: (session: SessionInfo) => void;
   setStatus: (sessionId: string, status: SessionStatus) => void;
-  dismissCompletion: (sessionId: string) => void;
   setTitle: (sessionId: string, title: string) => void;
   setShowCliSessions: (value: boolean) => void;
 }
@@ -163,7 +155,6 @@ function createSessionsStore() {
       agentIds: [],
 
       sessions: [],
-      recentlyCompleted: new Set(),
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
@@ -330,10 +321,7 @@ function createSessionsStore() {
         gen += 1;
         const row = get().sessions.find((s) => s.sessionId === sessionId);
         if (row) adjustCount(row, sessionCategory(row), -1);
-        set({
-          sessions: get().sessions.filter((s) => s.sessionId !== sessionId),
-          recentlyCompleted: dismissCompletionHighlight(get().recentlyCompleted, sessionId),
-        });
+        set({ sessions: get().sessions.filter((s) => s.sessionId !== sessionId) });
       },
 
       replace: (session) => {
@@ -352,19 +340,7 @@ function createSessionsStore() {
         const prev = get().sessions;
         const target = prev.find((s) => s.sessionId === sessionId);
         if (!target || target.status === status) return;
-        set({
-          sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s)),
-          recentlyCompleted: advanceCompletionHighlights(
-            get().recentlyCompleted,
-            sessionId,
-            target.status,
-            status,
-          ),
-        });
-      },
-
-      dismissCompletion: (sessionId) => {
-        set({ recentlyCompleted: dismissCompletionHighlight(get().recentlyCompleted, sessionId) });
+        set({ sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s)) });
       },
 
       setTitle: (sessionId, title) => {
@@ -420,7 +396,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       projectId,
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
       sessions: [],
-      recentlyCompleted: new Set(),
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
@@ -496,8 +471,6 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       remove: state.remove,
       replace: state.replace,
       setStatus: state.setStatus,
-      recentlyCompleted: state.recentlyCompleted,
-      dismissCompletion: state.dismissCompletion,
       setTitle: state.setTitle,
       showCliSessions: state.showCliSessions,
       setShowCliSessions: state.setShowCliSessions,

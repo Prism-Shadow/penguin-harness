@@ -42,6 +42,7 @@ import {
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
 import { sessionActivity } from "../../lib/session-activity";
+import { noteSessionSeen } from "../../lib/session-seen";
 import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
@@ -266,7 +267,6 @@ export function ChatPage() {
     add: addSession,
     replace,
     setStatus,
-    recentlyCompleted,
     setTitle,
   } = useSessions();
 
@@ -615,6 +615,18 @@ export function ChatPage() {
       void reloadAgents();
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
+
+  // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
+  // again when a run finishes under the user's eyes, so the sidebar row left behind is not
+  // flagged unread. Depending on lastActiveAt is what keeps the marker honest across clock skew
+  // — the effect above reloads the list on that same active→idle edge, and the refreshed
+  // server timestamp re-runs this one.
+  const selectedLastActiveAt = selected?.lastActiveAt ?? null;
+  useEffect(() => {
+    if (selectedSessionId === null || selectedLastActiveAt === null) return;
+    if (stream.taskState !== "idle") return; // Still working: nothing settled to have read yet.
+    noteSessionSeen(projectId, selectedSessionId, selectedLastActiveAt);
+  }, [projectId, selectedSessionId, selectedLastActiveAt, stream.taskState]);
 
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
@@ -1297,11 +1309,13 @@ export function ChatPage() {
     />
   );
 
-  /** Header glyph state; the toolbar shows running/completed only (compacting stays in the stream banner). */
+  /**
+   * Header glyph state. Never unread: this is the Session on screen, so its last reply is being
+   * read right now — the read/unread split is a sidebar affordance, and passing the live marker
+   * here would only flash the unread tone for the frame before the effect above stamps it.
+   */
   const headerActivity =
-    selectedSessionId === null
-      ? null
-      : sessionActivity(stream.taskState, recentlyCompleted.has(selectedSessionId));
+    selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-950">
@@ -1312,11 +1326,10 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Session-level state: a pulsing hourglass while the run is active, then a green
-                circled check for the observed active→idle transition (the shape, not the color,
-                carries the state). Seen idle Sessions stay quiet. The compacting state remains
-                in the stream banner instead of being repeated here. Below sm only the glyph
-                remains so the title keeps its room. */}
+            {/* Session-level state: a turning hourglass while the run is active, a circled check
+                once it has settled. The compacting state stays in the stream banner rather than
+                being repeated here, and a Session that has never run shows nothing. Below sm
+                only the glyph remains so the title keeps its room. */}
             {(headerActivity === "running" || headerActivity === "completed") && (
               <span
                 title={sessionActivityLabel(headerActivity)}

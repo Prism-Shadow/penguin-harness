@@ -32,6 +32,12 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay, formatRelativeShort } from "../../lib/format";
 import { sessionActivity } from "../../lib/session-activity";
+import {
+  forgetSession,
+  isSessionUnread,
+  noteSessionSeen,
+  useSessionSeen,
+} from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -272,13 +278,16 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 const DRAFTS_GROUP_KEY = "\0drafts";
 
 /**
- * Session status: the glyph SHAPE carries the state — hourglass (running), inward chevrons
- * (compacting), circled check (completed) — so rows read without color; settled, seen rows
- * show nothing.
+ * Session status glyph: a turning hourglass while the Session is busy, a circled check once it
+ * has settled (vivid until the user opens it again, muted after). A Session that has never run
+ * shows nothing at all — see sessionActivity.
  */
-function StatusGlyph({ session, completed }: { session: SessionInfo; completed: boolean }) {
-  const activity = sessionActivity(session.status, completed);
-  if (activity === null) return null;
+function StatusGlyph({ session, unread }: { session: SessionInfo; unread: boolean }) {
+  const activity = sessionActivity(session.status, session.hasTrace, unread);
+  // Reserve the glyph's box even when there is no glyph: the row is a flex line whose title
+  // truncates into whatever space is left, so letting the slot collapse would re-flow the title
+  // of every never-run row (and again the moment its first run starts).
+  if (activity === null) return <span aria-hidden="true" className="block h-3 w-3 shrink-0" />;
   return <SessionActivityIcon activity={activity} />;
 }
 
@@ -314,8 +323,6 @@ export function Sidebar({
     loading,
     remove,
     replace,
-    recentlyCompleted,
-    dismissCompletion,
     showCliSessions,
     setShowCliSessions,
   } = useSessions();
@@ -375,6 +382,8 @@ export function Sidebar({
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
+  /** This Project's read markers; re-renders the rows whenever one is stamped. */
+  const sessionSeen = useSessionSeen(currentProjectId);
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -703,6 +712,7 @@ export function Sidebar({
         setPinnedSessions(prunedPins);
         savePinnedSessions(currentProjectId, prunedPins);
       }
+      forgetSession(currentProjectId, target.sessionId);
       const prunedOrder = removeFromSessionOrder(sessionOrder, target.sessionId);
       if (prunedOrder !== sessionOrder) {
         setSessionOrder(prunedOrder);
@@ -832,7 +842,8 @@ export function Sidebar({
   };
 
   const openSession = (s: SessionInfo) => {
-    dismissCompletion(s.sessionId);
+    // Opening is what "read" means here: stamp the marker before navigating.
+    noteSessionSeen(currentProjectId, s.sessionId, s.lastActiveAt);
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
     go(`/chat/${s.sessionId}`);
@@ -924,7 +935,7 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
-            completed={recentlyCompleted.has(s.sessionId)}
+            unread={isSessionUnread(sessionSeen, s.sessionId, s.lastActiveAt)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -2119,7 +2130,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 function SessionRow({
   s,
   active,
-  completed,
+  unread,
   pinned,
   canPin = false,
   lastActive,
@@ -2139,8 +2150,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
-  /** Whether this idle Session completed since the user last opened it. */
-  completed: boolean;
+  /** Whether the Session has run since the user last opened it (drives the completed glyph's tone). */
+  unread: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2237,7 +2248,7 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusGlyph session={s} completed={completed} />
+          <StatusGlyph session={s} unread={unread} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

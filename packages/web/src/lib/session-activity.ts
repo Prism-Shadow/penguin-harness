@@ -1,59 +1,33 @@
 import type { SessionStatus } from "@prismshadow/penguin-server/api";
 
-/** Visual status carried by a Session row / chat header. `null` keeps settled, seen Sessions quiet. */
-export type SessionActivity = "running" | "compacting" | "completed" | null;
+/**
+ * Visual state carried by a Session row / chat header.
+ *
+ * `null` means "nothing has run here yet" and renders no glyph at all: a Session created but
+ * never used has no activity to report, and an icon that says so would be noise on every fresh
+ * row. Everything else has run at least once, so it always carries a glyph.
+ */
+export type SessionActivity = "running" | "compacting" | "completed" | "completedUnread" | null;
 
 /**
- * The server owns live execution (`running` / `compacting` / `idle`); the client adds one
- * deliberately transient state: a completion observed in this app lifetime and not dismissed
- * by opening the Session again. Idle alone must not render as completed — that would mark every
- * historical conversation after a reload.
+ * The Session's glyph state.
+ *
+ * Live execution comes from the server (`running` / `compacting` / `idle`). A settled Session
+ * splits by whether the user has looked at it since it last did anything — that read/unread
+ * distinction is the client's, because the API models no read receipt (see session-seen.ts).
+ *
+ * `hasTrace` is the server's own "a Task has been started" flag, already on every list row: it
+ * is what separates "finished" from "never ran", so idle-and-never-ran stays blank instead of
+ * claiming completion.
  */
 export function sessionActivity(
   status: SessionStatus,
-  recentlyCompleted: boolean,
+  hasTrace: boolean,
+  unread: boolean,
 ): SessionActivity {
+  // Status first: a live run reports itself even in the window before its Trace is recorded.
   if (status === "running") return "running";
   if (status === "compacting") return "compacting";
-  return recentlyCompleted ? "completed" : null;
-}
-
-/**
- * Fold a live status transition into the transient completion-highlight set.
- *
- * - beginning a new active run clears the old highlight;
- * - active → idle records a completion;
- * - idle snapshots and no-op observations do nothing, so loading history never invents a dot.
- *
- * Same-reference no-ops keep React state updates cheap and make the behavior straightforward to
- * unit test.
- */
-export function advanceCompletionHighlights(
-  current: ReadonlySet<string>,
-  sessionId: string,
-  previous: SessionStatus,
-  next: SessionStatus,
-): ReadonlySet<string> {
-  if (next === "running" || next === "compacting") {
-    if (!current.has(sessionId)) return current;
-    const updated = new Set(current);
-    updated.delete(sessionId);
-    return updated;
-  }
-  if (previous !== "idle" && next === "idle") {
-    if (current.has(sessionId)) return current;
-    return new Set(current).add(sessionId);
-  }
-  return current;
-}
-
-/** Dismiss one observed completion when its Session row is opened again. */
-export function dismissCompletionHighlight(
-  current: ReadonlySet<string>,
-  sessionId: string,
-): ReadonlySet<string> {
-  if (!current.has(sessionId)) return current;
-  const updated = new Set(current);
-  updated.delete(sessionId);
-  return updated;
+  if (!hasTrace) return null;
+  return unread ? "completedUnread" : "completed";
 }
