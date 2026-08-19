@@ -12,6 +12,7 @@
  *   whatever it is running) alive — that is the entire point of a server-side terminal.
  */
 import fsp from "node:fs/promises";
+import type { Resources } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
 import { HttpError } from "../../http/errors.js";
 import { spawnHelperHint } from "../../terminal/spawn-helper.js";
@@ -37,10 +38,18 @@ export interface CreateTerminalRequest {
 }
 
 export class TerminalManager {
+  /**
+   * The kernel's resource registry, threaded to every session it creates: a native module
+   * reaches the platform through it (pty-module.ts), and live ptys are registered in it so
+   * a hot swap hands them to the next platform instead of killing them.
+   */
+  constructor(
+    private readonly resources: Resources,
+    private readonly graceMs: number = EXITED_SESSION_GRACE_MS,
+  ) {}
+
   private readonly sessions = new Map<string, TerminalSession>();
   private readonly reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  constructor(private readonly graceMs: number = EXITED_SESSION_GRACE_MS) {}
 
   async create(request: CreateTerminalRequest): Promise<TerminalSession> {
     const cwd = await resolveCwd(request.cwd);
@@ -76,6 +85,7 @@ export class TerminalManager {
       ownerUserId: request.ownerUserId,
       seq,
       name,
+      resources: this.resources,
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
