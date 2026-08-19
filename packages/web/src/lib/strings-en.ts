@@ -469,7 +469,7 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: models use the OpenAI Chat Completions protocol (base URL required; an empty API key reads OPENAI_API_KEY). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is auto-detected from the base URL or picked manually (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -509,6 +509,21 @@ export const en: Strings = {
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
+    protocol: "Protocol",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    detectProtocol: "Auto-detect",
+    detecting: "Detecting protocol…",
+    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    detectNone:
+      "None of the three protocols matched: check the base URL, or pick the protocol manually",
+    detectFailed: (msg: string): string => `Protocol detection failed: ${msg}`,
+    addProtocolHintDetect:
+      "The protocol is auto-detected from the base URL (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions); you can also pick it manually",
+    addTitleCustom: "Add model",
     vision: "Vision support",
     visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",

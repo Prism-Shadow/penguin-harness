@@ -23,7 +23,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `model_id` | Upstream request id |
 | `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
-| `client_type` | Protocol hint (e.g. `openai`); inferred by AgentHub from the model id when omitted |
+| `client_type` | Protocol hint; inferred by AgentHub from the model id when omitted. Custom endpoints use one of the generic protocol clients — `openai-responses` (OpenAI Responses API), `ant-messages` (Anthropic Messages API), or `openai-chat` (Chat Completions) — which the Web dialog auto-detects from the base URL; the bare `openai` value remains an alias of `openai-chat` |
 | `display_name` | Display name |
 | `vision` | Whether image input is supported, default true |
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
@@ -80,10 +80,18 @@ Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash, MiniMax-
 
 ## Local / self-hosted OpenAI-compatible endpoints (e.g. vLLM)
 
-A local inference server is just a `custom` entry: `client_type = "openai"`, `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), and the served model name as `model_id`. Two settings make it run smoothly:
+A local inference server is just a `custom` entry: `base_url` pointing at the server (e.g. `http://127.0.0.1:8000/v1`), the served model name as `model_id`, and a Chat Completions client type (`openai-chat`, or the legacy `openai` alias — the Web dialog's protocol auto-detection below lands there on its own for such servers). Two settings make it run smoothly:
 
 - **Enable tool calling server-side.** For vLLM, start the server with `--enable-auto-tool-choice` and the `--tool-call-parser` matching your model (e.g. `hermes` for Qwen, `llama3_json` for Llama 3.x); without them tool calls arrive as plain text and the agent loop cannot execute anything.
 - **Set the entry's `context_window` to the server's real window** — for vLLM, the `--max-model-len` value (e.g. `32768`). The per-request output cap and the compaction threshold both derive from this window automatically: requests clamp `max_tokens` to what the window still fits, and compaction fires before the window overflows, so no hand-tuned `max_tokens` is needed. Left unset, the per-request output clamp is off and compaction assumes a 128000 window, so a smaller real window will reject requests.
+
+## Protocol auto-detection for custom models
+
+Custom and user-defined groups speak AgentHub's generic protocol clients, and the Web dialog detects which one a base URL serves. When the base URL field loses focus (or via the protocol row's "Auto-detect" button), the server probes the URL with three cheap requests in fixed order — `openai-responses` (`POST {base}/responses`, OpenAI Responses API) first, then `ant-messages` (`POST {base}/v1/messages`, Anthropic Messages API), then `openai-chat` (`POST {base}/chat/completions`) — and the first protocol the endpoint actually serves is applied to the entry's `client_type`.
+
+Probes are minimal invalid requests (`{}` bodies): they cost no tokens, need no valid model id, and work even without a key — an auth failure in the protocol's error shape still proves the route exists, while a `404`/`405` means the path isn't served and HTML or gateway junk counts for nothing. The probed URLs and auth headers are exactly what the AgentHub client would use after saving (`Authorization: Bearer` for the OpenAI protocols; `x-api-key` plus `Authorization: Bearer` and `anthropic-version` for `ant-messages`), so a detected protocol is one that will really work.
+
+The protocol dropdown next to the detection result is the manual override: when nothing matched (unreachable URL, non-API responses), pick one yourself. Entries from before this feature keep `client_type = "openai"` — still an alias of `openai-chat` — and are only rewritten when you pick a protocol or a detection run applies. Detection is exposed as `POST /api/projects/:id/models/detect` (owner only, see [Server API](/server-api)).
 
 ## Thinking levels
 

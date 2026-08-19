@@ -441,7 +441,7 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：组内模型走 OpenAI Chat Completions 兼容协议（base URL 必填，API key 留空读取 OPENAI_API_KEY）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义：接口协议可按 base URL 自动检测或手动选择（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
@@ -481,6 +481,22 @@ export const zh = {
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
+    /** Protocol selector (custom / user-defined groups): AgentHub's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
+    protocol: "接口协议",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    detectProtocol: "自动检测",
+    detecting: "正在检测协议…",
+    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
+    detectNone: "三种协议均未识别：请检查 base URL，或手动选择协议",
+    detectFailed: (msg: string): string => `协议检测失败：${msg}`,
+    /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
+    addProtocolHintDetect:
+      "填入 base URL 后自动检测接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可手动选择",
+    addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */

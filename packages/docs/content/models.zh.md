@@ -23,7 +23,7 @@ description: 经 AgentHub 单一网关接入模型，以 (provider, model_id) �
 | `model_id` | 上游请求 id |
 | `context_window` | 上下文窗口（Token 数）。不只用于展示：每次请求的实际输出上限与压缩阈值都由它推导，请求不会索要超出窗口剩余空间的输出。缺省（或小于 4096 的非常规值）时输出收敛关闭、压缩按 128000 假定推导——窗口更小的模型务必填真实值 |
 | `max_tokens` | 可选的按模型输出上限（单次请求最大输出 Token 数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用。该值是天花板而非逐字上线值：每次请求实际发送 `min(max_tokens, context_window − 估算输入 − 安全余量)`，小窗口模型无需手工调低。Web 整表保存时省略该字段即清除 |
-| `client_type` | 协议提示(如 `openai`)；缺省由 AgentHub 按 model id 推断 |
+| `client_type` | 协议提示；缺省由 AgentHub 按 model id 推断。自定义端点使用通用协议客户端——`openai-responses`（OpenAI Responses API）、`ant-messages`（Anthropic Messages API）或 `openai-chat`（Chat Completions）——Web 对话框可按 base URL 自动检测；`openai` 仍是 `openai-chat` 的别名 |
 | `display_name` | 显示名 |
 | `vision` | 是否支持图像输入，默认 true |
 | `pricing` | 三档价格(单位 `usd_per_mtok`,USD 每百万 Token):`cache_read` / `cache_write` / `output` |
@@ -80,10 +80,18 @@ api_key = "sk-..."
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 
-本地推理服务就是一条 `custom` 条目：`client_type = "openai"`、`base_url` 指向服务地址（如 `http://127.0.0.1:8000/v1`）、`model_id` 填服务端的模型名。两处设置决定运行是否顺畅：
+本地推理服务就是一条 `custom` 条目：`base_url` 指向服务地址（如 `http://127.0.0.1:8000/v1`）、`model_id` 填服务端的模型名、协议为 Chat Completions 客户端（`client_type = "openai-chat"`，旧别名 `openai` 同效——下文的协议自动检测对这类服务会自行落到该协议）。两处设置决定运行是否顺畅：
 
 - **服务端要开启工具调用。** vLLM 需以 `--enable-auto-tool-choice` 启动，并按模型选择对应的 `--tool-call-parser`（如 Qwen 用 `hermes`、Llama 3.x 用 `llama3_json`）；不开启时工具调用会以纯文本返回，Agent 循环无法执行任何工具。
 - **条目的 `context_window` 填服务端的真实窗口**——vLLM 即 `--max-model-len` 的值（如 `32768`）。每次请求的输出上限与压缩阈值都会由该窗口自动推导：请求把 `max_tokens` 收敛到窗口剩余空间以内，压缩也会在撞上窗口硬限制之前触发，无需手工调低 `max_tokens`。不填时不做逐请求输出收敛、压缩按 128000 假定，真实窗口更小会导致请求被拒。
+
+## 自定义模型的协议自动检测
+
+Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会检测 base URL 实际提供的是哪一种。base URL 输入框失焦时（或点击协议行的「自动检测」按钮），服务端按固定顺序向该 URL 发三个轻量探测请求——先 `openai-responses`（`POST {base}/responses`，OpenAI Responses API），再 `ant-messages`（`POST {base}/v1/messages`，Anthropic Messages API），最后 `openai-chat`（`POST {base}/chat/completions`）——第一个真正被端点提供的协议写入条目的 `client_type`。
+
+探测请求是刻意构造的最小非法请求（`{}` 请求体）：不消耗 Token、不需要有效的模型 id，没有 key 也能用——按协议形态返回的鉴权错误同样证明路由存在；`404`/`405` 则说明该路径未提供，HTML 或网关杂讯一概不算数。探测的 URL 与鉴权头和保存后 AgentHub 客户端实际使用的完全一致（OpenAI 系协议用 `Authorization: Bearer`；`ant-messages` 同时带 `x-api-key`、`Authorization: Bearer` 与 `anthropic-version`），因此检测出的协议就是真正能跑通的协议。
+
+检测结果旁的协议下拉框即手动覆盖入口：三种协议都没匹配（URL 不可达、返回的不是 API 响应）时自行选择。此前创建的条目保留 `client_type = "openai"`（仍是 `openai-chat` 的别名），只有手动选择或检测生效时才会改写。检测能力以 `POST /api/projects/:id/models/detect` 暴露（仅 owner，见 [Server API](/server-api)）。
 
 ## 思考等级
 

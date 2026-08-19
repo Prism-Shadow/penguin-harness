@@ -413,6 +413,53 @@ export interface ModelTestResponse {
 }
 
 /**
+ * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
+ * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
+ * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
+ * is a minimal invalid request whose error reveals the protocol shape).
+ */
+export interface ModelProtocolDetectRequest {
+  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
+  baseUrl: string;
+  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
+  clearApiKey?: boolean;
+  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  provider?: string;
+  modelId?: string;
+}
+
+/**
+ * One probe's outcome: `served` = the route answered in an API shape (including auth
+ * failures — 401/403 with a protocol-shaped body proves the route exists);
+ * `route_missing` = 404/405; `server_error` = 5xx (proves nothing about the path);
+ * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
+ * the request itself failed.
+ */
+export type ProtocolProbeOutcome =
+  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
+
+/** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
+export interface ModelProtocolProbeDto {
+  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  clientType: string;
+  /** Full URL probed (base URL + the protocol's path). */
+  url: string;
+  outcome: ProtocolProbeOutcome;
+  /** HTTP status, when a response arrived at all. */
+  status?: number;
+}
+
+/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+export interface ModelProtocolDetectResponse {
+  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  detected?: string;
+  probes: ModelProtocolProbeDto[];
+}
+
+/**
  * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
  * top-level `default_model` the models page's whole-table PUT writes, without resending the
  * table (and thus without touching credentials). The pair must name a configured model

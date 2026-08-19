@@ -29,9 +29,10 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CredentialInfo,
+  ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -158,9 +159,53 @@ export function decimalOnly(v: string): string {
   return i === -1 ? cleaned : cleaned.slice(0, i + 1) + cleaned.slice(i + 1).replace(/\./g, "");
 }
 
-/** Moving an existing model to Custom switches it to the OpenAI-compatible client. */
+/**
+ * AgentHub's generic protocol client types, in detection order (custom / user-defined
+ * groups select among these; see the protocol selector and the /models/detect probes).
+ */
+export const PROTOCOL_CLIENT_TYPES = ["openai-responses", "ant-messages", "openai-chat"] as const;
+export type ProtocolClientType = (typeof PROTOCOL_CLIENT_TYPES)[number];
+
+/**
+ * Whether a stored client_type belongs to the generic protocol family the selector can
+ * represent: the three protocol clients, the bare `openai` alias (legacy default for
+ * custom groups; routes to openai-chat), or empty. Any other explicit type (a legacy
+ * vendor-pinned config like `deepseek-v4`) keeps the read-only note instead — showing
+ * the selector there would silently rewrite it.
+ */
+export function isGenericProtocolClientType(clientType: string): boolean {
+  const t = clientType.trim().toLowerCase();
+  return t === "" || t === "openai" || (PROTOCOL_CLIENT_TYPES as readonly string[]).includes(t);
+}
+
+/**
+ * Selector value for the current clientType: `openai` / empty display as Chat
+ * Completions (their effective routing) without rewriting the stored value — only an
+ * actual selection or a detection hit writes the new-style client type.
+ */
+export function protocolSelectorValue(clientType: string): ProtocolClientType {
+  const t = clientType.trim().toLowerCase();
+  return t === "openai-responses" || t === "ant-messages" ? t : "openai-chat";
+}
+
+/** A base URL detection can probe: absolute http(s) (mirrors the server-side check; anything else 400s). */
+export function detectableBaseUrl(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl.trim());
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Moving an existing model to Custom keeps a generic protocol client type (protocol
+ * detection / the selector manage those) and otherwise switches to the OpenAI-compatible
+ * client — an unroutable or vendor-pinned type must not leak into a custom group.
+ */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
-  return provider === "custom" ? "openai" : current;
+  if (provider !== "custom") return current;
+  return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai";
 }
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
@@ -1108,6 +1153,22 @@ function ModelDialog({
    * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
+  /** Protocol detection in progress (custom / user-defined groups only). */
+  const [detecting, setDetecting] = useState(false);
+  /** Last detection outcome, rendered under the protocol selector (null = nothing to show). */
+  const [detectResult, setDetectResult] = useState<
+    | { kind: "ok"; clientType: string }
+    | { kind: "none" }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
+  /**
+   * Monotonic run counter: each detection captures it and only the newest run may apply
+   * its result — a manual protocol pick or a re-run supersedes anything still in flight.
+   */
+  const detectSeq = useRef(0);
+  /** Base URL the last detection ran against (auto-detect on blur only fires when it changed). */
+  const lastDetectedUrl = useRef<string | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -1158,6 +1219,47 @@ function ModelDialog({
   };
 
   /**
+   * Protocol auto-detection: POST /models/detect probes the base URL for the three
+   * generic protocols (openai-responses → ant-messages → openai-chat, first hit wins)
+   * and applies the result to the form's clientType. Credentials mirror the connectivity
+   * test: a newly typed key is sent; otherwise (unless "clear" is checked) the paired
+   * reference lets the server fall back to the stored key — the plaintext never reaches
+   * the frontend. Detection is assistive and non-blocking: a stale run (superseded by a
+   * manual pick or a newer run) discards its result instead of clobbering the form.
+   */
+  const runDetect = async () => {
+    const baseUrl = form.baseUrl.trim();
+    if (!detectableBaseUrl(baseUrl)) return;
+    const seq = ++detectSeq.current;
+    lastDetectedUrl.current = baseUrl;
+    setDetecting(true);
+    setDetectResult(null);
+    try {
+      const body: ModelProtocolDetectRequest = { baseUrl };
+      const key = form.apiKeyInput.trim();
+      if (key) body.apiKey = key;
+      else if (form.clearApiKey) body.clearApiKey = true;
+      const modelId = form.modelId.trim();
+      if (modelId) {
+        body.provider = form.provider;
+        body.modelId = modelId;
+      }
+      const res = await api.detectProtocol(projectId, body);
+      if (seq !== detectSeq.current) return;
+      if (res.detected) {
+        set({ clientType: res.detected });
+        setDetectResult({ kind: "ok", clientType: res.detected });
+      } else {
+        setDetectResult({ kind: "none" });
+      }
+    } catch (e) {
+      if (seq === detectSeq.current) setDetectResult({ kind: "error", message: apiErrorText(e) });
+    } finally {
+      if (seq === detectSeq.current) setDetecting(false);
+    }
+  };
+
+  /**
    * Validate and convert pricing back to USD storage; returns null on validation failure —
    * every error is placed below the offending input, which is highlighted red (no more
    * top-level banner: it's too far from the error site, and with three price fields it's
@@ -1173,6 +1275,13 @@ function ModelDialog({
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
   const baseUrlRequired = !preset && openAiLike;
+  // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
+  // clients: the selector (with auto-detection) shows there, unless the entry carries a
+  // legacy vendor-pinned client_type — that keeps the read-only note below instead.
+  // Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
+  const showProtocolSelector =
+    customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
@@ -1393,7 +1502,14 @@ function ModelDialog({
     <Modal
       open
       title={
-        isNew ? (vendorGroup ? S.models.addTitleVendor : S.models.addTitle) : S.models.editTitle
+        isNew
+          ? vendorGroup
+            ? S.models.addTitleVendor
+            : customLikeGroup
+              ? // Custom / user-defined groups no longer pin one protocol (detection + selector), so the title drops the "(OpenAI protocol)" suffix gateways keep.
+                S.models.addTitleCustom
+              : S.models.addTitle
+          : S.models.editTitle
       }
       onClose={onClose}
       widthClass="sm:max-w-lg"
@@ -1495,7 +1611,9 @@ function ModelDialog({
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
-                : S.models.addProtocolHint}
+                : customLikeGroup
+                  ? S.models.addProtocolHintDetect
+                  : S.models.addProtocolHint}
             </p>
             {identityFields}
           </>
@@ -1608,6 +1726,17 @@ function ModelDialog({
               disabled={!canEdit}
               invalid={Boolean(fieldErrors.baseUrl)}
               onChange={(e) => set({ baseUrl: e.target.value })}
+              // Auto-detection on leaving the field (custom / user-defined groups): only
+              // a probeable URL the user actually changed in this dialog triggers a run —
+              // typing never fires requests, a click-through must not rewrite a working
+              // entry's protocol, and the explicit button re-runs at will.
+              onBlur={() => {
+                if (!showProtocolSelector || !canEdit || detecting) return;
+                const bu = form.baseUrl.trim();
+                if (!detectableBaseUrl(bu)) return;
+                if (bu === form.originalBaseUrl || bu === lastDetectedUrl.current) return;
+                void runDetect();
+              }}
               className="font-mono"
               // Reserve room so the typed URL never slides under the suffix. Input and
               // suffix share the same monospace size, so the suffix width is exactly its
@@ -1624,6 +1753,67 @@ function ModelDialog({
           </span>
           {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
         </label>
+
+        {/* 2b) Protocol (custom / user-defined groups only): which of AgentHub's generic
+            protocol clients the entry uses. Auto-detected from the base URL (on blur, or
+            via the label-row button — the same link-next-to-label idiom as "get API key");
+            the selector doubles as the manual override. `openai` / empty display as Chat
+            Completions without being rewritten until the user picks or detection applies.
+            The in-field grey suffix on the base URL above tracks the choice live. */}
+        {showProtocolSelector && (
+          <div className="block">
+            <span className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.protocol}
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={detecting || !detectableBaseUrl(form.baseUrl)}
+                  onClick={() => void runDetect()}
+                  className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-300"
+                >
+                  {detecting ? S.models.detecting : S.models.detectProtocol}
+                </button>
+              )}
+            </span>
+            <Select
+              size="sm"
+              value={protocolSelectorValue(form.clientType)}
+              disabled={!canEdit}
+              onChange={(e) => {
+                // A manual pick supersedes any in-flight detection (its late result must not clobber the choice).
+                detectSeq.current++;
+                setDetecting(false);
+                setDetectResult(null);
+                set({ clientType: e.target.value });
+              }}
+            >
+              {PROTOCOL_CLIENT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {S.models.protocolNames[t] ?? t}
+                </option>
+              ))}
+            </Select>
+            {detectResult?.kind === "ok" && (
+              <p className="mt-1 text-xs text-green-600 dark:text-green-500">
+                {S.models.detectedProtocol(
+                  S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
+                )}
+              </p>
+            )}
+            {detectResult?.kind === "none" && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {S.models.detectNone}
+              </p>
+            )}
+            {detectResult?.kind === "error" && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                {S.models.detectFailed(detectResult.message)}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
             sits inside each box as a muted right suffix. Placeholders cannot scroll, so at
@@ -1724,12 +1914,18 @@ function ModelDialog({
 
         {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
-        {/* Legacy entries carrying a non-openai client_type (historical config): read-only display. */}
-        {!isNew && !preset && form.clientType && form.clientType !== "openai" && (
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            {S.models.clientTypeLocked(form.clientType)}
-          </p>
-        )}
+        {/* Legacy entries carrying a non-openai client_type (historical config): read-only
+            display — unless the protocol selector above already represents it (generic
+            protocol types in custom-like groups are editable there). */}
+        {!isNew &&
+          !preset &&
+          !showProtocolSelector &&
+          form.clientType &&
+          form.clientType !== "openai" && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {S.models.clientTypeLocked(form.clientType)}
+            </p>
+          )}
 
         {/* Vision capability: for preset models it's flagged by the built-in catalog (read-only);
             custom models toggle it here — an iOS-style switch sitting inline right next to the

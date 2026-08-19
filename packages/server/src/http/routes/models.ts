@@ -1,13 +1,15 @@
 /**
  * Model & credential config routes:
  * GET|PUT /api/projects/:p/models, PUT /api/projects/:p/models/default,
- * POST /api/projects/:p/models/test (the model reference
- * `(provider, modelId)` is sent as a pair in the request body, avoiding URL-encoding
- * issues). Any member can read (api_key is masked); only the owner can modify or test.
+ * POST /api/projects/:p/models/test, POST /api/projects/:p/models/detect (the model
+ * reference `(provider, modelId)` is sent as a pair in the request body, avoiding
+ * URL-encoding issues). Any member can read (api_key is masked); only the owner can
+ * modify, test, or detect.
  */
 import { Hono } from "hono";
 import type {
   DefaultModelResponse,
+  ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -16,6 +18,7 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
+import { isHttpUrl } from "../../services/protocol-detect.js";
 import type { AppDeps } from "../../app.js";
 
 /**
@@ -224,6 +227,37 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
       if (body.clientType) req.clientType = body.clientType;
     }
     return c.json(await deps.projectConfigService.testModel(projectId, req));
+  });
+
+  // Protocol auto-detection (owner): probes which generic protocol client the base URL
+  // serves — openai-responses, then ant-messages, then openai-chat — and returns the
+  // first hit plus per-probe outcomes (see services/protocol-detect.ts). Cheap: each
+  // probe is a minimal invalid request (no tokens billed). Like the connectivity test,
+  // an optional paired reference lets a stored key back the probes without the frontend
+  // ever seeing the plaintext.
+  app.post("/detect", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    const body = await readJson(c);
+    const req: ModelProtocolDetectRequest = {
+      baseUrl: requireString(body, "baseUrl", { minLen: 1, maxLen: 2000 }),
+    };
+    if (!isHttpUrl(req.baseUrl)) throw badRequest("baseUrl must be an absolute http(s) URL.");
+    if (body.apiKey !== undefined) {
+      if (typeof body.apiKey !== "string") throw badRequest("apiKey must be a string.");
+      if (body.apiKey) req.apiKey = body.apiKey;
+    }
+    if (body.clearApiKey !== undefined) {
+      if (typeof body.clearApiKey !== "boolean") throw badRequest("clearApiKey must be a boolean.");
+      req.clearApiKey = body.clearApiKey;
+    }
+    // The paired reference is optional (adding a not-yet-saved model has none); when
+    // present, both fields are required so the stored-key lookup is unambiguous.
+    if (body.provider !== undefined || body.modelId !== undefined) {
+      req.provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
+      req.modelId = requireString(body, "modelId", { minLen: 1, maxLen: 200 });
+    }
+    return c.json(await deps.projectConfigService.detectProtocol(projectId, req));
   });
 
   return app;

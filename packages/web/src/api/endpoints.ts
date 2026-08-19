@@ -44,6 +44,8 @@ import type {
   MemoryFilesResponse,
   MemoryOverviewResponse,
   MessagesResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -200,6 +202,13 @@ export const testModel = (projectId: string, body: ModelTestRequest) =>
     method: "POST",
     body,
   });
+
+/** Protocol auto-detection for a custom base URL: probes openai-responses → ant-messages → openai-chat and returns the first protocol the endpoint serves. */
+export const detectProtocol = (projectId: string, body: ModelProtocolDetectRequest) =>
+  apiFetch<ModelProtocolDetectResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/detect`,
+    { method: "POST", body },
+  );
 
 // Vault environment variables (Agent-level) -------------------------------------------------------
 

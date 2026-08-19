@@ -1084,6 +1084,10 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
     return env("MINIMAX");
   }
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
+  // Generic protocol clients (agenthub 0.4.2): ant-messages reads the ANTHROPIC_* pair;
+  // openai-responses / openai-chat fall through to the openai branch below (both read
+  // OPENAI_*). Order mirrors AutoLLMClient: ant-messages before the openai substring match.
+  if (t.includes("ant-messages")) return env("ANTHROPIC");
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }

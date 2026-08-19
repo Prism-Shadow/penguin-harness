@@ -43,6 +43,8 @@ import type {
   ChatDefaultsDto,
   ModelInfo,
   ModelPricingDto,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
   ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
@@ -51,6 +53,7 @@ import type {
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import { detectModelProtocol } from "./protocol-detect.js";
 import type { PricingRates } from "./usage-service.js";
 
 type RawTable = Record<string, unknown>;
@@ -465,6 +468,30 @@ export class ProjectConfigService {
         message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
       };
     }
+  }
+
+  /**
+   * Protocol auto-detection for a custom base URL (see services/protocol-detect.ts for
+   * the probe order and classification): resolves the probe credential the same way the
+   * connectivity test does — the request body's key wins; otherwise, when the optional
+   * paired reference names a stored entry and "clear" isn't checked, that entry's saved
+   * key backs the probes (the frontend only ever sees the mask, never the plaintext).
+   * Detection also runs keyless: a protocol-shaped 401/403 still proves the route.
+   * Never throws on probe failures — every outcome is reported per probe.
+   */
+  async detectProtocol(
+    projectId: string,
+    req: ModelProtocolDetectRequest,
+  ): Promise<ModelProtocolDetectResponse> {
+    let apiKey = req.apiKey;
+    if (apiKey === undefined && !req.clearApiKey && req.provider && req.modelId) {
+      const raw = await this.readRaw(projectId);
+      const entry = asArray(raw.models).find((m) =>
+        entryMatches(m, req.provider as string, req.modelId as string),
+      );
+      apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
+    }
+    return detectModelProtocol({ baseUrl: req.baseUrl, ...(apiKey ? { apiKey } : {}) });
   }
 
   /**
