@@ -494,6 +494,20 @@ export class ContextEngine {
   }
 
   /**
+   * Withdraws a queued steering input that has not been delivered yet. `input` is the exact
+   * list previously passed to `steer` (matched by identity — the host that queued it is the
+   * one recalling it, and it holds the reference). Returns false when the entry is no longer
+   * in the queue: it was already drained into the next request input (or the run exited),
+   * which the host surfaces as "already delivered" rather than an error.
+   */
+  unsteer(input: OmniMessage[]): boolean {
+    const i = this.steeringQueue.indexOf(input);
+    if (i < 0) return false;
+    this.steeringQueue.splice(i, 1);
+    return true;
+  }
+
+  /**
    * Drains the steering queue into standalone `[user_steering]` user messages (one per
    * queued entry, in arrival order, each followed by its images), yielding every message to
    * the output stream and writing it to Trace — steering is real user input: unlike a normal

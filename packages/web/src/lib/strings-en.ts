@@ -469,7 +469,7 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: models use the OpenAI Chat Completions protocol (base URL required; an empty API key reads OPENAI_API_KEY). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -509,7 +509,36 @@ export const en: Strings = {
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
+    protocol: "Protocol",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
+    /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
+    protocolUnset: "Select protocol",
+    detectProtocol: "Detect",
+    detectProtocolHint: "Probe the base URL and apply the protocol it serves",
+    detecting: "Detecting…",
+    /** Success toast; the protocol itself then shows in the base URL field's suffix. */
+    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
+    detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
+    /** Save-time detection came back empty: the save proceeds on the compatible client. */
+    detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
+    addProtocolHintDetect:
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
+    addTitleCustom: "Add model",
     vision: "Vision support",
+    /** Detect action beside the vision switch. */
+    detectVision: "Detect",
+    detectingVision: "Testing…",
+    detectVisionHint:
+      "Send one tiny test image to see whether this model accepts images (uses your API key)",
+    detectVisionNeedsId: "Fill in the model id first, then detect.",
+    detectVisionOk: "This model accepts images; vision turned on",
+    detectVisionNo: "This model does not accept images; vision left off",
     visionOffProxyHint: "Images are read via the vision proxy model",
     visionBadge: "Vision",
     freeBadge: "Free",
@@ -534,7 +563,8 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
-    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
+    baseUrlSuffixTitle:
+      "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
@@ -856,6 +886,17 @@ export const en: Strings = {
       high: "High",
       xhigh: "Extreme High",
     },
+    thinkingSwitchTitle: "Switch thinking level",
+    thinkingSwitchBody: (to: string): string =>
+      `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
+    thinkingSwitchBusyHint: "This conversation is still working — compaction has to wait for it.",
+    thinkingSwitchCompactFirst: "Compact, then switch",
+    thinkingSwitchConfirm: "Switch anyway",
+    thinkingSwitchCompacting: "Compacting the context — the thinking level switches when it ends.",
+    thinkingSwitchApplied: (to: string): string =>
+      `Context compacted; thinking level switched to "${to}".`,
+    thinkingSwitchCompactFailed:
+      "The compaction did not finish; the thinking level was switched anyway.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -1069,6 +1110,13 @@ Scenarios:
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) =>
       `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) =>
+      `Follow-up queued — sent when this run finishes: ${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "Recall",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "Recall to the input box to edit and resend",
     send: "Send",
     stop: "Stop",
     compact: "Compact context",
@@ -1273,6 +1321,11 @@ Scenarios:
     removeFile: "Remove file",
     attachmentTooLarge: (name: string): string =>
       `${name} exceeds the 10MB limit and was not attached.`,
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
+    dropFilesTitle: "Drop files to attach",
+    dropFilesDesc: "Images and files are added to the message draft",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -1468,6 +1521,7 @@ Scenarios:
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",
       file_not_found: "This file no longer exists.",
+      not_pending: "This message already went out and can no longer be recalled.",
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
@@ -1477,6 +1531,7 @@ Scenarios:
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
       task_in_progress: "This Session already has a task running.",
+      compacting: "This Session is compacting its context and is not accepting new input.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:

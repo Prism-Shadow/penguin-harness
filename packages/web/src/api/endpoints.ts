@@ -44,10 +44,14 @@ import type {
   MemoryFilesResponse,
   MemoryOverviewResponse,
   MessagesResponse,
+  ModelProtocolDetectRequest,
+  ModelProtocolDetectResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelTestResponse,
+  ModelVisionDetectRequest,
+  ModelVisionDetectResponse,
   PasswordChangeRequest,
   PrefsResponse,
   ProjectCreateRequest,
@@ -71,6 +75,7 @@ import type {
   SkillArchiveInstallRequest,
   SkillInstallRequest,
   SkillLibraryResponse,
+  RecalledMessageResponse,
   RetryNowResponse,
   SteerRequest,
   TaskCreateRequest,
@@ -200,6 +205,20 @@ export const testModel = (projectId: string, body: ModelTestRequest) =>
     method: "POST",
     body,
   });
+
+/** Protocol auto-detection for a custom base URL: probes openai-responses → ant-messages → openai-chat and returns the first protocol the endpoint serves. */
+export const detectProtocol = (projectId: string, body: ModelProtocolDetectRequest) =>
+  apiFetch<ModelProtocolDetectResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/detect`,
+    { method: "POST", body },
+  );
+
+/** Vision probe: sends one 1x1 image on this model's credential and reports whether it was accepted (a real, billed completion — unlike the protocol probes). */
+export const detectVision = (projectId: string, body: ModelVisionDetectRequest) =>
+  apiFetch<ModelVisionDetectResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/detect-vision`,
+    { method: "POST", body },
+  );
 
 // Vault environment variables (Agent-level) -------------------------------------------------------
 
@@ -482,6 +501,20 @@ export const postSteer = (sessionId: string, body: SteerRequest) =>
     method: "POST",
     body,
   });
+
+/** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
+export const recallSteer = (sessionId: string, steerId: string) =>
+  apiFetch<RecalledMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/steer/${encodeURIComponent(steerId)}`,
+    { method: "DELETE" },
+  );
+
+/** Recall a queued follow-up task back to the composer (#287): returns its original content (+ queued thinking level); 409 not_pending once it already auto-started. */
+export const recallFollowUp = (sessionId: string, followUpId: string) =>
+  apiFetch<RecalledMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/follow-ups/${encodeURIComponent(followUpId)}`,
+    { method: "DELETE" },
+  );
 
 export const postCompact = (sessionId: string) =>
   // Same shape as tasks: the response carries the actual current session_id (a new id after self-healing; the frontend updates its route accordingly).

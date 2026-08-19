@@ -393,6 +393,42 @@ export interface ModelTestRequest {
 }
 
 /**
+ * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
+ * credential, to decide whether the models dialog's "supports vision" switch should be
+ * turned on. The body mirrors the connectivity test (same paired reference and same
+ * not-yet-saved overrides), so an unsaved model can be probed before it exists on disk.
+ *
+ * Unlike protocol detection this is a real, billed completion — an image request cannot be
+ * shaped to cost nothing — so it only ever runs when the user presses the control.
+ */
+export interface ModelVisionDetectRequest {
+  provider: string;
+  modelId: string;
+  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key. */
+  clearApiKey?: boolean;
+  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
+  baseUrl?: string | null;
+  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
+  clientType?: string;
+}
+
+/**
+ * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
+ * = it answered specifically that it will not take an image (a definitive negative, not an
+ * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
+ * error), so nothing about the capability was learned and the setting is left alone.
+ */
+export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
+
+/** Vision probe result; `message` carries the truncated provider error for the failed case. */
+export interface ModelVisionDetectResponse {
+  outcome: ModelVisionOutcome;
+  message?: string;
+}
+
+/**
  * Connectivity test result: carries round-trip latency when ok, and a reason on failure
  * (truncated raw provider error). When streamed content was observed, also carries the
  * time-to-first-token and, when usage was reported (completed streams), the output rate.
@@ -410,6 +446,53 @@ export interface ModelTestResponse {
    */
   tps?: number;
   message?: string;
+}
+
+/**
+ * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
+ * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
+ * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
+ * is a minimal invalid request whose error reveals the protocol shape).
+ */
+export interface ModelProtocolDetectRequest {
+  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
+  baseUrl: string;
+  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
+  clearApiKey?: boolean;
+  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  provider?: string;
+  modelId?: string;
+}
+
+/**
+ * One probe's outcome: `served` = the route answered in an API shape (including auth
+ * failures — 401/403 with a protocol-shaped body proves the route exists);
+ * `route_missing` = 404/405; `server_error` = 5xx (proves nothing about the path);
+ * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
+ * the request itself failed.
+ */
+export type ProtocolProbeOutcome =
+  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
+
+/** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
+export interface ModelProtocolProbeDto {
+  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  clientType: string;
+  /** Full URL probed (base URL + the protocol's path). */
+  url: string;
+  outcome: ProtocolProbeOutcome;
+  /** HTTP status, when a response arrived at all. */
+  status?: number;
+}
+
+/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+export interface ModelProtocolDetectResponse {
+  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  detected?: string;
+  probes: ModelProtocolProbeDto[];
 }
 
 /**
@@ -742,6 +825,14 @@ export interface SessionInfo {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /**
+   * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
+   * Unset = never pinned: runs that carry no level of their own fall back to the Agent
+   * config's `model.thinking_level`, so config edits keep taking effect. Once pinned it
+   * survives reloads and applies to every later run of this Session, and an Agent-config
+   * change no longer moves it.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
   title?: string;
   /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
@@ -845,6 +936,13 @@ export interface SessionResponse {
 
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
+  /**
+   * Pin this Session's thinking level (`none | low | medium | high | xhigh`, anything else
+   * is a 400). It applies to every later run of the Session that doesn't carry its own
+   * level, and replaces the Agent-config fallback for this Session. There is no unpin:
+   * the picker only offers concrete levels.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Archive / unarchive (default list hides archived). */
   archived?: boolean;
   /** Manual rename; non-empty string, overrides the auto-generated title. */
@@ -958,8 +1056,9 @@ export interface TaskCreateRequest {
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
    * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
-   * the session's default (the Agent config's `model.thinking_level`). A queued follow-up
-   * (`queueIfBusy`) keeps its level and applies it when it auto-starts.
+   * the Session's pinned level (`SessionInfo.thinkingLevel`) and, when that is unset too,
+   * to the Agent config's `model.thinking_level`. A queued follow-up (`queueIfBusy`) keeps
+   * its level and applies it when it auto-starts.
    */
   thinkingLevel?: ThinkingLevelName;
   /**
@@ -1034,12 +1133,50 @@ export interface SteerRequest {
  * stream, and the whole list drops when the run exits (core discards undelivered steering).
  */
 export interface PendingSteeringInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
+  id: string;
   /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
   text: string;
   /** Number of images that rode along. */
   images: number;
   /** Number of file attachments that rode along. */
   files: number;
+}
+
+/**
+ * One follow-up task queued with `queueIfBusy` but not yet auto-started. Carried on
+ * `task_state` events and the SSE subscribe snapshot (like `pendingSteering`) so the
+ * composer can show each queued message's content with a recall affordance; entries leave
+ * the list when they auto-start on idle — or when DELETE /follow-ups/:followUpId recalls one.
+ */
+export interface PendingFollowUpInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
+  id: string;
+  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images in the queued input. */
+  images: number;
+  /** Number of file attachments in the queued input. */
+  files: number;
+}
+
+/**
+ * Response of the two recall endpoints — DELETE /api/sessions/:id/steer/:steerId and
+ * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
+ * for the composer to restore into the input box for editing and resending (#287). File
+ * attachments are read back from the Session scratchpad (then deleted from it); one that
+ * disappeared meanwhile is omitted rather than failing the recall. 409 `not_pending` when
+ * the entry is no longer queued — steering already delivered to the model, or a follow-up
+ * already auto-started (or unknown id either way).
+ */
+export interface RecalledMessageResponse {
+  text: string;
+  /** The images as submitted (`data:` / http(s) URLs). */
+  images: string[];
+  /** The file attachments, re-encoded as base64 data URLs (the shape the composer submits them in). */
+  files: { fileName: string; dataUrl: string }[];
+  /** Follow-up recall only: the per-turn thinking level the entry was queued with, when one was. */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export interface ApprovalDecisionRequest {
@@ -1093,6 +1230,8 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
+      pendingFollowUps?: PendingFollowUpInfo[];
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
