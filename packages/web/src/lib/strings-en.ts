@@ -853,13 +853,14 @@ export const en: Strings = {
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
     thinkingLevel: "Thinking level",
+    /** Tier names for the thinking-level controls: the wire value itself, so the label names the value actually sent (per maintainer request). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
-      none: "None",
-      low: "Low",
-      medium: "Medium",
-      high: "High",
-      xhigh: "Extreme High",
-      max: "Max",
+      none: "none",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
     },
     thinkingSwitchTitle: "Switch thinking level",
     thinkingSwitchBody: (to: string): string =>

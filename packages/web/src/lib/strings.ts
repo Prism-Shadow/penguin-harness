@@ -804,14 +804,14 @@ export const zh = {
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
     thinkingLevel: "思考等级",
-    /** Short tier names for the pre-conversation picker (per review: short names only, no descriptions, no "default" row). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
+    /** Tier names for the thinking-level controls: the Chinese name followed by the wire value in parentheses, so the label names the value actually sent (per maintainer request). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
-      none: "无",
-      low: "低",
-      medium: "中",
-      high: "高",
-      xhigh: "极高",
-      max: "最高",
+      none: "无 (none)",
+      low: "低 (low)",
+      medium: "中 (medium)",
+      high: "高 (high)",
+      xhigh: "极高 (xhigh)",
+      max: "最高 (max)",
     } as Readonly<Record<string, string>>,
     /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
     thinkingSwitchTitle: "切换思考等级",
