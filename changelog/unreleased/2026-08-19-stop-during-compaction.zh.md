@@ -3,7 +3,7 @@
 - **Date:** 2026-08-19
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#345](https://github.com/Prism-Shadow/penguin-harness/pull/345)
+- **PR:** [#345](https://github.com/Prism-Shadow/penguin-harness/pull/347)
 
 [English](2026-08-19-stop-during-compaction.md)
 
