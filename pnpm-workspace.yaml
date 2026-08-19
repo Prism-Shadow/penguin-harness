@@ -28,8 +28,8 @@ allowBuilds:
   # targets NSIS only, so the script is deliberately not run.
   electron-winstaller: false
 # pnpm 11 withholds freshly published versions by default (supply-chain gate), which
-# would resolve agenthub back to 0.4.1 and lose the minimax-m3 client. This package is
+# would resolve agenthub back to 0.4.2 and lose the gateway-heartbeat fix. This package is
 # first-party, so the exemption carries no third-party risk. Remove the entry at the next
-# agenthub bump — by then 0.4.2 is long past the age gate.
+# agenthub bump — by then 0.4.3 is long past the age gate.
 minimumReleaseAgeExclude:
-  - "@prismshadow/agenthub@0.4.2"
+  - "@prismshadow/agenthub@0.4.3"
