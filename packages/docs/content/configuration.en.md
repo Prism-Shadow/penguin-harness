@@ -12,7 +12,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | Variable | Description | Default |
 | --- | --- | --- |
 | `PENGUIN_HOME` | Data root directory | `~/.penguin/data` |
-| `PORT` | Web service listen port | `7376` |
+| `PORT` | Web service listen port | `7364` |
 | `HOST` | Web service listen address | `127.0.0.1` |
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |

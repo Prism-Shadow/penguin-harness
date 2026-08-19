@@ -149,7 +149,7 @@ penguin web
 
 | Option | Description |
 | --- | --- |
-| `--port <port>` | Listen port, default 7376 |
+| `--port <port>` | Listen port, default 7364 |
 | `--host <host>` | Listen host, default 127.0.0.1 |
 | `--no-open` | `web` only: do not open the browser |
 

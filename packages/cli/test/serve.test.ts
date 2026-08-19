@@ -15,14 +15,14 @@ import {
 } from "../src/commands/serve.js";
 import { getMessages } from "../src/i18n.js";
 
-describe("resolvePort (option > env var > default 7376)", () => {
+describe("resolvePort (option > env var > default 7364)", () => {
   it("derives DEFAULT_PORT from core's DEFAULT_SERVER_PORT", () => {
     expect(DEFAULT_PORT).toBe(DEFAULT_SERVER_PORT);
   });
-  it("uses the default 7376 when neither is given", () => {
-    expect(DEFAULT_PORT).toBe(7376);
-    expect(resolvePort(undefined, undefined)).toBe(7376);
-    expect(resolvePort(undefined, "")).toBe(7376); // an empty string counts as unset
+  it("uses the default 7364 when neither is given", () => {
+    expect(DEFAULT_PORT).toBe(7364);
+    expect(resolvePort(undefined, undefined)).toBe(7364);
+    expect(resolvePort(undefined, "")).toBe(7364); // an empty string counts as unset
   });
   it("takes the env var when only the env var is set", () => {
     expect(resolvePort(undefined, "8080")).toBe(8080);
