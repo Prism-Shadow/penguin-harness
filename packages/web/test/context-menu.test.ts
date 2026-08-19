@@ -17,7 +17,7 @@
  * lives in the hook the row spreads onto itself (title-reveal.test.ts convention).
  */
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -225,7 +225,15 @@ describe("reduceHold", () => {
   });
 });
 
-/** Every .ts/.tsx under packages/web/src, as [relative path, source] pairs. */
+/**
+ * Every .ts/.tsx under packages/web/src, as [relative path, source] pairs.
+ *
+ * Paths are normalized to forward slashes here, once, rather than at each comparison:
+ * `join` yields `\` on Windows, so every `path === "components/ui/…"` in this file would
+ * silently match nothing there and collapse its assertions into "expected undefined to be
+ * defined" — green on Linux, red on the Windows CI job. Callers can rely on POSIX
+ * separators on every platform.
+ */
 function sourceFiles(): Array<[string, string]> {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
   const out: Array<[string, string]> = [];
@@ -234,12 +242,30 @@ function sourceFiles(): Array<[string, string]> {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (/\.tsx?$/.test(entry.name))
-        out.push([full.slice(root.length + 1), readFileSync(full, "utf8")]);
+        out.push([
+          full
+            .slice(root.length + 1)
+            .split(sep)
+            .join("/"),
+          readFileSync(full, "utf8"),
+        ]);
     }
   };
   walk(root);
   return out;
 }
+
+describe("sourceFiles", () => {
+  it("reports POSIX-separated paths whatever the platform's separator is", () => {
+    // Pins the contract the assertions below depend on. A no-op assertion on Linux, and
+    // the one that fails first on Windows if the normalization is ever dropped.
+    const paths = sourceFiles().map(([path]) => path);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.filter((p) => p.includes("\\"))).toEqual([]);
+    expect(paths).toContain("components/ui/context-menu.tsx");
+    expect(paths).toContain("components/layout/sidebar.tsx");
+  });
+});
 
 describe("native-menu suppression scope", () => {
   it("registers no global contextmenu listener, so the browser's own menu survives off the row", () => {
