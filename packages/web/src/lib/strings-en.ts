@@ -1320,7 +1320,6 @@ Scenarios:
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
-    sessionMenu: "Chat options",
     pinSession: "Pin",
     unpinSession: "Unpin",
     pinnedSession: "Pinned",

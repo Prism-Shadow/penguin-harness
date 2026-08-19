@@ -8,6 +8,7 @@
  */
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
+import type { SessionSortMode } from "../../lib/session-order";
 import { Chevron } from "./chevron";
 
 /** Minimal stroke-icon wrapper shared by the grouped lists (moved from sidebar.tsx). */
@@ -41,8 +42,35 @@ export const FOLDER_OPEN_ICON =
 export const AGENT_GROUP_ICON =
   "M12 3v3m-6 4a6 6 0 0 1 12 0v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5zm3 3h.01M15 13h.01";
 
+/** Clock (lucide clock, drawn as one path), the "most recent" sort option. */
+export const CLOCK_ICON = "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2";
+
+/** Opposed up/down arrows (lucide arrow-up-down), the drag-reordered "manual order" sort option. */
+export const REORDER_ICON = "m21 16-4 4-4-4M17 20V4M3 8l4-4 4 4M7 4v16";
+
 /** Grouping mode of a Session list (persisted; Workspace is the default). */
 export type GroupMode = "workspace" | "agent";
+
+/**
+ * Leading glyph per grouping mode — the one place these are chosen, read by both the
+ * two-icon toggle below and the sidebar's list-options menu, so a row and its toggle can
+ * never end up wearing different icons for the same mode. Each glyph names the thing the
+ * list is grouped *into*: a folder for Workspaces, the Agent glyph for Agents.
+ */
+export const GROUP_MODE_ICONS: Record<GroupMode, string> = {
+  workspace: FOLDER_ICON,
+  agent: AGENT_GROUP_ICON,
+};
+
+/**
+ * Leading glyph per sort mode, distinguishing what actually decides the order rather than
+ * decorating the rows: a clock for recency, and the reorder arrows of the drag that
+ * produces a manual order.
+ */
+export const SORT_MODE_ICONS: Record<SessionSortMode, string> = {
+  recent: CLOCK_ICON,
+  manual: REORDER_ICON,
+};
 
 /**
  * One storage key for every grouped-list surface (sidebar + Trace page): the grouping
@@ -82,8 +110,8 @@ export function GroupModeToggle({
     <div className="flex items-center gap-0.5">
       {(
         [
-          { value: "workspace", icon: FOLDER_ICON, label: S.chat.groupByWorkspace },
-          { value: "agent", icon: AGENT_GROUP_ICON, label: S.chat.groupByAgent },
+          { value: "workspace", icon: GROUP_MODE_ICONS.workspace, label: S.chat.groupByWorkspace },
+          { value: "agent", icon: GROUP_MODE_ICONS.agent, label: S.chat.groupByAgent },
         ] as const
       ).map((opt) => (
         <button

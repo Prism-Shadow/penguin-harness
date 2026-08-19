@@ -1276,7 +1276,6 @@ Benchmark：
     archiveSession: "归档",
     unarchiveSession: "取消归档",
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
-    sessionMenu: "对话选项",
     pinSession: "置顶",
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
