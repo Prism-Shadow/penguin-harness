@@ -94,7 +94,7 @@ Browse the Skill library by group, install Skills onto an Agent, or quick-invoke
 
 ## Model Configuration (/models)
 
-A per-Project model table grouped by provider. Models can be added and edited: identity is the `(provider, model_id)` pair, credentials are masked, and context window, max output tokens (a per-model cap overriding the Agent's `model.max_tokens` — lower it for small-context models), pricing, and the vision flag are configurable. You can set the default model and the vision model (which reads images on behalf of session models without image input), and run a connectivity test on any entry. Only Project owners can edit. For concepts, see [Models and Providers](/models).
+A per-Project model table grouped by provider. Models can be added and edited: identity is the `(provider, model_id)` pair, credentials are masked, and context window, max output tokens (a per-model cap overriding the Agent's `model.max_tokens` — lower it for small-context models), pricing, the vision flag, and fast mode (off by default: faster output at the provider's premium tier — the toggle is shown only for models whose AgentHub client can serve it, and switching it on confirms the premium billing first) are configurable. A model with fast mode on is badged in the list. You can set the default model and the vision model (which reads images on behalf of session models without image input), and run a connectivity test on any entry — the test carries the dialog's current fast-mode toggle, so a rejection surfaces before saving. Only Project owners can edit. For concepts, see [Models and Providers](/models).
 
 ## Usage (/usage)
 

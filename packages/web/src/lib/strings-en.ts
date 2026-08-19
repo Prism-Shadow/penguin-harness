@@ -540,6 +540,17 @@ export const en: Strings = {
     detectVisionOk: "This model accepts images; vision turned on",
     detectVisionNo: "This model does not accept images; vision left off",
     visionOffProxyHint: "Images are read via the vision proxy model",
+    fastMode: "Fast mode",
+    fastModeHint:
+      "Faster output, billed at the provider's premium tier; the Cost center still counts it at the entry's standard prices",
+    fastModeUnsupported:
+      "This model does not support fast mode — turn it off, or its requests will fail",
+    fastModeConfirmTitle: "Enable fast mode",
+    fastModeConfirmBody:
+      "Fast mode is billed at the provider's premium price list (MiniMax charges 1.5x standard; OpenAI and Anthropic publish separate premium rates). The entry's recorded per-token prices are not adjusted, so the Cost center will under-report this usage.",
+    fastModeConfirmPreview:
+      "Anthropic's fast mode is a limited research preview: until your organization is granted access, requests return a 429 rate-limit error.",
+    fastModeBadge: "Fast",
     visionBadge: "Vision",
     freeBadge: "Free",
     visionModelBadge: "Proxy vision",

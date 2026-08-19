@@ -11,6 +11,7 @@ import {
   catalogEntryFor,
   presetModelEntries,
   providerInfo,
+  fastModeProtocol,
   resolveModelEnv,
 } from "../src/state/index.js";
 
@@ -711,5 +712,105 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     // Custom and user-defined groups have no page to vouch for.
     expect(modelHomepageUrl("custom", "my-model")).toBeUndefined();
     expect(modelHomepageUrl("my-own-gateway", "x")).toBeUndefined();
+  });
+});
+
+describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, and on which protocol)", () => {
+  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt5_6 / minimax_m3", () => {
+    // Bare "openai" is the alias the web pins on custom, user-defined and gateway rows.
+    expect(fastModeProtocol("anything-at-all", "openai")).toBe("openai");
+    expect(fastModeProtocol("local-qwen", "openai-responses")).toBe("openai");
+    // minimax-m3 is the one branch AgentHub matches by exact equality, not substring.
+    expect(fastModeProtocol("MiniMax-M3", "minimax-m3")).toBe("openai");
+    expect(fastModeProtocol("MiniMax-M3")).toBe("openai");
+    // The gpt-5.x branch precedes the openai catch-all, and both map service_tier.
+    expect(fastModeProtocol("gpt-5.5-pro")).toBe("openai");
+    expect(fastModeProtocol("gpt-5.4-mini")).toBe("openai");
+    expect(fastModeProtocol("gpt-5.6")).toBe("openai");
+  });
+
+  it("Anthropic-protocol clients carry it as speed=fast", () => {
+    expect(fastModeProtocol("claude-fable-5")).toBe("anthropic");
+    expect(fastModeProtocol("claude-sonnet-5")).toBe("anthropic");
+    expect(fastModeProtocol("claude-opus-4-8")).toBe("anthropic");
+    expect(fastModeProtocol("some-proxy-id", "ant-messages")).toBe("anthropic");
+    // Outside the research preview's Opus allowlist the client still sends it and Anthropic
+    // answers 429 — a warning before enabling, not a reason to withhold the setting.
+    expect(fastModeProtocol("claude-opus-4-7")).toBe("anthropic");
+  });
+
+  it("clients that reject the parameter get no toggle: Gemini, GLM, Kimi, DeepSeek, embeddings", () => {
+    expect(fastModeProtocol("gemini-3.5-flash")).toBeUndefined();
+    expect(fastModeProtocol("gemini-3.1-pro-preview")).toBeUndefined();
+    expect(fastModeProtocol("gemini-embedding-001")).toBeUndefined();
+    expect(fastModeProtocol("glm-5.2")).toBeUndefined();
+    expect(fastModeProtocol("kimi-k3")).toBeUndefined();
+    expect(fastModeProtocol("kimi-k2.6")).toBeUndefined();
+    expect(fastModeProtocol("kimi-k2.5")).toBeUndefined();
+    expect(fastModeProtocol("deepseek-v4-pro")).toBeUndefined();
+    expect(fastModeProtocol("text-embedding-3-large", "openai-embedding")).toBeUndefined();
+    // A future first-party generation inherits the verdict from its family substring, so a
+    // catalog row added later needs no change here (agenthub routes glm-5.3 / gemini-3.7 to
+    // the same rejecting clients).
+    expect(fastModeProtocol("glm-5.3")).toBeUndefined();
+    expect(fastModeProtocol("gemini-3.7-pro")).toBeUndefined();
+  });
+
+  it("claude5 carve-outs are tested against the model id and base URL, not the routing token", () => {
+    // Claude 4.6 is refused by name even though claude5 serves the family.
+    expect(fastModeProtocol("claude-sonnet-4-6")).toBeUndefined();
+    expect(fastModeProtocol("Claude-Sonnet-4-6")).toBeUndefined();
+    // Routing may come from client_type while the 4-6 refusal reads the model id...
+    expect(fastModeProtocol("my-claude-sonnet-4-6-proxy", "claude-5")).toBeUndefined();
+    // ...and conversely a 4-6 client_type with a served model id keeps fast mode.
+    expect(fastModeProtocol("claude-sonnet-5", "claude-4-6")).toBe("anthropic");
+    // Bedrock has no fast tier; the prefix lives in the base URL, which is why the rule needs it.
+    expect(fastModeProtocol("claude-fable-5", undefined, "bedrock://us-east-1")).toBeUndefined();
+    expect(fastModeProtocol("claude-fable-5", undefined, "https://api.anthropic.com")).toBe(
+      "anthropic",
+    );
+  });
+
+  it("an id AgentHub cannot route gets no toggle either (no client, so no fast tier)", () => {
+    // AutoLLMClient throws for an unmatched token — there is no openai_chat fallback.
+    expect(fastModeProtocol("totally-unknown-model")).toBeUndefined();
+    expect(fastModeProtocol("MiniMax-M4")).toBeUndefined();
+    // Dotted OpenRouter Anthropic ids match no branch at all when no client_type is pinned
+    // (neither "4-8" nor "-5"), unlike their dashed first-party spellings.
+    expect(fastModeProtocol("anthropic/claude-opus-4.8")).toBeUndefined();
+    // The same row as the catalog ships it — client_type pinned — is served over openai_chat.
+    expect(fastModeProtocol("anthropic/claude-opus-4.8", "openai")).toBe("openai");
+    // Self-routing can disagree with the provider group: a blank client_type sends this id to
+    // the native claude5 client, flipping the protocol that would carry the parameter.
+    expect(fastModeProtocol("anthropic/claude-fable-5")).toBe("anthropic");
+    expect(fastModeProtocol("anthropic/claude-fable-5", "openai")).toBe("openai");
+  });
+
+  it("catalog invariant: every built-in row's verdict follows its client family", () => {
+    for (const m of MODEL_CATALOG) {
+      const verdict = fastModeProtocol(m.modelId, m.clientType, m.baseUrl);
+      if (m.clientType === "openai") {
+        // Every gateway row pins the OpenAI protocol, which always carries service_tier.
+        expect(verdict, `${m.provider}/${m.modelId}`).toBe("openai");
+      } else if (["google", "zhipu", "moonshot", "deepseek"].includes(m.provider)) {
+        // These groups' first-party clients have no fast tier at all: rows added to them
+        // later (a new Gemini or GLM generation) stay excluded without touching this rule.
+        expect(verdict, `${m.provider}/${m.modelId}`).toBeUndefined();
+      }
+    }
+    // The direct first-party rows that do serve it, named so a regression is legible.
+    const verdictOf = (provider: string, modelId: string) => {
+      const m = catalogEntryFor(provider, modelId)!;
+      return fastModeProtocol(m.modelId, m.clientType, m.baseUrl);
+    };
+    expect(verdictOf("anthropic", "claude-fable-5")).toBe("anthropic");
+    expect(verdictOf("anthropic", "claude-sonnet-5")).toBe("anthropic");
+    expect(verdictOf("anthropic", "claude-opus-4-8")).toBe("anthropic");
+    expect(verdictOf("anthropic", "claude-opus-4-7")).toBe("anthropic");
+    // The one Anthropic row the client refuses by name.
+    expect(verdictOf("anthropic", "claude-sonnet-4-6")).toBeUndefined();
+    expect(verdictOf("openai", "gpt-5.5")).toBe("openai");
+    expect(verdictOf("openai", "gpt-5.4-pro")).toBe("openai");
+    expect(verdictOf("minimax", "MiniMax-M3")).toBe("openai");
   });
 });

@@ -32,9 +32,11 @@ function presetToRow(p: PresetEntry): RowState {
     modelId: p.model_id,
     original: null,
     ...presetFields(p),
-    // The output cap is user-owned, not catalog-owned (deliberately outside presetFields,
-    // so a sync never clobbers it on existing rows): fresh rows inherit the Agent setting.
+    // The output cap and fast mode are user-owned, not catalog-owned (deliberately outside
+    // presetFields, so a sync never clobbers them on existing rows): fresh rows inherit the
+    // Agent setting / default to off.
     maxTokens: "",
+    fastMode: false,
     originalBaseUrl: "",
     apiKeyInput: "",
     clearApiKey: false,

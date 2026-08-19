@@ -63,6 +63,7 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `display_name` | 展示名；仅在与内置目录不同时持久化 |
 | `vision` | 是否支持图片输入；缺省视为支持 |
 | `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |
+| `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
 | `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
 | `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |

@@ -14,6 +14,7 @@ import {
   EmptyResponseError,
   ThinkingLevel,
   ToolCallArgumentParseError,
+  UnsupportedParameterError,
 } from "@prismshadow/agenthub";
 import type { UniConfig, UniEvent, UniMessage, UsageMetadata } from "@prismshadow/agenthub";
 import type { LLMOutcome, ThinkingLevelName } from "../src/interfaces.js";
@@ -26,8 +27,10 @@ import {
   buildUniConfig,
   isAuthenticationError,
   isIncompleteStreamError,
+  isFastModeUnsupportedError,
   isMalformedJsonParseError,
   isRetryableError,
+  FAST_MODE_UNSUPPORTED_GUIDANCE,
   mapThinkingLevel,
   mergeOmniToUniMessage,
   stripToolCallIdSuffix,
@@ -1075,6 +1078,18 @@ describe("config helpers", () => {
     const withTools = buildUniConfig({ modelId: "m", tools: [{ name: "t", description: "d" }] });
     expect("tool_choice" in withTools).toBe(false);
   });
+
+  it("sets fast_mode only when enabled: the key stays off the config otherwise", () => {
+    // Enabled: the entry's fast_mode annotation reaches the wire as UniConfig.fast_mode.
+    const on = buildUniConfig({ modelId: "m", tools: [], fastMode: true });
+    expect(on.fast_mode).toBe(true);
+    // Off / absent: the key must be ABSENT, not false — models without a fast tier reject
+    // the parameter, so an unset annotation must leave existing configs bit-identical.
+    const off = buildUniConfig({ modelId: "m", tools: [], fastMode: false });
+    expect("fast_mode" in off).toBe(false);
+    const unset = buildUniConfig({ modelId: "m", tools: [] });
+    expect("fast_mode" in unset).toBe(false);
+  });
 });
 
 describe("isRetryableError (the timeout-vs-failed label; the engine retries every non-auth error)", () => {
@@ -1202,6 +1217,50 @@ describe("isAuthenticationError", () => {
     expect(isAuthenticationError({ status: 403, code: "insufficient_user_quota" })).toBe(false);
     expect(isAuthenticationError(new Error("socket hang up"))).toBe(false);
     expect(isAuthenticationError(null)).toBe(false);
+  });
+});
+
+describe("isFastModeUnsupportedError (fast_mode rejected by a model without a fast tier)", () => {
+  const fastModeError = () =>
+    new UnsupportedParameterError({
+      client: "KimiK3Client",
+      parameter: "fast_mode",
+      message: "Kimi does not support fast mode.",
+    });
+
+  it("detects AgentHub's UnsupportedParameterError for fast_mode, including the cause chain", () => {
+    expect(isFastModeUnsupportedError(fastModeError())).toBe(true);
+    // Wrapped one level up (a higher layer annotating the request) is still found.
+    expect(
+      isFastModeUnsupportedError(new Error("request failed", { cause: fastModeError() })),
+    ).toBe(true);
+    // Cross-realm / reconstructed errors match by name + parameter without the class identity.
+    expect(
+      isFastModeUnsupportedError({
+        name: "UnsupportedParameterError",
+        parameter: "fast_mode",
+        message: "Bedrock does not support fast mode.",
+      }),
+    ).toBe(true);
+  });
+
+  it("stays scoped to fast_mode: other unsupported parameters and unrelated errors do not match", () => {
+    // Another UnsupportedParameterError source (e.g. temperature) keeps the default failed
+    // classification and the engine's retry ladder — this detector must not widen the
+    // permanent special case.
+    expect(
+      isFastModeUnsupportedError(
+        new UnsupportedParameterError({
+          client: "Gemini37Client",
+          parameter: "temperature",
+          message: "temperature is not supported.",
+        }),
+      ),
+    ).toBe(false);
+    // Message vocabulary alone is not a signal: only the typed error (or its name) counts.
+    expect(isFastModeUnsupportedError(new Error("model does not support fast mode"))).toBe(false);
+    expect(isFastModeUnsupportedError({ status: 400 })).toBe(false);
+    expect(isFastModeUnsupportedError(null)).toBe(false);
   });
 });
 
@@ -1739,6 +1798,57 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
       model2.streamGenerate({ newMessages: [userText("go")] }),
     );
     expect(outcome2.status).toBe("failed");
+  });
+
+  it("marks a fast-mode rejection as permanent failed with actionable guidance (guarded on its own config)", async () => {
+    // AgentHub throws UnsupportedParameterError before any network I/O when fast_mode is
+    // enabled on a model without a fast tier: deterministic for this object's frozen config,
+    // so it is the one failed shape the engine aborts on instead of retrying
+    // (LLMOutcome.permanent; the engine side is covered in engine.test.ts).
+    async function* fastModeRejected(): AsyncGenerator<UniEvent> {
+      throw new UnsupportedParameterError({
+        client: "KimiK3Client",
+        parameter: "fast_mode",
+        message: "Kimi does not support fast mode.",
+      });
+    }
+    class FastSeamModel extends GenerativeModel {
+      constructor(fastMode: boolean) {
+        // A real AutoLLMClient is constructed even though openStream is overridden, and the
+        // Kimi client's OpenAI SDK demands a credential at construction time. The key is
+        // passed explicitly so the config is frozen here rather than read from the ambient
+        // environment (see test/provider-keys.ts); nothing is ever sent.
+        super({
+          modelId: "kimi-k3",
+          tools: [],
+          fastMode,
+          requestTimeoutMs: 10000,
+          apiKey: "test-key-not-used",
+        });
+      }
+      protected override openStream(): AsyncIterable<UniEvent> {
+        return fastModeRejected();
+      }
+    }
+    const model = new FastSeamModel(true);
+    const { messages, outcome } = await drain(
+      model.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome.status).toBe("failed");
+    expect(outcome.permanent).toBe(true);
+    // The surfaced text keeps AgentHub's own words and appends where the switch lives.
+    expect(outcome.errorMessage).toContain("Kimi does not support fast mode.");
+    expect(outcome.errorMessage).toContain(FAST_MODE_UNSUPPORTED_GUIDANCE);
+    expect(messages.map(typeOf)).not.toContain("token_usage");
+
+    // Guard: the same error on a config that never sent fast_mode cannot be ours to
+    // explain — it stays a plain failed (no permanent) and rides the engine's ladder.
+    const model2 = new FastSeamModel(false);
+    const { outcome: outcome2 } = await drain(
+      model2.streamGenerate({ newMessages: [userText("go")] }),
+    );
+    expect(outcome2.status).toBe("failed");
+    expect(outcome2.permanent).toBeUndefined();
   });
 
   it("an explicit auth signal wins whatever the message says: status auth, never retried", async () => {
