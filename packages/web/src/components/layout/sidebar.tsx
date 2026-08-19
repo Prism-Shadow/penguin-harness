@@ -31,6 +31,9 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay, formatRelativeShort } from "../../lib/format";
+import { sessionRowActivity } from "../../lib/session-activity";
+import type { SessionActivity } from "../../lib/session-activity";
+import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
@@ -103,6 +106,7 @@ import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
+import { SessionActivityIcon } from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -269,25 +273,17 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
-/** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
-function StatusDot({ session }: { session: SessionInfo }) {
-  if (session.status === "running") {
-    return (
-      <span
-        title={S.chat.statusRunning}
-        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500"
-      />
-    );
-  }
-  if (session.status === "compacting") {
-    return (
-      <span
-        title={S.chat.statusCompacting}
-        className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-      />
-    );
-  }
-  return null;
+/**
+ * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
+ * finished with a reply the user has not seen, and nothing once that reply has been read — or
+ * if the Session never ran at all. See sessionActivity.
+ */
+function StatusGlyph({ activity }: { activity: SessionActivity }) {
+  // Reserve the glyph's box even when there is no glyph: the row is a flex line whose title
+  // truncates into whatever space is left, so letting the slot collapse would re-flow the title
+  // of every never-run row (and again the moment its first run starts).
+  if (activity === null) return <span aria-hidden="true" className="block h-3 w-3 shrink-0" />;
+  return <SessionActivityIcon activity={activity} />;
 }
 
 export function Sidebar({
@@ -381,6 +377,8 @@ export function Sidebar({
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
+  /** This Project's read markers; re-renders the rows whenever one is stamped. */
+  const sessionSeen = useSessionSeen(currentProjectId);
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -714,6 +712,7 @@ export function Sidebar({
         setPinnedSessions(prunedPins);
         savePinnedSessions(currentProjectId, prunedPins);
       }
+      forgetSession(currentProjectId, target.sessionId);
       const prunedOrder = removeFromSessionOrder(sessionOrder, target.sessionId);
       if (prunedOrder !== sessionOrder) {
         setSessionOrder(prunedOrder);
@@ -843,6 +842,8 @@ export function Sidebar({
   };
 
   const openSession = (s: SessionInfo) => {
+    // Opening is what "read" means here: stamp the marker before navigating.
+    noteSessionSeen(currentProjectId, s.sessionId, s.lastActiveAt);
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
     go(`/chat/${s.sessionId}`);
@@ -934,6 +935,9 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
+            // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so
+            // the whole transition sequence is testable without a DOM.
+            activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -942,8 +946,8 @@ export function Sidebar({
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
-            // (it recedes while the run continues — the pulsing status dot beside it is
-            // what says "active right now"). CLI-adopted and subagent rows are not
+            // (it recedes while the run continues — the hourglass beside it is what says
+            // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
@@ -2128,6 +2132,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 function SessionRow({
   s,
   active,
+  activity,
   pinned,
   canPin = false,
   lastActive,
@@ -2147,6 +2152,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
+  /** Busy / settled-read / settled-unread / never-ran, already resolved by sessionRowActivity. */
+  activity: SessionActivity;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2243,7 +2250,7 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusDot session={s} />
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

@@ -42,6 +42,8 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
+import { sessionActivity } from "../../lib/session-activity";
+import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
   createStreamModel,
@@ -64,6 +66,10 @@ import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
+import {
+  SessionActivityIcon,
+  sessionActivityLabel,
+} from "../../components/ui/session-activity-icon";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
@@ -615,9 +621,17 @@ export function ChatPage() {
   }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
+  //
+  // Keyed on the session ID, not the `selected` row: the row object is replaced whenever
+  // anything about it changes — including by the user channel's own `session_state` event for
+  // this very Session, which arrives on a second connection with no ordering guarantee against
+  // this one. Depending on the object re-ran this effect on that replacement and re-asserted
+  // whatever `stream.taskState` still held, so a run that ended could be pushed back to
+  // "running" until this tab's Session stream caught up. Depending on the id means only a real
+  // state change writes, and the two sources agree instead of overwriting each other.
   useEffect(() => {
-    if (selected) setStatus(selected.sessionId, stream.taskState);
-  }, [stream.taskState, selected, setStatus]);
+    if (selectedSessionId !== null) setStatus(selectedSessionId, stream.taskState);
+  }, [stream.taskState, selectedSessionId, setStatus]);
 
   // Task returns from running/compacting to idle ON THE SAME SESSION: this turn may have
   // spawned a sub-session or auto-created a new Agent — reload both lists so they appear in
@@ -646,6 +660,18 @@ export function ChatPage() {
       void reloadAgents();
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
+
+  // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
+  // again when a run finishes under the user's eyes, so the sidebar row left behind is not
+  // flagged unread. Depending on lastActiveAt is what keeps the marker honest across clock skew
+  // — the effect above reloads the list on that same active→idle edge, and the refreshed
+  // server timestamp re-runs this one.
+  const selectedLastActiveAt = selected?.lastActiveAt ?? null;
+  useEffect(() => {
+    if (selectedSessionId === null || selectedLastActiveAt === null) return;
+    if (stream.taskState !== "idle") return; // Still working: nothing settled to have read yet.
+    noteSessionSeen(projectId, selectedSessionId, selectedLastActiveAt);
+  }, [projectId, selectedSessionId, selectedLastActiveAt, stream.taskState]);
 
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
@@ -1520,6 +1546,14 @@ export function ChatPage() {
     />
   );
 
+  /**
+   * Header glyph state. Never unread: this is the Session on screen, so its last reply is being
+   * read right now — the read/unread split is a sidebar affordance, and passing the live marker
+   * here would only flash the unread tone for the frame before the effect above stamps it.
+   */
+  const headerActivity =
+    selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Thin top toolbar */}
@@ -1529,15 +1563,18 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here.
-                Below sm only the pulsing dot remains (title carries the wording) — the text would eat the title's room on phones. */}
-            {stream.taskState === "running" && (
+            {/* Session-level state: a turning hourglass while the run is active, and nothing at
+                all once it settles — the conversation on screen is by definition read, and the
+                unread dot is a sidebar affordance for the rows you are NOT looking at. The
+                compacting state stays in the stream banner rather than being repeated here.
+                Below sm only the glyph remains so the title keeps its room. */}
+            {headerActivity === "running" && (
               <span
-                title={S.chat.statusRunning}
+                title={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                <span className="hidden sm:inline">{S.chat.statusRunning}</span>
+                <SessionActivityIcon activity={headerActivity} />
+                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
           </div>

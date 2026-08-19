@@ -237,6 +237,14 @@ export interface SessionManagerDeps {
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
   /**
+   * Publishes a Session-scoped event on the user-level channel of everyone who can see the
+   * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
+   * the app layer, the same split the scheduler's `notify` uses — this class holds no Project
+   * membership repos. Optional: without it only the per-Session channel is served, which is
+   * what unit tests that don't wire it get.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
+  /**
    * Clock for persisted timestamps (last_active_at). Injected like the other services' so a
    * stubbed clock moves this and `usage_records.ts` together — the pairing the legacy
    * backfill assumes when it reads MAX(ts) as a session's last activity.
@@ -1715,6 +1723,40 @@ export class SessionManager {
       ...(entry.followUps.length > 0
         ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
         : {}),
+    });
+    // The same flip again, this time on the user channel and carrying the Session id: a tab
+    // subscribes to the ONE conversation it has open, so the event above can never move any
+    // other row's badge. Only the queued/steering hints stay session-scoped — they belong to
+    // the composer of the conversation being watched, not to a list row.
+    const notify = this.deps.notifyProjectUsers;
+    if (!notify) return;
+    let lastActiveAt: string;
+    let hasTrace: boolean;
+    try {
+      // Read the stamp back rather than reconstruct it: the run-end flip is published right
+      // after the write that stamps it (touchLastActive in drive's finally), so this is what a
+      // list fetch would return right now and no clock of ours has to agree with the one that
+      // wrote it.
+      const row = this.deps.sessions.findById(entry.sessionId);
+      if (!row) return; // Row already deleted: no list row left to light up.
+      lastActiveAt = row.lastActiveAt;
+      // A running Session has by definition started a Task, whatever the row cache says yet:
+      // markDriven (which sets has_trace) runs inside drive(), and startTask has already
+      // published the first "running" by then. Reporting the raw flag there would tell a client
+      // the Session has never run at the exact moment it visibly is running — and a client that
+      // believed it would draw the hourglass, then nothing at all once the run settled.
+      hasTrace = row.hasTrace === true || state !== "idle";
+    } catch {
+      // Same failure touchRow guards against (DB handle closed by shutdown while a run
+      // outlives its drain window). A list badge is never worth breaking a run's finally over.
+      return;
+    }
+    notify(entry.projectId, {
+      type: "session_state",
+      sessionId: entry.sessionId,
+      state,
+      lastActiveAt,
+      hasTrace,
     });
   }
 

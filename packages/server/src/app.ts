@@ -241,6 +241,22 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     titles,
     log,
     goals: goalsRepo,
+    // Run-state flips reach the whole login session, not just the tab watching that one
+    // conversation. Audience = the Project's owner plus its members, i.e. exactly who
+    // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session
+    // they cannot open changed state.
+    //
+    // `peek`, deliberately not `get`: a user who has never opened an event stream has no
+    // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
+    // (their next connection fetches the list, which carries the same statuses anyway).
+    notifyProjectUsers: (projectId, event) => {
+      const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
+      if (ownerUserId === undefined) return;
+      const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
+      for (const userId of audience) {
+        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+      }
+    },
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   managerRef = manager;
