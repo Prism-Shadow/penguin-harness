@@ -27,7 +27,7 @@ import {
   scratchpadDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
@@ -843,6 +843,12 @@ export class TraceService {
     // compaction request entirely from TPS — matching the same convention as
     // compactionActive in the Chat page's task-stats.
     let compactionActive = false;
+    // The active compaction's mode, read off its `compaction_begin`, so the turn can be
+    // reported as the operation it actually was: `discard` drops the old context outright and
+    // compacts nothing, so calling it a compaction turn in the UI reads wrong. Null outside a
+    // compaction and for a `compaction_begin` carrying no recognizable mode — the DTO field is
+    // then simply left absent, which consumers read as the historical `summarize`.
+    let compactionMode: CompactionMode | null = null;
     // Token / duration totals per Task (computed server-side over the whole file:
     // frontend events are fetched in pages, so summing them there would be
     // mismatched).
@@ -963,7 +969,12 @@ export class TraceService {
           requests.push(openRequest);
           if (!hasOrigin) {
             const t = ensureTask(taskIndex);
-            if (compactionActive) t.compaction = true; // This turn is a compaction turn
+            if (compactionActive) {
+              t.compaction = true; // This turn is a compaction turn
+              // Carried alongside the flag, never instead of it: the flag stays the sole gate
+              // on "is this a compaction turn" for clients that predate the mode.
+              if (compactionMode !== null) t.compactionMode = compactionMode;
+            }
             // This turn's duration starts at the first request_begin. It doesn't
             // use the timestamp of the user Prompt / compaction summary or other
             // user text: `[context_summary]` is created during compaction but only
@@ -1073,6 +1084,8 @@ export class TraceService {
           if (!hasOrigin) {
             continuation = false;
             compactionActive = true;
+            const mode = p.mode;
+            compactionMode = mode === "summarize" || mode === "discard" ? mode : null;
           }
         } else if (p.type === "compaction_end") {
           // Both ends of compaction break a continuation. This closing one can't
@@ -1083,6 +1096,7 @@ export class TraceService {
           if (!hasOrigin) {
             continuation = false;
             compactionActive = false;
+            compactionMode = null;
           }
         } else if (p.type === "token_usage") {
           const request = p.request as
@@ -1219,6 +1233,20 @@ export class TraceService {
       const t = ensureTask(ti);
       if (t.messageFrom < 0 || k < t.messageFrom) t.messageFrom = k;
       if (k > t.messageTo) t.messageTo = k;
+      // Flag the compaction turn from its own `compaction_begin` rather than only from the
+      // compaction request: a `discard` issues no request at all (core emits begin/end
+      // back-to-back, see context-engine's discardContext), so keying off request_begin alone
+      // left a discarded round as a bare, unlabelled card. Attribution has resolved the owning
+      // turn by this pass, and for `summarize` it lands on the same turn the request-side path
+      // already flagged. Subagent messages are skipped for the same reason the main loop skips
+      // them — a child's compaction is not this turn's.
+      const cur = messages[k]!;
+      const cp = cur.payload as { type?: string; mode?: unknown };
+      const fromSubagent = cur.origin !== undefined && cur.origin.length > 0;
+      if (!fromSubagent && cur.type === "event_msg" && cp.type === "compaction_begin") {
+        t.compaction = true;
+        if (cp.mode === "summarize" || cp.mode === "discard") t.compactionMode = cp.mode;
+      }
       // session_meta is only **listed** in the first turn, and doesn't count
       // toward the end-of-turn time: it's metadata written when the session was
       // created, and its timestamp has nothing to do with this turn (it also gets

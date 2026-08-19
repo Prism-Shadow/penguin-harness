@@ -13,7 +13,11 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
+import type {
+  CompactionMode,
+  OmniMessage,
+  ToolCallPayload,
+} from "@prismshadow/penguin-core/omnimessage";
 import type {
   MCPServerConfig,
   ThinkingLevelName,
@@ -1408,12 +1412,22 @@ export interface TraceTaskStats {
   taskIndex: number;
   /**
    * This turn is a **compaction turn** (compaction forms its own turn); the UI marks it with
-   * a "Compaction" badge accordingly. It's treated the same as a user turn: it has Token /
+   * a badge accordingly. It's treated the same as a user turn: it has Token /
    * cost / duration / TPS, and **counts normally toward global stats** — the global totals are
    * just the sum of the per-turn cards below, the two scopes match, so adding up the per-turn
    * numbers must equal the total.
    */
   compaction?: boolean;
+  /**
+   * Which kind of compaction turn it is, from the turn's `compaction_begin`. Additive beside
+   * the flag rather than folded into it: `compaction` stays the sole gate on "is this a
+   * compaction turn", so a client that only knows the boolean keeps working unchanged, and one
+   * that reads this can name the turn for what it did — the two modes are different operations,
+   * and only `summarize` actually compacts anything (`discard` drops the old context outright).
+   * Absent on a turn analyzed before this field existed, or whose `compaction_begin` carried no
+   * mode; treat an absent value as `summarize`, which is what the badge said before the split.
+   */
+  compactionMode?: CompactionMode;
   /**
    * This turn's message index range within the **entire file** (inclusive). A single
    * sequential scan on the server tells which turn each message belongs to; the frontend

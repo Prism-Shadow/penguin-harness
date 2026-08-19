@@ -1431,7 +1431,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    compactionRound: "压缩",
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace page and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     empty: "该 Agent 暂无 Trace",
     inProgress: "进行中",
     systemPrompt: "系统提示词",

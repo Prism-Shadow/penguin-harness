@@ -1478,7 +1478,6 @@ Scenarios:
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
     compactions: "compactions",
-    compactionRound: "Compaction",
     empty: "No Traces for this agent",
     inProgress: "in progress",
     systemPrompt: "System prompt",
