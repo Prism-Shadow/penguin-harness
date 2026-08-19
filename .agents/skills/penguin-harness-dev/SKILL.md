@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
@@ -73,6 +73,16 @@ Every change ships a changelog entry, in both languages, in `changelog/unrelease
 The PR number exists only once the PR is open: open it, then add the links in a follow-up commit on the same branch.
 
 An entry ships **inside the PR that makes the change** — there is no separate aggregate PR. Released version folders are frozen. `RELEASE.md` is written at release preparation and must be committed **before** the tag — the workflow reads it from the tag's own checkout.
+
+## Blog posts, and where their images live
+
+A post is a pair under `packages/landing/content/blog/`: `<slug>.en.md` and `<slug>.zh.md`, each with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changelog entries — one without the other is unfinished.
+
+**The images are not in this repo.** Screenshots and demo videos live in the sibling `Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published post's screenshots are never deleted, so that asset class grows without bound in the number of posts written; keeping it out of this history keeps everyone's clone small.
+
+**Posts still write a repo-local path.** Reference an image as `/blog-assets/<name>` — both `![alt](…)` and the raw `<img src="…">` some posts use — and let the renderer resolve it: `blogAssetUrl` in `packages/landing/src/lib/links.ts`, applied by the `img` adapter in `src/pages/blog-post.tsx`. Never paste the raw `raw.githubusercontent` URL into a post. One source of truth for the host, Markdown that stays readable and diffable, and moving the host again is a one-line change instead of a sweep over every post.
+
+Release screenshots are captured, not mocked up: drive the app through the Playwright e2e harness in `packages/web/e2e/` with its mock LLM, against a scratch `PENGUIN_HOME` — never `~/.penguin`, which is the developer's real data. Shoot at `deviceScaleFactor: 2`, crop to the feature rather than the whole window, and check the frame for what must not ship publicly: absolute paths carrying a home directory, API keys, and mock-model filler text.
 
 ## Changing the built-in model catalog
 
