@@ -113,9 +113,10 @@ export interface CreateSessionOptions {
    *   `"medium"` (see `configuredThinkingLevel`);
    * - `null` means "no thinking level": the config fallback is suppressed entirely
    *   (nothing goes into the LLM config; session_meta echoes `"default"`).
-   * Subagent spawning always passes the parent Session's effective level (its level, or
-   * `null` when the parent has none), so a child Session thinks at the parent's level and
-   * never falls back to the child Agent's own config.
+   * Subagent spawning passes the parent Session's effective level (its level, or `null`
+   * when the parent has none) unless the spawn requests an explicit level (`run_subagent`'s
+   * `thinking_level`) — either way a child Session never falls back to the child Agent's
+   * own config.
    */
   thinkingLevel?: ThinkingLevelName | null;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
@@ -615,8 +616,9 @@ export class Agent {
     } = args;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
-    // optionally choose agentId (omitted = call the current Agent) and the child
-    // Session's model (omitted = the parent Session's model); an explicit model reference
+    // optionally choose agentId (omitted = call the current Agent), the child
+    // Session's model (omitted = the parent Session's model), and its thinking level
+    // (omitted = the parent Session's effective level); an explicit model reference
     // is forwarded to createSession as-is and must be a complete (provider, model_id)
     // pair — half a reference is rejected there rather than being guessed here. Precheck
     // errors (depth limit exceeded / agent doesn't exist) are expressed as throws, which
@@ -628,7 +630,7 @@ export class Agent {
       // Spawn and run are separate: the same child Session can run for multiple turns
       // (continuing via input_subagent appending a prompt); resource cleanup is
       // consolidated in handle.dispose (called by the managing ManagedSubagentSession).
-      async spawn({ agentId, modelId, provider }) {
+      async spawn({ agentId, modelId, provider, thinkingLevel: spawnThinkingLevel }) {
         if (subagentDepth >= MAX_SUBAGENT_DEPTH) {
           throw new Error(
             `subagent depth limit ${MAX_SUBAGENT_DEPTH} reached; not spawning another subagent`,
@@ -668,13 +670,15 @@ export class Agent {
                 ...(modelId !== undefined ? { modelId } : {}),
                 ...(provider !== undefined ? { provider } : {}),
               };
-        // The parent Session's effective thinking level (`thinkingLevel` in scope) is passed
-        // down too, as a tri-state: `null` when the parent has none, so the child never falls
-        // back to its own Agent config (which would otherwise apply on a cross-agent spawn).
+        // An explicit spawn-time level (run_subagent's `thinking_level`) pins the child;
+        // otherwise the parent Session's effective thinking level (`thinkingLevel` in scope)
+        // is passed down, as a tri-state: `null` when the parent has none, so the child never
+        // falls back to its own Agent config (which would otherwise apply on a cross-agent
+        // spawn).
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...childModel,
-          thinkingLevel: thinkingLevel ?? null,
+          thinkingLevel: spawnThinkingLevel ?? thinkingLevel ?? null,
           subagentDepth: subagentDepth + 1,
           source: "subagent",
         });

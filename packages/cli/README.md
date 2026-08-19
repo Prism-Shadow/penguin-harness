@@ -19,7 +19,7 @@ penguin chat --resume                                          # resume the late
 
 Tool calls go through an approval gate — `--approve allow-all` (default) `| deny-all | read-only | always-ask`. Data lives under `~/.penguin/data` (`PENGUIN_HOME` or `--root` override); model credentials come from the Project config or provider env vars (e.g. `DEEPSEEK_API_KEY`).
 
-Prefer a one-line install with a bundled Node runtime? See the [installation guide](https://penguin.ooo/docs/installation).
+Prefer a one-line install with a bundled Node runtime? See [Quickstart → CLI and Web App](https://penguin.ooo/docs/quickstart-cli).
 
 ## Documentation
 

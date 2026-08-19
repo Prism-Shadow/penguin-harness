@@ -297,6 +297,47 @@
   animation: drawer-in-right 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
+/* Truncated-title scroll reveal (#309, sidebar conversation rows; truncated.tsx attaches the
+   class and the two variables only when the title measurably overflows). While the row — the
+   [data-title-reveal] ancestor — is hovered or holds keyboard focus, the title slides its
+   clipped tail into view: the inner span becomes transformable (inline-block) and translates
+   by the measured overflow (--title-scroll-shift) over a duration proportional to it
+   (--title-scroll-ms), then holds at the end for as long as the hover/focus lasts. The base
+   state is a plain inline span — not transformable — so leaving the row drops the animation
+   and restores the text and its ellipsis in the same frame, with nothing to transition back.
+
+   Everything that alters the rendering lives INSIDE the keyframes, and the fill is `forwards`
+   only: during the 0.3s start delay there is no fill, so the row paints exactly as at rest and
+   a mouse merely passing across the sidebar leaves every title alone, ellipsis included. A
+   plain `display: inline-block` declaration on the hover rule would NOT hold that line — Blink
+   paints no ellipsis for an overflowing atomic inline, so the "…" would vanish the instant the
+   pointer touched the row, 0.3s before anything moved. That same suppression is why no
+   `text-overflow: clip` is needed: inline-block already retires the ellipsis for the duration.
+   Leaving it out is also what makes the degradation clean — an engine that ignores `display`
+   in keyframes gets a no-op (ellipsis kept, `title` tooltip still there) instead of a
+   clipped-but-motionless title.
+
+   Being an animation rather than a transition is what makes the reduced-motion path free: the
+   global `animation: none !important` block below disables the reveal outright, leaving the
+   ellipsis and the `title` tooltip — no JS media query to subscribe to per row, nothing to go
+   stale between render and effect.
+
+   :focus-visible (not :focus-within) scopes the keyboard trigger to actual keyboard focus;
+   inside :is() its selector is forgiving, so engines without :has() keep the hover trigger. */
+@keyframes title-scroll-reveal {
+  from {
+    display: inline-block;
+    transform: translateX(0);
+  }
+  to {
+    display: inline-block;
+    transform: translateX(var(--title-scroll-shift, 0px));
+  }
+}
+[data-title-reveal]:is(:hover, :has(:focus-visible)) .title-scroll > .title-scroll-text {
+  animation: title-scroll-reveal var(--title-scroll-ms, 0ms) linear 0.3s forwards;
+}
+
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out
    loop. Base state is fully hidden: the positive animation-delay wait keeps the first paint blank, and
    lines only start growing after load; once reduced-motion globally disables animation, the override below
@@ -363,6 +404,10 @@
   .login-via {
     opacity: 1;
   }
+  /* The truncated-title scroll reveal (#309) needs no override here: it is delivered
+     entirely by the `title-scroll-reveal` keyframes above — including the inline-block
+     that makes the text transformable at all — so `animation: none` leaves the title
+     exactly as it renders at rest, ellipsis and `title` tooltip included. */
 }
 
 /* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */

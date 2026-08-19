@@ -27,7 +27,7 @@
 # The data dir (%USERPROFILE%\.penguin\data) sits under the install home but is never touched by
 # reinstall/upgrade (which only replace bin/lib/web/node/git). Upgrading = re-running this installer.
 #
-# Docs: https://penguin.ooo/docs/installation
+# Docs: https://penguin.ooo/docs/quickstart-cli
 param(
   [string]$Version = "",
   [string]$InstallDir = "",
