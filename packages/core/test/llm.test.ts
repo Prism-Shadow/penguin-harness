@@ -1814,7 +1814,17 @@ describe("GenerativeModel.streamGenerate outcome classification (PRN-013)", () =
     }
     class FastSeamModel extends GenerativeModel {
       constructor(fastMode: boolean) {
-        super({ modelId: "kimi-k3", tools: [], fastMode, requestTimeoutMs: 10000 });
+        // A real AutoLLMClient is constructed even though openStream is overridden, and the
+        // Kimi client's OpenAI SDK demands a credential at construction time. The key is
+        // passed explicitly so the config is frozen here rather than read from the ambient
+        // environment (see test/provider-keys.ts); nothing is ever sent.
+        super({
+          modelId: "kimi-k3",
+          tools: [],
+          fastMode,
+          requestTimeoutMs: 10000,
+          apiKey: "test-key-not-used",
+        });
       }
       protected override openStream(): AsyncIterable<UniEvent> {
         return fastModeRejected();
