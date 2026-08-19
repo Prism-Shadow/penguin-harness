@@ -2038,6 +2038,8 @@ function DraftRow({
   return (
     <li>
       <div
+        // Same truncated-title scroll reveal as the session rows (#309).
+        data-title-reveal
         className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
           active
             ? "bg-gray-200/70 dark:bg-gray-800"
@@ -2050,6 +2052,7 @@ function DraftRow({
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
           <Truncated
+            scrollReveal
             text={title}
             className={`min-w-0 flex-1 text-sm ${
               active
@@ -2114,7 +2117,8 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
  * instead (the menu trigger overlays the exact same slot; the old rename / archive /
  * delete hover icons live inside the menu now, joined by pin — one glyph instead of a
  * row of three). The menu panel goes through the Dropdown body portal so the sidebar
- * scroller can't clip it.
+ * scroller can't clip it. A truncated title scrolls its tail into view while the row
+ * is hovered or keyboard-focused (#309; Truncated's scrollReveal + data-title-reveal).
  */
 function SessionRow({
   s,
@@ -2184,6 +2188,9 @@ function SessionRow({
         />
       )}
       <div
+        // data-title-reveal: hovering the row / keyboard-focusing its button scrolls a
+        // truncated title's tail into view (the Truncated below; styles.css #309 rules).
+        data-title-reveal
         className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
           draggable ? "cursor-grab " : ""
         }${
@@ -2204,8 +2211,11 @@ function SessionRow({
               <span className="sr-only">{agentHint}</span>
             </span>
           )}
-          {/* Only attach a title attribute when the title is actually truncated (hover to see full text); don't duplicate the text otherwise. */}
+          {/* Truncated titles reveal their full text on row hover / keyboard focus by
+              scrolling the tail into view (#309; scrollReveal, no-op when the title fits),
+              falling back to the title tooltip under prefers-reduced-motion and on touch. */}
           <Truncated
+            scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
             className={`min-w-0 flex-1 text-sm ${
               active
