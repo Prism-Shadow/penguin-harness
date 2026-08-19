@@ -12,7 +12,8 @@
  * per-user and keep running regardless; a scope only decides which of them are on screen
  * here. Pages with no Session of their own (settings, Agents, …) keep the last one's dock
  * rather than blanking it, since navigating to a settings page is not leaving the
- * conversation.
+ * conversation; and a dock opened before any conversation was chosen is handed to the
+ * first one that is (see setDockScope).
  *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar and the global hotkey flip visibility, AppLayout renders a pane per open edge,
@@ -175,10 +176,24 @@ export function setDockScope(next: string | null): void {
   const target = next ?? NO_SESSION_SCOPE;
   if (target === scope) return;
   persist();
+  // A dock opened before a conversation was chosen belongs to the one that is chosen.
+  // /chat carries no Session id and resolves to one a moment after it loads (chat-page.tsx
+  // redirects to the newest conversation, or to a draft), so a terminal opened in between
+  // would otherwise be stranded in a scope nothing navigates back to. Only when the target
+  // has no arrangement of its own — an existing one is never clobbered.
+  const staged = scopes[NO_SESSION_SCOPE];
+  const handedOver =
+    scope === NO_SESSION_SCOPE && staged !== undefined && scopes[target] === undefined;
+  if (handedOver) {
+    const { [NO_SESSION_SCOPE]: _moved, ...rest } = scopes;
+    scopes = { ...rest, [target]: staged! };
+  }
   scope = target;
   ({ visible, panes, assignments, currents } = scopes[scope] ?? emptyScope());
-  // Transient and about a pane that is no longer on screen.
-  paneErrors = {};
+  // Errors are about a pane that is no longer on screen — except after a hand-off, where
+  // the panes on screen are the same ones under a new name, and a failure they are still
+  // showing has not stopped being true.
+  if (!handedOver) paneErrors = {};
   notify();
 }
 
@@ -252,19 +267,26 @@ export function ensurePaneOpen(position: DockPosition): void {
 /**
  * Closes one pane. Its terminals fold back into the primary remaining pane (the shells
  * keep running server-side either way); closing the last pane hides the dock.
+ *
+ * Closing the LAST pane keeps the membership rather than dropping it: the shells are still
+ * running, and reopening the dock has to come back to them, not spawn a replacement. There
+ * is no pane left to re-home them to, so the entries stay pointed at the pane that closed —
+ * paneOfTerminal() re-homes anything whose pane is not open to the primary one, which is
+ * the pane that reopening creates. Terminals that were killed rather than closed leave on
+ * the next pruneAssignments(), which is what finally empties the scope.
  */
 export function closePane(position: DockPosition): void {
   if (!panes.includes(position)) return;
   panes = panes.filter((p) => p !== position);
-  delete currents[position];
   const fallback = panes[0];
-  assignments = Object.fromEntries(
-    Object.entries(assignments).flatMap(([id, pane]) => {
-      if (pane !== position) return [[id, pane]];
-      return fallback ? [[id, fallback]] : [];
-    }),
-  );
-  if (panes.length === 0) visible = false;
+  if (fallback) {
+    delete currents[position];
+    assignments = Object.fromEntries(
+      Object.entries(assignments).map(([id, pane]) => [id, pane === position ? fallback : pane]),
+    );
+  } else {
+    visible = false;
+  }
   persist();
   notify();
 }
@@ -310,12 +332,16 @@ export function paneOfTerminal(id: string): DockPosition | null {
 }
 
 /**
- * Whether this scope holds a terminal at all — the badge on the toolbar's terminal trigger
- * counts these, so it agrees with what opening the panel actually shows. Terminals the
- * other conversations hold are still live, and still listed in the toolbar's menu.
+ * Of `ids`, the ones no conversation holds — created through the API or the CLI, or left
+ * behind by a conversation that let go of them. A dock opening with nothing of its own
+ * adopts one of these rather than spawning a second shell beside a perfectly good one.
  */
-export function holdsTerminal(id: string): boolean {
-  return assignments[id] !== undefined;
+export function unownedTerminals(ids: readonly string[]): string[] {
+  const owned = new Set<string>(Object.keys(assignments)); // the live scope, ahead of `scopes`
+  for (const state of Object.values(scopes)) {
+    for (const id of Object.keys(state.assignments)) owned.add(id);
+  }
+  return ids.filter((id) => !owned.has(id));
 }
 
 /** Moves a terminal to a pane (opening it if needed) and shows it there. */
