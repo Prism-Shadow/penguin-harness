@@ -32,6 +32,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -53,7 +54,7 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
-import { CopyButton } from "../../components/ui/copy-button";
+import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { toastError } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
@@ -138,8 +139,9 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
 
 /**
  * Session id row in the details card: the id is selectable mono text (styled like the other
- * sections' values) with the shared CopyButton beside it. The copy feedback shows the check
- * + "已复制" text at the button (showCopiedText) — the "Session id" label above never changes.
+ * sections' values) with the shared CopyButton beside it. The copy feedback is the button's
+ * icon swapping to the check (#312, no "已复制" text) — the "Session id" label above never
+ * changes.
  */
 function SessionIdRow({ sessionId }: { sessionId: string }) {
   return (
@@ -149,12 +151,7 @@ function SessionIdRow({ sessionId }: { sessionId: string }) {
       </p>
       <div className="flex items-start gap-1.5">
         <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{sessionId}</span>
-        <CopyButton
-          text={sessionId}
-          label={S.chat.copySessionId}
-          showCopiedText
-          className="flex shrink-0 items-center gap-1 rounded p-0.5 text-xs text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-        />
+        <CopyButton text={sessionId} label={S.chat.copySessionId} className={ROW_COPY_CLASS} />
       </div>
     </div>
   );
@@ -747,6 +744,30 @@ export function ChatPage() {
         await api.killSessionProcess(selected.sessionId, processId);
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 404)) toastError(apiErrorText(e));
+      } finally {
+        setProcBusy(null);
+        api
+          .getSessionProcesses(selected.sessionId)
+          .then((res) => setProcesses(res.processes))
+          .catch(() => undefined);
+      }
+    },
+    [selected, procBusy],
+  );
+
+  // Remove one EXITED process entry from the list (#312; running rows offer Stop instead).
+  // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
+  // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
+  const onRemoveProcess = useCallback(
+    async (processId: string) => {
+      if (!selected || procBusy !== null) return;
+      setProcBusy(processId);
+      try {
+        await api.removeSessionProcess(selected.sessionId, processId);
+      } catch (e) {
+        if (!(e instanceof ApiError && (e.status === 404 || e.status === 409))) {
+          toastError(apiErrorText(e));
+        }
       } finally {
         setProcBusy(null);
         api
@@ -1497,8 +1518,9 @@ export function ChatPage() {
               </div>
               {/* Background processes the conversation started (e.g. a dev server on
                   localhost:3000): live rows carry a stop button — the kill signals the whole
-                  process group and the row drops on the follow-up refresh. Hidden entirely
-                  while there are none. */}
+                  process group and the row drops on the follow-up refresh; exited rows keep
+                  their "exited" label and carry a remove button that deletes the entry from
+                  the list (#312). Hidden entirely while there are none. */}
               {processes.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1534,9 +1556,19 @@ export function ChatPage() {
                             {procBusy === p.processId ? S.common.loading : S.chat.processStop}
                           </button>
                         ) : (
-                          <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                            {S.chat.processExited}
-                          </span>
+                          <>
+                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                              {S.chat.processExited}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={procBusy !== null}
+                              onClick={() => void onRemoveProcess(p.processId)}
+                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            >
+                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                            </button>
+                          </>
                         )}
                       </li>
                     ))}
@@ -1544,30 +1576,46 @@ export function ChatPage() {
                 </div>
               )}
               {/* Trace file, same section anatomy as the rows above (label + mono value):
-                  the path itself is the click target and SPA-navigates to the Trace page
-                  deep-linked to the owning Agent AND this Session (?agentId= focuses/expands
-                  the Agent group, ?sessionId= auto-selects — a Session beyond the first
-                  loaded page resolves via the Trace page's full-fetch fallback). Hidden
-                  until a trace exists (a brand-new session has no file to open); only
-                  reachable for a real Session — this whole header renders behind the
-                  `selected` guard, so a draft never shows it. */}
+                  the value is the file NAME on a single line (#312 — the full path wrapped
+                  over several lines; it now lives in the tooltip and the copy button, which
+                  copies the FULL path). The name itself is the click target and
+                  SPA-navigates to the Trace page deep-linked to the owning Agent AND this
+                  Session (?agentId= focuses/expands the Agent group, ?sessionId=
+                  auto-selects — a Session beyond the first loaded page resolves via the
+                  Trace page's full-fetch fallback). Hidden until a trace exists (a
+                  brand-new session has no file to open); only reachable for a real
+                  Session — this whole header renders behind the `selected` guard, so a
+                  draft never shows it. */}
               {tracePath !== null && (
                 <div>
                   <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                     {S.chat.traceFile}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInfoOpen(false);
-                      navigate(
-                        `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
-                      );
-                    }}
-                    className="break-all text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
-                  >
-                    {tracePath}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {/* Wrapper (not flex-1 on the button itself) keeps the click target no
+                        wider than the name while the copy button still sits at the row's
+                        right edge, mirroring the Session id row. */}
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        title={tracePath}
+                        onClick={() => {
+                          setInfoOpen(false);
+                          navigate(
+                            `/traces?agentId=${encodeURIComponent(selected.agentId)}&sessionId=${encodeURIComponent(selected.sessionId)}`,
+                          );
+                        }}
+                        className="max-w-full truncate text-left font-mono text-xs leading-5 text-gray-600 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-900 dark:text-gray-300 dark:decoration-gray-600 dark:hover:text-gray-100"
+                      >
+                        {pathFileName(tracePath)}
+                      </button>
+                    </div>
+                    <CopyButton
+                      text={tracePath}
+                      label={S.chat.copyTracePath}
+                      className={ROW_COPY_CLASS}
+                    />
+                  </div>
                 </div>
               )}
             </div>

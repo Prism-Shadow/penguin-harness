@@ -44,6 +44,15 @@ There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-o
 - Subagents leave a full-width row in the stream, styled like the other collapsed step rows (agent avatar, name, short session id, running spinner, and an amber dot while one of their tool calls awaits approval); clicking it opens the agents side panel — a call graph of that row's Task on top (each node shows its elapsed time; click a node to switch) and the selected child's live conversation below — the child's own user prompts included — where nested tool cards and approvals work exactly as in the main chat. Panel visibility is task-scoped: sending a message that starts a new task closes it by default (entering a session starts closed too), and it comes back when you open it yourself or — on desktop — when the current task spawns a subagent (one auto-open per task; a manual close holds until the next task; never over an open files panel). Opening the panel from the toolbar, or switching sessions, shows the latest Task's graph; a row on an older turn brings back that turn's graph. The agents panel and the Workspace files panel never show together — opening one closes the other. Context compaction and the first-run MCP connect show a unified step row (the work-group header shell, sticky title bar included — running/success/failure only swap the icon and the one-line detail, with the wall time on the result; the MCP row leads with the discovered-tool count and names unavailable servers, and expands into one group per server — status, tool count and that server's connect time — each opening into its tool list or the failure detail);
 - After each Task, a stats line shows tokens, TPS, elapsed time, and cost.
 
+### Header Stats and the Details Card
+
+The toolbar's right edge shows the Session's cumulative stats (tokens, cost, elapsed time); clicking them opens the details card — model, Session id (with a copy button beside it), Workspace, creation time and per-line statistics. Below those:
+
+- **Processes** — background processes the conversation started (`exec_command`s promoted past their yield window), one row each with the command, start time and pid. Running rows carry a **Stop** button (kills the whole process group and drops the row); exited rows keep their "exited" label and carry a **Remove** button that deletes the entry from the list.
+- **Trace file** — the Session's current Trace file, shown as its file name on a single line: clicking the name opens the Trace Browser focused on this session, and the button beside it copies the full path.
+
+Copy buttons across the app confirm at the button itself: the copy icon flips to a check mark for a moment (no "Copied" text label).
+
 ### Input and Shortcuts
 
 - Enter sends, Shift+Enter inserts a newline, and images can be pasted;

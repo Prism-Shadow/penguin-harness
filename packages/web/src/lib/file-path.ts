@@ -95,6 +95,21 @@ export function joinWorkspacePath(base: string, name: string): string {
   return base === "" ? name : `${base}/${name}`;
 }
 
+/**
+ * Final path segment, for showing a file's NAME where the full path would wrap (the
+ * details card's Trace file row keeps the path in the tooltip / copy action instead).
+ * Splits on both separators: a Windows deployment reports `\` (server-side path.join)
+ * while POSIX reports `/`. A backslash inside a POSIX directory name cannot leak in —
+ * only the part after the last `/` is inspected, and the file names this is used for
+ * are server-generated (`NNN.jsonl`). Falls back to the input when the last segment
+ * is empty (trailing separator) so the result is never blank.
+ */
+export function pathFileName(path: string): string {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const name = cut === -1 ? path : path.slice(cut + 1);
+  return name === "" ? path : name;
+}
+
 /** Max length for a single files/stat path (matches server-side validation). */
 const MAX_PATH_LEN = 512;
 

@@ -4,21 +4,18 @@
  *
  *   - the write is optimistic (an insecure context or denied permission must not leave the
  *     control stuck), matching the clipboard convention used across the chat views;
- *   - the feedback is ALWAYS shown AT THE BUTTON — the icon swaps copy → check for
- *     COPIED_MS and the tooltip flips to "已复制"; a control with room can also show the
- *     "已复制" text next to the check (showCopiedText). The feedback never replaces an
- *     unrelated label/title elsewhere.
- *
- * Icon-only callers (message footer, code block, reply stats) pass their own compact
- * className and omit showCopiedText, keeping their existing look; wider affordances (the
- * details card's Session id row) opt into the text.
+ *   - the feedback is ALWAYS shown AT THE BUTTON, and it is the icon alone: copy swaps to
+ *     the check for COPIED_MS and the tooltip flips to "已复制" (#312 — no transient
+ *     "已复制" text is rendered, and the feedback never replaces an unrelated label/title
+ *     elsewhere). A control that keeps a visible text label (e.g. "复制 Prompt") keeps it
+ *     unchanged and swaps only its glyph — see CopyCheckGlyph + useCopied.
  */
 import { useState } from "react";
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { GlyphIcon } from "./glyph-icon";
 
-/** How long the copied state (check icon + "已复制") stays after a click. */
+/** How long the copied state (check icon + flipped tooltip) stays after a click. */
 const COPIED_MS = 1500;
 
 /** Best-effort clipboard write (never throws; no-op where the API is unavailable). */
@@ -28,8 +25,9 @@ export function writeClipboard(text: string): void {
 
 /**
  * Transient "just copied" flag: `flash()` writes the text and turns `copied` on for
- * COPIED_MS. Exposed for the rare caller whose copy trigger is not a plain CopyButton
- * (e.g. a whole row); most callers should use CopyButton directly.
+ * COPIED_MS. Exposed for the caller whose copy trigger is not a plain CopyButton
+ * (e.g. a text button rendering CopyCheckGlyph next to its label); most callers
+ * should use CopyButton directly.
  */
 export function useCopied(): { copied: boolean; flash: (text: string) => void } {
   const [copied, setCopied] = useState(false);
@@ -41,15 +39,27 @@ export function useCopied(): { copied: boolean; flash: (text: string) => void } 
   return { copied, flash };
 }
 
+/** The glyph pair every copy affordance shows: the copy icon, swapping to the check while copied. */
+export function CopyCheckGlyph({ copied, size }: { copied: boolean; size?: number }) {
+  return <GlyphIcon d={copied ? STAT_ICONS.check : STAT_ICONS.copy} size={size} />;
+}
+
 /** Default compact icon-button look (message footer / code block). */
 const DEFAULT_CLASS =
   "rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300";
+
+/**
+ * The copy button beside a mono value row (details card Session id / Trace file, Agent
+ * State path): the default look plus what a flex row needs — never shrink, and an
+ * explicit dark-mode idle tone.
+ */
+export const ROW_COPY_CLASS =
+  "shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300";
 
 export function CopyButton({
   text,
   label,
   className = DEFAULT_CLASS,
-  showCopiedText = false,
 }: {
   /** The string to copy, or a getter for content computed at click time (e.g. a formatted stats line). */
   text: string | (() => string);
@@ -57,8 +67,6 @@ export function CopyButton({
   label: string;
   /** Overrides the compact default look (e.g. the reply row's fixed-size button). */
   className?: string;
-  /** Render the "已复制" text beside the check while copied (for wide affordances with room). */
-  showCopiedText?: boolean;
 }) {
   const { copied, flash } = useCopied();
   return (
@@ -69,14 +77,7 @@ export function CopyButton({
       onClick={() => flash(typeof text === "function" ? text() : text)}
       className={className}
     >
-      {showCopiedText && copied ? (
-        <span className="flex items-center gap-1">
-          <GlyphIcon d={STAT_ICONS.check} />
-          {S.common.copied}
-        </span>
-      ) : (
-        <GlyphIcon d={copied ? STAT_ICONS.check : STAT_ICONS.copy} />
-      )}
+      <CopyCheckGlyph copied={copied} />
     </button>
   );
 }
