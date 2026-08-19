@@ -28,6 +28,7 @@ import {
   paneCurrent,
   paneError,
   paneOfTerminal,
+  unownedTerminals,
   paneRatio,
   resetPaneRatio,
   setPaneCurrent,
@@ -272,7 +273,7 @@ const resolving = new Set<DockPosition>();
 
 /**
  * First-show resolution for a pane: keep its stored terminal when still alive, else the
- * newest live terminal assigned here, else create one. Runs only when the pane has no
+ * newest live terminal assigned here, else one no conversation holds, else create one. Runs only when the pane has no
  * usable current — a shell exiting later must NOT auto-respawn (the user sees the exit).
  */
 async function resolvePaneCurrent(position: DockPosition): Promise<void> {
@@ -292,13 +293,20 @@ async function resolvePaneCurrent(position: DockPosition): Promise<void> {
     const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(
       () => null,
     );
-    const mine = (listed?.terminals ?? []).filter(
-      (t) => t.alive && paneOfTerminal(t.id) === position,
-    );
-    const newest = mine.at(-1);
+    const live = (listed?.terminals ?? []).filter((t) => t.alive);
+    const newest = live.filter((t) => paneOfTerminal(t.id) === position).at(-1);
     if (newest) {
       setPaneError(position, null);
       setPaneCurrent(position, newest.id);
+      return;
+    }
+    // Nothing of this conversation's. A shell no conversation holds — started through the
+    // API or the CLI, or left behind — is adopted rather than answered with a second shell
+    // running beside it.
+    const adoptable = unownedTerminals(live.map((t) => t.id)).at(-1);
+    if (adoptable !== undefined) {
+      setPaneError(position, null);
+      assignTerminalToPane(adoptable, position);
       return;
     }
     await createShellInPane(position);

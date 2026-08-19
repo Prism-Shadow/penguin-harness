@@ -650,8 +650,14 @@ test("tab strip squeezes when crowded and wheel-scrolls", async ({ page }) => {
   await killAllTerminals(page.request);
   // A narrow left pane makes the strip overflow with few tabs.
   await page.addInitScript(() => {
-    localStorage.setItem("penguin.terminal.dockPanes", JSON.stringify(["left"]));
-    localStorage.setItem("penguin.terminal.dockOpen", "1");
+    // One entry per Session scope (terminal-dock-state.ts); "~none" is the one a /chat
+    // without a Session id uses, and it is handed to the Session that route resolves to.
+    localStorage.setItem(
+      "penguin.terminal.dock",
+      JSON.stringify({
+        "~none": { visible: true, panes: ["left"], assignments: {}, currents: {} },
+      }),
+    );
   });
   await page.goto(`${BASE}/chat`);
   await expect(dock(page)).toBeVisible({ timeout: 20000 });

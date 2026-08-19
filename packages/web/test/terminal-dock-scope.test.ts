@@ -83,4 +83,51 @@ describe("dock scopes", () => {
     expect(dock.isTerminalDockOpen()).toBe(false);
     expect(dock.paneOfTerminal("term-f")).toBeNull();
   });
+
+  it("keeps its terminals when the last pane closes, so reopening comes back to them", () => {
+    dock.setDockScope("session-g");
+    dock.assignTerminalToPane("term-g", "bottom");
+    dock.closePane("bottom"); // the header's X: the shell keeps running
+    expect(dock.isTerminalDockOpen()).toBe(false);
+
+    dock.setTerminalDockOpen(true);
+    expect(dock.paneOfTerminal("term-g")).toBe("bottom");
+  });
+});
+
+describe("the scope-less dock", () => {
+  it("is handed to the first Session chosen, since /chat resolves to one after it loads", () => {
+    dock.setDockScope(null);
+    dock.assignTerminalToPane("term-staged", "bottom");
+
+    dock.setDockScope("session-resolved");
+    expect(dock.isTerminalDockOpen()).toBe(true);
+    expect(dock.paneOfTerminal("term-staged")).toBe("bottom");
+    // Moved, not copied: going back to no Session shows nothing.
+    dock.setDockScope(null);
+    expect(dock.isTerminalDockOpen()).toBe(false);
+  });
+
+  it("keeps a pane's error across the hand-off, since the pane itself does not change", () => {
+    dock.setDockScope(null);
+    dock.assignTerminalToPane("term-erring", "bottom");
+    dock.setPaneError("bottom", "Could not start a shell");
+
+    dock.setDockScope("session-handed");
+    expect(dock.paneError("bottom")).toBe("Could not start a shell");
+    // A real switch does clear it: that pane left the screen.
+    dock.setDockScope("session-elsewhere");
+    expect(dock.paneError("bottom")).toBeNull();
+  });
+
+  it("never clobbers a Session that already has an arrangement", () => {
+    dock.setDockScope("session-owning");
+    dock.assignTerminalToPane("term-owned", "bottom");
+    dock.setDockScope(null);
+    dock.assignTerminalToPane("term-staged", "top");
+
+    dock.setDockScope("session-owning");
+    expect(dock.paneOfTerminal("term-owned")).toBe("bottom");
+    expect(dock.paneOfTerminal("term-staged")).toBeNull();
+  });
 });
