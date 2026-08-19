@@ -1096,6 +1096,21 @@ export type ServerEvent =
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
+  /**
+   * The user-channel counterpart of `task_state`: the same run-state flip, named by
+   * `sessionId`, delivered on GET /api/events.
+   *
+   * `task_state` is session-scoped and deliberately carries no id, so it only ever reaches the
+   * one conversation a tab has subscribed to — every OTHER row in that tab's Session list would
+   * otherwise keep whatever status its last list fetch returned. This event exists so the list
+   * can stay live without polling; the per-Session contract is unchanged.
+   *
+   * `lastActiveAt` is the row's stamp as it stands after the flip (the server writes it at run
+   * start and again at run end, just before publishing): it lets a client tell "this finished
+   * while I was looking elsewhere" from "this finished before I last looked" without refetching
+   * the list. Published only to the user channels of the Project's owner and members.
+   */
+  | { type: "session_state"; sessionId: string; state: SessionStatus; lastActiveAt: string }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**

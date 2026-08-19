@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-16
 - **Type:** feature
-- **Scope:** `web`
+- **Scope:** `web`, `server`, `docs`
 - **PR:** [#302](https://github.com/Prism-Shadow/penguin-harness/pull/302)
 - **Issue:** [#291](https://github.com/Prism-Shadow/penguin-harness/issues/291)
 
@@ -16,6 +16,16 @@ A running conversation was marked by a small pulsing dot that simply vanished wh
 - **Settled** — a circled checkmark, in emerald while the Session has run since the user last opened it, and in muted gray once it has been read. Measured against the surfaces they sit on, the unread tone reaches 5.48:1 in light and 10.47:1 in dark; the read tone is deliberately recessive at 2.54:1 and 2.66:1. The pair separates by 2.16:1 in light and 3.93:1 in dark, and by 2.35:1 and 3.55:1 under simulated deuteranopia, because it differs in lightness and not only in hue.
 - **Nothing at all** — a Session that has never run shows no glyph, using the server's existing `hasTrace` flag. Its slot keeps its width, so a row does not re-flow when its first run starts.
 - Every glyph carries its exact state as tooltip and accessible name in both locales, including the read/unread distinction, so no state is reachable only by seeing a colour. Live states announce as a `status`; a settled one is a plain labelled image.
+
+## Live for every row
+
+- Run status used to be live only for the conversation the tab had open. The Session channel's `task_state` event is session-scoped and carries no id, so every other row kept whatever status the last list fetch returned: a Session left running while the user moved on stayed on its hourglass indefinitely, and one that began running in the background — a scheduled task, a subagent, another tab, or the conversation just navigated away from — never grew one at all.
+- The server publishes the same flip a second time on the user-level event stream (`GET /api/events`) as `session_state`, carrying the `sessionId` and the row's `lastActiveAt` as just stamped. The per-Session `task_state` event is unchanged: the queued follow-up count and the undelivered-steering mirror belong to the conversation being watched, and the list event carries neither.
+- The event reaches the user channels of the Project's owner and its members and no one else, and only channels a client has actually opened.
+- Carrying the server's own row stamp is what makes a background completion legible: a run that finished while the user was elsewhere reads as unread, instead of settling straight into the muted already-read glyph.
+- A status naming a Session no loaded page holds is dropped rather than turned into a row — the same drop that keeps another Project's Sessions out of the list.
+- Nothing polls. A reconnect landing outside the channel's replay buffer already reports `resync_required`; the list refetches once on that event, so a gap in delivery cannot strand a row mid-run.
+- The conversation currently open is never drawn as unread — the user is looking at it — so its glyph does not flicker while the chat page and the user channel report the same completion.
 
 ## Read and unread
 

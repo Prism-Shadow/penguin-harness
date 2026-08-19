@@ -584,9 +584,17 @@ export function ChatPage() {
   }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
+  //
+  // Keyed on the session ID, not the `selected` row: the row object is replaced whenever
+  // anything about it changes — including by the user channel's own `session_state` event for
+  // this very Session, which arrives on a second connection with no ordering guarantee against
+  // this one. Depending on the object re-ran this effect on that replacement and re-asserted
+  // whatever `stream.taskState` still held, so a run that ended could be pushed back to
+  // "running" until this tab's Session stream caught up. Depending on the id means only a real
+  // state change writes, and the two sources agree instead of overwriting each other.
   useEffect(() => {
-    if (selected) setStatus(selected.sessionId, stream.taskState);
-  }, [stream.taskState, selected, setStatus]);
+    if (selectedSessionId !== null) setStatus(selectedSessionId, stream.taskState);
+  }, [stream.taskState, selectedSessionId, setStatus]);
 
   // Task returns from running/compacting to idle ON THE SAME SESSION: this turn may have
   // spawned a sub-session or auto-created a new Agent — reload both lists so they appear in

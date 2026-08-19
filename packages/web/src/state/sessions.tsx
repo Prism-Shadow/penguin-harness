@@ -26,6 +26,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  ServerEvent,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -66,8 +67,12 @@ interface SessionsContextValue {
   remove: (sessionId: string) => void;
   /** Replace the whole entry with the PATCH result. */
   replace: (session: SessionInfo) => void;
-  /** Live stream task_state → list badge. */
-  setStatus: (sessionId: string, status: SessionStatus) => void;
+  /**
+   * Live run status of one row — from the open Session's own stream (`task_state`), and from
+   * the user channel (`session_state`) for every row this tab is not subscribed to.
+   * `lastActiveAt` is the server's row stamp, carried only by the user-channel event.
+   */
+  setStatus: (sessionId: string, status: SessionStatus, lastActiveAt?: string) => void;
   /** session_title server event → update the title in place. */
   setTitle: (sessionId: string, title: string) => void;
   /** Whether CLI-created Sessions are listed too (persisted per user; default off = the list is served from the DB without Trace scanning). */
@@ -116,12 +121,17 @@ interface SessionsStoreState {
   add: (session: SessionInfo) => void;
   remove: (sessionId: string) => void;
   replace: (session: SessionInfo) => void;
-  setStatus: (sessionId: string, status: SessionStatus) => void;
+  setStatus: (sessionId: string, status: SessionStatus, lastActiveAt?: string) => void;
   setTitle: (sessionId: string, title: string) => void;
   setShowCliSessions: (value: boolean) => void;
 }
 
-function createSessionsStore() {
+/**
+ * Builds one Provider's store. Exported as a test seam: vitest runs this package in Node with
+ * no DOM, so the list's own behaviour is exercised against the store directly rather than
+ * through a React tree.
+ */
+export function createSessionsStore() {
   // Generation counter: invalidates any in-flight response once the Project/Agent set
   // changes or a reload happens.
   let gen = 0;
@@ -336,11 +346,31 @@ function createSessionsStore() {
         });
       },
 
-      setStatus: (sessionId, status) => {
+      /**
+       * The open Session's stream calls this with two arguments: it has no fresher row stamp
+       * to offer than the one the list already holds. The user-channel `session_state` event
+       * calls it with three, and that third one is what makes a background completion legible:
+       * the read/unread split compares the row's `lastActiveAt` against the seen marker
+       * (session-seen.ts), so without the server's new stamp a Session that finished while the
+       * user was elsewhere would settle into the muted "already read" glyph — the exact case
+       * the user needs to notice.
+       *
+       * An id no loaded page holds is dropped rather than turned into a row: the event names a
+       * Session, it does not describe one, and a row invented from a status and a timestamp
+       * would have no title, Agent or Workspace to render. That same drop is what filters
+       * another Project's Sessions — this store only ever holds the current Project's rows.
+       */
+      setStatus: (sessionId, status, lastActiveAt) => {
         const prev = get().sessions;
         const target = prev.find((s) => s.sessionId === sessionId);
-        if (!target || target.status === status) return;
-        set({ sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, status } : s)) });
+        if (!target) return;
+        const nextActiveAt = lastActiveAt ?? target.lastActiveAt;
+        if (target.status === status && target.lastActiveAt === nextActiveAt) return;
+        set({
+          sessions: prev.map((s) =>
+            s.sessionId === sessionId ? { ...s, status, lastActiveAt: nextActiveAt } : s,
+          ),
+        });
       },
 
       setTitle: (sessionId, title) => {
@@ -357,6 +387,54 @@ function createSessionsStore() {
       },
     };
   });
+}
+
+/** The vanilla store backing one Provider mount. */
+export type SessionsStore = ReturnType<typeof createSessionsStore>;
+
+/**
+ * Routes one user-level server event (/api/events) into the list store.
+ *
+ * That connection is the only one that outlives every Project switch and every conversation
+ * the user opens, which is why the list's cross-Session facts arrive on it rather than on a
+ * Session channel. Split out from the subscription so this routing is testable without a React
+ * tree or an EventSource, neither of which exists in this package's Node test environment.
+ *
+ * `onWebUpdated` is the escape hatch for the one event that is not a list update at all.
+ */
+export function applyUserEvent(
+  store: SessionsStore,
+  ev: ServerEvent,
+  onWebUpdated: () => void,
+): void {
+  // The served web assets were hot-swapped (dev watch-push / platform upgrade): reload so this
+  // window runs the new code.
+  if (ev.type === "web_updated") {
+    onWebUpdated();
+    return;
+  }
+  // A Session changed run state. This is what keeps every row honest: a tab subscribes to the
+  // ONE conversation it has open, so its `task_state` events can only ever move that row's
+  // badge. Everything else — the Session the user just navigated away from, a run started from
+  // another tab, a schedule, a subagent — would otherwise sit on whatever status the last list
+  // fetch happened to return.
+  if (ev.type === "session_state") {
+    store.getState().setStatus(ev.sessionId, ev.state, ev.lastActiveAt);
+    return;
+  }
+  // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips
+  // above were lost — away long enough and a row sits on an hourglass that will never stop.
+  // Refetch once, on the event that says so, rather than polling for it.
+  if (ev.type === "resync_required") {
+    void store.getState().reload();
+    return;
+  }
+  // A scheduled task firing may have created a new Session (new-session mode); reload the list
+  // so it appears immediately. schedule_queued doesn't change the list (the target Session
+  // already exists), so it is ignored, as is every other Session-scoped event.
+  if (ev.type !== "schedule_fired") return;
+  // The event carries projectId: a trigger from another Project is unrelated to the current list.
+  if (ev.projectId === store.getState().projectId) void store.getState().reload();
 }
 
 export function SessionsProvider({ children }: { children: ReactNode }) {
@@ -403,25 +481,14 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     void store.getState().reload();
   }, [store, projectId, agentIdsKey, showCliSessions]);
 
-  // User-level event stream (/api/events): a scheduled task firing may have created a new
-  // Session (new-session mode); reload the list so it appears immediately. schedule_queued
-  // doesn't change the list (the target Session already exists), so it's ignored.
-  // store.getState() serves the current values: the connection stays a single one for the
-  // whole login session and doesn't reconnect on Project switches.
+  // User-level event stream (/api/events); see applyUserEvent for what each event does. The
+  // connection stays a single one for the whole login session and doesn't reconnect on Project
+  // switches, so the handler reads current values through store.getState() rather than closing
+  // over them.
   useEffect(() => {
     const conn = openUserEvents({
       onOmniMessage: () => undefined,
-      onServerEvent: (ev) => {
-        // The served web assets were hot-swapped (dev watch-push / platform
-        // upgrade): reload so this window runs the new code.
-        if (ev.type === "web_updated") {
-          window.location.reload();
-          return;
-        }
-        if (ev.type !== "schedule_fired") return;
-        // The event carries projectId: a trigger from another Project is unrelated to the current list.
-        if (ev.projectId === store.getState().projectId) void store.getState().reload();
-      },
+      onServerEvent: (ev) => applyUserEvent(store, ev, () => window.location.reload()),
     });
     return () => conn.close();
   }, [store]);

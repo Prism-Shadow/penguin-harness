@@ -935,7 +935,15 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
-            unread={isSessionUnread(sessionSeen, s.sessionId, s.lastActiveAt)}
+            // The open conversation is never unread — the user is looking at it. The chat page
+            // reaches the same conclusion by stamping the marker once a run settles under the
+            // user's eyes, but it does so in an effect, one tick after the run-end event moved
+            // this row's lastActiveAt: deciding it here from what is on screen keeps the glyph
+            // from flashing unread for that tick.
+            unread={
+              s.sessionId !== activeSessionId &&
+              isSessionUnread(sessionSeen, s.sessionId, s.lastActiveAt)
+            }
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass

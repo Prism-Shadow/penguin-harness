@@ -223,6 +223,14 @@ export interface SessionManagerDeps {
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
   /**
+   * Publishes a Session-scoped event on the user-level channel of everyone who can see the
+   * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
+   * the app layer, the same split the scheduler's `notify` uses — this class holds no Project
+   * membership repos. Optional: without it only the per-Session channel is served, which is
+   * what unit tests that don't wire it get.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
+  /**
    * Clock for persisted timestamps (last_active_at). Injected like the other services' so a
    * stubbed clock moves this and `usage_records.ts` together — the pairing the legacy
    * backfill assumes when it reads MAX(ts) as a session's last activity.
@@ -1555,6 +1563,32 @@ export class SessionManager {
       state,
       queued: entry.followUps.length,
       ...(entry.pendingSteering.length > 0 ? { pendingSteering: entry.pendingSteering } : {}),
+    });
+    // The same flip again, this time on the user channel and carrying the Session id: a tab
+    // subscribes to the ONE conversation it has open, so the event above can never move any
+    // other row's badge. Only the queued/steering hints stay session-scoped — they belong to
+    // the composer of the conversation being watched, not to a list row.
+    const notify = this.deps.notifyProjectUsers;
+    if (!notify) return;
+    let lastActiveAt: string;
+    try {
+      // Read back rather than reconstruct: both flips are published immediately after the row
+      // write that stamps them (drive's markDriven at run start, touchLastActive in its
+      // finally), so this is exactly what a list fetch would return right now — no clock of
+      // ours has to agree with the one that wrote it.
+      const row = this.deps.sessions.findById(entry.sessionId);
+      if (!row) return; // Row already deleted: no list row left to light up.
+      lastActiveAt = row.lastActiveAt;
+    } catch {
+      // Same failure touchRow guards against (DB handle closed by shutdown while a run
+      // outlives its drain window). A list badge is never worth breaking a run's finally over.
+      return;
+    }
+    notify(entry.projectId, {
+      type: "session_state",
+      sessionId: entry.sessionId,
+      state,
+      lastActiveAt,
     });
   }
 
