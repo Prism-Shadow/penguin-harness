@@ -354,15 +354,23 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
       "node_modules/demo-native/build/Release/demo.node",
     );
     const before = await fs.stat(binary);
-    expect(before.mode & 0o111).not.toBe(0); // the exec list was honoured
+    // Windows has no POSIX permission bits at all — stat() reports none and chmod() only
+    // toggles the read-only attribute — so the exec list is a POSIX-only claim.
+    if (process.platform !== "win32") expect(before.mode & 0o111).not.toBe(0);
 
     // Windows keeps an open handle on a loaded .node, so a second write to it fails with
-    // EBUSY and takes the whole upgrade down. Read-only stands in for that lock here.
+    // EBUSY and takes the whole upgrade down. Read-only stands in for that lock here (on
+    // Windows that IS the read-only attribute, and it refuses writes just the same).
     await fs.chmod(binary, 0o444);
-    expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
+    try {
+      expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
 
-    const after = await fs.stat(binary);
-    expect(after.mtimeMs).toBe(before.mtimeMs);
+      const after = await fs.stat(binary);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+    } finally {
+      // Windows refuses to delete a read-only file, which would fail the temp-root cleanup.
+      await fs.chmod(binary, 0o644);
+    }
   });
 
   it("repairs a directory whose materialization was interrupted", async () => {
