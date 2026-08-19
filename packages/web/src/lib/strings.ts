@@ -86,6 +86,8 @@ export const zh = {
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
+    terminalTheme: "终端主题",
+    followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",

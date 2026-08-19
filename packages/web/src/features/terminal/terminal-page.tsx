@@ -18,6 +18,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
+import { useTerminalChrome } from "./terminal-appearance";
 import {
   TerminalView,
   fetchJson,
@@ -87,6 +88,7 @@ async function attachOrCreate(
 }
 
 export function TerminalPage() {
+  const chrome = useTerminalChrome();
   const [status, setStatus] = useState<TerminalStatus>("connecting");
   const [detail, setDetail] = useState<string>("");
   const [info, setInfo] = useState<TerminalInfo | null>(null);
@@ -136,10 +138,12 @@ export function TerminalPage() {
       : `${S.terminal.status[status]}${status === "error" && detail ? ` — ${detail}` : ""}`;
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
+    <div className={`flex h-screen w-screen flex-col ${chrome.surface}`}>
+      <header
+        className={`flex shrink-0 items-center gap-3 border-b px-4 py-2 text-xs ${chrome.border}`}
+      >
         <span className="font-medium">{S.terminal.title}</span>
-        <span className="text-gray-500 dark:text-gray-400">{info?.cwd ?? params.cwd}</span>
+        <span className={chrome.muted}>{info?.cwd ?? params.cwd}</span>
         <span
           data-testid="terminal-status"
           data-status={status}
@@ -157,7 +161,7 @@ export function TerminalPage() {
           type="button"
           data-testid="terminal-new-shell"
           onClick={restart}
-          className="ml-auto rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          className={`ml-auto rounded border px-2 py-1 ${chrome.outlineButton}`}
         >
           {S.terminal.newShell}
         </button>
