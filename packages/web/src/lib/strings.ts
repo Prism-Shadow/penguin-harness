@@ -853,15 +853,17 @@ export const zh = {
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
     thinkingLevel: "思考等级",
-    /** Tier names for the thinking-level controls: the Chinese name followed by the wire value in parentheses, so the label names the value actually sent (per maintainer request). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
+    /** Tier names for every surface that DISPLAYS an already-chosen level — the composer picker's trigger and tooltip, the mid-chat switch dialog and its toasts, the Project chat-defaults control and its read-only row. Chinese only, no wire value (per maintainer request): once the tier is picked, the English spelling is noise on a control this narrow, and it reads badly inside the 「…」 of the switch prose. `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
-      none: "无 (none)",
-      low: "低 (low)",
-      medium: "中 (medium)",
-      high: "高 (high)",
-      xhigh: "极高 (xhigh)",
-      max: "最高 (max)",
+      none: "无",
+      low: "低",
+      medium: "中",
+      high: "高",
+      xhigh: "极高",
+      max: "最高",
     } as Readonly<Record<string, string>>,
+    /** Dropdown-row variant of the name above: choosing is where the wire value earns its place, so a menu row annotates the Chinese name with the value the pick will send. Only the composer's own dropdown uses it — a native `<select>` renders the picked option's text on the collapsed control too, which would put the annotation straight back onto a trigger. */
+    thinkingLevelMenuName: (name: string, level: string): string => `${name} (${level})`,
     /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
     thinkingSwitchTitle: "切换思考等级",
     thinkingSwitchBody: (to: string): string =>
@@ -1242,9 +1244,8 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    compactionTitle: "压缩",
-    compactionDone: (mode: string): string =>
-      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
+    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
@@ -1429,7 +1430,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    compactionRound: "压缩",
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace page and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     empty: "该 Agent 暂无 Trace",
     inProgress: "进行中",
     systemPrompt: "系统提示词",

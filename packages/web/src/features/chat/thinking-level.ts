@@ -17,6 +17,12 @@
  * "default" row) under a title bar naming the control — and they do **not** offer "none"
  * (many models cannot disable thinking): "none" stays a valid stored/wire value, so a
  * legacy config or trace that carries it still displays via the label table below.
+ *
+ * The name comes in two variants, split by surface: `S.chat.thinkingLevelNames` is the plain
+ * tier name and belongs on anything DISPLAYING a settled level (trigger, tooltip, switch
+ * dialog, toasts, the Project read-only row), while `S.chat.thinkingLevelMenuName` composes
+ * the dropdown-row variant that also names the wire value being picked. Only zh actually
+ * differs between the two — an English name already is its wire value.
  */
 
 /** All stored/wire levels, for display lookup (mirrors core's ThinkingLevelName). */
@@ -49,7 +55,9 @@ export function effectiveThinkingLevel(
 }
 
 /**
- * Short display label for a level from the localized name table (S.chat.thinkingLevelNames).
+ * Plain display label for a level from the localized name table (S.chat.thinkingLevelNames) —
+ * the variant for surfaces that show a level already chosen, so it carries no wire-value
+ * annotation; a dropdown row wraps this through `S.chat.thinkingLevelMenuName` instead.
  * Covers every stored level including "none" (so a legacy value displays sanely instead
  * of being rewritten or hidden). Returns null for anything else — including "" (an Agent
  * without an explicit override) and session_meta's "default" — so callers can render a

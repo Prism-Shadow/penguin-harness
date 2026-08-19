@@ -404,7 +404,7 @@ function ThinkingLevelSelect({
         </button>
       }
     >
-      {/* Title bar: names the control (the rows themselves are just the short names). */}
+      {/* Title bar: names the control (the rows themselves are just the tier names). */}
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
@@ -422,8 +422,11 @@ function ThinkingLevelSelect({
               : "text-gray-600 dark:text-gray-400"
           }`}
         >
+          {/* The one surface that annotates: a menu row is where the tier is CHOSEN, so it
+              names the wire value the pick will send. The trigger above stays the plain
+              name — in zh that is 低/中/高/极高/最高, in en the annotation is a no-op. */}
           <span className="min-w-0 flex-1 truncate">
-            {S.chat.thinkingLevelNames[level] ?? level}
+            {S.chat.thinkingLevelMenuName(S.chat.thinkingLevelNames[level] ?? level, level)}
           </span>
           <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
         </button>

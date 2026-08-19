@@ -67,10 +67,13 @@ test("compaction mid-turn: the reply's stats line is still reachable by hovering
 
   const reply = page.getByText("Command finished; the result looks as expected.").first();
   await expect(reply).toBeVisible();
-  // The compaction row is a step banner: a disclosure button reading "压缩" plus its outcome.
+  // The compaction row is a step banner: a disclosure button titled by its MODE — "压缩" for
+  // this summarize, "清空" for a discard, which drops the context rather than compacting it.
   const banner = page.locator("button[aria-expanded]").filter({ hasText: "压缩" }).first();
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText("已切换到摘要后的新上下文");
+  // A succeeded row writes no outcome text: the title, the wall time and the chevron say it all,
+  // and the summary itself is behind the disclosure.
+  await expect(banner).not.toContainText("已切换到摘要后的新上下文");
 
   // The row doesn't show Token counts: compaction at round end isn't attributed to this round
   // (its usage shows up in the Session total and the Trace page's compaction-round card

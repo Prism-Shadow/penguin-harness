@@ -903,6 +903,8 @@ export const en: Strings = {
       xhigh: "xhigh",
       max: "max",
     },
+    /** English has no trigger/menu split to make: the name above already IS the wire value, so a menu row annotating it would only repeat itself. Taking just the name (the second parameter is dropped) is how this locale says "same text on every surface". */
+    thinkingLevelMenuName: (name: string): string => name,
     thinkingSwitchTitle: "Switch thinking level",
     thinkingSwitchBody: (to: string): string =>
       `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
@@ -1284,9 +1286,7 @@ Scenarios:
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
-    compactionTitle: "Compaction",
-    compactionDone: (mode: string) =>
-      mode === "discard" ? "old context discarded" : "switched to the summarized context",
+    compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined
@@ -1477,7 +1477,6 @@ Scenarios:
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
     compactions: "compactions",
-    compactionRound: "Compaction",
     empty: "No Traces for this agent",
     inProgress: "in progress",
     systemPrompt: "System prompt",

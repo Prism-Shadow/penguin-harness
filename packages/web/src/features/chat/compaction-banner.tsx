@@ -1,7 +1,14 @@
 /**
  * Compaction row: one StepBanner across running/done/failed (same shell as the MCP
- * connect row and the reasoning-&-tools group header) — mode while running, outcome plus
- * wall time once settled, failures on a single line.
+ * connect row and the reasoning-&-tools group header) — wall time once settled, failures
+ * on a single line.
+ *
+ * **The title names the mode**, so the two modes read as the two different things they are:
+ * a `summarize` row is 压缩 / "Compaction", a `discard` row is 清空 / "Clear" — it drops the
+ * old context rather than compacting it, and calling that "compaction" was the confusing part
+ * (per maintainer request). With the mode in the title neither outcome needs a detail line:
+ * a succeeded row is icon + title + wall time (+ chevron on a summarize), and the detail slot
+ * is left for the one thing the title cannot say — why a compaction failed.
  *
  * The summary is **collapsed by default, exactly like a thinking block**: the row carries
  * the chevron from the moment a summarize compaction starts, and the text the compaction
@@ -41,12 +48,13 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   const expandable = summary !== "" || (item.running && item.mode === "summarize");
   const body = expandable ? <SummaryBody text={summary} streaming={item.running} /> : null;
 
+  // The title carries the mode in both states, so the running row no longer repeats it as a
+  // raw `summarize`/`discard` in the detail slot — that was the untranslated wire value.
   if (item.running) {
     return (
       <StepBanner
         state="running"
-        title={S.chat.compactionTitle}
-        detail={item.mode}
+        title={S.chat.compactionTitle(item.mode)}
         {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
       >
         {body}
@@ -57,12 +65,10 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   return (
     <StepBanner
       state={ok ? "done" : "failed"}
-      title={S.chat.compactionTitle}
-      detail={
-        ok
-          ? S.chat.compactionDone(item.mode)
-          : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)
-      }
+      title={S.chat.compactionTitle(item.mode)}
+      // Success says everything through the title, the icon and the wall time; only a failure
+      // still needs a line, because its reason is the part the title cannot carry.
+      detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
     >
       {body}

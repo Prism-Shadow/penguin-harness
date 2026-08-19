@@ -55,6 +55,21 @@ import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
 
 /**
+ * Badge text for a round card, or null when the round is not a compaction turn.
+ *
+ * Reuses the chat stream's mode-aware row title rather than a Trace-local string, so the two
+ * surfaces cannot drift apart: a `discard` round reads 清空 / "Clear" here exactly as it does
+ * in the conversation, because it drops the old context instead of compacting it.
+ *
+ * `compaction` stays the sole gate — a round analyzed before the server carried the mode has
+ * no `compactionMode`, and falls back to the compaction title the badge always showed.
+ */
+export function compactionBadgeLabel(st: TraceTaskStats | undefined): string | null {
+  if (st?.compaction !== true) return null;
+  return S.chat.compactionTitle(st.compactionMode ?? "summarize");
+}
+
+/**
  * The three Token buckets (token_usage.request). No `total` field: usage is
  * always shown broken down, and the total = input (cacheRead + cacheWrite) +
  * output — there's no second convention.
@@ -460,6 +475,7 @@ export function TraceFileView({
         const st = statsByTask.get(t.taskIndex);
         const ctx = st?.context;
         const tokens = st?.tokens ?? zeroBuckets();
+        const compactionBadge = compactionBadgeLabel(st);
         return (
           <div
             key={t.taskIndex}
@@ -477,10 +493,12 @@ export function TraceFileView({
               </span>
               {/* Compaction rounds are explicitly flagged: their Token /
                   cost / duration / TPS count toward the global summary just
-                  like user rounds do, and this badge answers "this round isn't answering the user, it's compacting context". */}
-              {st?.compaction === true && (
+                  like user rounds do, and this badge answers "this round isn't answering the
+                  user, it's housekeeping" — naming which housekeeping, since a discard round
+                  clears the context rather than compacting it. */}
+              {compactionBadge !== null && (
                 <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {S.traces.compactionRound}
+                  {compactionBadge}
                 </span>
               )}
               <span className="min-w-0 flex-1" />
