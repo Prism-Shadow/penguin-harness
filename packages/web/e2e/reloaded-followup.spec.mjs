@@ -84,10 +84,11 @@ test("a stale steer response after reload queues the follow-up instead of strand
   // follow-up auto-starts. The picker is only disabled while a send is in flight, so it is
   // editable here; the pick is per-turn and does not write through to the Agent config.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
-  await expect(thinkingBtn).toContainText("中");
+  await expect(thinkingBtn).toContainText("中 (medium)");
   await thinkingBtn.click();
-  await page.getByRole("button", { name: "高", exact: true }).click();
-  await expect(thinkingBtn).toContainText("高");
+  // The popup's slider takes focus on open, so one ArrowRight steps medium -> high.
+  await page.getByRole("slider", { name: "思考等级" }).press("ArrowRight");
+  await expect(thinkingBtn).toContainText("高 (high)");
 
   await composer.fill("hello after reload");
   const followUpPost = page.waitForResponse((response) =>

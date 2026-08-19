@@ -32,6 +32,56 @@ export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"]
 export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 /**
+ * Stops of the thinking-level slider, left (shallowest) to right (deepest) — the ladder's
+ * own order, so dragging right always means more thinking.
+ *
+ * Normally the selectable tiers. A stored `"none"` is prepended instead of being dropped:
+ * the same rule {@link thinkingLevelOptionsFor} applies to the settings menu, so a legacy
+ * value stays visible AND reachable (the user can always land back on what is still on
+ * disk) while `"none"` is never offered to anyone who is not already on it. `current` is
+ * the value being displayed, not the local drag position — the stop set must not change
+ * shape mid-drag.
+ */
+export function thinkingLevelStops(current: string | null | undefined): readonly string[] {
+  return current === "none"
+    ? ["none", ...SELECTABLE_THINKING_LEVELS]
+    : [...SELECTABLE_THINKING_LEVELS];
+}
+
+/**
+ * Index of `level` among `stops`, or -1 when there is no position to show: `""` (an Agent
+ * with no explicit override, so the session picker has nothing resolved yet), null while
+ * the config still loads, or a value off the ladder. Callers render the track unfilled
+ * rather than parking the thumb on a level the user never chose.
+ */
+export function thinkingLevelIndex(
+  stops: readonly string[],
+  level: string | null | undefined,
+): number {
+  return level ? stops.indexOf(level) : -1;
+}
+
+/**
+ * The level at `step`, clamping into range — so an arrow key at either end, or a pointer
+ * dragged past the track, stays on the ladder instead of falling off it.
+ */
+export function thinkingLevelAtStep(stops: readonly string[], step: number): string {
+  const clamped = Math.min(Math.max(step, 0), stops.length - 1);
+  return stops[clamped] ?? stops[0] ?? "";
+}
+
+/**
+ * The stop a pointer at `ratio` (0 = track's left edge, 1 = its right edge) selects:
+ * nearest-stop rounding, so the thumb lands on the tick the pointer is closest to rather
+ * than the one it has already passed. Ratios outside 0..1 clamp to the end stops.
+ */
+export function thinkingLevelStepAtRatio(stops: readonly string[], ratio: number): number {
+  if (stops.length <= 1) return 0;
+  const step = Math.round(ratio * (stops.length - 1));
+  return Math.min(Math.max(step, 0), stops.length - 1);
+}
+
+/**
  * Effective thinking level for the draft picker's DISPLAY — the SAME chain core resolves
  * when a Session is created (core/src/agent.ts `configuredThinkingLevel`, the single rule):
  * the Agent's explicit `model.thinking_level` > the Project's `default_chat.thinking_level`

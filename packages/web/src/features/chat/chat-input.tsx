@@ -95,7 +95,13 @@ import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
+import {
+  thinkingLevelAtStep,
+  thinkingLevelIndex,
+  thinkingLevelLabel,
+  thinkingLevelStepAtRatio,
+  thinkingLevelStops,
+} from "./thinking-level";
 import {
   BOOK_ICON,
   buildSkillsMessage,
@@ -337,9 +343,13 @@ const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 
 
 /**
  * Conversation-time thinking-level picker, used in two places. Both variants list only the
- * concrete levels (per review: a title bar names the control; short names only, no
- * descriptions, no "default"/"follow" row, and no "none" — many models cannot disable
- * thinking; a stored legacy "none" still displays via the label table, just never offered):
+ * concrete levels, as a slider running shallowest (left) to deepest (right) — drag it or
+ * drive it from the keyboard (arrows step a tier, Home/End jump to an end). It stays inside
+ * the popup rather than sitting inline in the composer, so the toolbar keeps collapsing to
+ * the icon at phone width and the track gets room for a readout and a real touch target.
+ * The stops are the selectable tiers; "none" is not among them (many models cannot disable
+ * thinking) unless it is the value already stored, in which case it is prepended so the
+ * user can still land back on what is on disk — the same rule the settings menu applies:
  * - Draft state (docked left of the model selector): shows the **selected Agent's** current
  *   `model.thinking_level` and writes a picked level straight through to the Agent settings —
  *   it applies to the session created on first send and becomes the Agent's new default
@@ -351,7 +361,7 @@ const SPARK_ICON = "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 
  *   until touched); an explicit pick sticks for the session and rides on every subsequent
  *   send, never writing through to the Agent config.
  */
-function ThinkingLevelSelect({
+function ThinkingLevelSlider({
   value,
   onChange,
   disabled,
@@ -365,13 +375,50 @@ function ThinkingLevelSelect({
   direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+  /** Local drag position, cleared the moment a pick is handed up (see commit). */
+  const [preview, setPreview] = useState<number | null>(null);
   const label =
     value === null ? "…" : (thinkingLevelLabel(S.chat.thinkingLevelNames, value) ?? "—");
+  const stops = thinkingLevelStops(value);
+  const index = thinkingLevelIndex(stops, value);
+  const shown = preview ?? index;
+  const maxStep = stops.length - 1;
+
+  /**
+   * Hands a pick up and drops the local preview in the same breath, so the thumb goes back
+   * to tracking `value`. The parent only advances `value` once the change is accepted — the
+   * mid-chat switch guard holds it until its dialog is confirmed — so a cancelled or failed
+   * switch leaves the thumb where it was instead of stranding it at the dragged position.
+   */
+  const commit = (step: number): void => {
+    const level = thinkingLevelAtStep(stops, step);
+    setPreview(null);
+    if (level && level !== value) onChange(level);
+  };
+
+  const stepAt = (clientX: number): number => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return shown < 0 ? 0 : shown;
+    return thinkingLevelStepAtRatio(stops, (clientX - rect.left) / rect.width);
+  };
+
+  const onSliderKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    // preventDefault also tells Dropdown's Up/Down item walker to keep its hands off.
+    const from = shown;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") commit(from + 1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") commit(from < 0 ? 0 : from - 1);
+    else if (e.key === "Home") commit(0);
+    else if (e.key === "End") commit(maxStep);
+    else return;
+    e.preventDefault();
+  };
+
   return (
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="w-max min-w-36"
+      menuClass="w-60"
       portal={{ direction, align: "right" }}
       button={
         <button
@@ -404,30 +451,81 @@ function ThinkingLevelSelect({
         </button>
       }
     >
-      {/* Title bar: names the control (the rows themselves are just the short names). */}
+      {/* Title bar: names the control (the slider itself only reads out the current tier). */}
       <div className="border-b border-gray-100 px-3 pb-1.5 pt-0.5 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
         {S.chat.thinkingLevel}
       </div>
-      {SELECTABLE_THINKING_LEVELS.map((level) => (
-        <button
-          key={level}
-          type="button"
-          onClick={() => {
-            onChange(level);
-            setOpen(false);
+      <div className="px-3 pb-2.5 pt-2">
+        {/* Readout: the full localized name of the position under the thumb, so the tiers
+            between the two labelled ends are still identifiable while dragging. The same
+            name rides on aria-valuetext below — a screen reader must not read "3 of 4". */}
+        <div className="mb-1.5 text-center text-xs font-medium text-gray-900 dark:text-gray-100">
+          {shown < 0 ? "—" : (S.chat.thinkingLevelNames[stops[shown] ?? ""] ?? stops[shown])}
+        </div>
+        <div
+          role="slider"
+          tabIndex={0}
+          aria-label={S.chat.thinkingLevel}
+          aria-valuemin={0}
+          aria-valuemax={maxStep}
+          aria-valuenow={shown < 0 ? 0 : shown}
+          aria-valuetext={
+            shown < 0 ? "—" : (S.chat.thinkingLevelNames[stops[shown] ?? ""] ?? stops[shown])
+          }
+          onKeyDown={onSliderKeyDown}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setPreview(stepAt(e.clientX));
           }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-            level === value
-              ? "font-medium text-gray-900 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`}
+          onPointerMove={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) setPreview(stepAt(e.clientX));
+          }}
+          onPointerUp={(e) => {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+            commit(stepAt(e.clientX));
+          }}
+          onPointerCancel={() => setPreview(null)}
+          /* py-2 keeps the touch target ~36px tall on a phone while the rail stays hairline. */
+          className="group -mx-1 cursor-pointer touch-none px-1 py-2 focus:outline-none"
         >
-          <span className="min-w-0 flex-1 truncate">
-            {S.chat.thinkingLevelNames[level] ?? level}
+          <div
+            ref={trackRef}
+            className="relative h-1 rounded-full bg-gray-200 group-focus-visible:ring-2 group-focus-visible:ring-gray-400 group-focus-visible:ring-offset-4 group-focus-visible:ring-offset-white dark:bg-gray-700 dark:group-focus-visible:ring-gray-500 dark:group-focus-visible:ring-offset-gray-900"
+          >
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-gray-500 dark:bg-gray-300"
+              style={{ width: `${shown <= 0 ? 0 : (shown / maxStep) * 100}%` }}
+            />
+            {stops.map((level, i) => (
+              <span
+                key={level}
+                aria-hidden
+                className={`absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${
+                  shown >= 0 && i <= shown
+                    ? "bg-gray-500 dark:bg-gray-300"
+                    : "bg-gray-300 dark:bg-gray-600"
+                }`}
+                style={{ left: `${(i / maxStep) * 100}%` }}
+              />
+            ))}
+            {shown >= 0 && (
+              <span
+                aria-hidden
+                className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-gray-300 bg-white shadow-sm dark:border-gray-500 dark:bg-gray-200"
+                style={{ left: `${(shown / maxStep) * 100}%` }}
+              />
+            )}
+          </div>
+        </div>
+        {/* Only the ends are labelled: it takes two to establish that right means deeper,
+            and five localized names do not fit a composer popup at phone width. */}
+        <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500">
+          <span className="truncate">{S.chat.thinkingLevelNames[stops[0] ?? ""] ?? stops[0]}</span>
+          <span className="truncate">
+            {S.chat.thinkingLevelNames[stops[maxStep] ?? ""] ?? stops[maxStep]}
           </span>
-          <span className="w-3 shrink-0 text-center">{level === value ? "✓" : ""}</span>
-        </button>
-      ))}
+        </div>
+      </div>
     </Dropdown>
   );
 }
@@ -2697,7 +2795,7 @@ export function ChatInput({
             )}
             {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}
             {models && onChangeModel && onChangeThinkingLevel && (
-              <ThinkingLevelSelect
+              <ThinkingLevelSlider
                 value={thinkingLevel ?? null}
                 onChange={onChangeThinkingLevel}
                 disabled={busy}
@@ -2708,7 +2806,7 @@ export function ChatInput({
               untouched nothing rides on tasks; a pick sticks for the session and is sent
               with every subsequent send, never writing through to the Agent config. */}
             {!onChangeModel && onChangeTurnThinkingLevel && (
-              <ThinkingLevelSelect
+              <ThinkingLevelSlider
                 value={turnThinkingLevel ?? ""}
                 onChange={onChangeTurnThinkingLevel}
                 disabled={busy}
