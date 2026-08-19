@@ -2,7 +2,7 @@
  * Thinking-level control (pure logic, shared by chat's `/thinking`, the `--thinking`
  * startup flag on run/chat, and unit tests).
  *
- * The selectable levels are core's DEFAULT_CHAT_THINKING_LEVELS (low/medium/high/xhigh),
+ * The selectable levels are core's DEFAULT_CHAT_THINKING_LEVELS (low/medium/high/xhigh/max),
  * mirroring the web pickers: "none" stays a valid stored config value but is never offered
  * for selection (many models cannot disable thinking).
  *

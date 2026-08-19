@@ -4,7 +4,7 @@
  *   penguin run -m <msg> [--model-id <id> --provider <group>] [--workspace <path>]
  *               [--project-id <id>] [--agent-id <id>]
  *               [--approve <allow-all|deny-all|read-only|always-ask>]
- *               [--thinking <low|medium|high|xhigh>] [--goal [budget]]
+ *               [--thinking <low|medium|high|xhigh|max>] [--goal [budget]]
  *
  * Uses the current directory when Workspace is unspecified; uses the Project's default model
  * when model is unspecified. A model reference is always an explicit `(provider, model_id)`

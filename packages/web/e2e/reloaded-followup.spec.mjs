@@ -83,10 +83,25 @@ test("a stale steer response after reload queues the follow-up instead of strand
   // rides an ordinary send: the server keeps it with the queued input and applies it when the
   // follow-up auto-starts. The picker is only disabled while a send is in flight, so it is
   // editable here; the pick is per-turn and does not write through to the Agent config.
+  //
+  // This conversation already has history, so the mid-chat switch guard (#310) stages the
+  // pick behind its dialog instead of applying it. Cancel first: the guard must leave the
+  // displayed level exactly where it was, never half-applied.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中 (medium)");
   await thinkingBtn.click();
   await page.getByRole("button", { name: "高 (high)", exact: true }).click();
+  // The dialog's title is its accessible name, not body text — assert on its choices.
+  await expect(page.getByRole("button", { name: "仍要切换", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "压缩后切换", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(thinkingBtn).toContainText("中 (medium)");
+
+  // Now switch for real: a compaction cannot start while the task runs, so "压缩后切换" is
+  // disabled here and "仍要切换" is the applying choice.
+  await thinkingBtn.click();
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
+  await page.getByRole("button", { name: "仍要切换", exact: true }).click();
   await expect(thinkingBtn).toContainText("高 (high)");
 
   await composer.fill("hello after reload");
