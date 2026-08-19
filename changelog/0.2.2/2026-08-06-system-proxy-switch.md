@@ -1,5 +1,12 @@
 # Admin proxy options: app/agent switches and an explicit proxy address
 
+- **Date:** 2026-08-06
+- **Type:** feature
+- **Scope:** `server`, `web`, `desktop`, `core`
+- **PR:** [#225](https://github.com/Prism-Shadow/penguin-harness/pull/225), [#233](https://github.com/Prism-Shadow/penguin-harness/pull/233)
+
+[中文版](2026-08-06-system-proxy-switch.zh.md)
+
 The sidebar user menu gains an admin-only "Proxy options" entry opening a settings dialog — server-global, stored in a new `server_settings` table and served by `GET/PUT /api/admin/settings` — implementing (and then extending) the long-specced 出网与系统代理 design so that using a proxy needs no environment variable at all.
 
 - Two independent switches share one address:

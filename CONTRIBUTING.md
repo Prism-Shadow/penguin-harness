@@ -101,6 +101,12 @@ pnpm typecheck
 pnpm test           # unit suites for every package
 ```
 
+Working on this repo with a coding agent: [`.agents/skills/penguin-harness-dev/`](.agents/skills/penguin-harness-dev/SKILL.md)
+collects the conventions that are easy to get wrong from the outside — the two-repo symlink
+layout, the CI-parity chain, the record-and-ship contract, the model catalog's pricing rules,
+and the seams that are intentional. `.claude` is a symlink to `.agents`, so a Claude Code
+session and any other agent read the same directory.
+
 End-to-end suites (optional locally, slower):
 
 ```bash
@@ -116,13 +122,13 @@ pnpm test:e2e                                        # core live-model e2e, need
   where it is the content itself: zh i18n catalogs and fields (`strings.ts` dictionaries,
   CLI `i18n.ts`, `titleZh`, `short_description_zh`), `*.zh.md` documents, and test
   literals that assert zh i18n output or exercise CJK-specific behavior.
-- **Every change ships with a changelog entry**: add
-  `changelog/<version>/YYYY-MM-DD-<semantic-id>.md` under the next unreleased version
-  (released versions' folders are frozen) — an H1 title, a one-sentence summary
-  paragraph, then details — and add a one-line link for it to that version's index,
-  `changelog/<version>/README.md`. The layout is documented in
+- **Every change ships with a changelog entry, in both languages**: add
+  `changelog/unreleased/YYYY-MM-DD-<semantic-id>.md` plus its `.zh.md` counterpart
+  (released versions' folders are frozen) — an H1 title, the `Date` / `Type` / `Scope` /
+  `PR` / `Issue` / `Breaking` metadata block, the counterpart link, then a lead paragraph
+  and bespoke sections. There is no index file to update. The format is documented in
   [`changelog/README.md`](changelog/README.md). Related changes may share one entry
-  file (extending its details) instead of opening a new file per small change.
+  file (extending its sections) instead of opening a new file per small change.
 - **A release ships its own announcement**: `changelog/<version>/RELEASE.md` is published
   verbatim as the GitHub Release body. Write it during release preparation and **commit it
   before creating the tag** — the release workflow reads it from the tag's checkout, so a

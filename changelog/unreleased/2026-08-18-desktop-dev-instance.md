@@ -1,11 +1,28 @@
 # Desktop: a dev run coexists with an installed release build
 
-An unpackaged (source) desktop shell — `pnpm desktop`, or `pnpm --dir packages/desktop start` — now takes a dev-suffixed identity, so hacking on the desktop app no longer collides with a running installed build (#292).
+- **Date:** 2026-08-18
+- **Type:** fix
+- **Scope:** `desktop`, `docs`
+- **PR:** [#318](https://github.com/Prism-Shadow/penguin-harness/pull/318)
+- **Issue:** [#292](https://github.com/Prism-Shadow/penguin-harness/issues/292)
 
-- Dev runs set the app name to `PenguinHarness-Dev`, which gives them their own userData directory — and with it their own Chromium profile, `preferred-port` / `server-port` state, Electron single-instance lock, and (since Electron derives all of them from userData) their own `logs`, `sessionData` and `crashDumps` paths. Previously the lock path was shared with the installed build, so a dev launch while the release app was running quit immediately into the release instance's window (and vice versa); dev runs also shared — and overwrote the port memory in — the installed app's Chromium profile, and no longer do.
-- The data root now defaults to `~/.penguin/dev-data` inside the shell itself when unpackaged; before, only the root `pnpm desktop` script set it, and a bare `pnpm --dir packages/desktop start` would find the release install's `server.lock` on `~/.penguin/data` and attach the dev window to the running RELEASE server (or spawn its own server over the release's data). An explicit `PENGUIN_HOME` still wins in both forms.
-- Windows dev runs stamp a dev-suffixed AppUserModelID (`com.prismshadow.penguinharness.dev`) instead of claiming the installed app's taskbar/toast identity.
-- Ports never needed a knob: the embedded server keeps its `PORT=0` allocator with per-userData stickiness, so the split userData directories give each instance its own stable port. Auto-update and the CLI-install offer already stood down on unpackaged runs.
-- One-time move for existing contributors, documented in CONTRIBUTING.md: a bare `pnpm --dir packages/desktop start` was running on `~/.penguin/data`, so sessions made that way are no longer in the dev window (pass `PENGUIN_HOME=~/.penguin/data` to work against the release root deliberately); and because userData moved with the app name, the dev window's origin-scoped preferences and remembered port start fresh once. No in-app notice: every unpackaged launch already prints `[shell] dev instance '<name>' on data root <root>`. The dev identity is one fixed name rather than one per checkout, so two working copies still share an instance lock.
-- Crash and startup-failure dialogs title themselves with `app.name` instead of the hard-coded release name, so a failing dev run is attributable when both instances are up.
-- Release builds are byte-for-byte unchanged in behavior: same name, AppUserModelID, userData, and shared CLI data root. Two new unit tests back that: one pins the release identity to electron-builder.yml's `productName`/`appId` (previously a comment-only contract), the other pins the data-root precedence rule itself — explicit `PENGUIN_HOME` first, then the CLI root when packaged and the dev root when not — which had lived untestable inside the Electron-importing entry file.
+[中文版](2026-08-18-desktop-dev-instance.zh.md)
+
+An unpackaged (source) desktop shell — `pnpm desktop`, or `pnpm --dir packages/desktop start` — took a dev-suffixed app identity and its own data root, so hacking on the desktop app stopped colliding with a running installed build.
+
+## The dev instance
+
+- Dev runs set the app name to `PenguinHarness-Dev`, which gives them their own userData directory, and with it their own Chromium profile, `preferred-port` / `server-port` state, Electron single-instance lock and — since Electron derives these from userData — their own `logs`, `sessionData` and `crashDumps` paths. Under the shared lock a dev launch had quit immediately into the running release instance's window, and vice versa; dev runs had also shared, and overwritten the port memory in, the installed app's Chromium profile.
+- The data root defaults to `~/.penguin/dev-data` inside the shell itself when unpackaged, rather than only under the root `pnpm desktop` script: a bare `pnpm --dir packages/desktop start` had found the release install's `server.lock` on `~/.penguin/data` and attached the dev window to the running release server, or spawned its own server over the release's data. An explicit `PENGUIN_HOME` still wins in both forms.
+- Windows dev runs stamp a dev-suffixed AppUserModelID (`com.prismshadow.penguinharness.dev`) instead of claiming the installed app's taskbar and toast identity.
+- Crash and startup-failure dialogs title themselves with `app.name` rather than the hard-coded release name, so a failing dev run is attributable when both instances are up.
+- Every unpackaged launch prints the pair it picked: `[shell] dev instance '<name>' on data root <root>`.
+- Ports needed no new knob: the embedded server kept its `PORT=0` allocator with per-userData stickiness, so the split userData directories give each instance its own stable port. Auto-update and the CLI-install offer already stood down on unpackaged runs.
+
+## Release builds
+
+Release behavior is unchanged — same name, AppUserModelID, userData directory and shared CLI data root. Two unit tests were added to hold that: one pins the release identity to electron-builder.yml's `productName` and `appId`, previously a comment-only contract; the other pins the data-root precedence rule (explicit `PENGUIN_HOME` first, then the CLI root when packaged and the dev root when not), which had lived untestable inside the Electron-importing entry file.
+
+## Compatibility
+
+Contributors take a one-time move, documented in CONTRIBUTING.md and the installation docs. A bare `pnpm --dir packages/desktop start` had run on `~/.penguin/data`, so sessions made that way are not in the dev window — pass `PENGUIN_HOME=~/.penguin/data` to work against the release root deliberately. And because userData moved with the app name, the dev window's origin-scoped preferences and its remembered port start fresh once. The dev identity is one fixed name rather than one per checkout, so two working copies still share an instance lock.

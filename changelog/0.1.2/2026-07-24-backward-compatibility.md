@@ -1,5 +1,12 @@
 # Backward compatibility in this batch
 
+- **Date:** 2026-07-24
+- **Type:** process
+- **Scope:** `core`, `server`, `web`
+- **PR:** [#62](https://github.com/Prism-Shadow/penguin-harness/pull/62), [#63](https://github.com/Prism-Shadow/penguin-harness/pull/63), [#64](https://github.com/Prism-Shadow/penguin-harness/pull/64)
+
+[中文版](2026-07-24-backward-compatibility.zh.md)
+
 What this batch keeps tolerating from data and configuration already on disk, how far each allowance reaches, whether the user has to do anything, and when it could be dropped. Other entries describe the features themselves and point here.
 
 ## Legacy angle-bracket markers stay readable
