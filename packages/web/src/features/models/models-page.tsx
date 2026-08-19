@@ -29,14 +29,16 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CredentialInfo,
+  ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelUpdateEntry,
+  ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -73,6 +75,19 @@ import {
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import { protocolPathForModel } from "./protocol-path";
+import { ProtocolSuffixMenu } from "./protocol-suffix";
+import {
+  DEFAULT_CUSTOM_CLIENT_TYPE,
+  detectableBaseUrl,
+  displayWidthCh,
+  envHintClientType,
+  isCustomLikeGroup,
+  isGenericProtocolClientType,
+  needsProtocolDetectOnSave,
+  protocolForPersist,
+  protocolSelectorValue,
+} from "./protocol-types";
+import type { ProtocolClientType } from "./protocol-types";
 import {
   isGroupExpanded,
   loadExpandedProviders,
@@ -161,10 +176,22 @@ export function decimalOnly(v: string): string {
   return i === -1 ? cleaned : cleaned.slice(0, i + 1) + cleaned.slice(i + 1).replace(/\./g, "");
 }
 
-/** Moving an existing model to Custom switches it to the generic OpenAI Chat Completions client. */
+/**
+ * Moving an existing model to Custom keeps a generic protocol client type (protocol
+ * detection / the in-field picker manage those) and otherwise switches to the generic
+ * OpenAI Chat Completions client — an unroutable or vendor-pinned type must not leak
+ * into a custom group.
+ */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
-  return provider === "custom" ? "openai-chat" : current;
+  if (provider !== "custom") return current;
+  return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai-chat";
 }
+
+/**
+ * Who asked for a detection run. Only the failure wording differs: a manual run reports a
+ * failure, a save-triggered one reports the fallback it is proceeding with.
+ */
+type DetectMode = "manual" | "save";
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
@@ -197,7 +224,12 @@ export interface RowState {
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
-  /** AgentHub client protocol: defaults for preset models (auto-routed), "openai-chat" for new custom models; kept as-is, not user-editable. */
+  /**
+   * AgentHub client protocol. Empty for preset models (auto-routed from the model id) and
+   * for a NEW custom model, which starts with nothing selected until the user picks from
+   * the base URL field's suffix or a detection run fills it in; gateway groups start on
+   * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
+   */
   clientType: string;
   cacheRead: string;
   cacheWrite: string;
@@ -304,7 +336,8 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   return row;
 }
 
-function rowToEntry(row: RowState): ModelUpdateEntry {
+/** Row edit state -> wire entry (exported for unit tests): the single funnel into the config PUT. */
+export function rowToEntry(row: RowState): ModelUpdateEntry {
   // provider and modelId are always submitted as separate fields ((provider, modelId) is the entry's unique key, no concatenation).
   const entry: ModelUpdateEntry = { provider: row.provider, modelId: row.modelId };
   // Rename (either provider or model_id changing is a key change): include the original paired reference so the server
@@ -316,7 +349,10 @@ function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.displayName?.trim()) entry.displayName = row.displayName.trim();
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
-  if (row.clientType.trim()) entry.clientType = row.clientType.trim();
+  // Never persists an empty protocol for a custom-like entry (that entry could not start —
+  // see protocolForPersist); preset / vendor rows keep "" so AgentHub infers from the id.
+  const clientType = protocolForPersist(row.provider, row.clientType);
+  if (clientType) entry.clientType = clientType;
   // Supported by default: submit false only when explicitly marked "unsupported" (preset vision models and checked custom models aren't persisted).
   if (!row.vision) entry.vision = false;
   // Output cap ("" = inherit the Agent setting): submitted only when filled; omitting clears the stored annotation.
@@ -1095,10 +1131,16 @@ function ModelDialog({
       provider: addProvider,
       modelId: "",
       original: null,
-      vision: true,
+      // A new custom model claims no vision support until it is detected or switched on by
+      // hand (per maintainer). Vendor and gateway adds keep the old optimistic default:
+      // their ids are catalog-known, so the capability is already established for them.
+      vision: !isCustomLikeGroup(addProvider),
       contextWindow: "",
       maxTokens: "",
-      clientType: vendorAdd ? "" : "openai-chat",
+      // No protocol is preselected for a custom / user-defined group: it is detected from
+      // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
+      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
+      clientType: vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat",
       cacheRead: "",
       cacheWrite: "",
       output: "",
@@ -1118,6 +1160,30 @@ function ModelDialog({
    * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
+  /** Protocol detection in progress (custom / user-defined groups only). */
+  const [detecting, setDetecting] = useState(false);
+  /**
+   * Whether the last detection run came back empty, purely to tint the suffix trigger
+   * amber. That tint is the control's own appearance, not a message occupying the form —
+   * the wording of both outcomes lives in a toast. It is deliberately the only trace left:
+   * a hit needs none, because the suffix then shows the protocol it applied.
+   */
+  const [detectFailed, setDetectFailed] = useState(false);
+  /**
+   * Monotonic run counter: each detection captures it and only the newest run may apply
+   * its result — a manual protocol pick or a re-run supersedes anything still in flight.
+   */
+  const detectSeq = useRef(0);
+  /**
+   * The run currently in flight, so a second trigger joins it instead of starting a rival
+   * probe: clicking Detect while the save path is already probing (or vice versa) must not
+   * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
+   */
+  const detectInFlight = useRef<Promise<string | null> | null>(null);
+  /** Vision probe in progress (its own control, so its own busy state). */
+  const [visionDetecting, setVisionDetecting] = useState(false);
+  /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
+  const visionInFlight = useRef<Promise<void> | null>(null);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -1168,6 +1234,163 @@ function ModelDialog({
   };
 
   /**
+   * Protocol detection: POST /models/detect probes the base URL for the three generic
+   * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
+   * the result to the form's clientType. Resolves to the detected client type, or null
+   * when nothing matched / the probe failed, so the save path can decide from the same run
+   * whether it may go on.
+   *
+   * No API key is required. The server resolves the probe credential in three layers — the
+   * key typed here, else this entry's stored key, else the environment variable for
+   * whichever protocol each probe speaks (ANTHROPIC_* / OPENAI_*) — and a keyless probe
+   * still identifies a route that answers in a protocol's own error shape. So the button
+   * is always live and a failure explains itself afterwards instead of being pre-empted by
+   * a disabled control.
+   *
+   * Outcomes are announced with a toast, like the connectivity test in this same dialog:
+   * transient and non-blocking, nothing to dismiss before carrying on. The Toaster portals
+   * to document.body at z-[100] against the Modal's z-50, so a toast raised from inside
+   * this dialog renders above it rather than behind or clipped by it.
+   *
+   * Every failure — unreachable, timeout, gateway junk, nothing matched, an invalid URL
+   * that never left the browser, a server error — raises the SAME message naming the two
+   * things the user can act on (API key, base URL). Per maintainer: the finer distinctions
+   * are invisible from the outside, and wording one of them as "the endpoint responded"
+   * read as success. The per-probe outcomes stay in the endpoint's response for debugging.
+   *
+   * A stale run (superseded by a manual pick or a newer run) discards its result instead
+   * of clobbering the form, and stays silent.
+   */
+  const detectOnce = async (mode: DetectMode): Promise<string | null> => {
+    // What an empty result means depends on who asked. A manual run simply failed; a save
+    // run silently resolves to the compatible client and says so, because the save it was
+    // serving is still going through.
+    const failed = () => {
+      setDetectFailed(true);
+      if (mode === "save") toastInfo(S.models.detectFellBack);
+      else toastError(S.models.detectFailedBody);
+    };
+    const baseUrl = form.baseUrl.trim();
+    // An unusable URL is just another failure: the server would 400 it, and the user gets
+    // the same message either way rather than a distinct piece of API error text.
+    if (!detectableBaseUrl(baseUrl)) {
+      failed();
+      return null;
+    }
+    const seq = ++detectSeq.current;
+    setDetecting(true);
+    setDetectFailed(false);
+    try {
+      const body: ModelProtocolDetectRequest = { baseUrl };
+      const key = form.apiKeyInput.trim();
+      if (key) body.apiKey = key;
+      else if (form.clearApiKey) body.clearApiKey = true;
+      const modelId = form.modelId.trim();
+      if (modelId) {
+        body.provider = form.provider;
+        body.modelId = modelId;
+      }
+      const res = await api.detectProtocol(projectId, body);
+      if (seq !== detectSeq.current) return null;
+      if (res.detected) {
+        set({ clientType: res.detected });
+        return res.detected;
+      }
+      failed();
+      return null;
+    } catch {
+      if (seq === detectSeq.current) failed();
+      return null;
+    } finally {
+      if (seq === detectSeq.current) setDetecting(false);
+    }
+  };
+
+  /**
+   * Single-flight wrapper: a second trigger joins the run already in progress rather than
+   * starting a rival probe (the button while the save path is probing, or vice versa).
+   */
+  const runDetect = (mode: DetectMode): Promise<string | null> => {
+    if (detectInFlight.current) return detectInFlight.current;
+    const run = detectOnce(mode).finally(() => {
+      detectInFlight.current = null;
+    });
+    detectInFlight.current = run;
+    return run;
+  };
+
+  /**
+   * The Detect button. Announces BOTH outcomes: the user asked a question and gets an
+   * answer either way. (The save path calls runDetect directly instead — a hit there needs
+   * no announcement of its own, since the save it was serving carries straight on.)
+   */
+  const detectFromButton = async () => {
+    const detected = await runDetect("manual");
+    if (detected === null) return; // detectOnce already raised the failure toast
+    toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+  };
+
+  /**
+   * Vision probe. Mirrors protocol detection — always clickable, single-flight, toast-only
+   * — with one deliberate difference: it is a REAL completion on the user's credential
+   * (an image request cannot be shaped to cost nothing the way the protocol probes are), so
+   * it only ever runs from this button, never implicitly and never on save.
+   *
+   * Three outcomes, because "the probe failed" and "the model says no" are different facts:
+   * a hit switches vision ON, a definitive image rejection switches it OFF, and a probe
+   * that learned nothing leaves the switch exactly as the user had it.
+   */
+  const detectVisionFromButton = async () => {
+    if (visionInFlight.current) return;
+    const modelId = form.modelId.trim();
+    if (!modelId) {
+      toastError(S.models.detectVisionNeedsId);
+      return;
+    }
+    setVisionDetecting(true);
+    const run = (async () => {
+      try {
+        const body: ModelVisionDetectRequest = { provider: form.provider, modelId };
+        const key = form.apiKeyInput.trim();
+        if (key) body.apiKey = key;
+        else if (form.clearApiKey) body.clearApiKey = true;
+        const bu = form.baseUrl.trim();
+        body.baseUrl = bu ? bu : null;
+        if (form.clientType.trim()) body.clientType = form.clientType.trim();
+        const res = await api.detectVision(projectId, body);
+        if (res.outcome === "supported") {
+          set({ vision: true });
+          toastSuccess(S.models.detectVisionOk);
+        } else if (res.outcome === "unsupported") {
+          set({ vision: false });
+          toastInfo(S.models.detectVisionNo);
+        } else {
+          toastError(S.models.detectFailedBody);
+        }
+      } catch {
+        toastError(S.models.detectFailedBody);
+      } finally {
+        setVisionDetecting(false);
+      }
+    })();
+    visionInFlight.current = run.finally(() => {
+      visionInFlight.current = null;
+    });
+    await visionInFlight.current;
+  };
+
+  /**
+   * Manual protocol override from the in-field picker. Bumping the run counter supersedes
+   * any in-flight detection, so a late result cannot clobber a choice the user just made.
+   */
+  const pickProtocol = (clientType: ProtocolClientType) => {
+    detectSeq.current++;
+    setDetecting(false);
+    setDetectFailed(false);
+    set({ clientType });
+  };
+
+  /**
    * Validate and convert pricing back to USD storage; returns null on validation failure —
    * every error is placed below the offending input, which is highlighted red (no more
    * top-level banner: it's too far from the error site, and with three price fields it's
@@ -1183,11 +1406,29 @@ function ModelDialog({
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
   const baseUrlRequired = !preset && openAiLike;
+  // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
+  // clients: the base URL field's suffix becomes the protocol picker there, unless the
+  // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
+  // instead. Gateways stay pinned to their preset protocol (their base URL is fixed too).
+  const customLikeGroup = form.provider === "custom" || providerInfo(form.provider) === undefined;
+  const showProtocolSelector =
+    customLikeGroup && isGenericProtocolClientType(form.clientType) && !preset;
+  // A viewer without edit rights gets the plain grey suffix: the picker would offer writes
+  // the save path rejects anyway.
+  const showProtocolPicker = showProtocolSelector && canEdit;
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
   // group in add mode updates it.
   const protocolPath = protocolPathForModel(form.provider, form.clientType);
+  // Which protocol the picker shows as chosen — null while a fresh custom model has none.
+  const protocolChoice = protocolSelectorValue(form.clientType);
+  // In the picker, an unchosen protocol has no path to show: the field would otherwise
+  // display /chat/completions and read as a decision the user never made. The placeholder
+  // takes its place until a pick or a detection lands. (The read-only suffix used by preset
+  // groups keeps showing the real path — those entries genuinely route that way.)
+  const suffixLabel =
+    showProtocolPicker && protocolChoice === null ? S.models.protocolUnset : protocolPath;
 
   const validated = (): RowState | null => {
     const modelId = form.modelId.trim();
@@ -1245,9 +1486,30 @@ function ModelDialog({
     };
   };
 
-  const submit = (action: DialogAction) => {
+  /**
+   * Commit one dialog action. Saving a custom-like entry whose protocol is still unset
+   * detects it FIRST and continues with whatever comes back: asking the endpoint is more
+   * reliable than guessing, so it is worth the round-trip.
+   *
+   * A probe that finds nothing no longer blocks (per maintainer: 默认都走兼容类型). The save
+   * goes through on the compatible client, with a toast saying that is what happened —
+   * detection is an accuracy improvement, not a gate, and refusing to save left the user
+   * stuck on an endpoint that simply cannot be probed. Nothing unstartable is written
+   * either way, because the fallback is a real client.
+   *
+   * The other actions (set-default / set-vision-proxy / remove) do not probe: they are not
+   * the user saying "this model is ready", and rowToEntry's fallback still applies.
+   */
+  const submit = async (action: DialogAction) => {
     const next = validated();
-    if (next) onSubmit(next, action);
+    if (!next) return;
+    if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
+      // Joins a run already started from the Detect button rather than probing twice.
+      const detected = await runDetect("save");
+      onSubmit({ ...next, clientType: detected ?? DEFAULT_CUSTOM_CLIENT_TYPE }, action);
+      return;
+    }
+    onSubmit(next, action);
   };
 
   // Provider info for the current group (updates live as the group dropdown
@@ -1256,12 +1518,17 @@ function ModelDialog({
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
   // env fallback resolves live from the current form (uses the same
-  // resolveModelEnv as the server's getModels): explicit
-  // client_type takes priority, otherwise auto-route by model_id; no
-  // fallback if it can't be routed.
+  // resolveModelEnv as the server's getModels): explicit client_type takes
+  // priority, otherwise auto-route by model_id; no fallback if it can't be routed.
+  //
+  // Custom and user-defined groups opt out of the model_id half (per maintainer): typing
+  // `claude-sonnet-5` into a custom group must not quietly imply the Anthropic client and
+  // its ANTHROPIC_* key. Those groups default to the compatible client, which is also what
+  // gets persisted when nothing is picked or detected — so keying the hint off it is what
+  // the entry will actually read after saving.
   const liveEnvKey = resolveModelEnv(
     form.modelId.trim(),
-    form.clientType.trim() || undefined,
+    envHintClientType(form.provider, form.clientType),
   )?.envKey;
   // First-party provider group (built-in, non-gateway, non-custom): adding
   // goes through auto-routing — show a hint when the id can't be routed
@@ -1403,7 +1670,14 @@ function ModelDialog({
     <Modal
       open
       title={
-        isNew ? (vendorGroup ? S.models.addTitleVendor : S.models.addTitle) : S.models.editTitle
+        isNew
+          ? vendorGroup
+            ? S.models.addTitleVendor
+            : customLikeGroup
+              ? // Custom / user-defined groups no longer pin one protocol (detection + selector), so the title drops the "(OpenAI protocol)" suffix gateways keep.
+                S.models.addTitleCustom
+              : S.models.addTitle
+          : S.models.editTitle
       }
       onClose={onClose}
       widthClass="sm:max-w-lg"
@@ -1413,11 +1687,15 @@ function ModelDialog({
           {canEdit && (
             <Button
               variant="primary"
+              // Saving may have to probe the endpoint first (protocol still unset), which
+              // is a network round-trip: the label says so and the button locks, matching
+              // the "test connection" convention used inside this dialog.
+              disabled={detecting}
               onClick={() => {
                 // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
                 if (!validated()) return;
                 if (isNew || row === null) {
-                  submit("save");
+                  void submit("save");
                   return;
                 }
                 // Nothing changed: report it instead of confirming a no-op write (the
@@ -1436,7 +1714,7 @@ function ModelDialog({
                 setConfirming("save");
               }}
             >
-              {S.common.confirm}
+              {detecting ? S.models.detecting : S.common.confirm}
             </Button>
           )}
         </>
@@ -1505,7 +1783,9 @@ function ModelDialog({
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
-                : S.models.addProtocolHint}
+                : customLikeGroup
+                  ? S.models.addProtocolHintDetect
+                  : S.models.addProtocolHint}
             </p>
             {identityFields}
           </>
@@ -1603,37 +1883,115 @@ function ModelDialog({
         )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
-            baseUrlRequired). The grey in-field suffix shows the protocol path the client appends
-            to the base URL — the endpoint shape a custom URL must serve; it renders for every
-            model and stays while the field is empty (hints the shape before typing). Reuses the
-            unit-adornment idiom of the context window / max tokens fields below; the error text
-            sits outside the relative wrapper (see Input.invalid). */}
-        <label className="block">
-          <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
-          <span className="relative block">
+            baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
+            client appends to the base URL — the endpoint shape a custom URL must serve; it
+            renders for every model and stays while the field is empty (hints the shape before
+            typing). Reuses the unit-adornment idiom of the context window / max tokens fields
+            below; the error text sits outside the relative wrapper (see Input.invalid).
+
+            For custom / user-defined groups that suffix IS the protocol SELECTOR (see
+            protocol-suffix.tsx): the path is one-to-one with the three generic protocol
+            clients, so picking one reuses it instead of taking a form row of its own.
+            Elsewhere (preset groups, read-only viewers) it stays the plain grey label it has
+            always been.
+
+            The detect ACTION sits at this field's top-right instead, next to the label — the
+            same idiom as the API key field's "get API key" link above (per maintainer). It is
+            gated on the API key, and a disabled row buried inside the suffix menu could not
+            say so where the user is looking.
+
+            A <div>, not a <label>: the picker is a <button>, and a label may not contain a
+            second labelable element besides its control — the click would fire the button AND
+            re-focus the input. Same shape as the API key block above; the input carries an
+            aria-label so it stays named. */}
+        <div className="block">
+          {showProtocolPicker ? (
+            <span className="mb-1 flex items-baseline justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.baseUrl}
+                {baseUrlRequired && (
+                  <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+                    *
+                  </span>
+                )}
+              </span>
+              {/* Always live: no API key is needed (the server falls back to the stored key
+                  and then to the protocol's env var), and anything that does go wrong is
+                  explained in a popup. `detecting` only guards re-entrancy. */}
+              <button
+                type="button"
+                disabled={detecting}
+                onClick={() => void detectFromButton()}
+                title={S.models.detectProtocolHint}
+                className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+              >
+                {detecting && (
+                  <span
+                    aria-hidden
+                    className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                  />
+                )}
+                {detecting ? S.models.detecting : S.models.detectProtocol}
+              </button>
+            </span>
+          ) : (
+            <FieldLabel required={baseUrlRequired}>{S.models.baseUrl}</FieldLabel>
+          )}
+          <div className="relative">
             <Input
               size="sm"
+              aria-label={S.models.baseUrl}
               required={baseUrlRequired}
               value={form.baseUrl}
               disabled={!canEdit}
               invalid={Boolean(fieldErrors.baseUrl)}
-              onChange={(e) => set({ baseUrl: e.target.value })}
+              // Editing the URL retires the previous run's verdict: it described the old
+              // endpoint, and leaving it up would keep asserting a result for a URL that is
+              // no longer in the field.
+              onChange={(e) => {
+                setDetectFailed(false);
+                set({ baseUrl: e.target.value });
+              }}
+              // Detection on leaving the field (custom / user-defined groups): only a
+              // probeable URL the user actually changed in this dialog triggers a run —
+              // typing never fires requests, and a click-through must not rewrite a working
               className="font-mono"
               // Reserve room so the typed URL never slides under the suffix. Input and
-              // suffix share the same monospace size, so the suffix width is exactly its
-              // character count in ch (plus the right offset and a small gap).
-              style={{ paddingRight: `calc(${protocolPath.length}ch + 1.25rem)` }}
-              // The suffix itself is hover-transparent (pointer-events-none), so the
-              // explanation rides on the input's title.
+              // suffix share the same monospace size, so the suffix width is its display
+              // width in ch (CJK placeholder glyphs count double), plus the right offset
+              // and — for the interactive version — its padding, gap and chevron. The
+              // picker never changes width between states, so this holds for all of them.
+              style={{
+                paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + ${showProtocolPicker ? "2.25rem" : "1.25rem"})`,
+              }}
+              // The read-only suffix is hover-transparent (pointer-events-none), so the
+              // explanation rides on the input's title; the picker carries its own.
               title={S.models.baseUrlSuffixTitle}
               placeholder={preset ? S.models.baseUrlHint : "https://…"}
             />
-            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
-              {protocolPath}
-            </span>
-          </span>
+            {showProtocolPicker ? (
+              <div className="absolute inset-y-0 right-1 flex items-center">
+                <ProtocolSuffixMenu
+                  value={protocolChoice}
+                  path={suffixLabel}
+                  detecting={detecting}
+                  tone={detectFailed ? "warn" : null}
+                  onPick={pickProtocol}
+                />
+              </div>
+            ) : (
+              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-xs text-gray-400">
+                {protocolPath}
+              </span>
+            )}
+          </div>
           {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
-        </label>
+          {/* No detection verdict is rendered here (per maintainer): a result must not take
+              up room in the form. Both outcomes are toasts, and where the protocol ENDED UP
+              is already visible in the suffix above, which is the thing that actually holds
+              it. Nothing conditional remains below the field, so the idle and post-detection
+              layouts are identical — no reserved height, no shift. */}
+        </div>
 
         {/* 3) Context window + max output tokens side by side (one row): the "Token" unit
             sits inside each box as a muted right suffix. Placeholders cannot scroll, so at
@@ -1736,9 +2094,12 @@ function ModelDialog({
         {!isNew && identityFields}
         {/* Legacy entries carrying a client_type other than the standard openai-chat
             (historical config): read-only display. Compared canonically so the deprecated
-            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either. */}
+            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either, and
+            skipped when the protocol selector above already represents it (generic protocol
+            types in custom-like groups are editable there). */}
         {!isNew &&
           !preset &&
+          !showProtocolSelector &&
           form.clientType &&
           canonicalClientType(form.clientType) !== "openai-chat" && (
             <p className="text-xs text-gray-400 dark:text-gray-500">
@@ -1753,19 +2114,43 @@ function ModelDialog({
             proxy model (describe_image). */}
         {!preset && (
           <div>
-            <label
-              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-            >
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                {S.models.vision}
-              </span>
-              <Switch
-                checked={form.vision}
-                disabled={!canEdit}
-                onChange={(vision) => set({ vision })}
-                aria-label={S.models.vision}
-              />
-            </label>
+            {/* Detect sits inline after the switch — the protocol control's idiom, but next
+                to the setting it fills in rather than at a field's top-right, since this row
+                has no field to hang off. Always clickable, single-flight, toast-only, like
+                protocol detection; it just costs a real (tiny) completion, so it never runs
+                on its own. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <label
+                className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+              >
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                  {S.models.vision}
+                </span>
+                <Switch
+                  checked={form.vision}
+                  disabled={!canEdit}
+                  onChange={(vision) => set({ vision })}
+                  aria-label={S.models.vision}
+                />
+              </label>
+              {canEdit && (
+                <button
+                  type="button"
+                  disabled={visionDetecting}
+                  onClick={() => void detectVisionFromButton()}
+                  title={S.models.detectVisionHint}
+                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                >
+                  {visionDetecting && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                    />
+                  )}
+                  {visionDetecting ? S.models.detectingVision : S.models.detectVision}
+                </button>
+              )}
+            </div>
             {!form.vision && (
               <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                 {S.models.visionOffProxyHint}
@@ -1785,7 +2170,7 @@ function ModelDialog({
           onConfirm={() => {
             const action = confirming;
             setConfirming(null);
-            submit(action);
+            void submit(action);
           }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
