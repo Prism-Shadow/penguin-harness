@@ -1,4 +1,4 @@
-# Thinking-level labels split by surface, and a summarize compaction drops its outcome notice
+# Thinking-level labels split by surface, and the compaction row names its mode
 
 - **Date:** 2026-08-19
 - **Type:** fix
@@ -7,7 +7,7 @@
 
 [中文版](2026-08-19-thinking-label-and-compaction-notice.zh.md)
 
-Two corrections to what the chat UI prints. The Chinese thinking-level label stopped carrying the wire value on every surface and now carries it only where a tier is picked, and a completed `summarize` compaction stopped restating what the row's own expandable body already shows.
+Two corrections to what the chat UI prints. The Chinese thinking-level label stopped carrying the wire value on every surface and now carries it only where a tier is picked, and the compaction step row started naming what it actually did — a step that clears the context is no longer announced as compaction — which left neither mode with an outcome line to write.
 
 ## Thinking-level labels
 
@@ -18,5 +18,7 @@ Two corrections to what the chat UI prints. The Chinese thinking-level label sto
 
 ## Compaction row
 
-- A completed `summarize` compaction renders no outcome text at all: `compactionDone` returns undefined for that mode and `StepBanner` omits the detail slot, leaving the status icon, the title, the wall time, and the chevron that opens the summary itself.
-- A `discard` compaction kept its notice — 已丢弃旧上下文 / "old context discarded" — the one outcome the row cannot show any other way, since that mode writes no summary body to expand.
+- The row's title names its mode. A `summarize` step stays 压缩 / "Compaction"; a `discard` step became 清空 / "Clear", because it drops the old context rather than compacting it, and labelling that compaction was the confusing part.
+- With the mode in the title, a settled row writes no outcome text in either mode: it renders as status icon, title and wall time, plus — on a `summarize` — the chevron that opens the adopted summary. The `已丢弃旧上下文` / "old context discarded" strings and the `compactionDone` helper that chose between them were deleted from both catalogs.
+- The running row stopped repeating the mode as a raw `summarize` / `discard` in its detail slot; that was the untranslated wire value, and the title carries it now.
+- A failed or aborted compaction still states why, in both modes: the reason is the one thing the title cannot carry.

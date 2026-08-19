@@ -1,5 +1,6 @@
 /**
- * compaction-summary.ts: the text a compaction row shows inside its collapsed body.
+ * What a compaction row shows: the text inside its collapsed body (compaction-summary.ts)
+ * and the title above it (the dictionaries' mode-aware `compactionTitle`).
  *
  * The row itself is a StepBanner with the summary as its `children`, so it is collapsed by
  * default and carries the chevron exactly like a thinking block — the reader expands it to
@@ -8,6 +9,8 @@
  * and renders no React).
  */
 import { describe, expect, it } from "vitest";
+import { en } from "../src/lib/strings-en";
+import { zh } from "../src/lib/strings";
 import { compactionSummaryText } from "../src/lib/omni/compaction-summary";
 
 describe("compactionSummaryText", () => {
@@ -31,5 +34,31 @@ describe("compactionSummaryText", () => {
     expect(compactionSummaryText({})).toBe("");
     expect(compactionSummaryText({ summaryText: "" })).toBe("");
     expect(compactionSummaryText({ summaryText: "   " })).toBe("");
+  });
+});
+
+describe("compactionTitle (the row is titled by its mode)", () => {
+  it("names a summarize row compaction and a discard row clear, in both locales", () => {
+    expect(zh.chat.compactionTitle("summarize")).toBe("压缩");
+    expect(zh.chat.compactionTitle("discard")).toBe("清空");
+    expect(en.chat.compactionTitle("summarize")).toBe("Compaction");
+    expect(en.chat.compactionTitle("discard")).toBe("Clear");
+  });
+
+  it("never labels a discard as compaction — the whole point of titling by mode", () => {
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      expect(
+        dict.chat.compactionTitle("discard"),
+        `${locale} still calls a discard a compaction`,
+      ).not.toBe(dict.chat.compactionTitle("summarize"));
+    }
+  });
+
+  it("falls back to the compaction title for any other mode (an unknown/legacy value)", () => {
+    expect(zh.chat.compactionTitle("")).toBe("压缩");
+    expect(en.chat.compactionTitle("future-mode")).toBe("Compaction");
   });
 });

@@ -1286,9 +1286,7 @@ Scenarios:
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
-    compactionTitle: "Compaction",
-    compactionDone: (mode: string): string | undefined =>
-      mode === "discard" ? "old context discarded" : undefined,
+    compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined

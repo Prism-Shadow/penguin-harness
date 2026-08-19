@@ -1244,10 +1244,8 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    compactionTitle: "压缩",
-    /** Only `discard` carries a notice, because losing the old context is the one outcome the row cannot show by itself. A `summarize` compaction renders its adopted summary in the row's own expandable body, so the settled row states completion through its icon and wall time and returns undefined here — StepBanner then omits the detail slot entirely. */
-    compactionDone: (mode: string): string | undefined =>
-      mode === "discard" ? "已丢弃旧上下文" : undefined,
+    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
