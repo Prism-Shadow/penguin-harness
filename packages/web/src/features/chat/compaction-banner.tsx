@@ -1,7 +1,9 @@
 /**
  * Compaction row: one StepBanner across running/done/failed (same shell as the MCP
  * connect row and the reasoning-&-tools group header) — mode while running, outcome plus
- * wall time once settled, failures on a single line.
+ * wall time once settled, failures on a single line. A settled `summarize` gets no outcome
+ * text at all: `compactionDone` returns undefined for it, StepBanner drops the detail slot,
+ * and the row reads icon + title + wall time + chevron, with the summary itself one click away.
  *
  * The summary is **collapsed by default, exactly like a thinking block**: the row carries
  * the chevron from the moment a summarize compaction starts, and the text the compaction

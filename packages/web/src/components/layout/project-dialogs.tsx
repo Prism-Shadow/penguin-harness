@@ -600,6 +600,11 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                 </option>
               ))}
             </Select>
+            {/* Plain tier names, not the composer dropdown's annotated variant: a native
+                <select> paints the picked option's own text on the collapsed control, so
+                annotating the rows here would also put "(xhigh)" on what is, once closed,
+                a trigger. Matches the approval-mode select directly above, whose options
+                are plain localized names too. */}
             <Select
               label={S.chat.thinkingLevel}
               size="sm"

@@ -10,8 +10,16 @@
  * dialog's "compact, then switch" choice decides — from the transcript alone — whether the
  * compaction it started completed (apply the pick), settled without completing (keep the
  * level and say so), or is still in flight.
+ *
+ * Plus a drift guard over the REAL dictionaries (the rest of this file works against the
+ * local NAMES stub): every tier core accepts has to be named in both locales, and the
+ * trigger/menu split has to hold — no tier can go unlabelled, and no wire value can leak
+ * back onto a trigger, without a test failing here.
  */
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CHAT_THINKING_LEVELS } from "@prismshadow/penguin-core";
+import { en } from "../src/lib/strings-en";
+import { zh } from "../src/lib/strings";
 import {
   SELECTABLE_THINKING_LEVELS,
   THINKING_LEVELS,
@@ -53,6 +61,46 @@ describe("thinking level lists", () => {
       "xhigh",
       "max",
     ]);
+  });
+});
+
+describe("tier names track core, and the trigger/menu split holds", () => {
+  const dictionaries: ReadonlyArray<readonly [string, typeof zh]> = [
+    ["zh", zh],
+    ["en", en],
+  ];
+
+  it("offers exactly the tiers core accepts as a chat default", () => {
+    expect([...SELECTABLE_THINKING_LEVELS]).toEqual([...DEFAULT_CHAT_THINKING_LEVELS]);
+  });
+
+  it("names every stored level in both locales — a new tier cannot ship unlabelled", () => {
+    for (const [locale, dict] of dictionaries) {
+      // THINKING_LEVELS ⊇ DEFAULT_CHAT_THINKING_LEVELS: the extra "none" is never offered
+      // but still has to display, so the table has to cover it too.
+      for (const level of THINKING_LEVELS) {
+        const name = dict.chat.thinkingLevelNames[level];
+        expect(name, `${locale} has no name for the ${level} tier`).toBeTruthy();
+      }
+    }
+  });
+
+  it("keeps the wire value off the zh trigger name and puts it on the zh menu row", () => {
+    for (const level of THINKING_LEVELS) {
+      const name = zh.chat.thinkingLevelNames[level] ?? "";
+      // The maintainer's rule for the trigger: Chinese only — no latin letters, no parens.
+      expect(name, `zh ${level} must not carry the wire value`).not.toMatch(/[A-Za-z()]/);
+      // ...and the menu row is where that value belongs.
+      expect(zh.chat.thinkingLevelMenuName(name, level)).toBe(`${name} (${level})`);
+    }
+  });
+
+  it("leaves en unsplit: its name already is the wire value, so the menu adds nothing", () => {
+    for (const level of THINKING_LEVELS) {
+      const name = en.chat.thinkingLevelNames[level] ?? "";
+      expect(name).toBe(level);
+      expect(en.chat.thinkingLevelMenuName(name, level)).toBe(name);
+    }
   });
 });
 

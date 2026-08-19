@@ -87,22 +87,25 @@ test("a stale steer response after reload queues the follow-up instead of strand
   // This conversation already has history, so the mid-chat switch guard (#310) stages the
   // pick behind its dialog instead of applying it. Cancel first: the guard must leave the
   // displayed level exactly where it was, never half-applied.
+  // The trigger carries the plain Chinese name ("中"); only the menu rows annotate it with the
+  // wire value ("高 (high)"), which is why the two are matched differently here.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
-  await expect(thinkingBtn).toContainText("中 (medium)");
+  await expect(thinkingBtn).toContainText("中");
+  await expect(thinkingBtn).not.toContainText("medium");
   await thinkingBtn.click();
   await page.getByRole("button", { name: "高 (high)", exact: true }).click();
   // The dialog's title is its accessible name, not body text — assert on its choices.
   await expect(page.getByRole("button", { name: "仍要切换", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "压缩后切换", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "取消", exact: true }).click();
-  await expect(thinkingBtn).toContainText("中 (medium)");
+  await expect(thinkingBtn).toContainText("中");
 
   // Now switch for real: a compaction cannot start while the task runs, so "压缩后切换" is
   // disabled here and "仍要切换" is the applying choice.
   await thinkingBtn.click();
   await page.getByRole("button", { name: "高 (high)", exact: true }).click();
   await page.getByRole("button", { name: "仍要切换", exact: true }).click();
-  await expect(thinkingBtn).toContainText("高 (high)");
+  await expect(thinkingBtn).toContainText("高");
 
   await composer.fill("hello after reload");
   const followUpPost = page.waitForResponse((response) =>
