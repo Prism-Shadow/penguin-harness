@@ -59,7 +59,7 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `provider` | Provider 分组；与 `model_id` 共同构成条目唯一键 |
 | `model_id` | 上游请求 id，原样发送给 AgentHub |
 | `context_window` | 上下文窗口大小 |
-| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断。自定义端点使用通用协议客户端 `openai-responses` / `ant-messages` / `openai-chat`（Web 对话框可按 base URL 自动检测；`openai` 仍是 `openai-chat` 的别名） |
+| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断。自定义端点使用通用协议客户端 `openai-responses` / `ant-messages` / `openai-chat`(Web 对话框可按 base URL 检测其中哪一种；0.4.2 之前的旧写法 `openai` 为 `openai-chat` 的已废弃别名，读取时归一化) |
 | `display_name` | 展示名；仅在与内置目录不同时持久化 |
 | `vision` | 是否支持图片输入；缺省视为支持 |
 | `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |

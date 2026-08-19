@@ -190,6 +190,9 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
+| GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表 |
+| POST | /processes/:processId/kill | 停止一个后台进程（对整个进程组先 SIGTERM、宽限期后 SIGKILL），条目随之从列表消失；已不存在时 404 `process_not_found` |
+| DELETE | /processes/:processId | 从列表移除一个**已退出**的进程条目：仍在运行时 409 `process_running`（应改用停止），已不存在时 404 `process_not_found`。条目连同该进程已捕获的输出一起离开运行时注册表，此后对该 `process_id` 调用 `input_command` 会失败 |
 | GET | /files?path= | 浏览 Workspace 目录 |
 | GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |

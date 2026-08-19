@@ -625,7 +625,6 @@ export const zh = {
     editRequirementPlaceholder: "描述要怎么改（可留空，跳转后在对话中补充）",
     editPromptLabel: "引导语预览",
     editCopyPrompt: "复制 Prompt",
-    editCopied: "已复制",
     editOpenChat: "打开新对话",
     delete: "删除",
     deleteTitle: "删除这条记忆？",
@@ -793,7 +792,6 @@ export const zh = {
     importPromptTail:
       "安装前请完整阅读全部内容，确认安全、无恶意指令后再写入，并向我说明它的用途。如果你安装了 skill-porting 技能，请先阅读并按其流程处理。",
     importCopyPrompt: "复制 Prompt",
-    importCopied: "已复制到剪贴板",
     importOpenChat: "打开新对话",
     importUploadTitle: "上传技能 zip 包",
     importUploadDesc: "zip 根目录为 SKILL.md，或仅含一个内含 SKILL.md 的顶层目录。",
@@ -1104,12 +1102,16 @@ Benchmark：
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
     copySessionId: "复制 Session id",
-    /** Info-dropdown trace row: labels the Session's trace file path (clicking deep-links to the Trace page). */
+    /** Info-dropdown trace row: labels the Session's trace file, shown as its NAME (clicking deep-links to the Trace page; the button beside it copies the full path). */
     traceFile: "轨迹文件",
-    /** Info-dropdown list of background processes the conversation started, and its per-row actions. */
+    copyTracePath: "复制完整路径",
+    /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "会话进程",
     processStop: "停止",
     processExited: "已退出",
+    processRemove: "移除",
+    /** Remove button tooltip: removal also drops the output captured from that process. */
+    processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
     /** Header chip title: count of the conversation's still-running background processes. */
     runningServices: (n: number) => `${n} 个运行中的服务`,
     statTokens: "Token 累计",

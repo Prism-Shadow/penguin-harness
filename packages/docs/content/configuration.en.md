@@ -59,7 +59,7 @@ Model entry (`[[models]]`) fields:
 | `provider` | Provider group; together with `model_id` forms the entry's unique key |
 | `model_id` | Upstream request id, sent to AgentHub unchanged |
 | `context_window` | Context window size |
-| `client_type` | AgentHub client protocol; inferred from `model_id` by default — custom endpoints use a generic protocol client: `openai-responses`, `ant-messages`, or `openai-chat` (auto-detected from the base URL in the Web dialog; the bare `openai` stays an alias of `openai-chat`) |
+| `client_type` | AgentHub client protocol; inferred from `model_id` by default — custom endpoints use a generic protocol client: `openai-responses`, `ant-messages`, or `openai-chat` (the Web dialog can detect which one a base URL serves; the pre-0.4.2 `openai` spelling is a deprecated alias of `openai-chat`, normalized on read) |
 | `display_name` | Display name; persisted only when it differs from the built-in catalog |
 | `vision` | Whether image input is supported; defaults to supported |
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |

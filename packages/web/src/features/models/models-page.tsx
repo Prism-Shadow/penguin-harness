@@ -65,6 +65,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
+  canonicalClientType,
   catalogEntryFor,
   modelHomepageUrl,
   providerInfo,
@@ -168,13 +169,13 @@ export function decimalOnly(v: string): string {
 
 /**
  * Moving an existing model to Custom keeps a generic protocol client type (protocol
- * detection / the in-field picker manage those) and otherwise switches to the
- * OpenAI-compatible client — an unroutable or vendor-pinned type must not leak into a
- * custom group.
+ * detection / the in-field picker manage those) and otherwise switches to the generic
+ * OpenAI Chat Completions client — an unroutable or vendor-pinned type must not leak
+ * into a custom group.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
   if (provider !== "custom") return current;
-  return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai";
+  return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai-chat";
 }
 
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
@@ -208,7 +209,7 @@ export interface RowState {
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
-  /** AgentHub client protocol: defaults for preset models (auto-routed), "openai" for new custom models; kept as-is, not user-editable. */
+  /** AgentHub client protocol: defaults for preset models (auto-routed), "openai-chat" for new custom models; kept as-is, not user-editable. */
   clientType: string;
   cacheRead: string;
   cacheWrite: string;
@@ -1088,7 +1089,7 @@ function ModelDialog({
     // New model: protocol follows group semantics — a first-party vendor group
     // doesn't persist client_type (AgentHub auto-routes by upstream id, with env fallback
     // resolved live from the id); custom / user-defined groups / gateways use a fixed
-    // openai protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
+    // openai-chat protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
     // endpoint base URL. provider keeps the entry point's original value (a user-defined
     // group must not collapse into custom), stored as a separate field from model_id, with
     // no concatenation on save.
@@ -1102,7 +1103,7 @@ function ModelDialog({
       vision: true,
       contextWindow: "",
       maxTokens: "",
-      clientType: vendorAdd ? "" : "openai",
+      clientType: vendorAdd ? "" : "openai-chat",
       cacheRead: "",
       cacheWrite: "",
       output: "",
@@ -1893,14 +1894,16 @@ function ModelDialog({
 
         {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}
-        {/* Legacy entries carrying a non-openai client_type (historical config): read-only
-            display — unless the protocol selector above already represents it (generic
-            protocol types in custom-like groups are editable there). */}
+        {/* Legacy entries carrying a client_type other than the standard openai-chat
+            (historical config): read-only display. Compared canonically so the deprecated
+            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either, and
+            skipped when the protocol selector above already represents it (generic protocol
+            types in custom-like groups are editable there). */}
         {!isNew &&
           !preset &&
           !showProtocolSelector &&
           form.clientType &&
-          form.clientType !== "openai" && (
+          canonicalClientType(form.clientType) !== "openai-chat" && (
             <p className="text-xs text-gray-400 dark:text-gray-500">
               {S.models.clientTypeLocked(form.clientType)}
             </p>

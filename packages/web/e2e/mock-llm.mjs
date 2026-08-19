@@ -13,6 +13,9 @@
  *  - "background server test" -> tool_use(exec_command) whose command outlives its yield
  *    window (processes.spec: the promoted background process shows in the session's
  *    process list and can be stopped from there)
+ *  - "background exit test" -> tool_use(exec_command) whose command outlives the yield
+ *    window but exits on its own shortly after (processes.spec: the exited row can be
+ *    removed from the process list)
  *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
@@ -306,6 +309,19 @@ const server = http.createServer((req, res) => {
     if (flat.includes("background server test") && !hasToolResult) {
       block(res, 0, { type: "tool_use", id: "toolu_bg_1", name: "exec_command", input: {} }, [
         { type: "input_json_delta", partial_json: '{"cmd": "sleep 600",' },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Background process that EXITS on its own (processes.spec: the exited row keeps its
+    // "已退出" label and gains a remove button that deletes the entry from the list). The
+    // command outlives the 300ms yield window — so it is promoted to background — and
+    // exits ~200ms later, leaving an exited entry behind.
+    if (flat.includes("background exit test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_bgexit_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "sleep 0.5",' },
         { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
       ]);
       messageStop(res, "tool_use", 14);

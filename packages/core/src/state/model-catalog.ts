@@ -1,7 +1,9 @@
 /**
  * Built-in model catalog (single source of truth): official chat models that AgentHub can
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
- * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03, per each provider's docs).
+ * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
+ * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
+ * 2026-08-18, per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -18,12 +20,24 @@
  * Scope: excludes deepseek-chat / deepseek-reasoner legacy aliases that AgentHub cannot
  * auto-route (deprecated 2026-07-24), glm-5v-turbo (image input unsupported by AgentHub's GLM
  * client), the OpenRouter z-ai/glm-5.1 and SiliconFlow Pro/zai-org/GLM-5.1 gateway listings
- * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), non-chat models (embedding / image
- * generation / TTS), and Bedrock. Direct-vendor ids are auto-routed by AgentHub and leave
- * client_type unset; the five gateway groups (OpenRouter, Fireworks AI, SiliconFlow, Qwen
- * Token Plan, Qwen Pay-As-You-Go) can't be auto-routed, so they set `client_type: "openai"`
- * and inline their preset base URL. The MiniMax M3 preset pins AgentHub's first-party
- * `minimax-m3` protocol and direct API endpoint.
+ * (delisted 2026-08-06; the Z.AI direct glm-5.1 remains), the OpenRouter
+ * inclusionai/ling-3.0-flash:free listing (delisted from OpenRouter, removed 2026-08-18),
+ * non-chat models (embedding / image generation / TTS), and Bedrock. Direct-vendor ids are
+ * auto-routed by AgentHub and leave client_type unset; the five gateway groups (OpenRouter,
+ * Fireworks AI, SiliconFlow, Qwen Token Plan, Qwen Pay-As-You-Go) can't be auto-routed, so
+ * every gateway row **always pins an explicit client_type** and inlines its preset base URL.
+ * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
+ * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
+ * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
+ * GPT-5.6 client aimed at a gateway, and `anthropic/claude-opus-4.8` would throw outright
+ * (dotted "4.8" matches neither "4-8" nor "-5"). Two protocols are pinned:
+ * - `openai-chat` for most rows (AgentHub 0.4.2's canonical name for the generic Chat
+ *   Completions client — the bare "openai" spelling is a deprecated upstream alias, see
+ *   canonicalClientType);
+ * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
+ *   OpenAI Responses server (see the OpenRouter block comment for why only those rows).
+ * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
+ * endpoint.
  *
  * This file imports no Node built-ins (type-only imports only), so it can be bundled directly
  * for the browser.
@@ -92,10 +106,12 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://platform.deepseek.com/api_keys",
     modelsUrl: "https://api-docs.deepseek.com/quick_start/pricing",
   },
-  // Gateways (their model ids can't be auto-routed by AgentHub, so they always use
-  // client_type=openai + a preset base URL): they go through AgentHub's OpenAI client, so when
-  // credential is blank the SDK reads **OPENAI_API_KEY / OPENAI_BASE_URL** (not the provider's
-  // own var names) - the env fallback hint must reflect that accurately.
+  // Gateways (their model ids can't be auto-routed by AgentHub, so they always pin an
+  // explicit client_type + a preset base URL): they go through one of AgentHub's generic
+  // OpenAI-protocol clients - openai-chat (Chat Completions) for most rows, openai-responses
+  // for the OpenRouter openai/* rows - and *both* read **OPENAI_API_KEY / OPENAI_BASE_URL**
+  // when the credential is blank (not the provider's own var names), so the env fallback hint
+  // is the same either way and must reflect that accurately.
   {
     id: "openrouter",
     label: "OpenRouter",
@@ -217,13 +233,18 @@ function usd(cacheRead: number, cacheWrite: number, output: number): ModelPricin
  * order is precomputed by hand right here — no runtime sorting anywhere.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
-  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output) --
+  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
+  // from api-docs.deepseek.com/quick_start/pricing after the official price increase
+  // introduced time-based tiers: the rows store the OFF-PEAK tier (the lower published
+  // price, issue #313's display choice); peak hours (Beijing 9:00-12:00 and 14:00-18:00)
+  // bill exactly double every bucket, so peak usage is underestimated 2x (same single-rate
+  // limitation as the long-context surcharges in the file header). --
   {
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.02, 1, 2),
+    pricing: cny(0.05, 1.5, 4.5),
     supportsVision: false,
   },
   {
@@ -231,20 +252,42 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.025, 3, 6),
+    pricing: cny(0.15, 4.5, 13.5),
     supportsVision: false,
   },
   // -- OpenRouter (gateway: OpenAI-compatible protocol, preset base URL). Prices re-read in
   // one pass on 2026-08-07 from the models API (/api/v1/models; the API is authoritative
-  // where a model's web page disagrees): cache_read stores the published input_cache_read
-  // (falling back to the input price for the few rows without one — the :free rows); cache_write stores
+  // where a model's web page disagrees); the DeepSeek rows, the rows added on 2026-08-18
+  // (gemini-3.7-flash, grok-4.6, deepseek-v4-pro-0813, glm-5.3, the openai/* additions) and
+  // every pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
+  // pages and the per-model endpoints API.
+  //
+  // Protocol: rows pin `openai-chat` except the `openai/*` rows, which pin
+  // `openai-responses` - OpenRouter serves the Responses API at {base}/responses (the same
+  // https://openrouter.ai/api/v1 base URL these rows already carry), and AgentHub 0.4.2
+  // verified that pairing live. The switch is deliberately limited to the OpenAI family:
+  // OpenRouter will translate /responses for any upstream, but the Responses client leans on
+  // OpenAI-specific reasoning-item round-tripping (replaying encrypted_content / signature /
+  // summary and the assistant `phase`), which is only guaranteed when the upstream is
+  // genuinely OpenAI. Non-OpenAI rows therefore stay on Chat Completions.
+  //
+  // Price buckets: cache_read stores the published input_cache_read
+  // (falling back to the input price for the rows without one — the :free rows and the
+  // GPT Pro tiers, which publish no cache discount); cache_write stores
   // input_cache_write only when it is a genuine per-token write premium (the Anthropic, GPT
   // and qwen3.8-max rows, 1.25x input) —
   // Gemini's field is an hourly cache-STORAGE rate, not a per-token price, so those rows
   // keep the input price — and otherwise also carries the input price. The :free tier and
   // the openrouter/free Free Models Router store a genuine $0 price (not "unknown"), so
   // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
-  // product-line policy) even where the gateway page omits the modality. --
+  // product-line policy) even where the gateway page omits the modality.
+  //
+  // Discounts: these rows store what OpenRouter actually BILLS, so an active promotion is
+  // stored at its discounted rate (unlike the direct-vendor rows, which keep the list price).
+  // The endpoints API exposes the running promotion as `pricing.discount` on the default
+  // endpoint; rows sitting on one say so and name the rate to restore, because a lapsed
+  // promotion silently doubles the real cost — that is exactly how the gpt-5.6-terra and
+  // gpt-5.6-luna rows drifted 2x low before the 2026-08-18 re-read. --
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -252,7 +295,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -262,7 +305,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -272,7 +315,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -282,7 +325,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -292,7 +335,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.2, 2.5, 10),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -300,9 +343,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash 0731",
     provider: "openrouter",
     contextWindow: 1000000,
-    pricing: usd(0.018, 0.09, 0.18),
+    pricing: usd(0.0157192, 0.078596, 0.157192),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -310,9 +353,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash",
     provider: "openrouter",
     contextWindow: 1000000,
-    pricing: usd(0.01764, 0.0882, 0.1764),
+    pricing: usd(0.0168, 0.0679, 0.168),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // The 0813 general-availability release of DeepSeek V4 Pro (OpenRouter listing dated
+    // 2026-08-12); the default routed endpoint is DeepSeek's own API, so the price matches
+    // the official USD list, and the context window is the default endpoint's 1,048,576.
+    modelId: "deepseek/deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.022, 0.66, 1.98),
+    supportsVision: false,
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -320,9 +376,25 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: "openrouter",
     contextWindow: 1000000,
-    pricing: usd(0.003625, 0.435, 0.87),
+    pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Same Gemini cache conventions as the gemini-3.6-flash row below. The stored rates are
+    // what OpenRouter currently bills: the default Google endpoint runs `discount: 0.75` off
+    // the $0.15/$1.50/$7.50 list price (Google's launch discount through 2026-12-31, which
+    // OpenRouter deepens further), so it bills $0.0375/$0.375/$1.875 — re-read when the
+    // discount ends, and restore the $0.15/$1.50/$7.50 list then (the direct-vendor row
+    // stores that list price already).
+    modelId: "google/gemini-3.7-flash",
+    displayName: "Gemini 3.7 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.0375, 0.375, 1.875),
+    supportsVision: true,
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -336,7 +408,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -346,7 +418,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -358,20 +430,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "openai",
-    baseUrl: OPENROUTER_BASE_URL,
-  },
-  {
-    // inclusionAI's free tier of Ling-3.0-flash (released 2026-07-23): 124B-param MoE with
-    // ~5.1B active params per token, text-only; context and $0 pricing per the OpenRouter
-    // models API (2026-07-24).
-    modelId: "inclusionai/ling-3.0-flash:free",
-    displayName: "Ling 3.0 Flash (free)",
-    provider: "openrouter",
-    contextWindow: 262144,
-    pricing: usd(0, 0, 0),
-    supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -382,7 +441,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -392,7 +451,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.3, 3, 15),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -402,7 +461,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.0992, 0.589, 2.48),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -412,50 +471,109 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
+  // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
+  // gateway rows on the Responses protocol (see the block comment). Their context windows
+  // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
   {
-    // The page shows the $0.10/$0.60 rate under a "50% off" banner; the models API bills the
-    // same numbers (with real hit/write prices), so this row stores them — re-read when the
-    // promotion ends.
+    // The 50% promotion this row used to store has ended: OpenRouter now bills the full
+    // $0.20/$1.20 rate (endpoints API `discount: 0`), so the stored rates doubled on the
+    // 2026-08-18 re-read.
     modelId: "openai/gpt-5.6-luna",
     displayName: "GPT-5.6 Luna",
     provider: "openrouter",
-    contextWindow: 1000000,
-    pricing: usd(0.01, 0.125, 0.6),
+    contextWindow: 1050000,
+    pricing: usd(0.02, 0.25, 1.2),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Running a `discount: 0.5` promotion as of 2026-08-18, so OpenRouter bills half the
+    // $0.50/$6.25/$30 list price — restore the list rates when the promotion ends.
     modelId: "openai/gpt-5.6-sol",
     displayName: "GPT-5.6 Sol",
     provider: "openrouter",
-    contextWindow: 1000000,
-    pricing: usd(0.5, 6.25, 30),
+    contextWindow: 1050000,
+    pricing: usd(0.25, 3.125, 15),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Same lapsed promotion as the luna row: now billed at the full $2/$12 rate.
     modelId: "openai/gpt-5.6-terra",
     displayName: "GPT-5.6 Terra",
     provider: "openrouter",
-    contextWindow: 1000000,
-    pricing: usd(0.1, 1.25, 6),
+    contextWindow: 1050000,
+    pricing: usd(0.2, 2.5, 12),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
     modelId: "openai/gpt-5.5",
     displayName: "GPT-5.5",
     provider: "openrouter",
-    contextWindow: 1000000,
+    contextWindow: 1050000,
     pricing: usd(0.5, 5, 30),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // No published cache discount (the Pro tiers bill cached input at the standard rate), so
+    // cache_read carries the input price — same convention as the direct gpt-5.5-pro row.
+    modelId: "openai/gpt-5.5-pro",
+    displayName: "GPT-5.5 Pro",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(30, 30, 180),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "openai/gpt-5.4",
+    displayName: "GPT-5.4",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(0.25, 2.5, 15),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "openai/gpt-5.4-mini",
+    displayName: "GPT-5.4 mini",
+    provider: "openrouter",
+    contextWindow: 400000,
+    pricing: usd(0.075, 0.75, 4.5),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    modelId: "openai/gpt-5.4-nano",
+    displayName: "GPT-5.4 nano",
+    provider: "openrouter",
+    contextWindow: 400000,
+    pricing: usd(0.02, 0.2, 1.25),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // No published cache discount, as with gpt-5.5-pro above.
+    modelId: "openai/gpt-5.4-pro",
+    displayName: "GPT-5.4 Pro",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(30, 30, 180),
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -472,7 +590,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 128000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -482,7 +600,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.25, 2.5, 6),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -492,7 +610,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -503,7 +621,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 256000,
     pricing: usd(0.04, 0.2, 1.15),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -513,7 +631,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.033, 0.132, 0.528),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -526,7 +644,19 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.17, 1, 4.05),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // xAI's Grok 4.6 (OpenRouter listing dated 2026-08-12): same $2/$6 input/output rates as
+    // Grok 4.5 with a raised $0.50 cache-hit price.
+    modelId: "x-ai/grok-4.6",
+    displayName: "Grok 4.6",
+    provider: "openrouter",
+    contextWindow: 500000,
+    pricing: usd(0.5, 2, 6),
+    supportsVision: true,
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -536,7 +666,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.3, 2, 6),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -546,7 +676,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.0028, 0.14, 0.28),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // The gateway listing of the direct glm-5.3 row below; OpenRouter's single Z.AI endpoint
+    // passes Z.AI's published price straight through (no discount), which is why the two
+    // rows agree to the cent. Text-only, per the listing's modalities.
+    modelId: "z-ai/glm-5.3",
+    displayName: "GLM-5.3",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -556,7 +699,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.1261, 0.679, 2.134),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: OPENROUTER_BASE_URL,
   },
   // -- Fireworks AI (gateway, standard serverless USD pricing: cached input / uncached
@@ -569,7 +712,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.028, 0.14, 0.28),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -579,7 +722,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.03, 0.14, 0.28),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -589,7 +732,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.15, 1.74, 3.48),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -599,7 +742,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.14, 1.4, 4.4),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -611,7 +754,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.17, 1, 4.05),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -621,7 +764,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.3, 3, 15),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -631,7 +774,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.19, 0.95, 4),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
@@ -641,7 +784,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 524288,
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
   // -- SiliconFlow (gateway, official CNY pricing: cache hit / input / output) --
@@ -652,7 +795,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.02, 1, 2),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
@@ -662,7 +805,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.1, 12, 24),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
@@ -672,7 +815,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.1, 5, 20),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
@@ -682,7 +825,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: cny(1.3, 6.5, 27),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   // The Pro/ and Qwen/ entries below were unpriced until 2026-08-03 (SiliconFlow's price
@@ -695,7 +838,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: cny(1.1, 6.5, 27),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
@@ -706,7 +849,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: cny(1.8, 1.8, 10.8),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
@@ -716,7 +859,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(2, 8, 28),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: SILICONFLOW_BASE_URL,
   },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
@@ -731,7 +874,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.2, 1, 2),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
@@ -741,7 +884,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1, 12, 24),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
@@ -751,7 +894,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
@@ -761,7 +904,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
@@ -771,7 +914,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.4, 2, 8),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   // -- Qwen Pay-As-You-Go (DashScope's OpenAI-compatible pay-per-token marketplace; official
@@ -785,7 +928,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.2, 1, 2),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
@@ -795,7 +938,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: cny(2, 20, 100),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
@@ -805,7 +948,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
@@ -815,7 +958,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(0.4, 2, 8),
     supportsVision: true,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
@@ -825,7 +968,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
-    clientType: "openai",
+    clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard
@@ -841,6 +984,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: MINIMAX_BASE_URL,
   },
   // -- Google Gemini (official USD pricing) --
+  {
+    // Official list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
+    // Google's price page). Google halves all three rates as a launch discount through
+    // 2026-12-31; like other limited-time promotions the discount is not stored (the
+    // OpenRouter row bills — and stores — the halved rates instead).
+    modelId: "gemini-3.7-flash",
+    displayName: "Gemini 3.7 Flash",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    supportsVision: true,
+  },
   {
     modelId: "gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
@@ -933,6 +1088,34 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenAI (official USD pricing) --
   {
+    // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier; served
+    // by AgentHub 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
+    // OpenRouter rows above, which carry the gateway's (currently discounted) rates instead
+    // of this list price.
+    modelId: "gpt-5.6",
+    displayName: "GPT-5.6",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(0.5, 5, 30),
+    supportsVision: true,
+  },
+  {
+    modelId: "gpt-5.6-luna",
+    displayName: "GPT-5.6 Luna",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(0.02, 0.2, 1.2),
+    supportsVision: true,
+  },
+  {
+    modelId: "gpt-5.6-terra",
+    displayName: "GPT-5.6 Terra",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(0.2, 2, 12),
+    supportsVision: true,
+  },
+  {
     modelId: "gpt-5.5",
     displayName: "GPT-5.5",
     provider: "openai",
@@ -984,6 +1167,17 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Z.AI (GLM) --
   {
+    // Announced 2026-08-14 and served by AgentHub 0.4.2's unified GLM client. Z.AI's price
+    // list (docs.z.ai/guides/overview/pricing, read 2026-08-18) publishes the same USD rates
+    // as glm-5.2 / glm-5.1.
+    modelId: "glm-5.3",
+    displayName: "GLM-5.3",
+    provider: "zhipu",
+    contextWindow: 1000000,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+  },
+  {
     modelId: "glm-5.2",
     displayName: "GLM-5.2",
     provider: "zhipu",
@@ -1034,6 +1228,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
 ];
 
+/**
+ * Canonical spelling of an AgentHub client-type string. AgentHub 0.4.2 renamed the generic
+ * Chat Completions client from `openai` to `openai-chat`; the bare `openai` spelling still
+ * routes upstream as a deprecated alias, but the harness converges on the canonical name —
+ * config reads/writes and API request handling all normalize through here, so configs saved
+ * before the rename keep working while comparisons (legacy-protocol display, catalog sync)
+ * see one spelling. Any other value (including `openai-responses` / `openai-embedding`,
+ * which merely contain "openai") passes through unchanged.
+ */
+export function canonicalClientType(clientType: string | undefined): string | undefined {
+  if (clientType === undefined) return undefined;
+  return clientType.trim().toLowerCase() === "openai" ? "openai-chat" : clientType;
+}
+
 /** Looks up a catalog entry by (provider, upstream id) pair (**the sole catalog-matching entry point**); returns undefined if not in the catalog. */
 export function catalogEntryFor(
   provider: string,
@@ -1075,19 +1283,26 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   ) {
     return env("ANTHROPIC");
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5")) return env("OPENAI");
+  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) {
+    return env("OPENAI");
+  }
+  // agenthub 0.4.2's unified GLM client serves the whole glm-5 series (5.3 included).
   if (t.includes("glm-5")) return env("ZAI");
-  // agenthub 0.4.1 routes kimi-k3 to its own client, which reads the same MOONSHOT_* pair.
-  if (t.includes("kimi-k3")) return env("MOONSHOT");
-  if (t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return env("MOONSHOT");
+  // agenthub 0.4.2's unified Kimi client serves the whole K2.5+ series; every spelling reads
+  // the same MOONSHOT_* pair.
+  if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) {
+    return env("MOONSHOT");
+  }
   if (t === "minimax-m3" && modelId.toLowerCase() === "minimax-m3") {
     return env("MINIMAX");
   }
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
-  // Generic protocol clients (agenthub 0.4.2): ant-messages reads the ANTHROPIC_* pair;
-  // openai-responses / openai-chat fall through to the openai branch below (both read
-  // OPENAI_*). Order mirrors AutoLLMClient: ant-messages before the openai substring match.
+  // agenthub 0.4.2's generic Anthropic Messages protocol client reads the ANTHROPIC_* pair.
+  // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
   if (t.includes("ant-messages")) return env("ANTHROPIC");
+  // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
+  // bare "openai" as a deprecated alias), openai-responses and openai-embedding — all read
+  // the OPENAI_* pair.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }
@@ -1097,8 +1312,9 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * explicitly set client_type=openai and inline a preset base_url. The direct MiniMax M3 entry
- * also pins its protocol and endpoint. No secrets are included, so only an API key is needed.
+ * always pin a client_type — openai-chat, or openai-responses for the OpenRouter openai/*
+ * rows — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
+ * endpoint. No secrets are included, so only an API key is needed.
  */
 export function presetModelEntries(): ModelEntry[] {
   return MODEL_CATALOG.map((m) => ({
