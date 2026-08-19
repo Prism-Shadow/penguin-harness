@@ -450,7 +450,7 @@ export interface ChatDefaultsDto {
   /**
    * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
    * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
-   * "none" — only the four selectable tiers.
+   * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
 }
@@ -957,7 +957,7 @@ export interface TaskCreateRequest {
   input: TaskInputPart[];
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
-   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
+   * `none | low | medium | high | xhigh | max`, anything else is a 400). Omitted = falls back to
    * the session's default (the Agent config's `model.thinking_level`). A queued follow-up
    * (`queueIfBusy`) keeps its level and applies it when it auto-starts.
    */

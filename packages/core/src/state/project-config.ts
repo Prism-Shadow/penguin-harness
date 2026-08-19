@@ -114,7 +114,7 @@ export const CHAT_APPROVAL_MODES = ["allow-all", "deny-all", "read-only", "alway
 export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
 
 /**
- * Thinking levels storable in `[default_chat]`: the four selectable tiers only — never
+ * Thinking levels storable in `[default_chat]`: the selectable tiers only — never
  * `"none"` (the project default is a fallback for Agents without an explicit level, and
  * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
  */
@@ -124,6 +124,7 @@ export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
   "medium",
   "high",
   "xhigh",
+  "max",
 ];
 
 /**

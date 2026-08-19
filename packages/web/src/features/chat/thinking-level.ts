@@ -19,15 +19,17 @@
  * legacy config or trace that carries it still displays via the label table below.
  */
 
-/** All five stored/wire levels, for display lookup (mirrors core's ThinkingLevelName). */
-export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh"] as const;
+/** All stored/wire levels, for display lookup (mirrors core's ThinkingLevelName). */
+export const THINKING_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
  * The levels the picker offers, in menu order: "none" is deliberately excluded (many models
  * don't support disabling thinking) — it can still be displayed (a stored legacy value) but
- * never picked.
+ * never picked. "max" carries no such caveat: every AgentHub client maps it onto the deepest
+ * effort its vendor accepts and degrades silently where there is no such tier, so it is
+ * offered like any other tier.
  */
-export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+export const SELECTABLE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 /**
  * Effective thinking level for the draft picker's DISPLAY — the SAME chain core resolves
@@ -48,7 +50,7 @@ export function effectiveThinkingLevel(
 
 /**
  * Short display label for a level from the localized name table (S.chat.thinkingLevelNames).
- * Covers all five stored levels including "none" (so a legacy value displays sanely instead
+ * Covers every stored level including "none" (so a legacy value displays sanely instead
  * of being rewritten or hidden). Returns null for anything else — including "" (an Agent
  * without an explicit override) and session_meta's "default" — so callers can render a
  * placeholder on the trigger and hide the session read-only tag instead of showing a raw

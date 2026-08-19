@@ -73,8 +73,15 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
 ];
 
-/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
-const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
+/** The valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
 /** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
 const MESSAGES_PAGE_LIMIT_MAX = 1000;
@@ -667,7 +674,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
-    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // Per-turn thinking level (optional): validated against the level names; omitted follows
     // the session's default. In goal mode it rides every round of the goal; a queued
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);

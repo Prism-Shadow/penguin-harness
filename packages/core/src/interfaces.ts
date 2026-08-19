@@ -101,7 +101,7 @@ export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<Appr
 // LLM interface
 // ---------------------------------------------------------------------------
 
-export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * GenerativeModel initialization config.
@@ -240,7 +240,7 @@ export interface SubagentHandle {
 
 /**
  * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
- * `thinking_level` argument): the four selectable tiers only — never `"none"`, mirroring the
+ * `thinking_level` argument): the selectable tiers only — never `"none"`, mirroring the
  * user-facing pickers (many models cannot disable thinking; see the web picker's
  * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
  * argument inherits the parent Session's effective level, so a parent genuinely running
@@ -251,6 +251,7 @@ export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
   "medium",
   "high",
   "xhigh",
+  "max",
 ];
 
 /**

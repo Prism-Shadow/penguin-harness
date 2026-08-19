@@ -54,7 +54,7 @@ export function chatDefaultsRoutes(deps: AppDeps): Hono<AppEnv> {
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     if (approvalMode !== undefined) req.approvalMode = approvalMode;
 
-    // Only the four selectable tiers — "none" is rejected (never offered as a default).
+    // Only the selectable tiers — "none" is rejected (never offered as a default).
     const thinkingLevel = optionalEnum(body, "thinkingLevel", DEFAULT_CHAT_THINKING_LEVELS);
     if (thinkingLevel !== undefined) req.thinkingLevel = thinkingLevel;
 

@@ -89,7 +89,9 @@ api_key = "sk-..."
 
 对于 MiniMax M3，`none` 会直接映射为 `reasoning.effort = "none"`。
 
-思考等级共五档：`none | low | medium | high | xhigh`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区拾取器只列出各档位，初始即显示 Agent 配置的档位——用户未手动选择时自动跟随配置下发（请求不携带档位，配置的修改持续生效）；选定某档后即固定为该会话的档位，随之后每次发送携带（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
+DeepSeek V4 只接受 `low`/`high`/`max`，服务端会把 `medium` 与 `xhigh` 都折算成 `high`。AgentHub 0.4.4 让 client 与这套取值对齐，因此在 DeepSeek 模型上，`low` 现在发送 `low`（此前发送 `high`），`xhigh` 现在发送 `high`（此前发送 `max`）：停在 `low` 的会话思考更浅、花费也更少，停在 `xhigh` 的会话思考深度有所下降。想要 DeepSeek 最深的思考档位，请选 `max`。
+
+思考等级共六档：`none | low | medium | high | xhigh | max`，按 Agent 在 `system_config.yaml` 的 `model.thinking_level` 配置，默认 medium。Web 拾取器只提供 `low` 及以上档位（多数模型不支持关闭思考；`none` 仍是合法的已存值，能正常显示）。`max` 是最深的一档：各 client 会把它映射到对应厂商能接受的最深档位，厂商没有这一档时静默降级，因此选它不会失败——在 Gemini 与 MiniMax M3 上它与 `xhigh` 落到同一档。对话草稿页在模型选择器旁提供快捷拾取器：选定档位立即写回所选 Agent 的该项配置（切换后的档位即成为该 Agent 的新默认，自下一个 Session 生效）。进行中的会话里，思考等级是**逐轮参数**：输入区拾取器只列出各档位，初始即显示 Agent 配置的档位——用户未手动选择时自动跟随配置下发（请求不携带档位，配置的修改持续生效）；选定某档后即固定为该会话的档位，随之后每次发送携带（仅作用于该会话的后续 Task，不写回 Agent 配置）。见 [配置参考](/configuration)。
 
 ## 模型与 Agent 解耦
 

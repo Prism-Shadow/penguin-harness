@@ -301,7 +301,11 @@ export const en: Strings = {
       ["high", "Enables a higher tier of extended reasoning; slower responses."],
       [
         "xhigh",
-        "Enables the highest tier of extended reasoning; identical to high on some models.",
+        "Enables an extended tier of reasoning beyond high; identical to high on some models.",
+      ],
+      [
+        "max",
+        "Enables the deepest tier of extended reasoning; slowest and identical to xhigh on some models.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     thinkingLevelNoneKept:
@@ -855,6 +859,7 @@ export const en: Strings = {
       medium: "Medium",
       high: "High",
       xhigh: "Extreme High",
+      max: "Max",
     },
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",

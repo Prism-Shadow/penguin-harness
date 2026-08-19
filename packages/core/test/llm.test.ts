@@ -1019,6 +1019,7 @@ describe("config helpers", () => {
     expect(mapThinkingLevel("medium")).toBe(ThinkingLevel.MEDIUM);
     expect(mapThinkingLevel("high")).toBe(ThinkingLevel.HIGH);
     expect(mapThinkingLevel("xhigh")).toBe(ThinkingLevel.XHIGH);
+    expect(mapThinkingLevel("max")).toBe(ThinkingLevel.MAX);
     expect(mapThinkingLevel(undefined)).toBeUndefined();
   });
 

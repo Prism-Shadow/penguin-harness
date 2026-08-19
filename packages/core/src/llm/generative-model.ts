@@ -1386,6 +1386,7 @@ export function mapThinkingLevel(name: ThinkingLevelName | undefined): ThinkingL
     medium: ThinkingLevel.MEDIUM,
     high: ThinkingLevel.HIGH,
     xhigh: ThinkingLevel.XHIGH,
+    max: ThinkingLevel.MAX,
   };
   return table[name];
 }
