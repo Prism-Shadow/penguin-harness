@@ -2,7 +2,7 @@
  * resolveServerConfig parsing tests.
  *
  * PORT: both the default (missing) and empty string (the common `PORT=` empty value in
- * `.env`) fall back to 7376 — Number("") === 0 used to make the empty string pass range
+ * `.env`) fall back to 7364 — Number("") === 0 used to make the empty string pass range
  * validation and bind to a random port; explicit "0" is preserved (explicit semantics
  * for a random available port); invalid values throw. This matches the CLI's
  * resolvePort semantics (packages/cli serve).
@@ -14,9 +14,9 @@ import { resolveServerConfig } from "../src/config.js";
 const base = { PENGUIN_HOME: "/tmp/penguin-config-test" };
 
 describe("resolveServerConfig: PORT parsing", () => {
-  it("defaults to 7376; empty string treated as unset (does not fall to port 0)", () => {
-    expect(resolveServerConfig({ ...base }).port).toBe(7376);
-    expect(resolveServerConfig({ ...base, PORT: "" }).port).toBe(7376);
+  it("defaults to 7364; empty string treated as unset (does not fall to port 0)", () => {
+    expect(resolveServerConfig({ ...base }).port).toBe(7364);
+    expect(resolveServerConfig({ ...base, PORT: "" }).port).toBe(7364);
   });
 
   it('explicit value takes effect; "0" is preserved (binds a random available port)', () => {

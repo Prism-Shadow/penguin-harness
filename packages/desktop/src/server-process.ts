@@ -104,7 +104,7 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
  * construction, which is what the old remembered-port dance was for, and it is the
  * address a client probes to find this user's server at all. A port already in use is a
  * hard failure here (the server exits without announcing): boot() checks for a live
- * penguin server first and attaches to it instead, so reaching this path with 7376 taken
+ * penguin server first and attaches to it instead, so reaching this path with 7364 taken
  * means something else owns it, which is worth an error rather than a silent second
  * origin.
  */

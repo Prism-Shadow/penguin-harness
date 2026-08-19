@@ -7,7 +7,7 @@ npm install -g @prismshadow/penguin-cli   # requires Node >= 24
 ```
 
 ```bash
-penguin web        # start the Web service and open http://127.0.0.1:7376
+penguin web        # start the Web service and open http://127.0.0.1:7364
 penguin server     # same service, headless
 
 penguin config model add --model-id deepseek-v4-pro --api-key sk-... --set-default

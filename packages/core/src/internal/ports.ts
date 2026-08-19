@@ -19,7 +19,7 @@
  *
  * | port | who                                | where                                       |
  * | ---- | ---------------------------------- | ------------------------------------------- |
- * | 7376 | installed server / Web UI / desktop| `DEFAULT_SERVER_PORT` below                 |
+ * | 7364 | installed server / Web UI / desktop| `DEFAULT_SERVER_PORT` below                 |
  * | 7365 | `pnpm dev:web` (Vite)              | `packages/web/vite.config.ts`               |
  * | 7366 | `pnpm dev:landing` (Vite)          | `packages/landing/vite.config.ts`           |
  * | 7367 | `pnpm dev:docs` (Vite)             | `packages/docs/vite.config.ts`              |
@@ -39,7 +39,9 @@
 
 /**
  * The well-known main server / Web UI port; deliberately avoids common defaults like
- * 3000/8080. Was 7364 through 0.2.2, when it was only a default and the desktop shell
- * bound an ephemeral port instead; it moved with the switch to one probed, fixed address.
+ * 3000/8080. It is an ADDRESS, not merely a default: a client — the desktop shell, an
+ * SSH-tunneled session — finds this user's server by probing this one number, and the
+ * shell binds it rather than an ephemeral port so the app origin (and the renderer's
+ * origin-scoped storage) is stable by construction.
  */
-export const DEFAULT_SERVER_PORT = 7376;
+export const DEFAULT_SERVER_PORT = 7364;
