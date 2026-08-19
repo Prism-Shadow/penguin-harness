@@ -40,6 +40,7 @@ import {
   type ProjectConfig,
   addModel,
   catalogEntryFor,
+  fastModeProtocol,
   formatModelRef,
   getModel,
   loadAgentVault,
@@ -196,6 +197,19 @@ export function registerConfigCommand(program: Command, t: Messages): void {
         ? t.modelUpdated(formatModelRef(ref), defaultRef)
         : t.modelAdded(formatModelRef(ref), defaultRef);
       process.stdout.write(`${line}\n`);
+      // Fast mode on a model whose AgentHub client cannot carry it makes every session
+      // request fail. The Web dialog does not offer the switch there at all, so this flag is
+      // the remaining way into that state: warn rather than silently write a config that only
+      // reveals itself at request time. A warning, not a refusal — the entry may point at an
+      // endpoint whose capability we cannot see from here (see fastModeProtocol).
+      const saved = getModel(cfg, ref);
+      if (
+        opts.fastMode === true &&
+        saved !== undefined &&
+        fastModeProtocol(saved.model_id, saved.client_type, saved.base_url) === undefined
+      ) {
+        process.stderr.write(`${t.config.fastModeUnsupported(formatModelRef(ref))}\n`);
+      }
     });
 
   model

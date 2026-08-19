@@ -89,7 +89,7 @@ penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-ke
 | `--max-tokens <n>` | Per-model max output tokens (positive integer). Overrides the Agent's `model.max_tokens` when set; omit to inherit — lower it for small-context models |
 | `--client-type <type>` | Client protocol type |
 | `--vision` / `--no-vision` | Mark vision input as supported / unsupported |
-| `--fast-mode` / `--no-fast-mode` | Enable / disable fast mode (faster output at premium pricing; off by default — models without a fast tier reject requests carrying it). Omit both to keep the current value |
+| `--fast-mode` / `--no-fast-mode` | Enable / disable fast mode (faster output at premium pricing; off by default). Enabling it on a model whose AgentHub client rejects the parameter still writes the entry but warns on stderr. Omit both to keep the current value |
 | `--price-cache-read <n>` | Cache-read price |
 | `--price-cache-write <n>` | Cache-write price |
 | `--price-output <n>` | Output price |

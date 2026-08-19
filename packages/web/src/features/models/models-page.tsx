@@ -65,11 +65,12 @@ import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
   catalogEntryFor,
+  fastModeProtocol,
   modelHomepageUrl,
   providerInfo,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
 import { protocolPathForModel } from "./protocol-path";
 import {
@@ -306,6 +307,31 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.credential) row.credential = m.credential;
   return row;
+}
+
+/**
+ * Whether the model dialog offers the fast-mode switch for a draft row, and on which protocol
+ * the parameter would travel.
+ *
+ * `protocol` is AgentHub's own answer (see fastModeProtocol): `undefined` means the routed
+ * client rejects `fast_mode` — or the id routes to no client at all — so arming the switch
+ * could only produce a turn-killing error, and it is not offered. `show` adds the one
+ * exception: a row that already stores fast mode keeps its switch regardless, because a
+ * value that arrived another way (a hand-edited config, `penguin config model add
+ * --fast-mode`, or an upstream id renamed afterwards) has to remain switchable off — the
+ * runtime rejection tells the user to turn it off in the model settings, and that has to be
+ * true. `protocol` also picks the warning copy: only Anthropic's fast mode is a gated
+ * research preview.
+ */
+export function fastModeState(
+  row: Pick<RowState, "modelId" | "clientType" | "baseUrl" | "fastMode">,
+): { protocol: FastModeProtocol | undefined; show: boolean } {
+  const protocol = fastModeProtocol(
+    row.modelId.trim(),
+    row.clientType.trim() || undefined,
+    row.baseUrl.trim() || undefined,
+  );
+  return { protocol, show: protocol !== undefined || row.fastMode };
 }
 
 function rowToEntry(row: RowState): ModelUpdateEntry {
@@ -1005,6 +1031,10 @@ function ModelCard({
         {isFreeModel(row) && <Badge tone="yellow">{S.models.freeBadge}</Badge>}
         {row.vision && <Badge tone="green">{S.models.visionBadge}</Badge>}
         {isVisionModel && <Badge tone="amber">{S.models.visionModelBadge}</Badge>}
+        {/* Fast mode moves the model onto a premium price list that the recorded prices do not
+            reflect, so it has to be visible without opening the dialog (amber, like the other
+            badge that flags a standing cost/behavior choice). */}
+        {row.fastMode && <Badge tone="amber">{S.models.fastModeBadge}</Badge>}
       </span>
       {/* Upstream id in small text (grouping already separates by group, no composite id is
           shown anymore); when there's no display name, the main line is already the
@@ -1118,8 +1148,14 @@ function ModelDialog({
    * (Adding a new custom model isn't confirmed: opening the dialog is itself a clear intent.)
    */
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
+  /** Fast mode is being switched ON and awaits the premium-billing warning's confirmation. */
+  const [confirmingFastMode, setConfirmingFastMode] = useState(false);
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+
+  // Read from the live form, not the saved row, so editing the upstream id, the protocol or
+  // the base URL updates the answer as it is typed.
+  const { protocol: fastProtocol, show: showFastMode } = fastModeState(form);
 
   const set = (patch: Partial<RowState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -1774,31 +1810,76 @@ function ModelDialog({
         )}
 
         {/* Fast mode: per-model opt-in to the provider's faster serving tier (premium
-            pricing), editable on every model — preset ones included, since the built-in
-            catalog carries no fast-tier flag. Same inline-switch shape as vision; the one
-            small muted line appears in the non-default (ON) state: what it buys, and that
-            models without a fast tier reject requests carrying it. The label's hover title
-            reveals the same text before toggling. */}
-        <div>
-          <label
-            className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
-            title={S.models.fastModeHint}
-          >
-            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.fastMode}
-            </span>
-            <Switch
-              checked={form.fastMode}
-              disabled={!canEdit}
-              onChange={(fastMode) => set({ fastMode })}
-              aria-label={S.models.fastMode}
-            />
-          </label>
-          {form.fastMode && (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{S.models.fastModeHint}</p>
-          )}
-        </div>
+            pricing). Offered only where AgentHub's routed client actually puts the parameter
+            on the wire (fastModeProtocol) — a model whose client rejects it would otherwise
+            arm a switch that kills the next turn. Same inline-switch shape as vision; the one
+            small muted line appears in the non-default (ON) state, and the label's hover title
+            reveals it before toggling. Enabling is confirmed (premium billing), disabling is
+            immediate. */}
+        {showFastMode && (
+          <div>
+            <label
+              className={`inline-flex items-center gap-2 ${canEdit ? "cursor-pointer" : "cursor-not-allowed"}`}
+              title={S.models.fastModeHint}
+            >
+              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                {S.models.fastMode}
+              </span>
+              <Switch
+                checked={form.fastMode}
+                disabled={!canEdit}
+                onChange={(fastMode) => {
+                  // Only the ON direction is confirmed: it is the one that starts spending at
+                  // premium rates. Turning it off costs nothing and must stay one click — it
+                  // is the documented escape from a model that rejects the parameter.
+                  if (fastMode) setConfirmingFastMode(true);
+                  else set({ fastMode: false });
+                }}
+                aria-label={S.models.fastMode}
+              />
+            </label>
+            {form.fastMode && (
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                {S.models.fastModeHint}
+              </p>
+            )}
+            {/* Reachable only for a stored annotation the rule would not have offered (a
+                hand-edited config, `--fast-mode`, or an id renamed after the fact): the switch
+                is kept visible precisely so it can be turned off, and says why it should be. */}
+            {form.fastMode && fastProtocol === undefined && (
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                {S.models.fastModeUnsupported}
+              </p>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Premium-billing warning, stacked on the config dialog the same way: fast mode moves
+          the model onto the provider's premium price list while the recorded per-token prices
+          stay standard, so the Cost center under-reports it — and on the Anthropic protocol
+          access is a gated research preview that answers 429 until granted. Warning tone (the
+          alert triangle) rather than the save pencil: nothing is being written yet, the point
+          is what enabling costs. */}
+      {confirmingFastMode && (
+        <ConfirmModal
+          open
+          title={S.models.fastModeConfirmTitle}
+          tone="danger"
+          onClose={() => setConfirmingFastMode(false)}
+          onConfirm={() => {
+            setConfirmingFastMode(false);
+            set({ fastMode: true });
+          }}
+        >
+          <p className="text-sm text-gray-700 dark:text-gray-300">{S.models.fastModeConfirmBody}</p>
+          {fastProtocol === "anthropic" && (
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              {S.models.fastModeConfirmPreview}
+            </p>
+          )}
+        </ConfirmModal>
+      )}
 
       {/* Confirmation before writing config (save / set default / set as vision proxy model / remove): stacked on top of the config dialog. */}
       {confirming && (

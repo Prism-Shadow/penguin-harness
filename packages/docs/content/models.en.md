@@ -94,15 +94,29 @@ Five levels: `none | low | medium | high | xhigh`, configured per Agent as `mode
 
 ## Fast mode
 
-Each model entry can opt into the provider's faster serving tier ("Fast mode" toggle in the Web model dialog, `--fast-mode` / `--no-fast-mode` on `penguin config model add`, `fast_mode = true` in the entry). Off by default; existing configs are unaffected.
+Each model entry can opt into the provider's faster serving tier ("Fast mode" toggle in the Web model dialog, `--fast-mode` / `--no-fast-mode` on `penguin config model add`, `fast_mode = true` in the entry). Off by default; existing configs are unaffected. Switching it on asks for confirmation first, because it changes what the model costs.
 
-When enabled, session requests carry AgentHub's `fast_mode` flag: OpenAI-protocol clients send `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"` with the fast-mode beta header. Fast tiers are billed at the provider's premium price list, and the recorded per-token pricing does not adjust for it — costs shown for fast-mode usage are underestimated unless you raise the entry's price buckets.
+When enabled, session requests carry AgentHub's `fast_mode` flag: OpenAI-protocol clients send `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"` with the fast-mode beta header. Fast tiers are billed at the provider's premium price list (MiniMax charges 1.5x its standard rate; OpenAI and Anthropic publish separate premium rates), and the recorded per-token pricing does not adjust for it — costs shown for fast-mode usage are underestimated unless you raise the entry's price buckets.
 
-Support is model/provider dependent and there is no capability flag in the catalog, so the toggle is offered on every model:
+### Which models offer it
 
-- Models whose AgentHub client has no fast tier (Gemini, GLM, Kimi, DeepSeek, and Claude on Bedrock or Claude 4.6 ids) reject the parameter **before any network request**. The session ends that turn immediately with the provider's message plus a pointer to the setting — a deterministic rejection is not retried.
-- Anthropic's fast mode is a research preview limited to certain Opus models; organizations without access receive a 429 rate-limit error at request time.
-- Some OpenAI-compatible servers simply ignore the flag and serve at the standard tier.
+Whether a fast tier exists is decided by the AgentHub client a model routes to, not by the model entry, so the toggle appears only where that client actually sends the parameter:
+
+| Routed client | Fast mode |
+| --- | --- |
+| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt5_6`, `minimax_m3`) | sent as `service_tier: "priority"` |
+| Anthropic protocol (`ant_messages`, `claude5`) | sent as `speed: "fast"` plus the beta header |
+| Gemini, GLM, Kimi, DeepSeek, OpenAI embeddings | rejected — no toggle |
+| Claude on Bedrock, or a Claude 4.6 id | rejected — no toggle |
+
+Routing follows the entry's `client_type`, or its `model_id` when none is set, so the same upstream id can land in different places: a Kimi model added under a gateway group (`client_type = "openai"`) can serve fast mode, while the same id routed to Kimi's own client cannot. A custom model behind your own base URL keeps the toggle — it speaks the OpenAI protocol and may well be OpenAI — but a third-party server is free to accept the parameter and serve the standard tier anyway.
+
+Two things the toggle cannot check for you:
+
+- Anthropic's fast mode is a limited research preview: until your organization is granted access, requests return a 429 rate-limit error. The confirmation says so for Anthropic-protocol models.
+- `CLIENT_TYPE` and `ANTHROPIC_BASE_URL` in the server's environment override the entry, and can route a model somewhere the toggle did not anticipate.
+
+If a request does reach a client that rejects `fast_mode`, AgentHub refuses it **before any network request**: the session ends that turn immediately with the provider's message plus a pointer to the setting, and a deterministic rejection is never retried. An entry that stores `fast_mode = true` on a model that cannot serve it keeps its toggle in the dialog, marked unsupported, so it can always be switched off.
 
 The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `describe_image` proxy reads) never carry fast mode — only the session's own requests do.
 

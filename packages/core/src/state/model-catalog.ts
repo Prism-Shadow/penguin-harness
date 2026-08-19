@@ -1089,6 +1089,82 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 }
 
 /**
+ * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
+ * OpenAI-protocol clients (openai_chat / openai_responses / gpt5_6 / minimax_m3), which send
+ * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
+ * / claude5), which send `speed: "fast"` plus the `fast-mode-2026-02-01` beta header. The two
+ * differ in what the user must be warned about, not just in wire shape (see fastModeProtocol).
+ */
+export type FastModeProtocol = "openai" | "anthropic";
+
+/**
+ * Whether a model can carry fast mode at all, and on which protocol - `undefined` means no.
+ *
+ * The fast tier is a property of the **client AgentHub routes to**, never of the catalog row:
+ * the registry carries no fast-tier capability flag, but the routing is deterministic, so the
+ * answer is too. This mirrors AutoLLMClient's branch order exactly (the same discipline as
+ * resolveModelEnv above) and reports what the selected client does with the parameter:
+ *
+ * - maps it -> the protocol, and the toggle may be offered;
+ * - raises UnsupportedParameterError (gemini3_7, glm5_3, kimi_k3, deepseek_v4,
+ *   openai_embedding, and claude5 on Bedrock or a Claude 4.6 id) -> `undefined`;
+ * - routes nowhere (AutoLLMClient throws for an id it cannot place; there is no openai_chat
+ *   fallback) -> `undefined` as well, since a model that cannot run has no fast tier either.
+ *
+ * A rule rather than a per-model list on purpose: catalog rows added later inherit the right
+ * answer without anyone remembering to update a table.
+ *
+ * Routing reads `(clientType || modelId).toLowerCase()`, exactly as AutoLLMClient resolves it,
+ * so an entry that pins no client_type self-routes on its model id - which does not always
+ * agree with its provider group (`anthropic/claude-fable-5` with a blank client_type reaches
+ * the native claude5 client, not openai_chat, and the dotted `anthropic/claude-opus-4.8`
+ * matches no branch at all). The two claude5 carve-outs are therefore checked against the raw
+ * `modelId` / `baseUrl`, not against the routing token: the client tests its own `_model` for
+ * `"4-6"` and its base URL for the `bedrock://` prefix.
+ *
+ * `"anthropic"` is reported for every Claude the client serves, including ids outside the
+ * research preview's Opus allowlist: Anthropic answers those with a 429 at request time, which
+ * is something to warn about before enabling, not grounds to hide the setting.
+ *
+ * Two runtime inputs stay invisible to a pure function of the config and can still flip the
+ * answer: the server's `CLIENT_TYPE` env var overrides the entry's client type, and
+ * `ANTHROPIC_BASE_URL` supplies the base URL when the entry leaves it blank (so a `bedrock://`
+ * there sends Claude to Bedrock, which has no fast tier). Third-party OpenAI-compatible
+ * endpoints are a third: they accept `service_tier` and may quietly serve the standard tier.
+ * That residue is why llm/generative-model.ts still handles the rejection at runtime.
+ */
+export function fastModeProtocol(
+  modelId: string,
+  clientType?: string,
+  baseUrl?: string,
+): FastModeProtocol | undefined {
+  const t = clientType?.toLowerCase() || modelId.toLowerCase();
+  // Branch order mirrors AutoLLMClient. Every test is a substring of `t` except minimax-m3,
+  // which the router matches by exact equality; no trimming, matching the router.
+  if (t === "minimax-m3") return "openai";
+  if (t.includes("gemini-3") || t.includes("gemini-embedding")) return undefined;
+  if (
+    t.includes("claude") &&
+    (t.includes("4-6") || t.includes("4-7") || t.includes("4-8") || t.includes("-5"))
+  ) {
+    // claude5 refuses fast mode on Bedrock and across the Claude 4.6 family; both tests run
+    // against what the client was constructed with, not against the routing token.
+    if (baseUrl?.startsWith("bedrock://")) return undefined;
+    if (modelId.includes("4-6")) return undefined;
+    return "anthropic";
+  }
+  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) return "openai";
+  if (t.includes("glm-5")) return undefined;
+  if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
+  if (t.includes("deepseek-v4")) return undefined;
+  if (t.includes("ant-messages")) return "anthropic";
+  if (t.includes("openai-responses")) return "openai";
+  if (t.includes("openai") && t.includes("embedding")) return undefined;
+  if (t.includes("openai")) return "openai";
+  return undefined;
+}
+
+/**
  * Catalog -> preset ModelEntry list (shared by defaultProjectConfig and the server's initial
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be

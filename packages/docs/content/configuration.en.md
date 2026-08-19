@@ -63,7 +63,7 @@ Model entry (`[[models]]`) fields:
 | `display_name` | Display name; persisted only when it differs from the built-in catalog |
 | `vision` | Whether image input is supported; defaults to supported |
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
-| `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Models without a fast tier reject requests carrying it — see [Models](/models#fast-mode) |
+| `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
 | `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |

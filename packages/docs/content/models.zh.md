@@ -94,15 +94,29 @@ api_key = "sk-..."
 
 ## 快速模式
 
-每个模型条目都可以选择进入厂商的快速推理档位（Web 模型弹窗中的「快速模式」开关、`penguin config model add` 的 `--fast-mode` / `--no-fast-mode`，或条目里的 `fast_mode = true`）。默认关闭；既有配置不受影响。
+每个模型条目都可以选择进入厂商的快速推理档位（Web 模型弹窗中的「快速模式」开关、`penguin config model add` 的 `--fast-mode` / `--no-fast-mode`，或条目里的 `fast_mode = true`）。默认关闭；既有配置不受影响。打开开关会先弹出确认提示，因为它会改变该模型的计费。
 
-开启后，会话请求携带 AgentHub 的 `fast_mode` 参数：OpenAI 协议 client 发送 `service_tier: "priority"`，Anthropic 协议 client 发送 `speed: "fast"` 并附带 fast-mode beta 请求头。快速档位按厂商的溢价价目计费，而条目记录的按 Token 单价不会随之调整——不上调三档价格的话，快速模式用量的成本统计会偏低。
+开启后，会话请求携带 AgentHub 的 `fast_mode` 参数：OpenAI 协议 client 发送 `service_tier: "priority"`，Anthropic 协议 client 发送 `speed: "fast"` 并附带 fast-mode beta 请求头。快速档位按厂商的溢价价目计费（MiniMax 为标准价的 1.5 倍，OpenAI 与 Anthropic 另有溢价价目表），而条目记录的按 Token 单价不会随之调整——不上调三档价格的话，快速模式用量的成本统计会偏低。
 
-是否支持取决于模型与厂商，目录中没有能力标志，因此每个模型都提供该开关：
+### 哪些模型会出现该开关
 
-- AgentHub client 没有 fast 档位的模型（Gemini、GLM、Kimi、DeepSeek，以及 Bedrock 上或 Claude 4.6 系列 id 的 Claude）会在**发起网络请求之前**拒绝该参数。该轮会话立即结束，错误信息带上厂商原文与设置入口指引——确定性的拒绝不会重试。
-- Anthropic 的 fast mode 是限部分 Opus 模型的 research preview：未获授权的组织在请求时会收到 429 限流错误。
-- 部分 OpenAI 兼容服务端会直接忽略该参数，按标准档位处理。
+是否存在快速档位，由该模型路由到的 AgentHub client 决定，而不是由模型条目决定，因此开关只在该 client 确实会发送这个参数时才出现：
+
+| 路由到的 client | 快速模式 |
+| --- | --- |
+| OpenAI 协议（`openai_chat`、`openai_responses`、`gpt5_6`、`minimax_m3`） | 发送 `service_tier: "priority"` |
+| Anthropic 协议（`ant_messages`、`claude5`） | 发送 `speed: "fast"` 并附带 beta 请求头 |
+| Gemini、GLM、Kimi、DeepSeek、OpenAI embedding | 拒绝——不提供开关 |
+| Bedrock 上的 Claude，或 Claude 4.6 系列 id | 拒绝——不提供开关 |
+
+路由按条目的 `client_type` 判定，未设置时按 `model_id` 判定，所以同一个上游 id 可能落到不同 client：在网关分组下添加的 Kimi 模型（`client_type = "openai"`）可以使用快速模式，同一个 id 路由到 Kimi 自己的 client 时则不行。自建 base URL 的自定义模型仍然保留开关——它走 OpenAI 协议，背后也可能就是 OpenAI——但第三方服务端完全可能接受该参数却仍按标准档位处理。
+
+有两件事开关无法替你检查：
+
+- Anthropic 的快速模式是限量的 research preview：在你的组织获得授权之前，请求会返回 429 限流错误。Anthropic 协议的模型在确认弹窗里会给出这条提示。
+- 服务端环境变量 `CLIENT_TYPE` 与 `ANTHROPIC_BASE_URL` 会覆盖条目的配置，可能把模型路由到开关未曾预期的地方。
+
+如果请求最终仍到达了拒绝 `fast_mode` 的 client，AgentHub 会在**发起网络请求之前**拒绝：该轮会话立即结束，错误信息带上厂商原文与设置入口指引，确定性的拒绝不会重试。若某个条目在不支持的模型上存有 `fast_mode = true`，弹窗仍会显示该开关并标注不支持，以便随时关闭。
 
 连通性测试会携带弹窗当前的开关状态，因此「测试连通性」能在保存前暴露快速模式被拒的问题。后台请求（会话标题生成、`describe_image` 代读）不携带快速模式——只有会话自身的请求携带。
 

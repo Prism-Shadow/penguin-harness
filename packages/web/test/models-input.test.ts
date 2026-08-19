@@ -15,6 +15,7 @@ import {
   clientTypeAfterProviderChange,
   decimalOnly,
   digitsOnly,
+  fastModeState,
   nextPointers,
   rowRef,
   toRow,
@@ -192,5 +193,73 @@ describe("nextPointers (where the default/vision-agent model pointers land after
       defaultModel: mA,
       visionModel: mB,
     });
+  });
+});
+
+describe("fastModeState (whether the dialog offers the fast-mode switch, and on which protocol)", () => {
+  const draft = (partial: {
+    modelId: string;
+    clientType?: string;
+    baseUrl?: string;
+    fastMode?: boolean;
+  }) => ({
+    modelId: partial.modelId,
+    clientType: partial.clientType ?? "",
+    baseUrl: partial.baseUrl ?? "",
+    fastMode: partial.fastMode ?? false,
+  });
+
+  it("offers it where AgentHub's routed client carries the parameter, with the protocol", () => {
+    // Gateway / custom rows pin the OpenAI protocol; first-party Claude ids take the
+    // Anthropic one, which is what selects the research-preview paragraph in the warning.
+    expect(fastModeState(draft({ modelId: "z-ai/glm-5.2", clientType: "openai" }))).toEqual({
+      protocol: "openai",
+      show: true,
+    });
+    expect(fastModeState(draft({ modelId: "claude-fable-5" }))).toEqual({
+      protocol: "anthropic",
+      show: true,
+    });
+    expect(fastModeState(draft({ modelId: "gpt-5.5" })).protocol).toBe("openai");
+  });
+
+  it("withholds it where the client would reject the parameter", () => {
+    // The whole point of the gate: these ids would fail the next turn with fast mode on.
+    for (const modelId of ["gemini-3.5-flash", "glm-5.2", "kimi-k3", "deepseek-v4-pro"]) {
+      expect(fastModeState(draft({ modelId })), modelId).toEqual({
+        protocol: undefined,
+        show: false,
+      });
+    }
+    // Claude 4.6 is refused by name even though the client serves the family, and Bedrock
+    // has no fast tier at all — the base URL is read from the draft, not the saved row.
+    expect(fastModeState(draft({ modelId: "claude-sonnet-4-6" })).show).toBe(false);
+    expect(
+      fastModeState(draft({ modelId: "claude-fable-5", baseUrl: "bedrock://us-east-1" })).show,
+    ).toBe(false);
+  });
+
+  it("keeps the switch on a row that already stores fast mode, so it can always be turned off", () => {
+    // A value that arrived by hand-edited TOML or `--fast-mode` must stay switchable off:
+    // the runtime rejection tells the user to turn it off in the model settings.
+    const stranded = fastModeState(draft({ modelId: "kimi-k3", fastMode: true }));
+    expect(stranded.show).toBe(true);
+    // ...but the protocol stays undefined, which is what raises the "not supported" warning
+    // line instead of pretending the model can serve it.
+    expect(stranded.protocol).toBeUndefined();
+  });
+
+  it("follows the draft as it is typed: an unsaved protocol change flips the answer", () => {
+    // Same upstream id, different client: routed to Kimi it is rejected, pinned to the
+    // OpenAI protocol (a gateway reselling it) it is served.
+    expect(fastModeState(draft({ modelId: "moonshotai/kimi-k3" })).show).toBe(false);
+    expect(fastModeState(draft({ modelId: "moonshotai/kimi-k3", clientType: "openai" }))).toEqual({
+      protocol: "openai",
+      show: true,
+    });
+    // Whitespace-only fields are treated as absent, matching what the form submits.
+    expect(fastModeState(draft({ modelId: "claude-fable-5", clientType: "  " })).protocol).toBe(
+      "anthropic",
+    );
   });
 });
