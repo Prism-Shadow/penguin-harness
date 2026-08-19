@@ -1,10 +1,10 @@
 import { defineConfig } from "tsup";
 
 /**
- * Four self-contained bundles, no shared chunks: the shell itself, the server it forks as a
- * utilityProcess, the CLI its bin/ launchers start on the app's Electron runtime, and
- * launcher.ts, which scripts/build-assets.mjs imports (plain node, no Electron) to write
- * those launcher scripts. Because everything is bundled, the packaged app has no runtime
+ * Five self-contained bundles, no shared chunks: the shell itself, the server it forks as a
+ * utilityProcess, the two CLI entries its bin/ launchers start on the app's Electron runtime
+ * (the built-in one and the hot-update one that runs a pushed CLI), and launcher.ts, which
+ * scripts/build-assets.mjs imports (plain node, no Electron) to write those launcher scripts. Because everything is bundled, the packaged app has no runtime
  * dependencies and ships no node_modules at all.
  *
  * The server and the CLI are bundled from their own packages' build output, so the app runs
@@ -16,6 +16,10 @@ export default defineConfig({
     launcher: "src/launcher.ts",
     server: "../server/dist/index.js",
     penguin: "../cli/dist/penguin.js",
+    // Separate bundle on purpose: penguin-hmr decides whether it is the process entry point
+    // by comparing import.meta.url against argv[1], so sharing a file with penguin.js would
+    // make every plain `penguin` run go looking for a pushed CLI (see src/launcher.ts).
+    "penguin-hmr": "../cli/dist/penguin-hmr.js",
   },
   format: ["esm"],
   target: "node22",

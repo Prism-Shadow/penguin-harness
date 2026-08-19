@@ -3,6 +3,7 @@ import {
   appImageBootstrapJs,
   appImageWrapperScript,
   CLI_ENTRY_RELPATH,
+  CLI_HMR_ENTRY_RELPATH,
   cliInstallKind,
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
@@ -166,5 +167,23 @@ describe("cliInstallKind", () => {
     expect(
       cliInstallKind({ packaged: true, platform: "linux", appImagePath: "/x/y.AppImage" }),
     ).toBe("appimage");
+  });
+});
+
+describe("the hot-update launcher", () => {
+  it("points at penguin-hmr's own bundle, not the built-in CLI's", () => {
+    expect(CLI_HMR_ENTRY_RELPATH).not.toBe(CLI_ENTRY_RELPATH);
+
+    const posix = posixLauncherScript(CLI_HMR_ENTRY_RELPATH);
+    expect(posix).toContain(`CLI_ENTRY="$APP_DIR/${CLI_HMR_ENTRY_RELPATH}"`);
+    expect(posix).not.toContain(CLI_ENTRY_RELPATH);
+
+    const windows = windowsLauncherScript(CLI_HMR_ENTRY_RELPATH);
+    expect(windows).toContain(CLI_HMR_ENTRY_RELPATH.replaceAll("/", "\\"));
+  });
+
+  it("still defaults to the built-in CLI, which is what the bare `penguin` means", () => {
+    expect(posixLauncherScript()).toContain(`CLI_ENTRY="$APP_DIR/${CLI_ENTRY_RELPATH}"`);
+    expect(windowsLauncherScript()).toContain(CLI_ENTRY_RELPATH.replaceAll("/", "\\"));
   });
 });

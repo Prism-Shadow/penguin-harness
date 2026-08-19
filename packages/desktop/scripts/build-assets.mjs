@@ -13,7 +13,9 @@
  * - `dist/icon.png` — the runtime window icon, read app-path-relative (see src/app-icon.ts).
  *   build/ is electron-builder's buildResources directory and does not ship inside the app.
  * - `bin/penguin`, `bin/penguin.cmd` — the CLI launchers, whose script text lives in
- *   src/launcher.ts so it is unit-tested with the rest of the shell.
+ *   src/launcher.ts so it is unit-tested with the rest of the shell. `bin/penguin-hmr`
+ *   (and its .cmd) is the same launcher pointed at the hot-update entry, which runs the CLI
+ *   pushed to this machine instead of the built-in one.
  *
  * Run from anywhere (after tsup); all paths derive from this file's location.
  */
@@ -42,14 +44,18 @@ if (!fs.existsSync(iconSrc)) {
 }
 fs.copyFileSync(iconSrc, path.join(distDir, "icon.png"));
 
-const { posixLauncherScript, windowsLauncherScript } = await import(
-  pathToFileURL(launcherModule).href
-);
+const { posixLauncherScript, windowsLauncherScript, CLI_ENTRY_RELPATH, CLI_HMR_ENTRY_RELPATH } =
+  await import(pathToFileURL(launcherModule).href);
 const binDir = path.join(pkgDir, "bin");
 fs.mkdirSync(binDir, { recursive: true });
-fs.writeFileSync(path.join(binDir, "penguin"), posixLauncherScript(), { mode: 0o755 });
-// Explicit chmod: the mode option only applies when writeFileSync creates the file.
-fs.chmodSync(path.join(binDir, "penguin"), 0o755);
-fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
+for (const [name, entry] of [
+  ["penguin", CLI_ENTRY_RELPATH],
+  ["penguin-hmr", CLI_HMR_ENTRY_RELPATH],
+]) {
+  fs.writeFileSync(path.join(binDir, name), posixLauncherScript(entry), { mode: 0o755 });
+  // Explicit chmod: the mode option only applies when writeFileSync creates the file.
+  fs.chmodSync(path.join(binDir, name), 0o755);
+  fs.writeFileSync(path.join(binDir, `${name}.cmd`), windowsLauncherScript(entry));
+}
 
 console.log("[build-assets] done: skills/, dist/icon.png, bin/");
