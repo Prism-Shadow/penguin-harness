@@ -175,12 +175,12 @@ describe("agent.resumeSession", () => {
     ).toEqual(["text", "text", "abort"]);
   });
 
-  it("heals a dangling compaction span by appending the aborted closure (issue #288)", async () => {
-    // The previous process died while a compaction ran: the shard ends inside the span
-    // (begin + prompt + an unfinished request). Without the closure, every stateless reader
-    // (the Web reducer, the server's window scanner) hides everything appended after the
-    // dangling begin as compaction-internal — the messages the user sends after resuming
-    // vanish on reload.
+  it("closes a compaction the user quit out of as failed, discarding its draft (issue #288)", async () => {
+    // The process died while a compaction ran: the shard ends inside the span (begin +
+    // prompt + an unfinished request that had started writing a summary). That compaction
+    // simply failed — resume closes the span before appending anything else, so the
+    // conversation that follows is not hidden as compaction-internal, and the half-written
+    // draft is discarded rather than adopted as a summary.
     const agent = await createAgent({});
     const file = await writeTraceFile(tmpRoot, SID, [
       metaFor(SID, workspace),
@@ -192,23 +192,30 @@ describe("agent.resumeSession", () => {
       compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
       userText("COMPACT NOW"),
       requestBegin(),
+      assistantText("[summary]half-writ"),
     ]);
 
     const session = await agent.resumeSession({ sessionId: SID });
-    session.dispose();
-    const healed = await readTrace(file);
-    const last = healed[healed.length - 1]!;
+    const closed = await readTrace(file);
+    const last = closed[closed.length - 1]!;
     expect(last.payload).toMatchObject({
       type: "compaction_end",
       reason: "context",
       mode: "summarize",
-      status: "aborted",
+      status: "failed",
     });
+    // Nothing was reconstructed from the interrupted compaction: the original context is
+    // resumed as it stood before it, with no `[context_summary]` injected.
+    const injected = (session.resumedHistory ?? []).some((m) =>
+      ((m.payload as { text?: string }).text ?? "").includes("[context_summary]"),
+    );
+    expect(injected).toBe(false);
+    session.dispose();
 
-    // Healing is idempotent: a second resume sees the matched pair and appends nothing.
+    // Idempotent: a second resume sees the matched pair and appends nothing.
     const again = await agent.resumeSession({ sessionId: SID });
     again.dispose();
-    expect((await readTrace(file)).length).toBe(healed.length);
+    expect((await readTrace(file)).length).toBe(closed.length);
   });
 
   it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {

@@ -827,12 +827,6 @@ export class TraceService {
             continuation = false;
             compactionActive = false;
           }
-        } else if (p.type === "abort") {
-          // An abort while a compaction span is open means its compaction_end was lost
-          // (the engine always closes the pair first — a crash/shutdown tore it away):
-          // close the span so later turns aren't misfiled as compaction turns, mirroring
-          // the Chat reducer and the window scanner (issue #288).
-          if (!hasOrigin) compactionActive = false;
         } else if (p.type === "token_usage") {
           const request = p.request as
             | { total?: number; cache_read?: number; cache_write?: number; output?: number }

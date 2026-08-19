@@ -485,21 +485,22 @@ export class Agent {
       startIndex: located.index,
     });
 
-    // Heal a compaction span the previous process left dangling (a compaction_begin with no
-    // end — crash, kill, or a shutdown that outran the drive): every stateless reader (the
-    // Web reducer, the server's window scanner) hides messages between the pair as
-    // compaction-internal, so continuing this file behind a dangling begin would make
-    // everything the user sends after the compaction vanish on reload — and once a later
-    // compaction_end closed the wedge mid-Task, tool outputs rendered without their
-    // swallowed calls as "unknown tool" cards (issue #288). Appending the aborted closure
-    // makes the file well-formed for every reader before any new record lands. Best-effort
-    // like every Trace write: a failure here must not block the resume itself.
+    // A compaction the user quit out of (a compaction_begin with no end — the process died
+    // mid-request) is simply a **failed** compaction: close the span with a `failed`
+    // compaction_end before any new record lands, and discard whatever half-summary it had
+    // written — nothing is reconstructed from it (the original context is intact and the
+    // standing threshold makes the compaction up at the next trigger). Closing the span is
+    // what keeps the rest of the conversation visible: readers treat messages between the
+    // paired events as compaction-internal, so an unclosed span would hide everything the
+    // user sends afterwards, and tool outputs whose calls it swallowed would render as
+    // "unknown tool" cards (issue #288). Best-effort like every Trace write: a failure here
+    // must not block the resume itself.
     if (resumed.danglingCompaction) {
       try {
-        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "aborted" }));
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[trace] dangling-compaction heal failed: ${detail}\n`);
+        process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);
       }
     }
 

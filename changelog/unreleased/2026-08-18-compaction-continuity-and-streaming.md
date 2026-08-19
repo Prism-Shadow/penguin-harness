@@ -1,4 +1,4 @@
-# Compaction: dangling-span healing, interruption-flow failures, and streamed summaries
+# Compaction: tool-first ordering, interrupted compactions fail cleanly, and a collapsed streaming summary
 
 - **Date:** 2026-08-18
 - **Type:** fix
@@ -8,15 +8,25 @@
 
 [中文版](2026-08-18-compaction-continuity-and-streaming.zh.md)
 
-Two compaction defects were fixed and the compaction banner gained live summary text. A compaction span left open by a process death is healed when the session resumes, so messages sent after a compaction survive a reload and stale `(unknown tool)` cards are gone; an abandoned compaction now ends the run through the ordinary interruption flow and is made up at the next trigger; and the summary reaches the Web App as it is written, carried by the span's own text messages rather than a new event type.
+Two compaction defects were fixed and the compaction row gained a live, collapsed summary. A compaction triggered after a tool call now runs the tools to completion and compacts with their results, inventing nothing synthetic; a compaction the user quit out of is closed as failed when the session next loads, with its half-written draft discarded, so messages sent after a compaction survive a reload and stale `(unknown tool)` cards are gone; and the summary reaches the Web App as it is written, inside a block that is collapsed by default exactly like a thinking block.
 
-## Dangling compaction spans heal on resume
+## A compaction triggered after a tool call runs the tools first
 
-A process death mid-compaction left a `compaction_begin` with no matching end in the shard. Core's replay tolerated the dangle and appended the follow-up conversation to the same file, but every stateless reader treats messages between the pair as compaction-internal, so everything sent after the compaction vanished on reload; once a later `compaction_end` un-wedged the state mid-Task, tool outputs rendered without their swallowed calls as "(unknown tool)" cards.
+The engine reaches its compaction checkpoint only after `runTurn` has returned, which happens once every tool call of the turn has completed — so a compaction that triggers on a turn ending in tool calls never preempts them.
 
-- `resumeTrace` reports the unmatched begin, and `resumeSession` appends a synthetic aborted `compaction_end` before any new record lands, leaving the file well-formed for every later reader. Healing is idempotent and skipped for healthy traces.
-- The readers additionally close a stale span themselves on the unambiguous signals — another `compaction_begin` (spans never nest), an `abort` event (the engine always closes the pair first), and a rotation's `session_meta` — in the Web reducer, the server's window scanner and the Trace analysis pass, keeping traces damaged before the heal readable.
-- The server's scanner cache version was bumped (`CACHE_VERSION` 2), so cached `page_stats` records are recomputed under the new boundary rules.
+- All of the turn's results ride the compaction request itself, ahead of the compaction Prompt and in their original call order, whatever they carry: a normal result, a `[tool error]`, or a denial.
+- A tool waiting on approval or running for minutes only delays the compaction. No clock is running on it, because the compaction request has not been issued yet.
+- Nothing synthetic is inserted to close the pending exchange, and the `LLMInterface` is unchanged.
+- Manual `/compact` keeps its own semantics: it has no pending turn, so only the Prompt (plus any interruption carry-over it folds in) goes out.
+
+## A compaction the user quit out of is simply a failed compaction
+
+Quitting mid-compaction left a `compaction_begin` with no matching end in the shard. Core's replay tolerated it and appended the follow-up conversation to the same file, but every reader treats messages between the pair as compaction-internal, so everything sent after the compaction vanished on reload; once a later `compaction_end` un-wedged the state mid-Task, tool outputs rendered without their swallowed calls as "(unknown tool)" cards.
+
+- `resumeTrace` reports the unmatched begin, and `resumeSession` closes the span with a `failed` `compaction_end` before any new record lands, leaving the file well-formed for every later reader. It is idempotent and skipped for healthy traces.
+- The interrupted compaction's half-written summary is **discarded**, never reconstructed: no `[context_summary]` is injected, the original context stands, and the standing threshold makes the compaction up at the next trigger.
+- The Web reducer drops the partial draft from any compaction that did not complete, so a truncated summary is never shown as if it had been adopted.
+- The reader-side stale-span heuristics added earlier in this PR were removed along with the scanner cache-version bump: closing the span at load is enough, and the readers stay simple.
 
 ## An abandoned compaction ends the run and is made up later
 
@@ -29,6 +39,6 @@ A mid-Task compaction that failed used to leave the loop in an ill-defined state
 
 The compaction request's raw messages stay Trace-only, with one exception: the summary being generated rides the output stream as ordinary `partial_text` (or the complete `text`, for LLM implementations that stream nothing), positioned between the paired compaction events. No new protocol type is involved, and the Trace is unchanged.
 
-- The Web App's compaction banner shows the summary being written under its header, tail-clamped and with tags stripped by the same lenient extractor core uses, then folds the full text into an expandable body once the compaction settles. A history rebuild reads the same text back from the span's recorded assistant output, so a reload shows what the live viewer saw.
+- The Web App's compaction row is **collapsed by default, exactly like a thinking block**: the chevron is present from the start of a summarize compaction, and the summary streams inside the collapsed body (same `md-body` treatment and streaming renderer thinking uses), which the reader expands to watch it being written or to read it afterwards. Tags are stripped by the same lenient extractor core uses, so a summary still mid-stream reads as prose. A history rebuild reads the same text back from the span's recorded assistant output, so a reload shows what the live viewer saw.
 - Because the text is an ordinary streamed message, the server's live tail seeds it too: joining or refreshing mid-compaction picks up the summary prefix generated so far instead of starting blank.
 - The CLI keeps its one-line compaction progress and prints none of the streamed summary.

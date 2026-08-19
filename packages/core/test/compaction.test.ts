@@ -1727,8 +1727,34 @@ describe("compaction summary streaming (issue #290)", () => {
   });
 });
 
-describe("dangling compaction spans (issue #288)", () => {
-  it("resumeTrace reports an unmatched compaction_begin for the resume path to heal", () => {
+describe("a compaction the user quit out of (issue #288)", () => {
+  it("resumeTrace reports the unmatched compaction_begin, and discards the interrupted draft", () => {
+    // The interrupted compaction's half-written summary is never adopted: the replay
+    // reconstructs no [context_summary] and the original context stands (best-effort).
+    const interrupted = resumeTrace([
+      metaMessage,
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      usage(150, 150),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]half-writ"),
+    ]);
+    expect(interrupted.danglingCompaction).toEqual({ reason: "context", mode: "summarize" });
+    expect(interrupted.contextClosed).toBe(false);
+    expect(interrupted.pendingSummary).toBeUndefined();
+    // The compaction Prompt is not conversational input and is not resent as carry-over.
+    expect(interrupted.carryOver.map((m) => (m.payload as TextPayload).text)).not.toContain(
+      "COMPACT NOW",
+    );
+    // The context before the compaction is intact: the committed turn is still history.
+    expect(interrupted.history.map((m) => (m.payload as TextPayload).text)).toEqual(["q1", "a1"]);
+  });
+
+  it("resumeTrace reports an unmatched compaction_begin for the resume path to close", () => {
     const dangling = resumeTrace([
       metaMessage,
       userText("q1"),
@@ -1757,5 +1783,222 @@ describe("dangling compaction spans (issue #288)", () => {
       compactionEnd({ reason: "context", mode: "summarize", status: "aborted" }),
     ]);
     expect(closed.danglingCompaction).toBeUndefined();
+  });
+});
+
+describe("mid-task compaction runs the tools first (issue #288)", () => {
+  /** Environment whose tools resolve only when released, recording dispatch order. */
+  function gatedEnvironment(): {
+    env: EnvironmentInterface;
+    dispatched: string[];
+    release: () => void;
+  } {
+    const dispatched: string[] = [];
+    let unblock: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    return {
+      dispatched,
+      release: () => unblock(),
+      env: {
+        async listTools() {
+          return [];
+        },
+        async *executeTool({ toolCall: tc }) {
+          dispatched.push(tc.payload.tool_call_id);
+          await gate;
+          yield toolCallOutput({ output: "tool ran", toolCallId: tc.payload.tool_call_id });
+        },
+        toolPermission() {
+          return "rw";
+        },
+      },
+    };
+  }
+
+  it("every tool of the turn completes before the compaction request goes out, and all results ride it", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        // One turn, three parallel tool calls, then usage over the threshold.
+        {
+          messages: [
+            toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }),
+            toolCall({ name: "t", arguments: "{}", toolCallId: "c2" }),
+            toolCall({ name: "t", arguments: "{}", toolCallId: "c3" }),
+            usage(150, 150),
+          ],
+        },
+        { messages: [assistantText("[summary]continue: step 2[/summary]"), usage(160, 320)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("done"), usage(30, 360)] }], "llm2");
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => llm2,
+    });
+
+    const out = await collect(engine.run([userText("go")], { approve: allowAll }));
+
+    // The compaction request carries all three results, in the original call order, ahead
+    // of the compaction Prompt — the tools ran to completion first.
+    expect(llm1.calls).toHaveLength(2);
+    const compactionInput = llm1.calls[1]!;
+    expect(payloadTypes(compactionInput)).toEqual([
+      "tool_call_output",
+      "tool_call_output",
+      "tool_call_output",
+      "text",
+    ]);
+    expect(
+      compactionInput.slice(0, 3).map((m) => (m.payload as { tool_call_id?: string }).tool_call_id),
+    ).toEqual(["c1", "c2", "c3"]);
+    expect(textOf(compactionInput[3]!)).toBe("COMPACT NOW");
+    // No synthetic assistant text was invented anywhere in the exchange.
+    expect(compactionInput.map((m) => (m.payload as { role?: string }).role)).toEqual([
+      "user",
+      "user",
+      "user",
+      "user",
+    ]);
+    // The loop resumes the task on the new context.
+    expect(llm2.calls[0]!.map(textOf)).toEqual([
+      "[context_summary]\ncontinue: step 2\n[/context_summary]",
+    ]);
+    expect(out.map((m) => (m.payload as { text?: string }).text)).toContain("done");
+  });
+
+  it("a slow tool simply delays the compaction: nothing starts (or times out) until its result is in", async () => {
+    const { env, dispatched, release } = gatedEnvironment();
+    const llm1 = new ScriptedLLM(
+      [
+        {
+          messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "slow" }), usage(150, 150)],
+        },
+        { messages: [assistantText("[summary]s[/summary]"), usage(160, 320)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: env,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([{ messages: [assistantText("done"), usage(1, 1)] }], "l2"),
+    });
+
+    const gen = engine.run([userText("go")], { approve: allowAll });
+    const seen: OmniMessage[] = [];
+    // Drive until the tool has been dispatched but not yet answered.
+    for (;;) {
+      const next = gen.next();
+      const settled = await Promise.race([
+        next.then((r) => ({ r })),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 30)),
+      ]);
+      if (settled === null) break; // the loop is parked on the pending tool
+      if (settled.r.done) break;
+      seen.push(settled.r.value);
+    }
+    expect(dispatched).toEqual(["slow"]);
+    // The compaction has NOT started while the tool is outstanding: no compaction event,
+    // and the compaction request was never issued (the LLM saw only the first turn).
+    expect(payloadTypes(seen)).not.toContain("compaction_begin");
+    expect(llm1.calls).toHaveLength(1);
+
+    release();
+    for await (const msg of gen) seen.push(msg);
+    // Once the result lands, the compaction runs and carries it.
+    expect(compactionEvents(seen).map((e) => e.type)).toEqual([
+      "compaction_begin",
+      "compaction_end",
+    ]);
+    expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
+  });
+
+  it("a failing tool's error output is what rides the compaction request", async () => {
+    const failingEnv: EnvironmentInterface = {
+      async listTools() {
+        return [];
+      },
+      async *executeTool({ toolCall: tc }) {
+        yield toolCallOutput({
+          output: "[tool error] boom",
+          toolCallId: tc.payload.tool_call_id,
+          stopReason: "failed",
+        });
+      },
+      toolPermission() {
+        return "rw";
+      },
+    };
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)] },
+        { messages: [assistantText("[summary]after the failure[/summary]"), usage(160, 320)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: failingEnv,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+    });
+
+    await collect(engine.run([userText("go")], { approve: allowAll }));
+    const compactionInput = llm1.calls[1]!;
+    expect(payloadTypes(compactionInput)).toEqual(["tool_call_output", "text"]);
+    const out = compactionInput[0]!.payload as { output: string; stop_reason?: string };
+    expect(out.output).toBe("[tool error] boom");
+    expect(out.stop_reason).toBe("failed");
+  });
+
+  it("a denied tool still pairs: the denial output rides the compaction request", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [toolCall({ name: "t", arguments: "{}", toolCallId: "c1" }), usage(150, 150)] },
+        { messages: [assistantText("[summary]after the denial[/summary]"), usage(160, 320)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      createLLM: () => new ScriptedLLM([{ messages: [assistantText("ok"), usage(1, 1)] }], "l2"),
+    });
+
+    await collect(engine.run([userText("go")], { approve: async () => "deny" }));
+    expect(payloadTypes(llm1.calls[1]!)).toEqual(["tool_call_output", "text"]);
+    expect((llm1.calls[1]![0]!.payload as { output: string }).output).toBe(
+      "Tool call denied by user.",
+    );
+  });
+
+  it("manual /compact keeps its own semantics: no turn is pending, so only the Prompt goes out", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("first answer"), usage(50, 50)] },
+        { messages: [assistantText("[summary]manual[/summary]"), usage(60, 110)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings({ maxContextLength: 100000 }),
+      createLLM: () => new ScriptedLLM([], "llm2"),
+    });
+    await collect(engine.run([userText("hi")], { approve: allowAll }));
+    await collect(engine.compact());
+    expect(llm1.calls[1]!.map(textOf)).toEqual(["COMPACT NOW"]);
   });
 });

@@ -1,0 +1,35 @@
+/**
+ * compaction-summary.ts: the text a compaction row shows inside its collapsed body.
+ *
+ * The row itself is a StepBanner with the summary as its `children`, so it is collapsed by
+ * default and carries the chevron exactly like a thinking block — the reader expands it to
+ * watch the summary stream or to read it afterwards. What that body contains is this pure
+ * helper's job, and it is what these tests pin (the Web suite runs in a node environment
+ * and renders no React).
+ */
+import { describe, expect, it } from "vitest";
+import { compactionSummaryText } from "../src/lib/omni/compaction-summary";
+
+describe("compactionSummaryText", () => {
+  it("strips the summary tags so the body reads as prose", () => {
+    expect(compactionSummaryText({ summaryText: "[summary]the plan[/summary]" })).toBe("the plan");
+  });
+
+  it("shows a summary still mid-stream, before the model closes the block", () => {
+    // The body streams while collapsed: an unclosed `[summary]` must read as the text so
+    // far, not vanish until the closing tag arrives.
+    expect(compactionSummaryText({ summaryText: "[summary]writing the pl" })).toBe(
+      "writing the pl",
+    );
+  });
+
+  it("uses tagless output verbatim (core's lenient extraction)", () => {
+    expect(compactionSummaryText({ summaryText: "no tags at all" })).toBe("no tags at all");
+  });
+
+  it("is empty when nothing streamed — a discard compaction, or a failed one whose draft was discarded", () => {
+    expect(compactionSummaryText({})).toBe("");
+    expect(compactionSummaryText({ summaryText: "" })).toBe("");
+    expect(compactionSummaryText({ summaryText: "   " })).toBe("");
+  });
+});

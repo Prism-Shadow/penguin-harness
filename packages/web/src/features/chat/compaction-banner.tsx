@@ -3,13 +3,14 @@
  * connect row and the reasoning-&-tools group header) — mode while running, outcome plus
  * wall time once settled, failures on a single line.
  *
- * The streamed summary (issue #290): while the compaction request writes its summary, the
- * text arrives as the span's own partial_text fragments accumulated onto
- * `item.summaryText` — the running banner shows the tail of it live under the header (the
- * same text a history rebuild reads back from the compaction span, so a reload agrees with
- * the live view);
- * once settled, the full text folds into the banner's expandable body. Summary tags are
- * stripped for display via the same lenient extractor core uses to adopt the summary.
+ * The summary is **collapsed by default, exactly like a thinking block**: the row carries
+ * the chevron from the moment a summarize compaction starts, and the text the compaction
+ * request is writing streams inside the collapsed body (same `md-body` treatment and the
+ * same streaming `Md` as thinking-block.tsx) — the reader expands it to watch the summary
+ * being written, or to read it afterwards. A `discard` compaction produces no text at all
+ * and stays chevron-less, as does a failed one: a compaction that did not complete wrote
+ * no adopted summary, and the reducer discards its half-written draft (see stream-model's
+ * compaction_end handling), so there is nothing left to show.
  *
  * Doesn't show Tokens: the row only needs to state whether compaction happened and whether it
  * succeeded. Compaction's cost lands in different places depending on when it occurs — compaction
@@ -17,32 +18,29 @@
  * turn ends** and manual compaction both go into the Session total (the Trace page lists
  * compaction turns separately); see the task-stats module comments.
  */
-import { extractSummary } from "@prismshadow/penguin-core/markers";
 import { S } from "../../lib/strings";
 import type { CompactionItem } from "../../lib/omni/stream-model";
+import { compactionSummaryText } from "../../lib/omni/compaction-summary";
+import { Md } from "./md";
 import { StepBanner } from "./step-banner";
 
-/** Tail cap for the live preview (characters after tag stripping): enough to read along without the row swallowing the stream. */
-const LIVE_TAIL_CHARS = 600;
-
-/** Strips the summary tags for display; empty when nothing readable has streamed yet. */
-function displaySummary(raw: string | undefined): string {
-  if (!raw) return "";
-  return extractSummary(raw).trim();
-}
-
-function SummaryBody({ text, tail }: { text: string; tail: boolean }) {
-  const shown =
-    tail && text.length > LIVE_TAIL_CHARS ? `…${text.slice(text.length - LIVE_TAIL_CHARS)}` : text;
+/** The expandable body: the same shell thinking uses for its own text (md-body + streaming Md). */
+function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) {
   return (
-    <div className="max-h-48 overflow-y-auto px-3 py-2 font-mono text-xs whitespace-pre-wrap text-gray-500 dark:text-gray-400">
-      {shown}
+    <div className="md-body px-3 py-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+      <Md text={text} streaming={streaming} />
     </div>
   );
 }
 
 export function CompactionBanner({ item }: { item: CompactionItem }) {
-  const summary = displaySummary(item.summaryText);
+  const summary = compactionSummaryText(item);
+  // The chevron is stable for the whole life of a summarize compaction: present from the
+  // start (before the first token arrives the body is simply empty, as a thinking block's
+  // is) rather than appearing mid-stream and shifting the row.
+  const expandable = summary !== "" || (item.running && item.mode === "summarize");
+  const body = expandable ? <SummaryBody text={summary} streaming={item.running} /> : null;
+
   if (item.running) {
     return (
       <StepBanner
@@ -50,8 +48,9 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
         title={S.chat.compactionTitle}
         detail={item.mode}
         {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
-        {...(summary !== "" ? { liveBody: <SummaryBody text={summary} tail /> } : {})}
-      />
+      >
+        {body}
+      </StepBanner>
     );
   }
   const ok = item.status === "completed";
@@ -66,7 +65,7 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
       }
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
     >
-      {summary !== "" ? <SummaryBody text={summary} tail={false} /> : null}
+      {body}
     </StepBanner>
   );
 }
