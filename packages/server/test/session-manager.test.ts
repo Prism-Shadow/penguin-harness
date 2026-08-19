@@ -371,6 +371,30 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
+  it("compact refusal: each reason gets its own error code, not one shared code", async () => {
+    // Clients localize by code (the Web looks it up in a table and falls back to the raw
+    // English message), so the three reasons cannot share one code: that forces either a
+    // single vague sentence for all three, or untranslated English in a non-English UI.
+    const cases = [
+      ["unsupported", "compaction_not_configured"],
+      ["empty", "nothing_to_compact"],
+      ["just_compacted", "already_compacted"],
+    ] as const;
+
+    for (const [why, code] of cases) {
+      const session: RuntimeSession = {
+        ...approvalFakeSession("session-1"),
+        compactability: () => why,
+      };
+      const manager = makeManager(loaderOf(session));
+      const err = await manager.startCompact("session-1").catch((e: unknown) => e);
+      expect((err as { status: number }).status).toBe(409);
+      expect((err as { code: string }).code).toBe(code);
+      // The message still names the reason, for a client that has not mapped the code.
+      expect((err as { message: string }).message).not.toBe("");
+    }
+  });
+
   it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
     const steered: string[] = [];
     const fake = approvalFakeSession("session-1");
