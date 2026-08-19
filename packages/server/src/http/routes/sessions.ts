@@ -19,6 +19,7 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
+  RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
@@ -54,9 +55,11 @@ import {
   assertAttachmentBudget,
   attachFilesToInput,
   parseAttachmentPart,
+  readRecalledFiles,
   removeAttachments,
 } from "../../services/task-attachments.js";
 import type { TaskAttachment } from "../../services/task-attachments.js";
+import type { RecallStore } from "../../runtime/session-manager.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -210,6 +213,10 @@ function resolveScratchpadFile(dir: string, fileName: string): string | null {
 interface ParsedTaskInput {
   messages: OmniMessage[];
   attachments: TaskAttachment[];
+  /** The `text` parts in order, as submitted — the recall store's text (pre-attachment-lines). */
+  texts: string[];
+  /** The `image_url` parts in order, as submitted — the recall store's images. */
+  images: string[];
 }
 
 /** Validate Prompt input parts: text, image (data: / http(s) URL), or an uploaded file. */
@@ -220,6 +227,8 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
   }
   const messages: OmniMessage[] = [];
   const attachments: TaskAttachment[] = [];
+  const texts: string[] = [];
+  const images: string[] = [];
   input.forEach((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw badRequest(`input[${i}] must be an object.`);
@@ -230,10 +239,13 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
         throw badRequest(`input[${i}].text must be a non-empty string.`);
       }
       messages.push(userText(part.text));
+      texts.push(part.text);
       return;
     }
     if (part.type === "image_url") {
-      messages.push(imageUrlMessage(requireImageUrl(part.imageUrl, `input[${i}].imageUrl`)));
+      const url = requireImageUrl(part.imageUrl, `input[${i}].imageUrl`);
+      messages.push(imageUrlMessage(url));
+      images.push(url);
       return;
     }
     if (part.type === "file") {
@@ -247,7 +259,48 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
     }
     throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
   });
-  return { messages, attachments };
+  return { messages, attachments, texts, images };
+}
+
+/**
+ * The recall store of a queued message (see session-manager RecallStore): the submitted
+ * content plus where each attachment landed on disk, zipped from the validated parts and
+ * `attachFilesToInput`'s written paths (same order — the writes are sequential).
+ */
+function recallStore(
+  text: string,
+  images: string[],
+  attachments: TaskAttachment[],
+  written: string[],
+): RecallStore {
+  return {
+    text,
+    images,
+    files: written.map((p, i) => ({
+      fileName: attachments[i]!.fileName,
+      path: p,
+      mime: attachments[i]!.mime,
+    })),
+  };
+}
+
+/**
+ * Serve one recall (#287): read the withdrawn message's file attachments back into data URLs,
+ * delete their scratchpad copies (nothing references them anymore — leaving them would strand
+ * a second copy when the user resends), and hand the composer-shaped content back.
+ */
+async function recalledResponse(
+  recall: RecallStore,
+  thinkingLevel?: ThinkingLevelName,
+): Promise<RecalledMessageResponse> {
+  const files = await readRecalledFiles(recall.files);
+  await removeAttachments(recall.files.map((f) => f.path));
+  return {
+    text: recall.text,
+    images: recall.images,
+    files,
+    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+  };
 }
 
 /**
@@ -426,6 +479,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
@@ -443,11 +497,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         );
       }
     }
-    if (approvalMode === undefined && archived === undefined && title === undefined) {
+    if (
+      approvalMode === undefined &&
+      thinkingLevel === undefined &&
+      archived === undefined &&
+      title === undefined
+    ) {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / archived / title).",
+        "No updatable field provided (approvalMode / thinkingLevel / archived / title).",
       );
     }
     let updated: SessionRow = { ...row };
@@ -460,6 +519,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
+    }
+    if (thinkingLevel !== undefined) {
+      // Takes effect from the next run on: launchTask/startGoal read the pinned level for
+      // any run that carries none of its own (a run already in flight keeps its level).
+      deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
+      updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {
       const at = archived ? new Date().toISOString() : null;
@@ -652,14 +717,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
+    const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
-        // Undelivered steering rides the snapshot too, so the composer's "steering queued"
-        // hint (and what it says) survives a reload.
+        // Undelivered steering and queued follow-ups ride the snapshot too, so the composer's
+        // queued hints (and what they say) survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
+        ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -730,6 +797,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         queueIfBusy,
+        // Original content, kept while the input waits in the follow-up queue so a recall
+        // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
+        recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
       return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
     } catch (err) {
@@ -769,11 +839,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      deps.manager.steer(row.sessionId, input, {
-        text,
-        images: images.length,
-        files: files.length,
-      });
+      deps.manager.steer(row.sessionId, input, recallStore(text, images, files, written));
     } catch (err) {
       // 409 (not running) or any other refusal: the files must not stay behind — the
       // frontend falls back to a normal task POST, which writes its own copies.
@@ -781,6 +847,29 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       throw err;
     }
     return c.body(null, 202);
+  });
+
+  // Recall an undelivered steering message back to the composer (#287): withdraws it from
+  // the queue and returns its original content for editing and resending. 409 not_pending
+  // once it was delivered to the model (or the id is unknown) — nothing left to take back.
+  app.delete("/:sessionId/steer/:steerId", async (c) => {
+    const row = resolveSession(c);
+    const recall = deps.manager.recallSteering(row.sessionId, pathParam(c, "steerId"));
+    return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Recall a queued follow-up task back to the composer (#287): removes it from the queue
+  // before it auto-starts and returns its original content (with the thinking level it was
+  // queued with). 409 not_pending once it already started (or the id is unknown).
+  app.delete("/:sessionId/follow-ups/:followUpId", async (c) => {
+    const row = resolveSession(c);
+    const { recall, thinkingLevel } = deps.manager.recallFollowUp(
+      row.sessionId,
+      pathParam(c, "followUpId"),
+    );
+    return c.json(
+      (await recalledResponse(recall, thinkingLevel)) satisfies RecalledMessageResponse,
+    );
   });
 
   // The Session's most recent goal run (for restoring the chat page's goal banner on load).

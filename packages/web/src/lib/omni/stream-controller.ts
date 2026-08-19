@@ -35,6 +35,7 @@ import type {
   GoalServerEvent,
   MessagesLiveTail,
   MessagesPageInfo,
+  PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
   SessionStatus,
@@ -121,6 +122,8 @@ export interface StreamControllerDeps {
   onQueuedFollowUps?: (count: number) => void;
   /** Undelivered steering messages carried on task_state events (absent = none): keeps the composer's "steering queued" hint alive across reloads. */
   onPendingSteering?: (items: PendingSteeringInfo[]) => void;
+  /** Queued follow-up tasks carried on task_state events (absent = none): each entry's content + recall handle, alongside the count. */
+  onPendingFollowUps?: (items: PendingFollowUpInfo[]) => void;
   onLoading: (loading: boolean) => void;
   /** History load failure message (null = clear). */
   onError: (message: string | null) => void;
@@ -290,6 +293,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onTaskState(ev.state);
         deps.onQueuedFollowUps?.(ev.queued ?? 0);
         deps.onPendingSteering?.(ev.pendingSteering ?? []);
+        deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
         if (ev.state === "idle") {
           // Task ended (or the snapshot confirms idle): finalize the current Task's stats; pending approvals have already converged server-side.
           notifyTaskIdle(model);
@@ -606,6 +610,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           deps.onTaskState(ev.state);
           deps.onQueuedFollowUps?.(ev.queued ?? 0);
           deps.onPendingSteering?.(ev.pendingSteering ?? []);
+          deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
         }
         buffer.push({ kind: "server", ev, id: eventId });
         return;

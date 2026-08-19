@@ -98,7 +98,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
   // seeded default (medium, short name 中); the menu carries a title bar and the short-name
-  // rows 低/中/高/极高 only — no descriptions, no default row, and no 无 (many models cannot
+  // rows 低/中/高/极高/最高 only — no descriptions, no default row, and no 无 (many models cannot
   // disable thinking); picking 高 writes straight through to the Agent config, so the session
   // created on send runs with it and it becomes the Agent's new default.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
