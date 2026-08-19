@@ -182,17 +182,18 @@ export interface TerminalViewProps {
 
 export function TerminalView({ ensure, onStatus, onInfo, onTitle, className }: TerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  // Appearance is repainted in place rather than remounted: the xterm instance, its
-  // scrollback and its WebSocket all outlive a theme switch (the view pool exists to keep
-  // exactly those alive). The ref is what lets the once-per-mount effect below read the
-  // current appearance without listing it as a dependency.
-  const { dark } = useTheme();
-  const darkRef = useRef(dark);
-  darkRef.current = dark;
+  // The terminal's OWN appearance setting (light / dark / follow the app, defaulting to
+  // dark — see TerminalThemeMode), not the app's. It is repainted in place rather than
+  // remounted: the xterm instance, its scrollback and its WebSocket all outlive a switch
+  // (the view pool exists to keep exactly those alive). The ref is what lets the
+  // once-per-mount effect below read the current appearance without depending on it.
+  const { terminalDark } = useTheme();
+  const darkRef = useRef(terminalDark);
+  darkRef.current = terminalDark;
   const termRef = useRef<XTerminal | null>(null);
   useEffect(() => {
-    if (termRef.current) termRef.current.options.theme = terminalTheme(dark);
-  }, [dark]);
+    if (termRef.current) termRef.current.options.theme = terminalTheme(terminalDark);
+  }, [terminalDark]);
   // Kept in refs so the (intentionally once-per-mount) effect always calls the latest
   // callbacks without re-running when a parent re-renders with a new closure.
   const callbacks = useRef({ ensure, onStatus, onInfo, onTitle });

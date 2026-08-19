@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
+import { useTerminalChrome } from "./terminal-appearance";
 import {
   assignTerminalToPane,
   closePane,
@@ -77,6 +78,7 @@ const RESIZER_CLASSES: Record<DockPosition, string> = {
 
 /** Small icon-sized header button shared by the pane's controls. */
 function DockButton(props: { label: string; testId: string; onClick: () => void; d: string }) {
+  const chrome = useTerminalChrome();
   return (
     <button
       type="button"
@@ -84,7 +86,7 @@ function DockButton(props: { label: string; testId: string; onClick: () => void;
       aria-label={props.label}
       data-testid={props.testId}
       onClick={props.onClick}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors duration-150 ${chrome.iconButton}`}
     >
       <svg
         width="14"
@@ -132,6 +134,7 @@ function TerminalTab(props: {
   onKill: () => void;
 }) {
   const { terminal, active } = props;
+  const chrome = useTerminalChrome();
   // The `1:`-style prefix (tmux convention) keeps identically-named/-titled tabs apart.
   // It is the terminal's STABLE seq, not its position: a dragged tab keeps its number, so
   // where it went stays visible.
@@ -142,9 +145,7 @@ function TerminalTab(props: {
       data-terminal-id={terminal.id}
       data-active={active}
       className={`group relative flex h-6 min-w-10 max-w-40 items-center overflow-hidden rounded-md transition-colors duration-150 ${
-        active
-          ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-          : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        active ? chrome.tabActive : chrome.tabIdle
       }`}
     >
       {/* No shrink-0: crowded tabs squeeze browser-style down to min-w-10 — the label
@@ -166,7 +167,7 @@ function TerminalTab(props: {
         aria-label={`${S.terminal.killShell}: ${label}`}
         data-testid="terminal-tab-kill"
         onClick={props.onKill}
-        className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded bg-gray-100 p-0.5 opacity-0 transition-opacity duration-150 hover:bg-gray-200 group-hover:opacity-100 focus-visible:opacity-100 dark:bg-gray-800 dark:hover:bg-gray-700"
+        className={`absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 ${chrome.tabKill}`}
       >
         <svg
           width="10"
@@ -308,6 +309,7 @@ async function resolvePaneCurrent(position: DockPosition): Promise<void> {
 }
 
 export function TerminalDock({ position }: { position: DockPosition }) {
+  const chrome = useTerminalChrome();
   useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
   const allTerminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
   const currentId = paneCurrent(position);
@@ -565,7 +567,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
       data-position={position}
       data-status={status}
       style={horizontal ? { height: `${ratio * 100}%` } : { width: `${ratio * 100}%` }}
-      className={`relative flex min-h-0 min-w-0 flex-col border-gray-200 bg-white text-gray-900 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100 ${POSITION_CLASSES[position]}`}
+      className={`relative flex min-h-0 min-w-0 flex-col ${chrome.surface} ${chrome.border} ${POSITION_CLASSES[position]}`}
     >
       {/* Boundary resize handle: invisible until hovered/active, forgiving 6px hit strip. */}
       <div
@@ -584,14 +586,14 @@ export function TerminalDock({ position }: { position: DockPosition }) {
       <header
         data-testid="terminal-dock-header"
         {...headerDragProps}
-        className="flex shrink-0 cursor-grab select-none items-center gap-2 border-b border-gray-200 px-3 py-1.5 text-xs dark:border-gray-800"
+        className={`flex shrink-0 cursor-grab select-none items-center gap-2 border-b px-3 py-1.5 text-xs ${chrome.border}`}
       >
         {/* Grip: the visual "this bar drags" affordance (any non-interactive spot of the
             header drags the pane; the grip is the always-present, unmistakable one). */}
         <span
           data-testid="terminal-dock-grip"
           aria-hidden
-          className="flex h-6 shrink-0 items-center text-gray-400 dark:text-gray-600"
+          className={`flex h-6 shrink-0 items-center ${chrome.grip}`}
         >
           <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
             <circle cx="2.5" cy="2.5" r="1.2" />
@@ -660,10 +662,8 @@ export function TerminalDock({ position }: { position: DockPosition }) {
           data-testid="terminal-dock-error"
           className="absolute inset-x-0 bottom-0 top-9 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
         >
-          <div className="text-sm text-red-600 dark:text-red-400">{S.terminal.createFailed}</div>
-          <div className="max-w-xl break-all text-xs text-gray-500 dark:text-gray-400">
-            {resolveError}
-          </div>
+          <div className={`text-sm ${chrome.danger}`}>{S.terminal.createFailed}</div>
+          <div className={`max-w-xl break-all text-xs ${chrome.muted}`}>{resolveError}</div>
           <button
             type="button"
             data-testid="terminal-dock-retry"
@@ -671,7 +671,7 @@ export function TerminalDock({ position }: { position: DockPosition }) {
               setPaneError(position, null);
               void resolvePaneCurrent(position);
             }}
-            className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+            className={`rounded border px-3 py-1 text-xs ${chrome.outlineButton}`}
           >
             {S.common.retry}
           </button>

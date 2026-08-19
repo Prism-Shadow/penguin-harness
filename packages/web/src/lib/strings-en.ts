@@ -74,6 +74,8 @@ export const en: Strings = {
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
+    terminalTheme: "Terminal theme",
+    followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
