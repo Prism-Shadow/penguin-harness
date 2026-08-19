@@ -1,5 +1,12 @@
 # Language and theme carry across the landing page and the docs site
 
+- **Date:** 2026-07-21
+- **Type:** fix
+- **Scope:** `landing`, `docs`
+- **PR:** [#13](https://github.com/Prism-Shadow/penguin-harness/pull/13)
+
+[中文版](2026-07-21-site-preferences-sync.zh.md)
+
 The two sites are separate SPAs deployed to one origin — penguin.ooo and penguin.ooo/docs/ — but each persisted its preferences under its own `localStorage` key (`penguin-landing.*` and `penguin-docs.*`). Picking dark mode or Chinese on one and clicking through to the other therefore dropped the visitor back to the system default, which read as the setting being ignored.
 
 - Both sites now read and write one shared pair of keys, `penguin-site.theme` and `penguin-site.lang`, via a small `state/site-prefs.ts` module duplicated in each package (they share no package, exactly as `theme.tsx` and `locale.tsx` already are). The keys must stay identical on both sides; if they drift, the sync stops silently.

@@ -1,5 +1,12 @@
 # Built-in MiniMax M3 model preset
 
+- **Date:** 2026-08-18
+- **Type:** feature
+- **Scope:** `core`, `web`, `docs`, `model-catalog`
+- **PR:** [#167](https://github.com/Prism-Shadow/penguin-harness/pull/167)
+
+[中文版](2026-08-18-minimax-m3-preset.zh.md)
+
 The built-in model catalog gains a MiniMax provider group with one direct `MiniMax-M3` preset, ready to use with only an API key.
 
 ## Core

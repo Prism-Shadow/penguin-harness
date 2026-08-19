@@ -1,5 +1,12 @@
 # Models and core: request hygiene, prompt guardrails, and runtime settings
 
+- **Date:** 2026-07-22
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
+- **PR:** [#21](https://github.com/Prism-Shadow/penguin-harness/pull/21), [#24](https://github.com/Prism-Shadow/penguin-harness/pull/24), [#28](https://github.com/Prism-Shadow/penguin-harness/pull/28), [#38](https://github.com/Prism-Shadow/penguin-harness/pull/38), [#40](https://github.com/Prism-Shadow/penguin-harness/pull/40), [#43](https://github.com/Prism-Shadow/penguin-harness/pull/43)
+
+[中文版](2026-07-22-models-and-core.zh.md)
+
 ## Empty tool lists stay off the wire
 
 Strict OpenAI-compatible servers reject requests that carry `tools: []` — vLLM answers `400 … tools must not be an empty array. Either provide at least one tool or omit the field entirely.` Every tool-less request the harness makes (the Models-page connectivity probe, session-title generation, the vision describer) hit this against a local vLLM endpoint.

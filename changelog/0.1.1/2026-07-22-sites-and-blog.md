@@ -1,5 +1,12 @@
 # Sites: one navbar, a richer blog, and the built-in Skills listed
 
+- **Date:** 2026-07-22
+- **Type:** process
+- **Scope:** `landing`, `docs`
+- **PR:** [#20](https://github.com/Prism-Shadow/penguin-harness/pull/20), [#23](https://github.com/Prism-Shadow/penguin-harness/pull/23), [#25](https://github.com/Prism-Shadow/penguin-harness/pull/25), [#32](https://github.com/Prism-Shadow/penguin-harness/pull/32), [#42](https://github.com/Prism-Shadow/penguin-harness/pull/42), [#45](https://github.com/Prism-Shadow/penguin-harness/pull/45)
+
+[中文版](2026-07-22-sites-and-blog.zh.md)
+
 ## The docs and landing navbars are identical
 
 The two sites' navbars differed in container width (6xl vs 7xl), the docs-only badge pill, hamburger placement and a broken menu animation class. Both now share the same `max-w-7xl` container (the landing footer aligned to match, framing nav and footer consistently while content sections stay 6xl), the same logo block, and the same right-cluster layout; the landing language menu's undefined `anim-pop` class was replaced with the working `anim-fade`. Cross-SPA link semantics and each site's mobile behavior stay as they were.

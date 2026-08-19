@@ -23,8 +23,11 @@ cache/
 # logs
 *.log
 
-# claude code session state (worktrees, skills)
-.claude/
+# Agent workspace. `.claude` is a committed symlink to `.agents`, so a
+# Claude Code session and any other agent read the same `.agents/skills/`.
+# The shared contents are tracked; only per-machine session state is not.
+.agents/settings.local.json
+.agents/**/*.local.*
 
 # playwright e2e artifacts
 packages/web/test-results/
