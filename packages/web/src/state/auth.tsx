@@ -6,9 +6,24 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { UserInfo } from "@prismshadow/penguin-server/api";
+import type { UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
+
+/**
+ * Stand-in until GET /api/me answers, matching the server's shipped defaults. The window is the
+ * mount-time fetch, before a composer can be used at all; the server re-validates every upload
+ * against the real limits regardless, so a stale value here can only make the composer's
+ * pre-flight check slightly wrong, never let an oversize file through.
+ */
+const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
+  attachmentMaxMb: 100,
+  attachmentTotalMb: 120,
+  attachmentMaxCount: 20,
+  imageMaxMb: 20,
+  attachmentLimitMinMb: 1,
+  attachmentLimitMaxMb: 200,
+};
 
 interface AuthContextValue {
   /** undefined = initializing; null = not logged in. */
@@ -32,6 +47,12 @@ interface AuthContextValue {
    * password without the old one.
    */
   sessionVia: "password" | "desktop";
+  /**
+   * Upload limits in force on this server (admin-settable). The composer reads them to refuse an
+   * oversize pick before reading it and to name the real number in the message, so the client
+   * check and the server check can never disagree about what "too large" means.
+   */
+  uploadLimits: UploadLimits;
   login: (userId: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   /** Refetch /api/me (e.g. to refresh the passwordIsInitial flag after a password change). */
@@ -47,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [previewIsolated, setPreviewIsolated] = useState(true);
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<"password" | "desktop">("password");
+  const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
   // RequireAuth redirects back to the login page.
@@ -67,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
+        setUploadLimits(res.uploadLimits);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -94,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
+      setUploadLimits(me.uploadLimits);
     } catch {
       // Login itself succeeded; keep the optimistic default.
     }
@@ -113,11 +137,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);
     setSessionVia(res.sessionVia);
+    setUploadLimits(res.uploadLimits);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, previewIsolated, desktopMode, sessionVia, login, logout, refresh }}
+      value={{
+        user,
+        previewIsolated,
+        desktopMode,
+        sessionVia,
+        uploadLimits,
+        login,
+        logout,
+        refresh,
+      }}
     >
       {children}
     </AuthContext.Provider>

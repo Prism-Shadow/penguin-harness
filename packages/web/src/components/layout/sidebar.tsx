@@ -145,6 +145,7 @@ import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
+import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
@@ -367,6 +368,11 @@ export function Sidebar({
    * ProxySettingsDialog.
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
+  /**
+   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
+   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
+   */
+  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -1791,6 +1797,20 @@ export function Sidebar({
                 {S.settings.proxyMenu}
               </button>
             )}
+            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
+                opener above. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setUploadLimitsOpen(true);
+                }}
+              >
+                {S.settings.uploadLimitsMenu}
+              </button>
+            )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
                 layout: the menu used to stack a release-notes link, an admin "Update now" row
                 and this check row on top of each other). It reads "Check for updates" and runs
@@ -1889,6 +1909,7 @@ export function Sidebar({
         onClose={() => setChangePasswordOpen(false)}
       />
       <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
+      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
