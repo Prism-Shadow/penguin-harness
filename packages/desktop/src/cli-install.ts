@@ -27,7 +27,7 @@ import type { CliInstallKind } from "./launcher.js";
 
 const execFileAsync = promisify(execFile);
 
-/** The staged launcher directory inside the packaged app. */
+/** The launcher directory inside the packaged app. */
 function binDir(): string {
   return path.join(app.getAppPath(), "bin");
 }

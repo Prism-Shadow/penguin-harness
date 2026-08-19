@@ -1,7 +1,7 @@
 # Desktop packages: Electron installers for the desktop shell.
 #
-# Reusable three-OS matrix: stage the pnpm-deploy app tree, run electron-builder, and
-# upload the installers as workflow artifacts named desktop-<OS>. release.yml calls this
+# Reusable three-OS matrix: build the workspace, run electron-builder, and upload the
+# installers as workflow artifacts named desktop-<OS>. release.yml calls this
 # BEFORE creating the Release — assets are immutable once published, so the desktop
 # installers must exist at creation time. workflow_dispatch runs it standalone as a dry
 # run on any branch.
@@ -139,9 +139,6 @@ jobs:
 
       - run: pnpm -r build
 
-      - name: Stage the app directory
-        run: node packages/desktop/scripts/stage.mjs
-
       # Windows carries MinGit under resources/git so the packaged agent shell has the
       # same deterministic POSIX bash as the npm package (release.yml bundles the
       # identical MinGit into the CLI win-x64 zip; the shell advertises it as
@@ -153,7 +150,7 @@ jobs:
           mingit="MinGit-$MINGIT_VERSION-64-bit.zip"
           curl -fsSL -o "$mingit" \
             "https://github.com/git-for-windows/git/releases/download/$MINGIT_TAG/$mingit"
-          unzip -q "$mingit" -d packages/desktop/stage/minigit
+          unzip -q "$mingit" -d packages/desktop/build/minigit
 
       - name: Prepare macOS signing credentials
         if: runner.os == 'macOS'
@@ -289,7 +286,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $publisher = "RushRush Network Technology Ltd"
-          $outDir = "packages/desktop/stage/out"
+          $outDir = "packages/desktop/out"
           $installer = Join-Path $outDir "penguin-desktop-win32-x64.exe"
           $latest = Join-Path $outDir "latest.yml"
           $blockmap = "$installer.blockmap"
@@ -353,7 +350,7 @@ jobs:
           set -euo pipefail
 
           shopt -s nullglob
-          dmgs=(packages/desktop/stage/out/*.dmg)
+          dmgs=(packages/desktop/out/*.dmg)
           if ((${#dmgs[@]} == 0)); then
             echo "::error title=Missing macOS DMG::No DMG files were produced."
             exit 1
@@ -381,7 +378,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          metadata="packages/desktop/stage/out/latest-mac.yml"
+          metadata="packages/desktop/out/latest-mac.yml"
           if [[ ! -f "$metadata" ]]; then
             echo "::error title=Missing macOS update metadata::$metadata was not produced."
             exit 1
@@ -390,7 +387,7 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
 
-          const metadata = "packages/desktop/stage/out/latest-mac.yml";
+          const metadata = "packages/desktop/out/latest-mac.yml";
           const text = fs.readFileSync(metadata, "utf8");
           const lines = text.split(/\r?\n/);
           const output = [];
@@ -453,8 +450,8 @@ jobs:
           set -euo pipefail
 
           apps=(
-            packages/desktop/stage/out/mac-arm64/PenguinHarness.app
-            packages/desktop/stage/out/mac/PenguinHarness.app
+            packages/desktop/out/mac-arm64/PenguinHarness.app
+            packages/desktop/out/mac/PenguinHarness.app
           )
           for app in "${apps[@]}"; do
             if [[ ! -d "$app" ]]; then
@@ -473,7 +470,7 @@ jobs:
           done
 
           shopt -s nullglob
-          dmgs=(packages/desktop/stage/out/*.dmg)
+          dmgs=(packages/desktop/out/*.dmg)
           if ((${#dmgs[@]} == 0)); then
             echo "::error title=Missing macOS DMG::No DMG files were produced."
             exit 1
@@ -493,13 +490,13 @@ jobs:
           name: desktop-${{ runner.os }}
           if-no-files-found: error
           path: |
-            packages/desktop/stage/out/penguin-desktop-*.AppImage
-            packages/desktop/stage/out/penguin-desktop-*.deb
-            packages/desktop/stage/out/penguin-desktop-*.dmg
-            packages/desktop/stage/out/penguin-desktop-*.zip
-            packages/desktop/stage/out/penguin-desktop-*.exe
+            packages/desktop/out/penguin-desktop-*.AppImage
+            packages/desktop/out/penguin-desktop-*.deb
+            packages/desktop/out/penguin-desktop-*.dmg
+            packages/desktop/out/penguin-desktop-*.zip
+            packages/desktop/out/penguin-desktop-*.exe
             # Update metadata: electron-updater reads latest*.yml from the Release, and
             # the blockmaps are what make differential downloads possible. Without these
             # the installers ship but nothing can auto-update.
-            packages/desktop/stage/out/latest*.yml
-            packages/desktop/stage/out/*.blockmap
+            packages/desktop/out/latest*.yml
+            packages/desktop/out/*.blockmap

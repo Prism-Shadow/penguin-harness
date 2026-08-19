@@ -155,11 +155,6 @@ jobs:
 
       - run: pnpm build
 
-      # Stage the self-contained app tree (packages/desktop/stage/app) that
-      # electron-builder packages — the same explicit step desktop-build.yml runs.
-      - name: Stage the app tree
-        run: node packages/desktop/scripts/stage.mjs
-
       - name: Build unpacked runtime
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -172,8 +167,8 @@ jobs:
           if-no-files-found: error
           # Each OS produces exactly one of these unpacked trees.
           path: |
-            packages/desktop/stage/out/linux-unpacked
-            packages/desktop/stage/out/win-unpacked
-            packages/desktop/stage/out/mac
-            packages/desktop/stage/out/mac-arm64
-            packages/desktop/stage/out/mac-x64
+            packages/desktop/out/linux-unpacked
+            packages/desktop/out/win-unpacked
+            packages/desktop/out/mac
+            packages/desktop/out/mac-arm64
+            packages/desktop/out/mac-x64

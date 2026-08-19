@@ -86,6 +86,23 @@ describe.skipIf(process.platform === "win32")(
       expect(detectInstall("/random/place/index.js").kind).toBe("unknown");
       expect(detectInstall("/home/me/.penguin/bin/penguin").kind).toBe("unknown");
     });
+
+    it("an Electron runtime is the desktop app, whatever the path looks like", () => {
+      // The desktop app bundles the CLI to a path no layout matches, and runs it on the
+      // app's Electron runtime as Node.
+      expect(
+        detectInstall("/opt/PenguinHarness/resources/app/dist/penguin.js", { electron: true }),
+      ).toEqual({ kind: "desktop" });
+      expect(
+        detectInstall("/usr/local/lib/node_modules/@prismshadow/penguin-cli/dist/index.js", {
+          electron: true,
+        }),
+      ).toEqual({ kind: "desktop" });
+      expect(
+        detectInstall("/opt/PenguinHarness/resources/app/dist/penguin.js", { electron: false })
+          .kind,
+      ).toBe("unknown");
+    });
   },
 );
 
@@ -504,6 +521,7 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     defaultInstallDir: "/home/me/.penguin",
   };
   const tarball = { kind: "tarball", installDir: "/home/me/.penguin" } as const;
+  const desktop = { kind: "desktop" } as const;
   const npmGlobal = { kind: "npm", globalRoot: "/usr/local/lib/node_modules" } as const;
 
   it("--check reports the comparison and never upgrades, even when one is available", () => {
@@ -546,6 +564,13 @@ describe("planUpdate (what the command decides before it touches anything)", () 
     expect(planUpdate({ ...base, install: { kind: "source" } })).toEqual({
       action: "refuse",
       reason: "source",
+    });
+  });
+
+  it("the desktop app is refused: it replaces its bundled CLI when the app updates", () => {
+    expect(planUpdate({ ...base, install: desktop })).toEqual({
+      action: "refuse",
+      reason: "desktop",
     });
   });
 

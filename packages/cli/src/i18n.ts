@@ -123,6 +123,8 @@ export interface Messages {
     failed(): string;
     /** Running from a source checkout: refuse, because overwriting a working tree destroys work. */
     sourceCheckout(): string;
+    /** Bundled into the desktop app: refuse, because the app updates itself. */
+    desktopApp(): string;
     unknownInstall(modulePath: string): string;
     /** A global install whose package manager could not be identified: print the command, never guess. */
     npmUnknownManager(globalRoot: string, target: string): string;
@@ -419,6 +421,8 @@ const en: Messages = {
     failed: () => "Upgrade failed; the previous install was left in place where possible.",
     sourceCheckout: () =>
       "This penguin runs from a source checkout, so there is nothing to download — update it with `git pull` and rebuild (`pnpm install && pnpm -r build`).",
+    desktopApp: () =>
+      "This penguin ships inside the PenguinHarness desktop app and is replaced when the app updates — check for updates from the application menu.",
     unknownInstall: (modulePath) =>
       `Cannot tell how this penguin was installed (running from ${modulePath}), so it will not be replaced. Re-install with the official installer, or upgrade with the package manager you used.`,
     npmUnknownManager: (globalRoot, target) =>
@@ -671,6 +675,8 @@ const zh: Messages = {
     failed: () => "升级失败；在可能的情况下已保留原有安装。",
     sourceCheckout: () =>
       "当前 penguin 运行自源码检出，无需下载——请用 `git pull` 更新并重新构建（`pnpm install && pnpm -r build`）。",
+    desktopApp: () =>
+      "当前 penguin 随 PenguinHarness 桌面应用一同分发，会在应用更新时一并替换——请从应用菜单检查更新。",
     unknownInstall: (modulePath) =>
       `无法判断当前 penguin 的安装方式（运行自 ${modulePath}），因此不会替换它。请用官方安装脚本重新安装，或用你当初使用的包管理器升级。`,
     npmUnknownManager: (globalRoot, target) =>
