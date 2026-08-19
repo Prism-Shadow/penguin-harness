@@ -1,10 +1,17 @@
 # Agent config kernel version: dated generations with a smart update
 
-`system_config.yaml` is baked at agent creation and never auto-upgraded, so until now the only way to newer built-in defaults was a full restore that discarded every customization. Agent configs now carry a **kernel version** (#263): a date, `kernel_version: 2026-08-11`, recording which generation of built-in defaults the config was created from or last updated to. Creation and "restore defaults" both stamp it; ordinary config edits never touch it (it is unrelated to `version`, the optimization counter).
+- **Date:** 2026-08-11
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`
+- **PR:** [#257](https://github.com/Prism-Shadow/penguin-harness/pull/257), [#261](https://github.com/Prism-Shadow/penguin-harness/pull/261), [#263](https://github.com/Prism-Shadow/penguin-harness/pull/263)
+
+[中文版](2026-08-11-agent-kernel-version.zh.md)
+
+`system_config.yaml` is baked at agent creation and never auto-upgraded, so until now the only way to newer built-in defaults was a full restore that discarded every customization. Agent configs now carry a **kernel version** ([#263](https://github.com/Prism-Shadow/penguin-harness/pull/263)): a date, `kernel_version: 2026-08-11`, recording which generation of built-in defaults the config was created from or last updated to. Creation and "restore defaults" both stamp it; ordinary config edits never touch it (it is unrelated to `version`, the optimization counter).
 
 ## Development-side bumps, mechanically enforced
 
-The version only moves when development changes the defaults, and it cannot be forgotten: a guard test pins the hash of every leaf default to the latest entry of a per-generation history table, so any default change fails CI until `KERNEL_VERSION` gets a new date and the table gains the generation. The history is seeded with two generations — the current defaults and the byte-exact pre-#257 reconstruction — and matching is purely by hash, never by the stored date.
+The version only moves when development changes the defaults, and it cannot be forgotten: a guard test pins the hash of every leaf default to the latest entry of a per-generation history table, so any default change fails CI until `KERNEL_VERSION` gets a new date and the table gains the generation. The history is seeded with two generations — the current defaults and the byte-exact pre-[#257](https://github.com/Prism-Shadow/penguin-harness/pull/257) reconstruction — and matching is purely by hash, never by the stored date.
 
 ## Update beside restore
 
@@ -14,4 +21,4 @@ Outdated agents are flagged with the minimal-chrome convention — the kernel-ve
 
 ## The overview settles into ruled sections
 
-The rest of the overview follows the kernel controls (#261), as horizontal-rule-divided sections in the skill library's visual family rather than boxed cards: an **Agent State** section (State version with the snapshot import/export actions beside it, and the state path below — click-to-copy via the chat details card's optimistic "Copied" convention, full path on hover) and the **Kernel** section (Update and Restore in its action slot). Version values render dark and semibold against small gray labels so the number is the first thing read. The name/description form keeps its Save beside the fields it actually saves, and the active-session statistic is dropped from the overview.
+The rest of the overview follows the kernel controls ([#261](https://github.com/Prism-Shadow/penguin-harness/pull/261)), as horizontal-rule-divided sections in the skill library's visual family rather than boxed cards: an **Agent State** section (State version with the snapshot import/export actions beside it, and the state path below — click-to-copy via the chat details card's optimistic "Copied" convention, full path on hover) and the **Kernel** section (Update and Restore in its action slot). Version values render dark and semibold against small gray labels so the number is the first thing read. The name/description form keeps its Save beside the fields it actually saves, and the active-session statistic is dropped from the overview.

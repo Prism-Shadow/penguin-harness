@@ -1,5 +1,12 @@
 # Web App: one name per navigation entry, one update row, one panel width, and a fixed-height example shelf
 
+- **Date:** 2026-07-30
+- **Type:** feature
+- **Scope:** `web`, `server`
+- **PR:** [#119](https://github.com/Prism-Shadow/penguin-harness/pull/119), [#130](https://github.com/Prism-Shadow/penguin-harness/pull/130)
+
+[中文版](2026-07-30-web-app-refinements.zh.md)
+
 A pass over the surfaces you touch on every visit. Navigation entries settle on a single name each, the user menu's three update rows collapse into one, the two docked panels stop behaving like two different panels, Project display names become editable, and the draft page's examples become a fixed-height shelf that can keep growing.
 
 ## Navigation entries have one name each
