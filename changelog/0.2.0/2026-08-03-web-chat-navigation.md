@@ -1,6 +1,13 @@
 # Web App: chat navigation — input history, stacked sticky headers, minimap tick rail
 
-Long conversations were hard to move through: recalling a previous request meant retyping it, collapsing a long thinking/tool run meant scrolling all the way back to its header, and reaching a specific exchange meant scrolling past everything in between. Three navigation aids on the chat page address this (#164).
+- **Date:** 2026-08-03
+- **Type:** feature
+- **Scope:** `web`
+- **PR:** [#164](https://github.com/Prism-Shadow/penguin-harness/pull/164)
+
+[中文版](2026-08-03-web-chat-navigation.zh.md)
+
+Long conversations were hard to move through: recalling a previous request meant retyping it, collapsing a long thinking/tool run meant scrolling all the way back to its header, and reaching a specific exchange meant scrolling past everything in between. Three navigation aids on the chat page address this ([#164](https://github.com/Prism-Shadow/penguin-harness/pull/164)).
 
 ## ArrowUp input history
 

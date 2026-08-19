@@ -117,4 +117,4 @@ curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/downl
 penguin web
 ```
 
-Then open the Models page, drop in a Gemini or OpenRouter key, and pick `gemini-3.6-flash`. The full release notes live in [`changelog/0.1.1/`](https://github.com/Prism-Shadow/penguin-harness/blob/main/changelog/0.1.1/README.md).
+Then open the Models page, drop in a Gemini or OpenRouter key, and pick `gemini-3.6-flash`. The full release notes live in [`changelog/0.1.1/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.1).

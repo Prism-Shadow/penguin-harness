@@ -1,6 +1,14 @@
 # File tools diagnose missing paths instead of implying absolute paths are rejected
 
-`read_file` / `edit_file` accepted absolute paths all along, but their "File not found" message mentioned only workspace-relative resolution — so a genuinely missing file (typically a dropped `agent_state/` segment) read as "absolute paths are unsupported", and the model retried path forms instead of questioning the path (#138).
+- **Date:** 2026-08-02
+- **Type:** fix
+- **Scope:** `core`, `skills`
+- **PR:** [#155](https://github.com/Prism-Shadow/penguin-harness/pull/155)
+- **Issue:** [#138](https://github.com/Prism-Shadow/penguin-harness/issues/138)
+
+[中文版](2026-08-02-file-tool-missing-path-diagnostics.zh.md)
+
+`read_file` / `edit_file` accepted absolute paths all along, but their "File not found" message mentioned only workspace-relative resolution — so a genuinely missing file (typically a dropped `agent_state/` segment) read as "absolute paths are unsupported", and the model retried path forms instead of questioning the path ([#138](https://github.com/Prism-Shadow/penguin-harness/issues/138)).
 
 ## Details
 

@@ -1,5 +1,12 @@
 # Web App and CLI: duration and byte abbreviations carry into the next unit
 
+- **Date:** 2026-07-28
+- **Type:** fix
+- **Scope:** `web`, `cli`
+- **PR:** [#112](https://github.com/Prism-Shadow/penguin-harness/pull/112)
+
+[中文版](2026-07-28-duration-and-byte-formatting.zh.md)
+
 Two display helpers chose a unit — or split a value into minutes and seconds — from the raw input while printing a rounded one, so a duration could read `1m60s` and a file size `1024KB`. Both now round before deciding what to print.
 
 ## Durations no longer print a 60-second remainder

@@ -1,5 +1,12 @@
 # Offline admin password reset: `penguin server reset-admin-password`
 
+- **Date:** 2026-08-18
+- **Type:** feature
+- **Scope:** `cli`, `server`
+- **PR:** [#315](https://github.com/Prism-Shadow/penguin-harness/pull/315)
+
+[中文版](2026-08-18-admin-password-reset.zh.md)
+
 The admin resets every other user's password from the user-management page, but a forgotten **admin** password had no recovery path once it was changed from the initial one (the plaintext file in the data root only survives while the password is still initial). A new CLI subcommand closes the gap from the machine that owns the data root:
 
 ```bash
