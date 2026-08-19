@@ -1,1 +1,12 @@
 stage/
+
+# Artifacts of a desktop packaging run. The scripts that write them do not live on
+# every branch, but the files they leave behind outlive a branch switch — an ignore
+# rule only where the generator lives leaves 340 MB of unpacked app untracked and
+# unignored in every other working copy, one `git add -A` away from a commit.
+#   bin/    — generated `penguin` / `penguin.cmd` CLI launchers
+#   out/    — electron-builder output
+#   skills/ — a copy of packages/skills/skills, which is tracked at its source
+bin/
+out/
+skills/
