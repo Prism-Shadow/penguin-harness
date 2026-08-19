@@ -87,6 +87,45 @@ export function ConfirmModal({
 }
 
 /**
+ * Alert dialog: the same compact card as ConfirmModal, but for something that already
+ * happened rather than something to approve — so it carries a single dismiss button
+ * instead of a Cancel / Confirm pair. Use it when a failure has to interrupt (the user
+ * cannot proceed, or is about to act on a wrong assumption); a toast remains the right
+ * choice for anything they can safely ignore.
+ */
+export function AlertModal({
+  open,
+  title,
+  onClose,
+  tone = "danger",
+  closeLabel,
+  children,
+}: {
+  open: boolean;
+  /** Accessible dialog name only — the compact card renders no title bar. */
+  title: string;
+  onClose: () => void;
+  tone?: "danger" | "primary";
+  /** Dismiss button text (defaults to the shared "Close"). */
+  closeLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Modal open={open} title={title} onClose={onClose} headerless widthClass="sm:max-w-sm">
+      <div className="flex items-start gap-3">
+        <ToneBadge tone={tone} />
+        <div className="min-w-0 flex-1 pt-1.5">{children}</div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button size="sm" variant="primary" onClick={onClose}>
+          {closeLabel ?? S.common.close}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+/**
  * Shared confirm-before-save flow for the settings forms: `requestSave(run)` opens a
  * standard "save these changes?" dialog and Confirm executes `run`. The caller decides
  * beforehand whether there is anything to save (no changes → an info toast, not a

@@ -52,7 +52,7 @@ import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { AlertModal, ConfirmModal } from "../../components/ui/confirm-modal";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -76,8 +76,12 @@ import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./m
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
+  classifyDetectFailure,
+  detectableBaseUrl,
+  isCustomLikeGroup,
   isGenericProtocolClientType,
-  protocolDetectBlocker,
+  needsProtocolDetectOnSave,
+  protocolForPersist,
   protocolSelectorValue,
 } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
@@ -316,7 +320,8 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   return row;
 }
 
-function rowToEntry(row: RowState): ModelUpdateEntry {
+/** Row edit state -> wire entry (exported for unit tests): the single funnel into the config PUT. */
+export function rowToEntry(row: RowState): ModelUpdateEntry {
   // provider and modelId are always submitted as separate fields ((provider, modelId) is the entry's unique key, no concatenation).
   const entry: ModelUpdateEntry = { provider: row.provider, modelId: row.modelId };
   // Rename (either provider or model_id changing is a key change): include the original paired reference so the server
@@ -328,7 +333,10 @@ function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.displayName?.trim()) entry.displayName = row.displayName.trim();
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
-  if (row.clientType.trim()) entry.clientType = row.clientType.trim();
+  // Never persists an empty protocol for a custom-like entry (that entry could not start —
+  // see protocolForPersist); preset / vendor rows keep "" so AgentHub infers from the id.
+  const clientType = protocolForPersist(row.provider, row.clientType);
+  if (clientType) entry.clientType = clientType;
   // Supported by default: submit false only when explicitly marked "unsupported" (preset vision models and checked custom models aren't persisted).
   if (!row.vision) entry.vision = false;
   // Output cap ("" = inherit the Agent setting): submitted only when filled; omitting clears the stored annotation.
@@ -1103,7 +1111,10 @@ function ModelDialog({
       vision: true,
       contextWindow: "",
       maxTokens: "",
-      clientType: vendorAdd ? "" : "openai-chat",
+      // No protocol is preselected for a custom / user-defined group: it is detected from
+      // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
+      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
+      clientType: vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat",
       cacheRead: "",
       cacheWrite: "",
       output: "",
@@ -1125,18 +1136,30 @@ function ModelDialog({
   const [confirming, setConfirming] = useState<DialogAction | null>(null);
   /** Protocol detection in progress (custom / user-defined groups only). */
   const [detecting, setDetecting] = useState(false);
-  /** Last detection outcome, rendered under the protocol selector (null = nothing to show). */
+  /**
+   * Last detection outcome. A hit renders one green line under the base URL field; a miss
+   * only tints the suffix trigger amber, because the explanation goes to the popup below
+   * (an error the user must act on interrupts rather than waiting to be noticed).
+   */
   const [detectResult, setDetectResult] = useState<
     | { kind: "ok"; clientType: string }
     | { kind: "none" }
     | { kind: "error"; message: string }
     | null
   >(null);
+  /** Message of the detection-failure popup (null = closed); dismissing it keeps the amber tone. */
+  const [detectAlert, setDetectAlert] = useState<string | null>(null);
   /**
    * Monotonic run counter: each detection captures it and only the newest run may apply
    * its result — a manual protocol pick or a re-run supersedes anything still in flight.
    */
   const detectSeq = useRef(0);
+  /**
+   * The run currently in flight, so a second trigger joins it instead of starting a rival
+   * probe: clicking Detect while the save path is already probing (or vice versa) must not
+   * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
+   */
+  const detectInFlight = useRef<Promise<string | null> | null>(null);
   /** Base URL the last detection ran against (auto-detect on blur only fires when it changed). */
   const lastDetectedUrl = useRef<string | null>(null);
   const isNew = row === null;
@@ -1191,20 +1214,29 @@ function ModelDialog({
   /**
    * Protocol detection: POST /models/detect probes the base URL for the three generic
    * protocols (openai-responses → ant-messages → openai-chat, first hit wins) and applies
-   * the result to the form's clientType. Credentials mirror the connectivity test: a newly
-   * typed key is sent; otherwise (unless "clear" is checked) the paired reference lets the
-   * server fall back to the stored key — the plaintext never reaches the frontend. Which
-   * is why an API key is a precondition (see protocolDetectBlocker): the probes
-   * authenticate as the saved client would, so without a key they mostly report auth
-   * failures the user cannot act on. Detection is assistive and non-blocking: a stale run
-   * (superseded by a manual pick or a newer run) discards its result instead of clobbering
-   * the form.
+   * the result to the form's clientType. Resolves to the detected client type, or null
+   * when nothing matched / the probe failed, so the save path can decide from the same run
+   * whether it may go on.
+   *
+   * No API key is required. The server resolves the probe credential in three layers — the
+   * key typed here, else this entry's stored key, else the environment variable for
+   * whichever protocol each probe speaks (ANTHROPIC_* / OPENAI_*) — and a keyless probe
+   * still identifies a route that answers in a protocol's own error shape. So the button
+   * is always live and a failure explains itself in the popup instead of being pre-empted
+   * by a disabled control.
+   *
+   * A stale run (superseded by a manual pick or a newer run) discards its result instead
+   * of clobbering the form, and never raises the popup.
    */
-  const runDetect = async () => {
-    // Re-checked here, not just on the button: the same preconditions must hold for every
-    // entry point (button, blur), and the key can be taken away between render and click.
-    if (protocolDetectBlocker(hasKey(form), form.baseUrl) !== null) return;
+  const detectOnce = async (): Promise<string | null> => {
     const baseUrl = form.baseUrl.trim();
+    // Invalid URLs are rejected by the server with a 400; catching it here turns "nothing
+    // to probe" into the same popup as every other failure, rather than an API error text.
+    if (!detectableBaseUrl(baseUrl)) {
+      setDetectResult({ kind: "none" });
+      setDetectAlert(S.models.detectNeedsUrl);
+      return null;
+    }
     const seq = ++detectSeq.current;
     lastDetectedUrl.current = baseUrl;
     setDetecting(true);
@@ -1220,18 +1252,42 @@ function ModelDialog({
         body.modelId = modelId;
       }
       const res = await api.detectProtocol(projectId, body);
-      if (seq !== detectSeq.current) return;
+      if (seq !== detectSeq.current) return null;
       if (res.detected) {
         set({ clientType: res.detected });
         setDetectResult({ kind: "ok", clientType: res.detected });
-      } else {
-        setDetectResult({ kind: "none" });
+        return res.detected;
       }
+      setDetectResult({ kind: "none" });
+      setDetectAlert(
+        classifyDetectFailure(res.probes) === "unreachable"
+          ? S.models.detectUnreachable
+          : S.models.detectNone,
+      );
+      return null;
     } catch (e) {
-      if (seq === detectSeq.current) setDetectResult({ kind: "error", message: apiErrorText(e) });
+      if (seq === detectSeq.current) {
+        const message = apiErrorText(e);
+        setDetectResult({ kind: "error", message });
+        setDetectAlert(S.models.detectFailed(message));
+      }
+      return null;
     } finally {
       if (seq === detectSeq.current) setDetecting(false);
     }
+  };
+
+  /**
+   * Single-flight wrapper: a second trigger joins the run already in progress rather than
+   * starting a rival probe (the button while the save path is probing, or vice versa).
+   */
+  const runDetect = (): Promise<string | null> => {
+    if (detectInFlight.current) return detectInFlight.current;
+    const run = detectOnce().finally(() => {
+      detectInFlight.current = null;
+    });
+    detectInFlight.current = run;
+    return run;
   };
 
   /**
@@ -1271,12 +1327,6 @@ function ModelDialog({
   // A viewer without edit rights gets the plain grey suffix: the picker would offer writes
   // the save path rejects anyway.
   const showProtocolPicker = showProtocolSelector && canEdit;
-  // Detection preconditions (per maintainer: the API key gates it). hasKey covers both a
-  // freshly typed key and one already stored for this model — editing an existing entry
-  // must not demand the key be re-entered — and honours the "clear key" checkbox, which
-  // takes the key away again. null = the run is allowed.
-  const detectBlocker = protocolDetectBlocker(hasKey(form), form.baseUrl);
-  const canDetect = showProtocolPicker && detectBlocker === null;
   // Protocol-path suffix shown inside the base URL field (every model, even while the
   // field is empty): the path the client appends to the base URL, i.e. the endpoint
   // shape a custom URL must serve. Recomputed from the live form so switching the
@@ -1339,9 +1389,29 @@ function ModelDialog({
     };
   };
 
-  const submit = (action: DialogAction) => {
+  /**
+   * Commit one dialog action. Saving a custom-like entry whose protocol is still unset
+   * detects it FIRST and only then continues with the detected value: nothing may reach
+   * the config without a protocol (an entry AgentHub would refuse to start — see
+   * protocolForPersist), and asking the endpoint is more reliable than guessing.
+   *
+   * A failed probe aborts the save and leaves the dialog open on top of the popup, so the
+   * user can pick a protocol by hand or fix the URL — never a silent save. The other
+   * actions (set-default / set-vision-proxy / remove) do not probe: they are not the user
+   * saying "this model is ready", and rowToEntry's fallback still keeps the written entry
+   * startable.
+   */
+  const submit = async (action: DialogAction) => {
     const next = validated();
-    if (next) onSubmit(next, action);
+    if (!next) return;
+    if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
+      // Joins a run already started from the button / blur rather than probing twice.
+      const detected = await runDetect();
+      if (!detected) return;
+      onSubmit({ ...next, clientType: detected }, action);
+      return;
+    }
+    onSubmit(next, action);
   };
 
   // Provider info for the current group (updates live as the group dropdown
@@ -1514,11 +1584,15 @@ function ModelDialog({
           {canEdit && (
             <Button
               variant="primary"
+              // Saving may have to probe the endpoint first (protocol still unset), which
+              // is a network round-trip: the label says so and the button locks, matching
+              // the "test connection" convention used inside this dialog.
+              disabled={detecting}
               onClick={() => {
                 // Validate first: if validation fails, the inline field errors show right away without popping the confirm dialog.
                 if (!validated()) return;
                 if (isNew || row === null) {
-                  submit("save");
+                  void submit("save");
                   return;
                 }
                 // Nothing changed: report it instead of confirming a no-op write (the
@@ -1537,7 +1611,7 @@ function ModelDialog({
                 setConfirming("save");
               }}
             >
-              {S.common.confirm}
+              {detecting ? S.models.detecting : S.common.confirm}
             </Button>
           )}
         </>
@@ -1738,20 +1812,14 @@ function ModelDialog({
                   </span>
                 )}
               </span>
-              {/* Disabled rather than hidden: the affordance has to stay visible for its
-                  reason line below to make sense. Its own busy label keeps the state
-                  legible without relying on the suffix trigger's small spinner. */}
+              {/* Always live: no API key is needed (the server falls back to the stored key
+                  and then to the protocol's env var), and anything that does go wrong is
+                  explained in a popup. `detecting` only guards re-entrancy. */}
               <button
                 type="button"
-                disabled={!canDetect || detecting}
+                disabled={detecting}
                 onClick={() => void runDetect()}
-                title={
-                  detectBlocker === "key"
-                    ? S.models.detectNeedsKey
-                    : detectBlocker === "url"
-                      ? S.models.detectNeedsUrl
-                      : S.models.detectProtocolHint
-                }
+                title={S.models.detectProtocolHint}
                 className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
               >
                 {detecting && (
@@ -1781,15 +1849,16 @@ function ModelDialog({
                 setDetectResult(null);
                 set({ baseUrl: e.target.value });
               }}
-              // Detection on leaving the field (custom / user-defined groups): only a URL
-              // the user actually changed in this dialog triggers a run — typing never
-              // fires requests, and a click-through must not rewrite a working entry's
-              // protocol. `canDetect` carries the API key gate too, so nothing fires while
-              // the model has no key; the top-right button is then the only way in, once
-              // the key is there.
+              // Detection on leaving the field (custom / user-defined groups): only a
+              // probeable URL the user actually changed in this dialog triggers a run —
+              // typing never fires requests, and a click-through must not rewrite a working
+              // entry's protocol. Unlike the button, this one stays quiet when there is
+              // nothing to probe: an unfinished URL must not pop an error at the moment the
+              // user tabs out of the field.
               onBlur={() => {
-                if (!canDetect || detecting) return;
+                if (!showProtocolPicker || detecting) return;
                 const bu = form.baseUrl.trim();
+                if (!detectableBaseUrl(bu)) return;
                 if (bu === form.originalBaseUrl || bu === lastDetectedUrl.current) return;
                 void runDetect();
               }}
@@ -1824,34 +1893,15 @@ function ModelDialog({
             )}
           </div>
           {fieldErrors.baseUrl && <FieldError>{fieldErrors.baseUrl}</FieldError>}
-          {/* Why the detect button above is greyed out. Shares the field's message slot with
-              the verdict below and yields to it: a verdict only exists after a run, which
-              means detection was available at the time. Muted, one line — a precondition,
-              not an error. */}
-          {showProtocolPicker && detectBlocker !== null && !detectResult && (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              {detectBlocker === "key" ? S.models.detectNeedsKey : S.models.detectNeedsUrl}
-            </p>
-          )}
-          {/* Detection verdict, in the field's own message slot rather than a row of its own:
-              nothing renders until a run has actually happened, and a success line is worth
-              one line because the picker only shows the path, not the protocol's name. */}
-          {detectResult && (
-            <p
-              role="status"
-              className={`mt-1 text-xs ${
-                detectResult.kind === "ok"
-                  ? "text-green-600 dark:text-green-500"
-                  : "text-amber-600 dark:text-amber-400"
-              }`}
-            >
-              {detectResult.kind === "ok"
-                ? S.models.detectedProtocol(
-                    S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
-                  )
-                : detectResult.kind === "none"
-                  ? S.models.detectNone
-                  : S.models.detectFailed(detectResult.message)}
+          {/* Detection hit, in the field's own message slot rather than a row of its own:
+              nothing renders until a run has actually landed, and it is worth one line
+              because the suffix only shows the path, not the protocol's name. A miss says
+              nothing here — it raised the popup, and leaves the suffix amber. */}
+          {detectResult?.kind === "ok" && (
+            <p role="status" className="mt-1 text-xs text-green-600 dark:text-green-500">
+              {S.models.detectedProtocol(
+                S.models.protocolNames[detectResult.clientType] ?? detectResult.clientType,
+              )}
             </p>
           )}
         </div>
@@ -2009,13 +2059,24 @@ function ModelDialog({
           onConfirm={() => {
             const action = confirming;
             setConfirming(null);
-            submit(action);
+            void submit(action);
           }}
         >
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {CONFIRM_BODY[confirming](form.displayName ?? form.modelId)}
           </p>
         </ConfirmModal>
+      )}
+
+      {/* Detection failure. A popup rather than a quiet line, because it interrupts
+          something the user asked for — and on the save path it is the reason the model
+          was NOT saved, which must not be missable. The config dialog stays mounted
+          underneath, so dismissing this returns to the form with the protocol still
+          unset, ready to be picked by hand or re-probed against a corrected URL. */}
+      {detectAlert !== null && (
+        <AlertModal open title={S.models.detectFailedTitle} onClose={() => setDetectAlert(null)}>
+          <p className="text-sm text-gray-700 dark:text-gray-300">{detectAlert}</p>
+        </AlertModal>
       )}
     </Modal>
   );

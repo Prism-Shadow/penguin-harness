@@ -6,6 +6,7 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 
 /**
  * AgentHub's generic protocol client types, in detection order (custom / user-defined
@@ -46,22 +47,68 @@ export function detectableBaseUrl(baseUrl: string): boolean {
   }
 }
 
-/** Why protocol detection is unavailable right now, or null when it can run. */
-export type ProtocolDetectBlocker = "key" | "url";
+/**
+ * Custom-like group: the entry picks its own protocol from the generic trio, rather than
+ * being auto-routed inside a first-party vendor group or pinned by a gateway preset.
+ * `custom` plus every user-defined group (a provider id the catalog does not know).
+ */
+export function isCustomLikeGroup(provider: string): boolean {
+  return provider === "custom" || providerInfo(provider) === undefined;
+}
 
 /**
- * Detection preconditions, in the order the dialog states them. The API key comes first
- * and is a hard gate: every probe authenticates exactly as the saved client would, so
- * offering detection before the model has a key would mostly produce auth-shaped
- * verdicts the user cannot act on. `hasApiKey` is the dialog's existing notion of "this
- * row has, or will have after this edit, a key" — a freshly typed one **or** a stored
- * one, so editing an existing model never demands the key be re-entered.
+ * The `client_type` actually persisted for a row.
+ *
+ * A custom-like entry must never reach the config with an empty protocol: AgentHub's
+ * AutoLLMClient resolves an unmatched client type by THROWING (`"<type> is not
+ * supported"`) rather than falling back, and a custom model id matches none of its
+ * substring rules — so an entry saved with no protocol is a model that cannot start.
+ * The dialog's save path detects the protocol before submitting; this is the last-resort
+ * net for the paths that do not (set-default, set-vision-proxy, remove), where probing
+ * the endpoint would be the wrong thing to do.
+ *
+ * Preset and vendor-group entries are returned untouched: their model ids ARE routable,
+ * so an empty value there correctly means "let AgentHub infer from the id", and the
+ * empty default must not leak into them as a bogus pin.
  */
-export function protocolDetectBlocker(
-  hasApiKey: boolean,
-  baseUrl: string,
-): ProtocolDetectBlocker | null {
-  if (!hasApiKey) return "key";
-  if (!detectableBaseUrl(baseUrl)) return "url";
-  return null;
+export function protocolForPersist(provider: string, clientType: string): string {
+  const t = clientType.trim();
+  if (t !== "" || !isCustomLikeGroup(provider)) return t;
+  return "openai-chat";
+}
+
+/**
+ * Whether committing this dialog action must detect the protocol before it may proceed:
+ * the user pressed save/add on a custom-like entry that still has no protocol. Detection
+ * is preferred over guessing here because the endpoint is the authority, and because a
+ * wrong guess surfaces much later as a failing session rather than a failing save.
+ *
+ * Deliberately NOT the other actions (set-default / set-vision-proxy / remove): those are
+ * not the user declaring the model ready, and probing an endpoint as a side effect of
+ * "make this the default" would be surprising. Those paths stay safe through
+ * protocolForPersist instead.
+ */
+export function needsProtocolDetectOnSave(
+  action: string,
+  provider: string,
+  clientType: string,
+): boolean {
+  return action === "save" && isCustomLikeGroup(provider) && clientType.trim() === "";
+}
+
+/** Why a detection run produced no protocol — picks which explanation the popup shows. */
+export type ProtocolDetectFailure = "unreachable" | "none";
+
+/**
+ * Reads the per-probe outcomes to tell "we could not reach this endpoint at all" apart
+ * from "we reached it and none of the three protocols were served". Only the former is
+ * worth telling the user to check the URL/network over; the latter means picking a
+ * protocol by hand is the way forward.
+ */
+export function classifyDetectFailure(
+  probes: readonly { outcome: string }[],
+): ProtocolDetectFailure {
+  if (probes.length === 0) return "none";
+  const unreachable = probes.every((p) => p.outcome === "timeout" || p.outcome === "network_error");
+  return unreachable ? "unreachable" : "none";
 }

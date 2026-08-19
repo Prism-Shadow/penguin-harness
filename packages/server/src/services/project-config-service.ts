@@ -474,13 +474,18 @@ export class ProjectConfigService {
   }
 
   /**
-   * Protocol auto-detection for a custom base URL (see services/protocol-detect.ts for
-   * the probe order and classification): resolves the probe credential the same way the
-   * connectivity test does — the request body's key wins; otherwise, when the optional
-   * paired reference names a stored entry and "clear" isn't checked, that entry's saved
-   * key backs the probes (the frontend only ever sees the mask, never the plaintext).
-   * Detection also runs keyless: a protocol-shaped 401/403 still proves the route.
-   * Never throws on probe failures — every outcome is reported per probe.
+   * Protocol detection for a custom base URL (see services/protocol-detect.ts for the
+   * probe order and classification). Credential resolution has three layers, in order:
+   *   1. the request body's key (what the user just typed in the dialog);
+   *   2. otherwise, when the optional paired reference names a stored entry and "clear"
+   *      isn't checked, that entry's saved key (the frontend only ever sees the mask);
+   *   3. otherwise the environment variable for whichever protocol each probe speaks,
+   *      resolved inside detectModelProtocol because the protocol is the thing being
+   *      determined (ANTHROPIC_API_KEY for ant-messages, OPENAI_API_KEY for the two
+   *      OpenAI protocols).
+   * Layers 2 and 3 are read server-side only and never travel back to the browser.
+   * Detection still runs with no credential at all: a protocol-shaped 401/403 proves the
+   * route. Never throws on probe failures — every outcome is reported per probe.
    */
   async detectProtocol(
     projectId: string,

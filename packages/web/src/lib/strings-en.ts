@@ -469,7 +469,7 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL once an API key is set (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -518,15 +518,17 @@ export const en: Strings = {
     protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
     detectProtocol: "Detect",
     detectProtocolHint: "Probe the base URL and apply the protocol it serves",
-    detectNeedsKey: "Fill in the API key first to detect the protocol",
-    detectNeedsUrl: "Fill in an absolute http(s) base URL first",
+    detectNeedsUrl: "Fill in an absolute http(s) base URL first, then detect again.",
     detecting: "Detecting…",
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    detectFailedTitle: "Protocol detection",
     detectNone:
-      "None of the three protocols matched: check the base URL, or pick the protocol manually",
+      "The endpoint answered, but none of the three protocols (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions) are served at this base URL. Check the URL, or pick the protocol yourself from the suffix at the field's right edge.",
+    detectUnreachable:
+      "The base URL could not be reached: every probe timed out or failed to connect. Check the address, the port and whether the service is running.",
     detectFailed: (msg: string): string => `Protocol detection failed: ${msg}`,
     addProtocolHintDetect:
-      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or fill in the API key and base URL and let Detect probe the endpoint",
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
     addTitleCustom: "Add model",
     vision: "Vision support",
     visionOffProxyHint: "Images are read via the vision proxy model",

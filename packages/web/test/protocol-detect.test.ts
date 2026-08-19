@@ -1,17 +1,22 @@
 /**
  * Custom-model protocol detection UI logic: the generic protocol client-type family
- * (selector visibility / value mapping), the detect preconditions (API key, then a
- * probeable base URL) and the protocol-path suffix for the new client types. The probing
- * itself is server-side (see the server package's protocol-detect tests); these are the
- * pure helpers the dialog composes.
+ * (selector visibility / value mapping), when saving must detect first, what the failure
+ * popup explains, the guarantee that no entry is persisted without a protocol, and the
+ * protocol-path suffix for the new client types. The probing itself is server-side (see
+ * the server package's protocol-detect tests); these are the pure helpers the dialog
+ * composes.
  */
 import { describe, expect, it } from "vitest";
-import { clientTypeAfterProviderChange } from "../src/features/models/models-page";
+import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
+import type { RowState } from "../src/features/models/models-page";
 import {
   PROTOCOL_CLIENT_TYPES,
+  classifyDetectFailure,
   detectableBaseUrl,
+  isCustomLikeGroup,
   isGenericProtocolClientType,
-  protocolDetectBlocker,
+  needsProtocolDetectOnSave,
+  protocolForPersist,
   protocolSelectorValue,
 } from "../src/features/models/protocol-types";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
@@ -73,26 +78,114 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
   });
 });
 
-describe("protocolDetectBlocker (detection is gated on the API key)", () => {
-  const url = "https://api.example.com/v1";
+describe("isCustomLikeGroup", () => {
+  it("covers custom and every unknown (user-defined) group, but no catalog vendor group", () => {
+    expect(isCustomLikeGroup("custom")).toBe(true);
+    expect(isCustomLikeGroup("my-group")).toBe(true);
+    expect(isCustomLikeGroup("openai")).toBe(false);
+    expect(isCustomLikeGroup("anthropic")).toBe(false);
+  });
+});
 
-  it("reports the missing API key first — a probeable URL alone is not enough", () => {
-    expect(protocolDetectBlocker(false, url)).toBe("key");
-    // Key missing AND url missing: the key is the reason stated, since it is the gate the
-    // user hits first (the API key field sits above the base URL field).
-    expect(protocolDetectBlocker(false, "")).toBe("key");
-    expect(protocolDetectBlocker(false, "not-a-url")).toBe("key");
+describe("needsProtocolDetectOnSave (save detects a still-unset protocol first)", () => {
+  it("fires for saving a custom-like entry with no protocol yet", () => {
+    expect(needsProtocolDetectOnSave("save", "custom", "")).toBe(true);
+    expect(needsProtocolDetectOnSave("save", "my-group", "   ")).toBe(true);
   });
 
-  it("falls through to the URL precondition once a key is available", () => {
-    expect(protocolDetectBlocker(true, "")).toBe("url");
-    expect(protocolDetectBlocker(true, "api.example.com/v1")).toBe("url");
-    expect(protocolDetectBlocker(true, "ftp://example.com")).toBe("url");
+  it("does not fire once a protocol is chosen", () => {
+    expect(needsProtocolDetectOnSave("save", "custom", "ant-messages")).toBe(false);
+    expect(needsProtocolDetectOnSave("save", "custom", "openai-chat")).toBe(false);
   });
 
-  it("allows the run only when a key and a probeable base URL are both present", () => {
-    expect(protocolDetectBlocker(true, url)).toBeNull();
-    expect(protocolDetectBlocker(true, " http://127.0.0.1:8000/v1 ")).toBeNull();
+  it("never probes for vendor groups, nor for actions other than save", () => {
+    // A vendor group auto-routes by model id; an empty protocol there is correct.
+    expect(needsProtocolDetectOnSave("save", "openai", "")).toBe(false);
+    expect(needsProtocolDetectOnSave("remove", "custom", "")).toBe(false);
+    expect(needsProtocolDetectOnSave("setDefault", "custom", "")).toBe(false);
+    expect(needsProtocolDetectOnSave("setVisionModel", "custom", "")).toBe(false);
+  });
+});
+
+describe("protocolForPersist (an empty protocol must never reach the config)", () => {
+  it("falls back to openai-chat for a custom-like entry that still has none", () => {
+    // AutoLLMClient THROWS on an unmatched client type, so persisting "" would save a
+    // model that cannot start.
+    expect(protocolForPersist("custom", "")).toBe("openai-chat");
+    expect(protocolForPersist("my-group", "   ")).toBe("openai-chat");
+  });
+
+  it("keeps an explicit protocol exactly as chosen", () => {
+    expect(protocolForPersist("custom", "ant-messages")).toBe("ant-messages");
+    expect(protocolForPersist("custom", "openai-responses")).toBe("openai-responses");
+    expect(protocolForPersist("my-group", " openai-chat ")).toBe("openai-chat");
+  });
+
+  it("leaves preset / vendor groups empty so AgentHub still infers from the model id", () => {
+    expect(protocolForPersist("openai", "")).toBe("");
+    expect(protocolForPersist("anthropic", "")).toBe("");
+    expect(protocolForPersist("google", "")).toBe("");
+  });
+});
+
+describe("rowToEntry (the persistence funnel)", () => {
+  const row = (over: Partial<RowState>): RowState => ({
+    provider: "custom",
+    modelId: "my-model",
+    original: null,
+    vision: true,
+    contextWindow: "",
+    maxTokens: "",
+    clientType: "",
+    cacheRead: "",
+    cacheWrite: "",
+    output: "",
+    baseUrl: "",
+    originalBaseUrl: "",
+    apiKeyInput: "",
+    clearApiKey: false,
+    ...over,
+  });
+
+  it("never writes a custom entry without a protocol, even when the form left it empty", () => {
+    expect(rowToEntry(row({})).clientType).toBe("openai-chat");
+    expect(rowToEntry(row({ provider: "my-group" })).clientType).toBe("openai-chat");
+  });
+
+  it("writes the chosen protocol verbatim", () => {
+    expect(rowToEntry(row({ clientType: "ant-messages" })).clientType).toBe("ant-messages");
+  });
+
+  it("omits clientType for a vendor group so AgentHub keeps inferring it", () => {
+    expect(rowToEntry(row({ provider: "openai", modelId: "gpt-5.6" })).clientType).toBeUndefined();
+  });
+});
+
+describe("classifyDetectFailure (which explanation the popup shows)", () => {
+  it("calls it unreachable only when every probe failed to connect", () => {
+    expect(
+      classifyDetectFailure([
+        { outcome: "network_error" },
+        { outcome: "timeout" },
+        { outcome: "network_error" },
+      ]),
+    ).toBe("unreachable");
+  });
+
+  it("says none matched when the endpoint answered at all", () => {
+    // A reachable endpoint that simply serves none of the three paths.
+    expect(
+      classifyDetectFailure([
+        { outcome: "route_missing" },
+        { outcome: "route_missing" },
+        { outcome: "junk" },
+      ]),
+    ).toBe("none");
+    // Mixed: one probe connected, so the address itself is fine.
+    expect(classifyDetectFailure([{ outcome: "timeout" }, { outcome: "route_missing" }])).toBe(
+      "none",
+    );
+    expect(classifyDetectFailure([])).toBe("none");
   });
 });
 
