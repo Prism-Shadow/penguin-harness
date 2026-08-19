@@ -2485,6 +2485,38 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
     expect(engine.steer([userText("late")])).toBe(false);
   });
 
+  it("unsteer withdraws a queued entry before delivery; refuses once drained or idle", async () => {
+    const llm = new FakeLLM();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_unsteer" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+
+    // Idle: nothing queued, nothing to withdraw.
+    const idleInput = [userText("never queued")];
+    expect(engine.unsteer(idleInput)).toBe(false);
+
+    const kept = [userText("focus on the tests")];
+    const recalled = [userText("actually, never mind")];
+    const approve: ApproveFn = async () => {
+      expect(engine.steer(kept)).toBe(true);
+      expect(engine.steer(recalled)).toBe(true);
+      // Withdraw the second entry while both are still queued; a second attempt on the
+      // same entry finds nothing.
+      expect(engine.unsteer(recalled)).toBe(true);
+      expect(engine.unsteer(recalled)).toBe(false);
+      return "allow";
+    };
+    const all = await collectRun(engine, [userText("go")], approve);
+
+    // Only the kept entry was delivered — streamed, and fed to the next turn's input.
+    const expected = ["[user_steering]\nfocus on the tests\n[/user_steering]"];
+    expect(steeringTexts(all)).toEqual(expected);
+    expect(steeringTexts(llm.receivedSecondInput!)).toEqual(expected);
+    expect(steeringTexts(await readTrace(trace.currentPath()))).toEqual(expected);
+
+    // After delivery (queue drained, run over): the kept entry can no longer be withdrawn.
+    expect(engine.unsteer(kept)).toBe(false);
+  });
+
   it("delivers steering left at loop end as a [user_steering] continuation turn (traced, streamed)", async () => {
     // Turn 1 ends with no tool calls while steering is queued mid-stream -> the engine keeps
     // looping and sends the queued text as the next input, wrapped in the same marker (UIs

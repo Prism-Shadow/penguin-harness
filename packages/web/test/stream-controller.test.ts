@@ -20,6 +20,7 @@ import type { OmniMessage, TokenCounts } from "@prismshadow/penguin-core/omnimes
 import type {
   MessagesLiveTail,
   MessagesPageInfo,
+  PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
   SessionStatus,
@@ -45,6 +46,7 @@ interface Harness {
   controller: StreamController;
   states: SessionStatus[];
   pendingSteering: PendingSteeringInfo[][];
+  pendingFollowUps: PendingFollowUpInfo[][];
   errors: Array<string | null>;
   loadings: boolean[];
   loadCalls: () => number;
@@ -71,6 +73,7 @@ function createHarness(): Harness {
   }> = [];
   const states: SessionStatus[] = [];
   const pendingSteering: PendingSteeringInfo[][] = [];
+  const pendingFollowUps: PendingFollowUpInfo[][] = [];
   const errors: Array<string | null> = [];
   const loadings: boolean[] = [];
   const pageArgs: Array<MessagesPageQuery | undefined> = [];
@@ -89,6 +92,7 @@ function createHarness(): Harness {
       }),
     onTaskState: (s) => states.push(s),
     onPendingSteering: (items) => pendingSteering.push(items),
+    onPendingFollowUps: (items) => pendingFollowUps.push(items),
     onLoading: (l) => loadings.push(l),
     onError: (e) => errors.push(e),
     onModelChange: () => {},
@@ -99,6 +103,7 @@ function createHarness(): Harness {
     controller,
     states,
     pendingSteering,
+    pendingFollowUps,
     errors,
     loadings,
     loadCalls: () => calls,
@@ -207,11 +212,27 @@ describe("in-stream task_state is the authoritative running state (history-closi
     h.controller.handleServer({
       type: "task_state",
       state: "running",
-      pendingSteering: [{ text: "hold on", images: 0, files: 1 }],
+      pendingSteering: [{ id: "st-1", text: "hold on", images: 0, files: 1 }],
     });
     // A later event without the field means "none left" — reported as empty, not skipped.
     h.controller.handleServer({ type: "task_state", state: "running" });
-    expect(h.pendingSteering).toEqual([[{ text: "hold on", images: 0, files: 1 }], []]);
+    expect(h.pendingSteering).toEqual([[{ id: "st-1", text: "hold on", images: 0, files: 1 }], []]);
+  });
+
+  it("reports the queued follow-up list from task_state, and its absence as empty", async () => {
+    const h = createHarness();
+    void h.controller.load();
+    h.controller.handleServer({
+      type: "task_state",
+      state: "running",
+      queued: 1,
+      pendingFollowUps: [{ id: "fu-1", text: "next up", images: 1, files: 0 }],
+    });
+    h.controller.handleServer({ type: "task_state", state: "running" });
+    expect(h.pendingFollowUps).toEqual([
+      [{ id: "fu-1", text: "next up", images: 1, files: 0 }],
+      [],
+    ]);
   });
 
   it("closes the current Task before an auto-started queued follow-up begins", async () => {

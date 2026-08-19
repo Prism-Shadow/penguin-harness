@@ -1036,6 +1036,12 @@ Benchmark：
     followUpSend: "排队为下一条消息",
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) => `跟进消息已排队，本轮结束后自动发送：${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "撤回",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "撤回到输入框，编辑后重新发送",
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -1438,6 +1444,7 @@ Benchmark：
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",
       file_not_found: "该文件已不存在。",
+      not_pending: "该消息已发出，无法撤回。",
       file_too_large: "文件过大。",
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",

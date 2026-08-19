@@ -1080,6 +1080,13 @@ Scenarios:
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) =>
       `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) =>
+      `Follow-up queued — sent when this run finishes: ${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "Recall",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "Recall to the input box to edit and resend",
     send: "Send",
     stop: "Stop",
     compact: "Compact context",
@@ -1484,6 +1491,7 @@ Scenarios:
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",
       file_not_found: "This file no longer exists.",
+      not_pending: "This message already went out and can no longer be recalled.",
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
