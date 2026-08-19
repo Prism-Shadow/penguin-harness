@@ -469,7 +469,7 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: models use the OpenAI Chat Completions protocol (base URL required; an empty API key reads OPENAI_API_KEY). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -509,7 +509,36 @@ export const en: Strings = {
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
+    protocol: "Protocol",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
+    /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
+    protocolUnset: "Select protocol",
+    detectProtocol: "Detect",
+    detectProtocolHint: "Probe the base URL and apply the protocol it serves",
+    detecting: "Detecting…",
+    /** Success toast; the protocol itself then shows in the base URL field's suffix. */
+    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
+    detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
+    /** Save-time detection came back empty: the save proceeds on the compatible client. */
+    detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
+    addProtocolHintDetect:
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
+    addTitleCustom: "Add model",
     vision: "Vision support",
+    /** Detect action beside the vision switch. */
+    detectVision: "Detect",
+    detectingVision: "Testing…",
+    detectVisionHint:
+      "Send one tiny test image to see whether this model accepts images (uses your API key)",
+    detectVisionNeedsId: "Fill in the model id first, then detect.",
+    detectVisionOk: "This model accepts images; vision turned on",
+    detectVisionNo: "This model does not accept images; vision left off",
     visionOffProxyHint: "Images are read via the vision proxy model",
     fastMode: "Fast mode",
     fastModeHint:
@@ -545,7 +574,8 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
-    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
+    baseUrlSuffixTitle:
+      "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",

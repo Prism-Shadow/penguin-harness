@@ -1298,6 +1298,7 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   }
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
   // agenthub 0.4.2's generic Anthropic Messages protocol client reads the ANTHROPIC_* pair.
+  // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
   if (t.includes("ant-messages")) return env("ANTHROPIC");
   // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
   // bare "openai" as a deprecated alias), openai-responses and openai-embedding — all read

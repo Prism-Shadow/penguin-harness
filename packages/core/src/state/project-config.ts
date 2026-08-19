@@ -69,11 +69,13 @@ export interface ModelEntry {
   model_id: string;
   context_window?: number;
   /**
-   * AgentHub client protocol (`openai-chat` / `claude-4-8` / `deepseek-v4` / …); defaults to
-   * being inferred by AgentHub from the request id (`model_id`). A third-party model speaking
-   * the OpenAI Chat Completions protocol should set this to `openai-chat` (the bare `openai`
-   * spelling from configs saved before AgentHub 0.4.2's rename is normalized to it on read —
-   * see canonicalClientType).
+   * AgentHub client protocol (`openai-responses` / `ant-messages` / `openai-chat` /
+   * `claude-4-8` / `deepseek-v4` / …); defaults to being inferred by AgentHub from the
+   * request id (`model_id`). Third-party endpoints use one of the generic protocol clients:
+   * `openai-responses` (OpenAI Responses API), `ant-messages` (Anthropic Messages API), or
+   * `openai-chat` (OpenAI Chat Completions; the bare `openai` spelling from configs saved
+   * before AgentHub 0.4.2's rename is normalized to it on read — see canonicalClientType).
+   * The Web models page can detect which one a custom base URL serves.
    */
   client_type?: string;
   /**

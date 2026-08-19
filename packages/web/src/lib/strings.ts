@@ -441,7 +441,7 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：组内模型走 OpenAI Chat Completions 兼容协议（base URL 必填，API key 留空读取 OPENAI_API_KEY）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义：接口协议可手动选择，也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
@@ -481,8 +481,41 @@ export const zh = {
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
+    /** Protocol selector (custom / user-defined groups): AgentHub's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
+    protocol: "接口协议",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
+    protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
+    /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
+    protocolUnset: "选择协议",
+    /** Detect button at the base URL field's top-right. */
+    detectProtocol: "检测协议",
+    /** Hover title on the detect button. */
+    detectProtocolHint: "探测 base URL，采用它实际提供的协议",
+    detecting: "检测中…",
+    /** Success toast；协议本身随后显示在 base URL 输入框的后缀处。 */
+    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
+    /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
+    detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
+    /** 保存时检测无结果：按兼容协议继续保存。 */
+    detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
+    /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
+    addProtocolHintDetect:
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
+    addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
+    /** Detect action beside the vision switch. */
+    detectVision: "检测",
+    detectingVision: "测试中…",
+    detectVisionHint: "发送一张极小的测试图片，判断该模型是否接受图片输入(会消耗 API Key 额度)",
+    detectVisionNeedsId: "请先填写模型 id，再进行检测。",
+    detectVisionOk: "该模型接受图片输入，已开启视觉",
+    detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
     /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
@@ -525,8 +558,8 @@ export const zh = {
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
     baseUrlHint: "留空使用厂商默认地址",
-    /** Hover title for the base URL field: explains the grey in-field suffix (the protocol path the client appends to the base URL). */
-    baseUrlSuffixTitle: "客户端会在 base URL 后追加右侧灰色协议路径",
+    /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
+    baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",

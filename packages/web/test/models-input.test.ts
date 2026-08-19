@@ -198,12 +198,17 @@ describe("nextPointers (where the default/vision-agent model pointers land after
 });
 
 describe("fastModeState (whether the dialog offers the fast-mode switch, and on which protocol)", () => {
+  // The provider defaults to a real vendor group, whose entries are auto-routed by a
+  // catalog-known model id — the custom-like groups, which resolve to a protocol instead,
+  // are exercised explicitly below.
   const draft = (partial: {
     modelId: string;
+    provider?: string;
     clientType?: string;
     baseUrl?: string;
     fastMode?: boolean;
   }) => ({
+    provider: partial.provider ?? "anthropic",
     modelId: partial.modelId,
     clientType: partial.clientType ?? "",
     baseUrl: partial.baseUrl ?? "",
@@ -262,6 +267,64 @@ describe("fastModeState (whether the dialog offers the fast-mode switch, and on 
     expect(fastModeState(draft({ modelId: "claude-fable-5", clientType: "  " })).protocol).toBe(
       "anthropic",
     );
+  });
+
+  it("resolves a custom-like group through the protocol it will be saved with, not its model id", () => {
+    // A custom / user-defined group starts with no protocol and is persisted on the
+    // compatible client (protocolForPersist -> DEFAULT_CUSTOM_CLIENT_TYPE), which carries
+    // fast mode. Routing those ids by name instead would withhold the switch from an entry
+    // that can serve it — nothing about such a group routes by model id.
+    for (const provider of ["custom", "my-group"]) {
+      expect(fastModeState(draft({ provider, modelId: "my-model" })), provider).toEqual({
+        protocol: "openai",
+        show: true,
+      });
+      // Ids that WOULD route to a client with no fast tier if they were read by name: the
+      // group still saves them on the compatible client, so the switch stays offered.
+      for (const modelId of ["kimi-k3", "gemini-3.5-flash", "deepseek-v4-pro"]) {
+        expect(fastModeState(draft({ provider, modelId })), `${provider}/${modelId}`).toEqual({
+          protocol: "openai",
+          show: true,
+        });
+      }
+    }
+    // An explicitly picked protocol still wins over the fallback, on either family.
+    expect(
+      fastModeState(draft({ provider: "custom", modelId: "my-model", clientType: "ant-messages" }))
+        .protocol,
+    ).toBe("anthropic");
+    expect(
+      fastModeState(
+        draft({ provider: "custom", modelId: "my-model", clientType: "openai-responses" }),
+      ).protocol,
+    ).toBe("openai");
+    // The Bedrock carve-out belongs to the claude5 client, so it applies where routing
+    // actually reaches that client: a vendor group withholds the switch, while the same id
+    // and base URL under a custom group is pinned to the compatible client and keeps it.
+    // The gate mirrors AutoLLMClient's routing; it does not promise the endpoint honours
+    // the parameter, which no dialog-side rule can know.
+    expect(
+      fastModeState(
+        draft({ provider: "anthropic", modelId: "claude-fable-5", baseUrl: "bedrock://us-east-1" }),
+      ).show,
+    ).toBe(false);
+    expect(
+      fastModeState(
+        draft({ provider: "custom", modelId: "claude-fable-5", baseUrl: "bedrock://us-east-1" }),
+      ).protocol,
+    ).toBe("openai");
+  });
+
+  it("leaves preset and vendor groups on id-based routing when no protocol is set", () => {
+    // The fallback is scoped to custom-like groups: a vendor group with an empty protocol
+    // must keep deferring to AgentHub's id routing, so a no-fast-tier id stays withheld.
+    expect(fastModeState(draft({ provider: "moonshot", modelId: "kimi-k3" }))).toEqual({
+      protocol: undefined,
+      show: false,
+    });
+    expect(
+      fastModeState(draft({ provider: "anthropic", modelId: "claude-fable-5" })).protocol,
+    ).toBe("anthropic");
   });
 });
 
