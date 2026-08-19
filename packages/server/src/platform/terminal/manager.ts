@@ -13,8 +13,8 @@
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { HttpError } from "../http/errors.js";
-import { spawnHelperHint } from "./spawn-helper.js";
+import { HttpError } from "../../http/errors.js";
+import { spawnHelperHint } from "../../terminal/spawn-helper.js";
 import {
   TerminalSession,
   expandHomePath,

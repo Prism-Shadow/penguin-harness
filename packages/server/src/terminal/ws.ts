@@ -28,10 +28,10 @@ import {
   encodeTerminalFrame,
   framePayloadText,
   parseResizePayload,
-} from "./frames.js";
-import { TerminalOutputCoalescer } from "./output-coalescer.js";
-import type { TerminalManager } from "./manager.js";
-import type { TerminalSession } from "./session.js";
+} from "../platform/terminal/frames.js";
+import { TerminalOutputCoalescer } from "../platform/terminal/output-coalescer.js";
+import type { TerminalManager } from "../platform/terminal/manager.js";
+import type { TerminalSession } from "../platform/terminal/session.js";
 
 const STREAM_PATH = /^\/api\/terminals\/([^/]+)\/stream$/;
 
