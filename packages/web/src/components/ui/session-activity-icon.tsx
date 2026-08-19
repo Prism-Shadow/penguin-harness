@@ -61,8 +61,11 @@ export function SessionActivityIcon({
 }) {
   const label = sessionActivityLabel(activity);
   if (activity === "completedUnread") {
-    // The dot sits inside the same `size` box the hourglass occupies, so a row does not shift
-    // as the glyph appears, changes shape, or goes away entirely.
+    // The dot itself is exactly the Session status dot's geometry — `h-1.5 w-1.5`, 6px, the same
+    // at both surfaces on main. It is centred inside the same `size` box the hourglass occupies
+    // rather than sitting in the row's flow directly, which is what keeps a row from shifting as
+    // the glyph appears, swaps shape, or goes away entirely. Centring changes where the 6px sits,
+    // never how big it is: the box is the reservation, the dot is the mark.
     return (
       <span
         role="img"
@@ -71,7 +74,7 @@ export function SessionActivityIcon({
         style={{ width: size, height: size }}
         className="flex shrink-0 items-center justify-center"
       >
-        <span className="block h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="block h-1.5 w-1.5 rounded-full bg-emerald-500" />
       </span>
     );
   }

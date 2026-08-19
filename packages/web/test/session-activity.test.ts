@@ -112,22 +112,34 @@ describe("SessionActivityIcon", () => {
     expect(render("compacting")).toContain("dark:text-amber-400");
   });
 
-  it("draws the dot in the emerald the Session status dot has always used", () => {
-    // Same green as the pulsing dot this replaces (sidebar StatusDot / chat header): one tone
-    // in both themes, no per-theme override.
+  it("draws the dot in the Session status dot's own emerald and geometry", () => {
+    // Same green and same 6px as the dot this replaces, at both surfaces: `h-1.5 w-1.5
+    // rounded-full bg-emerald-500`, one tone in both themes, no per-theme override.
     const unread = render("completedUnread");
     expect(unread).toContain("bg-emerald-500");
     expect(unread).not.toMatch(/dark:bg-emerald-/);
+    expect(unread).toContain("h-1.5 w-1.5");
+    expect(unread).toContain("rounded-full");
+    // The reservation must never inflate the mark: no larger dot sneaking back in.
+    expect(unread).not.toMatch(/\bh-2 w-2\b/);
   });
 
   it("occupies the same box whatever the glyph, so a row never shifts", () => {
-    // The slot is reserved at 12px by the sidebar for the no-glyph case; every rendered glyph
-    // has to match it or the title would re-flow as a run starts and ends.
+    // Every glyph renders into the same 12px box, and the sidebar reserves that same box when
+    // there is no glyph at all — otherwise the title would re-flow as a run starts, finishes and
+    // is read. The 6px dot is CENTRED in that box rather than sized to it: the box is the
+    // reservation, the dot is the mark.
     for (const activity of ACTIVITIES) {
       const markup = render(activity);
       expect(markup).toMatch(/(width="12"|width:12px)/);
       expect(markup).toMatch(/(height="12"|height:12px)/);
     }
+    // The empty state's placeholder, read from the sidebar itself so it cannot drift apart.
+    const sidebar = readFileSync(
+      fileURLToPath(new URL("../src/components/layout/sidebar.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(sidebar).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
   });
 });
 
