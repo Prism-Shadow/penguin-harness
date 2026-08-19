@@ -1,5 +1,12 @@
 # Web App: skills management on the Agent settings page, deep-linked list icons
 
+- **Date:** 2026-08-04
+- **Type:** feature
+- **Scope:** `web`, `server`
+- **PR:** [#179](https://github.com/Prism-Shadow/penguin-harness/pull/179), [#186](https://github.com/Prism-Shadow/penguin-harness/pull/186)
+
+[中文版](2026-08-04-agent-skills-and-list.zh.md)
+
 ## Skills tab
 
 Agent settings gains a Skills tab, placed right after Tools. The installed list re-reads `agent_state/skills/` on every fetch — the directory stays the single source of truth, exactly as the vault and schedule files do, so hand-installed or agent-installed skills show up without any registry. Rows carry the skill icon, name, localized short description and version/updated metadata; uninstalling asks for confirmation first.

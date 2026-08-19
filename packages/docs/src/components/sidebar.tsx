@@ -1,11 +1,13 @@
 /**
  * Docs sidebar: sections + page links from DOCS_NAV, titles resolved from the active
- * locale's frontmatter. Desktop: sticky column. Mobile: the layout renders it as an
- * overlay panel under the top bar; onNavigate closes that panel.
+ * locale's frontmatter. Sub-pages (a page's children) render indented under their
+ * parent. Desktop: sticky column. Mobile: the layout renders it as an overlay panel
+ * under the top bar; onNavigate closes that panel.
  */
 import { Link, useLocation } from "react-router";
 import { S } from "../lib/strings";
 import { useLocale } from "../state/locale";
+import type { Locale } from "../state/locale";
 import { DOCS_NAV, HOME_SLUG } from "../lib/nav";
 import { docTitle } from "../lib/docs";
 import { currentSearchShortcutLabel } from "../lib/shortcut";
@@ -41,28 +43,64 @@ export function Sidebar({
             {S.sections[section.id]}
           </p>
           <ul className="space-y-0.5 border-l border-gray-200 dark:border-gray-800">
-            {section.slugs.map((slug) => {
-              const active = slug === activeSlug;
-              return (
-                <li key={slug}>
-                  <Link
-                    to={slug === HOME_SLUG ? "/" : `/${slug}`}
-                    onClick={onNavigate}
-                    aria-current={active ? "page" : undefined}
-                    className={`-ml-px block border-l py-1 pl-3 transition-colors ${
-                      active
-                        ? "border-brand-600 font-medium text-brand-700 dark:border-brand-400 dark:text-brand-300"
-                        : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-100"
-                    }`}
-                  >
-                    {docTitle(slug, locale)}
-                  </Link>
-                </li>
-              );
-            })}
+            {section.pages.map((page) => (
+              <li key={page.slug}>
+                <PageLink
+                  slug={page.slug}
+                  activeSlug={activeSlug}
+                  locale={locale}
+                  onNavigate={onNavigate}
+                />
+                {page.children && (
+                  <ul className="space-y-0.5">
+                    {page.children.map((child) => (
+                      <li key={child}>
+                        <PageLink
+                          slug={child}
+                          activeSlug={activeSlug}
+                          locale={locale}
+                          onNavigate={onNavigate}
+                          nested
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       ))}
     </nav>
+  );
+}
+
+function PageLink({
+  slug,
+  activeSlug,
+  locale,
+  onNavigate,
+  nested = false,
+}: {
+  slug: string;
+  activeSlug: string;
+  locale: Locale;
+  onNavigate?: () => void;
+  nested?: boolean;
+}) {
+  const active = slug === activeSlug;
+  return (
+    <Link
+      to={slug === HOME_SLUG ? "/" : `/${slug}`}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={`-ml-px block border-l py-1 transition-colors ${nested ? "pl-6 text-[13px]" : "pl-3"} ${
+        active
+          ? "border-brand-600 font-medium text-brand-700 dark:border-brand-400 dark:text-brand-300"
+          : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:text-gray-100"
+      }`}
+    >
+      {docTitle(slug, locale)}
+    </Link>
   );
 }

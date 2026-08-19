@@ -6,6 +6,7 @@
  * replacement) runs only in the production entry.
  */
 import http from "node:http";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
@@ -79,17 +80,33 @@ describe("normalizeProxyUrl", () => {
     expect(normalizeProxyUrl("http://[::1]:8080")).toBe("http://[::1]:8080");
   });
 
-  it("rejects everything that is not an http(s) host[:port]", () => {
-    // Other schemes: the dispatcher speaks only HTTP(S) proxies.
-    expect(normalizeProxyUrl("socks5://proxy.corp.example:1080")).toBeNull();
+  it("passes socks5/socks addresses through to undici", () => {
+    expect(normalizeProxyUrl("socks5://proxy.corp.example:1080")).toBe(
+      "socks5://proxy.corp.example:1080",
+    );
+    expect(normalizeProxyUrl("socks://127.0.0.1:1080")).toBe("socks://127.0.0.1:1080");
+    // The parser's bare "/" is trimmed for non-special schemes too.
+    expect(normalizeProxyUrl("socks5://proxy.corp.example:1080/")).toBe(
+      "socks5://proxy.corp.example:1080",
+    );
+  });
+
+  it("keeps credentials intact (SOCKS and proxy-authorization auth ride the URL)", () => {
+    expect(normalizeProxyUrl("socks5://user:pass@proxy.corp.example:1080")).toBe(
+      "socks5://user:pass@proxy.corp.example:1080",
+    );
+    expect(normalizeProxyUrl("http://user:pass@proxy.corp.example:8080")).toBe(
+      "http://user:pass@proxy.corp.example:8080",
+    );
+  });
+
+  it("rejects what undici's dispatcher cannot construct, and unparseable shapes", () => {
+    // Schemes undici's ProxyAgent throws on — storing one would crash the next startup.
+    expect(normalizeProxyUrl("socks4://proxy.corp.example:1080")).toBeNull();
     expect(normalizeProxyUrl("ftp://proxy.corp.example")).toBeNull();
-    // Credentials, paths, queries, fragments: a proxy address is host-only.
-    expect(normalizeProxyUrl("http://user:pass@proxy.corp.example:8080")).toBeNull();
-    expect(normalizeProxyUrl("http://proxy.corp.example:8080/path")).toBeNull();
-    expect(normalizeProxyUrl("http://proxy.corp.example:8080?x=1")).toBeNull();
-    expect(normalizeProxyUrl("http://proxy.corp.example:8080#frag")).toBeNull();
     // Unparseable shapes.
     expect(normalizeProxyUrl("http://")).toBeNull();
+    expect(normalizeProxyUrl("socks5://")).toBeNull();
     expect(normalizeProxyUrl("not a proxy")).toBeNull();
     expect(normalizeProxyUrl("proxy.corp.example:port")).toBeNull();
     expect(normalizeProxyUrl("")).toBeNull();
@@ -185,6 +202,55 @@ describe("buildProxyDispatcher", () => {
       await dispatcher.close();
       proxy.close();
       direct.close();
+    }
+  });
+
+  it("explicit socks5 address: traffic tunnels through the SOCKS proxy", async () => {
+    // A minimal no-auth SOCKS5 server that accepts CONNECT and then plays the tunneled
+    // origin itself — a request to an unresolvable name can only succeed through it.
+    const targets: string[] = [];
+    const proxy = net.createServer((socket) => {
+      let stage: "greeting" | "request" | "tunnel" = "greeting";
+      let buffered = Buffer.alloc(0);
+      socket.on("data", (chunk: Buffer) => {
+        buffered = Buffer.concat([buffered, chunk]);
+        if (stage === "greeting" && buffered.length >= 2 && buffered.length >= 2 + buffered[1]!) {
+          buffered = buffered.subarray(2 + buffered[1]!);
+          stage = "request";
+          socket.write(Buffer.from([0x05, 0x00])); // no-auth accepted
+        }
+        if (stage === "request" && buffered.length >= 5 && buffered[3] === 0x03) {
+          const nameLen = buffered[4]!;
+          if (buffered.length < 5 + nameLen + 2) return;
+          const name = buffered.subarray(5, 5 + nameLen).toString("utf8");
+          const port = buffered.readUInt16BE(5 + nameLen);
+          targets.push(`${name}:${port}`);
+          buffered = buffered.subarray(5 + nameLen + 2);
+          stage = "tunnel";
+          // Success reply, bound address 0.0.0.0:0.
+          socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]));
+        }
+        if (stage === "tunnel" && buffered.toString("utf8").includes("\r\n\r\n")) {
+          socket.end(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: 9\r\nconnection: close\r\n\r\nvia-socks",
+          );
+        }
+      });
+    });
+    const proxyPort = await new Promise<number>((resolve) => {
+      proxy.listen(0, "127.0.0.1", () => resolve((proxy.address() as AddressInfo).port));
+    });
+    const dispatcher = buildProxyDispatcher(
+      { proxyForApp: true, proxyUrl: `socks5://127.0.0.1:${proxyPort}` },
+      {},
+    );
+    try {
+      const res = await undiciFetch("http://proxied.invalid/x", { dispatcher });
+      expect(await res.text()).toBe("via-socks");
+      expect(targets).toEqual(["proxied.invalid:80"]);
+    } finally {
+      await dispatcher.close();
+      proxy.close();
     }
   });
 });

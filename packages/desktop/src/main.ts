@@ -1,6 +1,14 @@
 /**
  * Desktop shell main process.
  *
+ * RUNTIME LAYER — MECHANISM ONLY (see packages/server/src/hmr/README.md). The
+ * shell boots and hosts; it does not implement product behavior. It is also
+ * the least updatable code in the system — a change here reaches users only
+ * through a new installer — so a capability that could instead be delivered
+ * by a platform push must be. A rejected example: adding a preload bridge so
+ * the web UI could open DevTools, when the shell's own View menu already
+ * does it.
+ *
  * One window over the embedded server: fork penguin-server as a utilityProcess on the
  * shared data root (PENGUIN_HOME or ~/.penguin/data), learn its port (last launch's when
  * still free, so origin-scoped localStorage preferences survive restarts), and load

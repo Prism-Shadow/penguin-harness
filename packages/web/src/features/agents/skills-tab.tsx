@@ -29,6 +29,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
@@ -197,12 +198,9 @@ export function SkillsTab({
   const trimmedSource = source.trim();
   const chatPrompt = buildImportPrompt(trimmedSource || S.skills.importSourceToken);
 
-  const copyPrompt = () => {
-    void navigator.clipboard
-      .writeText(buildImportPrompt(trimmedSource))
-      .then(() => toastSuccess(S.skills.importCopied))
-      .catch(() => toastError(S.common.unknownError));
-  };
+  // Copy feedback lives at the button (the shared copy convention): its glyph flips to
+  // the check while copied — no toast, and the button label never changes.
+  const promptCopy = useCopied();
 
   /**
    * "Open a new chat" with this Agent: the same draft-state entry as the agents page
@@ -404,9 +402,15 @@ export function SkillsTab({
                 className="text-gray-600 dark:text-gray-300"
               />
               <div className="flex gap-2">
-                <Button size="sm" disabled={trimmedSource === ""} onClick={copyPrompt}>
+                <Button
+                  size="sm"
+                  disabled={trimmedSource === ""}
+                  onClick={() => promptCopy.flash(buildImportPrompt(trimmedSource))}
+                >
+                  <CopyCheckGlyph copied={promptCopy.copied} size={12} />
                   {S.skills.importCopyPrompt}
                 </Button>
+                <CopiedStatus copied={promptCopy.copied} />
                 <Button size="sm" variant="primary" onClick={openChat}>
                   {S.skills.importOpenChat}
                 </Button>

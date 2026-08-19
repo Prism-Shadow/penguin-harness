@@ -501,5 +501,5 @@ jobs:
             # Update metadata: electron-updater reads latest*.yml from the Release, and
             # the blockmaps are what make differential downloads possible. Without these
             # the installers ship but nothing can auto-update.
-            packages/desktop/stage/out/*.yml
+            packages/desktop/stage/out/latest*.yml
             packages/desktop/stage/out/*.blockmap

@@ -79,8 +79,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 
 - `proxyForApp`（「应用程序使用代理」，默认开）治理服务端自身出网（LLM 请求、更新检查、图片抓取）：开且填写了 `proxyUrl` → http 与 https 流量都走该地址，**优先于代理环境变量**——无需配置任何环境变量；开但未填地址 → 遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（大小写并存）；关 → 一律直连。
-- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
-- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 `http://主机[:端口]`、`https://主机[:端口]` 与裸 `主机[:端口]`（规范化为 `http://主机[:端口]`——只存储规范化后的值，响应回显存储形态）；其余一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
+- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值（`socks5://` 地址原样注入——各工具对这些变量中的 SOCKS URL 支持程度不一）；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
+- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 undici dispatcher 认可的代理 URL——`http://`、`https://` 与（undici 实验性支持的）`socks5://`/`socks://` 地址，允许携带凭据——以及裸 `主机[:端口]`（规范化为 `http://主机[:端口]`）；只存储规范化后的值，响应回显存储形态。其余（无法解析，或 undici 拒绝的协议如 `socks4://`）一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
 
 任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
 
@@ -183,12 +183,15 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/docs/goal-mode) |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
+| GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表 |
+| POST | /processes/:processId/kill | 停止一个后台进程（对整个进程组先 SIGTERM、宽限期后 SIGKILL），条目随之从列表消失；已不存在时 404 `process_not_found` |
+| DELETE | /processes/:processId | 从列表移除一个**已退出**的进程条目：仍在运行时 409 `process_running`（应改用停止），已不存在时 404 `process_not_found`。条目连同该进程已捕获的输出一起离开运行时注册表，此后对该 `process_id` 调用 `input_command` 会失败 |
 | GET | /files?path= | 浏览 Workspace 目录 |
 | GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |

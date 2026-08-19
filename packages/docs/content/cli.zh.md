@@ -147,6 +147,16 @@ penguin web
 
 端口 / 地址优先级：命令行选项 > 环境变量 `PORT` / `HOST`（含 `.env`）> 默认值。
 
+### penguin server reset-admin-password
+
+忘记 Web 管理员密码时的离线救援。须在服务停止后执行——数据根目录上有服务在运行时会拒绝：
+
+```bash
+penguin server reset-admin-password
+```
+
+内置 `admin` 会得到一个新的初始密码（形如 `penguin-1234`），以边框提示打印——此后每次启动服务端都会重印，直到密码被修改——并清空 admin 的全部登录会话。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
+
 ## penguin update
 
 原地升级当前安装，并沿用它当初的安装方式。安装方式由运行中 CLI 的真实路径判定，不做猜测。

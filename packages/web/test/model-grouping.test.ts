@@ -26,6 +26,7 @@ const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
   { provider: "anthropic", modelId: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
   { provider: "moonshot", modelId: "kimi-k2.6", displayName: "Kimi K2.6" },
+  { provider: "minimax", modelId: "MiniMax-M3", displayName: "MiniMax M3" },
   { provider: "custom", modelId: "my-proxy-model" },
   { provider: "unknown-vendor", modelId: "weird-model" }, // provider not in the catalog → custom-built group
 ];
@@ -45,11 +46,13 @@ describe("matchesQuery", () => {
   });
 
   it("custom models without a display name match by id and the Custom group name", () => {
-    expect(matchesQuery(rows[3]!, "proxy")).toBe(true);
-    expect(matchesQuery(rows[3]!, "custom")).toBe(true);
+    const customRow = rows.find((row) => row.provider === "custom")!;
+    const customBuiltRow = rows.find((row) => row.provider === "unknown-vendor")!;
+    expect(matchesQuery(customRow, "proxy")).toBe(true);
+    expect(matchesQuery(customRow, "custom")).toBe(true);
     // Custom-built groups are searchable by their group name (raw provider value); no longer folded into the Custom bucket.
-    expect(matchesQuery(rows[4]!, "unknown-vendor")).toBe(true);
-    expect(matchesQuery(rows[4]!, "custom")).toBe(false);
+    expect(matchesQuery(customBuiltRow, "unknown-vendor")).toBe(true);
+    expect(matchesQuery(customBuiltRow, "custom")).toBe(false);
   });
 });
 
@@ -59,17 +62,20 @@ describe("groupModelRows", () => {
     expect(groups.map((g) => g.provider.id)).toEqual([
       "anthropic",
       "moonshot",
+      "minimax",
       "custom",
       "unknown-vendor",
     ]);
     expect(groups[0]!.rows.map((r) => r.modelId)).toEqual(["claude-sonnet-4-6", "claude-opus-4-8"]);
-    expect(groups[2]!.rows.map((r) => r.modelId)).toEqual(["my-proxy-model"]);
+    expect(groups[2]!.provider.label).toBe("MiniMax");
+    expect(groups[2]!.rows.map((r) => r.modelId)).toEqual(["MiniMax-M3"]);
+    expect(groups[3]!.rows.map((r) => r.modelId)).toEqual(["my-proxy-model"]);
     // Custom-built group: synthesized provider info — label is the group name, OpenAI-protocol semantics (env falls back to OPENAI_*).
-    expect(groups[3]!.provider.label).toBe("unknown-vendor");
-    expect(groups[3]!.provider.envKey).toBe("OPENAI_API_KEY");
-    expect(groups[3]!.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
-    // Group order matches the MODEL_PROVIDERS definition: DeepSeek first, the two gateways right after,
-    // Google Gemini before Anthropic, custom last.
+    expect(groups[4]!.provider.label).toBe("unknown-vendor");
+    expect(groups[4]!.provider.envKey).toBe("OPENAI_API_KEY");
+    expect(groups[4]!.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
+    // Group order matches MODEL_PROVIDERS: DeepSeek and gateway groups first, then first-party
+    // providers, with MiniMax immediately before custom.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "deepseek",
       "openrouter",
@@ -82,9 +88,11 @@ describe("groupModelRows", () => {
       "openai",
       "zhipu",
       "moonshot",
+      "minimax",
       "custom",
     ]);
     expect(MODEL_PROVIDERS.find((p) => p.id === "siliconflow")!.label).toBe("SiliconFlow");
+    expect(MODEL_PROVIDERS.find((p) => p.id === "minimax")!.label).toBe("MiniMax");
   });
 
   it("the custom group always shows without a search query (returned even when empty, hosting the add entry point)", () => {

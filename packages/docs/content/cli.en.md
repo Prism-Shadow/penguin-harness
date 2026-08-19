@@ -147,6 +147,16 @@ penguin web
 
 Port / host priority: command-line option > the `PORT` / `HOST` env vars (including `.env`) > defaults.
 
+### penguin server reset-admin-password
+
+Offline rescue when the Web admin password is forgotten. Run it with the server stopped — it refuses while one is running on the data root:
+
+```bash
+penguin server reset-admin-password
+```
+
+The built-in `admin` gets a fresh initial password of the usual `penguin-1234` form, printed in the framed notice — and re-printed on every server start until it is changed — and all of admin's sign-in sessions are cleared. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
+
 ## penguin update
 
 Upgrades this install in place, using the mechanism it was installed with. The install kind is detected from the real path of the running CLI, never guessed.

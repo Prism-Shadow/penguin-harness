@@ -228,7 +228,9 @@ interface SubagentRunner {
   // Precheck errors (depth limit, unknown agent) are thrown — Environment collapses them to failed
   spawn(input: {
     agentId?: string;     // defaults to the current Agent (self-spawn)
-    modelId?: string;     // omitted = inherit the parent Session's model
+    modelId?: string;     // paired with provider; both omitted = inherit the parent Session's model
+    provider?: string;    // required whenever modelId is given (a model reference is the pair)
+    thinkingLevel?: ThinkingLevelName; // omitted = inherit the parent Session's effective level
   }): Promise<SubagentHandle>;
 }
 
