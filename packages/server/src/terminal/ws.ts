@@ -5,7 +5,7 @@
  * handler returns one whole Response — so the runtime keeps what an upgrade needs: the
  * handshake itself, the Origin check, and the session-cookie authentication it already
  * owns. The moment the socket is live it is handed to the platform, which owns the
- * protocol that flows over it (platform/terminal/stream.ts): frames, coalescing, restore
+ * protocol that flows over it (terminal/stream.ts): frames, coalescing, restore
  * and backpressure are all pushable, the socket plumbing is not.
  *
  * Auth: the session cookie rides along on the upgrade request, so the same credential as

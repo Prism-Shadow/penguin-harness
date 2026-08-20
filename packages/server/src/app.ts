@@ -1,15 +1,19 @@
 /**
- * The RUNTIME shell: Hono assembly of the mechanism surface (auth, desktop, HMR, the
- * platform seam, static hosting) + capability publication for the hot platform.
+ * App assembly, both halves of it.
  *
- * The business surface — every business service and route — lives in
- * platform/business.ts and is assembled per App inside platformImpl.create
- * (platform/platform.ts), so a hot push replaces it wholesale.
+ * The RUNTIME shell — `createApp(deps)` — mounts the mechanism surface: the network
+ * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
+ * `buildAppDeps(config)` builds the runtime core (database, auth, channels, HmrHost),
+ * publishes its capabilities into the resource registry (see hmr/capabilities.ts), and
+ * boots the platform — which returns the merged view. Neither listens on a port: tests
+ * inject requests via `app.request()`, and the startup entry point is index.ts.
  *
- * `createApp(deps)` is pure assembly (does not listen on a port): tests inject requests
- * via `app.request()`; `buildAppDeps(config)` builds the runtime core, publishes its
- * capabilities, boots the platform (which builds the business surface), and returns the
- * merged view. The startup entry point is in index.ts.
+ * The BUSINESS surface — `buildBusinessDeps` + `createBusinessApp`, at the bottom of this
+ * file — is what a hot push replaces. Both are called from `platformImpl.create`
+ * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
+ * registry, so every business service and route travels with the platform version rather
+ * than with this build. Swap semantics for anything they hold that is not parked is a
+ * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -18,7 +22,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
-import { applyProxySettings } from "./net/proxy.js";
+import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
   BUSINESS_DEPS_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
@@ -29,19 +33,21 @@ import {
   RUNTIME_HMR_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   RUNTIME_PROXY_RESOURCE_ID,
-} from "./platform/capabilities.js";
-import type { ProxyControl } from "./platform/capabilities.js";
+  RuntimeCapabilities,
+} from "./hmr/capabilities.js";
+import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
-import type { ErrorsRepo } from "./db/repos/errors.js";
-import type { GoalsRepo } from "./db/repos/goals.js";
-import type { SchedulesRepo } from "./db/repos/schedules.js";
-import type { ServerSettingsRepo } from "./db/repos/server-settings.js";
-import type { SessionsRepo } from "./db/repos/sessions.js";
-import type { UiPrefsRepo } from "./db/repos/ui-prefs.js";
+import { ErrorsRepo } from "./db/repos/errors.js";
+import { GoalsRepo } from "./db/repos/goals.js";
+import { SchedulesRepo } from "./db/repos/schedules.js";
+import { ServerSettingsRepo } from "./db/repos/server-settings.js";
+import { SessionsRepo } from "./db/repos/sessions.js";
+import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
-import { jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
-import { IDENTITY_RESOURCE_ID } from "./platform/terminal/identity.js";
+import type { UserRow } from "./db/repos/users.js";
+import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
+import { IDENTITY_RESOURCE_ID } from "./terminal/identity.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
@@ -49,32 +55,72 @@ import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
 import { authRoutes } from "./http/routes/auth.js";
 import { ChannelHub } from "./runtime/channel.js";
-import type { ErrorRecorder } from "./runtime/error-recorder.js";
-import type { SessionManager, SessionLoader } from "./runtime/session-manager.js";
-import type { SessionSources } from "./runtime/session-sources.js";
-import type { Scheduler } from "./runtime/scheduler.js";
-import type { TitleNotifier } from "./runtime/title-generator.js";
-import type { AdminService } from "./services/admin-service.js";
+import { ErrorRecorder } from "./runtime/error-recorder.js";
+import {
+  createCoreSessionLoader,
+  SessionLoader,
+  SessionManager,
+} from "./runtime/session-manager.js";
+import { SessionSources } from "./runtime/session-sources.js";
+import { Scheduler } from "./runtime/scheduler.js";
+import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
+import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { desktopRoutes } from "./http/routes/desktop.js";
-import type { AgentConfigService } from "./services/agent-config-service.js";
-import type { MemoryService } from "./services/memory-service.js";
-import type { AgentService } from "./services/agent-service.js";
-import type { BenchmarkService } from "./services/benchmark-service.js";
-import type { SnapshotService } from "./services/snapshot-service.js";
-import type { ProjectConfigService } from "./services/project-config-service.js";
-import type { ProjectService } from "./services/project-service.js";
-import type { SessionService } from "./services/session-service.js";
-import type { TraceIndexService } from "./services/trace-index.js";
-import type { TraceService } from "./services/trace-service.js";
-import type { UpdateCheckService } from "./services/update-check-service.js";
-import type { UsageService } from "./services/usage-service.js";
-import type { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { AgentConfigService } from "./services/agent-config-service.js";
+import { MemoryService } from "./services/memory-service.js";
+import { AgentService } from "./services/agent-service.js";
+import { BenchmarkService } from "./services/benchmark-service.js";
+import { SnapshotService } from "./services/snapshot-service.js";
+import { ProjectConfigService } from "./services/project-config-service.js";
+import { ProjectService } from "./services/project-service.js";
+import { SessionService } from "./services/session-service.js";
+import { TraceIndexService } from "./services/trace-index.js";
+import { TraceService } from "./services/trace-service.js";
+import { UpdateCheckService } from "./services/update-check-service.js";
+import { UsageService } from "./services/usage-service.js";
+import { WorkspaceFilesService } from "./services/workspace-files-service.js";
 import { HmrHost } from "./hmr/host.js";
 import { hmrRoutes } from "./hmr/routes.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
-import { hostOnly, loopbackHostRoles, requestAuthority } from "./services/preview-token.js";
+import {
+  createPreviewTokenSigner,
+  hostOnly,
+  loopbackHostRoles,
+  requestAuthority,
+} from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
+
+import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import { declined } from "./hmr/hono-seam.js";
+import { AgentsRepo } from "./db/repos/agents.js";
+import { MembersRepo } from "./db/repos/members.js";
+import { ProjectsRepo } from "./db/repos/projects.js";
+import { TraceIndexRepo } from "./db/repos/trace-index.js";
+import { UsageRepo } from "./db/repos/usage.js";
+import { adminUsersRoutes } from "./http/routes/admin.js";
+import { adminSettingsRoutes } from "./http/routes/admin-settings.js";
+import { meRoutes } from "./http/routes/me.js";
+import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
+import { projectsRoutes } from "./http/routes/projects.js";
+import { membersRoutes } from "./http/routes/members.js";
+import { modelsRoutes } from "./http/routes/models.js";
+import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
+import { vaultRoutes } from "./http/routes/vault.js";
+import { memoryRoutes } from "./http/routes/memory.js";
+import { scheduleRoutes } from "./http/routes/schedules.js";
+import { benchmarksRoutes } from "./http/routes/benchmarks.js";
+import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
+import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
+import { agentsRoutes } from "./http/routes/agents.js";
+import { dirsRoutes } from "./http/routes/dirs.js";
+import { agentConfigRoutes } from "./http/routes/agent-config.js";
+import { agentTracesRoutes } from "./http/routes/agent-traces.js";
+import { usageRoutes } from "./http/routes/usage.js";
+import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
+import { versionRoutes } from "./http/routes/version.js";
+import { UsageRecorder } from "./runtime/usage-recorder.js";
+import { previewRoutes } from "./http/routes/preview.js";
 
 /** Request body size limit (tasks may carry data: images): 20MB. */
 const MAX_BODY_BYTES = 20 * 1024 * 1024;
@@ -143,7 +189,7 @@ export interface BuildDepsOverrides {
 
 /**
  * Assemble the runtime core, publish its capabilities, boot the platform (which builds
- * the business surface — see platform/business.ts), and return the merged view. Shared
+ * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  */
 export async function buildAppDeps(
@@ -199,13 +245,13 @@ export async function buildAppDeps(
   // The seam runs before the auth middleware, so a platform serving an API of its own has
   // no `c.var.user`. Authenticating is the runtime's job, not something a bundle should
   // re-implement against cookie names and session TTLs — so it is published as a
-  // capability the booting platform claims (see platform/terminal/identity.ts).
+  // capability the booting platform claims (see terminal/identity.ts).
   hmr.resources.register(IDENTITY_RESOURCE_ID, async (request: Request) => {
     const token = readSessionCookie(request.headers.get("cookie"));
     const authed = token === null ? null : authService.authenticateWithMeta(token);
     return authed === null ? null : { userId: authed.user.userId };
   });
-  // The capability set buildBusinessDeps claims (see platform/capabilities.ts) — every
+  // The capability set buildBusinessDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot.
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
@@ -320,7 +366,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.use("*", platformHttpSeam(deps.hmr));
 
   // Every protected business route — /api/me through /api/sessions, and /preview — is
-  // served by the platform through the seam above (see platform/business.ts). What
+  // served by the platform through the seam above (see app.ts). What
   // follows is the runtime's own tail: static hosting and the SPA fallback.
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
@@ -432,4 +478,265 @@ function readSessionCookie(header: string | null): string | null {
     return decodeURIComponent(part.slice(eq + 1).trim());
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// The business surface: everything below travels with the platform version.
+// Called from hmr/platform.ts's create() at every App creation — see the module doc.
+// ---------------------------------------------------------------------------
+
+/**
+ * Assembles the business service graph over the claimed runtime capabilities.
+ *
+ * The db handle, auth service, channel hub, config object and hmr host come from the
+ * claim — one live instance per process, shared with the runtime. Everything else is
+ * built fresh per App, which is exactly what makes it hot-swappable.
+ */
+export function buildBusinessDeps(
+  caps: RuntimeCapabilities,
+  overrides: BuildDepsOverrides = {},
+): AppDeps {
+  const { config, db, authService, channels, hmr } = caps;
+  const log = overrides.log ?? ((line: string) => console.log(line));
+
+  const usersRepo = new UsersRepo(db);
+  const projectsRepo = new ProjectsRepo(db);
+  const membersRepo = new MembersRepo(db);
+  const agentsRepo = new AgentsRepo(db);
+  const sessionsRepo = new SessionsRepo(db);
+  const usageRepo = new UsageRepo(db);
+  const errorsRepo = new ErrorsRepo(db);
+  const prefsRepo = new UiPrefsRepo(db);
+  const serverSettingsRepo = new ServerSettingsRepo(db);
+  // Command-subprocess proxy policy for core, keyed on the
+  // "agent environment uses the proxy" switch (the app switch only drives the server's
+  // own dispatcher, see net/proxy.ts): switch off → strip HTTP(S)_PROXY/ALL_PROXY; on
+  // with an explicit address → inject that address (with the merged loopback NO_PROXY)
+  // over whatever the environment carries; on without an address → pass the environment
+  // through. A getter, not a snapshot: it is re-read at every command spawn, so a
+  // settings change reaches already-loaded Sessions. Threaded through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation, whose runtime
+  // the manager adopts for the first Task).
+  const proxyEnv = (): ProxyEnvPolicy | null => {
+    if (!serverSettingsRepo.getProxyForAgent()) return { mode: "strip" };
+    const url = serverSettingsRepo.getProxyUrl();
+    return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+  };
+  const schedulesRepo = new SchedulesRepo(db);
+  const goalsRepo = new GoalsRepo(db);
+
+  const projectConfigService = new ProjectConfigService(config.root);
+  const agentConfigService = new AgentConfigService(config.root);
+  const agentService = new AgentService(config.root, agentsRepo, agentConfigService);
+  const memoryService = new MemoryService(config.root, agentConfigService);
+  // Session-origin registry: session_meta is the single source of truth (no DB column);
+  // shared by the manager (subagent registration), the loader (self-heal rebuild),
+  // SessionService (creation / adoption / lazy list resolution), and the Trace index /
+  // listing classification.
+  const sessionSources = new SessionSources();
+  // Trace-file index: the derived cache every trace listing/locating path serves from
+  // (mtime-gated reconciler keeps it in step with the on-disk tree; see trace-index.ts).
+  const traceIndexRepo = new TraceIndexRepo(db);
+  const traceIndex = new TraceIndexService(config.root, traceIndexRepo, sessionSources);
+  const traceService = new TraceService(config.root, {
+    index: traceIndex,
+    sessions: sessionsRepo,
+    sources: sessionSources,
+  });
+  const workspaceFiles = new WorkspaceFilesService();
+  // Per-process secret: preview tokens are short-lived, so losing them on restart is
+  // harmless and there is nothing to persist or rotate. (Per-App is the same trade at a
+  // smaller scale: a push invalidates open previews, and a preview is one reload away.)
+  const previewTokens = createPreviewTokenSigner();
+  const benchmarks = new BenchmarkService(config.root, workspaceFiles);
+  const snapshots = new SnapshotService(config.root);
+  const usageService = new UsageService(
+    usageRepo,
+    errorsRepo,
+    (projectId, provider, modelId) => projectConfigService.getPricing(projectId, provider, modelId),
+    overrides.now ?? (() => new Date()),
+  );
+  const updateCheck =
+    overrides.updateCheck ?? new UpdateCheckService(overrides.now ? { now: overrides.now } : {});
+
+  const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
+  const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
+  const titles =
+    overrides.titles ??
+    new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
+  const manager = new SessionManager({
+    sessions: sessionsRepo,
+    channels,
+    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
+    sources: sessionSources,
+    recorder,
+    errors,
+    titles,
+    log,
+    goals: goalsRepo,
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
+
+  const projectService = new ProjectService({
+    root: config.root,
+    users: usersRepo,
+    projects: projectsRepo,
+    members: membersRepo,
+    agents: agentsRepo,
+    sessions: sessionsRepo,
+    usage: usageRepo,
+    errors: errorsRepo,
+    schedules: schedulesRepo,
+    goals: goalsRepo,
+    projectConfig: projectConfigService,
+    manager,
+    traceIndex,
+  });
+  // Any password update for the built-in admin makes the persisted initial-password
+  // plaintext stale (either the password is no longer initial, or a reset replaced it
+  // with an admin-chosen value that is never persisted): drop the file so later startups
+  // stop re-printing a credential that no longer signs in. (The runtime's AuthService
+  // carries the same rule for the self-service path; this one covers admin resets.)
+  const onPasswordChanged = (userId: string): void => {
+    if (userId === ADMIN_USER_ID) clearInitialAdminPassword(config.root);
+  };
+  const adminService = new AdminService({
+    users: usersRepo,
+    authSessions: new AuthSessionsRepo(db),
+    projects: projectsRepo,
+    projectService,
+    onPasswordChanged,
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
+  const sessionService = new SessionService({
+    root: config.root,
+    sessions: sessionsRepo,
+    manager,
+    projectConfig: projectConfigService,
+    sources: sessionSources,
+    traceIndex,
+    proxyEnv,
+  });
+  // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
+  // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
+  const scheduler = new Scheduler({
+    root: config.root,
+    repo: schedulesRepo,
+    projects: projectsRepo,
+    sessions: sessionsRepo,
+    runner: manager,
+    sessionCreator: sessionService,
+    projectConfig: projectConfigService,
+    errors,
+    notify: (userId, event) => {
+      channels.get(userChannelKey(userId)).publish(event, "server_event");
+    },
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+  });
+
+  return {
+    config,
+    db,
+    sessionsRepo,
+    prefsRepo,
+    serverSettingsRepo,
+    authService,
+    adminService,
+    projectService,
+    projectConfigService,
+    agentService,
+    agentConfigService,
+    memoryService,
+    sessionService,
+    traceService,
+    traceIndex,
+    usageService,
+    updateCheck,
+    workspaceFiles,
+    previewTokens,
+    benchmarks,
+    snapshots,
+    schedulesRepo,
+    goalsRepo,
+    errorsRepo,
+    scheduler,
+    channels,
+    manager,
+    sessionSources,
+    errors,
+    desktop: caps.desktop,
+    hmr,
+    proxyControl: caps.proxyControl,
+    log,
+  };
+}
+
+/** Prefixes the runtime serves itself; the business app declines them unconditionally. */
+const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
+
+/** Assembles the business Hono app (routes + auth + error shaping; no listening, no logging). */
+export function createBusinessApp(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  // Error recording is layered in a lambda wrapping onError: handleError stays a
+  // pure function with unchanged behavior (HttpError is mapped as-is, unknown
+  // exceptions are logged with a stack trace and collapsed to 500), and recording
+  // to the DB is just a side-effect layered on top.
+  app.onError((err, c) => {
+    const projectId = attributedProjectId(c, deps);
+    deps.errors.record({
+      source: "http",
+      err,
+      ...(projectId !== undefined ? { ctx: { projectId } } : {}),
+    });
+    return handleError(err, c);
+  });
+  app.notFound(() => declined());
+
+  // Runtime-owned prefixes decline before anything else runs — in particular before the
+  // auth gate below, which would otherwise 401 an unauthenticated /api/auth/login instead
+  // of letting the runtime's own public route serve it.
+  app.use("*", async (c, next) => {
+    if (RUNTIME_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
+      return declined();
+    }
+    await next();
+  });
+
+  // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
+  app.use("/api/*", authMiddleware(deps.authService));
+  app.route("/api/me", meRoutes(deps));
+  app.route("/api/version", versionRoutes(deps));
+  app.route("/api/admin/users", adminUsersRoutes(deps));
+  app.route("/api/admin/settings", adminSettingsRoutes(deps));
+  app.route("/api/events", eventsRoutes(deps));
+  // Skill library listing: readable once logged in, not nested under a Project prefix.
+  app.route("/api/skills", skillLibraryRoutes());
+  app.route("/api/projects", projectsRoutes(deps));
+  app.route("/api/projects/:projectId/members", membersRoutes(deps));
+  app.route("/api/projects/:projectId/models", modelsRoutes(deps));
+  app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
+  app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
+  app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId", agentTransferRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/traces", agentTracesRoutes(deps));
+  app.route("/api/projects/:projectId/agents/:agentId/sessions", agentSessionsRoutes(deps));
+  app.route("/api/projects/:projectId/usage", usageRoutes(deps));
+  app.route("/api/sessions", sessionsRoutes(deps));
+
+  // Workspace HTML preview on the separate preview origin: deliberately outside /api and
+  // outside the auth middleware — that origin never receives the session cookie, so the
+  // signed token in the path is the only credential.
+  app.route("/preview", previewRoutes(deps));
+
+  // An unknown /api path a logged-in caller reaches falls to notFound → decline → the
+  // runtime answers its own 404; unauthenticated callers are already 401'd above, which
+  // is the same shape the one-app assembly produced.
+  return app;
 }

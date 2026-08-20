@@ -8,8 +8,8 @@
  * main() comes first in the file and is the sequence itself: each step is one PenguinServer
  * method, named after what it does and appearing in the order main() calls it. The order
  * carries real constraints — the proxy dispatcher before any outbound request, the instance
- * lock before the database opens, the platform (and with it the whole business surface)
- * before the first request is served — so each step documents the constraint it stands on.
+ * lock before the database opens, the platform (and with it the whole business surface) before the first request is
+ * served — so each step documents the constraint it stands on.
  *
  * Tests never go through this file (they inject via app.request() instead).
  */
@@ -29,7 +29,7 @@ import {
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { GRACEFUL_SHUTDOWN_RESOURCE_ID } from "./platform/capabilities.js";
+import { GRACEFUL_SHUTDOWN_RESOURCE_ID } from "./hmr/capabilities.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 
@@ -111,6 +111,7 @@ class PenguinServer {
     console.error(`Existing instance: http://localhost:${existing.port}/`);
     process.exit(EXIT_ALREADY_RUNNING);
   }
+
 
   /**
    * Builds the service graph: opens the database, publishes the runtime capabilities, and
