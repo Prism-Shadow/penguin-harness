@@ -17,6 +17,7 @@ export const en: Strings = {
     plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
+    extensions: "Extensions",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -1201,6 +1202,13 @@ export const en: Strings = {
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+
+  extensions: {
+    pageTitle: "Extensions",
+    pageDesc:
+      "Extension index: packages a deployment can install (configured in extensions.json under the data root).",
+    empty: "No extensions yet",
+    specifierHint: "Package specifier for extensions.json",
   },
 
   skills: {
