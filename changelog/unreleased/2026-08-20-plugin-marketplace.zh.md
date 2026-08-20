@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 
 [English](2026-08-20-plugin-marketplace.md)
 
