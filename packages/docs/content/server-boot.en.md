@@ -71,14 +71,17 @@ platformImpl.create
 │
 ├─ new TerminalManager(resources)    # adopt the ptys the previous instance parked
 ├─ extensions = extensionHostFrom(resources)  # claim the host the runtime loaded in ④ (empty host if none was published)
-├─ iface = { workflow: new Map(), tool: new Map() }   # a fresh definition view per App
+├─ iface = { workflow, tool, sandbox }   # a fresh definition view per App
 ├─ extensions.emit("initialize", iface) # the definition view, to every handler, in activation order
+├─ sandbox = new SandboxService(registered backends)   # rehydrated from the parked settings
 ├─ extensions.emit("create", {          # the instance view, assembled after registration closes
 │    workflows: instantiateWorkflows(iface.workflow),  # every factory is called eagerly here
 │    terminals,
+│    sandbox: { configure, settings },
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ business assembly (when caps are all present): buildAppDeps → scheduler.start()
+└─ business assembly (when caps are all present): buildAppDeps — the sandbox confiner
+   rides in as an argument, into the session loader's spawn path → scheduler.start()
    → orphaned-Goal reconciliation → createApp (terminal + business groups in ONE Hono app)
    → one registry write publishes the {deps, app, shutdown} pointer
    → ctx.effect registers the hard stop for the next swap
@@ -89,9 +92,9 @@ Split by frequency, the extension lifecycle has three tiers:
 | Moment                  | Frequency        | What happens                                                                                                   |
 | ----------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
 | Load + `activate(ctx)`  | Once per process | Boot step ④ `loadExtensions`: resolve and import each specifier in `extensions.json`, then run its exported `activate` (awaited when async) — the only window where `ctx.on(...)` subscribes and `ctx.disposables` accepts cleanup. A failing entry is rolled back (its disposables run) and skipped; an unreadable or malformed `extensions.json` fails the boot |
-| `"initialize"` event    | Once per App     | Handlers register workflow factories into the fresh `iface` (the `tool` slot is reserved, unused)               |
+| `"initialize"` event    | Once per App     | Handlers register workflow factories and sandbox backends into the fresh `iface` (the `tool` slot is reserved, unused) |
 | Workflow instantiation  | Once per App     | `instantiateWorkflows` calls **every** factory synchronously before the emit — instances are born in one batch at App creation, not on first call |
-| `"create"` event        | Once per App     | Handlers receive the instance view `ctx` (`workflows` + `terminals`)                                            |
+| `"create"` event        | Once per App     | Handlers receive the instance view `ctx` (`workflows` + `terminals` + `sandbox`)                                |
 | `workflows.run`         | Per call         | A plain function call: no Session, no approval, no streaming                                                    |
 | Disposables             | Once per process | Awaited (≤5s) in the graceful shutdown; disposers may be async, run concurrently with failures isolated — so they must be mutually independent |
 
@@ -103,6 +106,7 @@ Several behavioral facts follow:
 - **Handlers are synchronous and unwrapped**: extension *loading* failures (import, or a throwing/rejecting `activate`) are isolated per entry, but event handlers run without a try/catch — a throwing handler fails that platform boot, and a handler that returns a promise is refused for the same reason (an App is assembled synchronously around the emit, so its rejection could only escape unhandled).
 - **A duplicate workflow name is refused**: `iface.workflow` is a registry whose `set` throws, so a name cannot change owner depending on `extensions.json` ordering.
 - **The event vocabulary is typed and lives in one place**: `ExtensionEvents` maps each name to its payload — adding an event types the platform's emit and every handler at once.
+- **Confinement is same-generation wiring**: the confiner reaches core as a plain argument to `buildAppDeps`, and the sessions spawning through it are hard-stopped with their App — what crosses the swap is the active settings on the parked context, so a push cannot silently un-confine a deployment.
 
 The extension contract (`Extension` / `ExtensionContext` / `ExtensionEvents` / `PenguinInterface` / `PenguinContext`) is declared in the SDK, at `@prismshadow/penguin-core/extension`. `PenguinContext` and `PenguinInterface` are open: the harness contributes the members it owns — `terminals` — by augmenting that module, and re-exports both halves from `@prismshadow/penguin-server/extension`. Both subpaths emit types only. Which extensions exist is the deployment's `<root>/extensions.json`; the harness itself imports no extension.
 
@@ -123,6 +127,7 @@ Each subsystem's construction site and external surface (step numbers refer to t
 | HMR host / platform  | `hmr/host.ts` (end of ⑤)                         | `PlatformApi` (`park` / `info` / `http` / `terminals` / `attachStream`); `POST /api/hmr/upgrade` is a runtime-owned route, never offered to the platform |
 | Terminals            | `terminal/` — **App-level**             | `/api/terminals*` route group (registered into the platform's one Hono app), WS `GET /api/terminals/:id/stream`; ptys are parked and survive swaps |
 | Extension host          | built by ④ `loadExtensions`, published to the registry in ⑤ | `activate(ctx: ExtensionContext)` + the `ExtensionEvents` registry; the configuration surface is `<root>/extensions.json` |
+| Sandbox              | `sandbox/service.ts` — **App-level** (built in create, over the backends extensions registered) | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`; enforcement reaches commands through core's spawn seam, and backends are extension packages named in `extensions.json` |
 | Model catalog        | No boot-time construction — static core data     | `/api/projects/:projectId/models`; the catalog itself lives in `core/src/state/model-catalog.ts`                |
 
 One request-time path is worth knowing: the platform's HTTP seam offers every request to the current App's `http(request)` first, and only a `null` return falls through to the runtime's own routes; while a hot swap is in flight, requests queue at the seam for the new App instead of hitting a half-disposed one.
