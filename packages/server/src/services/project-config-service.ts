@@ -31,6 +31,7 @@ import {
   DEFAULT_CHAT_THINKING_LEVELS,
   GenerativeModel,
   canonicalClientType,
+  listEndpointModels as coreListEndpointModels,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
@@ -43,6 +44,8 @@ import {
 import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   ModelInfo,
   ModelPricingDto,
   ModelProtocolDetectRequest,
@@ -131,6 +134,13 @@ function showRef(provider: string, modelId: string): string {
  */
 const PROBE_PROMPT =
   'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>';
+
+/**
+ * Endpoint model-listing bound: the SDK paginates `/models` under the hood, so one slow
+ * or endless gateway must not pin the add-group dialog — 20s matches the connectivity
+ * test's request timeout.
+ */
+const LIST_MODELS_TIMEOUT_MS = 20_000;
 
 /**
  * Speed probe prompt: a one-word answer can't be timed (a compliant model emits 1-3
@@ -582,6 +592,49 @@ export class ProjectConfigService {
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
     }
     return detectModelProtocol({ baseUrl: req.baseUrl, ...(apiKey ? { apiKey } : {}) });
+  }
+
+  /**
+   * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
+   * parameters come from the request — a group being created has no stored entry to fall
+   * back to; an omitted key follows the same environment chain as the connectivity test
+   * (the wrapped SDK reads the protocol's own variable). Never throws: SDK construction
+   * and request failures collapse into `{ ok:false, message }`, an AgentHub
+   * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
+   * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
+   * timed out (the abandoned promise is dropped — the SDK's own timeout bounds the
+   * socket). The listing is returned verbatim; dedup against the config is the caller's
+   * policy, exactly like the probe routes never write anything either.
+   */
+  async listEndpointModels(
+    req: EndpointModelListRequest,
+    listImpl: typeof coreListEndpointModels = coreListEndpointModels,
+    timeoutMs: number = LIST_MODELS_TIMEOUT_MS,
+  ): Promise<EndpointModelListResponse> {
+    const clientType = canonicalClientType(req.clientType) ?? req.clientType;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const listing = listImpl({
+        clientType,
+        baseUrl: req.baseUrl,
+        ...(req.apiKey ? { apiKey: req.apiKey } : {}),
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("model listing timed out")), timeoutMs);
+        timer.unref?.();
+      });
+      const models = await Promise.race([listing, timeout]);
+      return { ok: true, models };
+    } catch (err) {
+      const unsupported = err instanceof Error && err.name === "UnsupportedOperationError";
+      return {
+        ok: false,
+        ...(unsupported ? { unsupported: true } : {}),
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /**

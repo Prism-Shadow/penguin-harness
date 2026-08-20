@@ -97,6 +97,7 @@ import {
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
+import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 
@@ -483,6 +484,12 @@ export function ModelsPage() {
   const [addGroupOpen, setAddGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupNameError, setGroupNameError] = useState<string | null>(null);
+  /** Optional endpoint fields of the add-group popup: a filled base URL arms "detect & import". */
+  const [groupBaseUrl, setGroupBaseUrl] = useState("");
+  const [groupApiKey, setGroupApiKey] = useState("");
+  /** Import progress line shown in the popup while detect/list/save runs (null = idle). */
+  const [groupImportStatus, setGroupImportStatus] = useState<string | null>(null);
+  const [groupImportError, setGroupImportError] = useState<string | null>(null);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -614,25 +621,105 @@ export function ModelsPage() {
     }
   };
 
-  /**
-   * "Add group" confirm: a valid name that doesn't conflict with a built-in group or an
-   * existing provider proceeds directly to that group's add-model dialog — groups are
-   * carried by the model entry's provider field and aren't persisted separately, so the
-   * group appears once the first model saves successfully (canceling leaves nothing behind).
-   */
-  const confirmAddGroup = () => {
+  /** Validated group name of the add-group popup, or null (with the field error set). */
+  const validGroupName = (): string | null => {
     const name = groupName.trim();
     if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name)) {
       setGroupNameError(S.models.groupNameInvalid);
-      return;
+      return null;
     }
     if (MODEL_PROVIDERS.some((p) => p.id === name) || rows?.some((r) => r.provider === name)) {
       setGroupNameError(S.models.groupNameExists);
-      return;
+      return null;
     }
+    return name;
+  };
+
+  /**
+   * "Add group" confirm (manual path): a valid name that doesn't conflict with a built-in
+   * group or an existing provider proceeds directly to that group's add-model dialog —
+   * groups are carried by the model entry's provider field and aren't persisted separately,
+   * so the group appears once the first model saves successfully (canceling leaves nothing
+   * behind).
+   */
+  const confirmAddGroup = () => {
+    const name = validGroupName();
+    if (!name) return;
     setAddGroupOpen(false);
     setGroupName("");
     setAddingTo(name);
+  };
+
+  /**
+   * "Detect & import" (bulk path, armed by a filled base URL): detects the endpoint's
+   * protocol with the same probes the model dialog uses, lists every model id the endpoint
+   * serves (POST models/list), and appends them all as rows of the new group — each entry
+   * carrying the base URL / detected protocol / typed key inline — in one table PUT.
+   * Failures stay inside the popup (status line -> error) so the manual path remains one
+   * click away; nothing is persisted until the listing succeeded.
+   */
+  const importGroupModels = async () => {
+    if (!projectId || !rows) return;
+    const name = validGroupName();
+    if (!name) return;
+    const baseUrl = groupBaseUrl.trim();
+    const apiKey = groupApiKey.trim();
+    setGroupImportError(null);
+    setGroupImportStatus(S.models.groupImportDetecting);
+    try {
+      const detect = await api.detectProtocol(projectId, {
+        baseUrl,
+        ...(apiKey ? { apiKey } : {}),
+      });
+      if (!detect.detected) {
+        setGroupImportError(S.models.groupImportNoProtocol);
+        return;
+      }
+      setGroupImportStatus(S.models.groupImportListing);
+      const listed = await api.listEndpointModels(projectId, {
+        baseUrl,
+        clientType: detect.detected,
+        ...(apiKey ? { apiKey } : {}),
+      });
+      if (!listed.ok || !listed.models) {
+        setGroupImportError(
+          listed.unsupported
+            ? S.models.groupImportUnsupported
+            : (listed.message ?? S.models.groupImportFailed),
+        );
+        return;
+      }
+      const built = buildImportedRows(rows, name, listed.models, {
+        baseUrl,
+        clientType: detect.detected,
+        apiKey,
+      });
+      if (built.added === 0) {
+        setGroupImportError(S.models.groupImportEmpty);
+        return;
+      }
+      setGroupImportStatus(S.models.groupImportSaving(built.added));
+      const ok = await persist(
+        [...rows, ...built.rows],
+        defaultModel,
+        visionModel,
+        S.models.groupImported(built.added, built.skipped),
+      );
+      if (!ok) return;
+      // Open the group the import just created so the result is visible immediately.
+      if (!expanded.has(name)) {
+        const next = new Set(expanded);
+        next.add(name);
+        setExpanded(next);
+        saveExpandedProviders(projectId, next);
+      }
+      setAddGroupOpen(false);
+      setGroupName("");
+    } catch (e) {
+      setGroupImportError(apiErrorText(e));
+    } finally {
+      setGroupImportStatus(null);
+    }
   };
   const editingRow =
     editing !== null ? rows?.find((r) => sameModelRef(rowRef(r), editing)) : undefined;
@@ -865,6 +952,9 @@ export function ModelsPage() {
                 onClick={() => {
                   setGroupName("");
                   setGroupNameError(null);
+                  setGroupBaseUrl("");
+                  setGroupApiKey("");
+                  setGroupImportError(null);
                   setAddGroupOpen(true);
                 }}
                 className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
@@ -931,38 +1021,84 @@ export function ModelsPage() {
         <Modal
           open
           title={S.models.addGroupTitle}
-          onClose={() => setAddGroupOpen(false)}
+          onClose={() => groupImportStatus === null && setAddGroupOpen(false)}
           widthClass="sm:max-w-sm"
           footer={
             <>
-              <Button onClick={() => setAddGroupOpen(false)}>{S.common.cancel}</Button>
-              <Button variant="primary" onClick={confirmAddGroup}>
-                {S.common.confirm}
+              <Button disabled={groupImportStatus !== null} onClick={() => setAddGroupOpen(false)}>
+                {S.common.cancel}
               </Button>
+              <Button
+                variant={groupBaseUrl.trim() ? undefined : "primary"}
+                disabled={groupImportStatus !== null}
+                onClick={confirmAddGroup}
+              >
+                {S.models.groupAddManually}
+              </Button>
+              {groupBaseUrl.trim() !== "" && (
+                <Button
+                  variant="primary"
+                  disabled={groupImportStatus !== null}
+                  onClick={() => void importGroupModels()}
+                >
+                  {S.models.groupImportAction}
+                </Button>
+              )}
             </>
           }
         >
-          <label className="block">
-            <Input
+          <div className="space-y-3">
+            <label className="block">
+              <Input
+                size="sm"
+                label={S.models.groupNameLabel}
+                required
+                value={groupName}
+                invalid={Boolean(groupNameError)}
+                onChange={(e) => {
+                  setGroupName(e.target.value);
+                  setGroupNameError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmAddGroup();
+                }}
+                placeholder={S.models.groupNameHint}
+                className="font-mono"
+                autoFocus
+              />
+              {groupNameError && <FieldError>{groupNameError}</FieldError>}
+            </label>
+            <label className="block">
+              <Input
+                size="sm"
+                label="Base URL"
+                value={groupBaseUrl}
+                onChange={(e) => {
+                  setGroupBaseUrl(e.target.value);
+                  setGroupImportError(null);
+                }}
+                placeholder={S.models.groupBaseUrlHint}
+                className="font-mono"
+              />
+            </label>
+            <PasswordInput
               size="sm"
-              label={S.models.groupNameLabel}
-              required
-              value={groupName}
-              invalid={Boolean(groupNameError)}
+              label="API key"
+              value={groupApiKey}
               onChange={(e) => {
-                setGroupName(e.target.value);
-                setGroupNameError(null);
+                setGroupApiKey(e.target.value);
+                setGroupImportError(null);
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmAddGroup();
-              }}
-              placeholder={S.models.groupNameHint}
               className="font-mono"
-              autoFocus
+              autoComplete="off"
+              placeholder={S.models.groupImportKeyHint}
             />
-            {groupNameError && <FieldError>{groupNameError}</FieldError>}
-          </label>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.models.addGroupDesc}</p>
+            {groupImportStatus !== null && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">{groupImportStatus}</p>
+            )}
+            {groupImportError && <FieldError>{groupImportError}</FieldError>}
+          </div>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{S.models.addGroupDesc}</p>
         </Modal>
       )}
 

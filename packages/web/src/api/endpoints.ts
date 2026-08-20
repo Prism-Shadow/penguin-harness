@@ -32,6 +32,8 @@ import type {
   DefaultModelResponse,
   DefaultModelUpdateRequest,
   DirListResponse,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
@@ -212,6 +214,13 @@ export const testModel = (projectId: string, body: ModelTestRequest) =>
 export const detectProtocol = (projectId: string, body: ModelProtocolDetectRequest) =>
   apiFetch<ModelProtocolDetectResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/detect`,
+    { method: "POST", body },
+  );
+
+/** Endpoint model listing: given a base URL plus the protocol /detect reported, returns every model id the endpoint serves (the add-group import). */
+export const listEndpointModels = (projectId: string, body: EndpointModelListRequest) =>
+  apiFetch<EndpointModelListResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/list`,
     { method: "POST", body },
   );
 

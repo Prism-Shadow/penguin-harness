@@ -485,7 +485,22 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL. With a base URL filled in, every model the endpoint serves can be imported in one click. Groups live on model entries — the group appears once its first model is saved.",
+    groupAddManually: "Add manually",
+    groupImportAction: "Detect & import",
+    groupBaseUrlHint: "Fill in to detect the protocol and import the endpoint's models",
+    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportDetecting: "Detecting protocol…",
+    groupImportListing: "Fetching model list…",
+    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportNoProtocol: "No compatible protocol detected — check the base URL and API key",
+    groupImportUnsupported: "This protocol cannot list models — add them manually",
+    groupImportFailed: "Fetching the model list failed",
+    groupImportEmpty: "The endpoint returned no models",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0
+        ? `Imported ${added} models, skipped ${skipped} duplicates`
+        : `Imported ${added} models`,
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
