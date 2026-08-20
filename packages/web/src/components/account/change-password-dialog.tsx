@@ -93,7 +93,8 @@ export function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose
             }}
             error={errors.old}
             autoComplete="current-password"
-            hint={S.account.oldPasswordHint}
+            info={S.account.oldPasswordHint}
+            infoLabel={S.account.oldPassword}
             autoFocus
           />
         )}

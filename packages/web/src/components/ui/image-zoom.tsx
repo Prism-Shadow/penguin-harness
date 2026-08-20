@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { S } from "../../lib/strings";
+import { CloseIcon } from "./icons";
 
 export function ZoomableImage({
   src,
@@ -56,9 +57,7 @@ function Lightbox({ src, alt, onClose }: { src: string; alt: string; onClose: ()
           onClick={onClose}
           className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white transition-colors duration-150 hover:bg-black/70"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor">
-            <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <CloseIcon />
         </button>
         <img
           src={src}

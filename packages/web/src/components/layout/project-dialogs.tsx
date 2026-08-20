@@ -37,6 +37,7 @@ import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
+import { InfoPopover } from "../ui/info-popover";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
 const APPROVAL_MODES: readonly ApprovalMode[] = [
@@ -562,8 +563,10 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
 
   return (
     <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
-      <p className="text-xs font-medium text-gray-500">{S.project.chatDefaultsTitle}</p>
-      <p className="mb-2 mt-0.5 text-xs text-gray-400">{S.project.chatDefaultsHint}</p>
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gray-500">
+        {S.project.chatDefaultsTitle}
+        <InfoPopover label={S.project.chatDefaultsTitle}>{S.project.chatDefaultsHint}</InfoPopover>
+      </p>
       {loadError ? (
         <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null || models === null ? (
@@ -619,7 +622,10 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               ))}
             </Select>
             <div>
-              <FieldLabel>{S.chat.model}</FieldLabel>
+              <span className="mb-1 flex items-center gap-1">
+                <FieldLabel block={false}>{S.chat.model}</FieldLabel>
+                <InfoPopover label={S.chat.model}>{S.project.chatDefaultsModelHint}</InfoPopover>
+              </span>
               {models.models.length > 0 ? (
                 <>
                   {/* The composer's model dropdown (provider logo + name + searchable grouped
@@ -632,7 +638,6 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
                     disabled={busy}
                     variant="form"
                   />
-                  <FieldHint>{S.project.chatDefaultsModelHint}</FieldHint>
                 </>
               ) : (
                 <p className="text-xs text-gray-400">{S.models.empty}</p>

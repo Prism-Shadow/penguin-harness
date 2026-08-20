@@ -10,24 +10,12 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import type { SessionSortMode } from "../../lib/session-order";
 import { Chevron } from "./chevron";
+import { GlyphIcon } from "./glyph-icon";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
-/** Minimal stroke-icon wrapper shared by the grouped lists (moved from sidebar.tsx). */
-export function Icon({ d, size = 16 }: { d: string; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d={d} />
-    </svg>
-  );
+/** The grouped lists' line icon: GlyphIcon at the nav-row rung, which is what these rows are. */
+export function Icon({ d, size = ICON_SIZE.navRow }: { d: string; size?: number }) {
+  return <GlyphIcon d={d} size={size} />;
 }
 
 /** Folder outline, closed (same glyph as the draft page's Workspace pill); collapsed workspace groups and the grouping toggle use it. */

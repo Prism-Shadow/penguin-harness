@@ -39,6 +39,7 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { ActivitySparkline } from "./activity-sparkline";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -268,7 +269,7 @@ export function AgentsPage() {
                           aria-label={S.agent.kernelOutdatedHint}
                           onClick={() => openSettingsTab(a.agentId, "overview")}
                         >
-                          <GlyphIcon d={CARD_ICONS.kernelUpdate} size={12} />
+                          <GlyphIcon d={CARD_ICONS.kernelUpdate} size={ICON_SIZE.inlineGlyph} />
                         </button>
                       )}
                     </div>
@@ -288,7 +289,7 @@ export function AgentsPage() {
                         className="inline-flex shrink-0 items-center gap-1 tabular-nums"
                         title={S.agent.sessionCount(a.sessionCount)}
                       >
-                        <GlyphIcon d={CARD_ICONS.sessions} size={12} />
+                        <GlyphIcon d={CARD_ICONS.sessions} size={ICON_SIZE.inlineGlyph} />
                         {a.sessionCount}
                       </span>
                       <button
@@ -298,7 +299,7 @@ export function AgentsPage() {
                         aria-label={S.agent.toolCount(a.toolCount)}
                         onClick={() => openSettingsTab(a.agentId, "tools")}
                       >
-                        <GlyphIcon d={STAT_ICONS.toolCalls} size={12} />
+                        <GlyphIcon d={STAT_ICONS.toolCalls} size={ICON_SIZE.inlineGlyph} />
                         {a.toolCount}
                       </button>
                       <button
@@ -308,7 +309,7 @@ export function AgentsPage() {
                         aria-label={S.skills.skillCount(a.skillCount)}
                         onClick={() => openSettingsTab(a.agentId, "skills")}
                       >
-                        <GlyphIcon d={CARD_ICONS.skills} size={12} />
+                        <GlyphIcon d={CARD_ICONS.skills} size={ICON_SIZE.inlineGlyph} />
                         {a.skillCount}
                       </button>
                       <button
@@ -318,7 +319,7 @@ export function AgentsPage() {
                         aria-label={S.agent.memoryCount(a.memoryCount)}
                         onClick={() => openSettingsTab(a.agentId, "memory")}
                       >
-                        <GlyphIcon d={CARD_ICONS.memory} size={12} />
+                        <GlyphIcon d={CARD_ICONS.memory} size={ICON_SIZE.inlineGlyph} />
                         {a.memoryCount}
                       </button>
                       <button
@@ -328,7 +329,7 @@ export function AgentsPage() {
                         aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         onClick={() => openSettingsTab(a.agentId, "vault")}
                       >
-                        <GlyphIcon d={CARD_ICONS.vaultKeys} size={12} />
+                        <GlyphIcon d={CARD_ICONS.vaultKeys} size={ICON_SIZE.inlineGlyph} />
                         {a.vaultKeyCount}
                       </button>
                       <button
@@ -338,14 +339,14 @@ export function AgentsPage() {
                         aria-label={S.agent.scheduleCount(a.scheduleCount)}
                         onClick={() => openSettingsTab(a.agentId, "schedules")}
                       >
-                        <GlyphIcon d={CARD_ICONS.schedules} size={12} />
+                        <GlyphIcon d={CARD_ICONS.schedules} size={ICON_SIZE.inlineGlyph} />
                         {a.scheduleCount}
                       </button>
                       <span
                         className="inline-flex shrink-0 items-center gap-1"
                         title={`${S.agent.updatedAt} ${a.updatedAt ? formatDateTime(a.updatedAt) : "—"}`}
                       >
-                        <GlyphIcon d={STAT_ICONS.elapsed} size={12} />
+                        <GlyphIcon d={STAT_ICONS.elapsed} size={ICON_SIZE.inlineGlyph} />
                         {a.updatedAt ? formatRelativeDays(a.updatedAt, locale) : "—"}
                       </span>
                     </div>

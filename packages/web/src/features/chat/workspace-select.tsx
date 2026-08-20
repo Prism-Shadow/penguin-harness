@@ -19,6 +19,9 @@ import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
 import { noAutofill } from "../../components/ui/input";
 import { toastError } from "../../components/ui/toast";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { FOLDER_ICON } from "../../components/ui/group-list";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** Shared style for pill trigger buttons (ChatGPT project button style: small rounded pill + icon + short name + collapse arrow). */
 export const pillClass =
@@ -178,21 +181,7 @@ export function WorkspaceSelect({
   const entries = (dir?.entries ?? []).filter((e) => !e.name.startsWith("."));
   /** Folder glyph shared by both triggers. */
   const folderIcon = (extraClass: string) => (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      className={`shrink-0 text-gray-400 ${extraClass}`}
-      aria-hidden
-    >
-      <path
-        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.rowLead} className={`text-gray-400 ${extraClass}`} />
   );
   const menu = (
     <div className="space-y-1.5 px-2.5 pb-2.5 pt-2">
@@ -255,21 +244,7 @@ export function WorkspaceSelect({
                 onClick={() => loadDir(entry.path)}
                 className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-gray-700 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  className="shrink-0 text-gray-400"
-                  aria-hidden
-                >
-                  <path
-                    d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                <GlyphIcon d={FOLDER_ICON} className="text-gray-400" />
                 <span className="min-w-0 flex-1 truncate" title={entry.name}>
                   {entry.name}
                 </span>

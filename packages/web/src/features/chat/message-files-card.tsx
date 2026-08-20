@@ -15,6 +15,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
 import { isFilePathLike, toWorkspaceRelative } from "../../lib/file-path";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { Chevron } from "../../components/ui/chevron";
+import { ICON_SIZE } from "../../lib/icon-scale";
+
+/** File glyph (a page with a folded corner), the card header's mark and each row's lead. */
+const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
 
 const MAX_VISIBLE = 3;
 
@@ -109,18 +115,7 @@ export function MessageFilesCard({
           the rows (Codex-style). No card-level action entry point — each row already has its own
           "Preview", adding one to the header would just duplicate the row action. */}
       <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-800/40">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          aria-hidden
-          className="shrink-0 text-gray-400"
-        >
-          <path d="M6 3h8l4 4v14H6zM14 3v4h4" />
-        </svg>
+        <GlyphIcon d={FILE_ICON} size={ICON_SIZE.rowLead} className="text-gray-400" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {S.chat.filesInMessage(paths.length)}
         </span>
@@ -135,18 +130,7 @@ export function MessageFilesCard({
             onClick={() => onOpenFile(path)}
             className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden
-              className="shrink-0 text-gray-400"
-            >
-              <path d="M6 3h8l4 4v14H6zM14 3v4h4" />
-            </svg>
+            <GlyphIcon d={FILE_ICON} size={ICON_SIZE.rowLead} className="text-gray-400" />
             <PathLabel path={path} />
             <span className="min-w-0 flex-1" />
             {/* Right-aligned "click to preview" text: makes the row action explicit (a trailing
@@ -168,20 +152,7 @@ export function MessageFilesCard({
             className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800/50"
           >
             {expanded ? S.chat.showLess : S.chat.showMoreFiles(hidden)}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
+            <Chevron open={expanded} size={ICON_SIZE.chevronDense} />
           </button>
         )}
       </div>

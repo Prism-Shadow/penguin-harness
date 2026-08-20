@@ -16,6 +16,7 @@ import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { resolveAgentLabel, shortSessionId } from "./agent-topology";
 import type { StreamRenderContext } from "./message-stream";
+import { toneDot } from "../../lib/tone";
 
 export function SubagentChip({
   sessionId,
@@ -65,7 +66,9 @@ export function SubagentChip({
           className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-gray-400 border-t-transparent"
         />
       )}
-      {pending && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />}
+      {pending && (
+        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.attention}`} />
+      )}
       <span className="min-w-0 flex-1" />
     </button>
   );
