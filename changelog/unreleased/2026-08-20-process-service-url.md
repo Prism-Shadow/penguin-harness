@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#373](https://github.com/Prism-Shadow/penguin-harness/pull/373)
 
 [中文版](2026-08-20-process-service-url.zh.md)
 
