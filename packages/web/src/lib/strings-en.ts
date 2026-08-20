@@ -165,6 +165,7 @@ export const en: Strings = {
   },
 
   account: {
+    tokenRewards: "Claim API Tokens",
     changePassword: "Change password",
     oldPassword: "Current password",
     oldPasswordHint:

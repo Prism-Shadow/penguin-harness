@@ -213,6 +213,14 @@ function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
 const menuItemClass =
   "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
 
+/**
+ * Stable Token Hub campaign-center entry. Deployments can point at another Hub origin or a
+ * specific generated campaign without changing the Web App code.
+ */
+const TOKEN_HUB_ACTIVITY_URL = String(
+  import.meta.env.VITE_TOKEN_HUB_ACTIVITY_URL || "https://penguin.ooo/activities",
+).trim();
+
 /** Section-header icon control (search / list settings / create): the grouping-toggle button look — active renders as a pressed fill. */
 const headerControlClass = (active: boolean) =>
   `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
@@ -1763,6 +1771,15 @@ export function Sidebar({
             </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+            <a
+              className={`${menuItemClass} text-gray-700 no-underline dark:text-gray-300`}
+              href={TOKEN_HUB_ACTIVITY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setUserOpen(false)}
+            >
+              {S.account.tokenRewards}
+            </a>
             {/* Hidden in the desktop shell's own window: it signs in through the shell's
                 one-shot token rather than a login form, and the seed password of a
                 desktop-created root is fully random and never printed — there is no

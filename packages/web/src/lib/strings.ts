@@ -163,6 +163,7 @@ export const zh = {
   },
 
   account: {
+    tokenRewards: "领取 API Token",
     changePassword: "修改密码",
     oldPassword: "当前密码",
     oldPasswordHint: "内置管理员的初始密码在服务端首次启动时打印（形如 penguin-1234）",
