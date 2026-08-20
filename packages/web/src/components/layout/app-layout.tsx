@@ -34,6 +34,7 @@ import {
   isTerminalDockOpen,
   setDockScope,
   paneHasSlot,
+  SIDE_SLOT_TRANSITION_MS,
   visiblePanes,
   subscribeTerminalDock,
 } from "../../features/terminal/terminal-dock-state";
@@ -200,7 +201,7 @@ function useLingeringSlot(slot: boolean): boolean {
       return;
     }
     if (!lingering) return;
-    const timer = window.setTimeout(() => setLingering(false), 200);
+    const timer = window.setTimeout(() => setLingering(false), SIDE_SLOT_TRANSITION_MS);
     return () => window.clearTimeout(timer);
   }, [slot, lingering]);
   return slot || lingering;

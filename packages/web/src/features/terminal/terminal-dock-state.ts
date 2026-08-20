@@ -48,7 +48,7 @@ const POSITIONS: readonly DockPosition[] = ["top", "bottom", "left", "right"];
  * and Agents panels (use-panel-width.ts), since the three take turns in the same slot.
  */
 export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
-export const DOCK_RATIO_MIN = 0.15;
+const DOCK_RATIO_MIN = 0.15;
 export const DOCK_RATIO_MAX = 0.85;
 export const DOCK_MIN_HEIGHT_PX = 140;
 
@@ -327,11 +327,13 @@ export function setChatSidePanelOpen(open: boolean): void {
 }
 
 /**
- * How long a chat side panel takes to retract — chat-page.tsx's PANEL_SWAP_MS, which is
- * also the pane's own collapse. Duplicated rather than imported: the store is the layer
- * below, and importing upward to read a number is worse than the two staying in step.
+ * The one duration of the side-slot choreography: a panel's retraction, a pane's collapse,
+ * the sequenced swap's wait, and the exit linger all use it — they are phases of the same
+ * motion, and any two drifting apart is what reads as "the old surface never left". The
+ * two `duration-200` Tailwind classes (terminal-dock.tsx, files-panel.tsx) must match it;
+ * CSS cannot read a JS constant.
  */
-const SIDE_HANDOVER_MS = 200;
+export const SIDE_SLOT_TRANSITION_MS = 200;
 
 /**
  * The panel has been told to retract but is still on screen. The pane stays displaced for
@@ -364,7 +366,7 @@ function terminalTakesTheSide(): void {
     handoverTimer = null;
     handingOver = false;
     notify();
-  }, SIDE_HANDOVER_MS);
+  }, SIDE_SLOT_TRANSITION_MS);
 }
 
 let visibleSnapshot: DockPosition[] = [];
@@ -380,11 +382,11 @@ export function visiblePanes(): DockPosition[] {
 }
 
 /** The pane unassigned terminals belong to. */
-export function primaryPane(): DockPosition {
+function primaryPane(): DockPosition {
   return panes[0] ?? "bottom";
 }
 
-export function ensurePaneOpen(position: DockPosition): void {
+function ensurePaneOpen(position: DockPosition): void {
   terminalTakesTheSide();
   visible = true;
   if (!panes.includes(position)) panes = [...panes, position];

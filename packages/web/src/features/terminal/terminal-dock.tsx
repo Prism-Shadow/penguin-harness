@@ -26,7 +26,6 @@ import {
   assignTerminalToPane,
   closePane,
   dockStateVersion,
-  DEFAULT_DOCK_HEIGHT_RATIO,
   isHorizontal,
   isTerminalDockOpen,
   movePane,
@@ -82,15 +81,6 @@ const POSITION_CLASSES: Record<DockPosition, string> = {
   // element from ever measuring zero.
   left: "",
   right: "",
-};
-
-/**
- * Overlay handle placement for TOP/BOTTOM panes: a 6px strip straddling the pane's inner
- * edge, costing no layout height. Side panes use a layout sibling instead (see sideHandle).
- */
-const RESIZER_CLASSES: Partial<Record<DockPosition, string>> = {
-  bottom: "left-0 right-0 -top-[3px] h-1.5 cursor-ns-resize",
-  top: "left-0 right-0 -bottom-[3px] h-1.5 cursor-ns-resize",
 };
 
 /** Small icon-sized header button shared by the pane's controls. */
@@ -695,9 +685,11 @@ export function TerminalDock({
             title={S.terminal.resize}
             {...resizerDragProps}
             onDoubleClick={onResizerDoubleClick}
-            className={`absolute z-20 transition-colors duration-150 ${RESIZER_CLASSES[position]} ${
-              resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-            }`}
+            // A 6px strip straddling the pane's inner edge, costing no layout height
+            // (side panes use a layout sibling instead — see sideHandle).
+            className={`absolute left-0 right-0 z-20 h-1.5 cursor-ns-resize transition-colors duration-150 ${
+              position === "bottom" ? "-top-[3px]" : "-bottom-[3px]"
+            } ${resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"}`}
           />
         )}
 

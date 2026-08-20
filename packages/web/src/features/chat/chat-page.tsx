@@ -36,6 +36,7 @@ import {
   adoptDockScope,
   chatSidePanelOpen,
   dockStateVersion,
+  SIDE_SLOT_TRANSITION_MS,
   setChatSidePanelOpen,
   subscribeTerminalDock,
   visiblePanes,
@@ -144,7 +145,6 @@ const PROCESS_POLL_MS = 15_000;
  * (files-panel.tsx / subagents-panel.tsx) — shorter would cut the retract off, longer
  * would leave a dead gap.
  */
-const PANEL_SWAP_MS = 200;
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
@@ -376,7 +376,7 @@ export function ChatPage() {
       panelSwapTimer.current = window.setTimeout(() => {
         panelSwapTimer.current = null;
         open(true);
-      }, PANEL_SWAP_MS);
+      }, SIDE_SLOT_TRANSITION_MS);
     } else {
       open(true);
     }
