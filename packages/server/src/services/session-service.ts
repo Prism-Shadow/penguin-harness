@@ -15,7 +15,7 @@
  * added to session-manager's active table (state idle).
  */
 import { createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   SessionCategory,
@@ -58,6 +58,8 @@ export interface SessionServiceDeps {
    * runs the Session's first Task, so it needs the command-subprocess proxy policy too.
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
+  /** Spawn-confinement getter (see app.ts): claimed from the platform's registered resource, forwarded into core beside proxyEnv. */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 export class SessionService {
@@ -329,6 +331,7 @@ export class SessionService {
       projectId: args.projectId,
       agentId: args.agentId,
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
+      ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
     });
     let session;
     try {

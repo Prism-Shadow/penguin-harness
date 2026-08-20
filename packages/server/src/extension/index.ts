@@ -6,13 +6,20 @@
  * redeclaring it. Core names nothing it cannot reach, this layer names what it owns, and
  * an extension sees one `PenguinContext` either way.
  *
- * Re-exported here so an extension package has one import site for both halves.
+ * Re-exported here so an extension package has one import site for every half.
  */
 import type { TerminalManager } from "../terminal/manager.js";
+import type { SandboxControl, SandboxProviderRegistry } from "../sandbox/types.js";
 
 declare module "@prismshadow/penguin-core/extension" {
   interface PenguinContext {
     terminals: TerminalManager;
+    /** The sandbox config surface (see {@link SandboxControl}). */
+    sandbox: SandboxControl;
+  }
+  interface PenguinInterface {
+    /** Sandbox backend registration (see {@link SandboxProviderRegistry}). */
+    sandbox: SandboxProviderRegistry;
   }
 }
 
@@ -28,3 +35,17 @@ export type {
   WorkflowInstance,
   WorkflowInstances,
 } from "@prismshadow/penguin-core/extension";
+export type {
+  ConfinedArgv,
+  ConfinedSandboxMode,
+  RunnerFailureRule,
+  SandboxControl,
+  SandboxDimension,
+  SandboxEnforcement,
+  SandboxMode,
+  SandboxPolicy,
+  SandboxProvider,
+  SandboxProviderRegistry,
+  SandboxProviderSource,
+  SandboxSettings,
+} from "../sandbox/types.js";

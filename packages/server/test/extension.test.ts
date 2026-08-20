@@ -16,7 +16,11 @@ import type { WorkflowFactory } from "../src/extension/index.js";
 
 function emptyIface(): PenguinInterface {
   // The registry, not a bare Map: that IS the surface an extension gets (see platform.ts).
-  return { workflow: new WorkflowFactories(), tool: new Map() };
+  return {
+    workflow: new WorkflowFactories(),
+    tool: new Map(),
+    sandbox: { registerProvider: () => {} },
+  };
 }
 
 /**
@@ -314,6 +318,8 @@ describe("extension seam on the real platform", () => {
       expect(initializes).toBe(1);
       expect(contexts).toHaveLength(1);
       const ctx = contexts[0]!;
+      // The sandbox config surface rides the same context (see ../src/sandbox/).
+      expect(ctx.sandbox.settings()).toEqual({ mode: "danger-full-access" });
       // context.* flatten: the platform's own member is directly on the context.
       expect(typeof ctx.terminals.handleIds).toBe("function");
       // …and the workflow this extension registered is instantiated and callable.
