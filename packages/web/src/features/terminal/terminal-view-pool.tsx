@@ -16,8 +16,8 @@ import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { TerminalView, probeJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
 import {
-  isTerminalDockOpen,
-  visiblePanes,
+  paneHasSlot,
+  openPanes,
   paneCurrent,
   subscribeTerminalDock,
   toggleTerminalDock,
@@ -75,14 +75,19 @@ function attachById(id: string) {
 }
 
 /**
- * The set of terminal ids that should have a live view right now. Displaced side panes are
- * not among them: a pane a chat panel pushed off screen tears its view down like any other
- * hidden pane, and reattaches (server-side restore) when it comes back.
+ * The set of terminal ids that should have a live view right now — the whole arrangement,
+ * not just what is visible. A side pane a chat panel displaced is still mounted (collapsed
+ * to zero width, animating), so its view has to survive the swap: tearing it down would
+ * make the panel slide in over a blank box, and coming back would flash a reconnect. Hiding
+ * the dock outright is the case that disposes.
  */
 function shownIds(): string[] {
-  if (!isTerminalDockOpen()) return [];
   const ids: string[] = [];
-  for (const pane of visiblePanes()) {
+  for (const pane of openPanes()) {
+    // paneHasSlot, not isTerminalDockOpen: the latter answers "is anything on screen", and a
+    // displaced side pane is not — but it is still mounted and mid-animation, so tearing its
+    // view down here is what would make the panel slide in over a blank box.
+    if (!paneHasSlot(pane)) continue;
     const id = paneCurrent(pane);
     if (id !== null && !ids.includes(id)) ids.push(id);
   }

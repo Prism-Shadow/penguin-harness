@@ -15,10 +15,10 @@
  * header owns the pointer), so CSS hover never fires on the overlay.
  */
 import { createPortal } from "react-dom";
+import { panelWidth } from "../chat/use-panel-width";
 import type { CSSProperties } from "react";
 import {
   DOCK_MIN_HEIGHT_PX,
-  DOCK_MIN_WIDTH_PX,
   DOCK_RATIO_MAX,
   isHorizontal,
   paneRatio,
@@ -105,10 +105,10 @@ function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProper
         ),
     contentHeight,
   );
+  // A side pane's width is the shared panel width in pixels (use-panel-width.ts), not a
+  // ratio of the host — the preview has to promise the same region the drop actually gives.
   const width = Math.min(
-    existing && !isHorizontal(position)
-      ? existing.width
-      : clampSize(paneRatio(position) * host.width, DOCK_MIN_WIDTH_PX, DOCK_RATIO_MAX * host.width),
+    existing && !isHorizontal(position) ? existing.width : panelWidth(),
     host.width,
   );
   switch (position) {

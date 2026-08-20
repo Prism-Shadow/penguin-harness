@@ -57,6 +57,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
         />
       )}
       <div
+        data-testid="files-panel"
         ref={panel.panelRef}
         style={{ width: panel.open ? panel.width : 0 }}
         // Use inert rather than unmounting when closed: the width transition needs the node to

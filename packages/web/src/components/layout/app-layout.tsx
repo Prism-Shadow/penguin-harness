@@ -27,6 +27,7 @@ import {
   dockStateVersion,
   isTerminalDockOpen,
   setDockScope,
+  paneHasSlot,
   visiblePanes,
   subscribeTerminalDock,
 } from "../../features/terminal/terminal-dock-state";
@@ -194,6 +195,10 @@ export function AppLayout() {
   const dockVisible = isTerminalDockOpen();
   // The arrangement minus anything a chat side panel is displacing (terminal-dock-state.ts).
   const panes = visiblePanes();
+  // A displaced SIDE pane stays mounted so it can slide out and back on the same 200ms as
+  // the panel that took its place; it renders collapsed (TerminalDock's `open`). Hiding the
+  // dock outright still unmounts, which is what disposes the view. Note this cannot key off
+  // dockVisible: that already answers "is anything on screen", which a displaced pane is not.
   const hasPane = (p: string) => dockVisible && panes.includes(p as never);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
@@ -329,11 +334,11 @@ export function AppLayout() {
             a terminal. data-dock-row anchors the drag preview's geometry. */}
         {hasPane("top") && <TerminalDock position="top" />}
         <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
-          {hasPane("left") && <TerminalDock position="left" />}
+          {paneHasSlot("left") && <TerminalDock position="left" open={hasPane("left")} />}
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
-          {hasPane("right") && <TerminalDock position="right" />}
+          {paneHasSlot("right") && <TerminalDock position="right" open={hasPane("right")} />}
         </div>
         {hasPane("bottom") && <TerminalDock position="bottom" />}
         <TerminalDockRuntime />

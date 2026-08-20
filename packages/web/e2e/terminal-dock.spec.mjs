@@ -648,8 +648,10 @@ test("tab strip squeezes when crowded and wheel-scrolls", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   await configureProjectModel(page.request);
   await killAllTerminals(page.request);
-  // A narrow left pane makes the strip overflow with few tabs.
+  // A narrow left pane makes the strip overflow with few tabs. Its width is the one shared
+  // with the chat's side panels (use-panel-width.ts), so the floor is seeded there.
   await page.addInitScript(() => {
+    localStorage.setItem("penguin.panelWidth", "320");
     // One entry per Session scope (terminal-dock-state.ts); "~none" is the one a /chat
     // without a Session id uses, and it is handed to the Session that route resolves to.
     localStorage.setItem(
@@ -937,11 +939,20 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SIDE_SWAP_MARKER");
 
   const workspace = page.locator('[data-testid="panel-btn-workspace"]');
+  const paneWidth = (await dock(page).boundingBox()).width;
 
   // Workspace wins: the side pane goes away, and the shell behind it keeps running.
   await workspace.click();
   await expect(workspace).toHaveAttribute("aria-expanded", "true");
   await expect(dock(page)).toBeHidden();
+  // Collapsed, not unmounted — that is what lets the width animate rather than pop, and it
+  // is why the shell's view survives the swap.
+  await expect(dock(page)).toHaveCount(1);
+
+  // Same slot, same width: the panel opens exactly as wide as the pane it displaced
+  // (use-panel-width.ts is one value for all three side surfaces).
+  const panelWidth = (await page.locator('[data-testid="files-panel"]').boundingBox()).width;
+  expect(Math.abs(panelWidth - paneWidth)).toBeLessThanOrEqual(2);
   const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
   expect(terminals.filter((t) => t.alive)).toHaveLength(1);
 

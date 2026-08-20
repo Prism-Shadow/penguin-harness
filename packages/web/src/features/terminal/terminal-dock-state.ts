@@ -29,7 +29,7 @@
 
 /** Every scope's arrangement, in one entry: `Record<scope, DockScopeState>`. */
 const DOCK_KEY = "penguin.terminal.dock";
-/** How wide/tall the user likes a pane is one preference, not one per conversation. */
+/** How tall the user likes a pane is one preference, not one per conversation. */
 const RATIOS_KEY = "penguin.terminal.dockRatios";
 /** Scopes kept in storage; past that, the least recently touched conversations age out. */
 const MAX_SCOPES = 40;
@@ -40,16 +40,17 @@ export type DockPosition = "top" | "bottom" | "left" | "right";
 const POSITIONS: readonly DockPosition[] = ["top", "bottom", "left", "right"];
 
 /**
- * Pane sizes are RATIOS of the layout row, per position. The px minimums (and the ratio
- * ceiling, which also leaves the main content room) are enforced both by the pane's CSS
- * and by the drag preview.
+ * A top/bottom pane's HEIGHT is a ratio of the layout row. The px minimum (and the ratio
+ * ceiling, which also leaves the main content room) are enforced both by the pane's CSS and
+ * by the drag preview.
+ *
+ * A left/right pane's WIDTH is not here: it is the width shared with the chat's Workspace
+ * and Agents panels (use-panel-width.ts), since the three take turns in the same slot.
  */
 export const DEFAULT_DOCK_HEIGHT_RATIO = 0.4;
-export const DEFAULT_DOCK_WIDTH_RATIO = 0.33;
 export const DOCK_RATIO_MIN = 0.15;
 export const DOCK_RATIO_MAX = 0.85;
 export const DOCK_MIN_HEIGHT_PX = 140;
-export const DOCK_MIN_WIDTH_PX = 320;
 
 export function isHorizontal(position: DockPosition): boolean {
   return position === "top" || position === "bottom";
@@ -231,6 +232,16 @@ export function isTerminalDockOpen(): boolean {
   return visible && visiblePanes().length > 0;
 }
 
+/**
+ * Whether a pane occupies its slot in the layout: it is in the arrangement, and the user has
+ * not hidden the dock. A displaced side pane still does — it stays mounted and collapses to
+ * zero width so the swap animates instead of popping — which is precisely where this parts
+ * ways with isTerminalDockOpen().
+ */
+export function paneHasSlot(position: DockPosition): boolean {
+  return visible && panes.includes(position);
+}
+
 export function setTerminalDockOpen(next: boolean): void {
   if (next) terminalTakesTheSide();
   visible = next;
@@ -350,10 +361,10 @@ export function closePane(position: DockPosition): void {
 
 // -------------------------------------------------------------------------------- ratios
 
+/** A top/bottom pane's height, as a ratio of the layout row. Side panes are sized in px. */
 export function paneRatio(position: DockPosition): number {
-  const fallback = isHorizontal(position) ? DEFAULT_DOCK_HEIGHT_RATIO : DEFAULT_DOCK_WIDTH_RATIO;
   const stored = ratios[position];
-  return typeof stored === "number" ? clampRatio(stored) : fallback;
+  return typeof stored === "number" ? clampRatio(stored) : DEFAULT_DOCK_HEIGHT_RATIO;
 }
 
 export function setPaneRatio(position: DockPosition, next: number): void {
@@ -484,14 +495,11 @@ export function movePane(from: DockPosition, to: DockPosition): void {
   if (from === to) return;
   const shown = currents[from] ?? null;
   const movedIds = Object.keys(assignments).filter((id) => paneOfTerminal(id) === from);
-  // A same-orientation move carries the pane's size along ("keep the ratio"): the user
-  // sized THIS pane, and it is the same pane on the other edge. Cross-orientation moves
-  // and merges into an existing pane keep the target's own size.
-  if (
-    !panes.includes(to) &&
-    isHorizontal(from) === isHorizontal(to) &&
-    ratios[from] !== undefined
-  ) {
+  // A top<->bottom move carries the pane's height along ("keep the ratio"): the user sized
+  // THIS pane, and it is the same pane on the other edge. Merges into an existing pane keep
+  // the target's own size, and a side pane has no size of its own to carry — its width is
+  // the shared one every side surface opens at.
+  if (!panes.includes(to) && isHorizontal(from) && isHorizontal(to) && ratios[from] !== undefined) {
     ratios = { ...ratios, [to]: ratios[from] };
     writeJson(RATIOS_KEY, ratios);
   }
