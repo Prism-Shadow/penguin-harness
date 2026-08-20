@@ -15,6 +15,11 @@
  * conversation; and a dock opened before any conversation was chosen is handed to the
  * first one that is (see setDockScope).
  *
+ * A side pane and the chat's Agents/Workspace panel both want the horizontal half of the
+ * content area, so only one of them is on screen: whichever the user opened last. That is
+ * an exclusion, not a close — the losing side keeps its arrangement and comes back when the
+ * winner goes away (see setChatSidePanelOpen).
+ *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar and the global hotkey flip visibility, AppLayout renders a pane per open edge,
  * and the drag/drop interactions inside any pane reshape the arrangement. Everything
@@ -217,11 +222,17 @@ export function subscribeTerminalDock(listener: () => void): () => void {
 
 // ---------------------------------------------------------------------------- visibility
 
+/**
+ * Whether the dock is on screen — which is what every caller means by "open", including the
+ * toggle. A side pane displaced by a chat panel does not count: from the user's seat there
+ * is no terminal, so asking for one must bring it back rather than toggle it off.
+ */
 export function isTerminalDockOpen(): boolean {
-  return visible && panes.length > 0;
+  return visible && visiblePanes().length > 0;
 }
 
 export function setTerminalDockOpen(next: boolean): void {
+  if (next) terminalTakesTheSide();
   visible = next;
   if (next && panes.length === 0) panes = ["bottom"];
   persist();
@@ -247,9 +258,54 @@ if (typeof window !== "undefined") {
 
 // --------------------------------------------------------------------------------- panes
 
-/** Open panes; stable snapshot (same reference until contents change). */
+/**
+ * The arrangement: every pane the dock would show. Stable reference until it changes.
+ *
+ * This is NOT what to render — a side pane displaced by a chat panel is still part of the
+ * arrangement, which is exactly what lets it come back. Renderers want visiblePanes().
+ */
 export function openPanes(): DockPosition[] {
   return panes;
+}
+
+/**
+ * A chat side panel (Agents / Workspace) is on screen, displacing this dock's left and
+ * right panes. Not persisted: it mirrors panel state that is itself per-visit, and a reload
+ * with no panel open should show the panes again.
+ */
+let sidePanelDisplacing = false;
+
+/** Whether a chat side panel currently holds the side. */
+export function chatSidePanelOpen(): boolean {
+  return sidePanelDisplacing;
+}
+
+export function setChatSidePanelOpen(open: boolean): void {
+  if (sidePanelDisplacing === open) return;
+  sidePanelDisplacing = open;
+  notify();
+}
+
+/**
+ * Called by everything that puts a terminal on screen: the terminal is what the user just
+ * asked for, so it takes the side back. The chat page watches for this and retracts its
+ * panels — the store cannot reach into them, and should not know they exist beyond this
+ * one flag.
+ */
+function terminalTakesTheSide(): void {
+  sidePanelDisplacing = false;
+}
+
+let visibleSnapshot: DockPosition[] = [];
+
+/** Panes to actually render: the arrangement minus what a chat side panel is displacing. */
+export function visiblePanes(): DockPosition[] {
+  const next = sidePanelDisplacing ? panes.filter(isHorizontal) : panes;
+  if (next.length === panes.length) return panes; // nothing displaced: keep the stable ref
+  if (next.length !== visibleSnapshot.length || next.some((p, i) => p !== visibleSnapshot[i])) {
+    visibleSnapshot = next;
+  }
+  return visibleSnapshot;
 }
 
 /** The pane unassigned terminals belong to. */
@@ -258,6 +314,7 @@ export function primaryPane(): DockPosition {
 }
 
 export function ensurePaneOpen(position: DockPosition): void {
+  terminalTakesTheSide();
   visible = true;
   if (!panes.includes(position)) panes = [...panes, position];
   persist();

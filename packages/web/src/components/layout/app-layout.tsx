@@ -27,7 +27,7 @@ import {
   dockStateVersion,
   isTerminalDockOpen,
   setDockScope,
-  openPanes,
+  visiblePanes,
   subscribeTerminalDock,
 } from "../../features/terminal/terminal-dock-state";
 
@@ -192,7 +192,8 @@ export function AppLayout() {
   // Any dock-state change (panes opening/closing/moving) re-renders the slots below.
   useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
   const dockVisible = isTerminalDockOpen();
-  const panes = openPanes();
+  // The arrangement minus anything a chat side panel is displacing (terminal-dock-state.ts).
+  const panes = visiblePanes();
   const hasPane = (p: string) => dockVisible && panes.includes(p as never);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.

@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { TerminalView, probeJson, type TerminalInfo, type TerminalStatus } from "./terminal-view";
 import {
   isTerminalDockOpen,
-  openPanes,
+  visiblePanes,
   paneCurrent,
   subscribeTerminalDock,
   toggleTerminalDock,
@@ -74,11 +74,15 @@ function attachById(id: string) {
   };
 }
 
-/** The set of terminal ids that should have a live view right now. */
+/**
+ * The set of terminal ids that should have a live view right now. Displaced side panes are
+ * not among them: a pane a chat panel pushed off screen tears its view down like any other
+ * hidden pane, and reattaches (server-side restore) when it comes back.
+ */
 function shownIds(): string[] {
   if (!isTerminalDockOpen()) return [];
   const ids: string[] = [];
-  for (const pane of openPanes()) {
+  for (const pane of visiblePanes()) {
     const id = paneCurrent(pane);
     if (id !== null && !ids.includes(id)) ids.push(id);
   }

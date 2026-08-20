@@ -911,3 +911,54 @@ test("the dock belongs to its Session: switching hides it, coming back restores 
   });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SCOPED_MARKER");
 });
+
+test("a side pane and the Workspace panel take turns: whichever was asked for last", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+
+  // A dock already arranged on the RIGHT, where it competes with the Workspace panel for
+  // the same horizontal half (terminal-dock-state.ts seeds one entry per Session scope).
+  await page.addInitScript((scope) => {
+    localStorage.setItem(
+      "penguin.terminal.dock",
+      JSON.stringify({
+        [scope]: { visible: true, panes: ["right"], assignments: {}, currents: {} },
+      }),
+    );
+  }, sessionId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await expect(dock(page)).toBeVisible({ timeout: 20000 });
+  await waitForDockShell(page, "SIDE_SWAP_UP");
+  await runInDock(page, "echo SIDE_SWAP_MARKER");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SIDE_SWAP_MARKER");
+
+  const workspace = page.locator('[data-testid="panel-btn-workspace"]');
+
+  // Workspace wins: the side pane goes away, and the shell behind it keeps running.
+  await workspace.click();
+  await expect(workspace).toHaveAttribute("aria-expanded", "true");
+  await expect(dock(page)).toBeHidden();
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.filter((t) => t.alive)).toHaveLength(1);
+
+  // Closing it gives the pane back, on the same edge, with its screen intact.
+  await workspace.click();
+  await expect(workspace).toHaveAttribute("aria-expanded", "false");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await expect(dock(page)).toHaveAttribute("data-position", "right");
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SIDE_SWAP_MARKER");
+
+  // And the other direction: asking for the terminal retracts the panel.
+  await workspace.click();
+  await expect(dock(page)).toBeHidden();
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await expect(workspace).toHaveAttribute("aria-expanded", "false");
+});

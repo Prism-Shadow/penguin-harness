@@ -14,7 +14,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
@@ -32,6 +32,12 @@ import type {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import {
+  chatSidePanelOpen,
+  dockStateVersion,
+  setChatSidePanelOpen,
+  subscribeTerminalDock,
+} from "../terminal/terminal-dock-state";
 import { apiErrorText } from "../../lib/api-error";
 import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -366,22 +372,53 @@ export function ChatPage() {
       open(true);
     }
   };
+  // The exclusivity above extends to the terminal dock's LEFT and RIGHT panes, which want the
+  // same horizontal half of the content area: opening a panel displaces them, and opening a
+  // side pane retracts the panels. Whichever the user asked for last is what they get. The
+  // dock only learns that a panel is up (setChatSidePanelOpen); it keeps its arrangement, so
+  // closing the panel brings the pane back where it was. Top/bottom panes are unaffected —
+  // they cost height, not width.
   const filesPanel: FilesPanelState = {
     ...filesPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
-      if (next) swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen);
-      else filesPanelRaw.setOpen(false);
+      if (next) {
+        setChatSidePanelOpen(true);
+        swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen);
+      } else {
+        filesPanelRaw.setOpen(false);
+        // The OTHER panel decides whether the side is still held: this one's `open` is the
+        // render-time value and still reads true here.
+        setChatSidePanelOpen(subagentsPanelRaw.open);
+      }
     },
   };
   const subagentsPanel: SubagentsPanelState = {
     ...subagentsPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
-      if (next) swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen);
-      else subagentsPanelRaw.setOpen(false);
+      if (next) {
+        setChatSidePanelOpen(true);
+        swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen);
+      } else {
+        subagentsPanelRaw.setOpen(false);
+        setChatSidePanelOpen(filesPanelRaw.open);
+      }
     },
   };
+  // The other direction. The store flips this the moment anything puts a terminal on screen
+  // (see terminalTakesTheSide), which is the only signal the page needs: retract both panels
+  // and let the pane render. Edge-triggered, so a panel the user opens is not immediately
+  // closed again — it sets the flag back on its way up.
+  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
+  const terminalHasTheSide = !chatSidePanelOpen();
+  useEffect(() => {
+    if (!terminalHasTheSide) return;
+    filesPanelRaw.setOpen(false);
+    subagentsPanelRaw.setOpen(false);
+    // Panel objects are recreated every render; the raw hooks' setters are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminalHasTheSide]);
   // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
   // just bound to their own stored entry — every "this is a draft, not a Session" branch
   // below treats the two alike.
@@ -497,6 +534,7 @@ export function ChatPage() {
     cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
+    setChatSidePanelOpen(false); // nothing holds the side any more: side panes come back
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
 
@@ -529,6 +567,7 @@ export function ChatPage() {
       !subagentsPanelRaw.open &&
       !filesPanelRaw.open
     ) {
+      setChatSidePanelOpen(true);
       subagentsPanelRaw.setOpen(true);
     }
     // The panel objects are rebuilt every render; the tracker only acts on real transitions of
