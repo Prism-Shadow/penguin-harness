@@ -123,8 +123,14 @@ jobs:
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
+      # One package at a time. `pnpm -r test` runs packages in parallel, and this runner has
+      # two cores: core's exec_command suites spawn real shells and read their output under
+      # timeouts, so they lose races against the other packages' suites and fail differently
+      # on each run (a truncated stream, a command that never resolved). The assertions are
+      # right; the machine was oversubscribed. Ubuntu and macOS have the cores to spare and
+      # keep the default.
       - name: Unit tests (vitest)
-        run: pnpm test
+        run: pnpm -r --workspace-concurrency=1 test
 
       # The Linux job cannot validate PowerShell syntax; parse (never execute) the installer
       # scripts with the real PowerShell parser so a broken install.ps1 cannot ship.
