@@ -71,14 +71,17 @@ platformImpl.create
 │
 ├─ new TerminalManager(resources)    # adopt the ptys the previous instance parked
 ├─ plugins = pluginHostFrom(resources)  # claim the host the runtime loaded in ④ (empty host if none was published)
-├─ iface = { workflow: new Map(), tool: new Map() }   # a fresh definition view per App
+├─ iface = { workflow, tool, sandbox }   # a fresh definition view per App
 ├─ plugins.emit("initialize", iface) # the definition view, to every handler, in activation order
+├─ sandbox = new SandboxService(registered backends)   # rehydrated from the parked settings
 ├─ plugins.emit("create", {          # the instance view, assembled after registration closes
 │    workflows: instantiateWorkflows(iface.workflow),  # every factory is called eagerly here
 │    terminals,
+│    sandbox: { configure, settings },
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ business assembly (when caps are all present): buildAppDeps → scheduler.start()
+└─ business assembly (when caps are all present): buildAppDeps — the sandbox confiner
+   rides in as an argument, into the session loader's spawn path → scheduler.start()
    → orphaned-Goal reconciliation → createApp (terminal + business groups in ONE Hono app)
    → one registry write publishes the {deps, app, shutdown} pointer
    → ctx.effect registers the hard stop for the next swap
@@ -89,9 +92,9 @@ Split by frequency, the plugin lifecycle has three tiers:
 | Moment                  | Frequency        | What happens                                                                                                   |
 | ----------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
 | Load + `activate(ctx)`  | Once per process | Boot step ④ `loadPlugins`: resolve and import each specifier in `plugins.json`, then run its exported `activate` — the only window where `ctx.on(...)` subscribes and `ctx.disposables` accepts cleanup. A failing entry is isolated and logged, never fatal |
-| `"initialize"` event    | Once per App     | Handlers register workflow factories into the fresh `iface` (the `tool` slot is reserved, unused)               |
+| `"initialize"` event    | Once per App     | Handlers register workflow factories and sandbox backends into the fresh `iface` (the `tool` slot is reserved, unused) |
 | Workflow instantiation  | Once per App     | `instantiateWorkflows` calls **every** factory synchronously before the emit — instances are born in one batch at App creation, not on first call |
-| `"create"` event        | Once per App     | Handlers receive the instance view `ctx` (`workflows` + `terminals`)                                            |
+| `"create"` event        | Once per App     | Handlers receive the instance view `ctx` (`workflows` + `terminals` + `sandbox`)                                |
 | `workflows.run`         | Per call         | A plain function call: no Session, no approval, no streaming                                                    |
 | Disposables             | Once per process | At exit, through the registry sweep that owns the host — newest first, best-effort                              |
 
@@ -102,6 +105,7 @@ Several behavioral facts follow:
 - **The subscription window is `activate`, sealed on return**: a handler-time `ctx.on(...)` would accumulate one copy per hot swap, so it throws instead — at the packaged boot, loudly, not as a slow leak. Disposables seal with the same window for the same reason.
 - **Handlers are synchronous and unwrapped**: plugin *loading* failures (import or a throwing `activate`) are isolated per entry, but event handlers run without a try/catch — a throwing handler fails that platform boot.
 - **The event vocabulary is typed and lives in one place**: `PluginEvents` maps each name to its payload — adding an event types the platform's emit and every handler at once.
+- **Confinement is same-generation wiring**: the confiner reaches core as a plain argument to `buildAppDeps`, and the sessions spawning through it are hard-stopped with their App — what crosses the swap is the active settings on the parked context, so a push cannot silently un-confine a deployment.
 
 The plugin type surface (`Plugin` / `PluginContext` / `PluginEvents` / `PenguinInterface` / `PenguinContext`) is exported types-only via the package subpath `@prismshadow/penguin-server/plugin`; which plugins exist is the deployment's `<root>/plugins.json` — the harness itself imports no plugin.
 
@@ -122,6 +126,7 @@ Each subsystem's construction site and external surface (step numbers refer to t
 | HMR host / platform  | `hmr/host.ts` (end of ⑤)                         | `PlatformApi` (`park` / `info` / `http` / `terminals` / `attachStream`); `POST /api/hmr/upgrade` is a runtime-owned route, never offered to the platform |
 | Terminals            | `terminal/` — **App-level**             | `/api/terminals*` route group (registered into the platform's one Hono app), WS `GET /api/terminals/:id/stream`; ptys are parked and survive swaps |
 | Plugin host          | built by ④ `loadPlugins`, published to the registry in ⑤ | `activate(ctx: PluginContext)` + the `PluginEvents` registry; the configuration surface is `<root>/plugins.json` |
+| Sandbox              | `sandbox/service.ts` — **App-level** (built in create, over the backends plugins registered) | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`; enforcement reaches commands through core's spawn seam, and backends are plugin packages named in `plugins.json` |
 | Model catalog        | No boot-time construction — static core data     | `/api/projects/:projectId/models`; the catalog itself lives in `core/src/state/model-catalog.ts`                |
 
 One request-time path is worth knowing: the platform's HTTP seam offers every request to the current App's `http(request)` first, and only a `null` return falls through to the runtime's own routes; while a hot swap is in flight, requests queue at the seam for the new App instead of hitting a half-disposed one.
