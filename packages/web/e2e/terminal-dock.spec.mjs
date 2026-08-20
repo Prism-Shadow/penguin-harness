@@ -953,6 +953,10 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   // Where the chat column ends: the outer edge of the resize handle, which the panel counts
   // as layout and the pane has to as well, or swapping them nudges the column sideways.
   const paneEdge = (await page.locator('[data-testid="terminal-dock-resizer"]').boundingBox()).x;
+  const topbarWidth = await page.locator('[data-testid="panels-toolbar"]').evaluate((el) => {
+    const bar = el.closest("header") ?? el.parentElement;
+    return Math.round(bar.getBoundingClientRect().width);
+  });
 
   // Workspace wins: the side pane goes away, and the shell behind it keeps running.
   await workspace.click();
@@ -972,6 +976,14 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
       return Math.abs((box?.width ?? 0) - paneWidth);
     })
     .toBeLessThanOrEqual(2);
+  // The page's own top bar is untouched either way: both surfaces sit inside the chat body
+  // row, below it — the pane used to flank <main> and squeeze the header with the content.
+  expect(topbarWidth, "top bar width").toBe(
+    await page.locator('[data-testid="panels-toolbar"]').evaluate((el) => {
+      const bar = el.closest("header") ?? el.parentElement;
+      return Math.round(bar.getBoundingClientRect().width);
+    }),
+  );
   // Same slot down to the handle: identical left edges, so the chat column does not shift.
   const panelBox = await page.locator('[data-testid="files-panel"]').boundingBox();
   expect(Math.abs(panelBox.x - paneBox.x), "panel vs pane left edge").toBeLessThanOrEqual(2);

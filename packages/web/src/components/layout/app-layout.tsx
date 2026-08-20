@@ -5,6 +5,7 @@
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
 import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -23,6 +24,11 @@ import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { TerminalDock } from "../../features/terminal/terminal-dock";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import {
+  dockSlot,
+  dockSlotVersion,
+  subscribeDockSlots,
+} from "../../features/terminal/terminal-dock-slot";
 import {
   dockStateVersion,
   isTerminalDockOpen,
@@ -224,6 +230,16 @@ export function AppLayout() {
   // Mounted through the exit collapse too — see useLingeringSlot.
   const leftMounted = useLingeringSlot(paneHasSlot("left"));
   const rightMounted = useLingeringSlot(paneHasSlot("right"));
+  // A page may donate a spot for its side panes (terminal-dock-slot.tsx). The chat page does,
+  // so a pane lines up with the panels it shares the slot with — below the page's own top
+  // bar, not squeezing it. Without a donation the pane stays here, beside <main>.
+  useSyncExternalStore(subscribeDockSlots, dockSlotVersion);
+  const sidePane = (position: "left" | "right", mounted: boolean) => {
+    if (!mounted) return null;
+    const pane = <TerminalDock position={position} open={hasPane(position)} />;
+    const slot = dockSlot(position);
+    return slot === null ? pane : createPortal(pane, slot);
+  };
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
@@ -358,11 +374,11 @@ export function AppLayout() {
             a terminal. data-dock-row anchors the drag preview's geometry. */}
         {hasPane("top") && <TerminalDock position="top" />}
         <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
-          {leftMounted && <TerminalDock position="left" open={hasPane("left")} />}
+          {sidePane("left", leftMounted)}
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
-          {rightMounted && <TerminalDock position="right" open={hasPane("right")} />}
+          {sidePane("right", rightMounted)}
         </div>
         {hasPane("bottom") && <TerminalDock position="bottom" />}
         <TerminalDockRuntime />

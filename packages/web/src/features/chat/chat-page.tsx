@@ -108,6 +108,7 @@ import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
 import type { FilesPanelState } from "./use-files-panel";
 import { SubagentsPanel } from "./subagents-panel";
+import { TerminalDockSlot } from "../terminal/terminal-dock-slot";
 import {
   advancePanelTaskScope,
   createPanelTaskScope,
@@ -1912,13 +1913,18 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
-      <div className="flex min-h-0 flex-1">
+      {/* Body: chat column + the docked panels on the right (message file cards jump to and
+          locate a file in the tree via onOpenFile), and the dock's side panes, which share
+          that slot and so belong on this row rather than around <main> — otherwise they
+          squeeze the header above. data-dock-side-row is what the drop preview measures for
+          a left/right landing. */}
+      <div data-dock-side-row className="flex min-h-0 flex-1">
+        <TerminalDockSlot position="left" />
         {/* The chat area, and the only region a dragged file may be dropped on (#311): it
             covers the conversation and the composer in both branches below, and nothing else
             — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
-            bounds the drop overlay to this column. */}
+            it (terminal panes included) are all outside, where a file drop is inert (see
+            drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
         <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
@@ -2039,6 +2045,7 @@ export function ChatPage() {
           />
         )}
         {selected && <FilesPanel session={selected} panel={filesPanel} />}
+        <TerminalDockSlot position="right" />
       </div>
 
       <Modal

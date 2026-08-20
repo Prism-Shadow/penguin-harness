@@ -43,7 +43,10 @@ function dockHostRect(): DOMRect | null {
  */
 interface DockGeometry {
   host: DOMRect;
+  /** Top of the region a TOP pane would occupy: below the app chrome. */
   contentTop: number;
+  /** Top of the region a SIDE pane would occupy: the page's donated row, when it has one. */
+  sideTop: number;
 }
 
 function clampSize(value: number, minPx: number, max: number): number {
@@ -55,7 +58,12 @@ function measureDockGeometry(): DockGeometry | null {
   if (!host) return null;
   const row = document.querySelector("[data-dock-row]")?.getBoundingClientRect() ?? null;
   const contentTop = row ? Math.max(host.top, row.top) : host.top;
-  return { host, contentTop };
+  // A side pane lands wherever the page donated a slot (terminal-dock-slot.tsx) — on the
+  // chat page that is below its top bar, not the full dock row. The preview has to promise
+  // the region the drop actually gives, so it measures that row when there is one.
+  const sideRow = document.querySelector("[data-dock-side-row]")?.getBoundingClientRect();
+  const sideTop = sideRow ? Math.max(contentTop, sideRow.top) : contentTop;
+  return { host, contentTop, sideTop };
 }
 
 /** The rendered rect of an already-open pane at `position`, if any. */
@@ -89,8 +97,9 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
 
 /** The exact region a pane at `position` would occupy after the drop. */
 function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProperties {
-  const { host, contentTop } = geometry;
+  const { host, contentTop, sideTop } = geometry;
   const contentHeight = host.bottom - contentTop;
+  const sideHeight = host.bottom - sideTop;
   const existing = openPaneRect(position);
   // Height percentages resolve against the HOST column (top/bottom panes are its direct
   // children), so the ratio's px value uses host.height — the region is then clipped to
@@ -117,9 +126,9 @@ function previewStyle(geometry: DockGeometry, position: DockPosition): CSSProper
     case "bottom":
       return { left: host.left, top: host.bottom - height, width: host.width, height };
     case "left":
-      return { left: host.left, top: contentTop, width, height: contentHeight };
+      return { left: host.left, top: sideTop, width, height: sideHeight };
     case "right":
-      return { left: host.right - width, top: contentTop, width, height: contentHeight };
+      return { left: host.right - width, top: sideTop, width, height: sideHeight };
   }
 }
 
