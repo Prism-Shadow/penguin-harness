@@ -20,6 +20,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |
 
 这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
 

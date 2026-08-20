@@ -35,6 +35,7 @@ import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
 import { resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, maybeOfferCliInstall, currentCliInstallKind } from "./cli-install.js";
+import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
@@ -249,6 +250,16 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() =>
     (async () => {
+      // GUI launches on macOS/Linux miss the login shell's exports (model API keys for
+      // core's env fallback, the PATH the agent shell needs). Import them fill-missing
+      // before anything reads process.env — boot() resolves PENGUIN_HOME from it, and
+      // the forked server inherits it (#351).
+      await applyLoginShellEnv({
+        platform: process.platform,
+        env: process.env,
+        shell: process.env.SHELL,
+        log: (line) => process.stdout.write(`[shell] ${line}\n`),
+      });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
