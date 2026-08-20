@@ -214,7 +214,7 @@ async function installServerOnRemote(alias: string): Promise<void> {
     await dialog.showMessageBox({
       type: "error",
       message: "This build carries no install image.",
-      detail: `Expected it at ${sources.payloadRoot}. In a dev run, stage it first: node packages/desktop/scripts/stage.mjs`,
+      detail: `Expected it at ${sources.payloadRoot}. In a dev run, build it first: pnpm --filter @prismshadow/penguin-desktop build:install-image`,
     });
     return;
   }

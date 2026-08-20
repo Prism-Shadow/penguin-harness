@@ -370,7 +370,7 @@ describe("resolvePayloadSources", () => {
     expect(
       resolvePayloadSources({ packaged: false, resourcesPath: "/ignored", repoRoot: "/repo" }),
     ).toEqual({
-      payloadRoot: "/repo/packages/desktop/stage/payload",
+      payloadRoot: "/repo/packages/desktop/install-image",
       installerScript: "/repo/packages/desktop/resources/remote-installer.cjs",
     });
   });
