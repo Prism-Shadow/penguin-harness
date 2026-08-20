@@ -20,7 +20,8 @@ had no single answer, and every new package was a coin flip.
 
 - `@prismshadow/penguin-core` and `@prismshadow/penguin-skills` gain
   `engines: { "node": ">=24" }`. They are published, they now emit Node 24 syntax, and
-  saying so is what makes npm refuse the install rather than letting a Node 20 user meet a
+  saying so is what surfaces the mismatch while a Node 20 user is installing — npm reports
+  `EBADENGINE`, and refuses outright under `engine-strict` — rather than letting them meet a
   `SyntaxError` at import time. Both are already built and tested only on 24, and both are
   consumed by packages that require it.
 - A drift guard in `packages/cli/test/tsup-target.test.ts` asserts every tsup config
