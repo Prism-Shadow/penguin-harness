@@ -71,14 +71,17 @@ platformImpl.create
 │
 ├─ new TerminalManager(resources)    # adopt the ptys the previous instance parked
 ├─ plugins = pluginHostFrom(resources)  # claim the host the runtime loaded in ④ (empty host if none was published)
-├─ iface = { workflow: new Map(), tool: new Map() }   # a fresh definition view per App
+├─ iface = { workflow, tool, sandbox }   # a fresh definition view per App
 ├─ plugins.createApp(iface)          # every plugin's onCreateApp, synchronously, in registration order
+├─ sandbox = new SandboxService(registered backends)   # rehydrated from the parked settings
 ├─ plugins.emit("create", {          # the only event the platform emits yet
 │    workflows: instantiateWorkflows(iface.workflow),  # every factory is called eagerly here
 │    terminals,
+│    sandbox: { configure, settings },
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ business assembly (when caps are all present): buildAppDeps → scheduler.start()
+└─ business assembly (when caps are all present): buildAppDeps — the sandbox confiner
+   rides in as an argument, into the session loader's spawn path → scheduler.start()
    → orphaned-Goal reconciliation → createApp (terminal + business groups in ONE Hono app)
    → one registry write publishes the {deps, app, shutdown} pointer
    → ctx.effect registers the hard stop for the next swap
@@ -89,9 +92,9 @@ Split by frequency, the plugin lifecycle has three tiers:
 | Moment                  | Frequency        | What happens                                                                                                   |
 | ----------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------- |
 | Module load             | Once per process | Boot step ④ `loadPlugins`: resolve and import each specifier in `plugins.json`; a failing entry is isolated and logged, never fatal |
-| onCreateApp             | Once per App     | Plugins register workflow factories into the fresh `iface` (the `tool` slot is reserved, unused)                |
+| onCreateApp             | Once per App     | Plugins register workflow factories and sandbox backends into the fresh `iface` (the `tool` slot is reserved, unused) |
 | Workflow instantiation  | Once per App     | `instantiateWorkflows` calls **every** factory synchronously before the emit — instances are born in one batch at App creation, not on first call |
-| `"create"`              | Once per App     | Plugins receive the instance view `ctx` (`workflows` + `terminals`)                                             |
+| `"create"`              | Once per App     | Plugins receive the instance view `ctx` (`workflows` + `terminals` + `sandbox`)                                 |
 | `workflows.run`         | Per call         | A plain function call: no Session, no approval, no streaming                                                    |
 
 Several behavioral facts follow:
@@ -100,6 +103,7 @@ Several behavioral facts follow:
 - **Instances do not cross a swap**: factories re-run per App, so a stateful workflow never carries the previous instance's state across a hot swap.
 - **Hooks are synchronous and unwrapped**: plugin *loading* failures are isolated (skipped and logged), but `onCreateApp` / `subscribe` run without a try/catch — a throwing hook fails that platform boot.
 - **Event names are an open set**: `"create"` is the only event the platform emits so far.
+- **Confinement is same-generation wiring**: the confiner reaches core as a plain argument to `buildAppDeps`, and the sessions spawning through it are hard-stopped with their App — what crosses the swap is the active settings on the parked context, so a push cannot silently un-confine a deployment.
 
 The plugin type surface (`RawPlugin` / `PenguinInterface` / `PenguinContext`) is exported types-only via the package subpath `@prismshadow/penguin-server/plugin`; which plugins exist is the deployment's `<root>/plugins.json` — the harness itself imports no plugin.
 
@@ -120,6 +124,7 @@ Each subsystem's construction site and external surface (step numbers refer to t
 | HMR host / platform  | `hmr/host.ts` (end of ⑤)                         | `PlatformApi` (`park` / `info` / `http` / `terminals` / `attachStream`); `POST /api/hmr/upgrade` is a runtime-owned route, never offered to the platform |
 | Terminals            | `terminal/` — **App-level**             | `/api/terminals*` route group (registered into the platform's one Hono app), WS `GET /api/terminals/:id/stream`; ptys are parked and survive swaps |
 | Plugin host          | built by ④ `loadPlugins`, published to the registry in ⑤ | `RawPlugin` / `PenguinInterface` / `PenguinContext`; the configuration surface is `<root>/plugins.json` |
+| Sandbox              | `sandbox/service.ts` — **App-level** (built in create, over the backends plugins registered) | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`; enforcement reaches commands through core's spawn seam, and backends are plugin packages named in `plugins.json` |
 | Model catalog        | No boot-time construction — static core data     | `/api/projects/:projectId/models`; the catalog itself lives in `core/src/state/model-catalog.ts`                |
 
 One request-time path is worth knowing: the platform's HTTP seam offers every request to the current App's `http(request)` first, and only a `null` return falls through to the runtime's own routes; while a hot swap is in flight, requests queue at the seam for the new App instead of hitting a half-disposed one.
