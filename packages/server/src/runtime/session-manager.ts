@@ -48,6 +48,7 @@ import type {
   ControlEnvContext,
   OmniMessage,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SessionMetaPayload,
   SessionTitleResult,
   SubagentMessageOptions,
@@ -227,6 +228,7 @@ export function createCoreSessionLoader(
   opts: {
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+    confineSpawn?: () => SpawnConfiner | null;
   } = {},
 ): SessionLoader {
   return {
@@ -237,6 +239,7 @@ export function createCoreSessionLoader(
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
+        ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
