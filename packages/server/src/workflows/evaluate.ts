@@ -1,19 +1,22 @@
 /**
- * A stored workflow script, evaluated into the extension seam's own currency.
+ * A stored workflow script, evaluated into the object the harness drives.
  *
- * An installed workflow is a workflow FACTORY source: the script's body runs once per
- * App creation and returns an object satisfying the contract below, which this module
- * wraps as a {@link WorkflowFactory} (see ../extension/index.ts). Installed workflows and
- * extension-registered ones therefore enter the harness through exactly one door — the
- * `iface.workflow` map — and a hot swap rebuilds both the same way, so neither can
- * carry a half-built instance across.
+ * The script's body runs once per App creation and returns the contract below. It is
+ * evaluated with `new Function`, not imported: it arrives over HTTP as a string and has
+ * no module identity to cache-bust. It runs in this process with this process's
+ * authority - installing one is an admin action for that reason.
  *
- * The script is evaluated with `new Function`, not imported: it arrives over HTTP as a
- * string and has no module identity to cache-bust. It runs in this process with this
- * process's authority — installing one is an admin action for that reason.
+ * Three members beyond `run` carry the capability that makes a workflow more than a
+ * callable function:
+ *
+ *   - `setup` registers TOOLS, which is how a workflow reaches an agent's tool set.
+ *   - `run` receives a run context, which is how a workflow reaches back and drives an
+ *     agent.
+ *   - `park` returns the state that survives a reload, so a workflow can keep something
+ *     across the swap that rebuilt it.
  */
+import type { Json } from "@prismshadow/penguin-core/kernel";
 import { type } from "@prismshadow/penguin-core/kernel";
-import type { WorkflowFactory, WorkflowInstance } from "../extension/index.js";
 
 export class ScriptContractError extends Error {
   constructor(message: string) {
@@ -22,45 +25,55 @@ export class ScriptContractError extends Error {
   }
 }
 
-/** What a stored script must return. `run` is the only member the seam calls. */
+/** A tool a workflow contributes to the agent's tool set. */
+export interface WorkflowTool {
+  name: string;
+  description: string;
+  run(input: unknown): unknown;
+}
+
+/** Where registered tools land. `register` returns its own undo. */
+export interface WorkflowToolRegistry {
+  register(owner: string, tool: WorkflowTool): () => void;
+}
+
+/** What a workflow may do while running. */
+export interface WorkflowRunCtx {
+  runAgent(prompt: string): Promise<string>;
+}
+
 export interface WorkflowObject {
   name: string;
   version: number;
-  run(input: unknown): unknown;
+  run(input: unknown, ctx: WorkflowRunCtx): unknown;
+  setup?(ctx: { registerTool(tool: WorkflowTool): void }): void;
+  park?(): unknown;
 }
 
 const WorkflowContract = type({
   name: "string > 0",
   version: "number",
   run: "Function",
+  "setup?": "Function",
+  "park?": "Function",
 });
 
-/**
- * Parses and runs the script's body once to check the contract, and returns a factory
- * that re-runs it per App creation. Failing here is how a malformed script is refused at
- * INSTALL time rather than at the next boot, where it would break an unrelated push.
- */
-export function workflowFactoryFrom(script: string): { factory: WorkflowFactory; name: string } {
-  const built = evaluateScript(script);
-  return {
-    name: built.name,
-    factory: (): WorkflowInstance => {
-      const fresh = evaluateScript(script);
-      return { run: (input) => fresh.run(input) };
-    },
-  };
-}
+const ToolContract = type({ name: "string > 0", description: "string", run: "Function" });
 
-function evaluateScript(script: string): WorkflowObject {
-  let body: () => unknown;
+/**
+ * Runs the script body with its parked state and checks the contract. `state` is what the
+ * previous instance's `park()` returned, so a workflow rebuilt by a swap resumes from it.
+ */
+export function evaluateWorkflow(script: string, state: Json = null): WorkflowObject {
+  let factory: (context: { state: Json }) => unknown;
   try {
-    body = new Function(`"use strict";\n${script}`) as typeof body;
+    factory = new Function("context", `"use strict";\n${script}`) as typeof factory;
   } catch (err) {
     throw new ScriptContractError(`script does not parse as a function body: ${detail(err)}`);
   }
   let value: unknown;
   try {
-    value = body();
+    value = factory({ state });
   } catch (err) {
     throw new ScriptContractError(`script threw while evaluating: ${detail(err)}`);
   }
@@ -69,6 +82,26 @@ function evaluateScript(script: string): WorkflowObject {
     throw new ScriptContractError(`workflow contract violation: ${out.summary}`);
   }
   return out as unknown as WorkflowObject;
+}
+
+/** Validates a tool the script offers, so a malformed one is refused at registration. */
+export function checkTool(tool: unknown): WorkflowTool {
+  const checked = ToolContract(tool);
+  if (checked instanceof type.errors) {
+    throw new ScriptContractError(`tool contract violation: ${checked.summary}`);
+  }
+  return checked as unknown as WorkflowTool;
+}
+
+/** What `park()` returned, refused unless it can actually be written down. */
+export function jsonValue(value: unknown, label: string): Json {
+  try {
+    const text = JSON.stringify(value);
+    if (text === undefined) throw new Error("value is undefined");
+    return JSON.parse(text) as Json;
+  } catch (err) {
+    throw new ScriptContractError(`${label} is not JSON-serializable: ${detail(err)}`);
+  }
 }
 
 const detail = (err: unknown): string => (err instanceof Error ? err.message : String(err));

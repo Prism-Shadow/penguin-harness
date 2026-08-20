@@ -12,31 +12,31 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentStateDir } from "@prismshadow/penguin-core";
 import type { WorkflowFactory } from "../src/extension/index.js";
-import { ScriptContractError, workflowFactoryFrom } from "../src/workflows/evaluate.js";
-import { WorkflowRegistry, restoreWorkflows } from "../src/workflows/registry.js";
+import { ScriptContractError, evaluateWorkflow } from "../src/workflows/evaluate.js";
+import { WorkflowRegistry } from "../src/workflows/registry.js";
+import { WorkflowLifecycle } from "../src/workflows/service.js";
 import { WorkflowIdError, WorkflowStore } from "../src/workflows/store.js";
 import type { StoredWorkflow } from "../src/workflows/store.js";
 
 const SCRIPT = `return { name: "counter", version: 1, run: (input) => ({ echoed: input }) };`;
+const RUN_CTX = { runAgent: async () => "" };
 
 describe("workflow scripts", () => {
-  it("evaluates to a factory that builds a fresh instance per call", () => {
-    const { factory, name } = workflowFactoryFrom(
-      `let calls = 0;
-       return { name: "stateful", version: 1, run: () => ++calls };`,
-    );
-    expect(name).toBe("stateful");
-    // A factory that keeps state gets a fresh instance per App creation, so a swap can
-    // never carry a half-built one across.
-    expect(factory().run(null)).toBe(1);
-    expect(factory().run(null)).toBe(1);
+  it("resumes from the state the previous instance parked", () => {
+    const script = `const n = context.state?.n ?? 0;
+       return { name: "counterish", version: 1, run: () => n, park: () => ({ n: n + 1 }) };`;
+    const first = evaluateWorkflow(script);
+    expect(first.run(null, RUN_CTX)).toBe(0);
+    expect(first.park?.()).toEqual({ n: 1 });
+    // A rebuild - what a swap does - picks up where the park left off.
+    expect(evaluateWorkflow(script, { n: 1 }).run(null, RUN_CTX)).toBe(1);
   });
 
   it("refuses a script that does not parse, throw-free, into the contract", () => {
-    expect(() => workflowFactoryFrom("this is not javascript {{")).toThrow(ScriptContractError);
-    expect(() => workflowFactoryFrom("throw new Error('boom');")).toThrow(/threw while evaluating/);
-    expect(() => workflowFactoryFrom("return { name: 'x' };")).toThrow(/contract violation/);
-    expect(() => workflowFactoryFrom("return { name: '', version: 1, run: () => 1 };")).toThrow(
+    expect(() => evaluateWorkflow("this is not javascript {{")).toThrow(ScriptContractError);
+    expect(() => evaluateWorkflow("throw new Error('boom');")).toThrow(/threw while evaluating/);
+    expect(() => evaluateWorkflow("return { name: 'x' };")).toThrow(/contract violation/);
+    expect(() => evaluateWorkflow("return { name: '', version: 1, run: () => 1 };")).toThrow(
       ScriptContractError,
     );
   });
@@ -70,9 +70,15 @@ describe("WorkflowStore", () => {
   });
 
   it("refuses a ui path that escapes the workflow directory", async () => {
+    const index = Buffer.from("<b>hi</b>").toString("base64");
     await expect(
-      store.install(ref, SCRIPT, { "../../pwned.txt": Buffer.from("x").toString("base64") }),
+      store.install(ref, SCRIPT, {
+        "index.html": index,
+        "../../pwned.txt": Buffer.from("x").toString("base64"),
+      }),
     ).rejects.toThrow(/escapes the workflow directory/);
+    // A UI is served as a page, so an entry is required before anything is written.
+    await expect(store.install(ref, SCRIPT, { "a.js": index })).rejects.toThrow(/no index\.html/);
   });
 
   it("serves ui files and hashes the tree, and declines traversal on read", async () => {
@@ -124,7 +130,7 @@ describe("WorkflowRegistry", () => {
   });
 
   it("registers an install into the same map, callable at once", async () => {
-    const registry = new WorkflowRegistry(factories);
+    const registry = new WorkflowRegistry(factories, () => RUN_CTX);
     await store.install(ref, SCRIPT);
     const summary = registry.register((await store.read(ref))!);
     expect(summary.name).toBe("counter");
@@ -148,49 +154,51 @@ describe("WorkflowRegistry", () => {
     expect(other.list()).toHaveLength(1);
   });
 
-  it("unregisters an installation and forgets its name", async () => {
-    const registry = new WorkflowRegistry(factories);
+  it("unregisters an installation, handing back what it parked", async () => {
+    const registry = new WorkflowRegistry(factories, () => RUN_CTX);
     await store.install(ref, SCRIPT);
     registry.register((await store.read(ref))!);
-    expect(registry.unregister(ref)).toBe(true);
-    expect(registry.unregister(ref)).toBe(false);
+    expect(registry.unregister(ref)).toEqual({ parked: null });
+    expect(registry.unregister(ref)).toBeNull();
     expect(factories.has("counter")).toBe(false);
     expect(registry.instanceView().names()).toEqual([]);
   });
 
-  it("parks only the refs, and restores exactly those", async () => {
-    const first = new WorkflowRegistry(new Map());
-    await store.install(ref, SCRIPT);
-    await store.install({ ...ref, workflowId: "second" }, SCRIPT.replace("counter", "second"));
-    first.register((await store.read(ref))!);
-    first.register((await store.read({ ...ref, workflowId: "second" }))!);
-    const parked = first.refs();
-    expect(parked).toEqual([
-      { projectId: "proj", agentId: "agent", workflowId: "counter" },
-      { projectId: "proj", agentId: "agent", workflowId: "second" },
+  it("binds the tools a workflow registers, and drops them with it", async () => {
+    const script = `return {
+      name: "toolful", version: 1,
+      run: () => null,
+      setup: (ctx) => ctx.registerTool({ name: "greet", description: "says hi", run: () => "hi" }),
+    };`;
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    await store.install(ref, script);
+    const summary = registry.register(stored(ref, script));
+    expect(summary.tools).toEqual([
+      { workflowId: "agent/counter", name: "greet", description: "says hi" },
     ]);
-
-    // The next App: only the parked refs are reloaded — nothing sweeps the disk.
-    await store.install({ ...ref, workflowId: "never-parked" }, SCRIPT.replace("counter", "third"));
-    const next = new WorkflowRegistry(new Map());
-    await restoreWorkflows(store, next, parked, () => {});
-    expect(next.instanceView().names()).toEqual(["counter", "second"]);
+    expect(registry.tools.get("greet")?.run(null)).toBe("hi");
+    registry.unregister(ref);
+    expect(registry.tools.list()).toEqual([]);
   });
 
-  it("skips a parked ref whose script is gone or broken, keeping the rest", async () => {
-    await store.install(ref, SCRIPT);
-    await store.install({ ...ref, workflowId: "broken" }, "throw new Error('boom');");
+  it("refuses a tool name another workflow owns, leaving nothing half-registered", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const tool = (name: string) =>
+      `return { name: "${name}", version: 1, run: () => null,
+        setup: (ctx) => ctx.registerTool({ name: "greet", description: "d", run: () => 1 }) };`;
+    registry.register(stored(ref, tool("first")));
+    expect(() =>
+      registry.register(stored({ ...ref, workflowId: "other" }, tool("second"))),
+    ).toThrow(/already registered by workflow/);
+    expect(registry.tools.list()).toHaveLength(1);
+    expect(registry.list()).toHaveLength(1);
+  });
+
+  it("tells a workflow plainly when no agent is configured to run", async () => {
     const registry = new WorkflowRegistry(new Map());
-    const lines: string[] = [];
-    await restoreWorkflows(
-      store,
-      registry,
-      [ref, { ...ref, workflowId: "broken" }, { ...ref, workflowId: "vanished" }],
-      (line) => lines.push(line),
-    );
-    expect(registry.instanceView().names()).toEqual(["counter"]);
-    expect(lines.join("\n")).toMatch(/broken/);
-    expect(lines.join("\n")).toMatch(/vanished/);
+    const script = `return { name: "caller", version: 1, run: (i, ctx) => ctx.runAgent("hi") };`;
+    registry.register(stored(ref, script));
+    expect(() => registry.instanceView().run("caller", null)).toThrow(/no agent to run/);
   });
 });
 
@@ -201,3 +209,108 @@ function stored(
 ): StoredWorkflow {
   return { ...ref, id: `${ref.agentId}/${ref.workflowId}`, script, uiRev: null };
 }
+
+describe("WorkflowLifecycle", () => {
+  let root: string;
+  let store: WorkflowStore;
+  const ref = { projectId: "proj", agentId: "agent", workflowId: "counter" };
+  const STATEFUL = `const n = context.state?.n ?? 0;
+    return { name: "counter", version: 1, run: () => n, park: () => ({ n: n + 1 }) };`;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-workflows-"));
+    store = new WorkflowStore(root);
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const lifecycleOver = (registry: WorkflowRegistry): WorkflowLifecycle =>
+    new WorkflowLifecycle(store, registry, () => {});
+
+  it("registers an agent's workflows while it is active, and parks them when it is not", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+
+    await lifecycle.activate("proj", "agent");
+    expect(lifecycle.isActive("proj", "agent")).toBe(true);
+    expect(registry.instanceView().run("counter", null)).toBe(0);
+
+    await lifecycle.deactivate("proj", "agent");
+    expect(lifecycle.isActive("proj", "agent")).toBe(false);
+    expect(registry.instanceView().names()).toEqual([]);
+    // What park() returned is on disk, so the next activation resumes from it.
+    expect(await store.readState(ref)).toEqual({ n: 1 });
+    await lifecycle.activate("proj", "agent");
+    expect(registry.instanceView().run("counter", null)).toBe(1);
+  });
+
+  it("counts holds: a second session does not re-register, and the first release does not park", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+    await lifecycle.activate("proj", "agent");
+    await lifecycle.activate("proj", "agent");
+    await lifecycle.deactivate("proj", "agent");
+    expect(registry.instanceView().names()).toEqual(["counter"]);
+    await lifecycle.deactivate("proj", "agent");
+    expect(registry.instanceView().names()).toEqual([]);
+  });
+
+  it("reseeds into a fresh App, so a push is invisible to a live workflow", async () => {
+    const first = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const before = lifecycleOver(first);
+    await store.install(ref, STATEFUL);
+    await store.install({ ...ref, workflowId: "idle" }, STATEFUL.replace("counter", "idle"));
+    await before.activate("proj", "agent");
+    const parked = before.refs();
+    expect(parked.map((r) => r.workflowId).sort()).toEqual(["counter", "idle"]);
+
+    const next = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    await lifecycleOver(next).reseed(parked);
+    expect(next.instanceView().names().sort()).toEqual(["counter", "idle"]);
+  });
+
+  it("installs live for an active agent and stores for an idle one", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+    expect(await lifecycle.installed(ref)).toBeNull();
+    expect(registry.instanceView().names()).toEqual([]);
+
+    await lifecycle.activate("proj", "agent");
+    await store.install({ ...ref, workflowId: "later" }, STATEFUL.replace("counter", "later"));
+    const summary = await lifecycle.installed({ ...ref, workflowId: "later" });
+    expect(summary?.name).toBe("later");
+    expect(registry.instanceView().names().sort()).toEqual(["counter", "later"]);
+  });
+
+  it("drops a removed workflow without parking it", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+    await lifecycle.activate("proj", "agent");
+    await lifecycle.removed(ref);
+    expect(registry.instanceView().names()).toEqual([]);
+    expect(lifecycle.refs()).toEqual([]);
+  });
+
+  it("keeps an agent's other workflows when one no longer loads", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+    await store.install({ ...ref, workflowId: "broken" }, "throw new Error('boom');");
+    await lifecycle.activate("proj", "agent");
+    expect(registry.instanceView().names()).toEqual(["counter"]);
+  });
+
+  it("parks every activation on shutdown", async () => {
+    const registry = new WorkflowRegistry(new Map(), () => RUN_CTX);
+    const lifecycle = lifecycleOver(registry);
+    await store.install(ref, STATEFUL);
+    await lifecycle.activate("proj", "agent");
+    await lifecycle.activate("proj", "agent");
+    await lifecycle.shutdown();
+    expect(lifecycle.isActive("proj", "agent")).toBe(false);
+    expect(await store.readState(ref)).toEqual({ n: 1 });
+  });
+});
