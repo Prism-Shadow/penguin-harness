@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#356](https://github.com/Prism-Shadow/penguin-harness/pull/356)
 
 [English](2026-08-20-token-hub-activity-entry.md)
 
