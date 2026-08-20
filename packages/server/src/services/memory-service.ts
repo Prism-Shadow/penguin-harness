@@ -484,7 +484,7 @@ export class MemoryService {
   }
 
   /**
-   * The service's one content write, shared by the topic files and the index.
+   * The write path for imported content, shared by the topic files and the index.
    *
    * The target has already been through `resolveFile` (or is the reserved index name, which is
    * never client-supplied), so it names a file directly inside this scope. The write goes to a
