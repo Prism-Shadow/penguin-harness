@@ -30,11 +30,32 @@ export class HotResources implements Resources {
   }
 
   /**
-   * Process-exit sweep: run every registered disposer. Not part of any upgrade path —
-   * resources are meant to outlive swaps. A throwing disposer must not strand the rest.
+   * The swap-side reconciliation hook (see kernel upgrade()): disposes and removes every
+   * entry of one ID-prefix group (`terminal` covers `terminal:*`), in reverse
+   * registration order — later entries may depend on earlier ones, the same convention
+   * effects follow. Called only for groups whose declared resource interface the two
+   * sides of a swap disagree on; a throwing disposer must not strand the rest.
+   */
+  disposeGroup(group: string): void {
+    const prefix = `${group}:`;
+    const ids = [...this.map.keys()].filter((id) => id.startsWith(prefix));
+    for (const id of ids.reverse()) {
+      try {
+        this.map.get(id)?.dispose?.();
+      } catch {
+        // Best-effort: the group is being discarded regardless.
+      }
+      this.map.delete(id);
+    }
+  }
+
+  /**
+   * Process-exit sweep: run every registered disposer, newest first (later registrations
+   * may depend on earlier ones). Not part of any upgrade path — resources are meant to
+   * outlive swaps. A throwing disposer must not strand the rest.
    */
   disposeAll(): void {
-    for (const entry of this.map.values()) {
+    for (const entry of [...this.map.values()].reverse()) {
       try {
         entry.dispose?.();
       } catch {
