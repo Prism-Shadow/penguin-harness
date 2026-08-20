@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** refactor
 - **Scope:** `web`, `tooling`
+- **PR:** [#378](https://github.com/Prism-Shadow/penguin-harness/pull/378)
 
 [中文版](2026-08-20-web-design-system.zh.md)
 
