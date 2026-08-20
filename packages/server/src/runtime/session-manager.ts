@@ -45,6 +45,7 @@ import type {
   CompactAvailability,
   OmniMessage,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SessionMetaPayload,
   SessionTitleResult,
   TextPayload,
@@ -187,7 +188,10 @@ export interface SessionLoader {
 export function createCoreSessionLoader(
   root: string,
   sources?: SessionSources,
-  opts: { proxyEnv?: () => ProxyEnvPolicy | null } = {},
+  opts: {
+    proxyEnv?: () => ProxyEnvPolicy | null;
+    confineSpawn?: () => SpawnConfiner | null;
+  } = {},
 ): SessionLoader {
   return {
     async load(row: SessionRow): Promise<RuntimeSession> {
@@ -196,6 +200,7 @@ export function createCoreSessionLoader(
         projectId: row.projectId,
         agentId: row.agentId,
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
+        ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -287,6 +292,10 @@ export interface SessionManagerDeps {
    * backfill assumes when it reads MAX(ts) as a session's last activity.
    */
   now?: () => Date;
+  agentLifecycle?: {
+    activate(projectId: string, agentId: string): Promise<void>;
+    deactivate(projectId: string, agentId: string): Promise<void>;
+  };
 }
 
 /**
@@ -476,6 +485,7 @@ export class SessionManager {
   private readonly sweepTimer: NodeJS.Timeout;
   /** Clock for persisted timestamps (see SessionManagerDeps.now); wall clock unless injected. */
   private readonly now: () => Date;
+  private readonly lifecyclePending = new Set<Promise<void>>();
 
   constructor(private readonly deps: SessionManagerDeps) {
     this.log = deps.log ?? ((line) => console.error(line));
@@ -572,6 +582,7 @@ export class SessionManager {
     // process (POST /sessions), and a listener registered only on the loader path left
     // freshly created sessions unable to deliver idle-arrival completion reports.
     this.registerNoticeListener(row.sessionId, session);
+    this.trackLifecycle(this.deps.agentLifecycle?.activate(row.projectId, row.agentId));
   }
 
   /**
@@ -1213,6 +1224,7 @@ export class SessionManager {
     const dispose = (): void => entry.session.dispose?.();
     if (entry.running) void entry.running.then(dispose, dispose);
     else dispose();
+    this.trackLifecycle(this.deps.agentLifecycle?.deactivate(entry.projectId, entry.agentId));
   }
 
   /**
@@ -1305,8 +1317,10 @@ export class SessionManager {
       const dispose = (): void => entry.session.dispose?.();
       if (entry.running) void entry.running.then(dispose, dispose);
       else dispose();
+      this.trackLifecycle(this.deps.agentLifecycle?.deactivate(entry.projectId, entry.agentId));
     }
     this.entries.clear();
+    pending.push(...this.lifecyclePending);
     if (pending.length === 0) return;
     await Promise.race([
       Promise.allSettled(pending).then(() => undefined),
@@ -1341,6 +1355,7 @@ export class SessionManager {
       if (entry.session.hasPendingBackgroundNotices?.()) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
+      this.disposeRemoved(entry);
     }
   }
 
@@ -1415,6 +1430,7 @@ export class SessionManager {
         return existing;
       }
       this.entries.delete(sessionId);
+      this.disposeRemoved(existing);
     }
     const row = this.deps.sessions.findById(sessionId);
     if (!row) {
@@ -1459,7 +1475,14 @@ export class SessionManager {
     };
     this.entries.set(currentId, entry);
     this.registerNoticeListener(currentId, session);
+    await this.deps.agentLifecycle?.activate(row.projectId, row.agentId);
     return entry;
+  }
+
+  private trackLifecycle(promise: Promise<void> | undefined): void {
+    if (!promise) return;
+    this.lifecyclePending.add(promise);
+    void promise.finally(() => this.lifecyclePending.delete(promise));
   }
 
   /**
