@@ -5,6 +5,7 @@ pnpm-lock.yaml
 
 # desktop build output: the installers electron-builder writes, and the assets
 # scripts/build-assets.mjs copies in beside them (formatted in their own packages)
+packages/desktop/install-image/
 packages/desktop/out/
 packages/desktop/skills/
 
