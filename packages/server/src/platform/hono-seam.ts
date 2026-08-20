@@ -15,10 +15,18 @@
  */
 
 const DECLINE_HEADER = "x-penguin-platform-decline";
+/**
+ * Random per boot, compared by VALUE in seamHttp. The header name is guessable, and this
+ * adapter is meant for every platform-side app — including ones that might one day copy
+ * response headers from an upstream. A fixed marker would let that upstream inject the
+ * header and silently decline the platform's own answer into whatever older handler sits
+ * behind the seam; a value nothing outside this module instance knows cannot be forged.
+ */
+const DECLINE_TOKEN = crypto.randomUUID();
 
 /** The marked response a platform app's notFound returns to decline the request. */
 export function declined(): Response {
-  return new Response(null, { status: 404, headers: { [DECLINE_HEADER]: "1" } });
+  return new Response(null, { status: 404, headers: { [DECLINE_HEADER]: DECLINE_TOKEN } });
 }
 
 /** Bridges a Hono app (structurally: anything fetch-shaped) onto the seam contract. */
@@ -27,6 +35,6 @@ export function seamHttp(app: {
 }): (request: Request) => Promise<Response | null> {
   return async (request) => {
     const response = await app.fetch(request);
-    return response.headers.get(DECLINE_HEADER) !== null ? null : response;
+    return response.headers.get(DECLINE_HEADER) === DECLINE_TOKEN ? null : response;
   };
 }
