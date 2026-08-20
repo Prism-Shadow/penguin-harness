@@ -19,7 +19,7 @@ export default defineConfig({
     "hmr/manifest": "src/hmr/manifest.ts",
   },
   format: ["esm"],
-  target: "node22",
+  target: "node24",
   dts: true,
   clean: true,
   sourcemap: true,

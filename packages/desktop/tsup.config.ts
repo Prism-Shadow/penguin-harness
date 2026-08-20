@@ -18,7 +18,7 @@ export default defineConfig({
     penguin: "../cli/dist/penguin.js",
   },
   format: ["esm"],
-  target: "node22",
+  target: "node24",
   platform: "node",
   clean: true,
   // Generated for a source run; electron-builder.yml keeps the .map files out of installers,
