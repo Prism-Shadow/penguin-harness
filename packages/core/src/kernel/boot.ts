@@ -26,6 +26,14 @@ export interface Resources {
   register(id: string, resource: unknown, dispose?: () => void): void;
   claim<T = unknown>(id: string): T | undefined;
   release(id: string): void;
+  /**
+   * Disposes and removes every entry whose id belongs to the group (`terminal` covers
+   * `terminal:*`), in reverse registration order — later entries may depend on earlier
+   * ones, same convention as effects. Optional: upgrade() calls it only when the two
+   * sides of a swap declare incompatible resource interfaces (see Iface.resources), and
+   * a registry without it simply carries the group across unchecked.
+   */
+  disposeGroup?(group: string): void;
 }
 
 export interface NodeCtx {
