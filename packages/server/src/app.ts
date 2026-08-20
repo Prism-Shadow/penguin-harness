@@ -56,6 +56,12 @@ import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import { workflowRoutes } from "./workflows/routes.js";
 import type { WorkflowRoutesDeps } from "./workflows/routes.js";
+
+/** What the manager calls as an agent's first session opens and its last one closes. */
+export interface AgentLifecycle {
+  activate(projectId: string, agentId: string): Promise<void>;
+  deactivate(projectId: string, agentId: string): Promise<void>;
+}
 import type { TerminalManager } from "./terminal/manager.js";
 import { PLUGINS_RESOURCE_ID, type PluginHost } from "./hmr/plugin.js";
 import type { AppEnv } from "./auth/middleware.js";
@@ -192,6 +198,12 @@ export interface BuildDepsOverrides {
   updateCheck?: UpdateCheckService;
   log?: (line: string) => void;
   now?: () => Date;
+  /**
+   * How a workflow drives an agent (see workflows/evaluate.ts's WorkflowRunCtx). Left
+   * unset in production for now: the seam exists so a workflow's `run` receives it, and
+   * a workflow that calls it without one configured is told so.
+   */
+  runWorkflowAgent?: (projectId: string, agentId: string, prompt: string) => Promise<string>;
 }
 
 /**
@@ -538,6 +550,10 @@ export function buildAppDeps(
   // sessions spawning through it are hard-stopped with their App, so no channel with a
   // longer lifetime is needed. Policy itself lives in ../sandbox/.
   confineSpawn: () => SpawnConfiner | null = () => null,
+  // When an installed workflow is live (see ../workflows/service.ts): the manager holds
+  // an agent open for as long as it has a session, and the lifecycle registers that
+  // agent's workflows for exactly that window.
+  agentLifecycle?: AgentLifecycle,
 ): AppDeps {
   const { config, db, authService, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -608,6 +624,7 @@ export function buildAppDeps(
     overrides.titles ??
     new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
   const manager = new SessionManager({
+    ...(agentLifecycle !== undefined ? { agentLifecycle } : {}),
     sessions: sessionsRepo,
     channels,
     loader:
@@ -748,7 +765,7 @@ export function createApp(
   deps: AppDeps | null,
   terminals: TerminalManager,
   identity: Identity,
-  workflows?: Pick<WorkflowRoutesDeps, "store" | "registry">,
+  workflows?: Pick<WorkflowRoutesDeps, "store" | "registry" | "lifecycle">,
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 

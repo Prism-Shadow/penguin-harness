@@ -13,6 +13,7 @@
  * middleware, so a request nothing here serves declines BEFORE authentication.
  *
  *   GET    /api/workflows                                     list what is installed
+ *   GET    /api/workflows/tools                               the tools they contributed
  *   POST   /api/workflows                                     install or replace one
  *   DELETE /api/workflows/:projectId/:agentId/:workflowId     uninstall
  *   POST   /api/workflows/:name/run                           call a live one by its name
@@ -28,6 +29,7 @@ import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../http/errors.js";
 import type { IdentifiedUser, Identity } from "../terminal/identity.js";
 import type { WorkflowRegistry } from "./registry.js";
+import type { WorkflowLifecycle } from "./service.js";
 import { WorkflowIdError } from "./store.js";
 import type { WorkflowStore } from "./store.js";
 
@@ -38,6 +40,8 @@ export interface WorkflowRoutesDeps {
   identity: Identity;
   /** The running App's live set: installing registers into it, so a call works at once. */
   registry: WorkflowRegistry;
+  /** Decides whether an install is live now or waits for its agent's next activation. */
+  lifecycle: WorkflowLifecycle;
 }
 
 interface InstallBody {
@@ -62,6 +66,10 @@ export function workflowRoutes(deps: WorkflowRoutesDeps): Hono<WorkflowEnv> {
 
   app.get("/api/workflows", gate, (c) => c.json({ workflows: deps.registry.list() }));
 
+  // What an agent's tool list would draw on: a workflow reaches an agent by registering
+  // tools in its `setup`, and this is that set, owner and all.
+  app.get("/api/workflows/tools", gate, (c) => c.json({ tools: deps.registry.tools.list() }));
+
   app.post("/api/workflows", gate, async (c) => {
     const body = await readBody(c.req.raw);
     const projectId = str(body.projectId);
@@ -82,19 +90,21 @@ export function workflowRoutes(deps: WorkflowRoutesDeps): Hono<WorkflowEnv> {
     } catch (err) {
       throw idError(err);
     }
-    // Registered into the running App, not deferred to the next boot: that is what makes
-    // an install take effect without a push. A script the contract refuses throws here,
-    // so it is reported to the installer rather than surfacing at some later swap.
+    // Live now if the agent is active, stored and waiting otherwise - the same rule
+    // activation follows, so an install never produces a registration that activation
+    // would not have made. A script the contract refuses throws here, so it is reported
+    // to the installer rather than surfacing at some later swap.
     let summary;
     try {
-      const stored = await deps.store.read(ref);
-      if (stored === null) throw new Error("the workflow vanished immediately after install");
-      summary = deps.registry.register(stored);
+      summary = await deps.lifecycle.installed(ref);
     } catch (err) {
       await deps.store.remove(ref);
       throw new HttpError(400, "bad_request", detail(err));
     }
-    return c.json(summary, 201);
+    return c.json(
+      summary ?? { id: `${agentId}/${workflowId}`, installed: true, active: false },
+      201,
+    );
   });
 
   app.delete("/api/workflows/:projectId/:agentId/:workflowId", gate, async (c) => {
@@ -105,12 +115,14 @@ export function workflowRoutes(deps: WorkflowRoutesDeps): Hono<WorkflowEnv> {
     };
     let removed: boolean;
     try {
+      // Unregistered first so a workflow holding something open gets its turn before the
+      // directory disappears. Nothing is parked: the installation is going away.
+      await deps.lifecycle.removed(ref);
       removed = await deps.store.remove(ref);
     } catch (err) {
       throw idError(err);
     }
-    const unregistered = deps.registry.unregister(ref);
-    if (!removed && !unregistered) throw new HttpError(404, "not_found", "No such workflow.");
+    if (!removed) throw new HttpError(404, "not_found", "No such workflow.");
     return c.json({ ok: true });
   });
 

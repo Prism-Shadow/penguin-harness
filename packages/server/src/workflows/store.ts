@@ -18,9 +18,11 @@
 import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import type { Json } from "@prismshadow/penguin-core/kernel";
 import { agentStateDir } from "@prismshadow/penguin-core";
 
 export const SCRIPT_FILE = "workflow.js";
+const STATE_FILE = "state.json";
 const WORKFLOWS_DIR = "workflows";
 const UI_DIR = "ui";
 
@@ -84,16 +86,49 @@ export class WorkflowStore {
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(path.join(dir, SCRIPT_FILE), script, "utf8");
     const uiDir = path.join(dir, UI_DIR);
-    await fsp.rm(uiDir, { recursive: true, force: true });
-    for (const [rel, base64] of Object.entries(ui ?? {})) {
-      const target = path.join(uiDir, rel);
-      // Reinstalling must not become a write primitive for the rest of the disk.
-      if (!target.startsWith(uiDir + path.sep)) {
+    if (ui === undefined) {
+      await fsp.rm(uiDir, { recursive: true, force: true });
+      return;
+    }
+    // A UI is served as a page, so it needs an entry; and the tree is built beside the
+    // live one and renamed over it, so a failed write never leaves a half-replaced UI.
+    if (typeof ui["index.html"] !== "string") {
+      throw new WorkflowIdError("workflow UI has no index.html");
+    }
+    const tmp = `${uiDir}.${process.pid}.tmp`;
+    await fsp.rm(tmp, { recursive: true, force: true });
+    for (const [rel, base64] of Object.entries(ui)) {
+      const target = path.resolve(tmp, rel);
+      // Installing must not become a write primitive for the rest of the disk.
+      if (!target.startsWith(path.resolve(tmp) + path.sep)) {
         throw new WorkflowIdError(`ui file '${rel}' escapes the workflow directory`);
       }
       await fsp.mkdir(path.dirname(target), { recursive: true });
       await fsp.writeFile(target, Buffer.from(base64, "base64"));
     }
+    await fsp.rm(uiDir, { recursive: true, force: true });
+    await fsp.rename(tmp, uiDir);
+  }
+
+  /** The state the previous instance parked, or null when there is none to resume from. */
+  async readState(ref: WorkflowRef): Promise<Json> {
+    try {
+      return JSON.parse(await fsp.readFile(path.join(this.dir(ref), STATE_FILE), "utf8")) as Json;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Writes down what a workflow parked. Atomic (write beside, rename over) so a crash
+   * mid-write leaves the previous state rather than a truncated file.
+   */
+  async writeState(ref: WorkflowRef, state: Json): Promise<void> {
+    const file = path.join(this.dir(ref), STATE_FILE);
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    await fsp.writeFile(tmp, JSON.stringify(state, null, 2));
+    await fsp.rename(tmp, file);
   }
 
   async remove(ref: WorkflowRef): Promise<boolean> {
