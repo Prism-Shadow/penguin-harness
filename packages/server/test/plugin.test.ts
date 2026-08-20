@@ -19,7 +19,7 @@ import {
 import { instantiateWorkflows, type WorkflowFactory } from "../src/plugin/workflow.js";
 
 function emptyIface(): PenguinInterface {
-  return { workflow: new Map(), tool: new Map() };
+  return { workflow: new Map(), tool: new Map(), sandbox: { registerProvider: () => {} } };
 }
 
 /**
@@ -218,6 +218,8 @@ describe("plugin seam on the real platform", () => {
       expect(initializes).toBe(1);
       expect(contexts).toHaveLength(1);
       const ctx = contexts[0]!;
+      // The sandbox config surface rides the same context (see ../src/sandbox/).
+      expect(ctx.sandbox.settings()).toEqual({ mode: "danger-full-access" });
       // context.* flatten: the platform's own member is directly on the context.
       expect(typeof ctx.terminals.handleIds).toBe("function");
       // …and the workflow this plugin registered is instantiated and callable.

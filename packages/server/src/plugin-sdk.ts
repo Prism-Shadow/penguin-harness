@@ -18,4 +18,17 @@ export type {
   PluginEvents,
   ToolFactory,
 } from "./plugin/index.js";
+export type { SandboxControl, SandboxProviderRegistry } from "./plugin/index.js";
 export type { WorkflowFactory, WorkflowInstance, WorkflowInstances } from "./plugin/workflow.js";
+export type {
+  ConfinedArgv,
+  ConfinedSandboxMode,
+  RunnerFailureRule,
+  SandboxDimension,
+  SandboxEnforcement,
+  SandboxMode,
+  SandboxPolicy,
+  SandboxProvider,
+  SandboxProviderSource,
+  SandboxSettings,
+} from "./sandbox/types.js";
