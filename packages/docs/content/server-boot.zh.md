@@ -70,14 +70,17 @@ platformImpl.create
 │
 ├─ new TerminalManager(resources)    # 接管上一实例寄存的 pty
 ├─ extensions = extensionHostFrom(resources)  # 认领运行时在 ④ 加载好的那个 host（未发布则为空 host）
-├─ iface = { workflow: new Map(), tool: new Map() }   # 每个 App 全新的定义视图
+├─ iface = { workflow, tool, sandbox }   # 每个 App 全新的定义视图
 ├─ extensions.emit("initialize", iface) # 定义视图，按激活顺序投递给每个 handler
+├─ sandbox = new SandboxService(已注册的后端)   # 由寄存的设置重新水合
 ├─ extensions.emit("create", {          # 实例视图，注册关闭后组装
 │    workflows: instantiateWorkflows(iface.workflow),  # 全部 factory 在此被急切调用
 │    terminals,
+│    sandbox: { configure, settings },
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ 业务面组装（caps 齐全时）：buildAppDeps → scheduler.start()
+└─ 业务面组装（caps 齐全时）：buildAppDeps——sandbox confiner 作为普通参数传入，
+   进入 session loader 的 spawn 路径 → scheduler.start()
    → createApp（终端组 + 业务组注册进同一个 Hono app）
    → 一次注册表写入发布 {deps, app, shutdown} 指针 → ctx.effect 注册 swap 硬中止
 ```
@@ -87,9 +90,9 @@ platformImpl.create
 | 时机           | 频率        | 发生什么                                                                                             |
 | -------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | 加载 + `activate(ctx)` | 每进程一次 | 启动步骤 ④ `loadExtensions`：解析 `extensions.json` 里的 specifier、import、执行其导出的 `activate`（async 会被等待）——`ctx.on(...)` 订阅与 `ctx.disposables` 登记只在这个窗口内有效。单条失败会回滚（跑掉它已登记的 disposable）并跳过；`extensions.json` 不可读或格式错误则启动失败 |
-| `"initialize"` 事件 | 每 App 一次 | handler 向全新的 `iface` 注册 workflow factory（`tool` 槽位保留未用）                               |
+| `"initialize"` 事件 | 每 App 一次 | handler 向全新的 `iface` 注册 workflow factory 与 sandbox 后端（`tool` 槽位保留未用）               |
 | workflow 实例化 | 每 App 一次 | `instantiateWorkflows` 在 emit 之前同步调用**全部** factory——实例随 App 创建整批诞生，不是首次调用时 |
-| `"create"`     | 每 App 一次 | 扩展拿到实例视图 `ctx`（`workflows` + `terminals`）                                                  |
+| `"create"`     | 每 App 一次 | 扩展拿到实例视图 `ctx`（`workflows` + `terminals` + `sandbox`）                                      |
 | `workflows.run` | 每次调用    | 纯函数调用：无 Session、无审批、无流式                                                               |
 | Disposables    | 每进程一次  | 优雅关停时被 await（≤5s）；disposer 可以是 async，全部并发执行、单条失败被隔离——因此彼此必须独立     |
 
@@ -101,6 +104,7 @@ platformImpl.create
 - **handler 同步且不被包裹**：扩展*加载*失败（import，或 `activate` 抛错/reject）按条目隔离，但事件 handler 没有 try/catch——抛错会使该次平台启动失败；返回 promise 的 handler 出于同样理由被拒绝（App 是围绕这次 emit 同步组装的，它的 rejection 只能以未处理形式逃逸）。
 - **workflow 重名被拒绝**：`iface.workflow` 是一个 `set` 会抛错的注册表，名字的归属不会随 `extensions.json` 顺序改变。
 - **事件词汇表有类型且只有一处**：`ExtensionEvents` 把每个事件名映射到它的载荷——加一个事件，平台的 emit 端和所有 handler 同时获得类型。
+- **约束是同代接线**：confiner 作为 `buildAppDeps` 的普通参数进入 core，经它 spawn 的 session 随所属 App 硬停——跨过 swap 的是寄存上下文上的生效设置，因此一次推送无法悄悄解除一个部署的约束。
 
 扩展契约（`Extension` / `ExtensionContext` / `ExtensionEvents` / `PenguinInterface` / `PenguinContext`）声明在 SDK 里，即 `@prismshadow/penguin-core/extension`。`PenguinContext` 与 `PenguinInterface` 是开放的：harness 通过对该模块做声明合并，贡献自己拥有的成员——`terminals`——并从 `@prismshadow/penguin-server/extension` 一并再导出。两个子路径都只产出类型。哪些扩展存在由部署的 `<root>/extensions.json` 决定，harness 自身不 import 任何扩展。
 
@@ -121,6 +125,7 @@ platformImpl.create
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
 | 扩展宿主             | ④ `loadExtensions` 构建，⑤ 发布进资源注册表      | `activate(ctx: ExtensionContext)` + `ExtensionEvents` 事件表；配置面是 `<root>/extensions.json`                       |
+| 沙盒                 | `sandbox/service.ts`——**App 级**（create 内基于扩展注册的后端构建） | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`；约束经 core 的 spawn seam 落到命令上，后端是 `extensions.json` 里点名的扩展包 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
 
 请求期还有一条固定路径值得知道：平台的 HTTP seam 把每个请求先交给当前 App 的 `http(request)`，返回 `null` 才落到运行时自己的路由；热更新进行中时请求在 seam 上排队等新 App 就绪，而不是打到半旧的实例上。
