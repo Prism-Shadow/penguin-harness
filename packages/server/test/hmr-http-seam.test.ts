@@ -218,7 +218,10 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
   });
 
   it("a route the platform takes over goes back to the runtime's own when it stops serving it", async () => {
-    const runtimeVersion = (await (await api.get("/api/version")).json()) as { version: string };
+    const runtimeVersion = (await (await api.get("/api/version")).json()) as {
+      version: string;
+      describe: string;
+    };
 
     await pushPlatform(t.app, cookie, platformServing(["/api/version"], "takeover"));
     expect(await (await api.get("/api/version")).json()).toMatchObject({ servedBy: "takeover" });
@@ -230,7 +233,7 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
     const released = (await (await api.get("/api/version")).json()) as Record<string, unknown>;
     expect(released.servedBy).toBeUndefined();
     expect(released.version).toBe(runtimeVersion.version);
-    expect(released.describe).toBe((runtimeVersion as { describe: string }).describe);
+    expect(released.describe).toBe(runtimeVersion.describe);
   });
 });
 
