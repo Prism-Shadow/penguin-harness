@@ -19,7 +19,9 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { bodyLimitBytes } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
@@ -128,9 +130,6 @@ import { agentSessionsRoutes, sessionsRoutes } from "./http/routes/sessions.js";
 import { versionRoutes } from "./http/routes/version.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
-
-/** Request body size limit (tasks may carry data: images): 20MB. */
-const MAX_BODY_BYTES = 20 * 1024 * 1024;
 
 export interface AppDeps {
   config: ServerConfig;
@@ -351,17 +350,36 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   // file attachments, Trace import) then decode whatever arrives. hono's bodyLimit keeps the
   // header fast path when the length is declared and otherwise counts bytes off the stream,
   // aborting the moment the total crosses the cap.
-  app.use(
-    "/api/*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      // Its default is a bare text/plain 413; throw the App's own error instead so the response
-      // stays the documented `payload_too_large` body that every client already handles.
-      onError: () => {
-        throw new HttpError(413, "payload_too_large", "Request body exceeds the 20MB limit.");
-      },
-    }),
-  );
+  //
+  // The cap is DERIVED from the admin-settable attachment budget rather than fixed, because the
+  // two must not disagree in either direction: a cap below the budget would reject a request whose
+  // every attachment was individually legal (and with a body-shaped error, not a size-shaped one),
+  // while a cap permanently sized for the largest budget an admin *could* set would keep accepting
+  // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
+  // admin's change takes effect immediately; the middleware itself is memoized on the resulting
+  // size so the steady state allocates nothing.
+  let capped: { size: number; mw: MiddlewareHandler } | null = null;
+  app.use("/api/*", (c, next) => {
+    const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
+    if (capped === null || capped.size !== size) {
+      capped = {
+        size,
+        mw: bodyLimit({
+          maxSize: size,
+          // Its default is a bare text/plain 413; throw the App's own error instead so the
+          // response stays the documented `payload_too_large` body that every client handles.
+          onError: () => {
+            throw new HttpError(
+              413,
+              "payload_too_large",
+              `Request body exceeds the ${Math.floor(size / (1024 * 1024))}MB limit.`,
+            );
+          },
+        }),
+      };
+    }
+    return capped.mw(c, next);
+  });
   app.use("/api/*", jsonOnlyWrites);
 
   // Public routes (no login required).
