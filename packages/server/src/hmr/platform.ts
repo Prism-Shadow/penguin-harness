@@ -15,7 +15,7 @@
  * effects (e.g. extending process.env for the shells agents spawn) are
  * deliverable from boot() with no runtime change. See ../hmr/README.md.
  *
- * This packaged platform carries the WHOLE business surface (see ./business.ts):
+ * This packaged platform carries the WHOLE business surface (see app.ts):
  * every business service and route is assembled inside create() over the runtime's
  * published capabilities, and serves through the seam in ../hmr/http-seam.ts — it
  * sees every request before the runtime's own routes do and answers null for the
@@ -28,17 +28,21 @@ import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { PlatformBundle } from "../hmr/host.js";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
-import { terminalHttp } from "../terminal/routes.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import { buildBusinessDeps, createBusinessApp, type BuildDepsOverrides } from "../app.js";
+import {
+  buildBusinessDeps,
+  createPlatformApp,
+  type AppDeps,
+  type BuildDepsOverrides,
+} from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
-  BUSINESS_DEPS_RESOURCE_ID,
-  GRACEFUL_SHUTDOWN_RESOURCE_ID,
+  PLATFORM_CURRENT_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
+import type { PlatformCurrent } from "./capabilities.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -77,19 +81,19 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
-    const terminalHandler = terminalHttp(terminals, identityFrom(ctx.resources));
+    const identity = identityFrom(ctx.resources);
 
-    // The business surface (services + routes), built per App over the runtime's
-    // published capabilities — see ./business.ts for what it is and ./capabilities.ts for
-    // what it stands on. A runtime that publishes nothing (an older runtime, a bare
-    // kernel) gets a terminals-only platform rather than a failed boot.
-    let businessHandler: ((request: Request) => Promise<Response | null>) | null = null;
+    // The business deps, built per App over the runtime's published capabilities — see
+    // app.ts's buildBusinessDeps and ./capabilities.ts. A runtime that publishes nothing
+    // (an older runtime, a bare kernel) gets a terminals-only platform rather than a
+    // failed boot.
+    let deps: AppDeps | null = null;
     const caps = claimRuntimeCapabilities(ctx.resources);
     if (caps === null) {
       console.warn("[platform] runtime publishes no business capabilities; terminals only");
     } else {
       const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
-      const deps = buildBusinessDeps(caps, overrides ?? {});
+      deps = buildBusinessDeps(caps, overrides ?? {});
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -99,27 +103,33 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // now — nothing is running in THIS App yet — so the chat banner never restores a
       // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
       deps.goalsRepo.abortOrphanedActive();
-      ctx.resources.register(BUSINESS_DEPS_RESOURCE_ID, deps);
-      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
-      // effect cannot await — published separately for index.ts's shutdown to claim.
-      ctx.resources.register(GRACEFUL_SHUTDOWN_RESOURCE_ID, () => deps.manager.shutdown(5000));
-      ctx.effect(() => {
-        // Swap semantics for unparked state: HARD STOP. Pending approvals converge to
-        // deny, active runs abort, the scheduler's timer dies with this App; the next
-        // App rebuilds all of it. Only parked resources (terminals) ride across.
-        deps.scheduler.stop();
-        void deps.manager.shutdown(0);
-        ctx.resources.release(BUSINESS_DEPS_RESOURCE_ID);
-        ctx.resources.release(GRACEFUL_SHUTDOWN_RESOURCE_ID);
-      });
-      businessHandler = seamHttp(createBusinessApp(deps));
     }
 
-    const http = async (request: Request): Promise<Response | null> => {
-      const own = await terminalHandler(request);
-      if (own !== null) return own;
-      return businessHandler === null ? null : businessHandler(request);
+    // ONE app, ONE pointer: every route this App serves — terminal group and business
+    // groups — registers into a single Hono table, and the swap publishes deps + table +
+    // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
+    const app = createPlatformApp(deps, terminals, identity);
+    const business = deps;
+    const current: PlatformCurrent = {
+      deps,
+      app,
+      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
+      // effect cannot await — carried on the pointer for index.ts's shutdown to call.
+      ...(business === null ? {} : { shutdown: () => business.manager.shutdown(5000) }),
     };
+    ctx.resources.register(PLATFORM_CURRENT_RESOURCE_ID, current);
+    ctx.effect(() => {
+      // Swap semantics for unparked state: HARD STOP. Pending approvals converge to
+      // deny, active runs abort, the scheduler's timer dies with this App; the next
+      // App rebuilds all of it. Only parked resources (terminals) ride across.
+      if (business !== null) {
+        business.scheduler.stop();
+        void business.manager.shutdown(0);
+      }
+      ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
+    });
+
+    const http = seamHttp(app);
 
     return {
       // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are

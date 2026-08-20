@@ -29,7 +29,8 @@ import {
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { GRACEFUL_SHUTDOWN_RESOURCE_ID } from "./hmr/capabilities.js";
+import { PLATFORM_CURRENT_RESOURCE_ID } from "./hmr/capabilities.js";
+import type { PlatformCurrent } from "./hmr/capabilities.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 
@@ -304,10 +305,8 @@ class PenguinServer {
     // The CURRENT App's graceful drain (manager: interrupt runs, deny approvals, wait ≤5s
     // for wrap-up) — claimed through the registry rather than deps, which after a hot swap
     // would point at an already-disposed business incarnation.
-    const graceful = this.deps.hmr.resources.claim<() => Promise<void>>(
-      GRACEFUL_SHUTDOWN_RESOURCE_ID,
-    );
-    if (graceful !== undefined) await graceful();
+    const current = this.deps.hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID);
+    if (current?.shutdown !== undefined) await current.shutdown();
     // Disposing the host drains the App's effects (scheduler stop, manager hard-stop) and
     // sweeps the resource registry (live ptys).
     this.deps.hmr.dispose();

@@ -1,11 +1,12 @@
 /**
- * Terminal control plane: `/api/terminals`, served by the PLATFORM through the HTTP seam.
+ * Terminal control plane: `/api/terminals`, one route group of the platform's Hono app.
  *
- * A Hono app on the seam contract (see ../hono-seam.ts): unknown paths and methods fall
- * to notFound, which declines to whatever is next in line — so this app owns exactly the
- * six routes below and nothing else under its prefix. The identity gate is attached
- * per-route, not as a prefix middleware, so a request nothing here serves declines
- * BEFORE authentication, same as a request outside the prefix.
+ * Mounted by app.ts's createPlatformApp beside the business route groups, so all
+ * platform routes register into ONE app and swap as one unit. This group owns exactly
+ * the six routes below and nothing else under its prefix: unknown paths and methods fall
+ * to the parent app's notFound, which declines to the runtime. The identity gate is
+ * attached per-route, not as a prefix middleware, so a request nothing here serves
+ * declines BEFORE authentication, same as a request outside the prefix.
  *
  * Identity is resolved through a runtime capability, not re-implemented here: the seam
  * runs BEFORE the auth middleware (app.ts mounts it there on purpose, so a push can
@@ -32,7 +33,6 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import { declined, seamHttp } from "../hmr/hono-seam.js";
 import type { TerminalManager } from "./manager.js";
 import type { IdentifiedUser, Identity } from "./identity.js";
 
@@ -82,15 +82,6 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/** The App's error body shape, so a platform failure reads like every other API error. */
-function errorResponse(err: unknown): Response {
-  if (err instanceof HttpError) {
-    return json({ error: { code: err.code, message: err.message } }, err.status);
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return json({ error: { code: "internal", message } }, 500);
-}
-
 async function readBody(request: Request): Promise<Record<string, unknown>> {
   try {
     return (await request.json()) as Record<string, unknown>;
@@ -102,18 +93,15 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 type TerminalEnv = { Variables: { user: IdentifiedUser } };
 
 /**
- * Serves the terminal API, or returns null for a request this platform does not own.
- * `identity` is the runtime's capability; a request it cannot attribute is 401 here rather
- * than falling through, because falling through would hand an unauthenticated caller
- * whatever older handler sits behind the seam.
+ * The terminal route group, mounted into the platform's one Hono app beside the business
+ * groups (see app.ts's createPlatformApp). Decline (unknown path/method) and error
+ * shaping belong to the parent app; what stays here is the routes and their identity
+ * gate. `identity` is the runtime's capability; a request it cannot attribute is 401
+ * here rather than falling through, because falling through would hand an
+ * unauthenticated caller whatever older handler sits behind the seam.
  */
-export function terminalHttp(
-  manager: TerminalManager,
-  identity: Identity,
-): (request: Request) => Promise<Response | null> {
+export function terminalRoutes(manager: TerminalManager, identity: Identity): Hono<TerminalEnv> {
   const app = new Hono<TerminalEnv>();
-  app.notFound(() => declined());
-  app.onError((err) => errorResponse(err));
 
   const gate: MiddlewareHandler<TerminalEnv> = async (c, next) => {
     const user = await identity(c.req.raw);
@@ -157,7 +145,7 @@ export function terminalHttp(
     return json({ ok: true });
   });
 
-  return seamHttp(app);
+  return app;
 }
 
 async function create(request: Request, manager: TerminalManager, ownerUserId: string) {
