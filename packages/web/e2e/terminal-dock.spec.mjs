@@ -996,10 +996,9 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   await workspace.click();
   await expect(workspace).toHaveAttribute("aria-expanded", "true");
   await expect(dock(page)).toBeHidden();
-  // Collapsed, not unmounted — that is what lets the width animate rather than pop, and it
-  // is why the shell's view survives the swap. (Raw selector: the collapsed pane is inert,
-  // which the dock() helper deliberately filters out.)
-  await expect(page.locator('[data-testid="terminal-dock"]')).toHaveCount(1);
+  // The pane closes rather than parking behind the panel; it lingers just long enough to
+  // collapse (useLingeringSlot) and then unmounts, so there is no steady state to assert
+  // here beyond its absence — the shell it was showing is checked below.
 
   // Same slot, same width: the panel opens exactly as wide as the pane it displaced
   // (use-panel-width.ts is one value for all three side surfaces). Polled — the open is
@@ -1026,9 +1025,15 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
   expect(terminals.filter((t) => t.alive)).toHaveLength(1);
 
-  // Closing it gives the pane back, on the same edge, with its screen intact.
+  // Closing the panel leaves the slot EMPTY. Opening the panel is what the user saw close
+  // the terminal, so closing the panel must not conjure it back.
   await workspace.click();
   await expect(workspace).toHaveAttribute("aria-expanded", "false");
+  await expect(dock(page)).toBeHidden();
+
+  // Asking for it again brings it back on the edge it was on, with its screen intact — the
+  // arrangement survived, only the showing of it did not.
+  await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
   await expect(dock(page)).toHaveAttribute("data-position", "right");
   await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
@@ -1036,10 +1041,42 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SIDE_SWAP_MARKER");
 
-  // And the other direction: asking for the terminal retracts the panel.
+  // And the other direction: asking for the terminal retracts an open panel.
   await workspace.click();
   await expect(dock(page)).toBeHidden();
   await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
   await expect(workspace).toHaveAttribute("aria-expanded", "false");
+});
+
+test("the dock stays with its conversation, not with the user's browsing", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await waitForDockShell(page, "AWAY_SHELL_UP");
+  await runInDock(page, "echo AWAY_MARKER");
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("AWAY_MARKER");
+
+  // A page with no conversation of its own: a shell has no business beside it. The shell
+  // keeps running — this is about where it is shown, not whether it lives.
+  await page.locator('aside a[href="/agents"]').first().click();
+  await expect(page).toHaveURL(/\/agents$/);
+  await expect(dock(page)).toBeHidden();
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.filter((t) => t.alive)).toHaveLength(1);
+
+  // Back on the conversation, it is there again with its screen intact.
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/chat/${sessionId}$`));
+  await expect(dock(page)).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('[data-testid="terminal-dock"][data-status="ready"]')).toBeVisible({
+    timeout: 20000,
+  });
+  await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("AWAY_MARKER");
 });

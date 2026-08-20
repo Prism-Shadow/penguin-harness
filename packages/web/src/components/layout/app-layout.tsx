@@ -216,7 +216,11 @@ export function AppLayout() {
   // dock flashes on the incoming one.
   const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   useLayoutEffect(() => {
-    if (dockScope !== null) setDockScope(dockScope);
+    // null off a conversation, which is a scope with no arrangement — so the dock is not on
+    // screen there. A terminal belongs to the conversation it was opened in; carrying it
+    // into Agents or user management puts a shell beside a page that has nothing to do with
+    // it. Coming back to the conversation restores it, because only the scope changed.
+    setDockScope(dockScope);
   }, [dockScope]);
   // Any dock-state change (panes opening/closing/moving) re-renders the slots below.
   useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
