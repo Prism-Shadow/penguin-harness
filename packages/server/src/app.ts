@@ -25,6 +25,8 @@ import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
   PLATFORM_CURRENT_RESOURCE_ID,
+  RUNTIME_INTERFACES,
+  RUNTIME_INTERFACES_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
@@ -256,7 +258,9 @@ export async function bootAppDeps(
     return authed === null ? null : { userId: authed.user.userId };
   });
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
-  // entry must be in place before ensure() below performs the first boot.
+  // entry must be in place before ensure() below performs the first boot. The interface
+  // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
+  hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
   hmr.resources.register(RUNTIME_AUTH_RESOURCE_ID, authService);

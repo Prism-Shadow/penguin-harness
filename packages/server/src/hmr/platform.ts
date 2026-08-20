@@ -33,11 +33,13 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
+  PENGUIN_FAMILY,
   PLATFORM_CURRENT_RESOURCE_ID,
+  RESOURCE_IFACES_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
-import type { PlatformCurrent } from "./capabilities.js";
+import type { Interfaces, MembersOf, PlatformCurrent } from "./capabilities.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -70,8 +72,52 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
   methods: ["park", "info", "http", "terminals", "attachStream"],
 });
 
+/**
+ * The resource interfaces this platform parks, by ID-prefix group (see
+ * RESOURCE_IFACES_RESOURCE_ID in ./capabilities.ts): create() integrates a group its
+ * predecessor declared only at the same family AND version, and hard-stops it otherwise.
+ * `terminal` is the spawn primitive — a live pty behind a deliberately stable contract,
+ * expected to stay at v1 across upgrades that change everything else; `platform` is the
+ * current-App pointer. A platform that does not want to inherit any of penguin's parked
+ * resources declares a different `family` instead of arguing with each version.
+ */
+interface ParkedInterfaces extends Interfaces {
+  family: string;
+  terminal: MembersOf<TerminalSession>;
+  platform: MembersOf<PlatformCurrent>;
+}
+
+export const DECLARED_RESOURCES: ParkedInterfaces = {
+  family: PENGUIN_FAMILY,
+  // A parked pty, as its adopter uses it (see TerminalManager.adopt).
+  terminal: ["id", "info", "capture", "write", "alive", "dispose"],
+  // The current-App pointer (see PlatformCurrent).
+  platform: ["deps", "app"],
+};
+
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
+    // the predecessor declared at the version this build also declares, hard-stop the
+    // rest — a version bump or a dropped group means this create() does not speak the
+    // contract behind those handles, and adopting them anyway is how a swap turns into a
+    // TypeError. A predecessor from before the declaration existed reads as `{}`:
+    // nothing provable, nothing disposed on its behalf (pre-declaration behavior).
+    const inherited = ctx.resources.claim<Interfaces>(RESOURCE_IFACES_RESOURCE_ID);
+    const inheritable = inherited !== undefined && inherited.family === DECLARED_RESOURCES.family;
+    for (const [group, offered] of Object.entries(inherited ?? {})) {
+      if (group === "family") continue;
+      // Wrong family, wrong version, or a group this build no longer declares: this
+      // create() cannot speak the contract behind those handles.
+      const need = DECLARED_RESOURCES[group];
+      const offers =
+        Array.isArray(need) && Array.isArray(offered) && need.every((m) => offered.includes(m));
+      if (!inheritable || !offers) ctx.resources.disposeGroup?.(group);
+    }
+    // Overwritten (never released — see the ID's doc) so the NEXT App reads this build's
+    // declaration, whatever generation it is.
+    ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+
     const terminals = new TerminalManager(ctx.resources);
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.

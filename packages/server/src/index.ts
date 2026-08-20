@@ -113,7 +113,6 @@ class PenguinServer {
     process.exit(EXIT_ALREADY_RUNNING);
   }
 
-
   /**
    * Builds the service graph: opens the database, publishes the runtime capabilities, and
    * boots the platform — whose create() assembles the whole business surface (services,
