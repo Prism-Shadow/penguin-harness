@@ -17,6 +17,7 @@ export type { ProcessExit, SpawnOptions } from "./tools/command/index.js";
 export { SubagentSessionManager, ManagedSubagentSession } from "./tools/subagent/index.js";
 export {
   DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+  DEFAULT_MCP_PERMISSION,
   MCP_TOOL_PREFIX,
   McpToolProvider,
   mcpToolName,
@@ -24,6 +25,7 @@ export {
   resolveMCPServers,
 } from "./mcp/index.js";
 export type {
+  MCPServerPermissionMode,
   McpToolProviderOptions,
   ResolvedMCPServer,
   ResolvedMCPTransport,

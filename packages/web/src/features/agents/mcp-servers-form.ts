@@ -8,9 +8,18 @@
  * codes (plus a line number for the multiline fields); the component maps them to
  * localized messages.
  */
-import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
+import type { MCPServerConfig, ToolPermission } from "@prismshadow/penguin-core/interfaces";
 
 export type McpTransportKind = "stdio" | "http" | "sse";
+
+/**
+ * Permission setting of one server: `"auto"` leaves every tool to the `readOnlyHint` it
+ * advertises, an explicit level applies to all of them instead.
+ */
+export type McpPermissionMode = "auto" | ToolPermission;
+
+/** Permission mode of an entry that does not set one (core's DEFAULT_MCP_PERMISSION). */
+export const MCP_PERMISSION_DEFAULT: McpPermissionMode = "auto";
 
 /** Editable string state backing the Add/Edit modal (multiline fields stay raw text). */
 export interface McpServerFormState {
@@ -28,6 +37,7 @@ export interface McpServerFormState {
   connectTimeoutMs: string;
   timeoutMs: string;
   maxOutputLength: string;
+  permission: McpPermissionMode;
   /** Unrecognized config keys of the entry being edited; merged back verbatim on save. */
   extras: Record<string, unknown>;
 }
@@ -90,6 +100,7 @@ const KNOWN_CONFIG_KEYS = new Set([
   "connectTimeoutMs",
   "timeoutMs",
   "maxOutputLength",
+  "permission",
 ]);
 
 export function emptyMcpForm(): McpServerFormState {
@@ -107,6 +118,7 @@ export function emptyMcpForm(): McpServerFormState {
     connectTimeoutMs: String(MCP_BUDGET_DEFAULTS.connectTimeoutMs),
     timeoutMs: String(MCP_BUDGET_DEFAULTS.timeoutMs),
     maxOutputLength: String(MCP_BUDGET_DEFAULTS.maxOutputLength),
+    permission: MCP_PERMISSION_DEFAULT,
     extras: {},
   };
 }
@@ -126,6 +138,12 @@ export function transportOf(entry: MCPServerConfig): McpTransportKind {
     : typeof c["url"] === "string"
       ? "http"
       : "stdio";
+}
+
+/** Effective permission mode of a stored entry (an unrecognized value reads as the default). */
+export function permissionOf(entry: MCPServerConfig): McpPermissionMode {
+  const p = entry.config["permission"];
+  return p === "r" || p === "rw" || p === "auto" ? p : MCP_PERMISSION_DEFAULT;
 }
 
 /** Loads a stored entry into form state (tolerates loosely-shaped configs). */
@@ -160,6 +178,7 @@ export function serverToForm(entry: MCPServerConfig): McpServerFormState {
         ? c["maxOutputLength"]
         : MCP_BUDGET_DEFAULTS.maxOutputLength,
     ),
+    permission: permissionOf(entry),
     extras,
   };
 }
@@ -243,6 +262,10 @@ export function formToServer(form: McpServerFormState): McpFormResult {
       config[field] = parsed.value;
     }
   }
+
+  // Same normalization as the budgets: the default is not written, so the entry keeps
+  // following the default rather than pinning today's value.
+  if (form.permission !== MCP_PERMISSION_DEFAULT) config["permission"] = form.permission;
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
   return { ok: true, server: { name, config } };

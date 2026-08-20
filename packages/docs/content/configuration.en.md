@@ -119,7 +119,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
 | `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
-| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
+| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that Server instead of trusting its `readOnlyHint`; see the MCP Servers section of [Tools & Approval](/tools) |
 
 Tool permissions and approval semantics are covered in [Tools & Approval](/tools).
 
