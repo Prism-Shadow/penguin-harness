@@ -95,7 +95,7 @@ In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/version | Running release identity: `{version, buildDate}` (`buildDate` is the running version's release date, stamped at build time — no network; null in a dev/source build or a release that predates the stamping) |
+| GET | /api/version | Identity of the running build plus this root's pushed harness: `{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}` — the same record `penguin version --json` prints. `harness` describes the data root's HMR store (`{source, pushedAt, bundles}`, where `source` is the pushing checkout's `{repo, revision}`) and is null when nothing was ever pushed there. `describe` is the one-line identity (`v0.2.3` for a release, `v0.2.3-14-g9e8f7d6-dirty` for a build from a checkout); `channel` is `release` or `source`; `buildDate` (UTC yyyy-mm-dd) and `commit` are stamped at build time, so no network is needed, and are null in a source build or a release predating the stamping; `branch` and `dirty` carry a source build's git position and are null for a release |
 | GET | /api/version/update-check | Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`; `?force=1` (the manual "check for updates" action) bypasses the TTL cache, and the outcome is cached as usual |
 | POST | /api/version/update | **Admin only.** Runs the CLI self-update (`penguin update --yes`) on the server host: `{status, output, needsRestart}` |
 
