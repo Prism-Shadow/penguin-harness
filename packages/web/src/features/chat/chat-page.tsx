@@ -33,6 +33,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import {
+  adoptDockScope,
   chatSidePanelOpen,
   dockStateVersion,
   setChatSidePanelOpen,
@@ -998,6 +999,9 @@ export function ChatPage() {
     async (currentId: string, respondedId: string) => {
       if (respondedId === currentId) return;
       await reloadSessions();
+      // Same conversation under a new id: its terminals follow, or they are stranded under
+      // an id nothing routes to again.
+      adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],

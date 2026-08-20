@@ -48,6 +48,7 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { adoptDockScope } from "../terminal/terminal-dock-state";
 import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
@@ -627,6 +628,10 @@ export function DraftView({
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
         add(created.session);
         if (!keepDraft) discardDraft();
+        // The draft now has an id of its own, so its terminals move with it: every draft
+        // shares one dock scope, and anything left behind under that key would surface in
+        // the NEXT new conversation instead (terminal-dock-state.ts).
+        adoptDockScope(res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {

@@ -179,20 +179,42 @@ function persist(): void {
  * behind the tabs are untouched, so switching away and back costs nothing.
  */
 export function setDockScope(next: string | null): void {
-  const target = next ?? NO_SESSION_SCOPE;
-  if (target === scope) return;
-  persist();
   // A dock opened before a conversation was chosen belongs to the one that is chosen.
   // /chat carries no Session id and resolves to one a moment after it loads (chat-page.tsx
   // redirects to the newest conversation, or to a draft), so a terminal opened in between
-  // would otherwise be stranded in a scope nothing navigates back to. Only when the target
-  // has no arrangement of its own — an existing one is never clobbered.
-  const staged = scopes[NO_SESSION_SCOPE];
-  const handedOver =
-    scope === NO_SESSION_SCOPE && staged !== undefined && scopes[target] === undefined;
+  // would otherwise be stranded in a scope nothing navigates back to. Only from that
+  // placeholder: an ordinary switch between two conversations carries nothing across.
+  switchScope(next ?? NO_SESSION_SCOPE, scope === NO_SESSION_SCOPE);
+}
+
+/**
+ * The draft this scope was holding has become a real Session: its arrangement moves to the
+ * new id. Every draft shares one scope, because a draft has no id to key on — so without
+ * this the terminal opened while drafting stays behind under that shared key, invisible to
+ * the conversation it was opened for and waiting to reappear in the NEXT draft, which is
+ * the same terminal showing up in a conversation that never asked for one.
+ *
+ * Called at the two points that turn a draft into a Session (its send paths), not on any
+ * navigation away from the draft: leaving a draft for an existing conversation must leave
+ * the draft's terminals where they are.
+ */
+export function adoptDockScope(sessionId: string): void {
+  switchScope(sessionId, true);
+}
+
+function switchScope(target: string, mayHandOver: boolean): void {
+  if (target === scope) return;
+  persist();
+  const staged = scopes[scope];
+  // Never clobbers: a target with an arrangement of its own keeps it.
+  const handedOver = mayHandOver && staged !== undefined && scopes[target] === undefined;
   if (handedOver) {
-    const { [NO_SESSION_SCOPE]: _moved, ...rest } = scopes;
-    scopes = { ...rest, [target]: staged! };
+    const { [scope]: _moved, ...rest } = scopes;
+    scopes = { ...rest, [target]: staged };
+    // The move has to reach storage here. persist() above wrote the map as it was, under the
+    // OLD key; leaving it at that means a reload reads the arrangement back under a key
+    // nothing routes to — and, for a draft, hands it to the next draft instead.
+    writeJson(DOCK_KEY, scopes);
   }
   scope = target;
   ({ visible, panes, assignments, currents } = scopes[scope] ?? emptyScope());

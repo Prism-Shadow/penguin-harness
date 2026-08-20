@@ -9,9 +9,11 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 let dock: typeof import("../src/features/terminal/terminal-dock-state");
+/** The stub's backing map, so a test can assert what a RELOAD would read back. */
+let store: Map<string, string>;
 
 beforeAll(async () => {
-  const store = new Map<string, string>();
+  store = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
     value: {
@@ -223,5 +225,54 @@ describe("the dock's own idea of being open", () => {
     expect(dock.visiblePanes()).toEqual(["right"]);
     // No stray bottom pane invented along the way: the arrangement already had one.
     expect(dock.openPanes()).toEqual(["right"]);
+  });
+});
+
+describe("a draft becoming a Session", () => {
+  it("takes its terminals with it, instead of leaving them for the next draft", () => {
+    // Every draft shares one scope — a draft has no id of its own to key on.
+    dock.setDockScope("new");
+    dock.assignTerminalToPane("term-drafted", "bottom");
+
+    dock.adoptDockScope("session-born");
+    expect(dock.paneOfTerminal("term-drafted")).toBe("bottom");
+    expect(dock.isTerminalDockOpen()).toBe(true);
+
+    // The next new conversation starts clean rather than inheriting that terminal.
+    dock.setDockScope("new");
+    expect(dock.isTerminalDockOpen()).toBe(false);
+    expect(dock.paneOfTerminal("term-drafted")).toBeNull();
+
+    // And it stays that way across a reload: the move has to reach storage, not just the
+    // in-memory map, or the draft key comes back with the terminal still under it.
+    const stored = JSON.parse(store.get("penguin.terminal.dock") ?? "{}") as Record<
+      string,
+      { assignments: Record<string, string> }
+    >;
+    expect(Object.keys(stored)).toContain("session-born");
+    expect(Object.keys(stored)).not.toContain("new");
+    expect(stored["session-born"]?.assignments).toHaveProperty("term-drafted");
+  });
+
+  it("leaves a draft's terminals alone when the user merely navigates away", () => {
+    dock.setDockScope("new");
+    dock.assignTerminalToPane("term-parked", "bottom");
+
+    dock.setDockScope("session-elsewhere-2"); // an ordinary switch, not a birth
+    expect(dock.paneOfTerminal("term-parked")).toBeNull();
+
+    dock.setDockScope("new");
+    expect(dock.paneOfTerminal("term-parked")).toBe("bottom");
+  });
+
+  it("never clobbers a Session that already has an arrangement of its own", () => {
+    dock.setDockScope("session-established");
+    dock.assignTerminalToPane("term-established", "bottom");
+    dock.setDockScope("new");
+    dock.assignTerminalToPane("term-newborn", "bottom");
+
+    dock.adoptDockScope("session-established");
+    expect(dock.paneOfTerminal("term-established")).toBe("bottom");
+    expect(dock.paneOfTerminal("term-newborn")).toBeNull();
   });
 });
