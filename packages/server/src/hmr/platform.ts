@@ -42,7 +42,8 @@ import {
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import type { PenguinInterface, WorkflowFactory } from "./plugin.js";
 import { pluginHostFrom } from "./plugin.js";
-import { WorkflowRegistry, restoreWorkflows } from "../workflows/registry.js";
+import { WorkflowRegistry } from "../workflows/registry.js";
+import { WorkflowLifecycle } from "../workflows/service.js";
 import { WorkflowStore } from "../workflows/store.js";
 import type { WorkflowRef } from "../workflows/store.js";
 
@@ -257,10 +258,25 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Installed workflows register into the very map plugins just wrote, so both kinds are
     // one thing downstream. Only the refs parked in this document are reloaded: an
     // installation is remembered, never discovered by sweeping agent folders.
-    const workflows = new WorkflowRegistry(pluginIface.workflow);
+    const runWorkflowAgent = ctx.resources.claim<BuildDepsOverrides>(
+      RUNTIME_OVERRIDES_RESOURCE_ID,
+    )?.runWorkflowAgent;
+    const workflows = new WorkflowRegistry(pluginIface.workflow, (ref) => ({
+      runAgent: async (prompt) => {
+        if (runWorkflowAgent === undefined) {
+          throw new Error("workflow runAgent is not configured");
+        }
+        return await runWorkflowAgent(ref.projectId, ref.agentId, prompt);
+      },
+    }));
     const workflowStore = caps === null ? null : new WorkflowStore(caps.config.root);
-    if (workflowStore !== null) {
-      await restoreWorkflows(workflowStore, workflows, context.workflows ?? []);
+    // A workflow is live only while its agent is: the lifecycle registers on the agent's
+    // first session and parks on its last. The refs this document carries say which
+    // agents were live when the previous App parked, so a push is invisible to them.
+    const workflowLifecycle =
+      workflowStore === null ? null : new WorkflowLifecycle(workflowStore, workflows);
+    if (workflowLifecycle !== null) {
+      await workflowLifecycle.reseed(context.workflows ?? []);
     }
     plugins.emit("create", {
       workflows: workflows.instanceView(),
@@ -278,7 +294,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     if (caps === null) {
       console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
-      deps = buildAppDeps(caps, caps.overrides, () => sandbox.confiner());
+      deps = buildAppDeps(caps, caps.overrides, () => sandbox.confiner(), workflowLifecycle ?? undefined);
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -299,7 +315,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       identity,
       workflowStore === null || caps === null
         ? undefined
-        : { store: workflowStore, registry: workflows },
+        : { store: workflowStore, registry: workflows, lifecycle: workflowLifecycle! },
     );
     const business = deps;
     // The runtime's two mid-request needs of the CURRENT App are hooks installed over the
@@ -367,7 +383,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         // bundle's schema; once confinement is configured, pushing a sandbox-ignorant
         // bundle blocks rather than silently un-confining.
         const parkedSandbox = sandbox.parkedSettings();
-        const parkedWorkflows = workflows.refs();
+        const parkedWorkflows = workflowLifecycle?.refs() ?? [];
         return {
           motd: context.motd,
           terminals: terminals.handleIds(),
@@ -389,6 +405,9 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.
       shutdown: async () => {
         if (business !== null) await business.manager.shutdown(DRAIN_GRACE_MS);
+        // After the manager drains: every activation the sessions held is released by
+        // then, and this parks whatever an abandoned one still carries.
+        await workflowLifecycle?.shutdown();
       },
       drained: () => drained,
     };
