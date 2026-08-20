@@ -6,7 +6,7 @@
  * The module reads localStorage at import time, so the stub is installed first and the
  * module imported dynamically.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 let dock: typeof import("../src/features/terminal/terminal-dock-state");
 
@@ -155,16 +155,45 @@ describe("the side, shared with the chat panels", () => {
     expect(dock.visiblePanes()).toEqual(["bottom"]);
   });
 
-  it("hands the side back the moment a terminal is put on screen", () => {
-    dock.setDockScope("session-retake");
-    dock.assignTerminalToPane("term-left", "left");
-    dock.setChatSidePanelOpen(true);
-    expect(dock.chatSidePanelOpen()).toBe(true);
+  it("hands the side back the moment a terminal is put on screen", async () => {
+    vi.useFakeTimers();
+    try {
+      dock.setDockScope("session-retake");
+      dock.assignTerminalToPane("term-left", "left");
+      dock.setChatSidePanelOpen(true);
+      expect(dock.chatSidePanelOpen()).toBe(true);
 
-    // What the chat page watches: the flag drops, and it retracts its panels in response.
-    dock.showTerminal("term-left");
-    expect(dock.chatSidePanelOpen()).toBe(false);
-    expect(dock.visiblePanes()).toEqual(["left"]);
+      // What the chat page watches: the flag drops, and it retracts its panels in response.
+      dock.showTerminal("term-left");
+      expect(dock.chatSidePanelOpen()).toBe(false);
+      // …but the pane holds at zero width while that retraction plays. Expanding into a slot
+      // the outgoing panel still fills keeps the total width constant, which reads as the
+      // panel never leaving.
+      expect(dock.visiblePanes()).toEqual([]);
+
+      vi.advanceTimersByTime(200);
+      expect(dock.visiblePanes()).toEqual(["left"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a pending handover when the panel comes straight back", () => {
+    vi.useFakeTimers();
+    try {
+      dock.setDockScope("session-flip");
+      dock.assignTerminalToPane("term-flip", "right");
+      dock.setChatSidePanelOpen(true);
+      dock.showTerminal("term-flip"); // handover starts
+      dock.setChatSidePanelOpen(true); // …and the user reopens the panel mid-retraction
+
+      vi.advanceTimersByTime(200);
+      // The handover's timer must not fire the pane back on: the panel holds the side now.
+      expect(dock.visiblePanes()).toEqual([]);
+      expect(dock.chatSidePanelOpen()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hands it back for the hotkey too, not just for a pane that already exists", () => {
@@ -182,8 +211,14 @@ describe("the dock's own idea of being open", () => {
     dock.setChatSidePanelOpen(true);
     expect(dock.isTerminalDockOpen()).toBe(false); // nothing on screen, whatever the arrangement says
 
-    dock.toggleTerminalDock();
-    expect(dock.chatSidePanelOpen()).toBe(false);
+    vi.useFakeTimers();
+    try {
+      dock.toggleTerminalDock();
+      expect(dock.chatSidePanelOpen()).toBe(false);
+      vi.advanceTimersByTime(200); // the panel's retraction, which the pane waits out
+    } finally {
+      vi.useRealTimers();
+    }
     expect(dock.isTerminalDockOpen()).toBe(true);
     expect(dock.visiblePanes()).toEqual(["right"]);
     // No stray bottom pane invented along the way: the arrangement already had one.

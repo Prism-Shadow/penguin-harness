@@ -292,26 +292,58 @@ export function chatSidePanelOpen(): boolean {
 }
 
 export function setChatSidePanelOpen(open: boolean): void {
+  if (open) cancelHandover(); // the panel is back: nothing left to hand over
   if (sidePanelDisplacing === open) return;
   sidePanelDisplacing = open;
   notify();
 }
 
 /**
+ * How long a chat side panel takes to retract — chat-page.tsx's PANEL_SWAP_MS, which is
+ * also the pane's own collapse. Duplicated rather than imported: the store is the layer
+ * below, and importing upward to read a number is worse than the two staying in step.
+ */
+const SIDE_HANDOVER_MS = 200;
+
+/**
+ * The panel has been told to retract but is still on screen. The pane stays displaced for
+ * that long: expanding into a slot the outgoing panel still fills keeps the total width
+ * constant, and a constant total is exactly what reads as "the panel never left" — the
+ * reason the panels sequence their own swaps rather than crossfading.
+ */
+let handingOver = false;
+let handoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelHandover(): void {
+  if (handoverTimer !== null) clearTimeout(handoverTimer);
+  handoverTimer = null;
+  handingOver = false;
+}
+
+/**
  * Called by everything that puts a terminal on screen: the terminal is what the user just
  * asked for, so it takes the side back. The chat page watches for this and retracts its
  * panels — the store cannot reach into them, and should not know they exist beyond this
- * one flag.
+ * one flag. The pane itself waits out the retraction (see handingOver) rather than
+ * expanding into a slot that is still occupied.
  */
 function terminalTakesTheSide(): void {
-  sidePanelDisplacing = false;
+  if (!sidePanelDisplacing) return;
+  sidePanelDisplacing = false; // the chat page reads this and retracts its panels
+  handingOver = true;
+  if (handoverTimer !== null) clearTimeout(handoverTimer);
+  handoverTimer = setTimeout(() => {
+    handoverTimer = null;
+    handingOver = false;
+    notify();
+  }, SIDE_HANDOVER_MS);
 }
 
 let visibleSnapshot: DockPosition[] = [];
 
 /** Panes to actually render: the arrangement minus what a chat side panel is displacing. */
 export function visiblePanes(): DockPosition[] {
-  const next = sidePanelDisplacing ? panes.filter(isHorizontal) : panes;
+  const next = sidePanelDisplacing || handingOver ? panes.filter(isHorizontal) : panes;
   if (next.length === panes.length) return panes; // nothing displaced: keep the stable ref
   if (next.length !== visibleSnapshot.length || next.some((p, i) => p !== visibleSnapshot[i])) {
     visibleSnapshot = next;
