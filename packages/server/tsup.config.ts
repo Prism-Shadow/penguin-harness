@@ -17,6 +17,10 @@ export default defineConfig({
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    // "./plugin": the type-only surface plugin PACKAGES compile against (see
+    // src/plugin-sdk.ts). Plugins live outside this bundle entirely — they are
+    // configuration resolved from the installation, not platform capability.
+    "plugin-sdk": "src/plugin-sdk.ts",
   },
   format: ["esm"],
   target: "node24",

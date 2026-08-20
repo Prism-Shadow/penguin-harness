@@ -8,7 +8,8 @@
  * main() comes first in the file and is the sequence itself: each step is one PenguinServer
  * method, named after what it does and appearing in the order main() calls it. The order
  * carries real constraints — the proxy dispatcher before any outbound request, the instance
- * lock before the database opens, the platform (and with it the whole business surface) before the first request is
+ * lock before the database opens, plugins loaded before the platform boots against them,
+ * the platform (and with it the whole business surface) before the first request is
  * served — so each step documents the constraint it stands on.
  *
  * Tests never go through this file (they inject via app.request() instead).
@@ -28,6 +29,8 @@ import {
   storeInitialAdminPassword,
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
+import { PluginHost } from "./plugin/index.js";
+import { loadConfiguredPlugins } from "./plugin/loader.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
@@ -45,6 +48,7 @@ async function main(): Promise<void> {
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
+  await server.loadPlugins();
   await server.buildDeps();
   server.applyPersistedProxy();
   server.buildApp();
@@ -63,6 +67,8 @@ async function main(): Promise<void> {
 class PenguinServer {
   /** Assigned by readConfig(); every later step reads it. */
   private config!: ServerConfig;
+  /** Assigned by loadPlugins(); published to the platform tree by buildDeps(). */
+  private plugins!: PluginHost;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: AppDeps;
   /** Assigned by buildApp(). */
@@ -113,13 +119,43 @@ class PenguinServer {
   }
 
   /**
-   * Builds the service graph: opens the database, publishes the runtime capabilities, and
-   * boots the platform — whose create() assembles the whole business surface (services,
-   * routes, the scheduler) and reconciles crash-orphaned Goals. Everything is therefore in
-   * place before the server serves anything.
+   * Plugins are configuration, and reading configuration is the runtime's job: take the
+   * specifiers plugins.json names, import them, and register each into this process's one
+   * PluginHost. Once per process — a hot swap re-delivers the hooks to these same plugin
+   * objects, which is the host's job, but must never import them again.
+   *
+   * A plugin that fails to load is skipped with a warning instead of taking the server
+   * down: the capability it would have provided stays unavailable, which a deployment can
+   * recover from, whereas a server that refuses to boot serves nobody.
+   */
+  async loadPlugins(): Promise<void> {
+    this.plugins = new PluginHost();
+    const result = await loadConfiguredPlugins(this.config.root);
+    for (const { specifier, plugin } of result.loaded) {
+      // use() runs the plugin's activate synchronously; a throw here is a LOAD failure
+      // (same isolation as an import failure), not a per-App hook failure.
+      try {
+        this.plugins.use(plugin);
+      } catch (err) {
+        result.failed.set(specifier, err instanceof Error ? err.message : String(err));
+      }
+    }
+    for (const [specifier, reason] of result.failed) {
+      console.warn(`[plugins] skipped ${specifier}: ${reason}`);
+    }
+  }
+
+  /**
+   * Builds the service graph: opens the database, publishes the runtime capabilities —
+   * the loaded plugin host among them — and boots the platform, whose create() assembles
+   * the whole business surface (services, routes, the scheduler) and delivers the plugin
+   * hooks. The host is handed in rather than registered here because the platform boots
+   * INSIDE bootAppDeps: everything it claims has to be in the registry first, and the
+   * registry is the only way a pushed bundle — compiled standalone — can reach these
+   * plugin objects at all (see plugin/index.ts's pluginHostFrom).
    */
   async buildDeps(): Promise<void> {
-    this.deps = await bootAppDeps(this.config);
+    this.deps = await bootAppDeps(this.config, {}, this.plugins);
   }
 
   /**

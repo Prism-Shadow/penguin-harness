@@ -54,6 +54,7 @@ import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
+import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/index.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
@@ -201,10 +202,16 @@ export interface BuildDepsOverrides {
  * Assemble the runtime core, publish its capabilities, boot the platform (which builds
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
+ *
+ * `plugins` is the host index.ts's loadPlugins step filled from plugins.json — handed in
+ * rather than registered by the caller because the platform boots inside this function,
+ * and everything it claims has to be in the registry first. Absent (tests), the platform
+ * falls back to an empty host (see plugin/index.ts's pluginHostFrom).
  */
 export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
+  plugins?: PluginHost,
 ): Promise<AppDeps> {
   const db = openDatabase(config.dbPath);
 
@@ -261,6 +268,11 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, overrides);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  // The disposer is what runs plugin disposables at process exit: the registry sweep
+  // (disposeAll) is the one exit path every resource already shares.
+  if (plugins !== undefined) {
+    hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => plugins.dispose());
+  }
 
   // Boot the platform now rather than on the first request: the business surface —
   // services, routes, the scheduler — is assembled inside its create(). The check reads
