@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`, `docs`
+- **PR:** [#369](https://github.com/Prism-Shadow/penguin-harness/pull/369)
 
 [English](2026-08-20-system-settings-page.md)
 
