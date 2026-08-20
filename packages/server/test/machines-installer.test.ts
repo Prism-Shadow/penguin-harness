@@ -13,8 +13,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REMOTE_INSTALLER_SCRIPT } from "../src/platform/machines/installer-script.js";
-import { packDirectory } from "../src/platform/machines/pack.js";
+import { REMOTE_INSTALLER_SCRIPT } from "../src/machines/installer-script.js";
+import { packDirectory } from "../src/machines/pack.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 

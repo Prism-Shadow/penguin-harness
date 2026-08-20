@@ -12,9 +12,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { installOnRemote } from "../src/platform/machines/install-server.js";
-import { packDirectory } from "../src/platform/machines/pack.js";
-import { runtimeArtifact, sha256Of } from "../src/platform/machines/runtime.js";
+import { installOnRemote } from "../src/machines/install-server.js";
+import { packDirectory } from "../src/machines/pack.js";
+import { runtimeArtifact, sha256Of } from "../src/machines/runtime.js";
 
 const posixOnly = process.platform === "win32" ? describe.skip : describe;
 

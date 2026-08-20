@@ -21,6 +21,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { bodyLimitBytes } from "./services/attachment-limits.js";

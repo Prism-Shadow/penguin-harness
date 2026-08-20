@@ -17,19 +17,16 @@ import {
   startServerCommand,
   stopServerCommand,
   tunnelArgs,
-} from "../src/platform/machines/commands.js";
-import { isSelfFingerprint, localIdentityFingerprint } from "../src/platform/machines/service.js";
+} from "../src/machines/commands.js";
+import { DEFAULT_SERVER_PORT } from "@prismshadow/penguin-core";
+import { isSelfFingerprint, localIdentityFingerprint } from "../src/machines/service.js";
 import {
   parseRemoteServerState,
   remoteServerState,
   startRemoteServer,
   stopRemoteServer,
-} from "../src/platform/machines/server-control.js";
-import {
-  parseMachinesState,
-  pickTunnelPort,
-  withMachineState,
-} from "../src/platform/machines/state.js";
+} from "../src/machines/server-control.js";
+import { parseMachinesState, pickTunnelPort, withMachineState } from "../src/machines/state.js";
 
 describe("tunnelArgs", () => {
   it("forwards the SAME port on both ends, batch-mode, with forward failure fatal", () => {
@@ -148,11 +145,14 @@ describe("machines state", () => {
   });
 
   it("pickTunnelPort tries the remembered port first, then shifts past busy ones", async () => {
-    const busySet = new Set([7376, 7377]);
+    // Derived from the constant, not spelled out: the search starts at the well-known port,
+    // and pinning a literal here is what let this drift when that number last moved.
+    const base = DEFAULT_SERVER_PORT;
+    const busySet = new Set([base, base + 1]);
     const busy = (port: number) => Promise.resolve(busySet.has(port));
-    await expect(pickTunnelPort({ remembered: 7390, busy })).resolves.toBe(7390);
-    await expect(pickTunnelPort({ remembered: 7376, busy })).resolves.toBe(7378);
-    await expect(pickTunnelPort({ remembered: undefined, busy })).resolves.toBe(7378);
+    await expect(pickTunnelPort({ remembered: base + 26, busy })).resolves.toBe(base + 26);
+    await expect(pickTunnelPort({ remembered: base, busy })).resolves.toBe(base + 2);
+    await expect(pickTunnelPort({ remembered: undefined, busy })).resolves.toBe(base + 2);
     await expect(
       pickTunnelPort({ remembered: undefined, busy: () => Promise.resolve(true) }),
     ).resolves.toBeNull();

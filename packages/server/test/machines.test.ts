@@ -10,12 +10,8 @@ import zlib from "node:zlib";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  machineIdentity,
-  parseHostAliases,
-  parseSshSettings,
-} from "../src/platform/machines/ssh-config.js";
-import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/platform/machines/detect.js";
+import { machineIdentity, parseHostAliases, parseSshSettings } from "../src/machines/ssh-config.js";
+import { parseProbeOutput, POSIX_PROBE, WINDOWS_PROBE } from "../src/machines/detect.js";
 import {
   checksumFor,
   ensureRuntimeArchive,
@@ -24,8 +20,8 @@ import {
   remoteNodeIsUsable,
   runtimeArtifact,
   sha256Of,
-} from "../src/platform/machines/runtime.js";
-import { packDirectory, unpackTo } from "../src/platform/machines/pack.js";
+} from "../src/machines/runtime.js";
+import { packDirectory, unpackTo } from "../src/machines/pack.js";
 import {
   cleanupCommand,
   cmdQuote,
@@ -35,8 +31,8 @@ import {
   scpArgs,
   shQuote,
   sshArgs,
-} from "../src/platform/machines/commands.js";
-import { resolvePayloadImage } from "../src/platform/machines/install-server.js";
+} from "../src/machines/commands.js";
+import { resolvePayloadImage } from "../src/machines/install-server.js";
 
 describe("parseHostAliases", () => {
   const noIncludes = () => [];

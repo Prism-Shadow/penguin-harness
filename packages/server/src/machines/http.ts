@@ -26,7 +26,7 @@
  * carrying this content type triggers a preflight, which no server here answers for.
  */
 import http from "node:http";
-import { readServerLock } from "../../lock.js";
+import { readServerLock } from "../lock.js";
 import type { MachinesService } from "./service.js";
 
 const PREFIX = "/api/machines";

@@ -12,8 +12,10 @@ import { createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const MINIMAL_CLI = "export async function cli(argv) { return 0; }\n";
+// Any pushable bundle does: what is under test is how the web assets riding along with a
+// push are then served, not what the platform in that push does.
 const PLATFORM_BUNDLE_FILE = fileURLToPath(
-  new URL("./fixtures/platform-next.bundle.mjs", import.meta.url),
+  new URL("./fixtures/platform-http.bundle.mjs", import.meta.url),
 );
 
 const webFiles = (marker: string) => ({

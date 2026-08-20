@@ -8,8 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MachinesService } from "../src/platform/machines/service.js";
-import { withMachineState } from "../src/platform/machines/state.js";
+import { MachinesService } from "../src/machines/service.js";
+import { withMachineState } from "../src/machines/state.js";
 
 describe("MachinesService.list", () => {
   let work: string;

@@ -13,7 +13,7 @@ import {
   rewriteLocation,
   rewriteRequestCookies,
   rewriteSetCookie,
-} from "../src/platform/machines/proxy.js";
+} from "../src/machines/proxy.js";
 
 describe("parseProxyPath", () => {
   it("reads /server/<id>/api/… and decodes the id", () => {

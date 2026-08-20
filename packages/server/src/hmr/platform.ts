@@ -42,6 +42,10 @@ import {
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import type { PenguinInterface, WorkflowFactory } from "./plugin.js";
 import { pluginHostFrom } from "./plugin.js";
+import { resolveRoot } from "@prismshadow/penguin-core";
+import { machinesHttp } from "../machines/http.js";
+import { machinesProxy } from "../machines/proxy.js";
+import { MachinesService } from "../machines/service.js";
 import { WorkflowRegistry } from "../workflows/registry.js";
 import { WorkflowLifecycle } from "../workflows/service.js";
 import { WorkflowStore } from "../workflows/store.js";
@@ -217,6 +221,19 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // wraps caps.authService, the same object the business routes authenticate with. A
     // bare kernel has no auth — terminals stay fail-closed there.
     const identity = identityFrom(caps?.authService ?? null);
+    // "Which machines can this window switch to, and how" is policy: the whole capability
+    // (host list, probe, auto-install, tunnel) lives here and reaches deployed machines by
+    // push. Tunnels it spawned before a swap are re-adopted through its state file, not
+    // held objects, so a push does not strand one.
+    const machinesRoot = process.env.PENGUIN_HOME ?? resolveRoot();
+    const machines = new MachinesService(machinesRoot);
+    const machinesRoutes = machinesHttp(machines, machinesRoot, {
+      // The env var is how the shell marks the server it spawned; env is stable for the
+      // process's lifetime, so a hot-pushed bundle reads the same answer as the packaged one.
+      desktopMode: process.env.PENGUIN_DESKTOP_TOKEN !== undefined,
+    });
+    // `/server/<id>/api/…` — the same-origin proxy onto a connected machine's tunnel.
+    const serverProxy = machinesProxy((id) => machines.tunnelPortFor(id));
     // The plugin seam (see ./plugin.ts). Every App creation — the packaged boot and each
     // hot-swap boot alike — offers plugins the definition view first, then the assembled
     // instance context. Workflows are built here, after registration closes, so a plugin
@@ -367,7 +384,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       drained = Promise.allSettled(drains).then(() => undefined);
     });
 
-    const http = seamHttp(app);
+    // The machines surface and the tunnel proxy answer the seam directly rather than as
+    // Hono groups: the proxy streams a whole upstream response through, and neither takes
+    // part in the business app's error shaping.
+    const appHttp = seamHttp(app);
+    const http = async (request: Request): Promise<Response | null> =>
+      (await machinesRoutes(request)) ?? (await serverProxy(request)) ?? (await appHttp(request));
 
     return {
       // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are

@@ -11,8 +11,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { machinesHttp } from "../src/platform/machines/http.js";
-import { MachinesService } from "../src/platform/machines/service.js";
+import { machinesHttp } from "../src/machines/http.js";
+import { MachinesService } from "../src/machines/service.js";
 
 describe("machinesHttp", () => {
   let work: string;
