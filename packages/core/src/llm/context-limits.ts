@@ -32,6 +32,11 @@ import type { OmniMessage } from "../omnimessage/index.js";
  * output clamp is disabled without a configured window (see effectiveMaxOutputTokens).
  * Models with a *smaller* real window still need `context_window` set on their entry —
  * no derivation can protect a window it doesn't know about.
+ *
+ * Not the compaction-threshold default (`DEFAULT_MAX_CONTEXT_LENGTH` in
+ * state/default-config.ts) — a separate number that happens to concern the same axis. The
+ * seeded threshold sits above this assumption, so an entry without a usable `context_window`
+ * effectively compacts at `DEFAULT_CONTEXT_WINDOW − COMPACTION_HEADROOM`.
  */
 export const DEFAULT_CONTEXT_WINDOW = 128000;
 
@@ -70,8 +75,9 @@ export const MIN_OUTPUT_TOKENS = Math.floor(OUTPUT_SAFETY_MARGIN / 2);
  * per-request clamp, so at the trigger point its output budget is about
  * `COMPACTION_HEADROOM − OUTPUT_SAFETY_MARGIN` minus the compaction prompt; reserving less
  * would clamp the summary to the floor and truncate it. On a 32768 window this makes
- * compaction fire at ≈ 30720 instead of never (the previous default threshold of 128000
- * was unreachable inside the window).
+ * compaction fire at ≈ 30720 instead of never — the seeded default threshold
+ * (`DEFAULT_MAX_CONTEXT_LENGTH`, 512000) sits far outside such a window, so without this cap
+ * the window's hard limit would always be hit first.
  */
 export const COMPACTION_HEADROOM = OUTPUT_SAFETY_MARGIN * 2;
 
