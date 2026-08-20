@@ -3,13 +3,18 @@
  * scope — user memory first (read by every Session), then one group per Workspace (labeled by
  * its `.workspace` path, newest activity first).
  *
- * The tab is read + delete only, matching the API: a memory's content is the model's document,
- * so both "edit" and each scope header's "add" open a bridge modal first — a text field and
- * a live preview of the generated prompt, the same shape as the skill import modal — and then
- * jump to a new chat with this Agent and the prompt as the prefilled draft (the same
- * draft-cache route). For a Workspace scope the draft also pins that Workspace, so the Session
- * is injected with the very index it is about to change. Deleting confirms first and also
- * drops the file's MEMORY.md index lines (server-side).
+ * A memory's content is the model's document, so per-file editing stays out of the tab: both
+ * "edit" and each scope header's "add" open a bridge modal first — a text field and a live
+ * preview of the generated prompt, the same shape as the skill import modal — and then jump to
+ * a new chat with this Agent and the prompt as the prefilled draft (the same draft-cache
+ * route). For a Workspace scope the draft also pins that Workspace, so the Session is injected
+ * with the very index it is about to change. Deleting confirms first and also drops the file's
+ * MEMORY.md index lines (server-side).
+ *
+ * A whole group moves in one piece, though: each header carries export and import, following
+ * the Agent State snapshot's split — any member may download a group, only the owner may write
+ * one back. Import defaults to the mode that loses nothing, and the two that do not are held
+ * behind a confirmation naming the memories at stake.
  *
  * The switch writes immediately rather than joining a tab-level Save, so turning Memory off
  * never drags an unrelated half-finished edit along with it. Off keeps every file and this tab
@@ -17,9 +22,14 @@
  * for new Sessions.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { ChangeEvent, RefObject } from "react";
 import { useNavigate } from "react-router";
-import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MemoryFileInfo,
+  MemoryImportMode,
+  MemoryScopeExport,
+  MemoryScopeInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -34,6 +44,8 @@ import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
 import { Chevron } from "../../components/ui/chevron";
+import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Drawer } from "../../components/ui/drawer";
 import { Sheet, type SheetSnap } from "../../components/ui/sheet";
 import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal";
@@ -43,6 +55,13 @@ import { Md } from "../chat/md";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
+import {
+  MemoryDocumentError,
+  memoryDocumentFileName,
+  parseMemoryScopeDocument,
+  planMemoryImport,
+} from "./memory-transfer";
+import type { MemoryImportPlan } from "./memory-transfer";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {
@@ -60,6 +79,17 @@ const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 /** "Add" plus glyph on the group headers, matching the models page's per-group add entry. */
 const PLUS_ICON = "M12 5v14M5 12h14";
+
+/**
+ * The ghost icon button's look on a `<label>`: the Button component only renders a `<button>`,
+ * and the import control has to wrap a file input (the Agent State section's transfer label does
+ * the same for its own size).
+ */
+const GHOST_LABEL_CLASS =
+  "inline-flex cursor-pointer items-center justify-center rounded-md border border-transparent " +
+  "p-1.5 text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 " +
+  "focus-within:ring-2 focus-within:ring-gray-400/30 " +
+  "dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
@@ -114,6 +144,9 @@ export function MemoryTab({
   const userId = useAuth().user?.userId ?? null;
   const { currentProject, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;
+  // the server enforces it either way, this only keeps the control out of a member's reach.
+  const isOwner = currentProject?.role === "owner";
 
   const [enabled, setEnabled] = useState(true);
   const [templateHasMemory, setTemplateHasMemory] = useState(true);
@@ -139,6 +172,15 @@ export function MemoryTab({
   const [editRequirement, setEditRequirement] = useState("");
   const [adding, setAdding] = useState<MemoryScopeInfo | null>(null);
   const [addContent, setAddContent] = useState("");
+  // A picked document waiting for its mode, then the plan the user is being asked to confirm.
+  const [importing, setImporting] = useState<{
+    scope: MemoryScopeInfo;
+    fileName: string;
+    doc: MemoryScopeExport;
+  } | null>(null);
+  const [importMode, setImportMode] = useState<MemoryImportMode>("skip");
+  const [importPlan, setImportPlan] = useState<MemoryImportPlan | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
   const [removing, setRemoving] = useState<Selected | null>(null);
   // ≥1024px the view opens as a right Drawer, below as a bottom Sheet — same live-updating
   // breakpoint as the chat page's panels; the two are mounted mutually exclusively.
@@ -354,6 +396,85 @@ export function MemoryTab({
     if (adding) openChatWithDraft(addPrompt, adding.workspacePath);
   };
 
+  /**
+   * Downloads one group as a transfer document. Fetched as JSON and saved through an object URL
+   * rather than followed as a link, so a failed request becomes a toast instead of an error body
+   * saved to disk (the skills tab's export made the same call).
+   */
+  const exportScope = async (scope: MemoryScopeInfo) => {
+    if (!projectId) return;
+    try {
+      const doc = await api.exportMemoryScope(projectId, agentId, scope.scopeKey);
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = memoryDocumentFileName(agentId, scope.scopeKey);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  /** Reads the picked file and opens the import modal; a file that is not a document never gets that far. */
+  const pickImport = async (scope: MemoryScopeInfo, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Cleared so picking the same file again still fires a change event.
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const doc = parseMemoryScopeDocument(await file.text());
+      setImportMode("skip");
+      setImporting({ scope, fileName: file.name, doc });
+    } catch (e) {
+      toastError(e instanceof MemoryDocumentError ? e.message : S.memory.importInvalidFile);
+    }
+  };
+
+  const runImport = async (confirm: boolean) => {
+    if (!projectId || !importing) return;
+    setImportBusy(true);
+    try {
+      const res = await api.importMemoryScope(projectId, agentId, importing.scope.scopeKey, {
+        mode: importMode,
+        confirm,
+        payload: importing.doc,
+      });
+      const touched = res.added.length + res.overwritten.length + res.removed.length;
+      if (touched === 0) toastSuccess(S.memory.importNothingNew);
+      else
+        toastSuccess(
+          S.memory.importDone(res.added.length, res.overwritten.length, res.removed.length),
+        );
+      setImportPlan(null);
+      setImporting(null);
+      await load();
+      // The agent card's memory count changed; refresh the list provider too.
+      void reloadAgents();
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  /** Import's first click: straight through when nothing would be lost, otherwise into the confirmation. */
+  const submitImport = () => {
+    if (!importing) return;
+    const group = groups?.find((g) => g.scope.scopeKey === importing.scope.scopeKey);
+    const plan = planMemoryImport(
+      importing.doc,
+      { names: group?.files.map((f) => f.name) ?? [], hasIndex: importing.scope.hasIndex },
+      importMode,
+    );
+    if (plan.destroys) setImportPlan(plan);
+    else void runImport(false);
+  };
+
   const confirmRemove = async () => {
     if (!projectId || !removing) return;
     const target = removing;
@@ -482,7 +603,7 @@ export function MemoryTab({
                 className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
               >
                 {/* Group header (the models page's group convention): the collapse button fills
-                    the row, the Add entry is a ghost text button to the chevron's left — a real
+                    the row, the group's own actions sit between it and the chevron — a real
                     <button> cannot nest another, so the actions are siblings, with the hover
                     highlight on the whole header so it reads as a single unit. */}
                 <div className="flex items-center gap-2 bg-gray-50 pr-2 transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60">
@@ -505,6 +626,32 @@ export function MemoryTab({
                       {S.memory.itemCount(files.length)}
                     </span>
                   </button>
+                  {/* Whole-group transfer, icon-only (the rows' affordance) so three actions
+                      still fit a narrow header: export for any member, import for the owner. */}
+                  <span className="shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title={S.memory.exportScope}
+                      aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
+                      onClick={() => void exportScope(scope)}
+                    >
+                      <DownloadIcon size={14} />
+                    </Button>
+                  </span>
+                  {isOwner && (
+                    <label
+                      className={`${GHOST_LABEL_CLASS} shrink-0`}
+                      title={S.memory.importScope}
+                      aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
+                    >
+                      <HiddenFileInput
+                        accept=".json,application/json"
+                        onChange={(e) => void pickImport(scope, e)}
+                      />
+                      <UploadIcon size={14} />
+                    </label>
+                  )}
                   <span className="shrink-0">
                     <Button size="sm" variant="ghost" onClick={() => openAdd(scope)}>
                       <GlyphIcon d={PLUS_ICON} size={13} />
@@ -740,6 +887,78 @@ export function MemoryTab({
           </div>
         )}
       </Modal>
+
+      {/* Import modal: the file that was picked, then the one consequential choice — what to do
+          with a name this group already has. The default loses nothing; the other two are held
+          behind the confirmation below. */}
+      <Modal
+        open={importing !== null}
+        title={S.memory.importTitle}
+        onClose={() => setImporting(null)}
+        widthClass="sm:max-w-lg"
+      >
+        {importing && (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importWhy}</p>
+            <p className="break-all font-mono text-[11px] text-gray-500 dark:text-gray-400">
+              {S.memory.importFile(importing.fileName, importing.doc.files.length)}
+            </p>
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                {S.memory.importModeLabel}
+              </legend>
+              {(
+                [
+                  ["skip", S.memory.importModeSkip, S.memory.importModeSkipHint],
+                  ["overwrite", S.memory.importModeOverwrite, S.memory.importModeOverwriteHint],
+                  ["replace", S.memory.importModeReplace, S.memory.importModeReplaceHint],
+                ] as [MemoryImportMode, string, string][]
+              ).map(([mode, label, hint]) => (
+                <label key={mode} className="flex cursor-pointer items-start gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="memory-import-mode"
+                    className="mt-1 shrink-0"
+                    checked={importMode === mode}
+                    onChange={() => setImportMode(mode)}
+                  />
+                  <span className="min-w-0">
+                    <span className="text-gray-800 dark:text-gray-200">{label}</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <div className="flex justify-end">
+              <Button size="sm" variant="primary" disabled={importBusy} onClick={submitImport}>
+                {S.memory.importAction}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* What the chosen mode costs, memory by memory, before it runs. */}
+      <ConfirmModal
+        open={importPlan !== null}
+        tone="danger"
+        title={S.memory.importConfirmTitle}
+        confirmLabel={S.memory.importAction}
+        busy={importBusy}
+        onClose={() => setImportPlan(null)}
+        onConfirm={() => void runImport(true)}
+      >
+        <div className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
+          {importPlan && importPlan.overwritten.length > 0 && (
+            <p className="break-words">{S.memory.importWillOverwrite(importPlan.overwritten)}</p>
+          )}
+          {importPlan && importPlan.removed.length > 0 && (
+            <p className="break-words">{S.memory.importWillRemove(importPlan.removed)}</p>
+          )}
+          {importPlan?.replacesIndex && <p>{S.memory.importWillReplaceIndex}</p>}
+          <p className="text-xs text-gray-500 dark:text-gray-400">{S.memory.importIrreversible}</p>
+        </div>
+      </ConfirmModal>
 
       <ConfirmModal
         open={removing !== null}

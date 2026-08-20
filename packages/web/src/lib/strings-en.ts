@@ -728,6 +728,34 @@ export const en: Strings = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
+    exportScope: "Export",
+    exportScopeLabel: (scope: string): string => `Export ${scope}`,
+    importScope: "Import",
+    importScopeLabel: (scope: string): string => `Import into ${scope}`,
+    importTitle: "Import memories",
+    importWhy:
+      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
+    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importModeLabel: "When this group already has a memory of the same name",
+    importModeSkip: "Keep the one that is here",
+    importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
+    importModeOverwrite: "Take the file's version",
+    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeReplace: "Replace the whole group",
+    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importAction: "Import",
+    importInvalidFile: "This file is not a memory export.",
+    importEmptyFile: "This file carries no memories.",
+    importConfirmTitle: "Confirm the import",
+    importWillOverwrite: (names: string[]): string =>
+      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+    importWillRemove: (names: string[]): string =>
+      `${names.length} memories will be deleted: ${names.join(", ")}`,
+    importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
+    importIrreversible: "This cannot be undone.",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
+    importNothingNew: "Nothing to import — this group already has every memory in the file",
   },
 
   vault: {
@@ -1592,6 +1620,8 @@ Scenarios:
       member_not_found: "This user is not a member of the Project.",
       already_member: "This user is already a member of the Project.",
       already_owner: "This user is already an owner of the Project.",
+      memory_import_confirm_required:
+        "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",

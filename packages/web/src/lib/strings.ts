@@ -703,6 +703,34 @@ export const zh = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
+    exportScope: "导出",
+    exportScopeLabel: (scope: string): string => `导出${scope}`,
+    importScope: "导入",
+    importScopeLabel: (scope: string): string => `导入到${scope}`,
+    importTitle: "导入记忆",
+    importWhy:
+      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
+    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+    importModeLabel: "当这一组里已有同名记忆时",
+    importModeSkip: "保留现有的这条",
+    importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
+    importModeOverwrite: "改用文件里的版本",
+    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeReplace: "整组替换",
+    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importAction: "导入",
+    importInvalidFile: "这个文件不是记忆导出文件。",
+    importEmptyFile: "这个文件里没有记忆。",
+    importConfirmTitle: "确认导入",
+    importWillOverwrite: (names: string[]): string =>
+      `将覆盖 ${names.length} 条记忆：${names.join("、")}`,
+    importWillRemove: (names: string[]): string =>
+      `将删除 ${names.length} 条记忆：${names.join("、")}`,
+    importWillReplaceIndex: "这一组的 MEMORY.md 索引将被替换。",
+    importIrreversible: "此操作不可恢复。",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
+    importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
   },
 
   vault: {
@@ -1552,6 +1580,7 @@ Benchmark：
       member_not_found: "该用户不是本 Project 的成员。",
       already_member: "该用户已是本 Project 的成员。",
       already_owner: "该用户已是本 Project 的所有者。",
+      memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",
