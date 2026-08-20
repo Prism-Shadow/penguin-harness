@@ -29,6 +29,7 @@ import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { HmrHost } from "../hmr/host.js";
 import type { DesktopService } from "../services/desktop-service.js";
+import type { AppDeps } from "../app.js";
 
 export const RUNTIME_CONFIG_RESOURCE_ID = "runtime:config";
 export const RUNTIME_DB_RESOURCE_ID = "runtime:db";
@@ -45,10 +46,25 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
 /** Test-only: BuildDepsOverrides published by buildAppDeps for the packaged boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:business-overrides";
-/** Reverse direction: the current App's built business deps (see platform.ts). */
-export const BUSINESS_DEPS_RESOURCE_ID = "platform:business-deps";
-/** Reverse direction: the current App's async process-exit wrap-up (manager ≤5s drain). */
-export const GRACEFUL_SHUTDOWN_RESOURCE_ID = "platform:graceful-shutdown";
+/** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
+export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
+
+/**
+ * The one object a swap publishes — deps, route table and wrap-up together, so flipping
+ * to a new App is a single registry write and no reader can ever see a half-swapped pair
+ * (new deps with the old routes, or the reverse). Everything runtime-side that needs the
+ * current App resolves this pointer at use time: the seam middleware dispatches into
+ * `app`, auth late-binds provisioning through `deps`, index.ts's shutdown awaits
+ * `shutdown`.
+ */
+export interface PlatformCurrent {
+  /** The business deps this App built, or null when the runtime published no capabilities. */
+  deps: AppDeps | null;
+  /** The App's whole Hono route table (terminal + business), fetch-shaped for cross-bundle safety. */
+  app: { fetch(request: Request): Response | Promise<Response> };
+  /** Process-exit graceful drain (manager ≤5s wrap-up); absent when no business runs. */
+  shutdown?: () => Promise<void>;
+}
 
 /** Applies proxy settings to the RUNTIME's global dispatcher (see net/proxy.ts). */
 export type ProxyControl = (settings: ProxySettings) => void;

@@ -8,7 +8,7 @@
  * boots the platform — which returns the merged view. Neither listens on a port: tests
  * inject requests via `app.request()`, and the startup entry point is index.ts.
  *
- * The BUSINESS surface — `buildBusinessDeps` + `createBusinessApp`, at the bottom of this
+ * The BUSINESS surface — `buildBusinessDeps` + `createPlatformApp`, at the bottom of this
  * file — is what a hot push replaces. Both are called from `platformImpl.create`
  * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
  * registry, so every business service and route travels with the platform version rather
@@ -24,7 +24,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  BUSINESS_DEPS_RESOURCE_ID,
+  PLATFORM_CURRENT_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
   RUNTIME_CHANNELS_RESOURCE_ID,
   RUNTIME_CONFIG_RESOURCE_ID,
@@ -35,7 +35,7 @@ import {
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
-import type { ProxyControl } from "./hmr/capabilities.js";
+import type { PlatformCurrent, ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -48,6 +48,9 @@ import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
 import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
 import { IDENTITY_RESOURCE_ID } from "./terminal/identity.js";
+import type { Identity } from "./terminal/identity.js";
+import { terminalRoutes } from "./terminal/routes.js";
+import type { TerminalManager } from "./terminal/manager.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
@@ -218,8 +221,9 @@ export async function buildAppDeps(
   // time rather than capturing any one incarnation.
   const channels = new ChannelHub({
     isActive: (key) => {
-      const business = hmr.resources.claim<AppDeps>(BUSINESS_DEPS_RESOURCE_ID);
-      return business !== undefined && business.manager.statusOf(key) !== "idle";
+      const manager = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps
+        ?.manager;
+      return manager !== undefined && manager.statusOf(key) !== "idle";
     },
   });
 
@@ -236,11 +240,11 @@ export async function buildAppDeps(
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
     // policy — late-bound through the registry so it always reaches the current App.
     provisionInitialProject: (user, isAdmin) => {
-      const business = hmr.resources.claim<AppDeps>(BUSINESS_DEPS_RESOURCE_ID);
-      if (business === undefined) {
+      const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
+      if (deps == null) {
         throw new Error("no business platform is running to provision the initial Project");
       }
-      return business.projectService.provisionInitialProject(user, isAdmin);
+      return deps.projectService.provisionInitialProject(user, isAdmin);
     },
     seedAdminPassword: config.seedAdminPassword,
     onPasswordChanged,
@@ -276,11 +280,11 @@ export async function buildAppDeps(
   // Boot the platform now rather than on the first request: the business surface —
   // services, routes, the scheduler — is assembled inside its create().
   await hmr.ensure();
-  const business = hmr.resources.claim<AppDeps>(BUSINESS_DEPS_RESOURCE_ID);
-  if (business === undefined) {
+  const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
+  if (deps == null) {
     throw new Error("the packaged platform built no business surface");
   }
-  return business;
+  return deps;
 }
 
 /** Assembles the Hono app (does not listen on a port). */
@@ -712,27 +716,49 @@ export function buildBusinessDeps(
   };
 }
 
-/** Prefixes the runtime serves itself; the business app declines them unconditionally. */
+/** Prefixes the runtime serves itself; the platform app declines them unconditionally. */
 const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
-/** Assembles the business Hono app (routes + auth + error shaping; no listening, no logging). */
-export function createBusinessApp(deps: AppDeps): Hono<AppEnv> {
+/**
+ * Assembles the platform's ONE Hono app: every route the platform serves — the terminal
+ * group and the business groups — registered together, so a swap replaces the whole route
+ * table as a unit (routes + auth + error shaping; no listening, no logging).
+ *
+ * `deps` is null when the runtime published no business capabilities (an older runtime, a
+ * bare kernel): the terminal group still serves, everything else declines.
+ */
+export function createPlatformApp(
+  deps: AppDeps | null,
+  terminals: TerminalManager,
+  identity: Identity,
+): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
   // pure function with unchanged behavior (HttpError is mapped as-is, unknown
   // exceptions are logged with a stack trace and collapsed to 500), and recording
-  // to the DB is just a side-effect layered on top.
+  // to the DB is just a side-effect layered on top — skipped when no business (and so
+  // no errors table access) is running.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, deps);
-    deps.errors.record({
-      source: "http",
-      err,
-      ...(projectId !== undefined ? { ctx: { projectId } } : {}),
-    });
+    if (deps !== null) {
+      const projectId = attributedProjectId(c, deps);
+      deps.errors.record({
+        source: "http",
+        err,
+        ...(projectId !== undefined ? { ctx: { projectId } } : {}),
+      });
+    }
     return handleError(err, c);
   });
   app.notFound(() => declined());
+
+  // The terminal group mounts FIRST and carries its own per-route identity gate: a
+  // matched terminal route ends the chain before the cookie auth below ever runs, and an
+  // unmatched /api/terminals path falls through it into the same auth-then-decline shape
+  // as any other unknown /api path.
+  app.route("/", terminalRoutes(terminals, identity));
+
+  if (deps === null) return app;
 
   // Runtime-owned prefixes decline before anything else runs — in particular before the
   // auth gate below, which would otherwise 401 an unauthenticated /api/auth/login instead
