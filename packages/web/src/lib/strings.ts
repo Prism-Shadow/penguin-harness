@@ -61,21 +61,29 @@ export const zh = {
 
   settings: {
     language: "语言",
+    /** Sidebar user-menu row opening the System settings page. */
+    systemSettings: "系统设置",
+    /** Sub-nav headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "个人",
+    groupServer: "服务器",
+    /** Personal sub-page (the per-user preferences). */
+    generalTitle: "通用",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "代理选项",
-    proxyDialogTitle: "代理选项",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "代理选项",
+    proxyHint: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "上传限制",
-    uploadLimitsDialogTitle: "上传限制",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "上传限制",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */

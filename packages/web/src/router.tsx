@@ -18,6 +18,7 @@ import { UsagePage } from "./features/usage/usage-page";
 import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
 import { AdminUsersPage } from "./features/admin/admin-users-page";
+import { SettingsPage } from "./features/settings/settings-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
@@ -76,6 +77,9 @@ export function AppRouter() {
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
+          {/* Bare /settings lands on the first sub-page the viewer may open; the page itself
+              resolves that, since which sections exist depends on who is asking. */}
+          <Route path="/settings/:section?" element={<SettingsPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>

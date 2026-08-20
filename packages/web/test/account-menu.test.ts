@@ -67,4 +67,23 @@ describe("the sidebar user menu", () => {
     expect(source).toContain("{!desktopMode && (");
     expect(source).toContain("{user?.isAdmin && !desktopMode && (");
   });
+
+  it("reaches the settings it no longer holds through one ungated System settings entry", () => {
+    // Proxy options and Upload limits used to be two admin-gated rows here, and "Show CLI
+    // sessions" an inline switch. All three moved to /settings, whose own sub-nav decides
+    // which of them this viewer sees — so the row itself carries no isAdmin test, or a
+    // non-admin would lose the personal preference along with the admin ones.
+    expect(source).toContain('go("/settings")');
+    expect(source).not.toContain("S.settings.proxyMenu");
+    expect(source).not.toContain("S.settings.uploadLimitsMenu");
+    expect(source).not.toContain("S.settings.showCliSessions");
+  });
+
+  it("no longer mounts the dialogs that surface moved into", () => {
+    // The components are deleted; a stale mount here would be a build failure rather than a
+    // silent one, but the menu keeping an opener for a surface reachable elsewhere is the
+    // regression worth naming.
+    expect(source).not.toContain("ProxySettingsDialog");
+    expect(source).not.toContain("UploadLimitsDialog");
+  });
 });

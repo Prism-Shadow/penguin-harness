@@ -15,7 +15,7 @@
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / logout).
+ * -> bottom user config (theme / language / System settings / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -90,7 +90,6 @@ import {
   storeSessionSortMode,
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
-import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
@@ -144,8 +143,6 @@ import {
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
-import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
@@ -320,8 +317,6 @@ export function Sidebar({
     loading,
     remove,
     replace,
-    showCliSessions,
-    setShowCliSessions,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
@@ -372,17 +367,6 @@ export function Sidebar({
       setUpdateChecking(false);
     }
   };
-  /**
-   * Admin-only server-global proxy settings dialog: the menu carries only the opener
-   * row; the controls, their form semantics, and the open-time hydration all live in
-   * ProxySettingsDialog.
-   */
-  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
-  /**
-   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
-   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
-   */
-  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -1780,13 +1764,21 @@ export function Sidebar({
             <SettingRow label={S.settings.language}>
               <Segmented options={langOptions} value={lang} onChange={setLang} />
             </SettingRow>
-            {/* Off (default) = the sidebar lists only web-created Sessions, served straight
-                from the DB; on = CLI Sessions are discovered from the Trace directory too. */}
-            <SettingRow label={S.settings.showCliSessions}>
-              <Switch checked={showCliSessions} onChange={setShowCliSessions} />
-            </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
+            {/* System settings (/settings): everyone gets it — the surface always has the
+                personal sub-page, and the server-global ones inside it stay admin-gated by
+                the page itself rather than by this row. */}
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setUserOpen(false);
+                go("/settings");
+              }}
+            >
+              {S.settings.systemSettings}
+            </button>
             {/* Hidden in the desktop shell's own window: it signs in through the shell's
                 one-shot token rather than a login form, and the seed password of a
                 desktop-created root is fully random and never printed — there is no
@@ -1804,35 +1796,6 @@ export function Sidebar({
                 }}
               >
                 {S.account.changePassword}
-              </button>
-            )}
-            {/* Admin-only, server-global proxy settings: one menu row opening the
-                dialog (same idiom as Change password above) — the switch, address
-                input and their live-save semantics live in ProxySettingsDialog. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setProxySettingsOpen(true);
-                }}
-              >
-                {S.settings.proxyMenu}
-              </button>
-            )}
-            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
-                opener above. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setUploadLimitsOpen(true);
-                }}
-              >
-                {S.settings.uploadLimitsMenu}
               </button>
             )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
@@ -1932,8 +1895,6 @@ export function Sidebar({
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
-      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
-      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
