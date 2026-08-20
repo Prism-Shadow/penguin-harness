@@ -17,9 +17,9 @@
  * bare kernel in tests) simply builds no business surface — the capability being absent
  * IS the signal, and terminals keep working regardless.
  *
- * The reverse direction has two entries: the platform publishes its built business deps
- * (for the composition root and tests to reach) and a graceful-shutdown hook (process
- * exit wants the manager's ≤5s wrap-up, which a synchronous dispose effect cannot await).
+ * The reverse direction is ONE entry: the pointer to the current App ({@link
+ * PlatformCurrent}) — deps, route table and graceful wrap-up published together in a
+ * single registry write.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -44,8 +44,8 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
  * admin surfaces), so the claim must distinguish "not desktop" from "not published".
  */
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
-/** Test-only: BuildDepsOverrides published by buildAppDeps for the packaged boot to claim. */
-export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:business-overrides";
+/** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
+export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 /** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
 export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
 
@@ -69,7 +69,7 @@ export interface PlatformCurrent {
 /** Applies proxy settings to the RUNTIME's global dispatcher (see net/proxy.ts). */
 export type ProxyControl = (settings: ProxySettings) => void;
 
-/** Everything buildBusinessDeps needs, claimed in one place. */
+/** Everything buildAppDeps needs, claimed in one place. */
 export interface RuntimeCapabilities {
   config: ServerConfig;
   db: DatabaseSync;
