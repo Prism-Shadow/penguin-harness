@@ -2,8 +2,8 @@
  * Guards the one precondition vitest.config.ts's `isolate: false` rests on. Workers here
  * reuse their module registry across the files they run, so a module mock registered by one
  * file would still be in place for every file that follows it in the same worker — a failure
- * that shows up in an unrelated file and does not reproduce alone. Nothing in this suite
- * needs module mocking today; a file that starts to needs its own isolated project instead.
+ * that shows up in an unrelated file and does not reproduce alone. A file that needs module
+ * mocking needs its own vitest project, isolated, rather than a mock registered in this one.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
