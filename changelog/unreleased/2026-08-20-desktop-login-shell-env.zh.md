@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** fix
 - **Scope:** `desktop`, `docs`
+- **PR:** [#370](https://github.com/Prism-Shadow/penguin-harness/pull/370)
 - **Issue:** [#351](https://github.com/Prism-Shadow/penguin-harness/issues/351)
 
 [English](2026-08-20-desktop-login-shell-env.md)
