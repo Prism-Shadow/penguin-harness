@@ -179,6 +179,19 @@ jobs:
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
           sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
+          # The commit is what separates two builds of the same version, which BUILD_DATE cannot:
+          # a release and a same-day rebuild share a date. GITHUB_SHA is the checked-out tag's sha
+          # and needs no git, which matters because the checkout is shallow and carries no tags.
+          # Absence is tolerated rather than guarded, on both arms: tags predating this constant
+          # must stay rebuildable, and a replay outside Actions has no GITHUB_SHA to stamp.
+          if ! grep -q 'export const BUILD_COMMIT: string | null = ' packages/core/src/index.ts; then
+            echo "Legacy tag without a BUILD_COMMIT constant; leaving the commit unstamped."
+          elif [ -z "${GITHUB_SHA:-}" ]; then
+            echo "GITHUB_SHA is unset; leaving the commit unstamped."
+          else
+            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
+            grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
+          fi
 
       - name: Build (tsup + vite)
         run: pnpm build
@@ -594,6 +607,19 @@ jobs:
           # BRE: the unescaped | in these patterns is literal (grep/sed default to POSIX BRE, where | is not alternation).
           grep -q 'export const BUILD_DATE: string | null = ' packages/core/src/index.ts
           sed -i "s/export const BUILD_DATE: string | null = [^;]*/export const BUILD_DATE: string | null = \"$D\"/" packages/core/src/index.ts
+          # The commit is what separates two builds of the same version, which BUILD_DATE cannot:
+          # a release and a same-day rebuild share a date. GITHUB_SHA is the checked-out tag's sha
+          # and needs no git, which matters because the checkout is shallow and carries no tags.
+          # Absence is tolerated rather than guarded, on both arms: tags predating this constant
+          # must stay rebuildable, and a replay outside Actions has no GITHUB_SHA to stamp.
+          if ! grep -q 'export const BUILD_COMMIT: string | null = ' packages/core/src/index.ts; then
+            echo "Legacy tag without a BUILD_COMMIT constant; leaving the commit unstamped."
+          elif [ -z "${GITHUB_SHA:-}" ]; then
+            echo "GITHUB_SHA is unset; leaving the commit unstamped."
+          else
+            sed -i "s/export const BUILD_COMMIT: string | null = [^;]*/export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"/" packages/core/src/index.ts
+            grep -Fq "export const BUILD_COMMIT: string | null = \"$GITHUB_SHA\"" packages/core/src/index.ts
+          fi
           (cd packages/skills && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/core && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")

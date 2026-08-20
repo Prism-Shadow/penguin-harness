@@ -95,7 +95,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/version | 当前运行版本：`{version, buildDate}`（`buildDate` 是当前运行版本的发布日期，构建时打入、无需联网；开发/源码构建以及打入机制之前的发布版为 null） |
+| GET | /api/version | 当前运行构建的身份：`{version, describe, channel, buildDate, commit, branch, dirty, runtime}`，与 `penguin version --json` 的输出逐字节一致。`describe` 是单行身份（发布版为 `v0.2.3`，源码构建为 `v0.2.3-14-g9e8f7d6-dirty`）；`channel` 取 `release` 或 `source`；`buildDate`（UTC yyyy-mm-dd）与 `commit` 在构建时打入、无需联网，源码构建以及打入机制之前的发布版为 null；`branch` 与 `dirty` 记录源码构建的 git 位置，发布版为 null |
 | GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
 | POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
 

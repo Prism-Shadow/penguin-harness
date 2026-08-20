@@ -3,7 +3,7 @@ title: CLI 参考
 description: penguin 命令的子命令与选项完整参考。
 ---
 
-CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带子命令执行 `penguin` 时打印帮助；`-v, --version` 打印版本号。启动时自动加载工作目录下的 `.env`。
+CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带子命令执行 `penguin` 时打印帮助；`-v, --version` 打印当前构建的单行身份，`penguin version --json` 打印其完整信息。启动时自动加载工作目录下的 `.env`。
 
 ## 全局约定
 
@@ -164,6 +164,26 @@ penguin server reset-admin-password
 ```
 
 内置 `admin` 会得到一个新的初始密码（形如 `penguin-1234`），以边框提示打印——此后每次启动服务端都会重印，直到密码被修改——并清空 admin 的全部登录会话。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
+
+## penguin version
+
+报告当前运行的是哪个构建。仅凭版本号回答不了这个问题——两次发布之间由源码 checkout 构建出来的每一个版本也都自称 `0.2.3`——因此发布版与源码构建给出的身份并不相同。
+
+```bash
+penguin version          # v0.2.3                     （发布版）
+penguin version          # v0.2.3-14-g9e8f7d6-dirty   （源码构建）
+penguin version --json   # 完整构建信息
+```
+
+| 选项 | 说明 |
+| --- | --- |
+| `--json` | 输出完整构建信息而非单行：`{version, describe, channel, buildDate, commit, branch, dirty, runtime}` |
+
+不带选项时输出单行；源码构建下该行即 `git describe --tags --dirty` 的结果——`v0.2.3-14-g9e8f7d6-dirty` 表示位于 `v0.2.3` 之后 14 个提交、当前提交为 `9e8f7d6`、且工作区有未提交改动。`-v, --version` 输出的是同一行。
+
+JSON 与 `GET /api/version` 的响应体逐字节一致，因此在 HTTP 边界的任意一侧都能采集到同样的排障信息。其中 `channel` 取 `release` 或 `source`；`buildDate` 与 `commit` 由发布流程在构建时打入，源码构建为 null；`branch` 与 `dirty` 描述源码构建的 git 位置，发布版为 null——发布流程会先把常量写进工作区再构建，所以「是否干净」对发布产物本就不成立。
+
+已安装的 penguin 从不调用 git，只读取打入的常量；只有未打入的构建才会问 git，且只问自己被构建时所在的那个 checkout——在无关仓库里执行 `penguin version`，报告的仍是 harness 自身的版本，而非该仓库的。
 
 ## penguin update
 

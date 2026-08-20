@@ -2,7 +2,8 @@
  * Version routes: the running release identity, the update-check reminder, and the
  * admin-only self-update.
  *
- *   GET  /api/version               -> {version, buildDate} from core's VERSION / BUILD_DATE
+ *   GET  /api/version               -> core's buildInfo(), the same object `penguin version
+ *                                      --json` prints
  *   GET  /api/version/update-check  -> UpdateCheckService (fail-soft, cached, opt-out env;
  *                                      ?force=1 bypasses the cache for the manual check)
  *   POST /api/version/update        -> admin only: re-runs the CLI as `penguin update --yes`
@@ -24,7 +25,7 @@
  * the same install — the strings can never be from a different release than this code.
  */
 import { spawn } from "node:child_process";
-import { BUILD_DATE, VERSION } from "@prismshadow/penguin-core";
+import { buildInfo } from "@prismshadow/penguin-core";
 import { Hono } from "hono";
 import type { UpdateRunResponse, VersionResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
@@ -122,7 +123,7 @@ export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
   let inflightRun: Promise<UpdateRunResponse> | null = null;
 
   app.get("/", (c) => {
-    return c.json({ version: VERSION, buildDate: BUILD_DATE } satisfies VersionResponse);
+    return c.json(buildInfo() satisfies VersionResponse);
   });
 
   app.get("/update-check", async (c) => {

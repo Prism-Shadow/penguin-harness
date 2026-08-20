@@ -91,6 +91,8 @@ sed -i 's/^TAG=.*/TAG="${TEST_RELEASE_TAG:?}"/' "$STAMP_SCRIPT"
 grep -q 'SH_HAS_MARKER' "$STAMP_SCRIPT" \
   || fail_test "release workflow stamping block could not be extracted"
 
+# Mirrors the three stamped constants of packages/core/src/index.ts. `make_stamp_case legacy`
+# drops BUILD_COMMIT, standing in for a tag cut before that constant existed.
 make_stamp_case() {
   case_dir="$1"
   mkdir -p "$case_dir/packages/core/src"
@@ -98,7 +100,13 @@ make_stamp_case() {
     'export const VERSION = "0.0.0";' \
     'export const BUILD_DATE: string | null = null;' \
     > "$case_dir/packages/core/src/index.ts"
+  [ "${2:-}" = legacy ] || printf '%s\n' 'export const BUILD_COMMIT: string | null = null;' \
+    >> "$case_dir/packages/core/src/index.ts"
 }
+
+# GITHUB_SHA is exported to every step of a real Actions run, so each case below pins it
+# rather than inheriting whatever the host happens to have set.
+STAMP_SHA=0123456789abcdef0123456789abcdef01234567
 
 STAMP_NEW_DIR="$WORK_DIR/stamp-new"
 make_stamp_case "$STAMP_NEW_DIR"
@@ -106,17 +114,56 @@ printf '%s\n' 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' \
   > "$STAMP_NEW_DIR/install.sh"
 printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
   > "$STAMP_NEW_DIR/install.ps1"
-(cd "$STAMP_NEW_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT")
+(cd "$STAMP_NEW_DIR" && TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" sh -e "$STAMP_SCRIPT")
 grep -Fq 'EMBEDDED_RELEASE_VERSION="v9.8.7"' "$STAMP_NEW_DIR/install.sh" \
   || fail_test "release workflow did not stamp the POSIX installer"
 grep -Fq '$EmbeddedReleaseVersion = "v9.8.7"' "$STAMP_NEW_DIR/install.ps1" \
   || fail_test "release workflow did not stamp the PowerShell installer"
+grep -Fq 'export const VERSION = "9.8.7";' "$STAMP_NEW_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow did not stamp core's VERSION"
+grep -Eq 'export const BUILD_DATE: string \| null = "[0-9]{4}-[0-9]{2}-[0-9]{2}";' \
+  "$STAMP_NEW_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow did not stamp core's BUILD_DATE"
+grep -Fq "export const BUILD_COMMIT: string | null = \"$STAMP_SHA\";" \
+  "$STAMP_NEW_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow did not stamp core's BUILD_COMMIT"
+
+# Without GITHUB_SHA (a replay outside Actions) the commit stays null and the rest still stamps.
+STAMP_NOSHA_DIR="$WORK_DIR/stamp-no-sha"
+make_stamp_case "$STAMP_NOSHA_DIR"
+printf '%s\n' 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NOSHA_DIR/install.sh"
+printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NOSHA_DIR/install.ps1"
+(cd "$STAMP_NOSHA_DIR" && TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA= sh -e "$STAMP_SCRIPT") \
+  > "$WORK_DIR/stamp-no-sha.output"
+grep -Fq 'GITHUB_SHA is unset' "$WORK_DIR/stamp-no-sha.output" \
+  || fail_test "release workflow did not report the unstamped commit"
+grep -Fq 'export const BUILD_COMMIT: string | null = null;' \
+  "$STAMP_NOSHA_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow stamped a commit without GITHUB_SHA"
+grep -Fq 'export const VERSION = "9.8.7";' "$STAMP_NOSHA_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow skipped the version stamp when GITHUB_SHA was unset"
+
+# A tag predating the BUILD_COMMIT constant must still rebuild.
+STAMP_NOCONST_DIR="$WORK_DIR/stamp-no-commit-const"
+make_stamp_case "$STAMP_NOCONST_DIR" legacy
+printf '%s\n' 'EMBEDDED_RELEASE_VERSION="__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NOCONST_DIR/install.sh"
+printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
+  > "$STAMP_NOCONST_DIR/install.ps1"
+(cd "$STAMP_NOCONST_DIR" && TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" sh -e "$STAMP_SCRIPT") \
+  > "$WORK_DIR/stamp-no-commit-const.output"
+grep -Fq 'Legacy tag without a BUILD_COMMIT constant' "$WORK_DIR/stamp-no-commit-const.output" \
+  || fail_test "release workflow did not use the legacy path for a missing BUILD_COMMIT"
+grep -Fq 'export const VERSION = "9.8.7";' "$STAMP_NOCONST_DIR/packages/core/src/index.ts" \
+  || fail_test "release workflow failed to stamp a tag without BUILD_COMMIT"
 
 STAMP_LEGACY_DIR="$WORK_DIR/stamp-legacy"
 make_stamp_case "$STAMP_LEGACY_DIR"
 printf '%s\n' 'legacy POSIX installer' > "$STAMP_LEGACY_DIR/install.sh"
 printf '%s\n' 'legacy PowerShell installer' > "$STAMP_LEGACY_DIR/install.ps1"
-(cd "$STAMP_LEGACY_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT") \
+(cd "$STAMP_LEGACY_DIR" && TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" sh -e "$STAMP_SCRIPT") \
   > "$WORK_DIR/stamp-legacy.output"
 grep -Fq 'leaving installers unstamped' "$WORK_DIR/stamp-legacy.output" \
   || fail_test "release workflow did not use the legacy installer path"
@@ -137,8 +184,8 @@ for inconsistent_side in posix powershell; do
     printf '%s\n' '$EmbeddedReleaseVersion = "__PENGUIN_RELEASE_VERSION__"' \
       > "$STAMP_INCONSISTENT_DIR/install.ps1"
   fi
-  if (cd "$STAMP_INCONSISTENT_DIR" && TEST_RELEASE_TAG=v9.8.7 sh -e "$STAMP_SCRIPT") \
-    > /dev/null 2>&1; then
+  if (cd "$STAMP_INCONSISTENT_DIR" && TEST_RELEASE_TAG=v9.8.7 GITHUB_SHA="$STAMP_SHA" \
+    sh -e "$STAMP_SCRIPT") > /dev/null 2>&1; then
     fail_test "release workflow accepted inconsistent $inconsistent_side installer markers"
   fi
 done

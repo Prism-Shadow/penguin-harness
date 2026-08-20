@@ -19,6 +19,7 @@ import type {
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
+  BuildInfo,
   MCPServerConfig,
   ThinkingLevelName,
   ToolDefinitionConfig,
@@ -2087,17 +2088,15 @@ export interface SkillArchiveInstallRequest {
 // Version and self-update
 // ---------------------------------------------------------------------------
 
-/** GET /api/version: the running server's release identity (from core's VERSION / BUILD_DATE). */
-export interface VersionResponse {
-  version: string;
-  /**
-   * The **running** version's release date (UTC yyyy-mm-dd), stamped into core's
-   * BUILD_DATE at build time by the release workflow — the web's "last updated" date
-   * needs no network. Null for a dev/source build and for releases that predate the
-   * stamping (v0.1.2 and earlier): the UI then shows the version alone.
-   */
-  buildDate: string | null;
-}
+/**
+ * GET /api/version: the running build's identity, verbatim from core's `buildInfo()` — the
+ * same object `penguin version --json` prints, so the two cannot drift apart. Field meanings
+ * live on {@link BuildInfo}; the ones the web reads are `version` and `buildDate` (the
+ * stamped release date behind the sidebar's "last updated", needing no network, and null
+ * for a source build or a release predating the stamping — v0.1.2 and earlier — where the
+ * UI shows the version alone).
+ */
+export type VersionResponse = BuildInfo;
 
 /**
  * GET /api/version/update-check: newest published release vs the running version.

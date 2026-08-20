@@ -408,6 +408,55 @@ export interface BackgroundCommandInfo {
 }
 
 /**
+ * Node and OS the build is executing on — the part of a build's identity that is a property
+ * of the run rather than of the artifact.
+ */
+export interface BuildRuntimeInfo {
+  /** `process.versions.node`. */
+  node: string;
+  /** `process.platform`. */
+  platform: string;
+  /** `process.arch`. */
+  arch: string;
+}
+
+/**
+ * Identity of the running build: everything `penguin version --json` prints and everything
+ * GET /api/version returns. Both render this object without adding facts of their own, so a
+ * report gathered over HTTP and one gathered at a shell are the same report.
+ *
+ * Produced by core's `buildInfo()`. Which fields carry information depends on `channel`: a
+ * release knows its date and the commit it was built from, a source build knows its git
+ * position instead.
+ */
+export interface BuildInfo {
+  /** Dotted release number, from core's VERSION constant. Never null, never prefixed. */
+  version: string;
+  /**
+   * The one-line human identity, and the whole of `penguin version`'s output: `v0.2.3` for a
+   * release, and git's own description for a source build — `v0.2.3-14-g9e8f7d6-dirty` reads
+   * as fourteen commits past v0.2.3, at 9e8f7d6, with uncommitted changes. Always begins
+   * `v<version>` so any form is recognizable as a version.
+   */
+  describe: string;
+  /** `release` once the release workflow has stamped the build; `source` for every other build. */
+  channel: "release" | "source";
+  /** Release build date (UTC yyyy-mm-dd); null in a source build. */
+  buildDate: string | null;
+  /** Full commit sha this build came from; null when neither the stamp nor git supplied one. */
+  commit: string | null;
+  /** Branch checked out at build time; null for a release, and for a detached HEAD. */
+  branch: string | null;
+  /**
+   * Whether tracked files differed from the commit. Null means the question does not apply
+   * rather than "clean": a release stamps its constants into the tree before building, so
+   * cleanliness is not a fact about release artifacts.
+   */
+  dirty: boolean | null;
+  runtime: BuildRuntimeInfo;
+}
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded

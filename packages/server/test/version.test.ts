@@ -7,7 +7,7 @@
  * classifier and the "not launched via the CLI" early exit.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BUILD_DATE, VERSION } from "@prismshadow/penguin-core";
+import { VERSION, buildInfo } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse, UpdateRunResponse, VersionResponse } from "../src/api/types.js";
 import {
   FAILURE_TTL_MS,
@@ -51,18 +51,23 @@ describe("GET /api/version", () => {
     await t.cleanup();
   });
 
-  it("requires auth and reports core's version identity (dev build: buildDate null)", async () => {
+  it("requires auth and serves core's build identity unchanged", async () => {
     expect((await t.app.request("/api/version")).status).toBe(401);
 
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version");
     expect(res.status).toBe(200);
     const body = (await res.json()) as VersionResponse;
-    // Both values come from core's constants, which the release workflow STAMPS before it
-    // builds and tests (VERSION from the tag, BUILD_DATE with the run's UTC date). Asserting
-    // a literal null passed everywhere except the one job that matters — the npm publish —
-    // where it failed the release. Compare against the constants themselves.
-    expect(body).toEqual({ version: VERSION, buildDate: BUILD_DATE });
+    // Compared against the producer, never against literals. The release workflow STAMPS
+    // core's constants before it builds and tests, so a hardcoded null passes everywhere
+    // except the one job that matters — the npm publish — where it failed the release.
+    // This is also the contract that `penguin version --json` prints the same bytes: the
+    // route adds no field of its own and drops none.
+    expect(body).toEqual(buildInfo());
+    // Non-vacuous floor, in case buildInfo itself ever returns something degenerate.
+    expect(body.version).toBe(VERSION);
+    expect(body.describe.startsWith(`v${VERSION}`)).toBe(true);
+    expect(["release", "source"]).toContain(body.channel);
   });
 });
 

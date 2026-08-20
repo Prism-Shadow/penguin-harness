@@ -3,7 +3,7 @@ title: CLI Reference
 description: Complete reference for the penguin command, its subcommands, and options.
 ---
 
-The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the version. A `.env` file in the working directory is loaded automatically on startup.
+The CLI ships as the npm package `@prismshadow/penguin-cli`; the command is `penguin`. Running bare `penguin` prints help; `-v, --version` prints the running build's one-line identity, and `penguin version --json` prints the whole of it. A `.env` file in the working directory is loaded automatically on startup.
 
 ## Global conventions
 
@@ -164,6 +164,26 @@ penguin server reset-admin-password
 ```
 
 The built-in `admin` gets a fresh initial password of the usual `penguin-1234` form, printed in the framed notice — and re-printed on every server start until it is changed — and all of admin's sign-in sessions are cleared. Other accounts are reset by the admin on the user-management page; this command only touches `admin`. The data root is selected by `PENGUIN_HOME` as usual.
+
+## penguin version
+
+Reports which build is running. The version number alone cannot answer that — every build made from a checkout between two releases also calls itself `0.2.3` — so a release and a source build identify themselves differently.
+
+```bash
+penguin version          # v0.2.3            (a release)
+penguin version          # v0.2.3-14-g9e8f7d6-dirty   (built from a checkout)
+penguin version --json   # the full build info
+```
+
+| Option | Description |
+| --- | --- |
+| `--json` | Print the full build info instead of the one line: `{version, describe, channel, buildDate, commit, branch, dirty, runtime}` |
+
+The bare form prints one line, which for a source build is `git describe --tags --dirty` output — `v0.2.3-14-g9e8f7d6-dirty` reads as fourteen commits past `v0.2.3`, at `9e8f7d6`, with uncommitted changes. `-v, --version` prints that same line.
+
+The JSON is byte for byte the body of `GET /api/version`, so a bug report can be gathered from either side of the HTTP boundary. In it, `channel` is `release` or `source`; `buildDate` and `commit` are stamped into the build by the release workflow and are null for a source build; `branch` and `dirty` describe a source build's git position and are null for a release, where the question does not apply — the workflow stamps its constants into the tree before building.
+
+An installed penguin never shells out to git: it reads the stamped constants. Only an unstamped build asks git, and only about the checkout it was itself built from — running `penguin version` inside an unrelated repository reports the harness's revision, not that repository's.
 
 ## penguin update
 
