@@ -66,7 +66,7 @@ The built-in Skills, by group (the group manifest is `SKILL_GROUPS` in `packages
 | Software Development | `web-design` | Penguin visual language for generated web pages and app UIs: design tokens, components, light/dark themes and chat layouts |
 | | `software-engineering` | Complete software-engineering tasks: investigate and review code, implement fixes, features and refactors with minimal scope, validate changes, and report verified outcomes |
 | | `remote-claude-code` | Run Claude Code on a remote host over SSH — a persistent expect session, headless `-p` with the stdin fix, a tmux-driven interactive TUI (one capture-verified keystroke at a time, user messages relayed verbatim) and multi-turn continuity (not preinstalled: install from the library when needed) |
-| AI App Development | `penguin-sdk` | Build AI and RAG apps on the SDK: the createSession/run streaming loop plus a complete retrieval recipe with chunk-revealing citations |
+| AI App Development | `penguin-sdk` | Build agents, AI and RAG apps on the SDK: the createSession/run streaming loop, CLI-wrapped user tools, plus a complete retrieval recipe with chunk-revealing citations |
 | | `penguin-cli` | Manage model API keys, default models and per-agent Vault secrets with the penguin CLI |
 | | `agenthub-models` | Call model APIs through `@prismshadow/agenthub`: streaming text, image generation, speech synthesis and embeddings |
 | | `vllm` | Deploy and serve LLMs with vLLM behind an OpenAI-compatible endpoint, with tool calling enabled for agent workloads |
