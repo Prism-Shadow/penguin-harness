@@ -18,6 +18,7 @@ export const zh = {
     agents: "智能体",
     skills: "技能库",
     models: "模型库",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -798,6 +799,14 @@ export const zh = {
         ["{{SCHEDULE_LIST}}", "现有任务名列表（每任务一行「- 名称」；无任务时注入空清单说明）"],
       ] as ReadonlyArray<readonly [string, string]>,
     },
+  },
+
+  plugins: {
+    pageTitle: "插件市场",
+    pageDesc: "插件索引：部署可选装的插件包（在数据目录的 plugins.json 中配置）。",
+    empty: "暂无插件",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "写入 plugins.json 的包名",
   },
 
   skills: {

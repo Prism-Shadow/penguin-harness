@@ -16,6 +16,7 @@ export const en: Strings = {
     agents: "Agents",
     skills: "Skills",
     models: "Models",
+    plugins: "Plugins",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -834,6 +835,14 @@ export const en: Strings = {
         ],
       ] as ReadonlyArray<readonly [string, string]>,
     },
+  },
+
+  plugins: {
+    pageTitle: "Plugins",
+    pageDesc:
+      "Plugin index: packages a deployment can install (configured in plugins.json under the data root).",
+    empty: "No plugins yet",
+    specifierHint: "Package specifier for plugins.json",
   },
 
   skills: {

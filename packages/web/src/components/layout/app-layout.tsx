@@ -91,11 +91,12 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
   };
 
-  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav. */
+  /** Page entries (rail positions 3-9): same routes, same labels as the pinned nav. */
   const pages: ReadonlyArray<{ to: string; label: string; icon: string }> = [
     { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
     { to: "/skills", label: S.nav.skills, icon: NAV_ICONS.skills },
     { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
+    { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
     { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
     { to: "/traces", label: S.nav.traces, icon: NAV_ICONS.traces },
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
@@ -114,7 +115,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       </button>
       {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
           keeps only the expand control and the account avatar at fixed height, so a window too
-          short for eight icons scrolls them here instead of pushing them out of the rail and
+          short for nine icons scrolls them here instead of pushing them out of the rail and
           growing the document. Scrollbar hidden — at 48px wide it would cost a third of the
           rail's width. */}
       <nav className="no-scrollbar mt-1 flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
