@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#375](https://github.com/Prism-Shadow/penguin-harness/pull/375)
 
 [中文版](2026-08-20-memory-change-list.zh.md)
 
