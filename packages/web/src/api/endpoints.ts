@@ -90,6 +90,7 @@ import type {
   UpdateCheckResponse,
   UpdateRunResponse,
   UsageErrorsPage,
+  UsageGranularity,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
@@ -621,6 +622,8 @@ export const getUsage = (
     from?: string;
     to?: string;
     groupBy: UsageGroupBy;
+    /** Time-series precision for the response's `series`; the server defaults to day. */
+    granularity?: UsageGranularity;
     agentId?: string;
     /** Model filter is always a whole pair — both fields or neither; a model is never referenced by id alone. */
     provider?: string;
@@ -632,6 +635,7 @@ export const getUsage = (
       from: params.from,
       to: params.to,
       groupBy: params.groupBy,
+      granularity: params.granularity,
       agentId: params.agentId,
       provider: params.provider,
       modelId: params.modelId,

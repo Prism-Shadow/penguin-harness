@@ -1,20 +1,25 @@
 /**
  * Cost and usage center:
- * top filters for Agent / Model + a date range (controls have no external
- * title, the explanation is written into the dropdown options themselves);
+ * top filters for Agent / Model + a date-range preset (7/30/90 days or a
+ * custom pair of date inputs) + a time-series precision (hour / day / week /
+ * month, constrained by the range — controls have no external title, the
+ * explanation is written into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
- * four business charts arranged two-by-two, each taking half the width — a
- * row of compositional charts (each Agent's call count pie chart, each
- * Model's success rate progress bar), and a row of time series (daily Token
- * three-segment stacked bar, daily cost line + area): Token bar width is
- * fixed at 25px, and it scrolls horizontally within the card when 30 days
- * doesn't fit the half-width; below that is a full-width "errors" panel
- * (stats + a recent-errors table).
+ * four time-series charts arranged two-by-two, each taking half the width —
+ * requests per Agent (smooth lines), success rate (smooth line, 0–100%),
+ * Token buckets (stacked bars + a cache-hit-rate curve in front), and cost
+ * (smooth line + area). Charts always fit their card — nothing scrolls;
+ * below them is a full-width "errors" panel (stats + a paged errors table).
  * Currency follows the user's settings; a row with unconfigured pricing shows its cost as "—".
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
+import type {
+  ModelRefDto,
+  UsageBucket,
+  UsageGranularity,
+  UsageResponse,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -27,14 +32,24 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
-import type { TokenBucketKey } from "./chart-geom";
-import { AgentPieChart, SuccessBarChart, TokenBarChart, TokenLegend } from "./usage-charts";
+import {
+  CallsChart,
+  CallsLegend,
+  SuccessRateChart,
+  TokenBarChart,
+  TokenLegend,
+  type TokenLegendKey,
+} from "./usage-charts";
+import {
+  callsSeries,
+  coerceGranularity,
+  granularityOptions,
+  isoDate,
+  presetRange,
+  rangeDays,
+  type RangePreset,
+} from "./usage-controls";
 import { ErrorsPanel } from "./errors-panel";
-
-function isoDate(d: Date): string {
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 /** A summary card's stat row: name on the left, value on the right — each item on its own row, so a narrow card no longer crams them into one wrapping line. */
 function SummaryRow({
@@ -133,17 +148,25 @@ export function UsagePage() {
   useEffect(() => {
     setAgentFilter(paramAgentId ?? "");
   }, [paramAgentId]);
-  const [from, setFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return isoDate(d);
-  });
+  // Date range: a preset (7/30/90 days) or a custom from/to pair, plus the
+  // time-series precision. A range change keeps the precision when the new
+  // range still offers it, otherwise snaps to that range's default.
+  const [preset, setPreset] = useState<RangePreset>("30d");
+  const [from, setFrom] = useState(() => presetRange("30d", new Date()).from);
   const [to, setTo] = useState(() => isoDate(new Date()));
+  const [granularity, setGranularity] = useState<UsageGranularity>("day");
+  const applyRange = (nextPreset: RangePreset, nextFrom: string, nextTo: string) => {
+    setPreset(nextPreset);
+    setFrom(nextFrom);
+    setTo(nextTo);
+    setGranularity((g) => coerceGranularity(g, rangeDays(nextFrom, nextTo)));
+  };
   const [data, setData] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The bucket currently hovered in the legend: the legend lives in the card
-  // header (ChartCard's extra) while the bars live inside the card, so this state is lifted to this level.
-  const [tokenBucket, setTokenBucket] = useState<TokenBucketKey | null>(null);
+  // The legend items currently hovered: the legends live in the card headers
+  // (ChartCard's extra) while the marks live inside the cards, so this state is lifted to this level.
+  const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
+  const [callsHover, setCallsHover] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -154,6 +177,7 @@ export function UsagePage() {
         to,
         // The detail table has been removed, superseded by the charts above; groupBy is still a required query parameter, fixed to group by date.
         groupBy: "date",
+        granularity,
         ...(agentFilter ? { agentId: agentFilter } : {}),
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
@@ -161,7 +185,7 @@ export function UsagePage() {
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
+  }, [projectId, from, to, granularity, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
   useEffect(() => {
     setData(null);
@@ -193,6 +217,18 @@ export function UsagePage() {
     (summary?.today.hasUncosted ?? false) ||
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
+
+  // Precision choices follow the selected range; the calls chart's series are
+  // folded once here (top Agents + an "other" tail) and shared by the chart and
+  // its legend in the card header.
+  const gOptions = granularityOptions(rangeDays(from, to));
+  const calls = data ? callsSeries(data.byAgentSeries, S.usage.callsOther) : [];
+  const granularityLabel = (g: UsageGranularity): string => {
+    if (g === "hour") return S.usage.granularityHour;
+    if (g === "day") return S.usage.granularityDay;
+    if (g === "week") return S.usage.granularityWeek;
+    return S.usage.granularityMonth;
+  };
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
@@ -236,25 +272,63 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: a dash between the two inputs stands in for a "from/to" label */}
-            <div className="flex items-center gap-1.5">
-              <Input
+            {/* Date range: quick presets, with "custom" revealing the two date inputs */}
+            <div className="w-28">
+              <Select
                 size="sm"
-                type="date"
-                aria-label={S.usage.from}
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-              <span className="shrink-0 text-gray-400" aria-hidden>
-                –
-              </span>
-              <Input
+                value={preset}
+                aria-label={S.usage.rangeLabel}
+                onChange={(e) => {
+                  const next = e.target.value as RangePreset;
+                  if (next === "custom") applyRange(next, from, to);
+                  else {
+                    const r = presetRange(next, new Date());
+                    applyRange(next, r.from, r.to);
+                  }
+                }}
+              >
+                <option value="7d">{S.usage.range7d}</option>
+                <option value="30d">{S.usage.range30d}</option>
+                <option value="90d">{S.usage.range90d}</option>
+                <option value="custom">{S.usage.rangeCustom}</option>
+              </Select>
+            </div>
+            {preset === "custom" && (
+              /* A dash between the two inputs stands in for a "from/to" label */
+              <div className="flex items-center gap-1.5">
+                <Input
+                  size="sm"
+                  type="date"
+                  aria-label={S.usage.from}
+                  value={from}
+                  onChange={(e) => applyRange("custom", e.target.value, to)}
+                />
+                <span className="shrink-0 text-gray-400" aria-hidden>
+                  –
+                </span>
+                <Input
+                  size="sm"
+                  type="date"
+                  aria-label={S.usage.to}
+                  value={to}
+                  onChange={(e) => applyRange("custom", from, e.target.value)}
+                />
+              </div>
+            )}
+            {/* Time-series precision, constrained by the range (see granularityOptions) */}
+            <div className="w-20">
+              <Select
                 size="sm"
-                type="date"
-                aria-label={S.usage.to}
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              />
+                value={granularity}
+                aria-label={S.usage.granularityLabel}
+                onChange={(e) => setGranularity(e.target.value as UsageGranularity)}
+              >
+                {gOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {granularityLabel(g)}
+                  </option>
+                ))}
+              </Select>
             </div>
           </div>
         </div>
@@ -274,26 +348,38 @@ export function UsagePage() {
           </div>
         )}
 
-        {/* Four business charts two-by-two, each taking half width: a row of
-            compositional charts (pie chart / success rate), a row of time
-            series (daily Token / daily cost). Token bar width fixed at 25px, scrolls horizontally within the card when 30 days doesn't fit the half-width */}
+        {/* Four time-series charts two-by-two, each taking half width, all over
+            the shared range + precision: requests per Agent / success rate /
+            Token buckets + cache hit rate / cost. Charts always fit their card — nothing scrolls. */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <ChartCard title={S.usage.chartAgentCalls}>
-              <AgentPieChart data={data.byAgent} />
+            {/* The legends live in the card headers, the marks inside the cards: the hover-linked state is lifted to this level to be shared */}
+            <ChartCard
+              title={S.usage.chartAgentCalls}
+              extra={<CallsLegend calls={calls} active={callsHover} onHover={setCallsHover} />}
+            >
+              <CallsChart
+                series={data.series}
+                calls={calls}
+                granularity={data.granularity}
+                legend={callsHover}
+              />
             </ChartCard>
             <ChartCard title={S.usage.chartSuccessRate}>
-              <SuccessBarChart data={data.success} />
+              <SuccessRateChart series={data.series} granularity={data.granularity} />
             </ChartCard>
-            {/* The legend lives in the card header, the bars live inside the card: the hover-linked bucket state is lifted to this level to be shared */}
             <ChartCard
               title={S.usage.chartTokenTrend}
               extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
             >
-              <TokenBarChart trend={data.trend} legend={tokenBucket} />
+              <TokenBarChart
+                series={data.series}
+                granularity={data.granularity}
+                legend={tokenBucket}
+              />
             </ChartCard>
             <ChartCard title={S.usage.chartCostTrend}>
-              <TrendChart points={data.trend} currency={currency} />
+              <TrendChart series={data.series} granularity={data.granularity} currency={currency} />
             </ChartCard>
           </div>
         ) : (

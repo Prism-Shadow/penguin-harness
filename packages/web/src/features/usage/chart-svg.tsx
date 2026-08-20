@@ -36,7 +36,6 @@ import {
   bubblePosition,
   CHART_H,
   PAD_L,
-  PAD_R,
   PAD_T,
   sparseLabelIdx,
   type ChartGeom,
@@ -76,7 +75,9 @@ export function ChartFrame({
   bubble,
   hitLayer,
   labels,
+  fmtX,
   yTicks,
+  rightAxis,
   hoverLine = true,
   scrollToEnd = false,
   children,
@@ -96,8 +97,12 @@ export function ChartFrame({
   hitLayer?: ReactNode;
   /** Indices for x-axis labels (omit for the default first/middle/last sparse labeling): the bar chart's cells are each wide, so it can label more via autoLabelIdx. */
   labels?: number[];
+  /** x-axis label formatting. Defaults to dropping a date's year (`slice(5)` → `mm-dd`); series charts pass their own granularity-aware short form. */
+  fmtX?: (d: string) => string;
   /** Explicit y-axis ticks. Omit to divide the geom's min..max range into four equal intervals. */
   yTicks?: number[];
+  /** Right-hand axis for an overlay drawn on its own scale (the Token chart's cache-hit-rate curve): tick values, their y mapping, and label formatting. Give the geom PAD_R_AXIS so the labels have room. */
+  rightAxis?: { y: (v: number) => number; ticks: number[]; fmt: (v: number) => string };
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
   /** Scroll to the far right by default when the canvas is wider than the container: the daily chart shows the most recent days first (scroll left for earlier ones). */
@@ -197,7 +202,7 @@ export function ChartFrame({
           <g key={i}>
             <line
               x1={PAD_L}
-              x2={w - PAD_R}
+              x2={w - geom.padR}
               y1={y(v)}
               y2={y(v)}
               className="stroke-gray-200 dark:stroke-gray-800"
@@ -213,6 +218,20 @@ export function ChartFrame({
               {fmtY(v)}
             </text>
           </g>
+        ))}
+
+        {/* Right-hand axis ticks (an overlay's own scale, e.g. a percentage) */}
+        {rightAxis?.ticks.map((v) => (
+          <text
+            key={`r${v}`}
+            x={w - geom.padR + 6}
+            y={rightAxis.y(v) + 3}
+            textAnchor="start"
+            className="fill-gray-400 dark:fill-gray-500"
+            fontSize={9}
+          >
+            {rightAxis.fmt(v)}
+          </text>
         ))}
 
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
@@ -243,7 +262,7 @@ export function ChartFrame({
               className="fill-gray-400 dark:fill-gray-500"
               fontSize={9}
             >
-              {d.slice(5)}
+              {(fmtX ?? ((v: string) => v.slice(5)))(d)}
             </text>
           );
         })}

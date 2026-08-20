@@ -1,17 +1,20 @@
 /**
  * Usage statistics routes:
- * GET /api/projects/:p/usage?from&to&groupBy&agentId&provider&modelId
- * (model filter is paired: provider and modelId are given together);
+ * GET /api/projects/:p/usage?from&to&groupBy&granularity&agentId&provider&modelId
+ * (model filter is paired: provider and modelId are given together; granularity
+ * sets the time-series precision, defaulting to day);
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId — one page of the error
  * detail table, for paging back past the first page the dashboard already returns.
  */
 import { Hono } from "hono";
-import type { UsageGroupBy } from "../../api/types.js";
+import type { UsageGranularity, UsageGroupBy } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, optionalDateParam, paginationQuery, requireValidId } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
+
+const GRANULARITIES: readonly UsageGranularity[] = ["hour", "day", "week", "month"];
 
 export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -24,6 +27,11 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!(GROUP_BYS as readonly string[]).includes(groupByRaw)) {
       throw badRequest(`groupBy must be one of ${GROUP_BYS.join(" / ")}.`);
     }
+    const granularityRaw = c.req.query("granularity") ?? "day";
+    if (!(GRANULARITIES as readonly string[]).includes(granularityRaw)) {
+      throw badRequest(`granularity must be one of ${GRANULARITIES.join(" / ")}.`);
+    }
+    const granularity = granularityRaw as UsageGranularity;
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
     const agentId = c.req.query("agentId");
@@ -32,6 +40,7 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(
       await deps.usageService.query(projectId, {
         groupBy: groupByRaw as UsageGroupBy,
+        granularity,
         // Unattributed errors (login failures, process crashes, etc. with no Project
         // context) are visible only to admins: requireProjectAccess only guarantees
         // "is a member of this Project" — a regular member seeing another tenant's errors

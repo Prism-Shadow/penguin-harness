@@ -70,6 +70,38 @@ export interface UsageGroupModelSums extends UsageModelSums {
   key: string;
 }
 
+/** Time-series bucket x Model sums, with the success-rate counts folded in. */
+export interface UsageSeriesModelSums extends UsageGroupModelSums {
+  /** Successful requests in the bucket. */
+  completed: number;
+  /** Success-rate denominator: all requests minus aborted (same convention as statusByModel). */
+  denominator: number;
+}
+
+/** Requests per time bucket per Agent (the calls chart's series data). */
+export interface UsageAgentBucketCount {
+  key: string;
+  agentId: string;
+  requests: number;
+}
+
+/** Time-series precision (mirrors the API's UsageGranularity). */
+export type UsageSeriesGranularity = "hour" | "day" | "week" | "month";
+
+/**
+ * Bucket-key SQL per granularity. Keys must agree byte-for-byte with
+ * internal/dates.ts's enumerateBuckets, which zero-fills the same series:
+ * hour buckets come from `ts` converted to the server's local clock (the same
+ * timezone `date` was recorded in), the rest derive from the `date` column —
+ * `date(date, '-6 days', 'weekday 1')` is the ISO week's Monday.
+ */
+const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
+  hour: `strftime('%Y-%m-%dT%H:00', ts, 'localtime')`,
+  day: "date",
+  week: `date(date, '-6 days', 'weekday 1')`,
+  month: "substr(date, 1, 7)",
+};
+
 /** groupBy dimension -> column name allowlist (prevents injection; only these four columns can be group keys). */
 const GROUP_COLUMNS: Record<UsageGroupBy, string> = {
   date: "date",
@@ -183,6 +215,58 @@ export class UsageRepo {
       )
       .all(params);
     return rows.map((r) => ({ key: r.key as string, ...toSums(r) }));
+  }
+
+  /**
+   * Time-series sums (bucket key x paired reference breakdown) with per-bucket
+   * success-rate counts riding along: powers the cost center's time-series charts
+   * (calls / success rate / Token / cost) at the requested precision. The
+   * denominator excludes aborted, same as statusByModel.
+   */
+  seriesByModel(
+    projectId: string,
+    granularity: UsageSeriesGranularity,
+    f: UsageFilter = {},
+  ): UsageSeriesModelSums[] {
+    const expr = BUCKET_EXPRS[granularity];
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT ${expr} AS key, provider, model_id, ${SUM_COLUMNS},
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
+         FROM usage_records WHERE ${where}
+         GROUP BY key, provider, model_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({
+      key: r.key as string,
+      ...toSums(r),
+      completed: r.completed as number,
+      denominator: r.denominator as number,
+    }));
+  }
+
+  /** Requests per time bucket per Agent (the calls chart's per-Agent series). */
+  agentSeries(
+    projectId: string,
+    granularity: UsageSeriesGranularity,
+    f: UsageFilter = {},
+  ): UsageAgentBucketCount[] {
+    const expr = BUCKET_EXPRS[granularity];
+    const { where, params } = this.conds(projectId, f);
+    const rows = this.db
+      .prepare(
+        `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests
+         FROM usage_records WHERE ${where}
+         GROUP BY key, agent_id`,
+      )
+      .all(params);
+    return rows.map((r) => ({
+      key: r.key as string,
+      agentId: r.agent_id as string,
+      requests: r.requests as number,
+    }));
   }
 
   /**

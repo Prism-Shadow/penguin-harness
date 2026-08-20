@@ -109,10 +109,10 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 
 ## Usage (/usage)
 
-- Filters: Agent, model, date range;
+- Filters: Agent, model, date range (last 7 / 30 / 90 days presets or a custom pair) and time-series precision (hourly / daily / weekly / monthly; the options follow the range);
 - Summary cards: today / last 7 days / cumulative;
-- Charts: per-Agent share, per-model success rates, daily Token and cost trends;
-- A server error panel summarizing recent server-side error records.
+- Charts: all time series over the selected range and precision — calls per Agent (smooth lines, one color per Agent), request success rate (a 0–100% smooth line), Token trend (three-segment stacked bars with the cache-hit-rate curve in front), and cost trend (smooth line + area); charts fit their card and never scroll;
+- A server error panel: summary stats plus an errors table paged at a fixed page size (no scrolling).
 
 ## Trace Browser (/traces)
 

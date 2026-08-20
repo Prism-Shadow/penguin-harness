@@ -277,6 +277,161 @@ describe("usage-service (cost computed on the fly)", () => {
   });
 });
 
+describe("usage-service series (zero-filled time-series buckets)", () => {
+  let db: DatabaseSync;
+  let repo: UsageRepo;
+  let service: (now: Date) => UsageService;
+  let pricing: Record<string, PricingRates | undefined>;
+  const lookup = async (_p: string, _provider: string, modelId: string) => pricing[modelId];
+
+  beforeEach(() => {
+    db = openDatabase(":memory:");
+    repo = new UsageRepo(db);
+    const errors = new ErrorsRepo(db);
+    service = (now: Date) => new UsageService(repo, errors, lookup, () => now);
+    pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
+  });
+  afterEach(() => db.close());
+
+  const ROW_COST = (10 * 0.3 + 1 * 3.75 + 5 * 15) / 1e6;
+
+  function insert(date: string, opts: Partial<Parameters<UsageRepo["insert"]>[0]> = {}): void {
+    repo.insert({
+      ts: `${date}T00:00:00.000Z`,
+      date,
+      projectId: "p1",
+      agentId: "a1",
+      sessionId: "s1",
+      originSessionId: null,
+      modelId: "m1",
+      provider: "custom",
+      cacheRead: 10,
+      cacheWrite: 1,
+      output: 5,
+      total: 100,
+      ...opts,
+    });
+  }
+
+  it("daily series: every bucket in the range appears exactly once, gaps as zeros; sums, cost, and success counts ride per bucket", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-02");
+    insert("2026-07-02", { status: "failed", total: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
+    insert("2026-07-02", { status: "aborted", total: 0, cacheRead: 0, cacheWrite: 0, output: 0 });
+    insert("2026-07-04");
+    const res = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-07-01",
+      to: "2026-07-05",
+    });
+    expect(res.granularity).toBe("day");
+    expect(res.series.map((p) => p.bucket)).toEqual([
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+      "2026-07-04",
+      "2026-07-05",
+    ]);
+    const d2 = res.series[1]!;
+    expect(d2).toMatchObject({ total: 100, requests: 3, completed: 1, denominator: 2 });
+    expect(d2.cost).toBeCloseTo(ROW_COST, 12);
+    // Zero-filled gap: nothing happened, but the bucket exists (a line must not bridge it silently).
+    expect(res.series[2]).toMatchObject({
+      total: 0,
+      requests: 0,
+      completed: 0,
+      denominator: 0,
+      cost: null,
+    });
+  });
+
+  it("weekly buckets key on the ISO week's Monday and aggregate everything in the week; monthly on yyyy-mm", async () => {
+    const now = new Date("2026-07-20T10:00:00");
+    insert("2026-07-07"); // Tuesday → week of Monday 2026-07-06
+    insert("2026-07-12"); // Sunday  → same week
+    insert("2026-07-13"); // Monday  → next week
+    const weekly = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-07-06",
+      to: "2026-07-19",
+      granularity: "week",
+    });
+    expect(weekly.granularity).toBe("week");
+    expect(weekly.series.map((p) => p.bucket)).toEqual(["2026-07-06", "2026-07-13"]);
+    expect(weekly.series[0]!.requests).toBe(2);
+    expect(weekly.series[1]!.requests).toBe(1);
+
+    const monthly = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-06-15",
+      to: "2026-07-19",
+      granularity: "month",
+    });
+    expect(monthly.series.map((p) => p.bucket)).toEqual(["2026-06", "2026-07"]);
+    expect(monthly.series[1]!.requests).toBe(3);
+  });
+
+  it("hourly buckets follow the server's local clock (the same timezone the date column records)", async () => {
+    // Build ts from a local wall-clock time so the expectation holds in any test timezone.
+    const at = (h: number, m: number) => new Date(2026, 6, 6, h, m);
+    const dateStr = formatLocalDate(at(9, 0));
+    insert(dateStr, { ts: at(9, 15).toISOString() });
+    insert(dateStr, { ts: at(9, 45).toISOString() });
+    insert(dateStr, { ts: at(11, 5).toISOString() });
+    const res = await service(at(12, 0)).query("p1", {
+      groupBy: "date",
+      from: dateStr,
+      to: dateStr,
+      granularity: "hour",
+    });
+    expect(res.series).toHaveLength(24);
+    const byBucket = new Map(res.series.map((p) => [p.bucket, p.requests]));
+    expect(byBucket.get(`${dateStr}T09:00`)).toBe(2);
+    expect(byBucket.get(`${dateStr}T10:00`)).toBe(0);
+    expect(byBucket.get(`${dateStr}T11:00`)).toBe(1);
+  });
+
+  it("byAgentSeries aligns index-for-index with series, sorts by total descending, and ignores the agent filter (all agents stay visible)", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-01", { agentId: "small" });
+    insert("2026-07-02", { agentId: "big" });
+    insert("2026-07-02", { agentId: "big" });
+    const res = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-07-01",
+      to: "2026-07-03",
+      agentId: "small",
+    });
+    expect(res.byAgentSeries.map((s) => s.agentId)).toEqual(["big", "small"]);
+    expect(res.byAgentSeries[0]!.requests).toEqual([0, 2, 0]);
+    expect(res.byAgentSeries[1]!.requests).toEqual([1, 0, 0]);
+    // The main series does honor the agent filter, like every other aggregate.
+    expect(res.series.map((p) => p.requests)).toEqual([1, 0, 0]);
+  });
+
+  it("defaults: no from/to serves the last 30 days; no granularity means day", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-06");
+    const res = await service(now).query("p1", { groupBy: "date" });
+    expect(res.granularity).toBe("day");
+    expect(res.series).toHaveLength(30);
+    expect(res.series[0]!.bucket).toBe("2026-06-07");
+    expect(res.series.at(-1)!).toMatchObject({ bucket: "2026-07-06", requests: 1 });
+  });
+
+  it("rejects a range × precision that would materialize an oversized series", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    await expect(
+      service(now).query("p1", {
+        groupBy: "date",
+        from: "2025-07-01",
+        to: "2026-07-01",
+        granularity: "hour",
+      }),
+    ).rejects.toThrow(/granularity/);
+  });
+});
+
 describe("usage-service.queryErrors (error table paging)", () => {
   let db: DatabaseSync;
   let errors: ErrorsRepo;

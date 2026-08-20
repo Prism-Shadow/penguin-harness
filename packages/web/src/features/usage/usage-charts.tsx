@@ -1,43 +1,49 @@
 /**
- * Cost center stat charts: hand-drawn SVG
- * / flex, no chart library. The form follows the nature of the data —
- * - AgentPieChart: each Agent's call count → a pie chart (compositional
- *   share; each slice's angle is that Agent's share of total calls);
- * - SuccessBarChart: each Model's success rate → a horizontal progress bar
- *   with a 100% track (shows how far from perfect at a glance), filled with
- *   a single uniform color (the bar's length alone conveys magnitude, not a three-color threshold);
- * - TokenBarChart: daily Token buckets → a three-segment stacked bar (one
- *   bar per day, bottom-to-top output → cacheWrite → cacheRead, same blue
- *   family, darkest at the bottom and lightest at the top; bar width fixed
- *   at 25 real pixels, spacing ≥ bar width, scrolls horizontally when it doesn't fit the card).
- * Daily cost reuses TrendChart (line + area fill).
+ * Cost center stat charts: hand-drawn SVG / flex, no chart library. Every
+ * chart is a time series over the page's shared date range and precision —
+ * - CallsChart: requests per bucket as smooth lines, one color per Agent (top
+ *   Agents keep their own CVD-checked hue, the tail folds into a neutral
+ *   "other" line — colors are assigned in fixed order, never cycled);
+ * - SuccessRateChart: per-bucket success rate as a single smooth line on a
+ *   fixed 0–100% scale (smoothing is monotone cubic, so the curve never arcs
+ *   above 100%);
+ * - TokenBarChart: per-bucket Token buckets as a three-segment stacked bar
+ *   (bottom-to-top output → cacheWrite → cacheRead, same blue family, darkest
+ *   at the bottom), with the cache hit rate drawn as a smooth curve **in front
+ *   of the bars** on its own right-hand 0–100% axis. Bars always fit the card
+ *   (fitBarWidth) — the charts never scroll.
+ * Cost reuses TrendChart (smooth line + area fill).
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
- * out the rest. Pie slices and the legend are linked both ways; the Token
- * bar is **precise down to the segment** — hovering a given day's given
- * bucket lights up only that segment, and the bubble reports only that segment's value (not the whole column's total).
+ * out the rest. The Token bar is **precise down to the segment** — hovering a
+ * given bucket's given segment lights up only that segment, and the bubble
+ * reports only that segment's value (not the whole column's total).
  */
 import { useState } from "react";
-import type {
-  UsageAgentCount,
-  UsageSuccessRate,
-  UsageTrendPoint,
-} from "@prismshadow/penguin-server/api";
-import { catalogEntryFor, providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { cacheHitRate, formatPercent, humanizeTokens } from "../../lib/format";
 import { TOKEN_COLORS } from "../../lib/token-colors";
-import { categoryColor } from "../../lib/category-colors";
+import { seriesColor } from "../../lib/category-colors";
 import {
   makeGeom,
+  makeRangeGeom,
   autoLabelIdx,
   barSegments,
-  tokenBarLayout,
-  pieSlices,
+  fitBarWidth,
+  monotonePath,
   successRate,
+  PAD_R_AXIS,
   type TokenBucketKey,
 } from "./chart-geom";
 import { ChartFrame, useChartWidth } from "./chart-svg";
+import {
+  bucketAxisLabel,
+  bucketFullLabel,
+  hitRateValues,
+  successRateValues,
+  type CallsSeries,
+} from "./usage-controls";
 
 /** Empty state for a chart card (defaults to "no usage records yet"; the errors chart passes its own copy). */
 export function Empty({ text }: { text?: string }) {
@@ -51,237 +57,269 @@ function bucketLabel(key: TokenBucketKey): string {
   return S.usage.colOutput;
 }
 
-/** Highlight = fade out the rest. */
-const DIM = "opacity-25";
+/** The neutral color of the folded "other" series (a line series color, not a category hue). */
+const OTHER_SERIES = {
+  text: "text-gray-400 dark:text-gray-500",
+  swatch: "bg-gray-400 dark:bg-gray-500",
+};
 
-// —— Each Agent's call count: pie chart ——
+/** Text/swatch classes for the i-th calls series (the folded tail is neutral). */
+function callsColor(s: CallsSeries, i: number): { text: string; swatch: string } {
+  return s.other ? OTHER_SERIES : seriesColor(i);
+}
 
-/** Pie chart canvas (square viewBox) and radius: leave a 5px margin so slice edges don't get clipped by the viewBox. */
-const PIE_SIZE = 160;
-const PIE_R = 75;
+// —— Requests per bucket: smooth lines per Agent ——
 
 /**
- * Each Agent's call count → a pie chart: each slice's angle = that Agent's
- * share of total calls, laid out clockwise from 12 o'clock sorted by
- * requests descending (re-sorted here defensively). Slices and the legend
- * on the right link both ways: hovering either side lights up the other and fades out the rest.
- * When a single Agent holds 100%, pieSlices degrades to a full circle (see chart-geom).
+ * Requests per bucket → smooth lines, one per Agent (pre-folded by
+ * usage-controls' callsSeries; colors in fixed order). The legend lives in the
+ * card header (see CallsLegend), linked through lifted hover state: hovering a
+ * legend item fades out every other line.
  */
-export function AgentPieChart({ data }: { data: UsageAgentCount[] }) {
+export function CallsChart({
+  series,
+  calls,
+  granularity,
+  legend,
+}: {
+  series: UsageSeriesPoint[];
+  calls: CallsSeries[];
+  granularity: UsageGranularity;
+  /** Index of the legend item currently hovered (fades the other lines); null = none. */
+  legend?: number | null;
+}) {
   const [hover, setHover] = useState<number | null>(null);
-  const total = data.reduce((s, d) => s + d.requests, 0);
-  if (data.length === 0 || total <= 0) return <Empty />;
+  const [ref, width] = useChartWidth();
+  const total = series.reduce((s, p) => s + p.requests, 0);
+  if (series.length === 0 || calls.length === 0 || total === 0) return <Empty />;
 
-  const rows = [...data].sort((a, b) => b.requests - a.requests);
-  const slices = pieSlices(
-    rows.map((d) => d.requests),
-    PIE_SIZE / 2,
-    PIE_SIZE / 2,
-    PIE_R,
-  );
-  const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
-  const dim = (i: number) => (hover !== null && hover !== i ? DIM : "");
+  const max = Math.max(1, ...calls.flatMap((c) => c.values));
+  const geom = makeGeom(series.length, max, width);
+  const buckets = series.map((p) => p.bucket);
 
   return (
-    <div className="flex items-center gap-3" onMouseLeave={() => setHover(null)}>
-      <svg
-        viewBox={`0 0 ${PIE_SIZE} ${PIE_SIZE}`}
-        className="h-40 w-40 shrink-0"
-        role="img"
-        aria-label={S.usage.chartAgentCalls}
-      >
-        {slices.map((s) => {
-          const d = rows[s.index]!;
-          return (
-            <path
-              key={d.agentId}
-              d={s.path}
-              onMouseEnter={() => setHover(s.index)}
-              className={`cursor-pointer ${categoryColor(s.index).fill} transition-opacity duration-150 ${dim(s.index)}`}
+    <div ref={ref}>
+      {width > 0 && (
+        <ChartFrame
+          geom={geom}
+          fmtY={(v) => String(Math.round(v))}
+          dates={buckets}
+          fmtX={(b) => bucketAxisLabel(granularity, b)}
+          hover={hover}
+          onHover={setHover}
+          bubble={(i) => (
+            <>
+              <p className="text-gray-400">{bucketFullLabel(granularity, buckets[i]!)}</p>
+              {calls.map((c, si) => (
+                <p key={c.label} className="flex items-center gap-1.5 font-mono">
+                  <span
+                    className={`inline-block h-2 w-2 shrink-0 rounded-sm ${callsColor(c, si).swatch}`}
+                  />
+                  <span className="max-w-40 truncate">{c.label}</span>
+                  <span className="ml-auto pl-2 tabular-nums">{c.values[i] ?? 0}</span>
+                </p>
+              ))}
+            </>
+          )}
+        >
+          {calls.map((c, si) => (
+            <g
+              key={c.label}
+              className={`${callsColor(c, si).text} transition-opacity duration-150`}
+              opacity={legend != null && legend !== si ? 0.2 : 1}
             >
-              <title>{`${d.agentId} · ${d.requests} ${S.usage.requests} · ${pct(d.requests)}`}</title>
-            </path>
-          );
-        })}
-      </svg>
-
-      {/* Legend: name + count + share (hover links to the pie slice; a long agentId truncates, with the title giving the full name and total Token count) */}
-      <ul className="flex max-h-40 min-w-0 flex-1 flex-col gap-1 overflow-y-auto">
-        {rows.map((d, i) => (
-          <li
-            key={d.agentId}
-            onMouseEnter={() => setHover(d.requests > 0 ? i : null)}
-            title={`${d.agentId} · ${d.requests} ${S.usage.requests} · ${humanizeTokens(d.total)}`}
-            className={`flex cursor-pointer items-center gap-1.5 text-[10px] transition-opacity duration-150 ${dim(i)}`}
-          >
-            <span
-              className={`inline-block h-2 w-2 shrink-0 rounded-sm ${categoryColor(i).swatch}`}
-            />
-            <span className="min-w-0 flex-1 truncate font-mono text-gray-500 dark:text-gray-400">
-              {d.agentId}
-            </span>
-            <span className="shrink-0 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-              {d.requests}
-            </span>
-            <span className="w-8 shrink-0 text-right font-mono tabular-nums text-gray-400 dark:text-gray-500">
-              {pct(d.requests)}
-            </span>
-          </li>
-        ))}
-      </ul>
+              <path
+                d={monotonePath(geom, c.values)}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                opacity={hover !== null ? 0.5 : 1}
+              />
+              {hover !== null && (
+                <circle
+                  cx={geom.x(hover)}
+                  cy={geom.y(c.values[hover] ?? 0)}
+                  r={3}
+                  className="fill-current"
+                />
+              )}
+            </g>
+          ))}
+        </ChartFrame>
+      )}
     </div>
   );
 }
 
-// —— Each Model's success rate: horizontal progress bar ——
-
-/** A progress bar row's shell: label on the left + track/fill in the middle + value on the right. Fades when hovering a different row. */
-function BarRow({
-  dimmed,
-  onEnter,
-  title,
-  label,
-  value,
-  children,
+/** Calls chart legend (one item per drawn series): hovering an item highlights its line and fades out the rest. */
+export function CallsLegend({
+  calls,
+  active,
+  onHover,
 }: {
-  dimmed: boolean;
-  onEnter: () => void;
-  title: string;
-  label: string;
-  value: string;
-  children: React.ReactNode;
+  calls: CallsSeries[];
+  active?: number | null;
+  onHover?: (i: number | null) => void;
 }) {
   return (
-    <div
-      onMouseEnter={onEnter}
-      className={`flex cursor-pointer items-center gap-2 transition-opacity duration-150 ${dimmed ? DIM : ""}`}
-      title={title}
-    >
-      <span className="w-24 shrink-0 truncate font-mono text-[10px] text-gray-500 dark:text-gray-400">
-        {label}
-      </span>
-      {children}
-      <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-gray-500 dark:text-gray-400">
-        {value}
-      </span>
+    <div className="flex max-w-72 flex-wrap justify-end gap-x-3 gap-y-1">
+      {calls.map((c, i) => (
+        <button
+          key={c.label}
+          type="button"
+          onMouseEnter={() => onHover?.(i)}
+          onMouseLeave={() => onHover?.(null)}
+          title={c.label}
+          className={`flex min-w-0 items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${
+            active != null && active !== i ? "opacity-30" : ""
+          }`}
+        >
+          <span className={`inline-block h-2 w-3 shrink-0 rounded-sm ${callsColor(c, i).swatch}`} />
+          <span className="max-w-28 truncate font-mono">{c.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-/** Row label: falls back from the catalog display name to the upstream id ((provider, modelId) paired lookup against the catalog). */
-function successLabel(d: UsageSuccessRate): string {
-  return catalogEntryFor(d.provider, d.modelId)?.displayName ?? d.modelId;
-}
+// —— Success rate per bucket: a single smooth line on a fixed 0–100% scale ——
 
 /**
- * Hover detail: the model's paired reference (upstream id + provider name) +
- * `completed/denominator` + a failure breakdown + excluded aborted runs. The
- * denominator already excludes aborted (the user clicking "stop" isn't a
- * model failure), so aborted is listed as its own item and labeled "not counted".
+ * Per-bucket success rate → one smooth line on a fixed 0–100% scale. An idle
+ * bucket counts as 100% (the site-wide "no requests = nothing failed"
+ * convention — see successRate), which also keeps the line continuous. The
+ * bubble reports the rate plus the completed/denominator counts behind it.
  */
-function successTitle(d: UsageSuccessRate): string {
-  const parts = [`${d.completed}/${d.total}`];
-  if (d.failed > 0) parts.push(`failed ${d.failed}`);
-  if (d.timeout > 0) parts.push(`timeout ${d.timeout}`);
-  if (d.malformed > 0) parts.push(`malformed ${d.malformed}`);
-  if (d.aborted > 0) parts.push(`${S.usage.successAborted} ${d.aborted}`);
-  const provider = providerInfo(d.provider)?.label ?? d.provider;
-  return `${d.modelId} · ${provider} · ${parts.join(" · ")}`;
-}
-
-/**
- * Each Model's success rate → a horizontal progress bar: the 100% track
- * (light gray) makes "how far from perfect" obvious at a glance, with the
- * percentage shown on the right. Filled with a **single uniform color**
- * (sky, the same primary color family as the Token chart): the bar's length
- * alone already conveys magnitude — a three-color threshold (green/yellow/red) would just re-encode the same information and add two more colors to the page unrelated to any site-wide meaning.
- */
-export function SuccessBarChart({ data }: { data: UsageSuccessRate[] }) {
+export function SuccessRateChart({
+  series,
+  granularity,
+}: {
+  series: UsageSeriesPoint[];
+  granularity: UsageGranularity;
+}) {
   const [hover, setHover] = useState<number | null>(null);
-  if (data.length === 0) return <Empty />;
+  const [ref, width] = useChartWidth();
+  if (series.length === 0 || series.every((p) => p.denominator === 0)) return <Empty />;
+
+  const values = successRateValues(series);
+  const geom = makeRangeGeom(series.length, 0, 100, width);
+  const buckets = series.map((p) => p.bucket);
+
   return (
-    <div className="flex flex-col gap-1.5" onMouseLeave={() => setHover(null)}>
-      {data.map((d, i) => {
-        const rate = successRate(d.completed, d.total);
-        const pct = Math.round(rate * 100);
-        return (
-          <BarRow
-            // Row key is a pair: the same model_id can coexist under multiple providers, so using modelId alone would collide.
-            key={`${d.provider}:${d.modelId}`}
-            dimmed={hover !== null && hover !== i}
-            onEnter={() => setHover(i)}
-            title={successTitle(d)}
-            label={successLabel(d)}
-            value={`${pct}%`}
-          >
-            <div className="h-3 min-w-0 flex-1 overflow-hidden rounded-sm bg-gray-200 dark:bg-gray-800">
-              <div
-                className="h-full rounded-sm bg-sky-500 dark:bg-sky-400"
-                style={{ width: `${rate * 100}%` }}
+    <div ref={ref}>
+      {width > 0 && (
+        <ChartFrame
+          geom={geom}
+          fmtY={(v) => `${Math.round(v)}%`}
+          yTicks={[0, 25, 50, 75, 100]}
+          dates={buckets}
+          fmtX={(b) => bucketAxisLabel(granularity, b)}
+          hover={hover}
+          onHover={setHover}
+          bubble={(i) => {
+            const p = series[i]!;
+            return (
+              <>
+                <p className="text-gray-400">{bucketFullLabel(granularity, buckets[i]!)}</p>
+                <p className="font-mono">
+                  {formatPercent(successRate(p.completed, p.denominator))}
+                  {p.denominator > 0 && (
+                    <span className="ml-1.5 text-gray-400">
+                      {p.completed}/{p.denominator}
+                    </span>
+                  )}
+                </p>
+              </>
+            );
+          }}
+        >
+          <g className="text-sky-500 dark:text-sky-400">
+            <path
+              d={monotonePath(geom, values)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              opacity={hover !== null ? 0.5 : 1}
+            />
+            {hover !== null && (
+              <circle
+                cx={geom.x(hover)}
+                cy={geom.y(values[hover] ?? 100)}
+                r={3}
+                className="fill-current"
               />
-            </div>
-          </BarRow>
-        );
-      })}
+            )}
+          </g>
+        </ChartFrame>
+      )}
     </div>
   );
 }
 
-// —— Daily Token: three-segment stacked bar ——
+// —— Token buckets: three-segment stacked bars + a cache-hit-rate curve in front ——
 
-/** The currently hovered segment: which day (column index), which bucket. */
+/** The currently hovered segment: which bucket (column index), which Token bucket. */
 interface SegHover {
   i: number;
   key: TokenBucketKey;
 }
 
+/** Legend keys of the Token chart: the three Token buckets plus the hit-rate curve. */
+export type TokenLegendKey = TokenBucketKey | "hitRate";
+
+/** The hit-rate curve's color classes (amber — distinct from the bars' blue family, CVD-checked against sky in the series palette). */
+const HIT_RATE_TEXT = "text-amber-500 dark:text-amber-600";
+const HIT_RATE_SWATCH = "bg-amber-500 dark:bg-amber-600";
+
 /**
- * Daily Token buckets → a three-segment stacked bar (SVG, reusing
- * TrendChart's coordinate system and grid), bottom-to-top output → cacheWrite → cacheRead.
+ * Per-bucket Token buckets → a three-segment stacked bar (SVG, reusing the
+ * shared coordinate system and grid), bottom-to-top output → cacheWrite →
+ * cacheRead, with the cache hit rate drawn as a smooth curve **in front of the
+ * bars** on its own right-hand 0–100% axis (same x positions — the two geoms
+ * share n / w / padR).
  *
- * **Bar width fixed at 25 real pixels, spacing ≥ bar width** (see
- * chart-geom's tokenBarLayout): the canvas renders at real pixels per the
- * container's measured width (1 canvas unit = 1 pixel, no scaling); when 30
- * days' worth of n×2×25px doesn't fit a half-width card, the canvas
- * overflows and ChartFrame's container carries horizontal scroll; with few
- * points the bars **never stretch** (25px is a fixed value, not a floor) —
- * all the extra space goes to bar spacing, and the canvas still fills the card without a scrollbar.
+ * Bars always fit the card: fitBarWidth caps them at 25px and shrinks them
+ * with the cell so the chart never scrolls horizontally.
  *
  * **Each segment is an independent, individually hoverable rect**: the hit
  * layer swaps ChartFrame's whole-column hit area for a per-segment hit band
  * (see chart-geom's barSegments — the hit band fills the whole bar and small
  * segments have a height floor, otherwise a sub-pixel output segment would
- * be un-hoverable; widening the bar doesn't help the vertical dimension
- * either). Hitting a segment highlights only that segment and fades out
- * everything else; the bubble reports only that segment's date/bucket
- * name/Token count (the cacheRead segment adds that day's cache hit rate,
- * cacheRead / (cacheRead + cacheWrite)). When legend is passed in (legend hover), it highlights all segments of the matching bucket.
+ * be un-hoverable). Hitting a segment highlights only that segment and fades
+ * out everything else; the bubble reports only that segment's bucket/name/
+ * Token count (the cacheRead segment adds that bucket's cache hit rate).
+ * When legend is passed in (legend hover), it highlights all segments of the
+ * matching bucket — or the curve alone for `hitRate`. The curve itself takes
+ * no pointer events; its per-bucket value already rides the cacheRead bubble.
  * No hover vertical line is drawn (hoverLine={false}): the bar itself already indicates the x position.
  */
 export function TokenBarChart({
-  trend,
+  series,
+  granularity,
   legend,
 }: {
-  trend: UsageTrendPoint[];
-  /** The bucket currently hovered in the legend (highlights matching segments); null = none. */
-  legend?: TokenBucketKey | null;
+  series: UsageSeriesPoint[];
+  granularity: UsageGranularity;
+  /** The legend item currently hovered (highlights matching segments / the curve); null = none. */
+  legend?: TokenLegendKey | null;
 }) {
   const [hover, setHover] = useState<SegHover | null>(null);
-  // Bar width is a pixel constraint, so the container must be measured
-  // first (unmeasured on the first frame → width=0, at which point nothing is rendered — see the ref container below).
   const [ref, width] = useChartWidth();
-  if (trend.length === 0) return <Empty />;
+  if (series.length === 0 || series.every((p) => p.total === 0)) return <Empty />;
 
-  const sums = trend.map((p) => p.cacheRead + p.cacheWrite + p.output);
+  const sums = series.map((p) => p.cacheRead + p.cacheWrite + p.output);
   const max = Math.max(1, ...sums);
-  const { barW, chartW, scroll } = tokenBarLayout(width, trend.length);
-  const geom = makeGeom(trend.length, max, chartW);
-  const dates = trend.map((p) => p.date);
-  const segs = trend.map((p) => barSegments(geom, p));
+  const geom = makeGeom(series.length, max, width, PAD_R_AXIS);
+  const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
+  const barW = fitBarWidth(geom.step);
+  const buckets = series.map((p) => p.bucket);
+  const segs = series.map((p) => barSegments(geom, p));
+  const rates = hitRateValues(series);
 
-  // Highlight = fade out the rest: segment-level hover leaves only "that day's that bucket", legend hover leaves all segments of the matching bucket.
+  // Highlight = fade out the rest: segment-level hover leaves only "that bucket's that segment", legend hover leaves all segments of the matching bucket (or the curve alone).
   const dimmed = (i: number, key: TokenBucketKey) =>
     (hover !== null && !(hover.i === i && hover.key === key)) || (legend != null && legend !== key);
+  const curveDim = (legend != null && legend !== "hitRate") || hover !== null;
 
   return (
     <div ref={ref}>
@@ -289,30 +327,29 @@ export function TokenBarChart({
         <ChartFrame
           geom={geom}
           fmtY={(v) => humanizeTokens(Math.round(v))}
-          dates={dates}
+          dates={buckets}
+          fmtX={(b) => bucketAxisLabel(granularity, b)}
           hover={hover?.i ?? null}
-          // Each cell ≥ 50px: dates can be labeled every day (autoLabelIdx sets the density by cell width, so they never blur together).
-          labels={autoLabelIdx(trend.length, geom.step)}
+          labels={autoLabelIdx(series.length, geom.step)}
           // The bar itself indicates x position: no hover vertical line spanning the whole chart.
           hoverLine={false}
-          // 30 days doesn't fit a half-width card (bar width fixed at 25px): defaults to sitting on the most recent day, scrolling left for earlier ones.
-          scrollToEnd={scroll}
+          rightAxis={{ y: rateGeom.y, ticks: [0, 50, 100], fmt: (v) => `${v}%` }}
           // Per-segment hits go through hitLayer below; ChartFrame only calls back when the mouse leaves the whole chart (i=null).
           onHover={(i) => {
             if (i === null) setHover(null);
           }}
           bubble={(i) => {
-            const p = trend[i]!;
+            const p = series[i]!;
             const key = hover?.key;
             if (!key) return null;
-            // The cacheRead bubble additionally reports that day's cache hit
+            // The cacheRead bubble additionally reports that bucket's cache hit
             // rate, via the formula/format/label shared with the Trace page
             // (lib/format.ts cacheHitRate + formatPercent, S.traces.hitRate),
             // so the metric reads identically everywhere; null (denominator 0) omits the line instead of showing 0/0.
             const hitRate = key === "cacheRead" ? cacheHitRate(p.cacheRead, p.cacheWrite) : null;
             return (
               <>
-                <p className="text-gray-400">{p.date}</p>
+                <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
                 <p className="font-mono">
                   {bucketLabel(key)} {humanizeTokens(p[key])}
                 </p>
@@ -324,7 +361,7 @@ export function TokenBarChart({
               </>
             );
           }}
-          hitLayer={trend.map((p, i) =>
+          hitLayer={series.map((p, i) =>
             segs[i]!.map((s) => (
               // The hit band is as wide as the bar horizontally (empty space
               // outside the bar doesn't trigger highlighting), and split by
@@ -333,7 +370,7 @@ export function TokenBarChart({
               // clears as soon as the pointer leaves the bar — otherwise the
               // previous segment's highlight would linger when moving from the bar into the empty space.
               <rect
-                key={`hit-${p.date}-${s.key}`}
+                key={`hit-${p.bucket}-${s.key}`}
                 x={geom.x(i) - barW / 2}
                 y={s.hitY}
                 width={barW}
@@ -346,10 +383,10 @@ export function TokenBarChart({
             )),
           )}
         >
-          {trend.map((p, i) =>
+          {series.map((p, i) =>
             segs[i]!.map((s) => (
               <rect
-                key={`${p.date}-${s.key}`}
+                key={`${p.bucket}-${s.key}`}
                 x={geom.x(i) - barW / 2}
                 y={s.y}
                 width={barW}
@@ -360,25 +397,51 @@ export function TokenBarChart({
               />
             )),
           )}
+          {/* Cache-hit-rate curve, in front of the bars on the right-hand 0–100% scale.
+              Gaps (no cache traffic) split the curve; a lone point between gaps gets a
+              dot so it stays visible. pointer-events-none: the bars' hit bands stay hoverable through it. */}
+          <g
+            className={`${HIT_RATE_TEXT} pointer-events-none transition-opacity duration-150`}
+            opacity={curveDim ? 0.3 : 1}
+          >
+            <path
+              d={monotonePath(rateGeom, rates)}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            />
+            {rates.map((r, i) =>
+              r !== null && rates[i - 1] == null && rates[i + 1] == null ? (
+                <circle
+                  key={buckets[i]}
+                  cx={rateGeom.x(i)}
+                  cy={rateGeom.y(r)}
+                  r={2}
+                  className="fill-current"
+                />
+              ) : null,
+            )}
+          </g>
         </ChartFrame>
       )}
     </div>
   );
 }
 
-/** Token bar chart legend (cacheRead / cacheWrite / output): hovering an item highlights matching segments (fading out the rest). */
+/** Token chart legend (cacheRead / cacheWrite / output + the hit-rate curve): hovering an item highlights the matching marks (fading out the rest). */
 export function TokenLegend({
   active,
   onHover,
 }: {
-  active?: TokenBucketKey | null;
-  onHover?: (key: TokenBucketKey | null) => void;
+  active?: TokenLegendKey | null;
+  onHover?: (key: TokenLegendKey | null) => void;
 }) {
   const items: Array<[TokenBucketKey, string]> = [
     ["cacheRead", S.usage.colCacheRead],
     ["cacheWrite", S.usage.colCacheWrite],
     ["output", S.usage.colOutput],
   ];
+  const dim = (key: TokenLegendKey) => (active != null && active !== key ? "opacity-30" : "");
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1">
       {items.map(([key, label]) => (
@@ -387,9 +450,7 @@ export function TokenLegend({
           type="button"
           onMouseEnter={() => onHover?.(key)}
           onMouseLeave={() => onHover?.(null)}
-          className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${
-            active != null && active !== key ? "opacity-30" : ""
-          }`}
+          className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${dim(key)}`}
         >
           <span
             className="inline-block h-2 w-3 rounded-sm"
@@ -398,6 +459,16 @@ export function TokenLegend({
           {label}
         </button>
       ))}
+      {/* The curve's legend item wears a line-shaped swatch: it is a line on its own axis, not a fourth stack segment. */}
+      <button
+        type="button"
+        onMouseEnter={() => onHover?.("hitRate")}
+        onMouseLeave={() => onHover?.(null)}
+        className={`flex items-center gap-1 text-[10px] text-gray-500 transition-opacity duration-150 dark:text-gray-400 ${dim("hitRate")}`}
+      >
+        <span className={`inline-block h-0.5 w-3 rounded-sm ${HIT_RATE_SWATCH}`} />
+        {S.usage.legendHitRate}
+      </button>
     </div>
   );
 }

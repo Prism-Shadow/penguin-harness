@@ -1,14 +1,15 @@
 /**
  * Geometry math for the cost center charts: pure functions, no React / no
- * JSX, easy to unit test (see test/usage-charts.test.ts). The two "last 30
- * days" charts (the daily Token bar's three-segment stack, the daily cost
- * line + area) share one coordinate system — canvas width, padding, the
- * x()/y() mapping, SVG paths, x-axis label indices. The stacked bar's
- * horizontal layout (fixed 25px bar width, spacing ≥ bar width) is computed
- * by tokenBarLayout, and per-segment geometry (including per-segment hit
- * bands) is produced by barSegments; there's also pie-slice geometry (each
- * Agent's call count), success-rate normalization, and hover-bubble
- * placement (pointer lower-right, flipping at the edges). See chart-svg.tsx for the render skeleton.
+ * JSX, easy to unit test (see test/usage-charts.test.ts). The time-series
+ * charts (the Token bar's three-segment stack, the smooth line charts for
+ * calls / success rate / cost) share one coordinate system — canvas width,
+ * padding, the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
+ * container (fitBarWidth — no horizontal scrolling), per-segment geometry
+ * (including per-segment hit bands) is produced by barSegments, smooth curves
+ * come from monotonePath (Fritsch–Carlson monotone cubic: no overshoot, so a
+ * 0–100% rate stays bounded); there's also success-rate normalization and
+ * hover-bubble placement (pointer lower-right, flipping at the edges). See
+ * chart-svg.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -28,6 +29,9 @@ export const PAD_B = 22;
 /** The daily Token chart's three buckets (bottom-to-top stacking order is output → cacheWrite → cacheRead). */
 export type TokenBucketKey = "cacheRead" | "cacheWrite" | "output";
 
+/** Right padding for charts that carry a right-hand percentage axis (the Token chart's cache-hit-rate overlay): room for a "100%" tick label. */
+export const PAD_R_AXIS = 34;
+
 /** A chart's coordinate system: canvas width w, data point count n, y-axis bounds, and x()/y() mapping "index / value" to canvas coordinates. */
 export interface ChartGeom {
   n: number;
@@ -35,6 +39,8 @@ export interface ChartGeom {
   max: number;
   /** Total canvas width (= viewBox width = CSS pixel width). */
   w: number;
+  /** Right padding (PAD_R by default; PAD_R_AXIS when a right-hand axis needs label room). */
+  padR: number;
   innerW: number;
   innerH: number;
   step: number;
@@ -48,17 +54,25 @@ export interface ChartGeom {
  * in pixels. Invalid or zero-height ranges map values to the baseline rather
  * than producing NaN / Infinity.
  */
-export function makeGeom(n: number, max: number, w: number): ChartGeom {
-  return makeRangeGeom(n, 0, max, w);
+export function makeGeom(n: number, max: number, w: number, padR = PAD_R): ChartGeom {
+  return makeRangeGeom(n, 0, max, w, padR);
 }
 
 /**
  * Build a coordinate system with an explicit y-axis range. Score charts use
  * this to zoom into the observed values; zero-baseline usage charts keep
- * calling makeGeom above.
+ * calling makeGeom above. Geoms sharing n / w / padR share x() exactly — that
+ * is how a right-axis overlay (its own y range) stays aligned with the marks
+ * under it.
  */
-export function makeRangeGeom(n: number, min: number, max: number, w: number): ChartGeom {
-  const innerW = Math.max(0, w - PAD_L - PAD_R);
+export function makeRangeGeom(
+  n: number,
+  min: number,
+  max: number,
+  w: number,
+  padR = PAD_R,
+): ChartGeom {
+  const innerW = Math.max(0, w - PAD_L - padR);
   const innerH = CHART_H - PAD_T - PAD_B;
   const step = n > 0 ? innerW / n : innerW;
   const range = max - min;
@@ -67,6 +81,7 @@ export function makeRangeGeom(n: number, min: number, max: number, w: number): C
     min,
     max,
     w,
+    padR,
     innerW,
     innerH,
     step,
@@ -92,6 +107,104 @@ export function areaPath(geom: ChartGeom, values: number[]): string {
   parts.push(`L${geom.x(0)},${baseY}`);
   parts.push("Z");
   return parts.join(" ");
+}
+
+// —— Smooth (monotone cubic) curves ——
+
+/** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
+const rnd = (v: number): number => Math.round(v * 100) / 100;
+
+/**
+ * Fritsch–Carlson tangents for a contiguous value run (uniform x spacing of 1
+ * index): interior tangents average the neighbouring secants, flatten to 0 at
+ * local extrema (a sign change), and are limited to 3× the segment's secant.
+ * The limiter is what keeps every cubic segment inside its endpoints' value
+ * range — a smoothed 100% success rate can never arc above 100%.
+ */
+function monotoneTangents(values: number[]): number[] {
+  const n = values.length;
+  const delta = values.slice(0, -1).map((v, i) => values[i + 1]! - v);
+  const m = values.map((_, i) => {
+    if (i === 0) return delta[0] ?? 0;
+    if (i === n - 1) return delta[n - 2] ?? 0;
+    const a = delta[i - 1]!;
+    const b = delta[i]!;
+    return a * b <= 0 ? 0 : (a + b) / 2;
+  });
+  for (let i = 0; i < n - 1; i++) {
+    const d = delta[i]!;
+    if (d === 0) {
+      m[i] = 0;
+      m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i]! / d;
+    const b = m[i + 1]! / d;
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[i] = t * a * d;
+      m[i + 1] = t * b * d;
+    }
+  }
+  return m;
+}
+
+/** One contiguous run's smooth path: `M` + cubic `C` segments (Hermite tangents converted to Bezier control points at 1/3 of each segment). A single point yields a bare `M` (the caller draws lone points as circles). */
+function monotoneRunPath(geom: ChartGeom, start: number, values: number[]): string {
+  const m = monotoneTangents(values);
+  const parts = [`M${rnd(geom.x(start))},${rnd(geom.y(values[0]!))}`];
+  for (let i = 0; i < values.length - 1; i++) {
+    const x0 = geom.x(start + i);
+    const x1 = geom.x(start + i + 1);
+    const dx = (x1 - x0) / 3;
+    const c1v = values[i]! + m[i]! / 3;
+    const c2v = values[i + 1]! - m[i + 1]! / 3;
+    parts.push(
+      `C${rnd(x0 + dx)},${rnd(geom.y(c1v))} ${rnd(x1 - dx)},${rnd(geom.y(c2v))} ${rnd(x1)},${rnd(
+        geom.y(values[i + 1]!),
+      )}`,
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
+ * Smooth line path (monotone cubic interpolation, Fritsch–Carlson tangents):
+ * never overshoots the data — every cubic segment stays inside its two
+ * endpoints' value range, so a rate curve bounded by 0–100 stays bounded after
+ * smoothing. `null` values split the path into separate runs (a gap, not a
+ * bridged line); a run of one point contributes a bare `M` that strokes
+ * nothing — callers mark lone points with a circle if they must stay visible.
+ */
+export function monotonePath(geom: ChartGeom, values: Array<number | null>): string {
+  const paths: string[] = [];
+  let run: number[] = [];
+  let start = 0;
+  const flush = () => {
+    if (run.length > 0) paths.push(monotoneRunPath(geom, start, run));
+    run = [];
+  };
+  values.forEach((v, i) => {
+    if (v === null) {
+      flush();
+      return;
+    }
+    if (run.length === 0) start = i;
+    run.push(v);
+  });
+  flush();
+  return paths.join(" ");
+}
+
+/** Smooth area path: the monotone curve closed down to the baseline (y=0), for the cost chart's fill layer. Empty input returns an empty string. */
+export function monotoneAreaPath(geom: ChartGeom, values: number[]): string {
+  const n = values.length;
+  if (n === 0) return "";
+  const baseY = rnd(geom.y(0));
+  return `${monotoneRunPath(geom, 0, values)} L${rnd(geom.x(n - 1))},${baseY} L${rnd(
+    geom.x(0),
+  )},${baseY} Z`;
 }
 
 /** Sparse x-axis label indices: first, middle, last (labeling every point would blur together when cells are narrow and there are many points). */
@@ -167,11 +280,9 @@ export function bubblePosition(
 // —— Daily Token: bar + three-segment stack ——
 
 /**
- * Bar width (**real CSS pixels**, since 1 canvas unit = 1 pixel): **a fixed
- * value, not a minimum** — it used to be implemented as "no less than 25px",
- * which made bars stretch to fill the container when there were few points
- * (3 daily points could balloon to ~180px), defeating the intent of "25px
- * bar width". Now it's always 25px: scroll when it doesn't fit, and give the extra space to bar spacing when it does.
+ * Ceiling on bar width (**real CSS pixels**, since 1 canvas unit = 1 pixel):
+ * with few points the bars never balloon past this — the extra space goes to
+ * bar spacing.
  */
 export const BAR_W = 25;
 
@@ -187,32 +298,15 @@ export const BAR_W = 25;
  */
 export const MIN_HIT_H = 8;
 
-/** The Token bar chart's horizontal layout: bar width (always BAR_W), total canvas width, and whether the content overflows the container (needing horizontal scroll). */
-export interface TokenBarLayout {
-  /** Bar width (CSS pixels): always BAR_W. */
-  barW: number;
-  /** Total canvas width (CSS pixels): fills the container, or overflows it per "bar + equal spacing". */
-  chartW: number;
-  /** Canvas is wider than the container: the caller needs horizontal scrolling to see it all. */
-  scroll: boolean;
-}
-
 /**
- * Token bar chart horizontal layout: **bar width is always BAR_W (25 real
- * pixels), bar spacing ≥ bar width**.
- * - Many points (n×2×25px doesn't fit): each cell is exactly 2× the bar
- *   width, and the canvas overflows the container in real pixels →
- *   the container scrolls horizontally (no scaling, no squeezing);
- * - Few points (fits): the canvas fills the container, and **all the extra
- *   space goes to bar spacing** — bars no longer stretch (the old
- *   implementation treated 25px as a floor, letting 3 daily points' bars
- *   balloon to ~180px), they just stand farther apart.
+ * Bar width that always fits the container (**no horizontal scrolling**): 60%
+ * of the cell width — leaving ≥ 40% as spacing so adjacent bars never touch —
+ * capped at BAR_W (few points must not balloon into slabs) and floored at 1px:
+ * a dense range at fine granularity degrades to hairlines, not to overlap
+ * (only a degenerate sub-1.7px cell can make the 1px floor fill its cell).
  */
-export function tokenBarLayout(containerW: number, n: number): TokenBarLayout {
-  const innerW = Math.max(0, containerW - PAD_L - PAD_R);
-  const needed = 2 * BAR_W * n; // inner width needed to lay out n bars (bar + equal spacing)
-  if (needed <= innerW) return { barW: BAR_W, chartW: containerW, scroll: false };
-  return { barW: BAR_W, chartW: PAD_L + needed + PAD_R, scroll: true };
+export function fitBarWidth(step: number): number {
+  return Math.max(1, Math.min(BAR_W, Math.floor(step * 0.6)));
 }
 
 /** One segment within a bar: the visual rectangle is drawn strictly to value, the hit band is computed separately (small segments are raised to be hoverable). */
@@ -295,69 +389,4 @@ export function barSegments(
     hitBottom -= hitH;
     return seg;
   });
-}
-
-// —— Each Agent's call count: pie chart ——
-
-const TAU = Math.PI * 2;
-/** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
-const rnd = (v: number): number => Math.round(v * 100) / 100;
-
-/** Take a point in polar coordinates: angle is measured from 12 o'clock, clockwise-positive (SVG's y-axis points down). */
-function polar(cx: number, cy: number, r: number, angle: number): [number, number] {
-  const a = angle - Math.PI / 2;
-  return [rnd(cx + r * Math.cos(a)), rnd(cy + r * Math.sin(a))];
-}
-
-/** A single pie slice. */
-export interface PieSlice {
-  /** Index within the passed-in values (the caller uses this to look up name and color). */
-  index: number;
-  value: number;
-  /** Fraction of the total [0,1]. */
-  frac: number;
-  /** Start/end angle (radians, clockwise from 12 o'clock). */
-  start: number;
-  end: number;
-  /** The slice's path. */
-  path: string;
-}
-
-/**
- * Slice path: `M center L start A radius … end Z`; sweep=1 means clockwise,
- * large-arc=1 when spanning more than a semicircle.
- * At 100% the start and end points coincide and the A command degrades into
- * "draws nothing" — split into two semicircular arcs to get a full circle.
- */
-function slicePath(cx: number, cy: number, r: number, start: number, end: number): string {
-  if (end - start >= TAU - 1e-9) {
-    const [tx, ty] = polar(cx, cy, r, 0);
-    const [bx, by] = polar(cx, cy, r, Math.PI);
-    return `M${tx},${ty} A${r},${r} 0 1 1 ${bx},${by} A${r},${r} 0 1 1 ${tx},${ty} Z`;
-  }
-  const [x0, y0] = polar(cx, cy, r, start);
-  const [x1, y1] = polar(cx, cy, r, end);
-  const large = end - start > Math.PI ? 1 : 0;
-  return `M${rnd(cx)},${rnd(cy)} L${x0},${y0} A${r},${r} 0 ${large} 1 ${x1},${y1} Z`;
-}
-
-/**
- * Pie slices: laid out clockwise from 12 o'clock in the order passed in,
- * each slice's angle = that value's share of the total.
- * Non-positive values produce no slice (a 0-degree arc is a degenerate
- * path); when the total ≤ 0, returns empty (the caller falls back to an empty state).
- */
-export function pieSlices(values: number[], cx: number, cy: number, r: number): PieSlice[] {
-  const total = values.reduce((s, v) => s + Math.max(0, v), 0);
-  if (total <= 0) return [];
-  const slices: PieSlice[] = [];
-  let start = 0;
-  values.forEach((value, index) => {
-    if (value <= 0) return;
-    const frac = value / total;
-    const end = start + frac * TAU;
-    slices.push({ index, value, frac, start, end, path: slicePath(cx, cy, r, start, end) });
-    start = end;
-  });
-  return slices;
 }
