@@ -3143,6 +3143,42 @@ export interface SkillArchiveInstallRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Extension registry index
+// ---------------------------------------------------------------------------
+
+/**
+ * One published version of an extension — the index entry format every extension registry
+ * speaks (modeled on the typst/packages `index.json` schema: a flat array of
+ * per-version entries; an extension published at several versions appears once per
+ * version). Installation is out of scope here: an entry's `name` is the package
+ * specifier an operator puts into `extensions.json`.
+ */
+export interface ExtensionIndexEntry {
+  /** Package specifier — the string that goes into `extensions.json`. */
+  name: string;
+  /** Semantic version of this entry. */
+  version: string;
+  description: string;
+  authors: string[];
+  /** SPDX license identifier. */
+  license: string;
+  /** Source repository URL. */
+  repository?: string;
+  homepage?: string;
+  /** Free-form searchable terms; the Web App renders them as chips (e.g. the target OS). */
+  keywords?: string[];
+  /** Capability floor(s) the extension provides on (e.g. "sandbox"). */
+  categories?: string[];
+  /** Unix timestamp (seconds) of the entry's last update. */
+  updatedAt?: number;
+}
+
+/** GET /api/extensions: the merged index of every configured registry (currently the builtin one). */
+export interface ExtensionIndexResponse {
+  extensions: ExtensionIndexEntry[];
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 

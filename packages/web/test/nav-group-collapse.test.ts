@@ -43,6 +43,7 @@ describe("NAV_GROUP_KEYS", () => {
       "plugins",
       "models",
       "machines",
+      "extensions",
       "usage",
       "benchmark",
     ]);
