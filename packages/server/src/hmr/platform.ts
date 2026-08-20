@@ -40,6 +40,8 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf, PlatformCurrent } from "./capabilities.js";
+import type { PenguinInterface, WorkflowFactory } from "./plugin.js";
+import { instantiateWorkflows, pluginHostFrom } from "./plugin.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -75,11 +77,10 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 /**
  * The resource interfaces this platform parks, by ID-prefix group (see
  * RESOURCE_IFACES_RESOURCE_ID in ./capabilities.ts): create() integrates a group its
- * predecessor declared only at the same family AND version, and hard-stops it otherwise.
- * `terminal` is the spawn primitive — a live pty behind a deliberately stable contract,
- * expected to stay at v1 across upgrades that change everything else; `platform` is the
- * current-App pointer. A platform that does not want to inherit any of penguin's parked
- * resources declares a different `family` instead of arguing with each version.
+ * predecessor declared only at the SAME version and hard-stops it otherwise. `terminal`
+ * is the spawn primitive — a live pty behind a deliberately stable contract, expected to
+ * stay at v1 across upgrades that change everything else; `platform` is the current-App
+ * pointer.
  */
 interface ParkedInterfaces extends Interfaces {
   family: string;
@@ -123,6 +124,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
     const identity = identityFrom(ctx.resources);
+    // The plugin seam (see ./plugin.ts). Every App creation — the packaged boot and each
+    // hot-swap boot alike — offers plugins the definition view first, then the assembled
+    // instance context. Workflows are built here, after registration closes, so a plugin
+    // that registers one always sees it instantiated in the same App it registered into.
+    // The host itself comes from the registry: the runtime loaded whatever plugins.json
+    // named once, at startup, and this claims that one host rather than importing another.
+    const plugins = pluginHostFrom(ctx.resources);
+    const pluginIface: PenguinInterface = {
+      workflow: new Map<string, WorkflowFactory>(),
+      tool: new Map(),
+    };
+    plugins.createApp(pluginIface);
+    plugins.emit("create", {
+      workflows: instantiateWorkflows(pluginIface.workflow),
+      terminals,
+    });
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. A runtime that publishes nothing
