@@ -177,11 +177,28 @@ penguin version --json   # 完整构建信息
 
 | 选项 | 说明 |
 | --- | --- |
-| `--json` | 输出完整构建信息而非单行：`{version, describe, channel, buildDate, commit, branch, dirty, runtime}` |
+| `--json` | 输出完整版本报告而非单行：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}` |
+| `--root <dir>` | 以哪个数据根目录的 HMR store 作为 `harness` 上报。优先级：`--root` > `PENGUIN_HOME` > `~/.penguin/data` |
 
 不带选项时输出单行；源码构建下该行即 `git describe --tags --dirty` 的结果——`v0.2.3-14-g9e8f7d6-dirty` 表示位于 `v0.2.3` 之后 14 个提交、当前提交为 `9e8f7d6`、且工作区有未提交改动。`-v, --version` 输出的是同一行。
 
-JSON 与 `GET /api/version` 的响应体逐字节一致，因此在 HTTP 边界的任意一侧都能采集到同样的排障信息。其中 `channel` 取 `release` 或 `source`；`buildDate` 与 `commit` 由发布流程在构建时打入，源码构建为 null；`branch` 与 `dirty` 描述源码构建的 git 位置，发布版为 null——发布流程会先把常量写进工作区再构建，所以「是否干净」对发布产物本就不成立。
+JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界的任意一侧都能采集到同样的排障信息。其中 `channel` 取 `release` 或 `source`；`buildDate` 与 `commit` 由发布流程在构建时打入，源码构建为 null；`branch` 与 `dirty` 描述源码构建的 git 位置，发布版为 null——发布流程会先把常量写进工作区再构建，所以「是否干净」对发布产物本就不成立。
+
+### harness：这台机器上热更新推了什么
+
+`harness` 描述的是该数据根目录的 HMR store——某次热更新提交进去、并会在重启后被恢复的 harness 代码。该根目录从未被推送过时为 null。
+
+```json
+"harness": {
+  "source": { "repo": "…/penguin-harness", "revision": "v0.2.3-7-gabc1234-dirty" },
+  "pushedAt": "2026-08-20T10:15:00.000Z",
+  "bundles": { "platform": "store/platform/…", "cli": "store/cli/…", "web": "store/web/…" }
+}
+```
+
+这正是单行版本无法表达的部分：推送过去的 bundle 落在任何 checkout 之外，它只能以自己被编译时的版本号自称；`source.revision`（由推送方记录，拼写方式与 `describe` 一致）是唯一能指明其背后 revision 的信息。`bundles` 是已提交产物的内容寻址指针，无论推送方声称了什么，它标识的都是被推送代码本身。
+
+它描述的是 store 而非当前进程：`penguin` 运行的是随包发布的 CLI，`penguin-hmr` 才运行 store 里的那份，因此 `harness` 非 null 并不意味着打印它的这条命令本身就是被推送的代码。若推送方未记录来源（包括在该机制存在之前推送的版本），`source` 为 null。
 
 已安装的 penguin 从不调用 git，只读取打入的常量；只有未打入的构建才会问 git，且只问自己被构建时所在的那个 checkout——在无关仓库里执行 `penguin version`，报告的仍是 harness 自身的版本，而非该仓库的。
 

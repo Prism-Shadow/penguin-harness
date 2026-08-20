@@ -7,7 +7,10 @@
  * classifier and the "not launched via the CLI" early exit.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VERSION, buildInfo } from "@prismshadow/penguin-core";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { VERSION } from "@prismshadow/penguin-core";
+import { versionReport } from "../src/version-report.js";
 import type { UpdateCheckResponse, UpdateRunResponse, VersionResponse } from "../src/api/types.js";
 import {
   FAILURE_TTL_MS,
@@ -51,7 +54,7 @@ describe("GET /api/version", () => {
     await t.cleanup();
   });
 
-  it("requires auth and serves core's build identity unchanged", async () => {
+  it("requires auth and serves the version report unchanged", async () => {
     expect((await t.app.request("/api/version")).status).toBe(401);
 
     const admin = await loginAdmin(t.app);
@@ -61,13 +64,39 @@ describe("GET /api/version", () => {
     // Compared against the producer, never against literals. The release workflow STAMPS
     // core's constants before it builds and tests, so a hardcoded null passes everywhere
     // except the one job that matters — the npm publish — where it failed the release.
-    // This is also the contract that `penguin version --json` prints the same bytes: the
+    // This is also the contract that `penguin version --json` prints the same record: the
     // route adds no field of its own and drops none.
-    expect(body).toEqual(buildInfo());
-    // Non-vacuous floor, in case buildInfo itself ever returns something degenerate.
+    expect(body).toEqual(await versionReport(t.root));
+    // Non-vacuous floor, in case the report itself ever comes back degenerate.
     expect(body.version).toBe(VERSION);
     expect(body.describe.startsWith(`v${VERSION}`)).toBe(true);
     expect(["release", "source"]).toContain(body.channel);
+  });
+
+  it("reports no harness for a root with nothing pushed, and the store's once there is", async () => {
+    const admin = await loginAdmin(t.app);
+    const get = async () =>
+      (await (await apiClient(t.app, admin.cookie).get("/api/version")).json()) as VersionResponse;
+
+    // A fresh test root has an empty HMR store: the build is packaged, not hot-updated.
+    expect((await get()).harness).toBeNull();
+
+    const hmrDir = path.join(t.root, "hmr");
+    await fs.mkdir(hmrDir, { recursive: true });
+    await fs.writeFile(
+      path.join(hmrDir, "harness.json"),
+      JSON.stringify({
+        cli: { bundle: "store/cli/abc123.mjs" },
+        source: { repo: "https://example.com/penguin.git", revision: "v0.2.3-7-gabc1234" },
+        pushedAt: "2026-08-20T10:15:00.000Z",
+      }),
+    );
+
+    expect((await get()).harness).toEqual({
+      source: { repo: "https://example.com/penguin.git", revision: "v0.2.3-7-gabc1234" },
+      pushedAt: "2026-08-20T10:15:00.000Z",
+      bundles: { platform: null, cli: "store/cli/abc123.mjs", web: null },
+    });
   });
 });
 

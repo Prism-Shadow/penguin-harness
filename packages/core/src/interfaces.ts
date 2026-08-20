@@ -457,6 +457,56 @@ export interface BuildInfo {
 }
 
 /**
+ * Where a hot update was pushed from, as the pusher recorded it. Provenance only: nothing
+ * here is ever executed or resolved, and both fields are whatever the pushing client sent.
+ */
+export interface HarnessSource {
+  /** The pushing checkout's origin remote, or its directory name when it has no remote. */
+  repo: string;
+  /** `git describe --tags --dirty` of the pushing checkout, spelled as {@link BuildInfo.describe}. */
+  revision: string;
+}
+
+/**
+ * What this machine's HMR store has committed — the harness code a hot update put there,
+ * which a restart resumes. A property of the data root rather than of the running process:
+ * it answers "which harness was pushed here", not "which code is executing".
+ *
+ * That distinction matters because the two can differ. `penguin` runs the packaged CLI
+ * while `penguin-hmr` runs the store's; a server whose committed version failed to restore
+ * warns and falls back to its packaged platform. Null in {@link VersionReport} means
+ * nothing was ever pushed to this root.
+ */
+export interface HarnessInfo {
+  /** Null for a version pushed by a client that recorded no provenance. */
+  source: HarnessSource | null;
+  /** When the version was committed to the store (ISO 8601); null if it predates the record. */
+  pushedAt: string | null;
+  /**
+   * The committed artifacts' content-addressed pointers, relative to `<root>/hmr` — the
+   * identity of the pushed code itself, independent of what the pusher claimed about it.
+   */
+  bundles: {
+    platform: string | null;
+    cli: string | null;
+    web: string | null;
+  };
+}
+
+/**
+ * What `penguin version --json` prints and what GET /api/version returns: the running
+ * build's identity, plus the harness this machine has in its HMR store.
+ *
+ * The two halves come from different places and neither can supply the other. {@link
+ * BuildInfo} describes the artifact this process is executing and core resolves it alone;
+ * `harness` describes the data root's store, so only a caller that knows which root is in
+ * play can fill it.
+ */
+export interface VersionReport extends BuildInfo {
+  harness: HarnessInfo | null;
+}
+
+/**
  * Environment interface: executes approved tool calls within the Workspace.
  * `executeTool` yields `partial_tool_call_output` as an async generator and ends with exactly one
  * complete `tool_call_output`; nested session messages carrying an origin marker (e.g. forwarded

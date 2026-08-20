@@ -19,10 +19,11 @@ import type {
   ToolCallPayload,
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
-  BuildInfo,
+  HarnessInfo,
   MCPServerConfig,
   ThinkingLevelName,
   ToolDefinitionConfig,
+  VersionReport,
 } from "@prismshadow/penguin-core/interfaces";
 
 // ---------------------------------------------------------------------------
@@ -2089,14 +2090,14 @@ export interface SkillArchiveInstallRequest {
 // ---------------------------------------------------------------------------
 
 /**
- * GET /api/version: the running build's identity, verbatim from core's `buildInfo()` — the
- * same object `penguin version --json` prints, so the two cannot drift apart. Field meanings
- * live on {@link BuildInfo}; the ones the web reads are `version` and `buildDate` (the
- * stamped release date behind the sidebar's "last updated", needing no network, and null
- * for a source build or a release predating the stamping — v0.1.2 and earlier — where the
- * UI shows the version alone).
+ * GET /api/version: the running build's identity plus this root's pushed harness, verbatim
+ * from `versionReport()` — the same record `penguin version --json` prints, so the two
+ * cannot drift apart. Field meanings live on {@link VersionReport} and {@link HarnessInfo};
+ * the ones the web reads are `version` and `buildDate` (the stamped release date behind the
+ * sidebar's "last updated", needing no network, and null for a source build or a release
+ * predating the stamping — v0.1.2 and earlier — where the UI shows the version alone).
  */
-export type VersionResponse = BuildInfo;
+export type VersionResponse = VersionReport;
 
 /**
  * GET /api/version/update-check: newest published release vs the running version.

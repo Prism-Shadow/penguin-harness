@@ -38,6 +38,37 @@ const CLI_BUNDLE = path.join(os.tmpdir(), `penguin-deploy-cli-${process.pid}.mjs
 
 const log = (msg) => console.log(`[deploy] ${msg}`);
 
+/** One git query against this checkout, or null for any failure (git absent, no remote, …). */
+function git(...args) {
+  try {
+    const out = execFileSync("git", args, {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Provenance for this push, recorded with the version so `penguin version --json` on the
+ * target can name where its harness came from. The bundles are content-addressed and say
+ * nothing about their origin, and a pushed bundle lands outside any checkout, so this is
+ * the only place the revision can be captured.
+ *
+ * `revision` is spelled exactly as core's BuildInfo.describe, `-dirty` included — a deploy
+ * from an uncommitted tree is normal here and the record has to admit it, since the sha
+ * alone would name code that never existed. Null when this is not a git checkout at all;
+ * the push then carries no `source` rather than a fabricated one.
+ */
+function pushSource() {
+  const revision = git("describe", "--tags", "--dirty", "--always");
+  if (revision === null) return null;
+  return { repo: git("remote", "get-url", "origin") ?? path.basename(ROOT), revision };
+}
+
 function usage(problem) {
   console.error(
     `${problem}\n\n` +
@@ -219,6 +250,7 @@ async function main() {
 
   const files = await readWebManifest();
   const assets = await readNativeAssets();
+  const source = pushSource();
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
@@ -226,9 +258,11 @@ async function main() {
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
         web: { files },
         assets,
+        ...(source === null ? {} : { source }),
       }),
     ),
   );
+  if (source !== null) log(`provenance: ${source.revision}`);
   log(
     `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );

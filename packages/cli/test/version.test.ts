@@ -4,9 +4,14 @@
  * against that producer rather than against literals — the release workflow stamps core's
  * constants before it runs these tests, and a hardcoded version would only fail there.
  */
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Command } from "commander";
 import { buildInfo } from "@prismshadow/penguin-core";
+import type { VersionReport } from "@prismshadow/penguin-core/interfaces";
+import { versionReport } from "@prismshadow/penguin-server/version-report";
 import { registerVersionCommand } from "../src/commands/version.js";
 import { cli } from "../src/index.js";
 import { getMessages } from "../src/i18n.js";
@@ -41,11 +46,50 @@ describe("penguin version", () => {
     expect(await run(["version"])).toBe(`${buildInfo().describe}\n`);
   });
 
-  it("prints the whole build info as JSON under --json", async () => {
-    const out = await run(["version", "--json"]);
-    expect(JSON.parse(out)).toEqual(buildInfo());
-    // Indented, because a human reads this out of a bug report.
-    expect(out).toContain("\n  ");
+  it("prints the whole version report as JSON under --json", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-cli-version-"));
+    try {
+      const out = await run(["version", "--json", "--root", root]);
+      expect(JSON.parse(out)).toEqual(await versionReport(root));
+      // Indented, because a human reads this out of a bug report.
+      expect(out).toContain("\n  ");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports the harness pushed to the root it was pointed at", async () => {
+    // The one fact the version line cannot carry: a hot-pushed CLI bundle sits in no
+    // checkout, so only the store's recorded provenance names the revision behind it.
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-cli-version-"));
+    try {
+      await fsp.mkdir(path.join(root, "hmr"), { recursive: true });
+      await fsp.writeFile(
+        path.join(root, "hmr", "harness.json"),
+        JSON.stringify({
+          cli: { bundle: "store/cli/abc123.mjs" },
+          source: { repo: "https://example.com/penguin.git", revision: "v0.2.3-7-gabc1234-dirty" },
+          pushedAt: "2026-08-20T10:15:00.000Z",
+        }),
+      );
+
+      const report = JSON.parse(await run(["version", "--json", "--root", root])) as VersionReport;
+      expect(report.harness?.source?.revision).toBe("v0.2.3-7-gabc1234-dirty");
+      expect(report.harness?.pushedAt).toBe("2026-08-20T10:15:00.000Z");
+      expect(report.harness?.bundles.cli).toBe("store/cli/abc123.mjs");
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("omits a harness for a root with nothing pushed", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "penguin-cli-version-"));
+    try {
+      const report = JSON.parse(await run(["version", "--json", "--root", root])) as VersionReport;
+      expect(report.harness).toBeNull();
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("describes this build in a form that names a version", async () => {

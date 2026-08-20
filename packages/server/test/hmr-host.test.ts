@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
 import { HmrHost } from "../src/hmr/host.js";
+import { readHarnessInfo } from "../src/hmr/manifest.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -388,5 +389,90 @@ describe("upgrade assets: an unchanged set is not copied again", () => {
     expect((await pushWithAssets(t.app, cookie, "second")).status).toBe(200);
     expect(await fs.readFile(manifest, "utf8")).toBe('{"name":"demo-native"}');
     expect(fsSync.existsSync(path.join(dir, ".materialized"))).toBe(true);
+  });
+});
+
+/**
+ * Provenance is the one part of a push that describes where the code came from: the bundles
+ * are content-addressed, and a pushed bundle lands outside any checkout, so unless the
+ * pusher's revision is committed with the version nothing on the target can name it. These
+ * assert the round trip a `penguin version --json` on the target depends on.
+ */
+describe("upgrade provenance: recorded with the version, or not at all", () => {
+  let t: TestApp | undefined;
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  async function pushWithSource(app: Hono<AppEnv>, cookie: string, source: unknown) {
+    const gz = zlib.gzipSync(
+      Buffer.from(
+        JSON.stringify({
+          platform: platformServing(["/api/demo/ping"], "pushed"),
+          cli: MINIMAL_CLI,
+          web: { files: MINIMAL_WEB },
+          ...(source === undefined ? {} : { source }),
+        }),
+      ),
+    );
+    return app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: gz,
+    });
+  }
+
+  async function manifestOf(root: string): Promise<Record<string, unknown>> {
+    return JSON.parse(await fs.readFile(path.join(root, "hmr", "harness.json"), "utf8")) as Record<
+      string,
+      unknown
+    >;
+  }
+
+  it("commits a pusher's repo and revision, and stamps when the version landed", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const before = Date.now();
+    const push = await pushWithSource(t.app, cookie, {
+      repo: "https://example.com/penguin.git",
+      revision: "v0.2.3-7-gabc1234-dirty",
+    });
+    expect(push.status).toBe(200);
+    expect(((await push.json()) as { persisted: boolean }).persisted).toBe(true);
+
+    const manifest = await manifestOf(t.root);
+    expect(manifest.source).toEqual({
+      repo: "https://example.com/penguin.git",
+      revision: "v0.2.3-7-gabc1234-dirty",
+    });
+    expect(Date.parse(manifest.pushedAt as string)).toBeGreaterThanOrEqual(before);
+
+    // And the reader the version report uses sees exactly that.
+    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
+      source: { revision: "v0.2.3-7-gabc1234-dirty" },
+      bundles: { cli: expect.stringContaining("store/cli/") },
+    });
+  });
+
+  it("stamps the push time even when the pusher recorded no provenance", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect((await pushWithSource(t.app, cookie, undefined)).status).toBe(200);
+
+    const manifest = await manifestOf(t.root);
+    expect(manifest.source).toBeUndefined();
+    expect(typeof manifest.pushedAt).toBe("string");
+  });
+
+  it("drops a malformed source rather than committing it to disk", async () => {
+    // A wrong-typed source would otherwise outlive the push that sent it, and every later
+    // reader would have to cope with it.
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    expect((await pushWithSource(t.app, cookie, { repo: 42, revision: "" })).status).toBe(200);
+
+    expect((await manifestOf(t.root)).source).toBeUndefined();
+    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({ source: null });
   });
 });

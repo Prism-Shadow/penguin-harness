@@ -177,11 +177,28 @@ penguin version --json   # the full build info
 
 | Option | Description |
 | --- | --- |
-| `--json` | Print the full build info instead of the one line: `{version, describe, channel, buildDate, commit, branch, dirty, runtime}` |
+| `--json` | Print the full version report instead of the one line: `{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}` |
+| `--root <dir>` | Data root whose HMR store to report as `harness`. Priority: `--root` > `PENGUIN_HOME` > `~/.penguin/data` |
 
 The bare form prints one line, which for a source build is `git describe --tags --dirty` output — `v0.2.3-14-g9e8f7d6-dirty` reads as fourteen commits past `v0.2.3`, at `9e8f7d6`, with uncommitted changes. `-v, --version` prints that same line.
 
-The JSON is byte for byte the body of `GET /api/version`, so a bug report can be gathered from either side of the HTTP boundary. In it, `channel` is `release` or `source`; `buildDate` and `commit` are stamped into the build by the release workflow and are null for a source build; `branch` and `dirty` describe a source build's git position and are null for a release, where the question does not apply — the workflow stamps its constants into the tree before building.
+The JSON is the same record `GET /api/version` returns, so a bug report can be gathered from either side of the HTTP boundary. In it, `channel` is `release` or `source`; `buildDate` and `commit` are stamped into the build by the release workflow and are null for a source build; `branch` and `dirty` describe a source build's git position and are null for a release, where the question does not apply — the workflow stamps its constants into the tree before building.
+
+### harness: what was hot-pushed here
+
+`harness` describes the data root's HMR store — the harness code a hot update committed, which a restart resumes. It is null when nothing was ever pushed to that root.
+
+```json
+"harness": {
+  "source": { "repo": "…/penguin-harness", "revision": "v0.2.3-7-gabc1234-dirty" },
+  "pushedAt": "2026-08-20T10:15:00.000Z",
+  "bundles": { "platform": "store/platform/…", "cli": "store/cli/…", "web": "store/web/…" }
+}
+```
+
+This is the one thing the version line cannot report. A pushed bundle lands outside any checkout, so it identifies itself by the version it was compiled from and nothing more; `source.revision` — recorded by the pusher, spelled the same way as `describe` — is the only thing that names the revision behind it. `bundles` holds the committed artifacts' content-addressed pointers, which identify the pushed code itself regardless of what the pusher claimed about it.
+
+It describes the store, not the process: `penguin` runs the packaged CLI while `penguin-hmr` runs the store's, so a non-null `harness` does not by itself mean the command printing it is the pushed code. `source` is null for a version pushed by a client that recorded no provenance, including anything pushed before it was recorded at all.
 
 An installed penguin never shells out to git: it reads the stamped constants. Only an unstamped build asks git, and only about the checkout it was itself built from — running `penguin version` inside an unrelated repository reports the harness's revision, not that repository's.
 

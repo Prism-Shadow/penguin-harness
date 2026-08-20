@@ -224,7 +224,13 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
     expect(await (await api.get("/api/version")).json()).toMatchObject({ servedBy: "takeover" });
 
     await pushPlatform(t.app, cookie, platformServing([], "released"));
-    expect(await (await api.get("/api/version")).json()).toEqual(runtimeVersion);
+    // Identified by what only the runtime's own handler produces, rather than by comparing
+    // the whole body against the pre-push one: this route reports the pushed harness, so a
+    // push legitimately changes its `harness` field while the handler stays the same.
+    const released = (await (await api.get("/api/version")).json()) as Record<string, unknown>;
+    expect(released.servedBy).toBeUndefined();
+    expect(released.version).toBe(runtimeVersion.version);
+    expect(released.describe).toBe((runtimeVersion as { describe: string }).describe);
   });
 });
 

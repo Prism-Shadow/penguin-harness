@@ -159,7 +159,17 @@ export function hmrRoutes(deps: AppDeps): Hono<AppEnv> {
               },
             }
           : {}),
-        ...(payload.source ? { source: payload.source } : {}),
+        // Provenance is optional and, unlike the bundles, now outlives the request in
+        // harness.json — so it is accepted only fully formed. A half-filled or
+        // wrong-typed `source` is dropped rather than committed: readers already
+        // tolerate its absence, and a malformed record on disk would outlive the push
+        // that produced it.
+        ...(typeof payload.source?.repo === "string" &&
+        typeof payload.source.revision === "string" &&
+        payload.source.repo.length > 0 &&
+        payload.source.revision.length > 0
+          ? { source: { repo: payload.source.repo, revision: payload.source.revision } }
+          : {}),
       });
     } catch (err) {
       throw new HttpError(400, "bad_request", err instanceof Error ? err.message : String(err));
