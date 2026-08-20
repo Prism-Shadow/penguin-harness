@@ -213,6 +213,8 @@ export const NAV_ICONS = {
     "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
+  /** Extension marketplace (a power plug: two prongs + body + cable). */
+  extensions: "M9 2v5m6-5v5M6 7h12v3a6 6 0 0 1-12 0zM12 16v6",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
   traces: "M4 6h16M4 12h10M4 18h13",
   /** Benchmark center (a trophy: cup + two handles + base). */
