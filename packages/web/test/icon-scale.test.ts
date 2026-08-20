@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ICON_GAP, ICON_SIZE } from "../src/lib/icon-scale";
 
@@ -23,8 +23,10 @@ function sources(dir = SRC, out: string[] = []): string[] {
   return out;
 }
 
+// Forward slashes whatever the platform separator is, so the expected paths below read the same
+// on Windows as they do everywhere else.
 const FILES = sources().map(
-  (path) => [path.slice(SRC.length + 1), readFileSync(path, "utf8")] as const,
+  (path) => [path.slice(SRC.length + 1).replaceAll(sep, "/"), readFileSync(path, "utf8")] as const,
 );
 
 /** Every occurrence of `needle`, as "relative/path:count". */
