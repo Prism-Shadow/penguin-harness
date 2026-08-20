@@ -16,6 +16,18 @@ import { ApiError, setUnauthorizedHandler } from "../api/client";
  * against the real limits regardless, so a stale value here can only make the composer's
  * pre-flight check slightly wrong, never let an oversize file through.
  */
+/**
+ * Fills in what a `/api/me` payload did not carry. The Web App and the runtime serving it
+ * are routinely different versions — a hot update pushes the dist without restarting the
+ * server, and the desktop shell attaches to whatever server is already running — so a field
+ * added on one side arrives as `undefined` on the other. Assigning the payload straight
+ * through replaced the defaults with `undefined` wholesale, and the first component to read
+ * a limit off it crashed the page (`Cannot read properties of undefined`).
+ */
+export function withDefaultUploadLimits(limits: Partial<UploadLimits> | undefined): UploadLimits {
+  return { ...DEFAULT_UPLOAD_LIMITS, ...limits };
+}
+
 const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
   attachmentMaxMb: 100,
   attachmentTotalMb: 120,
@@ -89,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
-        setUploadLimits(res.uploadLimits);
+        setUploadLimits(withDefaultUploadLimits(res.uploadLimits));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -117,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
-      setUploadLimits(me.uploadLimits);
+      setUploadLimits(withDefaultUploadLimits(me.uploadLimits));
     } catch {
       // Login itself succeeded; keep the optimistic default.
     }
@@ -137,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);
     setSessionVia(res.sessionVia);
-    setUploadLimits(res.uploadLimits);
+    setUploadLimits(withDefaultUploadLimits(res.uploadLimits));
   }, []);
 
   return (
