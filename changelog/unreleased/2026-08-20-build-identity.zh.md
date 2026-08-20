@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `cli`, `core`, `server`, `docs`, `ci`
+- **PR:** [#382](https://github.com/Prism-Shadow/penguin-harness/pull/382)
 
 [English](2026-08-20-build-identity.md)
 
