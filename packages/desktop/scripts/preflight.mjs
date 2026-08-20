@@ -1,9 +1,8 @@
 /**
  * Dev preflight for `pnpm --dir packages/desktop start` (and the root `pnpm desktop`):
  * verify everything a source run needs, and fail with the actual fix instead of a bare
- * ERR_MODULE_NOT_FOUND. The classic trap: this package's node_modules holds pnpm
- * *injected copies* of the workspace packages, which only sync while building THROUGH
- * pnpm — a stale copy surfaces as `Cannot find module …/penguin-server/dist/lock.js`.
+ * ENOENT from the utilityProcess fork or an empty skill library. A source run loads the
+ * same bundles a packaged app does, so all of them have to exist first.
  */
 import { createRequire } from "node:module";
 import fs from "node:fs";
@@ -17,13 +16,12 @@ const problems = [];
 
 for (const [what, rel] of [
   ["the desktop shell build", "dist/main.js"],
-  ["the injected server copy", "node_modules/@prismshadow/penguin-server/dist/lock.js"],
+  ["the embedded server bundle", "dist/server.js"],
+  ["the skill library copy", "skills"],
   ["the web frontend build", "../web/dist/index.html"],
 ]) {
   if (!fs.existsSync(path.join(pkgDir, rel))) {
-    problems.push(
-      `Missing ${what} (${rel}). Run \`pnpm -r build\` at the repo root — builds through pnpm also sync the injected workspace copies under node_modules.`,
-    );
+    problems.push(`Missing ${what} (${rel}). Run \`pnpm -r build\` at the repo root.`);
   }
 }
 
