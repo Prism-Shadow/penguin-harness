@@ -15,7 +15,7 @@
  */
 import fs from "node:fs/promises";
 import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   MessagingChannel,
@@ -79,6 +79,8 @@ export interface SessionServiceDeps {
    * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
+  /** Spawn-confinement getter (see app.ts): claimed from the platform's registered resource, forwarded into core beside proxyEnv. */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 export class SessionService {
@@ -365,6 +367,7 @@ export class SessionService {
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
       ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
+      ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
     });
     let session;
     try {
