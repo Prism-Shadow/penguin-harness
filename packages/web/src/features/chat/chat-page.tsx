@@ -102,6 +102,7 @@ import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-s
 import type { CostStatDisplay } from "./header-stats";
 import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
+import { detectProcessServiceUrls, serviceUrlLabel } from "./process-service-url";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { sameModelRef } from "../models/model-grouping";
@@ -491,6 +492,13 @@ export function ChatPage() {
   );
   const outline = useMemo(
     () => buildOutline(allItems),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // process_id → the service URL its output printed (dev servers announce themselves),
+  // rendered as a link on the live rows of the background-process list.
+  const processServiceUrls = useMemo(
+    () => detectProcessServiceUrls(allItems),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
@@ -1814,58 +1822,78 @@ export function ChatPage() {
                     {S.chat.processList}
                   </p>
                   <ul className="mt-1 space-y-1.5">
-                    {processes.map((p) => (
-                      <li key={p.processId} className="flex items-center gap-2">
-                        <span
-                          aria-hidden
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                            p.running
-                              ? "animate-pulse bg-emerald-500"
-                              : "bg-gray-300 dark:bg-gray-600"
-                          }`}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-mono text-xs" title={p.cmd}>
-                            {p.cmd}
-                          </span>
-                          <span className="block text-[11px] text-gray-400 dark:text-gray-500">
-                            {formatDateTime(p.startedAt)}
-                            {p.pid !== null && ` · pid ${p.pid}`}
-                          </span>
-                        </span>
-                        {p.running ? (
-                          <button
-                            type="button"
-                            disabled={procBusy !== null}
-                            onClick={() => void onKillProcess(p.processId)}
-                            className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                          >
-                            {procBusy === p.processId ? S.common.loading : S.chat.processStop}
-                          </button>
-                        ) : (
-                          <>
-                            <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
-                              {S.chat.processExited}
+                    {processes.map((p) => {
+                      // Exited rows keep no link: the service died with the process.
+                      const serviceUrl = p.running
+                        ? processServiceUrls.get(p.processId)
+                        : undefined;
+                      return (
+                        <li key={p.processId} className="flex items-center gap-2">
+                          <span
+                            aria-hidden
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                              p.running
+                                ? "animate-pulse bg-emerald-500"
+                                : "bg-gray-300 dark:bg-gray-600"
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-mono text-xs" title={p.cmd}>
+                              {p.cmd}
                             </span>
-                            {/* The row is the only handle on that process's captured
+                            <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
+                              {formatDateTime(p.startedAt)}
+                              {p.pid !== null && ` · pid ${p.pid}`}
+                              {serviceUrl !== undefined && (
+                                <>
+                                  {" · "}
+                                  <a
+                                    href={serviceUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={serviceUrl}
+                                    className="text-sky-600 hover:underline dark:text-sky-400"
+                                  >
+                                    {serviceUrlLabel(serviceUrl)}
+                                  </a>
+                                </>
+                              )}
+                            </span>
+                          </span>
+                          {p.running ? (
+                            <button
+                              type="button"
+                              disabled={procBusy !== null}
+                              onClick={() => void onKillProcess(p.processId)}
+                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            >
+                              {procBusy === p.processId ? S.common.loading : S.chat.processStop}
+                            </button>
+                          ) : (
+                            <>
+                              <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                                {S.chat.processExited}
+                              </span>
+                              {/* The row is the only handle on that process's captured
                                 output — removing the entry drops it from the runtime
                                 registry, so the model can no longer be asked to read it
                                 (input_command answers "unknown process_id"). No confirm
                                 step for a one-click tidy-up of a dead row, but the title
                                 says what leaves with it. */}
-                            <button
-                              type="button"
-                              title={S.chat.processRemoveHint}
-                              disabled={procBusy !== null}
-                              onClick={() => void onRemoveProcess(p.processId)}
-                              className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            >
-                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
-                            </button>
-                          </>
-                        )}
-                      </li>
-                    ))}
+                              <button
+                                type="button"
+                                title={S.chat.processRemoveHint}
+                                disabled={procBusy !== null}
+                                onClick={() => void onRemoveProcess(p.processId)}
+                                className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                              >
+                                {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                              </button>
+                            </>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
