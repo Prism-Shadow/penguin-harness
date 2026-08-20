@@ -119,6 +119,7 @@ import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes, skillLibraryRoutes } from "./http/routes/skills.js";
+import { pluginRegistryRoutes } from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -794,6 +795,7 @@ export function createApp(
   app.route("/api/events", eventsRoutes(deps));
   // Skill library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/skills", skillLibraryRoutes());
+  app.route("/api/plugins", pluginRegistryRoutes());
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));

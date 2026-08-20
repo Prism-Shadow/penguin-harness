@@ -128,6 +128,14 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 `PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
 
+### Plugin Registry
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+
+The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). Discovery only — installing an entry stays the operator-side `plugins.json` edit; this endpoint never imports plugin code.
+
 ### Agents
 
 The paths below omit the `/api/projects/:projectId` prefix.

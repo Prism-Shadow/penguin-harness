@@ -128,6 +128,14 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
+### 插件注册表
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。仅用于发现——安装插件仍是运维侧编辑 `plugins.json` 的操作，此接口不会导入任何插件代码。
+
 ### Agent
 
 以下路径均省略前缀 `/api/projects/:projectId`。

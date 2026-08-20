@@ -72,6 +72,7 @@ import type {
   SessionPatchRequest,
   SessionResponse,
   SessionProcessesResponse,
+  PluginIndexResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -720,6 +721,9 @@ export const deleteSchedule = (projectId: string, agentId: string, name: string)
 
 /** Skill library (available to any logged-in user): groups and metadata, excludes SKILL.md body content. */
 export const getSkillLibrary = () => apiFetch<SkillLibraryResponse>("/api/skills");
+
+/** Plugin index (available to any logged-in user): the merged index of every configured registry. */
+export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins");
 
 export const getAgentSkills = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsResponse>(
