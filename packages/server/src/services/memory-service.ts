@@ -410,7 +410,7 @@ export class MemoryService {
     const { index, files } = parseTransferDocument(request.payload);
     // Names are resolved before anything is written, so a document with one bad entry writes
     // nothing at all rather than half of itself.
-    const targets = new Map(files.map((f) => [f.name, this.resolveFile(dir, f.name)]));
+    const planned = files.map((f) => ({ ...f, target: this.resolveFile(dir, f.name) }));
 
     const present = new Set(await this.topicFileNames(dir));
     const carried = new Set(files.map((f) => f.name));
@@ -432,9 +432,9 @@ export class MemoryService {
     }
 
     const added: string[] = [];
-    for (const file of files) {
+    for (const file of planned) {
       if (request.mode === "skip" && present.has(file.name)) continue;
-      await this.writeScopeFile(dir, targets.get(file.name)!, file.content);
+      await this.writeScopeFile(dir, file.target, file.content);
       if (!present.has(file.name)) added.push(file.name);
     }
     for (const name of removed) {
