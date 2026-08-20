@@ -82,11 +82,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     root,
     adminPassword,
     cleanup: async () => {
+      // Terminals are real child processes owned by the platform: disposing the hot host
+      // sweeps its resource registry, which is where every live pty is registered.
       deps.hmr.dispose();
       deps.channels.dispose();
-      // Terminals are real child processes owned by the platform now: disposing the hot
-      // host sweeps its resource registry, which is where every live pty is registered.
-      deps.hmr.dispose();
       deps.db.close();
       // maxRetries: Windows can report ENOTEMPTY/EBUSY while handles from the test's own
       // just-closed files (SQLite, trace writers) are still being released — Node's rm
