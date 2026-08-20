@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`, `server`, `core`
+- **PR:** [#368](https://github.com/Prism-Shadow/penguin-harness/pull/368)
 
 [English](2026-08-20-model-list-import.md)
 
