@@ -5,11 +5,11 @@
  * `await import("@prismshadow/penguin-server")` and nothing else, so main() is invoked at
  * module scope rather than exported.
  *
- * The sequence is written out in main(); each step is one PenguinServer method, named
- * after what it does and appearing in the order main() calls it. The order carries real
- * constraints — the proxy dispatcher before any outbound request, the instance lock before
- * the database opens, the platform (and with it the whole business surface) before the
- * first request is served — so each step documents the constraint it stands on.
+ * main() comes first in the file and is the sequence itself: each step is one PenguinServer
+ * method, named after what it does and appearing in the order main() calls it. The order
+ * carries real constraints — the proxy dispatcher before any outbound request, the instance
+ * lock before the database opens, the platform (and with it the whole business surface)
+ * before the first request is served — so each step documents the constraint it stands on.
  *
  * Tests never go through this file (they inject via app.request() instead).
  */
@@ -33,15 +33,24 @@ import { GRACEFUL_SHUTDOWN_RESOURCE_ID } from "./platform/capabilities.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 
-/** Exit code for "another server already owns this data root" (see lock.ts). */
-const EXIT_ALREADY_RUNNING = 3;
-
-/** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
-function writePortFile(file: string, port: number): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${port}\n`);
-  fs.renameSync(tmp, file);
+/**
+ * The startup lifecycle: one line per step, in the order they have to happen.
+ *
+ * This is the file's table of contents — each call below is a PenguinServer method, and
+ * reading them top to bottom is the whole of what starting a server does.
+ */
+async function main(): Promise<void> {
+  const server = new PenguinServer();
+  server.loadEnv();
+  server.installProxy();
+  server.readConfig();
+  await server.ensureSoleInstance();
+  await server.buildDeps();
+  server.applyPersistedProxy();
+  server.buildApp();
+  await server.seedAdmin();
+  server.listen();
+  server.installProcessHandlers();
 }
 
 /**
@@ -327,19 +336,18 @@ class PenguinServer {
   }
 }
 
-/** The startup lifecycle: one line per step, in the order they have to happen. */
-async function main(): Promise<void> {
-  const server = new PenguinServer();
-  server.loadEnv();
-  server.installProxy();
-  server.readConfig();
-  await server.ensureSoleInstance();
-  await server.buildDeps();
-  server.applyPersistedProxy();
-  server.buildApp();
-  await server.seedAdmin();
-  server.listen();
-  server.installProcessHandlers();
+/** Exit code for "another server already owns this data root" (see lock.ts). */
+const EXIT_ALREADY_RUNNING = 3;
+
+/** Port announcement (PENGUIN_PORT_FILE): tmp + rename, so a polling reader never sees a partial write. */
+function writePortFile(file: string, port: number): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${port}\n`);
+  fs.renameSync(tmp, file);
 }
 
+// Runs on import, which is what starting this server means. It is the last line of the
+// file because main() reaches PenguinServer, whose declaration has to have been evaluated
+// by the time the call happens.
 await main();
