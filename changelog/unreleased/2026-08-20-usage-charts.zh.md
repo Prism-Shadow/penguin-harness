@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#371](https://github.com/Prism-Shadow/penguin-harness/pull/371)
 
 [English](2026-08-20-usage-charts.md)
 
