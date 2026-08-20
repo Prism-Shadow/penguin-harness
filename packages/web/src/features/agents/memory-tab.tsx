@@ -938,7 +938,9 @@ export function MemoryTab({
         )}
       </Modal>
 
-      {/* What the chosen mode costs, memory by memory, before it runs. */}
+      {/* What the chosen mode costs, memory by memory, before it runs. The import modal stays
+          underneath (the skills tab's overwrite confirmation does the same), so cancelling comes
+          back to the mode choice rather than to an empty tab. */}
       <ConfirmModal
         open={importPlan !== null}
         tone="danger"
