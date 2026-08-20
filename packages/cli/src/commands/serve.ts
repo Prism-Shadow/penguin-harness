@@ -100,7 +100,7 @@ export function cliEntryFor(argv1: string | undefined): string | null {
  * DIFFERENT root is untouched. See @prismshadow/penguin-server/lock.
  */
 async function existingInstanceUrl(): Promise<string | null> {
-  const lock = await liveServerLock(process.env.PENGUIN_HOME ?? resolveRoot());
+  const lock = await liveServerLock(resolveRoot());
   return lock === null ? null : `http://localhost:${lock.port}/`;
 }
 
@@ -291,7 +291,7 @@ export function registerServeCommands(program: Command, t: Messages): void {
         // initial one (the server removes it on change), so its presence alone gates the
         // reminder here. The fresh-start path below needs nothing: the server module
         // runs in this same process and prints the notice itself.
-        const initialPassword = readInitialAdminPassword(process.env.PENGUIN_HOME ?? resolveRoot());
+        const initialPassword = readInitialAdminPassword(resolveRoot());
         if (initialPassword !== null) {
           process.stdout.write(renderInitialPasswordNotice("admin", initialPassword) + "\n");
         }

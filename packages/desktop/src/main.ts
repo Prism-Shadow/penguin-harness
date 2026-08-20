@@ -177,7 +177,7 @@ async function handleServerExit(dataRoot: string, code: number): Promise<void> {
 }
 
 async function boot(): Promise<void> {
-  const dataRoot = process.env.PENGUIN_HOME ?? resolveRoot();
+  const dataRoot = resolveRoot();
   const existing = await liveServerLock(dataRoot);
   if (existing !== null) {
     // Attach mode: the one-shot token only works against a server this shell spawned,
