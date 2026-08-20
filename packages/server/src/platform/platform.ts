@@ -32,7 +32,8 @@ import { terminalHttp } from "./terminal/routes.js";
 import { identityFrom } from "./terminal/identity.js";
 import { bindTerminalStream } from "./terminal/stream.js";
 import type { BuildDepsOverrides } from "../app.js";
-import { buildBusinessDeps, businessHttp, createBusinessApp } from "./business.js";
+import { buildBusinessDeps, createBusinessApp } from "./business.js";
+import { seamHttp } from "./hono-seam.js";
 import {
   BUSINESS_DEPS_RESOURCE_ID,
   GRACEFUL_SHUTDOWN_RESOURCE_ID,
@@ -112,7 +113,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         ctx.resources.release(BUSINESS_DEPS_RESOURCE_ID);
         ctx.resources.release(GRACEFUL_SHUTDOWN_RESOURCE_ID);
       });
-      businessHandler = businessHttp(createBusinessApp(deps));
+      businessHandler = seamHttp(createBusinessApp(deps));
     }
 
     const http = async (request: Request): Promise<Response | null> => {

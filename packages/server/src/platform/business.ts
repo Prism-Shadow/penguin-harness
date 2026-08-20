@@ -13,16 +13,14 @@
  * (terminals) ride across; nothing here does yet.
  *
  * The app declines to the runtime through the seam contract (`null`): its notFound
- * returns a marked response `businessHttp` translates to null. The marker — not a bare
- * 404 — is what keeps "no such route here" distinct from a real business 404 ("no such
- * session"): the latter must reach the caller as-is, never fall through to an older
- * runtime handler with different semantics.
+ * returns the marked response of ../hono-seam.ts, which seamHttp translates to null.
  */
 import { Hono } from "hono";
 import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
 import { attributedProjectId } from "../http/attribution.js";
 import type { AppDeps, BuildDepsOverrides } from "../app.js";
 import type { RuntimeCapabilities } from "./capabilities.js";
+import { declined } from "./hono-seam.js";
 import { mergedNoProxy } from "../net/proxy.js";
 import { AgentsRepo } from "../db/repos/agents.js";
 import { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
@@ -277,17 +275,6 @@ export function buildBusinessDeps(
 /** Prefixes the runtime serves itself; the business app declines them unconditionally. */
 const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
 
-/**
- * The decline marker: how this app's notFound tells businessHttp "not mine" without
- * claiming the request. A header rather than a bare 404, because a real business 404
- * (unknown session, unknown project) must reach the caller as this app's answer.
- */
-const DECLINE_HEADER = "x-penguin-business-decline";
-
-function declined(): Response {
-  return new Response(null, { status: 404, headers: { [DECLINE_HEADER]: "1" } });
-}
-
 /** Assembles the business Hono app (routes + auth + error shaping; no listening, no logging). */
 export function createBusinessApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -353,12 +340,4 @@ export function createBusinessApp(deps: AppDeps): Hono<AppEnv> {
   // runtime answers its own 404; unauthenticated callers are already 401'd above, which
   // is the same shape the one-app assembly produced.
   return app;
-}
-
-/** Bridges the business Hono app onto the seam contract: notFound's marker becomes null. */
-export function businessHttp(app: Hono<AppEnv>): (request: Request) => Promise<Response | null> {
-  return async (request) => {
-    const response = await app.fetch(request);
-    return response.headers.get(DECLINE_HEADER) !== null ? null : response;
-  };
 }
