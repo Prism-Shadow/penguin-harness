@@ -276,3 +276,35 @@ describe("a draft becoming a Session", () => {
     expect(dock.paneOfTerminal("term-newborn")).toBeNull();
   });
 });
+
+describe("what the toolbar badge counts", () => {
+  it("is this conversation's terminals, so closing the last one can reach zero", () => {
+    dock.setDockScope("session-counting");
+    dock.assignTerminalToPane("term-here", "bottom");
+    expect(dock.holdsTerminal("term-here")).toBe(true);
+
+    // A shell running in another conversation is live, but it is not this panel's to show
+    // — counting it would leave a badge no action here could ever clear.
+    dock.setDockScope("session-counting-other");
+    expect(dock.holdsTerminal("term-here")).toBe(false);
+  });
+});
+
+describe("a fresh page load", () => {
+  it("keeps the arrangement but does not open the dock on its own", async () => {
+    dock.setDockScope("session-startup");
+    dock.assignTerminalToPane("term-startup", "right");
+    expect(dock.isTerminalDockOpen()).toBe(true);
+
+    // Reload: a second module instance reading the same storage back from scratch.
+    vi.resetModules();
+    const reloaded = await import("../src/features/terminal/terminal-dock-state");
+    reloaded.setDockScope("session-startup");
+    expect(reloaded.isTerminalDockOpen()).toBe(false); // no terminal unfurling by itself
+    expect(reloaded.openPanes()).toEqual(["right"]); // …but the arrangement is still there
+    expect(reloaded.paneOfTerminal("term-startup")).toBe("right");
+
+    reloaded.setTerminalDockOpen(true);
+    expect(reloaded.visiblePanes()).toEqual(["right"]); // and reopening comes back to it
+  });
+});

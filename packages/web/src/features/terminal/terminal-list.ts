@@ -110,15 +110,6 @@ export function liveTerminals(): TerminalInfo[] {
   return terminals;
 }
 
-/**
- * Live shells, all of them. The badge on the toolbar counts these rather than the current
- * conversation's: a running shell is a resource the user should see wherever they are, and
- * the toolbar's menu lists every one so any of them can be brought on screen here.
- */
-export function liveTerminalCount(): number {
-  return terminals.length;
-}
-
 /** Whether this server serves the terminal API at all (false on an older runtime). */
 export function terminalApiSupported(): boolean {
   return !unsupported;

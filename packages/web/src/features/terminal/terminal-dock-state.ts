@@ -122,7 +122,13 @@ function sanitizeScope(raw: unknown): DockScopeState {
   const entries = (value: unknown): Array<[string, unknown]> =>
     typeof value === "object" && value !== null ? Object.entries(value) : [];
   return {
-    visible: state.visible === true,
+    // Deliberately NOT the stored value: a fresh load starts with the dock closed. The
+    // ARRANGEMENT persists — panes, tabs, which terminal each showed — so reopening comes
+    // back to exactly what was there; what does not persist is being open, because a
+    // terminal panel unfurling on its own at startup is not something anyone asked for.
+    // Within one page load it is remembered as usual: this only runs at the storage
+    // boundary, and scope switches read the in-memory map.
+    visible: false,
     panes,
     assignments: Object.fromEntries(
       entries(state.assignments).filter((entry): entry is [string, DockPosition] =>
@@ -451,6 +457,14 @@ export function paneOfTerminal(id: string): DockPosition | null {
   const assigned = assignments[id];
   if (assigned === undefined) return null;
   return panes.includes(assigned) ? assigned : primaryPane();
+}
+
+/**
+ * Whether this conversation holds a terminal at all — what the toolbar's badge counts, so
+ * it agrees with what opening the panel shows.
+ */
+export function holdsTerminal(id: string): boolean {
+  return assignments[id] !== undefined;
 }
 
 /**

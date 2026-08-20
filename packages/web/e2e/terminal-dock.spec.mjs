@@ -337,6 +337,12 @@ test("tab interactions: reorder by drag, live title, detach keeps the dock", asy
 
   // The order persists across a reload.
   await page.reload();
+  // A reload starts with the dock closed by design (the arrangement persists, being open
+  // does not), so reopening is what brings the stored arrangement back. Wait for the app
+  // first: /chat resolves to a Session id a moment after load, and a keypress before that
+  // opens the dock in the placeholder scope instead of the conversation's.
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   await expect(tabs).toHaveCount(2, { timeout: 15000 });
   await expect(tabs.first()).toHaveAttribute("data-terminal-id", titledId);
@@ -441,6 +447,12 @@ test("tabs are numbered; drag-out splits the tab into a new pane", async ({ page
 
   // The arrangement survives a reload.
   await page.reload();
+  // A reload starts with the dock closed by design (the arrangement persists, being open
+  // does not), so reopening is what brings the stored arrangement back. Wait for the app
+  // first: /chat resolves to a Session id a moment after load, and a keypress before that
+  // opens the dock in the placeholder scope instead of the conversation's.
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
   await expect(leftPane).toBeVisible({ timeout: 20000 });
   await expect(bottomPane).toBeVisible();
   await expect(
@@ -543,6 +555,12 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
 
   // The position survives a reload.
   await page.reload();
+  // A reload starts with the dock closed by design (the arrangement persists, being open
+  // does not), so reopening is what brings the stored arrangement back. Wait for the app
+  // first: /chat resolves to a Session id a moment after load, and a keypress before that
+  // opens the dock in the placeholder scope instead of the conversation's.
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   await expect(dock(page)).toHaveAttribute("data-position", "top");
 });
@@ -587,6 +605,12 @@ test("dock resize: drag the boundary; the ratio survives reposition and reload",
 
   // The size survives a reload…
   await page.reload();
+  // A reload starts with the dock closed by design (the arrangement persists, being open
+  // does not), so reopening is what brings the stored arrangement back. Wait for the app
+  // first: /chat resolves to a Session id a moment after load, and a keypress before that
+  // opens the dock in the placeholder scope instead of the conversation's.
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   const reloaded = await dock(page).boundingBox();
   expect(Math.abs(reloaded.height - grown.height), "ratio kept across reload").toBeLessThan(8);
@@ -671,6 +695,9 @@ test("tab strip squeezes when crowded and wheel-scrolls", async ({ page }) => {
     );
   });
   await page.goto(`${BASE}/chat`);
+  // The seeded arrangement is restored, but a load never opens the dock by itself.
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote");
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   await waitForDockShell(page, "SQUEEZE_UP");
 
@@ -833,21 +860,18 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
   await page.goto(`${BASE}/chat/${sessionId}`);
   await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
 
-  // One live terminal → badge "1"; the terminal is not pinned by default, so the badge
-  // floats on the "all panels" trigger.
+  // The badge counts THIS conversation's terminals, and it holds none yet: the seeded shell
+  // belongs to no conversation until one adopts it, and a count of shells this panel would
+  // not show is a count that can never reach zero from here.
   const badge = page.locator('[data-testid="terminal-count-badge"]');
-  await expect(badge).toHaveText("1", { timeout: 15000 });
-  await expect(
-    page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
-  ).toBeVisible();
+  await expect(badge).toHaveCount(0);
 
-  // The dropdown's terminal row carries the same live count.
-  await page.locator('[data-testid="panels-all"]').click();
-  await expect(page.locator('[data-testid="panels-menu-terminal-count"]')).toHaveText("1");
-  await page.keyboard.press("Escape");
+  // (A shell no conversation holds is still reachable from the pinned terminal icon's hover
+  // list — covered by the hover-menus test.)
 
-  // Opening the terminal attaches the existing (last-opened) shell instead of creating a
-  // second one: its marker is on the dock screen and the count stays 1.
+  // Opening the panel from the dropdown adopts the seeded shell rather than creating a
+  // second one: its marker is on the dock screen, and it is now this conversation's one
+  // terminal, so the badge appears at 1.
   await page.locator('[data-testid="panels-all"]').click();
   await page.locator('[data-testid="panels-menu-terminal"]').click();
   await expect(dock(page)).toBeVisible({ timeout: 10000 });
@@ -855,7 +879,15 @@ test("terminal count badge and last-opened persistence", async ({ page }) => {
     timeout: 20000,
   });
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("LAST_OPENED_MARKER");
-  await expect(badge).toHaveText("1");
+  await expect(badge).toHaveText("1", { timeout: 15000 });
+  await expect(
+    page.locator('[data-testid="panels-all"] [data-testid="terminal-count-badge"]'),
+  ).toBeVisible();
+
+  // The dropdown's terminal row carries the same count.
+  await page.locator('[data-testid="panels-all"]').click();
+  await expect(page.locator('[data-testid="panels-menu-terminal-count"]')).toHaveText("1");
+  await page.keyboard.press("Escape");
 
   // Pinning the terminal moves the badge onto the terminal's own trigger.
   await page.locator('[data-testid="panels-all"]').click();
@@ -942,6 +974,8 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
     );
   }, sessionId);
   await page.goto(`${BASE}/chat/${sessionId}`);
+  await expect(page.locator('[data-testid="panels-toolbar"]')).toBeVisible({ timeout: 20000 });
+  await page.keyboard.press("Control+Backquote"); // a load never opens the dock by itself
   await expect(dock(page)).toBeVisible({ timeout: 20000 });
   await waitForDockShell(page, "SIDE_SWAP_UP");
   await runInDock(page, "echo SIDE_SWAP_MARKER");
