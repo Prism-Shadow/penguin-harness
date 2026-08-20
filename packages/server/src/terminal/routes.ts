@@ -1,7 +1,7 @@
 /**
  * Terminal control plane: `/api/terminals`, one route group of the platform's Hono app.
  *
- * Mounted by app.ts's createPlatformApp beside the business route groups, so all
+ * Mounted by app.ts's createApp beside the business route groups, so all
  * platform routes register into ONE app and swap as one unit. This group owns exactly
  * the six routes below and nothing else under its prefix: unknown paths and methods fall
  * to the parent app's notFound, which declines to the runtime. The identity gate is
@@ -94,7 +94,7 @@ type TerminalEnv = { Variables: { user: IdentifiedUser } };
 
 /**
  * The terminal route group, mounted into the platform's one Hono app beside the business
- * groups (see app.ts's createPlatformApp). Decline (unknown path/method) and error
+ * groups (see app.ts's createApp). Decline (unknown path/method) and error
  * shaping belong to the parent app; what stays here is the routes and their identity
  * gate. `identity` is the runtime's capability; a request it cannot attribute is 401
  * here rather than falling through, because falling through would hand an

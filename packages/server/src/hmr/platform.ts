@@ -30,12 +30,7 @@ import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
-import {
-  buildBusinessDeps,
-  createPlatformApp,
-  type AppDeps,
-  type BuildDepsOverrides,
-} from "../app.js";
+import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
   PLATFORM_CURRENT_RESOURCE_ID,
@@ -84,7 +79,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     const identity = identityFrom(ctx.resources);
 
     // The business deps, built per App over the runtime's published capabilities — see
-    // app.ts's buildBusinessDeps and ./capabilities.ts. A runtime that publishes nothing
+    // app.ts's buildAppDeps and ./capabilities.ts. A runtime that publishes nothing
     // (an older runtime, a bare kernel) gets a terminals-only platform rather than a
     // failed boot.
     let deps: AppDeps | null = null;
@@ -93,7 +88,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       console.warn("[platform] runtime publishes no business capabilities; terminals only");
     } else {
       const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
-      deps = buildBusinessDeps(caps, overrides ?? {});
+      deps = buildAppDeps(caps, overrides ?? {});
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -108,7 +103,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
     // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
-    const app = createPlatformApp(deps, terminals, identity);
+    const app = createApp(deps, terminals, identity);
     const business = deps;
     const current: PlatformCurrent = {
       deps,
