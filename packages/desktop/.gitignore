@@ -6,7 +6,9 @@
 #   out/    — electron-builder output
 #   skills/ — a copy of packages/skills/skills, which is tracked at its source
 #   stage/  — the assembled app directory, on branches that stage before packing
+#   install-image/ — the portable install image (scripts/build-install-image.mjs)
 bin/
+install-image/
 out/
 skills/
 stage/
