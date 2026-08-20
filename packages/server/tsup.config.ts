@@ -17,6 +17,10 @@ export default defineConfig({
     "initial-password": "src/initial-password.ts",
     "reset-admin-password": "src/reset-admin-password.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
+    // "./extension": the surface extension PACKAGES compile against. Extensions live outside
+    // this bundle entirely — they are configuration resolved from the installation,
+    // not platform capability.
+    "extension/index": "src/extension/index.ts",
   },
   format: ["esm"],
   target: "node24",
