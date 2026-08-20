@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** process
 - **Scope:** `skills`, `docs`
+- **PR:** [#365](https://github.com/Prism-Shadow/penguin-harness/pull/365)
 
 [中文版](2026-08-20-penguin-sdk-skill-trigger.zh.md)
 
