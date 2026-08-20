@@ -71,7 +71,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = buildAppDeps({ ...testConfig(root), ...config }, { log: () => {}, ...overrides });
+  const deps = await buildAppDeps(
+    { ...testConfig(root), ...config },
+    { log: () => {}, ...overrides },
+  );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
   const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;

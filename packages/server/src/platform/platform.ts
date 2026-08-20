@@ -15,12 +15,12 @@
  * effects (e.g. extending process.env for the shells agents spawn) are
  * deliverable from boot() with no runtime change. See ../hmr/README.md.
  *
- * This packaged default is deliberately a bare stub: the runtime (HmrHost,
- * routes.ts) is mechanism only, and carries no business methods of its own.
- * A real business platform is pushed over HTTP and serves its own HTTP through
- * the seam in ../hmr/http-seam.ts: it sees every request before the runtime's
- * own routes do and answers null for the ones it does not own, so adding or
- * changing an endpoint needs no runtime change.
+ * This packaged platform carries the WHOLE business surface (see ./business.ts):
+ * every business service and route is assembled inside create() over the runtime's
+ * published capabilities, and serves through the seam in ../hmr/http-seam.ts — it
+ * sees every request before the runtime's own routes do and answers null for the
+ * ones it does not own. A pushed bundle therefore replaces the business wholesale:
+ * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
@@ -31,6 +31,14 @@ import type { TerminalSession } from "./terminal/session.js";
 import { terminalHttp } from "./terminal/routes.js";
 import { identityFrom } from "./terminal/identity.js";
 import { bindTerminalStream } from "./terminal/stream.js";
+import type { BuildDepsOverrides } from "../app.js";
+import { buildBusinessDeps, businessHttp, createBusinessApp } from "./business.js";
+import {
+  BUSINESS_DEPS_RESOURCE_ID,
+  GRACEFUL_SHUTDOWN_RESOURCE_ID,
+  RUNTIME_OVERRIDES_RESOURCE_ID,
+  claimRuntimeCapabilities,
+} from "./capabilities.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -64,12 +72,54 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 });
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
-  create(ctx, context) {
+  async create(ctx, context) {
     const terminals = new TerminalManager(ctx.resources);
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
-    const http = terminalHttp(terminals, identityFrom(ctx.resources));
+    const terminalHandler = terminalHttp(terminals, identityFrom(ctx.resources));
+
+    // The business surface (services + routes), built per App over the runtime's
+    // published capabilities — see ./business.ts for what it is and ./capabilities.ts for
+    // what it stands on. A runtime that publishes nothing (an older runtime, a bare
+    // kernel) gets a terminals-only platform rather than a failed boot.
+    let businessHandler: ((request: Request) => Promise<Response | null>) | null = null;
+    const caps = claimRuntimeCapabilities(ctx.resources);
+    if (caps === null) {
+      console.warn("[platform] runtime publishes no business capabilities; terminals only");
+    } else {
+      const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
+      const deps = buildBusinessDeps(caps, overrides ?? {});
+      // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
+      // scan; only active while this App is.
+      await deps.scheduler.start();
+      // Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss)
+      // can leave goal_state rows stuck `active` with no runner behind them — and so can
+      // the previous App, whose manager a swap hard-aborts. Reconcile them to `aborted`
+      // now — nothing is running in THIS App yet — so the chat banner never restores a
+      // phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
+      deps.goalsRepo.abortOrphanedActive();
+      ctx.resources.register(BUSINESS_DEPS_RESOURCE_ID, deps);
+      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
+      // effect cannot await — published separately for index.ts's shutdown to claim.
+      ctx.resources.register(GRACEFUL_SHUTDOWN_RESOURCE_ID, () => deps.manager.shutdown(5000));
+      ctx.effect(() => {
+        // Swap semantics for unparked state: HARD STOP. Pending approvals converge to
+        // deny, active runs abort, the scheduler's timer dies with this App; the next
+        // App rebuilds all of it. Only parked resources (terminals) ride across.
+        deps.scheduler.stop();
+        void deps.manager.shutdown(0);
+        ctx.resources.release(BUSINESS_DEPS_RESOURCE_ID);
+        ctx.resources.release(GRACEFUL_SHUTDOWN_RESOURCE_ID);
+      });
+      businessHandler = businessHttp(createBusinessApp(deps));
+    }
+
+    const http = async (request: Request): Promise<Response | null> => {
+      const own = await terminalHandler(request);
+      if (own !== null) return own;
+      return businessHandler === null ? null : businessHandler(request);
+    };
 
     return {
       // Deliberately NOT disposing the terminals here (no ctx.effect): the shells are
