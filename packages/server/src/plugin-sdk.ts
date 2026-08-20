@@ -18,3 +18,16 @@ export type {
   WorkflowInstance,
   WorkflowInstances,
 } from "./hmr/plugin.js";
+export type { SandboxControl, SandboxProviderRegistry } from "./hmr/plugin.js";
+export type {
+  ConfinedArgv,
+  ConfinedSandboxMode,
+  RunnerFailureRule,
+  SandboxDimension,
+  SandboxEnforcement,
+  SandboxMode,
+  SandboxPolicy,
+  SandboxProvider,
+  SandboxProviderSource,
+  SandboxSettings,
+} from "./sandbox/types.js";

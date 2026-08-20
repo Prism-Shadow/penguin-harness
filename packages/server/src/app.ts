@@ -99,7 +99,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -529,6 +529,13 @@ function readSessionCookie(header: string | null): string | null {
 export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
+  // Spawn confinement (mechanism only here): platform.ts's create() hands in a getter
+  // over its own SandboxService, and it is threaded untouched through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation) — then re-read
+  // at every command spawn, like proxyEnv. Same-generation wiring on purpose: the
+  // sessions spawning through it are hard-stopped with their App, so no channel with a
+  // longer lifetime is needed. Policy itself lives in ../sandbox/.
+  confineSpawn: () => SpawnConfiner | null = () => null,
 ): AppDeps {
   const { config, db, authService, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -601,7 +608,9 @@ export function buildAppDeps(
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
-    loader: overrides.loader ?? createCoreSessionLoader(config.root, sessionSources, { proxyEnv }),
+    loader:
+      overrides.loader ??
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, confineSpawn }),
     sources: sessionSources,
     recorder,
     errors,
@@ -666,6 +675,7 @@ export function buildAppDeps(
     sources: sessionSources,
     traceIndex,
     proxyEnv,
+    confineSpawn,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.

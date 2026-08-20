@@ -25,6 +25,7 @@
  */
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import type { TerminalManager } from "../terminal/manager.js";
+import type { SandboxProviderSource, SandboxSettings } from "../sandbox/index.js";
 
 /** What a registered workflow does when called. Plain JS in, plain JS out. */
 export interface WorkflowInstance {
@@ -40,6 +41,32 @@ export type WorkflowFactory = () => WorkflowInstance;
 
 /** A tool factory — RESERVED. The shape lands with the first plugin-provided tool. */
 export type ToolFactory = unknown;
+
+/**
+ * Sandbox backend registration — the floor where plugins are PROVIDERS. Backends
+ * register against the harness's own sandbox interface (../sandbox/). None of them is
+ * built in: every backend, including the ones this repo ships, is a package a
+ * deployment installs and names in plugins.json, so a third-party one enters by exactly
+ * the same door. A backend declares which dimensions it implements (`network` and
+ * `mask-paths` are optional implementations; declaring nothing means filesystem only),
+ * and the service ROUTES each policy to a backend implementing what it requires — so an
+ * unimplemented dimension can never be silently ignored. A backend may be handed in as
+ * a promise: loading is asynchronous (dynamic imports, probes), and the service fails
+ * closed while a load is pending or failed.
+ */
+export interface SandboxProviderRegistry {
+  registerProvider(name: string, provider: SandboxProviderSource): void;
+}
+
+/**
+ * The sandbox config surface on the instance view: what a deployment (or a plugin
+ * reacting to an event) uses to flip confinement. Settings park with the platform
+ * context, so they survive hot swaps.
+ */
+export interface SandboxControl {
+  configure(settings: SandboxSettings): void;
+  settings(): SandboxSettings;
+}
 
 /**
  * The workflow instances this App built from the registered factories: a plain
@@ -61,6 +88,8 @@ export interface PenguinContext {
   workflows: WorkflowInstances;
   /** Terminals — a platform member, flattened onto the context per the vocabulary. */
   terminals: TerminalManager;
+  /** The sandbox config surface (see {@link SandboxControl}). */
+  sandbox: SandboxControl;
   // context.* — further platform members flatten here as concrete needs land.
 }
 
@@ -70,6 +99,8 @@ export interface PenguinInterface {
   workflow: Map<string, WorkflowFactory>;
   /** Tool factories, keyed by name — RESERVED (see {@link ToolFactory}). */
   tool: Map<string, ToolFactory>;
+  /** Sandbox backend registration (see {@link SandboxProviderRegistry}). */
+  sandbox: SandboxProviderRegistry;
 }
 
 /** A raw plugin: both hooks optional — a plugin may care about only one side. */

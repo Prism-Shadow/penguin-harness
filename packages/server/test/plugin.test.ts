@@ -18,7 +18,7 @@ import {
 } from "../src/hmr/plugin.js";
 
 function emptyIface(): PenguinInterface {
-  return { workflow: new Map(), tool: new Map() };
+  return { workflow: new Map(), tool: new Map(), sandbox: { registerProvider: () => {} } };
 }
 
 describe("plugin host", () => {
@@ -152,6 +152,8 @@ describe("plugin seam on the real platform", () => {
       expect(createApps).toBe(1);
       expect(events.map((e) => e.name)).toEqual(["create"]);
       const ctx = events[0]!.ctx;
+      // The sandbox config surface rides the same context (see ../src/sandbox/).
+      expect(ctx.sandbox.settings()).toEqual({ mode: "danger-full-access" });
       // context.* flatten: the platform's own member is directly on the context.
       expect(typeof ctx.terminals.handleIds).toBe("function");
       // …and the workflow this plugin registered is instantiated and callable.
