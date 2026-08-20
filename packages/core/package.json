@@ -29,6 +29,10 @@
       "types": "./dist/interfaces.d.ts",
       "import": "./dist/interfaces.js"
     },
+    "./extension": {
+      "types": "./dist/extension/index.d.ts",
+      "import": "./dist/extension/index.js"
+    },
     "./model-catalog": {
       "types": "./dist/state/model-catalog.d.ts",
       "import": "./dist/state/model-catalog.js"

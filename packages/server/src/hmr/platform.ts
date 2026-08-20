@@ -38,6 +38,9 @@ import {
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
+import type { PenguinInterface } from "../extension/index.js";
+import { extensionHostFrom } from "../extension/host.js";
+import { instantiateWorkflows, WorkflowFactories } from "../extension/workflow.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -87,11 +90,10 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 /**
  * The resource interfaces this platform parks, by ID-prefix group (see
  * RESOURCE_IFACES_RESOURCE_ID in ./capabilities.ts): create() integrates a group its
- * predecessor declared only at the same family AND version, and hard-stops it otherwise.
- * `terminal` is the spawn primitive — a live pty behind a deliberately stable contract,
- * expected to stay at v1 across upgrades that change everything else; `platform` is the
- * current-App pointer. A platform that does not want to inherit any of penguin's parked
- * resources declares a different `family` instead of arguing with each version.
+ * predecessor declared only at the SAME version and hard-stops it otherwise. `terminal`
+ * is the spawn primitive — a live pty behind a deliberately stable contract, expected to
+ * stay at v1 across upgrades that change everything else; `platform` is the current-App
+ * pointer.
  */
 interface ParkedInterfaces extends Interfaces {
   family: string;
@@ -182,6 +184,20 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // wraps caps.authService, the same object the business routes authenticate with. A
     // bare kernel has no auth — terminals stay fail-closed there.
     const identity = identityFrom(caps?.authService ?? null);
+    // The extension seam (see ../extension/index.ts): the definition view first, then the
+    // instance context, with the workflows built in between — so an extension that registers
+    // one always sees it instantiated in the App it registered into. The host is CLAIMED
+    // from the registry, never imported (see extensionHostFrom).
+    const extensions = extensionHostFrom(ctx.resources);
+    const extIface: PenguinInterface = {
+      workflow: new WorkflowFactories(),
+      tool: new Map(),
+    };
+    extensions.emit("initialize", extIface);
+    extensions.emit("create", {
+      workflows: instantiateWorkflows(extIface.workflow),
+      terminals,
+    });
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
