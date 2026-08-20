@@ -126,7 +126,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -773,6 +773,13 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
 export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
+  // Spawn confinement (mechanism only here): platform.ts's create() hands in a getter
+  // over its own SandboxService, and it is threaded untouched through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation) — then re-read
+  // at every command spawn, like proxyEnv. Same-generation wiring on purpose: the
+  // sessions spawning through it are hard-stopped with their App, so no channel with a
+  // longer lifetime is needed. Policy itself lives in ../sandbox/.
+  confineSpawn: () => SpawnConfiner | null = () => null,
 ): AppDeps {
   const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -939,7 +946,7 @@ export function buildAppDeps(
     channels,
     loader:
       overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, confineSpawn }),
     sources: sessionSources,
     recorder,
     errors,
@@ -1049,6 +1056,7 @@ export function buildAppDeps(
         ? enabled.channel
         : null;
     },
+    confineSpawn,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
