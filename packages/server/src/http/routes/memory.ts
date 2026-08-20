@@ -1,5 +1,5 @@
 /**
- * Memory routes (`agent_state/memory/`), all Project-member operations:
+ * Memory routes (`agent_state/memory/`), Project-member operations except where noted:
  *   GET    /api/projects/:p/agents/:a/memory                        # switch + scope groups (user scope first)
  *   POST   /api/projects/:p/agents/:a/memory/template-placeholder    # insert the {{MEMORY}} placeholder into the template
  *   GET    /api/projects/:p/agents/:a/memory/scopes/:key/files      # one scope's topic files
@@ -33,7 +33,7 @@ const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace
 export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  /** Shared preamble: id validation before any path construction (FD-4), then the Project membership check. */
+  /** Shared preamble: id validation before any path construction, then the Project membership check. */
   const scope = (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
@@ -70,7 +70,8 @@ export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
     const key = pathParam(c, "scopeKey");
     const doc = await deps.memoryService.exportScope(projectId, agentId, key);
     // Named for the Agent and the scope it came from, so several downloads stay apart in a
-    // downloads folder; both segments are validated ids, hence ASCII by construction.
+    // downloads folder. The Agent id is validated and the scope key has just passed the
+    // service's key rule, so neither can carry a quote or a newline into the header.
     return new Response(JSON.stringify(doc, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
