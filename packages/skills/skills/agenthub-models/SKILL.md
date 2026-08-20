@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 12
-updated: 2026-08-18T21:40:00Z
+version: 13
+updated: 2026-08-20T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -55,7 +55,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | Gemini 3 image   | `gemini-3.1-flash-image`, `gemini-3-pro-image-preview`                | —                                                                                                                                               |
 | Gemini 3 TTS     | `gemini-3.1-flash-tts-preview`                                        | —                                                                                                                                               |
 | Gemini embedding | `gemini-embedding-2`                                                  | —                                                                                                                                               |
-| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
+| Claude 5         | `claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`                  | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
 | Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT-5.6          | `gpt-5.6` (routes to sol), `gpt-5.6-terra`, `gpt-5.6-luna`            | OpenRouter `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`                                                                  |
 | GPT-5.5 / 5.4    | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                  | OpenRouter `openai/gpt-5.5`, `openai/gpt-5.5-pro`, `openai/gpt-5.4`, `openai/gpt-5.4-mini`, `openai/gpt-5.4-nano`, `openai/gpt-5.4-pro`         |
