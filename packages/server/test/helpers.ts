@@ -80,7 +80,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = buildAppDeps(
+  const deps = await buildAppDeps(
     { ...testConfig(root), ...config },
     { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
   );

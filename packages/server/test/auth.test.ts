@@ -38,14 +38,15 @@ describe("auth", () => {
   });
 
   it("registration is closed: no register endpoint", async () => {
-    // Not logged in: no such route under /api/auth, falls into the protected-section 401.
+    // /api/auth is the runtime's own public namespace (the business platform declines it
+    // wholesale), so an unknown path in it is an honest 404, logged in or not.
     const anon = await t.app.request("/api/auth/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ userId: "alice", password: "password-123" }),
     });
-    expect(anon.status).toBe(401);
-    // Logged in: falls through to notFound -> 404, proving the route has indeed been removed.
+    expect(anon.status).toBe(404);
+    // Logged in: same 404, proving the route has indeed been removed.
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).post("/api/auth/register", {
       userId: "alice",
@@ -196,7 +197,10 @@ describe("auth", () => {
 
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {
     const root = await makeTempRoot();
-    const deps = buildAppDeps({ ...testConfig(root), seedAdminPassword: "x" }, { log: () => {} });
+    const deps = await buildAppDeps(
+      { ...testConfig(root), seedAdminPassword: "x" },
+      { log: () => {} },
+    );
     try {
       await expect(deps.authService.seedAdmin()).rejects.toThrow(/at least 8 characters/);
       // Rejected before any insert: no half-created privileged account to retry around.

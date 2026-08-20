@@ -25,6 +25,7 @@ import {
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
+import { GRACEFUL_SHUTDOWN_RESOURCE_ID } from "./platform/capabilities.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -57,7 +58,9 @@ if (existingLock) {
   process.exit(EXIT_ALREADY_RUNNING);
 }
 
-const deps = buildAppDeps(config);
+// Boots the platform inside (the business surface — services, routes, scheduler — is
+// assembled in its create()), so everything is in place before the server serves anything.
+const deps = await buildAppDeps(config);
 // The database is open now: bring the dispatcher in line with the persisted proxy
 // settings (absent rows read as the defaults: app switch on, no explicit address)
 // before the first possible outbound request (update check, LLM calls — all behind
@@ -95,14 +98,9 @@ if (config.desktopToken === null) {
   }
 }
 
-// Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan; only active while the server is running.
-await deps.scheduler.start();
-
-// Goal mode runs only in SessionManager memory: a hard crash (SIGKILL, power loss) can leave
-// goal_state rows stuck `active` with no runner behind them. Reconcile them to `aborted` now —
-// nothing is running yet, so any `active` row is a crash orphan — so the chat banner never
-// restores a phantom "running" goal. GOAL.yaml on disk stays `active` as the resume point.
-deps.goalsRepo.abortOrphanedActive();
+// The scheduler start and the orphaned-Goal reconciliation moved into the platform's
+// create() (platform/platform.ts): they belong to the business surface and re-run at
+// every App creation, hot swaps included.
 
 // On a loopback bind the App is canonicalized onto one name (`localhost`) and its
 // counterpart is reserved for previews, so advertise the canonical name — the other one
@@ -190,8 +188,13 @@ async function shutdown(signal: string, exitCode = 0): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`Received ${signal}, shutting down…`);
-  deps.scheduler.stop();
-  await deps.manager.shutdown(5000);
+  // The CURRENT App's graceful drain (manager: interrupt runs, deny approvals, wait ≤5s
+  // for wrap-up) — claimed through the registry rather than deps, which after a hot swap
+  // would point at an already-disposed business incarnation.
+  const graceful = deps.hmr.resources.claim<() => Promise<void>>(GRACEFUL_SHUTDOWN_RESOURCE_ID);
+  if (graceful !== undefined) await graceful();
+  // Disposing the host drains the App's effects (scheduler stop, manager hard-stop) and
+  // sweeps the resource registry (live ptys).
   deps.hmr.dispose();
   deps.channels.dispose();
   ipv6Loopback?.close();

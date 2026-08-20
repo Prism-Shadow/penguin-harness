@@ -110,13 +110,13 @@ describe("desktop shutdown endpoint", () => {
 
     const plain = await createTestApp();
     try {
-      // Outside desktop mode the route is not mounted; the request falls through to the
-      // cookie auth middleware, which rejects the cookieless caller with 401.
+      // Outside desktop mode the route is not mounted, and /api/desktop is the runtime's
+      // own namespace (the business platform declines it wholesale): an honest 404.
       const res = await plain.app.request("/api/desktop/shutdown", {
         method: "POST",
         headers: { authorization: `Bearer ${TEST_DESKTOP_TOKEN}` },
       });
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(404);
     } finally {
       await plain.cleanup();
     }

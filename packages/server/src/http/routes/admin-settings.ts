@@ -116,7 +116,10 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     // Mirror the app switch + address into the process: rebuilds the global fetch
     // dispatcher (live change, no restart; a no-op when nothing effectively changed).
-    applyProxySettings({
+    // Through the claimed capability, not a direct import: this route runs inside the
+    // platform bundle, whose own copy of net/proxy.js drives a dispatcher that
+    // globalThis.fetch never routes through (see AppDeps.proxyControl).
+    deps.proxyControl({
       proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
     });
