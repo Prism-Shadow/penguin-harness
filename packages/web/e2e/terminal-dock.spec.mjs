@@ -72,7 +72,9 @@ async function killAllTerminals(request) {
     .toBe(0);
 }
 
-const dock = (page) => page.locator('[data-testid="terminal-dock"]');
+// The pane the user sees. A displaced or just-closed side pane lingers in the DOM for its
+// 200ms collapse — inert, width 0 — so the bare testid can briefly match two elements.
+const dock = (page) => page.locator('[data-testid="terminal-dock"]:not([inert])');
 const dockScreenText = (page) => dock(page).locator(".xterm-rows").innerText();
 
 async function runInDock(page, command) {
@@ -460,7 +462,8 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   await waitForDockShell(page, "LAYOUT_SHELL");
   await expect(dock(page)).toHaveAttribute("data-position", "bottom"); // the default
 
-  const header = page.locator('[data-testid="terminal-dock-grip"]');
+  // Scoped to the visible pane: a just-moved pane's predecessor lingers inert with its own grip.
+  const header = dock(page).locator('[data-testid="terminal-dock-grip"]');
   const ready = page.locator('[data-testid="terminal-dock"][data-status="ready"]');
 
   // Repositioning must not remount the terminal (a remount would drop the WebSocket and
@@ -487,13 +490,19 @@ test("dock layout: drag to an edge or onto the drop targets, preview then apply"
   await expect(dock(page)).toHaveAttribute("data-position", "left");
 
   // The preview promised the real final region: the landed dock occupies (within a couple
-  // of px of border rounding) exactly the rectangle that was previewed.
-  const landedBox = await dock(page).boundingBox();
-  for (const side of ["x", "y", "width", "height"]) {
-    expect(Math.abs(landedBox[side] - previewBox[side]), `preview vs landed ${side}`).toBeLessThan(
-      3,
-    );
-  }
+  // of px of border rounding) exactly the rectangle that was previewed. Polled — a freshly
+  // created side pane slides in over 200ms, so a one-shot read lands mid-animation.
+  await expect
+    .poll(async () => {
+      const landedBox = await dock(page).boundingBox();
+      if (!landedBox) return Infinity;
+      return Math.max(
+        ...["x", "y", "width", "height"].map((side) =>
+          Math.abs(landedBox[side] - previewBox[side]),
+        ),
+      );
+    }, "preview vs landed geometry")
+    .toBeLessThan(3);
 
   // The move kept the very same terminal instance — same xterm DOM node, same connection,
   // screen intact without any restore repaint — and it stays interactive.
@@ -566,7 +575,7 @@ test("dock resize: drag the boundary; the ratio survives reposition and reload",
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("RESIZED_OK");
 
   // Repositioning to the top keeps the height ratio (same orientation, same row height).
-  const hb = await page.locator('[data-testid="terminal-dock-grip"]').boundingBox();
+  const hb = await dock(page).locator('[data-testid="terminal-dock-grip"]').boundingBox();
   const host = await page.locator("[data-dock-host]").boundingBox();
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
@@ -946,13 +955,19 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   await expect(workspace).toHaveAttribute("aria-expanded", "true");
   await expect(dock(page)).toBeHidden();
   // Collapsed, not unmounted — that is what lets the width animate rather than pop, and it
-  // is why the shell's view survives the swap.
-  await expect(dock(page)).toHaveCount(1);
+  // is why the shell's view survives the swap. (Raw selector: the collapsed pane is inert,
+  // which the dock() helper deliberately filters out.)
+  await expect(page.locator('[data-testid="terminal-dock"]')).toHaveCount(1);
 
   // Same slot, same width: the panel opens exactly as wide as the pane it displaced
-  // (use-panel-width.ts is one value for all three side surfaces).
-  const panelWidth = (await page.locator('[data-testid="files-panel"]').boundingBox()).width;
-  expect(Math.abs(panelWidth - paneWidth)).toBeLessThanOrEqual(2);
+  // (use-panel-width.ts is one value for all three side surfaces). Polled — the open is
+  // sequenced behind the pane's retraction and then slides, so a one-shot read races it.
+  await expect
+    .poll(async () => {
+      const box = await page.locator('[data-testid="files-panel"]').boundingBox();
+      return Math.abs((box?.width ?? 0) - paneWidth);
+    })
+    .toBeLessThanOrEqual(2);
   const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
   expect(terminals.filter((t) => t.alive)).toHaveLength(1);
 

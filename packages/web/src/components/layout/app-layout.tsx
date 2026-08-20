@@ -179,6 +179,27 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   );
 }
 
+/**
+ * Keeps a side pane mounted through its 200ms collapse after its slot goes away (Ctrl+`,
+ * closing the pane, moving it to another edge). Unmounting the moment the slot empties is
+ * a pop: a width transition needs the node on both ends of it. The pane renders `open`
+ * false for the grace period — width 0, inert — and then unmounts for real, which is what
+ * finally lets the view pool dispose the xterm view.
+ */
+function useLingeringSlot(slot: boolean): boolean {
+  const [lingering, setLingering] = useState(false);
+  useEffect(() => {
+    if (slot) {
+      setLingering(true);
+      return;
+    }
+    if (!lingering) return;
+    const timer = window.setTimeout(() => setLingering(false), 200);
+    return () => window.clearTimeout(timer);
+  }, [slot, lingering]);
+  return slot || lingering;
+}
+
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
   // The terminal dock belongs to the conversation it was opened in, so switching Sessions
@@ -200,6 +221,9 @@ export function AppLayout() {
   // dock outright still unmounts, which is what disposes the view. Note this cannot key off
   // dockVisible: that already answers "is anything on screen", which a displaced pane is not.
   const hasPane = (p: string) => dockVisible && panes.includes(p as never);
+  // Mounted through the exit collapse too — see useLingeringSlot.
+  const leftMounted = useLingeringSlot(paneHasSlot("left"));
+  const rightMounted = useLingeringSlot(paneHasSlot("right"));
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
@@ -334,11 +358,11 @@ export function AppLayout() {
             a terminal. data-dock-row anchors the drag preview's geometry. */}
         {hasPane("top") && <TerminalDock position="top" />}
         <div data-dock-row className="flex min-h-0 min-w-0 flex-1">
-          {paneHasSlot("left") && <TerminalDock position="left" open={hasPane("left")} />}
+          {leftMounted && <TerminalDock position="left" open={hasPane("left")} />}
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
-          {paneHasSlot("right") && <TerminalDock position="right" open={hasPane("right")} />}
+          {rightMounted && <TerminalDock position="right" open={hasPane("right")} />}
         </div>
         {hasPane("bottom") && <TerminalDock position="bottom" />}
         <TerminalDockRuntime />

@@ -37,6 +37,7 @@ import {
   dockStateVersion,
   setChatSidePanelOpen,
   subscribeTerminalDock,
+  visiblePanes,
 } from "../terminal/terminal-dock-state";
 import { apiErrorText } from "../../lib/api-error";
 import { pathFileName } from "../../lib/file-path";
@@ -357,13 +358,19 @@ export function ChatPage() {
     }
   };
   useEffect(() => cancelPanelSwap, []);
-  /** Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant otherwise. */
+  /**
+   * Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant
+   * otherwise. `retractingPane` extends the same courtesy to a side terminal pane the open
+   * is displacing: it collapses on the same 200ms a closing panel takes, and opening over
+   * it mid-collapse is the wipe the sequencing exists to avoid.
+   */
   const swapPanels = (
     closeFirst: { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
     open: (v: boolean) => void,
+    retractingPane = false,
   ) => {
     closeFirst.setOpen(false);
-    if (closeFirst.open && closeFirst.isDocked) {
+    if ((closeFirst.open && closeFirst.isDocked) || retractingPane) {
       panelSwapTimer.current = window.setTimeout(() => {
         panelSwapTimer.current = null;
         open(true);
@@ -378,13 +385,16 @@ export function ChatPage() {
   // dock only learns that a panel is up (setChatSidePanelOpen); it keeps its arrangement, so
   // closing the panel brings the pane back where it was. Top/bottom panes are unaffected —
   // they cost height, not width.
+  /** A visible left/right terminal pane — read BEFORE the flag below starts hiding it. */
+  const sidePaneShowing = () => visiblePanes().some((p) => p === "left" || p === "right");
   const filesPanel: FilesPanelState = {
     ...filesPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
       if (next) {
+        const retracting = sidePaneShowing();
         setChatSidePanelOpen(true);
-        swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen);
+        swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen, retracting);
       } else {
         filesPanelRaw.setOpen(false);
         // The OTHER panel decides whether the side is still held: this one's `open` is the
@@ -398,8 +408,9 @@ export function ChatPage() {
     setOpen: (next: boolean) => {
       cancelPanelSwap();
       if (next) {
+        const retracting = sidePaneShowing();
         setChatSidePanelOpen(true);
-        swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen);
+        swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen, retracting);
       } else {
         subagentsPanelRaw.setOpen(false);
         setChatSidePanelOpen(filesPanelRaw.open);
@@ -414,6 +425,10 @@ export function ChatPage() {
   const terminalHasTheSide = !chatSidePanelOpen();
   useEffect(() => {
     if (!terminalHasTheSide) return;
+    // A sequenced open still waiting on its timer must die with the panels it belongs to:
+    // firing after the terminal reclaimed the side would open a panel over the pane with
+    // the exclusion flag already false — visibly both at once, and nothing to clear it.
+    cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
     // Panel objects are recreated every render; the raw hooks' setters are stable.

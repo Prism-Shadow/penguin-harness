@@ -360,19 +360,23 @@ export function TerminalDock({
     [allTerminals, position, dockStateVersion()],
   );
 
-  // Mount: always resolve, even with a stored id — the stored terminal can be dead or
+  // First show: always resolve, even with a stored id — the stored terminal can be dead or
   // reaped (server restart), and resolvePaneCurrent is what validates it against the
   // server. Afterwards only an EMPTIED pane re-resolves: a shell exiting while shown must
-  // keep showing its exit, never auto-respawn.
-  const resolvedOnMount = useRef(false);
+  // keep showing its exit, never auto-respawn. Gated on `open`: a pane that is collapsed —
+  // displaced by a chat panel, or lingering through its exit animation after a move cleared
+  // its current — must not create anything. The lingering case is the one that bites:
+  // without the gate, moving a pane to another edge respawned a shell on the edge it left.
+  const resolvedOnShow = useRef(false);
   useEffect(() => {
-    if (!resolvedOnMount.current) {
-      resolvedOnMount.current = true;
+    if (!open) return;
+    if (!resolvedOnShow.current) {
+      resolvedOnShow.current = true;
       void resolvePaneCurrent(position);
       return;
     }
     if (currentId === null) void resolvePaneCurrent(position);
-  }, [currentId, position]);
+  }, [currentId, position, open]);
 
   // The shown tab keeps itself in view: with many tabs the strip scrolls, and a
   // half-clipped active tab reads as a stray × button at the strip's edge.
@@ -596,6 +600,24 @@ export function TerminalDock({
   const horizontal = isHorizontal(position);
   const ratio = paneRatio(position); // height ratio; side panes use sideWidth below
   const sideWidth = usePanelWidthValue();
+
+  // First paint happens at width 0; `entered` flips a frame later. A node that MOUNTS at
+  // its target width has no transition to run, so a fresh side pane popped in while the
+  // chat panels slid — they never unmount, this one does. Double rAF: the first can land
+  // in the same frame as the initial paint, and a 0→width set within one frame is not a
+  // transition either. Height (top/bottom) stays unanimated on purpose: each intermediate
+  // height would refit xterm's grid.
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, []);
   // No visible status indicator (the screen itself shows what the shell is doing); the
   // machine-readable state stays on the root as data-status for tests and tooling.
   const status = viewState.status;
@@ -627,7 +649,9 @@ export function TerminalDock({
       data-testid="terminal-dock"
       data-position={position}
       data-status={status}
-      style={horizontal ? { height: `${ratio * 100}%` } : { width: open ? sideWidth : 0 }}
+      style={
+        horizontal ? { height: `${ratio * 100}%` } : { width: open && entered ? sideWidth : 0 }
+      }
       // Mounted-but-collapsed rather than unmounted, exactly like the chat panels: the width
       // transition needs the node, and `inert` keeps a pane nobody can see out of the tab
       // order and the accessibility tree. Not applied while resizing — a transition would
