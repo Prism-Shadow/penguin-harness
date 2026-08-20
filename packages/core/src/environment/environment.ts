@@ -30,6 +30,7 @@ import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
+  BackgroundTaskDoneEvent,
   EnvironmentConfig,
   EnvironmentInterface,
   ToolConfig,
@@ -126,6 +127,9 @@ export class Environment implements EnvironmentInterface {
       ...config.services,
       commandSessions: this.commandSessions,
       subagentSessions: this.subagentSessions,
+      // Completion reports of run_in_background launches converge here; the Session attaches
+      // the single consumer via setBackgroundTaskListener (events before that are buffered).
+      backgroundDone: (event: BackgroundTaskDoneEvent) => this.emitBackgroundDone(event),
     };
     // Assemble the tools supported by config into BuiltinTool instances; unrecognized tool
     // names are skipped (neither exposed to the LLM nor executable).
@@ -147,9 +151,33 @@ export class Environment implements EnvironmentInterface {
 
   /** Releases runtime resources held by Environment: finalizes all managed background sessions (command and subagent) and closes MCP clients (stdio server processes included). Idempotent. */
   dispose(): void {
+    // Suppress completion reports first: dispose kills the remaining background sessions, and
+    // their exits must not masquerade as task completions after the Session has ended.
+    this.bgDisposed = true;
+    this.bgBuffer = [];
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
+  }
+
+  // Background completion reports: a single listener (the owning Session), with events fired
+  // before the attach buffered so a fast completion is never lost between construction and wiring.
+  private bgListener: ((event: BackgroundTaskDoneEvent) => void) | null = null;
+  private bgBuffer: BackgroundTaskDoneEvent[] = [];
+  private bgDisposed = false;
+
+  private emitBackgroundDone(event: BackgroundTaskDoneEvent): void {
+    if (this.bgDisposed) return;
+    if (this.bgListener) this.bgListener(event);
+    else this.bgBuffer.push(event);
+  }
+
+  /** Attaches the single background-completion listener, flushing buffered events (see EnvironmentInterface). */
+  setBackgroundTaskListener(listener: (event: BackgroundTaskDoneEvent) => void): void {
+    this.bgListener = listener;
+    const buffered = this.bgBuffer;
+    this.bgBuffer = [];
+    for (const event of buffered) this.emitBackgroundDone(event);
   }
 
   /** Background command processes registered by exec_command (still-listed exited ones included; the host UI filters as it sees fit). */

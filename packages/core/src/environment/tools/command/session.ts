@@ -175,12 +175,42 @@ export class ManagedSession {
     this.exited = true;
     this.exitInfo = exit;
     this.wakeSignal.notify();
+    this.fireExitWatchers();
   }
   private handleError(err: Error): void {
     if (this.exited) return;
     this.spawnError = err;
     this.exited = true; // A spawn failure is also treated as a terminal state
     this.wakeSignal.notify();
+    this.fireExitWatchers();
+  }
+
+  // One-shot exit watchers (run_in_background completion reports). Consumed on fire; a
+  // watcher armed after exit fires on a microtask, so the caller never misses a fast command.
+  private exitWatchers: Array<() => void> = [];
+  private fireExitWatchers(): void {
+    const watchers = this.exitWatchers;
+    this.exitWatchers = [];
+    for (const cb of watchers) cb();
+  }
+
+  /** Registers a one-shot callback for the foreground process's terminal state (exit or spawn failure); fires immediately (microtask) when already terminal. */
+  onceExited(cb: () => void): void {
+    if (this.exited) {
+      queueMicrotask(cb);
+      return;
+    }
+    this.exitWatchers.push(cb);
+  }
+
+  /** Clears armed exit watchers (a deliberate kill already reports its outcome synchronously, so the completion report is disarmed first). */
+  clearExitWatchers(): void {
+    this.exitWatchers = [];
+  }
+
+  /** Synchronously drains the yet-undelivered output (the same buffer `collect` serves) — used to build completion reports without an async window. */
+  drainPending(): string {
+    return this.buffer.drain();
   }
 
   /** Whether the command is still running (hasn't exited, spawn hasn't failed). */

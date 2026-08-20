@@ -331,6 +331,33 @@ export interface EnvironmentServices {
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */
   subagentSessions?: SubagentSessionManager;
+  /**
+   * Sink for background-task completion reports (`run_in_background` launches): tools arm a
+   * completion watcher that calls this when the task settles; Environment forwards it to the
+   * listener the Session attached (see EnvironmentInterface.setBackgroundTaskListener).
+   * Injected internally by Environment.
+   */
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void;
+}
+
+/**
+ * Completion report of one background-launched task (`exec_command` / `run_subagent` with
+ * `run_in_background`), emitted when the task settles and delivered to the Session as a
+ * harness user message (see Session's background-notice queue).
+ */
+export interface BackgroundTaskDoneEvent {
+  /** Which background family settled. */
+  kind: "command" | "subagent";
+  /** The registry handle the model holds: `process_id` or `subagent_id`. */
+  id: string;
+  /** What was launched: the command string, or the subagent prompt's first line (display only, truncated by the producer). */
+  label: string;
+  /** Terminal status of the run. */
+  status: "completed" | "failed";
+  /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
+  detail: string;
+  /** Tail of the yet-undelivered output at settle time (capped by the producer); empty when nothing was pending. */
+  output: string;
 }
 
 /** Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig". */
@@ -426,6 +453,12 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Attaches the single listener for background-task completion reports (`run_in_background`
+   * launches). Events fired before a listener exists are buffered and flushed on attach; after
+   * `dispose()` no further events fire. Optional — environments without background tools omit it.
+   */
+  setBackgroundTaskListener?(listener: (event: BackgroundTaskDoneEvent) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

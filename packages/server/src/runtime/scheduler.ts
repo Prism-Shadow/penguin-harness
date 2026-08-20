@@ -416,7 +416,8 @@ export class Scheduler {
     const firedAt = new Date(this.now()).toISOString();
     try {
       await this.deps.runner.startTask(sessionId, [
-        userText(scheduledMessage(def.name, firedAt, def.prompt)),
+        // sender "harness": in the Trace this user turn was injected by the scheduler, not typed by a human.
+        userText(scheduledMessage(def.name, firedAt, def.prompt), "harness"),
       ]);
     } catch (err) {
       this.deps.errors.record({

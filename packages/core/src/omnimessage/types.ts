@@ -123,10 +123,21 @@ export interface SessionMetaPayload {
  */
 export type Fidelity = Record<string, unknown>;
 
+/**
+ * Who produced a user-role text: the human user, a parent agent driving a subagent session
+ * (run_subagent / input_subagent prompts), or the harness itself (automatic injections such
+ * as background-task completion reports). Absent = `"user"` — Traces written before this
+ * field existed carry only human input on the user side, so the default is also the
+ * historically correct reading.
+ */
+export type TextSender = "user" | "agent" | "harness";
+
 export interface TextPayload {
   type: "text";
   role: Role;
   text: string;
+  /** Origin of a user-role text (never sent to the provider); absent = the human user. See {@link TextSender}. */
+  sender?: TextSender;
   stop_reason?: StopReason;
   /** Provider-fidelity payload (e.g. `phase` for GPT-5 segment markers, `signature`), kept as-is and restored verbatim. */
   fidelity?: Fidelity;

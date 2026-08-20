@@ -26,7 +26,9 @@ import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
+import { BackgroundDoneBanner } from "./background-done-banner";
 import {
+  parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -166,6 +168,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // Harness-injected completion notice of a run_in_background task: collapsed into a
+      // one-line banner with the report body below it (the raw block shows on the Trace page).
+      const backgroundDone = parseBackgroundTaskDoneMessage(item.text);
+      if (backgroundDone) {
+        return <BackgroundDoneBanner done={backgroundDone.done} body={backgroundDone.rest} />;
+      }
       // A goal round's [goal] protocol prefix: collapsed into a round notice; the body after
       // it (round 1: the user's original input, skill blocks and all; later rounds: the
       // objective) continues down the normal parsing chain (the Trace shows the raw block).

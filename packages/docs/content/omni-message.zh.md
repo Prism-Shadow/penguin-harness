@@ -58,6 +58,7 @@ interface TextPayload {
   type: "text";
   role: "user" | "assistant";
   text: string;
+  sender?: "user" | "agent" | "harness"; // user 角色文本的来源;缺省 = 真人用户
   fidelity?: Fidelity;        // 如 { phase } 分段标记(GPT-5)、{ signature }
   stop_reason?: StopReason;
 }

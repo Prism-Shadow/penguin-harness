@@ -669,6 +669,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               "How long to wait for the command before yielding. If it is still running when this elapses, the tool returns the output so far plus a process_id, and the command keeps running in the background (drive it with input_command). Defaults to 60000; minimum 250, capped below the tool timeout.",
           },
+          run_in_background: {
+            type: "boolean",
+            description:
+              "Run the command in the background: return a process_id immediately without waiting. When it exits, its result arrives as an automatic user message — no polling needed. Use for long builds or work you want to continue past; interact via input_command, stop via kill_command. Defaults to false.",
+          },
         },
         required: ["description", "cmd"],
       },
@@ -701,7 +706,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           yield_time_ms: {
             type: "number",
             description:
-              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 5000. Minimum 250, capped below the tool timeout.",
+              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 120000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
           },
         },
         required: ["description", "process_id"],
@@ -710,6 +715,30 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
       timeoutMs: 130000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "kill_command",
+      description:
+        "Terminate a background command session started by exec_command: kills the whole process group (SIGTERM, then SIGKILL) and returns any output not yet delivered. Also removes an already-exited session. Identify the session with its process_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
+          process_id: {
+            type: "string",
+            description: "The process_id returned by exec_command for the command session.",
+          },
+        },
+        required: ["description", "process_id"],
+      },
+      permission: "rw",
+      call_description: true,
+      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     {
@@ -756,6 +785,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               "How long to wait for the subagent before yielding. If it is still working when this elapses, the tool returns the output so far plus a subagent_id, and the subagent keeps running in the background (drive it with input_subagent). Defaults to 300000; minimum 250, capped below the tool timeout.",
           },
+          run_in_background: {
+            type: "boolean",
+            description:
+              "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; interact via input_subagent, stop via kill_subagent. Defaults to false.",
+          },
         },
         required: ["description", "prompt"],
       },
@@ -798,6 +832,30 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
+      maxOutputLength: 16000,
+    },
+    {
+      name: "kill_subagent",
+      description:
+        "Terminate a background subagent started by run_subagent: aborts its run (denying its pending approvals), returns any answer text not yet delivered, and removes the session. Also removes an idle background subagent, freeing its slot. Identify the session with its subagent_id.",
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description:
+              "Required, and emit it first, before the other arguments: it is shown to the user while the call runs. One short sentence describing what this call is doing and why, written in the user's language.",
+          },
+          subagent_id: {
+            type: "string",
+            description: "The subagent_id returned by run_subagent for the background subagent.",
+          },
+        },
+        required: ["description", "subagent_id"],
+      },
+      permission: "rw",
+      call_description: true,
+      timeoutMs: 30000,
       maxOutputLength: 16000,
     },
     // The image-reading tools are mutually exclusive based on the session model's type

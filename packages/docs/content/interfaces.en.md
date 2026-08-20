@@ -144,6 +144,7 @@ interface EnvironmentServices {
   visionDescriber?: VisionDescriberService; // needed by describe_image on text-only models
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
 }
 
 interface MCPServerConfig {

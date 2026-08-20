@@ -287,6 +287,49 @@ describe("session-manager", () => {
     expect(seen).toEqual(["high", undefined]);
   });
 
+  it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    // First task loads the entry (which registers the notice listener) and finishes.
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(noticeCb).not.toBeNull();
+
+    // A completion notice lands while idle: the manager takes the queue and starts a task with it.
+    const events = capture("session-1");
+    const notice = userText("[background_task_done]\nkind: command\n[/background_task_done]");
+    queue.push(notice);
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 2);
+    expect(runInputs[1]).toEqual([notice]);
+    expect(queue).toHaveLength(0);
+    // The notice input was published to subscribers like any task input.
+    expect(events.some((e) => e.data.includes("background_task_done"))).toBe(true);
+
+    // An empty queue signal is a no-op (no phantom task).
+    noticeCb!();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runInputs).toHaveLength(2);
+  });
+
   it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {
     sessions.updateApprovalMode("session-1", "allow-all");
     const seen: (string | undefined)[] = [];

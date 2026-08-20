@@ -134,6 +134,27 @@ export class ManagedSubagentSession {
     this.wakeSignal.notify();
   }
 
+  // Settle watcher (run_in_background completion reports): fires at the end of EVERY round of a
+  // background-launched session (later input_subagent rounds included), until disarmed. A kill
+  // through the kill_subagent tool disarms first — the killer already reports the outcome.
+  private settleWatcher: (() => void) | null = null;
+
+  /** Arms the completion-report watcher (replacing any previous one); fires immediately (microtask) when the session is already idle with a terminal state. */
+  onSettled(cb: () => void): void {
+    this.settleWatcher = cb;
+    if (!this.isRunning && this.exitInfo !== null) queueMicrotask(() => this.fireSettleWatcher());
+  }
+
+  /** Disarms the completion-report watcher (deliberate kill / dispose). */
+  clearSettleWatcher(): void {
+    this.settleWatcher = null;
+  }
+
+  private fireSettleWatcher(): void {
+    const cb = this.settleWatcher;
+    if (cb && !this.killed) cb();
+  }
+
   /** Waits for "woken up" or `ms` to expire, whichever comes first. */
   async waitWake(ms: number): Promise<void> {
     await this.wakeSignal.wait(ms);
@@ -232,6 +253,7 @@ export class ManagedSubagentSession {
       this.isRunning = false;
       if (this.killed) this.handle.dispose();
       this.wakeSignal.notify();
+      this.fireSettleWatcher();
     }
   }
 

@@ -72,41 +72,46 @@ Each tool is described by one `ToolDefinitionConfig`:
 
 ## Built-in tools
 
-There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 11 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
 | `input_command` | rw | 130000 | Drive a running command by `process_id`: write stdin, send Ctrl-C, poll output |
+| `kill_command` | rw | 30000 | Terminate a command session by `process_id` (whole process group), returning undelivered output |
 | `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, or send a follow-up prompt once it is idle |
+| `kill_subagent` | rw | 30000 | Abort a background subagent by `subagent_id` and remove it, returning undelivered text |
 | `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
 | `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up the file tools automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (the file tools, `kill_command`, `kill_subagent`) or newer arguments (`run_in_background`) automatically — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
 
 ### Call descriptions
 
-The command/subagent tools (`exec_command`, `input_command`, `run_subagent`, `input_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
+The command/subagent tools (`exec_command`, `input_command`, `kill_command`, `run_subagent`, `input_subagent`, `kill_subagent`) take a `description` argument: one model-written sentence about what the call is doing, shown by the CLI and Web UI while the call runs. The argument is declared as a normal `description` property in each entry's `parameters` in `system_config.yaml` (tool schemas live entirely in the editable config), and it is **required** there — a tool that offers the argument always gets one, so the frontends can pick a call's display form from the schema instead of guessing while the arguments stream; the model is also asked to emit it first. The per-entry `call_description` field toggles the whole thing — missing = kept, `call_description: false` filters the property (and its `required` entry) out of the schema at assembly time (in-memory only, the YAML is never rewritten). The file tools don't take it — their `file_path` argument is self-describing.
 
 ### Command sessions
 
-`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`:
+`exec_command` waits in the foreground first; if the command outruns `yield_time_ms` it moves to the background and the call returns the output so far plus a `process_id`, driven from then on by `input_command`. With `run_in_background: true` it skips the foreground window entirely: the call returns the `process_id` immediately, and when the process exits its result arrives as an automatic user message (see [Background completion reports](#background-completion-reports)). `kill_command` terminates a session either way:
 
 ```text
 exec_command(cmd)
   ├─ finishes within the foreground window (yield_time_ms, default 60000)
   │        ──► full output + exit code
-  └─ still running ──► backgrounds, returns output so far + process_id
-                     │
-    input_command(process_id[, chars]) ──► write stdin / send Ctrl-C / poll
-                     └─ loop until the command exits
+  ├─ still running ──► backgrounds, returns output so far + process_id
+  │                  │
+  │  input_command(process_id[, chars]) ──► write stdin / send Ctrl-C / poll
+  │                  └─ loop until the command exits
+  └─ run_in_background: true ──► returns process_id immediately
+                     └─ on exit: completion report arrives as a user message
+     kill_command(process_id) ──► SIGTERM the process group (SIGKILL after a grace period)
 ```
 
-Both tools' arguments (explicit keys):
+The tools' arguments (explicit keys):
 
 ```ts
 // exec_command
@@ -114,6 +119,7 @@ Both tools' arguments (explicit keys):
   cmd: string;             // required: the shell command to run
   workdir?: string;        // working directory; defaults to the Workspace root, relative paths resolve against it
   yield_time_ms?: number;  // foreground wait; default 60000, minimum 250, capped below the tool timeout
+  run_in_background?: boolean; // true = return process_id immediately; completion arrives as a user message
   description: string;     // required while call_description is on: one sentence shown to the user while the call runs, emitted first
 }
 
@@ -121,7 +127,13 @@ Both tools' arguments (explicit keys):
 {
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
-  yield_time_ms?: number;  // wait; defaults 250 for writes, 5000 for empty polls
+  yield_time_ms?: number;  // wait; defaults 250 for writes, 120000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
+  description: string;     // required while call_description is on
+}
+
+// kill_command
+{
+  process_id: string;      // required: the command session to terminate (already-exited sessions are removed too)
   description: string;     // required while call_description is on
 }
 ```
@@ -163,7 +175,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 ### Subagents
 
-`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits.
+`run_subagent` hands a subtask you can fully specify in one prompt to a child Agent, with the same two-phase shape: after the foreground window (default 300000ms) it moves to the background with a `subagent_id`, driven by `input_subagent` for polling or follow-up prompts; the child's pending approvals surface while the poll waits. With `run_in_background: true` the call returns the `subagent_id` immediately and every round's completion arrives as an automatic user message (see [Background completion reports](#background-completion-reports)); `kill_subagent` aborts and removes a background subagent (an idle one is removed too, freeing its slot).
 
 ```ts
 // run_subagent
@@ -174,6 +186,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
   thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max"; omit to inherit the parent Session's level
   yield_time_ms?: number;  // foreground wait; default 300000
+  run_in_background?: boolean; // true = return subagent_id immediately; completion arrives as a user message
   description: string;     // required while call_description is on
 }
 
@@ -182,6 +195,12 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   subagent_id: string;     // required: the background Subagent id returned by run_subagent
   prompt?: string;         // follow-up task, accepted only while the child Session is idle; empty = poll only
   yield_time_ms?: number;  // wait; defaults 300000 with a prompt, 10000 for empty polls
+  description: string;     // required while call_description is on
+}
+
+// kill_subagent
+{
+  subagent_id: string;     // required: the background subagent to abort and remove
   description: string;     // required while call_description is on
 }
 ```
@@ -207,6 +226,12 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   prompt?: string;         // what to ask about the image; defaults to a detailed description
 }
 ```
+
+### Background completion reports
+
+A task launched with `run_in_background: true` reports its completion as a **user message injected by the harness** — the model does not need to poll. The message opens with a `[background_task_done]` marker block (kind, id, status, one-line detail) followed by what ran and the tail of its yet-undelivered output (capped at 4000 characters; the Web App collapses the block into a one-line notice). Its `text` payload carries `sender: "harness"`, distinguishing it from human input in the Trace (see [OmniMessage](/omni-message)).
+
+Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A task stopped through `kill_command` / `kill_subagent` sends no report — the kill's own result already carries the outcome.
 
 ### Background session caps
 

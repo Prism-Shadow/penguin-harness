@@ -11,5 +11,10 @@
 export const DEFAULT_EXEC_YIELD_MS = 60_000;
 /** Default wait duration (milliseconds) for `input_command` when there's a write. */
 export const DEFAULT_WRITE_YIELD_MS = 250;
-/** Default wait duration (milliseconds) for `input_command` on an empty poll. */
-export const DEFAULT_EMPTY_POLL_YIELD_MS = 5_000;
+/**
+ * Default wait duration (milliseconds) for `input_command` on an empty poll: a default-length
+ * poll waits out most builds/test runs in one call instead of ping-ponging short polls (data
+ * still streams as it arrives — the wait only ends early on exit). Must stay below
+ * `input_command`'s `timeoutMs` minus the clamp margin (see ../background/limits.ts).
+ */
+export const DEFAULT_EMPTY_POLL_YIELD_MS = 120_000;

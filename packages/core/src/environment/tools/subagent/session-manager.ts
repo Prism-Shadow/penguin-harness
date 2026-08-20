@@ -56,6 +56,13 @@ export class SubagentSessionManager {
     return this.registry.get(subagentId);
   }
 
+  /** Kills a background subagent by id (aborts its run, denies pending approvals, releases the child Session) and drops it from the registry; false when the id is unknown. */
+  kill(subagentId: string): boolean {
+    if (this.registry.get(subagentId) === undefined) return false;
+    this.registry.remove(subagentId);
+    return true;
+  }
+
   /** Disposes: removes the fallback registration and finalizes all sessions (the process 'exit' fallback is hooked by the registry itself). Idempotent. */
   dispose(): void {
     this.registry.dispose();
