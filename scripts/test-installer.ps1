@@ -159,7 +159,11 @@ function Invoke-OnlineCase(
   $Arguments = @{ InstallDir = $InstallDir }
   if ($Version) { $Arguments.Version = $Version }
   if (-not $InstallerPath) { $InstallerPath = $Installer }
-  $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
+  if ($SpeedProbe -eq "__unset") {
+    Remove-Item Env:\PENGUIN_DOWNLOAD_SPEED_PROBE -ErrorAction SilentlyContinue
+  } else {
+    $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
+  }
   $Succeeded = $true
   $Output = @()
   try { $Output = @(& $InstallerPath @Arguments *>&1) } catch { $Succeeded = $false; $Output += $_ }
@@ -190,7 +194,11 @@ function Invoke-ForwarderCase(
   }
   $env:PENGUIN_INSTALL_DIR = $InstallDir
   $env:PENGUIN_DOWNLOAD_SOURCE = $Source
-  $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
+  if ($SpeedProbe -eq "__unset") {
+    Remove-Item Env:\PENGUIN_DOWNLOAD_SPEED_PROBE -ErrorAction SilentlyContinue
+  } else {
+    $env:PENGUIN_DOWNLOAD_SPEED_PROBE = $SpeedProbe
+  }
   Remove-Item Env:\PENGUIN_DOWNLOAD_BASE_URL, Env:\PENGUIN_DOWNLOAD_FALLBACK_BASE_URL -ErrorAction SilentlyContinue
   $Forwarder = Join-Path $RepoRoot "packages\landing\public\install.ps1"
   $Output = @()
@@ -318,6 +326,10 @@ try {
   Assert-True ($speedProbeGitHubFast.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "speed probe did not select GitHub when it met the minimum speed"
 
+  $speedProbeDefaultOn = Invoke-OnlineCase "speed-probe-default-on" "speed-probe-github-fast" "" $true 6 $StampedInstaller "__unset"
+  Assert-True ($speedProbeDefaultOn.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "speed probe was not enabled by default"
+
   $speedProbeGitHubBelowThreshold = Invoke-OnlineCase "speed-probe-github-below-threshold" "speed-probe-github-below-threshold" "" $true 6 $StampedInstaller "1"
   Assert-True ($speedProbeGitHubBelowThreshold.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
     "speed probe did not keep OSS when GitHub was below the minimum speed"
@@ -394,6 +406,10 @@ try {
     "speed probe handoff forwarder did not fetch the versioned installer"
   Assert-True ($speedProbeForwarder.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "forwarder locked the payload source instead of letting the installer run speed probes"
+
+  $speedProbeDefaultForwarder = Invoke-ForwarderCase "forwarder-speed-probe-default-handoff" "speed-probe-github-fast" "auto" 7 "v0.0.0-test" $true "__unset"
+  Assert-True ($speedProbeDefaultForwarder.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "forwarder handoff did not leave speed probing enabled by default"
 
   Remove-Item Env:\PENGUIN_ARCHIVE, Env:\PENGUIN_INSTALL_DIR, Env:\PENGUIN_DOWNLOAD_SOURCE, Env:\PENGUIN_DOWNLOAD_SPEED_PROBE, Env:\PENGUIN_VERSION -ErrorAction SilentlyContinue
 
