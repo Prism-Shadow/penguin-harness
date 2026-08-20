@@ -54,6 +54,8 @@ import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middlewar
 import { IDENTITY_RESOURCE_ID } from "./terminal/identity.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
+import { workflowRoutes } from "./workflows/routes.js";
+import type { WorkflowRoutesDeps } from "./workflows/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
 import { PLUGINS_RESOURCE_ID, type PluginHost } from "./hmr/plugin.js";
 import type { AppEnv } from "./auth/middleware.js";
@@ -746,6 +748,7 @@ export function createApp(
   deps: AppDeps | null,
   terminals: TerminalManager,
   identity: Identity,
+  workflows?: Pick<WorkflowRoutesDeps, "store" | "registry">,
 ): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -772,6 +775,9 @@ export function createApp(
   // unmatched /api/terminals path falls through it into the same auth-then-decline shape
   // as any other unknown /api path.
   app.route("/", terminalRoutes(terminals, identity));
+  // Same shape as the terminal group: a platform-owned business surface with its own
+  // per-route identity gate. Absent when the runtime published no root to install into.
+  if (workflows !== undefined) app.route("/", workflowRoutes({ ...workflows, identity }));
 
   if (deps === null) return app;
 
