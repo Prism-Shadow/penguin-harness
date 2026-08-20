@@ -1,11 +1,14 @@
 /**
- * Width shared by the chat page's two docked panels (Workspace files and Agents), plus the
- * drag-to-resize machinery both of them mount.
+ * Width shared by everything that docks beside the chat: the Workspace files panel, the
+ * Agents panel, and a left or right terminal pane — plus the drag-to-resize machinery the
+ * two panels mount.
  *
- * The panels are MUTUALLY EXCLUSIVE — opening one closes the other — so to the user they read
- * as a single right-hand panel that swaps its content. Two independent widths made that swap
- * jump, which is why the width is one value here rather than a per-panel preference: a width
- * dragged on either panel is the width the other one opens at, immediately and after a reload.
+ * All three are MUTUALLY EXCLUSIVE — opening one displaces the others — so to the user they
+ * read as a single side panel that swaps its content. Independent widths made that swap
+ * jump, which is why the width is one value here rather than a per-surface preference: a
+ * width dragged on any of them is the width the next one opens at, immediately and after a
+ * reload. The terminal pane brings its own resize gesture (it can dock on either side) and
+ * writes through setPanelWidth.
  *
  * "Immediately" is what rules out two `useState`s over one storage key: only the panel that was
  * mounted and dragged would update, and the other would keep a stale copy until its next
@@ -21,21 +24,6 @@ import { createStore } from "zustand/vanilla";
 
 const MIN_WIDTH = 320;
 const WIDTH_STORAGE_KEY = "penguin.panelWidth";
-/**
- * Pre-unification per-panel keys, adopted once on first load so a dragged width survives the
- * merge instead of silently snapping back to the default. The WIDER of the two wins: the two
- * panels were sized independently, so picking either one arbitrarily could hand the merged
- * panel the narrower of the user's two choices — visibly a regression on the panel that used
- * to be wide. The migration deletes the keys as it reads, so it is already dead code for anyone
- * who has opened the app once since this shipped.
- *
- * REMOVAL: delete this constant and storedWidth()'s legacy branch while preparing the release
- * AFTER 0.2.0 — the 0.1.5 backward-compatibility entry schedules it for the second release
- * after the one shipping this change (0.2.0 was the first and deliberately kept it). Nothing
- * else in the repo reads these keys, so it is a pure deletion.
- * See changelog/0.1.5/2026-07-30-backward-compatibility.md.
- */
-const LEGACY_WIDTH_KEYS = ["penguin.filesPanelWidth", "penguin.subagentsPanelWidth"] as const;
 
 /** Width cap: at most half the window (keeping the chat column usable), plus a hard 720px readability ceiling. */
 export function maxWidthFor(windowWidth: number): number {
@@ -52,21 +40,11 @@ export function defaultWidthFor(windowWidth: number): number {
   return Math.min(maxWidthFor(windowWidth), Math.max(MIN_WIDTH, Math.round(windowWidth * 0.4)));
 }
 
-/** Reads the stored preference, migrating a legacy per-panel key the first time. Returns null when nothing is stored. */
+/** Reads the stored preference; null when nothing is stored (or storage is unreadable). */
 function storedWidth(): number | null {
   try {
     const own = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
-    if (Number.isFinite(own) && own > 0) return own;
-    let adopted: number | null = null;
-    for (const key of LEGACY_WIDTH_KEYS) {
-      const legacy = Number(localStorage.getItem(key));
-      // Widest wins — see LEGACY_WIDTH_KEYS: the merged panel must not come out narrower than
-      // either panel the user had sized.
-      if (Number.isFinite(legacy) && legacy > 0) adopted = Math.max(adopted ?? 0, legacy);
-      localStorage.removeItem(key);
-    }
-    if (adopted !== null) localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(adopted)));
-    return adopted;
+    return Number.isFinite(own) && own > 0 ? own : null;
   } catch {
     return null; // quota / private mode: fall back to the proportional default
   }
@@ -111,6 +89,40 @@ export interface PanelWidthState {
   panelRef: RefObject<HTMLDivElement | null>;
 }
 
+/** The current shared width, read outside React (measuring a drop region mid-drag). */
+export function panelWidth(): number {
+  return readWidth();
+}
+
+/** Subscribes to the shared width alone — for a consumer with its own resize gesture. */
+export function usePanelWidthValue(): number {
+  return useStore(widthStore, () => readWidth());
+}
+
+/** Sets the shared width from another surface's drag, clamped to the same bounds. */
+export function setPanelWidth(px: number): void {
+  writeWidth(Math.min(maxWidthFor(window.innerWidth), Math.max(MIN_WIDTH, Math.round(px))));
+}
+
+/** Persists the current width; call once at the end of a drag, not per frame. */
+export function persistPanelWidth(): void {
+  try {
+    localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(readWidth())));
+  } catch {
+    /* best-effort persistence (quota / private mode) */
+  }
+}
+
+/** Back to the window-proportional default, clearing the stored preference. */
+export function resetPanelWidth(): void {
+  writeWidth(defaultWidthFor(window.innerWidth));
+  try {
+    localStorage.removeItem(WIDTH_STORAGE_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
 /**
  * The shared width plus this panel's own drag state. `resizing` and `panelRef` stay per-panel
  * (each panel has its own DOM node and its own handle); only the width crosses between them.
@@ -133,11 +145,7 @@ export function usePanelWidth(): PanelWidthState {
     // Only persist once the drag ends: mousemove fires every frame, and it's not worth writing to localStorage on every frame.
     const onUp = () => {
       setResizing(false);
-      try {
-        localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(readWidth())));
-      } catch {
-        /* best-effort persistence (quota / private mode) */
-      }
+      persistPanelWidth();
     };
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
@@ -156,16 +164,9 @@ export function usePanelWidth(): PanelWidthState {
     setResizing(true);
   }, []);
 
-  const resetWidth = useCallback(() => {
-    writeWidth(defaultWidthFor(window.innerWidth));
-    // Clears rather than writing the default value: this way the default keeps following the
-    // window's proportion going forward, instead of being frozen at the current pixel value.
-    try {
-      localStorage.removeItem(WIDTH_STORAGE_KEY);
-    } catch {
-      /* best-effort */
-    }
-  }, []);
+  // Clears rather than writing the default value: this way the default keeps following the
+  // window's proportion going forward, instead of being frozen at the current pixel value.
+  const resetWidth = useCallback(resetPanelWidth, []);
 
   // When the window shrinks, clamp the width back within the cap so the docked panel can't
   // crowd out the chat column. Shrinks only, never grows back, and never overwrites the stored

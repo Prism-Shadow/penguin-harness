@@ -48,6 +48,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
     <>
       {panel.open && (
         <div
+          data-testid="files-panel-resizer"
           onMouseDown={panel.startResize}
           onDoubleClick={panel.resetWidth}
           title={S.files.resizeHandle}
@@ -57,6 +58,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
         />
       )}
       <div
+        data-testid="files-panel"
         ref={panel.panelRef}
         style={{ width: panel.open ? panel.width : 0 }}
         // Use inert rather than unmounting when closed: the width transition needs the node to

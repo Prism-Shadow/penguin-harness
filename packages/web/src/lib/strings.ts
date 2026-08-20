@@ -31,6 +31,34 @@ export const zh = {
     unpinGroup: "取消置顶",
   },
 
+  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
+  terminal: {
+    title: "终端",
+    newShell: "新建 Shell",
+    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
+    killShell: "关闭此终端",
+    /** Boundary drag handle between the dock and the main content (double-click resets). */
+    resize: "调整终端面板大小",
+    /** Hover menu when the user has no live terminal yet. */
+    noTerminals: "暂无终端",
+    /** Pane body when creating/attaching a shell failed (the server message follows). */
+    createFailed: "终端创建失败",
+    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
+    noTerminalApi:
+      "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
+    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
+    detach: "在新窗口打开",
+    close: "关闭",
+    status: {
+      connecting: "连接中",
+      ready: "已连接",
+      exited: "已退出",
+      error: "连接错误",
+    },
+    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
+    exitedWithCode: (code: string): string => `退出码 ${code}`,
+  },
+
   settings: {
     language: "语言",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
@@ -58,6 +86,8 @@ export const zh = {
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
+    terminalTheme: "终端主题",
+    followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
@@ -1197,6 +1227,11 @@ Benchmark：
     removeImage: "移除图片",
     openWorkspace: "打开工作区",
     openAgents: "智能体面板",
+    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
+    panelsCreate: "创建",
+    workspacePanel: "工作区",
+    pinPanel: "置顶到栏目",
+    unpinPanel: "取消置顶",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,

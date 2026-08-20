@@ -31,7 +31,8 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
+import { IDENTITY_RESOURCE_ID } from "./platform/terminal/identity.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { ADMIN_USER_ID, AuthService } from "./auth/service.js";
 import { clearInitialAdminPassword } from "./initial-password.js";
@@ -332,6 +333,19 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
   });
 
+  // Hoisted out of the returned literal so its registry can be populated before anything
+  // boots against it.
+  const hmr = new HmrHost(config.root);
+  // The seam runs before the auth middleware, so a platform serving an API of its own has
+  // no `c.var.user`. Authenticating is the runtime's job, not something a bundle should
+  // re-implement against cookie names and session TTLs — so it is published as a
+  // capability the booting platform claims (see platform/terminal/identity.ts).
+  hmr.resources.register(IDENTITY_RESOURCE_ID, async (request: Request) => {
+    const token = readSessionCookie(request.headers.get("cookie"));
+    const authed = token === null ? null : authService.authenticateWithMeta(token);
+    return authed === null ? null : { userId: authed.user.userId };
+  });
+
   return {
     config,
     db,
@@ -363,7 +377,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     sessionSources,
     errors,
     desktop: config.desktopToken !== null ? new DesktopService(config.desktopToken) : null,
-    hmr: new HmrHost(config.root),
+    hmr,
     log,
   };
 }
@@ -645,4 +659,16 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       headers: { "Content-Type": type },
     });
   });
+}
+
+/** The session cookie out of a raw Cookie header (the seam hands over a plain Request). */
+function readSessionCookie(header: string | null): string | null {
+  if (header === null) return null;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
+    return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
 }

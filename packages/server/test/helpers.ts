@@ -82,6 +82,8 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     root,
     adminPassword,
     cleanup: async () => {
+      // Terminals are real child processes owned by the platform: disposing the hot host
+      // sweeps its resource registry, which is where every live pty is registered.
       deps.hmr.dispose();
       deps.channels.dispose();
       deps.db.close();

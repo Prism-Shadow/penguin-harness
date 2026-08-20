@@ -42,7 +42,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
-import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
+import type { Accent, Currency, FontScale, TerminalThemeMode, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -287,8 +287,18 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const { user, logout, desktopMode, sessionVia } = useAuth();
-  const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
-    useTheme();
+  const {
+    mode,
+    setMode,
+    fontScale,
+    setFontScale,
+    accent,
+    setAccent,
+    currency,
+    setCurrency,
+    terminalMode,
+    setTerminalMode,
+  } = useTheme();
   const { lang, locale, setLang } = useLocale();
   const {
     projects,
@@ -1128,6 +1138,13 @@ export function Sidebar({
     { value: "zh", label: S.settings.langZh },
     { value: "system", label: S.settings.followSystem },
   ];
+  // The terminal keeps its own light/dark rather than inheriting the app's — see
+  // TerminalThemeMode. "跟随主题" is the opt-in that couples them.
+  const terminalThemeOptions: ReadonlyArray<{ value: TerminalThemeMode; label: string }> = [
+    { value: "light", label: S.settings.themeLight },
+    { value: "dark", label: S.settings.themeDark },
+    { value: "app", label: S.settings.followAppTheme },
+  ];
   const fontOptions: ReadonlyArray<{ value: FontScale; label: string }> = [
     { value: "sm", label: S.settings.fontSmall },
     { value: "md", label: S.settings.fontMedium },
@@ -1739,6 +1756,13 @@ export function Sidebar({
             <SettingRow label={S.settings.theme}>
               <Segmented options={themeOptions} value={mode} onChange={setMode} />
             </SettingRow>
+            <SettingRow label={S.settings.terminalTheme}>
+              <Segmented
+                options={terminalThemeOptions}
+                value={terminalMode}
+                onChange={setTerminalMode}
+              />
+            </SettingRow>
             <SettingRow label={S.settings.fontSize}>
               <Segmented options={fontOptions} value={fontScale} onChange={setFontScale} />
             </SettingRow>
@@ -2270,6 +2294,8 @@ function SessionRow({
       >
         <button
           type="button"
+          data-testid="session-row"
+          data-session-id={s.sessionId}
           // A press-and-hold that opened the context menu must not also open the Session:
           // touch screens replay the held press as a click once the finger lifts.
           onClick={() => {

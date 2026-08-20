@@ -163,4 +163,6 @@ export const NAV_ICONS = {
   /** Benchmark center (a trophy: cup + two handles + base). */
   benchmark:
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
+  /** Terminal (a `>_` prompt in a window frame). */
+  terminal: "M3 5h18v14H3zM7 9l3 3-3 3M13 15h4",
 } as const;
