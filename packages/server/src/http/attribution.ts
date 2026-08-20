@@ -1,6 +1,6 @@
 /**
  * Error→Project attribution, shared by the runtime shell's onError (app.ts) and the
- * business app's (platform/business.ts). A leaf module so the platform bundle can import
+ * business app's (app.ts). A leaf module so the platform bundle can import
  * it without dragging the runtime shell into its graph.
  */
 import type { Context } from "hono";

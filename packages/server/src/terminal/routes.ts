@@ -30,9 +30,9 @@
  */
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
-import { HttpError } from "../../http/errors.js";
-import { badRequest } from "../../http/validate.js";
-import { declined, seamHttp } from "../hono-seam.js";
+import { HttpError } from "../http/errors.js";
+import { badRequest } from "../http/validate.js";
+import { declined, seamHttp } from "../hmr/hono-seam.js";
 import type { TerminalManager } from "./manager.js";
 import type { IdentifiedUser, Identity } from "./identity.js";
 

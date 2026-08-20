@@ -26,13 +26,12 @@ import type { WebSocket } from "ws";
 import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
 import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
 import type { PlatformBundle } from "../hmr/host.js";
-import { TerminalManager } from "./terminal/manager.js";
-import type { TerminalSession } from "./terminal/session.js";
-import { terminalHttp } from "./terminal/routes.js";
-import { identityFrom } from "./terminal/identity.js";
-import { bindTerminalStream } from "./terminal/stream.js";
-import type { BuildDepsOverrides } from "../app.js";
-import { buildBusinessDeps, createBusinessApp } from "./business.js";
+import { TerminalManager } from "../terminal/manager.js";
+import type { TerminalSession } from "../terminal/session.js";
+import { terminalHttp } from "../terminal/routes.js";
+import { identityFrom } from "../terminal/identity.js";
+import { bindTerminalStream } from "../terminal/stream.js";
+import { buildBusinessDeps, createBusinessApp, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
   BUSINESS_DEPS_RESOURCE_ID,
