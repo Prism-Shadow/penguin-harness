@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#372](https://github.com/Prism-Shadow/penguin-harness/pull/372)
 
 [中文版](2026-08-20-memory-scope-transfer.zh.md)
 
