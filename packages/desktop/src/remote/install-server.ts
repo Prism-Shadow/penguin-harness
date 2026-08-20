@@ -37,7 +37,7 @@ import { ensureRuntimeArchive, remoteNodeIsUsable } from "./runtime.js";
 const PACK_NAME = "penguin-image.pack";
 
 export interface PayloadSources {
-  /** Directory holding the `penguin/` tree (stage/payload, or resources/payload when packaged). */
+  /** Directory holding the `penguin/` tree (install-image/, or resources/payload when packaged). */
   payloadRoot: string;
   /** The Node installer that is copied over and run on the far side. */
   installerScript: string;
@@ -59,7 +59,7 @@ export function resolvePayloadSources(opts: {
         installerScript: path.join(opts.resourcesPath, "remote-installer.cjs"),
       }
     : {
-        payloadRoot: path.join(opts.repoRoot, "packages", "desktop", "stage", "payload"),
+        payloadRoot: path.join(opts.repoRoot, "packages", "desktop", "install-image"),
         installerScript: path.join(
           opts.repoRoot,
           "packages",

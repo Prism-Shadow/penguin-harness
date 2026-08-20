@@ -63,11 +63,11 @@ nodeGypRebuild: false
 
 # The install image and the Node installer that unpacks it on the far side, shipped so the
 # app can put this build's server on a machine over SSH (Install Server on Remote Host).
-# stage/payload is produced by scripts/stage.mjs alongside stage/app. Deliberately NOT
+# install-image/ is produced by scripts/build-install-image.mjs. Deliberately NOT
 # install.sh: that is a POSIX script and the target may be Windows — the installer here is
 # plain Node and runs on the runtime the push carries with it.
 extraResources:
-  - from: stage/payload
+  - from: install-image
     to: payload
   - from: resources/remote-installer.cjs
     to: remote-installer.cjs
