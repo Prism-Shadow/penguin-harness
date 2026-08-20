@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `core`, `web`, `docs`
+- **PR:** [#364](https://github.com/Prism-Shadow/penguin-harness/pull/364)
 
 [中文版](2026-08-20-mcp-server-permission.zh.md)
 
