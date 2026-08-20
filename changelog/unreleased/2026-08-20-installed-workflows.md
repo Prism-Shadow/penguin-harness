@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-20
 - **Type:** feature
-- **Scope:** `server`, `web`
+- **Scope:** `server`, `web`, `skills`
 
 [中文版](2026-08-20-installed-workflows.zh.md)
 
@@ -23,8 +23,12 @@ hot push rather than by rebuilding every installation.
 - `POST /api/workflows/:name/run` — call one by the name its script declares
 - `GET /api/workflows/:projectId/:agentId/:workflowId/ui/*` — its own UI files
 
-Every route requires an identified caller. A script runs in the server process with the
-server's authority.
+Every route requires an **admin** session, reads included. A script runs in the server
+process with the server's authority, so installing one is an operator action: an agent able
+to install a workflow into the harness it runs inside would be a privilege-escalation hole.
+
+The `penguin-sdk` skill documents the whole contract — authenticating, the script shape,
+installing, verifying and maintaining one.
 
 ## The script contract
 

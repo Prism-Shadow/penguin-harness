@@ -57,9 +57,17 @@ interface InstallBody {
 export function workflowRoutes(deps: WorkflowRoutesDeps): Hono<WorkflowEnv> {
   const app = new Hono<WorkflowEnv>();
 
+  /**
+   * Admin only, on every route including the reads. Installing a workflow makes the
+   * harness run code it was not shipped with, under the server's own authority; an agent
+   * that could do that to the harness it runs inside would be a privilege-escalation
+   * hole. Integrating a workflow is therefore an operator action, and the listing that
+   * would tell a caller what to invoke is gated with it.
+   */
   const gate: MiddlewareHandler<WorkflowEnv> = async (c, next) => {
     const user = await deps.identity(c.req.raw);
     if (user === null) throw new HttpError(401, "unauthorized", "Sign in first.");
+    if (!user.isAdmin) throw new HttpError(403, "admin_only", "Admin session required.");
     c.set("user", user);
     await next();
   };

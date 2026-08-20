@@ -15,6 +15,9 @@ import type { WorkflowFactory } from "../src/hmr/plugin.js";
 import { ScriptContractError, evaluateWorkflow } from "../src/workflows/evaluate.js";
 import { WorkflowRegistry } from "../src/workflows/registry.js";
 import { WorkflowLifecycle } from "../src/workflows/service.js";
+import { Hono } from "hono";
+import { handleError } from "../src/http/errors.js";
+import { workflowRoutes } from "../src/workflows/routes.js";
 import { WorkflowIdError, WorkflowStore } from "../src/workflows/store.js";
 import type { StoredWorkflow } from "../src/workflows/store.js";
 
@@ -312,5 +315,36 @@ describe("WorkflowLifecycle", () => {
     await lifecycle.shutdown();
     expect(lifecycle.isActive("proj", "agent")).toBe(false);
     expect(await store.readState(ref)).toEqual({ n: 1 });
+  });
+});
+
+describe("workflow routes: who may integrate", () => {
+  // The group is mounted into an app that shapes HttpError (app.ts's createApp); standing
+  // one up here is what makes the status the route throws the status a caller sees.
+  const get = (user: { userId: string; isAdmin: boolean } | null) => {
+    const app = new Hono();
+    app.onError((err, c) => handleError(err, c));
+    app.route(
+      "/",
+      workflowRoutes({
+        store: new WorkflowStore("/nowhere"),
+        registry: new WorkflowRegistry(new Map()),
+        lifecycle: {} as never,
+        identity: async () => user,
+      }),
+    );
+    return app.fetch(new Request("http://localhost/api/workflows"));
+  };
+
+  it("refuses an unauthenticated caller", async () => {
+    expect((await get(null)).status).toBe(401);
+  });
+
+  it("refuses a signed-in non-admin: installing runs code as the server", async () => {
+    expect((await get({ userId: "someone", isAdmin: false })).status).toBe(403);
+  });
+
+  it("admits an operator", async () => {
+    expect((await get({ userId: "admin", isAdmin: true })).status).toBe(200);
   });
 });

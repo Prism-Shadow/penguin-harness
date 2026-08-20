@@ -2,7 +2,7 @@
 
 - **Date:** 2026-08-20
 - **Type:** feature
-- **Scope:** `server`, `web`
+- **Scope:** `server`, `web`, `skills`
 
 [English](2026-08-20-installed-workflows.md)
 
@@ -21,7 +21,10 @@
 - `POST /api/workflows/:name/run` —— 按脚本声明的名字调用
 - `GET /api/workflows/:projectId/:agentId/:workflowId/ui/*` —— 该工作流自带的 UI 文件
 
-每条路由都要求可识别的调用者。脚本在服务器进程内、以服务器的权限运行。
+每条路由都要求**管理员**会话，读取也不例外。脚本在服务器进程内、以服务器的权限运行，
+因此安装是一项运维动作：能把工作流装进自己所在 harness 的 agent，本身就是一个提权洞。
+
+`penguin-sdk` skill 记录了完整契约——鉴权、脚本形状、安装、验证与维护。
 
 ## 脚本契约
 

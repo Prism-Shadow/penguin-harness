@@ -1,10 +1,10 @@
 ---
 name: penguin-sdk
-description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
+description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI, and integration into a running harness as an installed workflow (tools, agent calls, embedded UI).
 short_description: Build agent, AI and RAG applications on the Penguin Harness SDK.
 short_description_zh: 基于 Penguin SDK 构建智能体应用、AI 与 RAG 应用。
-version: 21
-updated: 2026-08-21T00:00:00Z
+version: 22
+updated: 2026-08-22T00:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -347,6 +347,109 @@ http.createServer(async (req, res) => {
 - **Cross-language retrieval**: the corpus and the user often speak different languages (English docs, Chinese questions), and BM25 is purely lexical — a Chinese question scores zero against English chunks. At ingest time derive a small bilingual keyword map for the corpus's core vocabulary (10–20 domain terms, e.g. `权限 → permissions / allow / deny`, `钩子 → hooks`) and expand query tokens through it in `search()` before scoring; keep the per-character CJK tokenizer. The persona already pins the answer language to the question's language.
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
+
+## Integrating into a running harness
+
+Everything above builds an app that runs **beside** PenguinHarness — its own process, its own data root. When a capability must live **inside** the running system — contribute a tool an agent can call, drive agents, show a UI in the app — install it as a **workflow** instead of restarting or rebuilding the system. Two rules decide what goes where:
+
+1. **Most functionality does not belong in a workflow.** Business logic, retrieval, storage, calls to external services — all of that stays in your app or a normal module, built and verified as described above. A workflow is a thin integration seam; when one starts accumulating real logic, move the logic out and keep the workflow thin.
+2. **A workflow owns exactly the integration surface**: a callable unit (`run`), the **tools** it contributes to the agent's tool set, **calls back into agents**, and a **UI** served inside the app.
+
+You are the authoring loop: you write the script, the harness validates it (a `400` tells you exactly what is wrong), you fix and retry. Never try to weaken or bypass that validation — conform to it.
+
+### Authenticating
+
+Installing a workflow makes the harness run code it was not shipped with, under the server's own authority. It is therefore an **operator action**: every workflow route requires an **admin session** — the same credential a person uses from the browser. There is deliberately no readable token on disk to pick up. An agent able to install a workflow into the harness it runs inside would be a privilege-escalation hole, which is the whole reason the gate is there.
+
+The person running you must supply the harness's origin and the admin password; log in once and carry the session cookie:
+
+```bash
+: "${HARNESS_URL:?set it to the running harness origin, e.g. http://127.0.0.1:7364}"
+: "${PENGUIN_ADMIN_PASSWORD:?set the admin password to authenticate}"
+COOKIE=$(curl -s -i -X POST -H "content-type: application/json" \
+  -d "{\"userId\":\"admin\",\"password\":\"$PENGUIN_ADMIN_PASSWORD\"}" \
+  "$HARNESS_URL/api/auth/login" | grep -i '^set-cookie:' | sed 's/^[Ss]et-[Cc]ookie: *//; s/;.*//')
+[ -n "$COOKIE" ] && echo ok || echo "admin login failed"
+```
+
+If you have no admin credential, say so to the user and stop — never read tokens off disk or guess one.
+
+### The script contract
+
+A workflow script is the BODY of a strict-mode JavaScript function receiving one argument named `context` (`context.state` is what your previous instance parked, or `null` on first install). It must RETURN an object:
+
+- `name` — non-empty string, the name the workflow is **called by**; `version` — number.
+- `run(input, ctx)` — the callable unit. Receives the caller's input, may drive agents through `ctx.runAgent(prompt)`, returns a JSON-serializable result. Keep it a few lines.
+- `setup(ctx)` (optional) — `ctx.registerTool({ name, description, run })` contributes a tool to the agent's tool set. Registrations are bound to the workflow: removing it, or its agent going idle, withdraws exactly what it added. A tool name another workflow already owns is refused, never shadowed.
+- `park()` (optional) — return your serializable state. It is written down when the workflow is unregistered and handed back as `context.state` next time, so it survives both an agent going idle and a hot push.
+
+No `import`/`require`/`await` at the top level, and no code outside the function body. Anything worth keeping goes through `park()`/`context.state`; everything else is rebuilt on reload — never stash state in globals.
+
+```js
+// The body of the function: `context` is in scope, and this returns the workflow.
+const seen = context.state?.seen ?? 0;
+let n = seen;
+return {
+  name: "summarize-inbox",
+  version: 1,
+  run: async (input, ctx) => {
+    n += 1;
+    return { answer: await ctx.runAgent(`Summarize: ${input.text}`), calls: n };
+  },
+  setup: (ctx) =>
+    ctx.registerTool({
+      name: "inbox_count",
+      description: "How many summaries this workflow has produced.",
+      run: () => n,
+    }),
+  park: () => ({ seen: n }),
+};
+```
+
+### When a workflow is live
+
+A workflow belongs to an **agent**, and it is registered only while that agent is active: its tools join the tool set as the agent's first session opens and leave as its last one closes. Installing for an active agent takes effect at once; installing for an idle one stores it to wait for that agent's next activation. This is why the install response tells you whether it went live.
+
+### Install, verify, iterate
+
+Write the script to a file, put it in a JSON body with the agent it belongs to, and POST it:
+
+```bash
+cat > /tmp/workflow.js <<'SCRIPT'
+...your script...
+SCRIPT
+python3 -c "
+import json, os
+print(json.dumps({
+  'projectId': os.environ['PROJECT_ID'],
+  'agentId': os.environ['AGENT_ID'],
+  'workflowId': 'summarize-inbox',
+  'script': open('/tmp/workflow.js').read(),
+}))" > /tmp/workflow.json
+curl -s -X POST -H "cookie: $COOKIE" -H "content-type: application/json" \
+  -d @/tmp/workflow.json "$HARNESS_URL/api/workflows"
+```
+
+- `201` → installed. The body carries the registered `name`, its `version`, and the `tools` it contributed.
+- `400` → rejected; `error.message` is the exact verdict (parse error, missing contract field, duplicate tool name…). The installation is rolled back, so a rejected script leaves nothing behind. Fix and retry — no more than 3 times, then show the user the last script and the verdict.
+- `403` → the session is not an admin one. Stop and say so.
+
+Always verify before reporting success — call it and check the result against a case you can compute yourself:
+
+```bash
+curl -s -X POST -H "cookie: $COOKIE" -H "content-type: application/json" \
+  -d '{"input": {"text": "hello"}}' "$HARNESS_URL/api/workflows/summarize-inbox/run"
+```
+
+That path uses the `name` the script declares, not the `workflowId` it was installed under. Then tell the user that name, what tools it registered, and one example invocation.
+
+### Maintenance
+
+- `GET /api/workflows` — what this harness has registered, with each one's tools.
+- `GET /api/workflows/tools` — the whole contributed tool set, each entry naming its owner.
+- `POST /api/workflows` again with the same ids — reinstall in place. The parked state rides across, which is how a workflow is upgraded without losing what it kept.
+- `DELETE /api/workflows/<projectId>/<agentId>/<workflowId>` — uninstall. Everything it registered is withdrawn.
+- A workflow may ship a UI: send `ui` alongside `script` as a `{ path: base64 }` map that includes an `index.html`. It is served at `/api/workflows/<projectId>/<agentId>/<workflowId>/ui/`, and the app shows it as a tab beside Chat.
 
 ## Verify before you hand over
 
