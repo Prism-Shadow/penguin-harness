@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** fix
 - **Scope:** `model-catalog`, `core`, `docs`, `skills`
+- **PR:** [#363](https://github.com/Prism-Shadow/penguin-harness/pull/363)
 - **Issue:** [#352](https://github.com/Prism-Shadow/penguin-harness/issues/352)
 
 [中文版](2026-08-20-claude-opus-5-preset.zh.md)
