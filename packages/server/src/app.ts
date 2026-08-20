@@ -10,7 +10,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { DatabaseSync } from "node:sqlite";
 import type { ProxyEnvPolicy } from "@prismshadow/penguin-core";
@@ -94,9 +94,13 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 import { previewRoutes } from "./http/routes/preview.js";
+import { bodyLimitBytes } from "./services/attachment-limits.js";
 
-/** Request body size limit (tasks may carry data: images): 20MB. */
-const MAX_BODY_BYTES = 20 * 1024 * 1024;
+/**
+ * The request body cap is no longer a constant: it is derived per request from the admin-settable
+ * attachment budget (see services/attachment-limits.ts — tasks carry their attachments and images
+ * inline as base64 `data:` URLs, which inflates them by 4/3).
+ */
 
 export interface AppDeps {
   config: ServerConfig;
@@ -241,6 +245,22 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     titles,
     log,
     goals: goalsRepo,
+    // Run-state flips reach the whole login session, not just the tab watching that one
+    // conversation. Audience = the Project's owner plus its members, i.e. exactly who
+    // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session
+    // they cannot open changed state.
+    //
+    // `peek`, deliberately not `get`: a user who has never opened an event stream has no
+    // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
+    // (their next connection fetches the list, which carries the same statuses anyway).
+    notifyProjectUsers: (projectId, event) => {
+      const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
+      if (ownerUserId === undefined) return;
+      const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
+      for (const userId of audience) {
+        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+      }
+    },
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   managerRef = manager;
@@ -401,24 +421,44 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     });
   }
 
-  // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
+  // API common defenses: request body size cap and write-request Content-Type (one of the CSRF
+  // MVP defenses).
   //
   // The cap has to be measured, not read: a chunked request carries no `content-length` at all,
   // so a header check alone passes a body of any size — the sinks behind it (task input images,
   // file attachments, Trace import) then decode whatever arrives. hono's bodyLimit keeps the
   // header fast path when the length is declared and otherwise counts bytes off the stream,
   // aborting the moment the total crosses the cap.
-  app.use(
-    "/api/*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      // Its default is a bare text/plain 413; throw the App's own error instead so the response
-      // stays the documented `payload_too_large` body that every client already handles.
-      onError: () => {
-        throw new HttpError(413, "payload_too_large", "Request body exceeds the 20MB limit.");
-      },
-    }),
-  );
+  //
+  // The cap is DERIVED from the admin-settable attachment budget rather than fixed, because the
+  // two must not disagree in either direction: a cap below the budget would reject a request whose
+  // every attachment was individually legal (and with a body-shaped error, not a size-shaped one),
+  // while a cap permanently sized for the largest budget an admin *could* set would keep accepting
+  // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
+  // admin's change takes effect immediately; the middleware itself is memoized on the resulting
+  // size so the steady state allocates nothing.
+  let capped: { size: number; mw: MiddlewareHandler } | null = null;
+  app.use("/api/*", (c, next) => {
+    const size = bodyLimitBytes(deps.serverSettingsRepo.getAttachmentLimitsMb());
+    if (capped === null || capped.size !== size) {
+      capped = {
+        size,
+        mw: bodyLimit({
+          maxSize: size,
+          // Its default is a bare text/plain 413; throw the App's own error instead so the
+          // response stays the documented `payload_too_large` body that every client handles.
+          onError: () => {
+            throw new HttpError(
+              413,
+              "payload_too_large",
+              `Request body exceeds the ${Math.floor(size / (1024 * 1024))}MB limit.`,
+            );
+          },
+        }),
+      };
+    }
+    return capped.mw(c, next);
+  });
   app.use("/api/*", jsonOnlyWrites);
 
   // Public routes (no login required).

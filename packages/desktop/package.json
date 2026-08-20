@@ -1,33 +1,30 @@
 {
   "name": "@prismshadow/penguin-desktop",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "PenguinHarness desktop app: Electron shell running @prismshadow/penguin-server as a utilityProcess, window on http://localhost (same-origin HTTP/SSE, no private IPC).",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/build-assets.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "start": "node scripts/preflight.mjs && electron .",
-    "stage": "node scripts/stage.mjs",
-    "pack": "node scripts/stage.mjs && electron-builder",
-    "pack:linux": "node scripts/stage.mjs && electron-builder --linux",
-    "pack:mac": "node scripts/stage.mjs && electron-builder --mac",
-    "pack:win": "node scripts/stage.mjs && electron-builder --win"
+    "pack": "electron-builder",
+    "pack:linux": "electron-builder --linux",
+    "pack:mac": "electron-builder --mac",
+    "pack:win": "electron-builder --win"
   },
-  "dependencies": {
+  "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
-    "electron-updater": "^6.8.9"
-  },
-  "devDependencies": {
     "@types/node": "^24.0.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-updater": "^6.8.9",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
-    "vitest": "^3.2.6",
-    "electron-builder": "^26.0.12"
+    "vitest": "^3.2.6"
   }
 }

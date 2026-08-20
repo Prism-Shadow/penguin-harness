@@ -10,10 +10,12 @@
  * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
  * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
- * order. Conversations can be pinned too (row ellipsis menu; persisted per Project in
+ * order. Conversations can be pinned too (row context menu; persisted per Project in
  * localStorage): pinned rows bubble to the top of their group's active list. Each row's
- * trailing slot shows the compact last-active time at rest and swaps to the ellipsis menu
- * on hover/focus -> bottom user config (theme / language / logout).
+ * trailing slot shows the compact last-active time at rest and swaps to archive + delete
+ * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
+ * context menu on right-click, Shift+F10, or a press-and-hold on touch
+ * -> bottom user config (theme / language / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -31,7 +33,11 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatMonthDay, formatRelativeShort } from "../../lib/format";
+import { sessionRowActivity } from "../../lib/session-activity";
+import type { SessionActivity } from "../../lib/session-activity";
+import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
+import { offersChangePassword } from "../../lib/account-menu";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
@@ -86,11 +92,27 @@ import {
 import type { SessionSortMode } from "../../lib/session-order";
 import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
+import { useRowContextMenu } from "../ui/context-menu";
+import {
+  HOVER_ROW_ACTIONS,
+  PENCIL_ICON,
+  PIN_ICON,
+  SessionRowHoverActions,
+  SessionRowMenuRows,
+  TRASH_ICON,
+  contextMenuActions,
+  overflowMenuDangerClass,
+  overflowMenuGlyph,
+  overflowMenuRowClass,
+} from "../ui/session-row-menu";
+import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
 import { CheckIcon, ChevronDown, GEAR_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
   FOLDER_OPEN_ICON,
+  GROUP_MODE_ICONS,
+  SORT_MODE_ICONS,
   FolderSection,
   GroupHeader,
   Icon,
@@ -103,6 +125,7 @@ import type { GroupMode } from "../ui/group-list";
 import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
+import { SessionActivityIcon } from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -122,26 +145,14 @@ import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
+import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 
-/** Pushpin (lucide pin: head + body + stem), the group-header pin toggle / pinned indicator. */
-const PIN_ICON =
-  "M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z";
-
-/** Row-menu item glyphs (thin-line, leading each item per the reference design): pencil / archive / unarchive / trash. */
-const PENCIL_ICON = "M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3zM14 7l3 3";
-const ARCHIVE_ICON =
-  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M9.5 13.5 12 16l2.5-2.5";
-const UNARCHIVE_ICON =
-  "M3 8h18M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M4 8l1.5-3h13L20 8M12 17v-5m-2.5 2L12 11l2.5 3";
-const TRASH_ICON =
-  "M4 6h16M9 6V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V6M6 6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6M10 10.5v6M14 10.5v6";
-
-/** The session row's overflow-menu trigger: three FILLED dots (the stroke version read too faint against the last-active times). */
+/** The workspace group's overflow-menu trigger: three FILLED dots (the stroke version read too faint at this size). */
 function EllipsisGlyph({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -214,21 +225,6 @@ const headerControlClass = (active: boolean) =>
 const menuSectionClass =
   "px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-gray-400 dark:text-gray-500";
 
-/** Compact overflow-menu row (session row menu + workspace group menu; reference density): small text, leading thin-line glyph. */
-const overflowMenuRowClass =
-  "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-
-/** The overflow menus' destructive row (delete keeps the red treatment; its glyph inherits the red). */
-const overflowMenuDangerClass =
-  "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40";
-
-/** The overflow menus' muted leading glyph (the danger row inlines its own so the red inherits). */
-const overflowMenuGlyph = (d: string) => (
-  <span className="shrink-0 text-gray-400 dark:text-gray-500">
-    <Icon d={d} size={13} />
-  </span>
-);
-
 /**
  * Collapsed-group and pinned-group persistence (survives a refresh), one storage key
  * per Project and concern — group keys are Agent ids / Workspace paths, which are
@@ -269,25 +265,17 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
-/** Session status dot: running pulses green, compacting shows an amber dot; idle shows nothing. */
-function StatusDot({ session }: { session: SessionInfo }) {
-  if (session.status === "running") {
-    return (
-      <span
-        title={S.chat.statusRunning}
-        className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500"
-      />
-    );
-  }
-  if (session.status === "compacting") {
-    return (
-      <span
-        title={S.chat.statusCompacting}
-        className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-      />
-    );
-  }
-  return null;
+/**
+ * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
+ * finished with a reply the user has not seen, and nothing once that reply has been read — or
+ * if the Session never ran at all. See sessionActivity.
+ */
+function StatusGlyph({ activity }: { activity: SessionActivity }) {
+  // Reserve the glyph's box even when there is no glyph: the row is a flex line whose title
+  // truncates into whatever space is left, so letting the slot collapse would re-flow the title
+  // of every never-run row (and again the moment its first run starts).
+  if (activity === null) return <span aria-hidden="true" className="block h-3 w-3 shrink-0" />;
+  return <SessionActivityIcon activity={activity} />;
 }
 
 export function Sidebar({
@@ -298,7 +286,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode } = useAuth();
+  const { user, logout, desktopMode, sessionVia } = useAuth();
   const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
     useTheme();
   const { lang, locale, setLang } = useLocale();
@@ -380,7 +368,14 @@ export function Sidebar({
    * ProxySettingsDialog.
    */
   const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
+  /**
+   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
+   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
+   */
+  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
+  /** This Project's read markers; re-renders the rows whenever one is stamped. */
+  const sessionSeen = useSessionSeen(currentProjectId);
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -699,6 +694,11 @@ export function Sidebar({
     const target = deletingSession;
     try {
       await api.deleteSession(target.sessionId);
+      // remove() also tombstones the id (see the store's isDeleted), which is what keeps the
+      // chat page from re-fetching the Session it is still routed at during the frames before
+      // the navigate() below lands. Ordering the two is deliberately NOT the mechanism: the
+      // list lives in a zustand store whose updates are not subject to React's transition
+      // lanes, so scheduling tricks here cannot be relied on to sequence them.
       remove(target.sessionId);
       // The session is gone, so clear its input draft too (no orphaned keys left in localStorage; keys are scoped per user, #68).
       if (user) clearDraft(sessionDraftKey(user.userId, target.sessionId));
@@ -709,6 +709,7 @@ export function Sidebar({
         setPinnedSessions(prunedPins);
         savePinnedSessions(currentProjectId, prunedPins);
       }
+      forgetSession(currentProjectId, target.sessionId);
       const prunedOrder = removeFromSessionOrder(sessionOrder, target.sessionId);
       if (prunedOrder !== sessionOrder) {
         setSessionOrder(prunedOrder);
@@ -838,6 +839,8 @@ export function Sidebar({
   };
 
   const openSession = (s: SessionInfo) => {
+    // Opening is what "read" means here: stamp the marker before navigating.
+    noteSessionSeen(currentProjectId, s.sessionId, s.lastActiveAt);
     // Cross-group click: the current Agent follows this Session's own Agent.
     setCurrentAgentId(s.agentId);
     go(`/chat/${s.sessionId}`);
@@ -929,6 +932,9 @@ export function Sidebar({
             key={s.sessionId}
             s={s}
             active={s.sessionId === activeSessionId}
+            // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so
+            // the whole transition sequence is testable without a DOM.
+            activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -937,8 +943,8 @@ export function Sidebar({
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
-            // (it recedes while the run continues — the pulsing status dot beside it is
-            // what says "active right now"). CLI-adopted and subagent rows are not
+            // (it recedes while the run continues — the hourglass beside it is what says
+            // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
@@ -1403,6 +1409,7 @@ export function Sidebar({
             >
               <p className={menuSectionClass}>{S.chat.groupModeSection}</p>
               <MenuRadioRow
+                icon={GROUP_MODE_ICONS.workspace}
                 label={S.chat.groupByWorkspace}
                 checked={groupMode === "workspace"}
                 onSelect={() => {
@@ -1411,6 +1418,7 @@ export function Sidebar({
                 }}
               />
               <MenuRadioRow
+                icon={GROUP_MODE_ICONS.agent}
                 label={S.chat.groupByAgent}
                 checked={groupMode === "agent"}
                 onSelect={() => {
@@ -1423,6 +1431,7 @@ export function Sidebar({
               {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
               {canDrag && (
                 <MenuRadioRow
+                  icon={SORT_MODE_ICONS.manual}
                   label={S.chat.sortManual}
                   checked={sortMode === "manual"}
                   onSelect={() => {
@@ -1432,6 +1441,7 @@ export function Sidebar({
                 />
               )}
               <MenuRadioRow
+                icon={SORT_MODE_ICONS.recent}
                 label={S.chat.sortRecent}
                 checked={sortMode === "recent"}
                 onSelect={() => {
@@ -1753,16 +1763,25 @@ export function Sidebar({
             </SettingRow>
           </div>
           <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setChangePasswordOpen(true);
-              }}
-            >
-              {S.account.changePassword}
-            </button>
+            {/* Hidden in the desktop shell's own window: it signs in through the shell's
+                one-shot token rather than a login form, and the seed password of a
+                desktop-created root is fully random and never printed — there is no
+                password its holder has seen, or needs. Deliberately NOT keyed on
+                desktopMode alone: a browser signed into the same desktop-mode server over
+                loopback holds a password session that can, and still does, change it.
+                See offersChangePassword for the full rule. */}
+            {offersChangePassword({ desktopMode, sessionVia }) && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setChangePasswordOpen(true);
+                }}
+              >
+                {S.account.changePassword}
+              </button>
+            )}
             {/* Admin-only, server-global proxy settings: one menu row opening the
                 dialog (same idiom as Change password above) — the switch, address
                 input and their live-save semantics live in ProxySettingsDialog. */}
@@ -1776,6 +1795,20 @@ export function Sidebar({
                 }}
               >
                 {S.settings.proxyMenu}
+              </button>
+            )}
+            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
+                opener above. */}
+            {user?.isAdmin && (
+              <button
+                type="button"
+                className={menuItemClass}
+                onClick={() => {
+                  setUserOpen(false);
+                  setUploadLimitsOpen(true);
+                }}
+              >
+                {S.settings.uploadLimitsMenu}
               </button>
             )}
             {/* THE update row — one button, two jobs, directly below Change password (owner
@@ -1876,6 +1909,7 @@ export function Sidebar({
         onClose={() => setChangePasswordOpen(false)}
       />
       <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
+      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
       <UpdateDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
@@ -2113,16 +2147,26 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
 /**
  * Single Session row: title + pinned indicator + status dot/approval badge, and one
  * trailing slot that swaps its content — at rest it shows the compact last-active time,
- * on row hover / keyboard focus / while open it shows the ellipsis overflow menu
- * instead (the menu trigger overlays the exact same slot; the old rename / archive /
- * delete hover icons live inside the menu now, joined by pin — one glyph instead of a
- * row of three). The menu panel goes through the Dropdown body portal so the sidebar
- * scroller can't clip it. A truncated title scrolls its tail into view while the row
- * is hovered or keyboard-focused (#309; Truncated's scrollReveal + data-title-reveal).
+ * on row hover — or on either of them taking focus — it shows archive and delete as
+ * direct icon buttons.
+ * That pair is the affordance every release up to v0.2.2 shipped (as icon buttons in
+ * exactly this slot), restored here: the 0.3 line had replaced it with an ellipsis
+ * dropdown carrying pin / rename / archive / delete, which cost two clicks for the two
+ * actions people actually reach for.
+ *
+ * The rest of the set did not disappear — **right-clicking the row** opens all four as a
+ * context menu at the pointer (useRowContextMenu; also Shift+F10 from the keyboard and
+ * press-and-hold on touch, since neither hover nor a secondary click exists there). Both
+ * panels go through the Dropdown body portal so the sidebar scroller can't clip them, and
+ * both read their action set from session-row-menu.tsx.
+ *
+ * A truncated title scrolls its tail into view while the row is hovered or
+ * keyboard-focused (#309; Truncated's scrollReveal + data-title-reveal).
  */
 function SessionRow({
   s,
   active,
+  activity,
   pinned,
   canPin = false,
   lastActive,
@@ -2142,6 +2186,8 @@ function SessionRow({
 }: {
   s: SessionInfo;
   active: boolean;
+  /** Busy / settled-read / settled-unread / never-ran, already resolved by sessionRowActivity. */
+  activity: SessionActivity;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
@@ -2165,12 +2211,29 @@ function SessionRow({
   onDelete: (s: SessionInfo) => void;
   onToggleArchive: (s: SessionInfo) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  /** Close the menu, then run the action (every item shares this). */
-  const item = (fn: (x: SessionInfo) => void) => () => {
-    setMenuOpen(false);
-    fn(s);
+  const ctx = useRowContextMenu();
+  /** Run one action on this Session, closing the context menu first if it was open. */
+  const run = (action: SessionRowAction) => {
+    ctx.close();
+    const handler: Record<SessionRowAction, (x: SessionInfo) => void> = {
+      pin: onTogglePin,
+      rename: onRename,
+      archive: onToggleArchive,
+      delete: onDelete,
+    };
+    handler[action](s);
   };
+  /**
+   * Menu items hand focus back to the row before acting: the panel unmounts under the
+   * user, and the context menu is the only keyboard route to pin and rename, so a
+   * Shift+F10 → Enter user would otherwise be dropped onto <body> and lose their place in
+   * the list. Actions that open a dialog (rename, delete) take focus from there as usual.
+   */
+  const runFromMenu = (action: SessionRowAction) => {
+    ctx.returnFocus()?.focus();
+    run(action);
+  };
+  const rowState = { archived: s.archived, pinned };
   return (
     <li
       className="relative"
@@ -2191,7 +2254,13 @@ function SessionRow({
         // data-title-reveal: hovering the row / keyboard-focusing its button scrolls a
         // truncated title's tail into view (the Truncated below; styles.css #309 rules).
         data-title-reveal
-        className={`group flex items-center rounded-md pr-1 transition-colors duration-150 ${
+        ref={ctx.rowRef}
+        // Right-click / Shift+F10 / press-and-hold open the row's context menu. The
+        // native menu is suppressed inside this handler only — the rest of the app keeps
+        // the browser's own. select-none keeps a held press from raising the text
+        // selection callout on touch instead of the menu.
+        {...ctx.rowProps}
+        className={`group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
           draggable ? "cursor-grab " : ""
         }${
           active
@@ -2201,7 +2270,12 @@ function SessionRow({
       >
         <button
           type="button"
-          onClick={() => onOpen(s)}
+          // A press-and-hold that opened the context menu must not also open the Session:
+          // touch screens replay the held press as a click once the finger lifts.
+          onClick={() => {
+            if (ctx.consumeLongPressClick()) return;
+            onOpen(s);
+          }}
           className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-1.5 text-left"
         >
           {agentHint !== undefined && (
@@ -2238,84 +2312,57 @@ function SessionRow({
             </span>
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusDot session={s} />
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>
             </span>
           )}
         </button>
-        {/* Trailing swap slot: resting last-active time / hover-focus-open ellipsis menu.
-            The trigger is a CONSTANT 28px square anchored at the slot's right edge — NOT a
-            whole-slot overlay: the slot's width rides the time string (2 分钟前 vs 31 分钟前),
-            and a slot-centered glyph landed at a different x per row, so the ellipses never
-            formed a vertical column (the user saw it shift with the time's character count).
-            Right-anchored, every row's dots share one x and line up with the group-header
-            ellipsis above (a right-flush 28px square at the same 4px inset). The swap stays
-            a pure opacity handoff: time hides on row hover (group-hover), when the trigger
-            holds keyboard focus (peer-focus-visible; the button precedes the time span so
-            the peer combinator can reach it), and while the menu is open — regardless of the
-            time being wider than the square. */}
-        <Dropdown
-          open={menuOpen}
-          setOpen={setMenuOpen}
-          portal={{ direction: "down", align: "right" }}
-          className="flex h-6 min-w-7 shrink-0 items-center justify-end"
-          menuClass="w-32"
-          button={
-            <>
-              {/* No hover pill on this trigger (a fill as wide as the date read ugly);
-                  feedback is the icon color deepening only, and the filled dots carry
-                  enough weight to read as interactive on their own. */}
-              <button
-                type="button"
-                title={S.chat.sessionMenu}
-                aria-label={S.chat.sessionMenu}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen(!menuOpen)}
-                className={`peer absolute right-0 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center text-gray-500 transition-all duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100 ${
-                  menuOpen
-                    ? "opacity-100"
-                    : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-                }`}
-              >
-                <EllipsisGlyph />
-              </button>
-              {lastActive !== "" && (
-                <span
-                  aria-hidden
-                  className={`pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-visible:opacity-0 dark:text-gray-500 ${
-                    menuOpen ? "opacity-0" : ""
-                  }`}
-                >
-                  {lastActive}
-                </span>
-              )}
-            </>
-          }
-        >
-          {canPin && (
-            <button type="button" className={overflowMenuRowClass} onClick={item(onTogglePin)}>
-              {overflowMenuGlyph(PIN_ICON)}
-              {pinned ? S.chat.unpinSession : S.chat.pinSession}
-            </button>
-          )}
-          <button type="button" className={overflowMenuRowClass} onClick={item(onRename)}>
-            {overflowMenuGlyph(PENCIL_ICON)}
-            {S.chat.renameSession}
-          </button>
-          <button type="button" className={overflowMenuRowClass} onClick={item(onToggleArchive)}>
-            {overflowMenuGlyph(s.archived ? UNARCHIVE_ICON : ARCHIVE_ICON)}
-            {s.archived ? S.chat.unarchiveSession : S.chat.archiveSession}
-          </button>
-          <button type="button" className={overflowMenuDangerClass} onClick={item(onDelete)}>
-            {/* The glyph inherits the row's red. */}
-            <span className="shrink-0">
-              <Icon d={TRASH_ICON} size={13} />
+        {/* Trailing swap slot: resting last-active time / hover-focus archive + delete.
+            The buttons form a CONSTANT-width group anchored at the slot's right edge —
+            NOT a whole-slot overlay: the slot's width rides the time string (2 分钟前 vs
+            31 分钟前), and slot-centered glyphs landed at a different x per row, so the
+            icons never formed a vertical column (the user saw them shift with the time's
+            character count). Right-anchored, every row's icons share one x. min-w-12
+            reserves the pair's own width, so on a row with no time they still don't
+            overhang the title. The swap stays a pure opacity handoff: the time hides on
+            row hover (group-hover) and while a button holds focus (peer-focus-within; the
+            group precedes the time span so the peer combinator can reach it). */}
+        <div className="relative flex h-6 min-w-12 shrink-0 items-center justify-end">
+          {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
+              the glyph color deepening — red for delete. */}
+          <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
+            <SessionRowHoverActions actions={HOVER_ROW_ACTIONS} state={rowState} onRun={run} />
+          </div>
+          {lastActive !== "" && (
+            <span
+              aria-hidden
+              className="pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
+            >
+              {lastActive}
             </span>
-            {S.chat.deleteSession}
-          </button>
+          )}
+        </div>
+        {/* The full set, one right-click away (also Shift+F10 / press-and-hold — see
+            useRowContextMenu). `contents` keeps this wrapper out of the row's flex
+            layout: it renders no box of its own, the panel is portaled, and the anchor
+            is the viewport point the gesture landed on rather than this element. */}
+        <Dropdown
+          open={ctx.open}
+          setOpen={ctx.setOpen}
+          portal={{ direction: "down", align: "left" }}
+          anchorRect={ctx.anchor}
+          returnFocus={ctx.returnFocus}
+          className="contents"
+          menuClass="w-36"
+          button={null}
+        >
+          <SessionRowMenuRows
+            actions={contextMenuActions(canPin)}
+            state={rowState}
+            onRun={runFromMenu}
+          />
         </Dropdown>
       </div>
     </li>
@@ -2376,12 +2423,23 @@ function GroupOverflowMenu({ onRename, onDelete }: { onRename: () => void; onDel
   );
 }
 
-/** List-settings menu option: label left, checkmark marks the active choice (reference-style radio row; aria-pressed carries the state). Same type scale as the session/workspace overflow menus (用户口径: 字体和 Session 更多一样). */
+/**
+ * List-settings menu option: leading glyph + label, with a checkmark marking the active
+ * choice (reference-style radio row; aria-pressed carries the state). Same type scale and
+ * leading-glyph column as the session/workspace overflow menus (用户口径: 字体和 Session
+ * 更多一样), so the two menus read as one family.
+ *
+ * The glyph is decorative — it names the option's subject (a folder for Workspace
+ * grouping, a clock for recency) beside a label that is never dropped, so the row's
+ * accessible name stays the label alone.
+ */
 function MenuRadioRow({
+  icon,
   label,
   checked,
   onSelect,
 }: {
+  icon: string;
   label: string;
   checked: boolean;
   onSelect: () => void;
@@ -2393,7 +2451,10 @@ function MenuRadioRow({
       onClick={onSelect}
       className={`${overflowMenuRowClass} justify-between`}
     >
-      <span className="truncate">{label}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        {overflowMenuGlyph(icon)}
+        <span className="truncate">{label}</span>
+      </span>
       {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
     </button>
   );

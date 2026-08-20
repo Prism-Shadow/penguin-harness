@@ -19,9 +19,11 @@ import type {
   MessagesLiveTail,
   MessagesPageInfo,
   MessagesResponse,
+  RecalledMessageResponse,
   ServerEvent,
   SessionCategory,
   SessionCreateResponse,
+  SessionForkResponse,
   SessionProcessesResponse,
   SessionResponse,
   SessionsResponse,
@@ -54,9 +56,17 @@ import {
   assertAttachmentBudget,
   attachFilesToInput,
   parseAttachmentPart,
+  readRecalledFiles,
   removeAttachments,
 } from "../../services/task-attachments.js";
 import type { TaskAttachment } from "../../services/task-attachments.js";
+import {
+  INLINE_IMAGE_MAX_BYTES,
+  INLINE_IMAGE_MAX_MB,
+  toAttachmentLimits,
+} from "../../services/attachment-limits.js";
+import type { AttachmentLimits } from "../../services/attachment-limits.js";
+import type { RecallStore } from "../../runtime/session-manager.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -73,8 +83,15 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
 ];
 
-/** The five valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
-const THINKING_LEVELS: readonly ThinkingLevelName[] = ["none", "low", "medium", "high", "xhigh"];
+/** The valid per-turn thinking level names (TaskCreateRequest.thinkingLevel). */
+const THINKING_LEVELS: readonly ThinkingLevelName[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
 /** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
 const MESSAGES_PAGE_LIMIT_MAX = 1000;
@@ -105,8 +122,14 @@ function pageLimit(raw: string, name: string): number {
  */
 function appendPendingInputs(messages: OmniMessage[], pending: OmniMessage[]): OmniMessage[] {
   if (pending.length === 0) return messages;
-  const tail = new Set(messages.slice(-50).map((m) => JSON.stringify(m)));
-  const missing = pending.filter((m) => !tail.has(JSON.stringify(m)));
+  const envelopeKey = (message: OmniMessage): string => {
+    const { tracePosition: _tracePosition, ...envelope } = message as OmniMessage & {
+      tracePosition?: unknown;
+    };
+    return JSON.stringify(envelope);
+  };
+  const tail = new Set(messages.slice(-50).map(envelopeKey));
+  const missing = pending.filter((message) => !tail.has(envelopeKey(message)));
   return missing.length > 0 ? [...messages, ...missing] : messages;
 }
 
@@ -165,11 +188,38 @@ const IMAGE_DATA_URL = /^data:[^;,]+;base64,[A-Za-z0-9+/=\s]+$/;
 function requireImageUrl(url: unknown, field: string): string {
   if (typeof url === "string") {
     if (url.startsWith("http://") || url.startsWith("https://")) return url;
-    if (IMAGE_DATA_URL.test(url)) return url;
+    if (IMAGE_DATA_URL.test(url)) {
+      // An inline image is not an attachment: it enters the conversation and is written verbatim
+      // into the Trace, which is read back whole — into one JS string — on every history page and
+      // every resume. So it gets its own fixed ceiling instead of following the (much larger,
+      // admin-settable) attachment cap up. Measured on the decoded length rather than the data
+      // URL's, so the number in the error is the number a person sees in a file manager.
+      const bytes = dataUrlByteLength(url);
+      if (bytes > INLINE_IMAGE_MAX_BYTES) {
+        throw new HttpError(
+          413,
+          "image_too_large",
+          `${field} exceeds the ${INLINE_IMAGE_MAX_MB}MB inline image limit.`,
+        );
+      }
+      return url;
+    }
   }
   throw badRequest(
     `${field} must be an http(s) URL or a base64 data: URL (data:<mime>;base64,<bytes>).`,
   );
+}
+
+/**
+ * Decoded byte length of a base64 data URL, computed from the payload's length rather than by
+ * decoding it: the point is to reject an oversize image *before* materializing it as a Buffer.
+ * Whitespace and padding are discounted, so the result is the file's real size.
+ */
+function dataUrlByteLength(dataUrl: string): number {
+  // Padding and whitespace carry no bytes; every 4 remaining characters carry 3. Same arithmetic
+  // the composer uses to size a recalled attachment's chip (chat-input.tsx dataUrlBytes).
+  const payload = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[=\s]+/g, "");
+  return Math.floor((payload.length * 3) / 4);
 }
 
 /**
@@ -203,16 +253,22 @@ function resolveScratchpadFile(dir: string, fileName: string): string | null {
 interface ParsedTaskInput {
   messages: OmniMessage[];
   attachments: TaskAttachment[];
+  /** The `text` parts in order, as submitted — the recall store's text (pre-attachment-lines). */
+  texts: string[];
+  /** The `image_url` parts in order, as submitted — the recall store's images. */
+  images: string[];
 }
 
 /** Validate Prompt input parts: text, image (data: / http(s) URL), or an uploaded file. */
-function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
+function parseTaskInput(body: Record<string, unknown>, limits: AttachmentLimits): ParsedTaskInput {
   const input = body.input;
   if (!Array.isArray(input) || input.length === 0) {
     throw badRequest("input must be an array with at least one item.");
   }
   const messages: OmniMessage[] = [];
   const attachments: TaskAttachment[] = [];
+  const texts: string[] = [];
+  const images: string[] = [];
   input.forEach((item, i) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw badRequest(`input[${i}] must be an object.`);
@@ -223,24 +279,68 @@ function parseTaskInput(body: Record<string, unknown>): ParsedTaskInput {
         throw badRequest(`input[${i}].text must be a non-empty string.`);
       }
       messages.push(userText(part.text));
+      texts.push(part.text);
       return;
     }
     if (part.type === "image_url") {
-      messages.push(imageUrlMessage(requireImageUrl(part.imageUrl, `input[${i}].imageUrl`)));
+      const url = requireImageUrl(part.imageUrl, `input[${i}].imageUrl`);
+      messages.push(imageUrlMessage(url));
+      images.push(url);
       return;
     }
     if (part.type === "file") {
       // Not an OmniMessage of its own: the file becomes an `[attached file: …]` line on the
       // text message once written to the scratchpad, so it carries no payload into the run.
-      attachments.push(parseAttachmentPart(part, i));
+      attachments.push(parseAttachmentPart(part, i, limits));
       // Per-request count / total-bytes caps, re-checked on every part so a hostile `input`
       // is cut off at the item that crosses the line (see assertAttachmentBudget).
-      assertAttachmentBudget(attachments);
+      assertAttachmentBudget(attachments, limits);
       return;
     }
     throw badRequest(`input[${i}].type must be one of text / image_url / file.`);
   });
-  return { messages, attachments };
+  return { messages, attachments, texts, images };
+}
+
+/**
+ * The recall store of a queued message (see session-manager RecallStore): the submitted
+ * content plus where each attachment landed on disk, zipped from the validated parts and
+ * `attachFilesToInput`'s written paths (same order — the writes are sequential).
+ */
+function recallStore(
+  text: string,
+  images: string[],
+  attachments: TaskAttachment[],
+  written: string[],
+): RecallStore {
+  return {
+    text,
+    images,
+    files: written.map((p, i) => ({
+      fileName: attachments[i]!.fileName,
+      path: p,
+      mime: attachments[i]!.mime,
+    })),
+  };
+}
+
+/**
+ * Serve one recall (#287): read the withdrawn message's file attachments back into data URLs,
+ * delete their scratchpad copies (nothing references them anymore — leaving them would strand
+ * a second copy when the user resends), and hand the composer-shaped content back.
+ */
+async function recalledResponse(
+  recall: RecallStore,
+  thinkingLevel?: ThinkingLevelName,
+): Promise<RecalledMessageResponse> {
+  const files = await readRecalledFiles(recall.files);
+  await removeAttachments(recall.files.map((f) => f.path));
+  return {
+    text: recall.text,
+    images: recall.images,
+    files,
+    ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+  };
 }
 
 /**
@@ -259,7 +359,10 @@ function parseSteerImages(body: Record<string, unknown>): string[] {
  * input's `{type:"file"}` parts (parseAttachmentPart, budget re-checked per item), absent or
  * empty = no attachments.
  */
-function parseSteerFiles(body: Record<string, unknown>): TaskAttachment[] {
+function parseSteerFiles(
+  body: Record<string, unknown>,
+  limits: AttachmentLimits,
+): TaskAttachment[] {
   const files = body.files;
   if (files === undefined) return [];
   if (!Array.isArray(files)) throw badRequest("files must be an array.");
@@ -268,8 +371,8 @@ function parseSteerFiles(body: Record<string, unknown>): TaskAttachment[] {
     if (item === null || typeof item !== "object" || Array.isArray(item)) {
       throw badRequest(`files[${i}] must be an object.`);
     }
-    attachments.push(parseAttachmentPart(item as Record<string, unknown>, i, "files"));
-    assertAttachmentBudget(attachments);
+    attachments.push(parseAttachmentPart(item as Record<string, unknown>, i, limits, "files"));
+    assertAttachmentBudget(attachments, limits);
   });
   return attachments;
 }
@@ -419,6 +522,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
@@ -436,11 +540,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         );
       }
     }
-    if (approvalMode === undefined && archived === undefined && title === undefined) {
+    if (
+      approvalMode === undefined &&
+      thinkingLevel === undefined &&
+      archived === undefined &&
+      title === undefined
+    ) {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / archived / title).",
+        "No updatable field provided (approvalMode / thinkingLevel / archived / title).",
       );
     }
     let updated: SessionRow = { ...row };
@@ -453,6 +562,12 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
+    }
+    if (thinkingLevel !== undefined) {
+      // Takes effect from the next run on: launchTask/startGoal read the pinned level for
+      // any run that carries none of its own (a run already in flight keeps its level).
+      deps.sessionsRepo.updateThinkingLevel(row.sessionId, thinkingLevel);
+      updated = { ...updated, thinkingLevel };
     }
     if (archived !== undefined) {
       const at = archived ? new Date().toISOString() : null;
@@ -469,6 +584,67 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({
       session: await deps.sessionService.toInfo(fresh, hasTrace),
     } satisfies SessionResponse);
+  });
+
+  app.post("/:sessionId/fork", async (c) => {
+    const row = resolveSession(c);
+    const body = (await readJson(c)) as Record<string, unknown>;
+    const raw = body.position;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw badRequest("position must be a Trace position object.");
+    }
+    const { fileIndex, ordinal } = raw as Record<string, unknown>;
+    if (
+      !Number.isSafeInteger(fileIndex) ||
+      (fileIndex as number) < 1 ||
+      !Number.isSafeInteger(ordinal) ||
+      (ordinal as number) < 0
+    ) {
+      throw badRequest("position.fileIndex must be positive and position.ordinal non-negative.");
+    }
+
+    const fork = await deps.manager.atIdleBoundary(row.sessionId, () =>
+      deps.traceService.forkSessionTrace(row.projectId, row.agentId, row.sessionId, {
+        fileIndex: fileIndex as number,
+        ordinal: ordinal as number,
+      }),
+    );
+    const forkRow: SessionRow = {
+      sessionId: fork.sessionId,
+      projectId: row.projectId,
+      agentId: row.agentId,
+      provider: row.provider,
+      modelId: row.modelId,
+      workspace: row.workspace,
+      approvalMode: row.approvalMode,
+      // insertFork replaces this with the source's current title plus its persistent number.
+      title: null,
+      client: "web",
+      hasTrace: true,
+      lastActiveAt: fork.createdAt,
+      createdAt: fork.createdAt,
+    };
+    try {
+      const insertedForkRow = deps.sessionsRepo.insertFork(row.sessionId, forkRow);
+      deps.sessionSources.set(fork.sessionId, null);
+      return c.json(
+        {
+          session: await deps.sessionService.toInfo(insertedForkRow, true),
+        } satisfies SessionForkResponse,
+        201,
+      );
+    } catch (err) {
+      // insertFork commits before response shaping. If a later step fails (for example,
+      // resolving SessionInfo), remove that committed row along with the cloned files so
+      // the index cannot retain a Session whose Trace was rolled back.
+      deps.sessionsRepo.deleteById(fork.sessionId);
+      await deps.traceService.deleteSessionTraces(row.projectId, row.agentId, fork.sessionId);
+      await fs.rm(
+        path.join(scratchpadDir(deps.config.root, row.projectId, row.agentId), fork.sessionId),
+        { recursive: true, force: true },
+      );
+      throw err;
+    }
   });
 
   app.delete("/:sessionId", async (c) => {
@@ -645,14 +821,16 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
+    const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
       {
         type: "task_state",
         state: deps.manager.statusOf(row.sessionId),
         queued: deps.manager.pendingFollowUpCount(row.sessionId),
-        // Undelivered steering rides the snapshot too, so the composer's "steering queued"
-        // hint (and what it says) survives a reload.
+        // Undelivered steering and queued follow-ups ride the snapshot too, so the composer's
+        // queued hints (and what they say) survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
+        ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
       },
       ...deps.manager.pendingApprovals(row.sessionId).map((p) => ({
         type: "approval_request" as const,
@@ -667,10 +845,13 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const body = await readJson(c);
     const goal = parseGoalField(body);
-    // Per-turn thinking level (optional): validated against the five names; omitted follows
+    // Per-turn thinking level (optional): validated against the level names; omitted follows
     // the session's default. In goal mode it rides every round of the goal; a queued
     // follow-up keeps its level for its auto-start.
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVELS);
+    // Resolved per request from the admin settings, so a limit change applies to the very next
+    // upload rather than at the next restart.
+    const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
     if (goal) {
       // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
       // objective that every round re-injects and an image on its own doesn't say what the
@@ -678,7 +859,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       // inside the objective (whatever the model's vision) so they survive the rounds. File
       // attachments cannot: nothing folds them into the objective, so they are turned away
       // here, before any upload is written to disk.
-      const { messages, attachments } = parseTaskInput(body);
+      const { messages, attachments } = parseTaskInput(body, limits);
       const text = messages
         .filter((m) => (m.payload as { type?: string }).type === "text")
         .map((m) => (m.payload as { text: string }).text)
@@ -697,7 +878,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       });
       return c.json({ sessionId } satisfies TaskCreateResponse, 202);
     }
-    const parsed = parseTaskInput(body);
+    const parsed = parseTaskInput(body, limits);
     // Follow-up queue: with queueIfBusy, a busy session enqueues the input instead of 409
     // (auto-starts as an ordinary next task once idle; the response says which happened).
     const queueIfBusy = body.queueIfBusy === true;
@@ -723,6 +904,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const { sessionId, queued } = await deps.manager.startTask(row.sessionId, input, {
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         queueIfBusy,
+        // Original content, kept while the input waits in the follow-up queue so a recall
+        // (DELETE /follow-ups/:id) can hand it back; unused when the task starts directly.
+        recall: recallStore(parsed.texts.join("\n"), parsed.images, parsed.attachments, written),
       });
       return c.json({ sessionId, queued } satisfies TaskCreateResponse, 202);
     } catch (err) {
@@ -744,7 +928,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const images = parseSteerImages(body);
-    const files = parseSteerFiles(body);
+    const files = parseSteerFiles(
+      body,
+      toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb()),
+    );
     // Any part can carry the message on its own: an image or a file with no caption is a
     // complete steering message, and so is plain text.
     if (!text && images.length === 0 && files.length === 0) {
@@ -762,11 +949,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       row.sessionId,
     );
     try {
-      deps.manager.steer(row.sessionId, input, {
-        text,
-        images: images.length,
-        files: files.length,
-      });
+      deps.manager.steer(row.sessionId, input, recallStore(text, images, files, written));
     } catch (err) {
       // 409 (not running) or any other refusal: the files must not stay behind — the
       // frontend falls back to a normal task POST, which writes its own copies.
@@ -774,6 +957,29 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       throw err;
     }
     return c.body(null, 202);
+  });
+
+  // Recall an undelivered steering message back to the composer (#287): withdraws it from
+  // the queue and returns its original content for editing and resending. 409 not_pending
+  // once it was delivered to the model (or the id is unknown) — nothing left to take back.
+  app.delete("/:sessionId/steer/:steerId", async (c) => {
+    const row = resolveSession(c);
+    const recall = deps.manager.recallSteering(row.sessionId, pathParam(c, "steerId"));
+    return c.json((await recalledResponse(recall)) satisfies RecalledMessageResponse);
+  });
+
+  // Recall a queued follow-up task back to the composer (#287): removes it from the queue
+  // before it auto-starts and returns its original content (with the thinking level it was
+  // queued with). 409 not_pending once it already started (or the id is unknown).
+  app.delete("/:sessionId/follow-ups/:followUpId", async (c) => {
+    const row = resolveSession(c);
+    const { recall, thinkingLevel } = deps.manager.recallFollowUp(
+      row.sessionId,
+      pathParam(c, "followUpId"),
+    );
+    return c.json(
+      (await recalledResponse(recall, thinkingLevel)) satisfies RecalledMessageResponse,
+    );
   });
 
   // The Session's most recent goal run (for restoring the chat page's goal banner on load).

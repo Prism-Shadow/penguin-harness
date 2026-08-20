@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-docs",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "PenguinHarness documentation site (React + Vite + Tailwind CSS): bilingual zh/en Markdown pages with light/dark themes and per-page Copy Markdown, deployed to GitHub Pages under /docs/ next to the landing page.",
@@ -16,7 +16,8 @@
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",
     "react-router": "^8.3.0",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "shiki": "^4.3.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",

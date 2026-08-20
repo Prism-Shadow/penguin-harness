@@ -59,10 +59,11 @@ openrouter、fireworks、siliconflow、qwen-token-plan、qwen-pay-as-you-go 与 
 | `provider` | Provider 分组；与 `model_id` 共同构成条目唯一键 |
 | `model_id` | 上游请求 id，原样发送给 AgentHub |
 | `context_window` | 上下文窗口大小 |
-| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断，OpenAI 兼容的第三方模型应设为 `openai-chat`(0.4.2 之前的旧写法 `openai` 为已废弃别名，读取时归一化) |
+| `client_type` | AgentHub 客户端协议；缺省由 `model_id` 推断。自定义端点使用通用协议客户端 `openai-responses` / `ant-messages` / `openai-chat`(Web 对话框可按 base URL 检测其中哪一种；0.4.2 之前的旧写法 `openai` 为 `openai-chat` 的已废弃别名，读取时归一化) |
 | `display_name` | 展示名；仅在与内置目录不同时持久化 |
 | `vision` | 是否支持图片输入；缺省视为支持 |
 | `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |
+| `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
 | `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
 | `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |
@@ -102,7 +103,7 @@ output = 0.857143
 | `system_prompt` | 内置模板 | 必填；唯一进行占位符替换的模板 |
 | `max_turns` | `-1` | 单个 Task 的最大 LLM 轮数（`-1` 不限制，正整数为上限） |
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
 | `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |

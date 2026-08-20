@@ -36,7 +36,10 @@ import {
   userText,
 } from "../omnimessage/index.js";
 import type {
+  CompactionBeginPayload,
   CompactionEndPayload,
+  CompactionMode,
+  CompactionReason,
   CompleteModelMessage,
   OmniMessage,
   RequestBeginPayload,
@@ -72,6 +75,17 @@ export interface ResumeResult {
   renderMessages: OmniMessage[];
   /** The file's first session_meta; null if missing (unresumable — the caller reports the error). */
   meta: SessionMetaMessage | null;
+  /**
+   * A `compaction_begin` in this file has no matching `compaction_end`: the user quit (or the
+   * process died) while the compaction ran. That compaction simply **failed** — the resume
+   * path closes the span with a `failed` `compaction_end` before any new record lands, and
+   * its half-written summary is discarded rather than reconstructed (best-effort: the
+   * original context is still intact, and the standing threshold makes the compaction up at
+   * the next trigger). Closing the span is what keeps the conversation that follows visible:
+   * every reader treats messages between the paired events as compaction-internal, so an
+   * unclosed span would hide everything appended after it (issue #288).
+   */
+  danglingCompaction?: { reason: CompactionReason; mode: CompactionMode };
 }
 
 /** Content of the pairing-backfill placeholder output (the tool hadn't finished and no output was persisted before the process exited). */
@@ -305,6 +319,8 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
   /** Whether we're between a matched pair of compaction events: the compaction prompt in this
    * span is not conversational input and must not be resent as-is if uncommitted. */
   let inCompaction = false;
+  /** The last compaction_begin still waiting for its end (null once matched): a non-null value at the end of the file is a compaction the user quit out of, closed as failed by the resume path (see ResumeResult.danglingCompaction). */
+  let danglingBegin: OmniMessage<CompactionBeginPayload> | null = null;
   /** Ids of tool_calls that are committed (in history) and ids of outputs that are paired (in
    * history input). */
   const committedCallIds = new Set<string>();
@@ -407,9 +423,13 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
     }
     if (isEventMessage(msg)) {
       const t = (msg.payload as { type?: string }).type;
-      if (t === "compaction_begin") inCompaction = true;
-      else if (t === "compaction_end") inCompaction = false;
-      else if (t === "abort" && (msg.origin?.length ?? 0) === 0) renderMessages.push(msg);
+      if (t === "compaction_begin") {
+        inCompaction = true;
+        danglingBegin = msg as OmniMessage<CompactionBeginPayload>;
+      } else if (t === "compaction_end") {
+        inCompaction = false;
+        danglingBegin = null;
+      } else if (t === "abort" && (msg.origin?.length ?? 0) === 0) renderMessages.push(msg);
       // Other events (token_usage / approval_decision / tool_list_ready / mcp_connect_*,
       // etc.) don't participate in turn determination and stay out of the render view —
       // the bootstrap records are re-emitted live by the next run when they matter.
@@ -455,6 +475,14 @@ export function resumeTrace(messages: OmniMessage[]): ResumeResult {
     sessionTurns,
     renderMessages,
     meta,
+    ...(danglingBegin !== null
+      ? {
+          danglingCompaction: {
+            reason: danglingBegin.payload.reason,
+            mode: danglingBegin.payload.mode,
+          },
+        }
+      : {}),
   };
 }
 

@@ -25,6 +25,7 @@
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
  * a fake Session (issuing no real LLM requests).
  */
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -49,7 +50,13 @@ import type {
   TextPayload,
   ThinkingLevelName,
 } from "@prismshadow/penguin-core";
-import type { PendingSteeringInfo, ServerEvent, SessionStatus } from "../api/types.js";
+import type {
+  PendingFollowUpInfo,
+  PendingSteeringInfo,
+  ServerEvent,
+  SessionStatus,
+} from "../api/types.js";
+import type { RecallableFile } from "../services/task-attachments.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import type { GoalsRepo } from "../db/repos/goals.js";
 import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
@@ -64,15 +71,35 @@ import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
 
-/** 409 for when there's nothing to compact: give the specific reason rather than a one-size-fits-none message. */
+/**
+ * 409 for when there's nothing to compact: give the specific reason rather than a
+ * one-size-fits-none message.
+ *
+ * Each reason carries its **own code**, not just its own message. Clients localize by code
+ * (the Web's `apiErrorText` looks the code up in a table and falls back to the raw English
+ * message), so one shared code leaves exactly two bad options: flatten three unrelated
+ * explanations into one vague sentence, or let English prose reach a non-English UI. One code
+ * per sub-reason is how the rest of this API splits a refusal — `dir_not_absolute` /
+ * `dir_not_found` / `not_a_dir` are three codes for three ways of rejecting one directory.
+ */
 function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError {
-  const messages: Record<typeof why, string> = {
-    unsupported: "This Agent does not have context compaction configured.",
-    empty: "The current context has nothing to compact (no completed conversation turns yet).",
-    just_compacted:
-      "The context was just compacted and there is no new conversation since; no need to compact again.",
+  const reasons: Record<typeof why, { code: string; message: string }> = {
+    unsupported: {
+      code: "compaction_not_configured",
+      message: "This Agent does not have context compaction configured.",
+    },
+    empty: {
+      code: "nothing_to_compact",
+      message: "The current context has nothing to compact (no completed conversation turns yet).",
+    },
+    just_compacted: {
+      code: "already_compacted",
+      message:
+        "The context was just compacted and there is no new conversation since; no need to compact again.",
+    },
   };
-  return new HttpError(409, "nothing_to_compact", messages[why]);
+  const { code, message } = reasons[why];
+  return new HttpError(409, code, message);
 }
 
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
@@ -93,6 +120,13 @@ export interface RuntimeSession {
   compactability(): CompactAvailability;
   /** Queues a mid-run steering input (core `Session.steer`); false when no Task is running. */
   steer(input: OmniMessage[]): boolean;
+  /**
+   * Withdraws a steering input queued via `steer` before core delivers it (core
+   * `Session.unsteer`, matched by input-list identity); false when it is no longer queued —
+   * already delivered, or the run exited. Optional: test fakes may omit it, in which case
+   * every recall reports "already delivered".
+   */
+  unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
   toolPermission(name: string): "r" | "rw" | undefined;
@@ -223,6 +257,14 @@ export interface SessionManagerDeps {
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   goals?: GoalsRepo;
   /**
+   * Publishes a Session-scoped event on the user-level channel of everyone who can see the
+   * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
+   * the app layer, the same split the scheduler's `notify` uses — this class holds no Project
+   * membership repos. Optional: without it only the per-Session channel is served, which is
+   * what unit tests that don't wire it get.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
+  /**
    * Clock for persisted timestamps (last_active_at). Injected like the other services' so a
    * stubbed clock moves this and `usage_records.ts` together — the pairing the legacy
    * backfill assumes when it reads MAX(ts) as a session's last activity.
@@ -230,10 +272,33 @@ export interface SessionManagerDeps {
   now?: () => Date;
 }
 
+/**
+ * A queued message's original content, held while it waits in a queue so a recall (DELETE
+ * /steer/:id, DELETE /follow-ups/:id) can hand it back to the composer for editing (#287).
+ * `text` and `images` are the same strings the queued input already references (no extra
+ * copy); files stay on disk in the Session scratchpad and are read back only at recall.
+ */
+export interface RecallStore {
+  text: string;
+  images: string[];
+  files: RecallableFile[];
+}
+
 /** One queued follow-up task (`queueIfBusy`): the task input plus the per-turn thinking level it was posted with. */
 interface QueuedFollowUp {
+  /** Recall handle (PendingFollowUpInfo.id), assigned at queue time. */
+  id: string;
   input: OmniMessage[];
   thinkingLevel?: ThinkingLevelName;
+  /** Original content for recall; absent when the queueing path predates or bypasses the route (recall then returns 409). */
+  recall?: RecallStore;
+}
+
+/** One undelivered steering entry: the display info broadcast on task_state, plus what a recall needs — the exact input list core queued (its unsteer handle) and the original content. */
+interface PendingSteeringEntry {
+  info: PendingSteeringInfo;
+  input: OmniMessage[];
+  recall: RecallStore;
 }
 
 /** Active-table entry: a loaded runtime Session plus its running state. */
@@ -287,9 +352,10 @@ interface RuntimeEntry {
    * of core's steering queue (same FIFO order), so the composer's "steering queued" hint and
    * its content survive reloads: pushed on `steer`, shifted as each `[user_steering]`
    * message appears on the drive stream, dropped wholesale when the run exits (core
-   * discards undelivered steering on abort/completion). Broadcast on every `task_state`.
+   * discards undelivered steering on abort/completion). The `info` halves are broadcast on
+   * every `task_state`; the rest is the recall handle (see recallSteering).
    */
-  pendingSteering: PendingSteeringInfo[];
+  pendingSteering: PendingSteeringEntry[];
   /** Timestamp of last activity (refreshed on load / status flip / drive completion), used for idle-eviction checks. */
   lastActivityMs: number;
 }
@@ -311,6 +377,16 @@ const EARLY_TITLE_BODY_CHARS = 1000;
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
+}
+
+/** The `task_state` display info of one queued follow-up (see PendingFollowUpInfo); an entry queued without a recall store truthfully reports empty content. */
+function followUpInfo(f: QueuedFollowUp): PendingFollowUpInfo {
+  return {
+    id: f.id,
+    text: f.recall?.text ?? "",
+    images: f.recall?.images.length ?? 0,
+    files: f.recall?.files.length ?? 0,
+  };
 }
 
 /** If msg is a run_subagent tool call carrying a `prompt`, return its id and prompt (for use as the subagent's title); otherwise null. */
@@ -433,7 +509,12 @@ export class SessionManager {
 
   /** Steering messages queued but not yet delivered to the model (display mirror; see RuntimeEntry.pendingSteering). */
   pendingSteeringOf(sessionId: string): PendingSteeringInfo[] {
-    return this.entries.get(sessionId)?.pendingSteering ?? [];
+    return (this.entries.get(sessionId)?.pendingSteering ?? []).map((p) => p.info);
+  }
+
+  /** Queued follow-up tasks awaiting auto-start, as their display/recall info (id + content summary). */
+  pendingFollowUpsOf(sessionId: string): PendingFollowUpInfo[] {
+    return (this.entries.get(sessionId)?.followUps ?? []).map(followUpInfo);
   }
 
   /**
@@ -544,6 +625,23 @@ export class SessionManager {
   }
 
   /**
+   * Run a metadata operation at an idle Session boundary under the same mutex as Task and
+   * compaction starts. Session fork uses this to snapshot an append-only Trace without a Task
+   * beginning between its status check and final read. An uncached Session is idle by definition;
+   * unlike startTask this path deliberately does not load a heavyweight runtime.
+   */
+  async atIdleBoundary<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = this.entries.get(sessionId);
+      if (entry) this.assertIdle(entry);
+      return operation();
+    });
+  }
+
+  /**
    * Start a Task: get-or-load → 409
    * mutual-exclusion check → publish the input messages first → drive run in the
    * background. Returns the current actual session_id (the new id after self-heal).
@@ -557,7 +655,7 @@ export class SessionManager {
   async startTask(
     sessionId: string,
     input: OmniMessage[],
-    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean },
+    opts?: { thinkingLevel?: ThinkingLevelName; queueIfBusy?: boolean; recall?: RecallStore },
   ): Promise<{ sessionId: string; queued: boolean }> {
     return this.withLock(sessionId, async () => {
       this.assertOpen();
@@ -566,8 +664,11 @@ export class SessionManager {
       const entry = await this.ensureEntry(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
+          id: randomUUID(),
           input,
           ...(opts.thinkingLevel !== undefined ? { thinkingLevel: opts.thinkingLevel } : {}),
+          // The original content rides the queue so a recall can hand it back (see recallFollowUp).
+          ...(opts.recall !== undefined ? { recall: opts.recall } : {}),
         });
         entry.lastActivityMs = Date.now();
         // Re-publish the current state so subscribers pick up the new queued count (the
@@ -652,10 +753,12 @@ export class SessionManager {
         objective,
         budget: args.budget,
       });
+      // Same fallback chain as a task: the goal's own level, else the Session's pinned one.
+      const thinkingLevel = this.runThinkingLevel(entry.sessionId, args.thinkingLevel);
       const gen = this.goalStream(entry, {
         input: args.input,
         budget: args.budget,
-        ...(args.thinkingLevel !== undefined ? { thinkingLevel: args.thinkingLevel } : {}),
+        ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         approve,
         signal: ac.signal,
         ...(goalId !== undefined ? { goalId } : {}),
@@ -762,11 +865,26 @@ export class SessionManager {
   }
 
   /** Shared task launch (fresh tasks and auto-started follow-ups): flips to running, publishes the input, and drives the run with the per-turn thinking level (if any). Caller holds the session lock and has verified idle. */
+  /**
+   * Thinking level for one run: the level the request carried wins, else the level pinned
+   * on the Session row (PATCH /api/sessions/:id — the Web App's in-chat picker), else
+   * undefined so core keeps falling back to the Agent config. Resolved at LAUNCH time, so
+   * a queued follow-up that carried no level of its own picks up the pin as it stands when
+   * it finally starts, and a pin set mid-run applies from the next run.
+   */
+  private runThinkingLevel(
+    sessionId: string,
+    requested?: ThinkingLevelName,
+  ): ThinkingLevelName | undefined {
+    return requested ?? this.deps.sessions.findById(sessionId)?.thinkingLevel ?? undefined;
+  }
+
   private launchTask(
     entry: RuntimeEntry,
     input: OmniMessage[],
-    thinkingLevel?: ThinkingLevelName,
+    requestedThinkingLevel?: ThinkingLevelName,
   ): void {
+    const thinkingLevel = this.runThinkingLevel(entry.sessionId, requestedThinkingLevel);
     const channel = this.deps.channels.get(entry.sessionId);
     const ac = new AbortController();
     entry.status = "running";
@@ -880,12 +998,13 @@ export class SessionManager {
    * or the run finished in the race window — the caller falls back to submitting a normal
    * task, which carries the same text and images.
    *
-   * `info` is the queued message's display summary: mirrored on the entry and broadcast via
-   * `task_state` (and the SSE subscribe snapshot) until the delivered `[user_steering]`
-   * message is observed on the stream — that is what keeps the composer's "steering queued"
-   * hint, content included, alive across reloads.
+   * `recall` is the queued message's original content: its summary (with a fresh id) is
+   * mirrored on the entry and broadcast via `task_state` (and the SSE subscribe snapshot)
+   * until the delivered `[user_steering]` message is observed on the stream — that is what
+   * keeps the composer's "steering queued" hint, content included, alive across reloads —
+   * and the content itself is what a recall (recallSteering) hands back to the composer.
    */
-  steer(sessionId: string, input: OmniMessage[], info: PendingSteeringInfo): void {
+  steer(sessionId: string, input: OmniMessage[], recall: RecallStore): void {
     const entry = this.entries.get(sessionId);
     if (!entry || entry.status !== "running" || !entry.session.steer(input)) {
       throw new HttpError(
@@ -894,9 +1013,73 @@ export class SessionManager {
         "This Session has no Task in progress; send the message as a new task instead.",
       );
     }
-    entry.pendingSteering.push(info);
+    entry.pendingSteering.push({
+      info: {
+        id: randomUUID(),
+        text: recall.text,
+        images: recall.images.length,
+        files: recall.files.length,
+      },
+      input,
+      recall,
+    });
     entry.lastActivityMs = Date.now();
     this.publishState(entry, entry.status);
+  }
+
+  /**
+   * Recall an undelivered steering message (#287): withdraw it from core's queue and the
+   * display mirror, re-broadcast state, and hand back its original content for the composer
+   * to restore. 409 `not_pending` when the entry is no longer queued — already delivered to
+   * the model (core's `unsteer` says so authoritatively; the mirror can lag behind delivery
+   * until the `[user_steering]` message is observed on the stream), the run exited, or the
+   * id is unknown — all the same outcome for the caller: nothing left to take back.
+   */
+  recallSteering(sessionId: string, steerId: string): RecallStore {
+    const entry = this.entries.get(sessionId);
+    const i = entry?.pendingSteering.findIndex((p) => p.info.id === steerId) ?? -1;
+    const pending = i >= 0 ? entry!.pendingSteering[i]! : undefined;
+    if (!entry || !pending || !(entry.session.unsteer?.(pending.input) ?? false)) {
+      throw new HttpError(
+        409,
+        "not_pending",
+        "This steering message was already delivered to the model and can no longer be recalled.",
+      );
+    }
+    entry.pendingSteering.splice(i, 1);
+    entry.lastActivityMs = Date.now();
+    this.publishState(entry, entry.status);
+    return pending.recall;
+  }
+
+  /**
+   * Recall a queued follow-up task (#287): remove it from the queue before it auto-starts,
+   * re-broadcast state, and hand back its original content (plus the thinking level it was
+   * queued with). 409 `not_pending` when the id is not in the queue — it already
+   * auto-started (or the runtime was evicted/restarted, which empties the queue) — or the
+   * entry has no recall store to give back.
+   */
+  recallFollowUp(
+    sessionId: string,
+    followUpId: string,
+  ): { recall: RecallStore; thinkingLevel?: ThinkingLevelName } {
+    const entry = this.entries.get(sessionId);
+    const i = entry?.followUps.findIndex((f) => f.id === followUpId) ?? -1;
+    const queued = i >= 0 ? entry!.followUps[i]! : undefined;
+    if (!entry || !queued?.recall) {
+      throw new HttpError(
+        409,
+        "not_pending",
+        "This follow-up message already started and can no longer be recalled.",
+      );
+    }
+    entry.followUps.splice(i, 1);
+    entry.lastActivityMs = Date.now();
+    this.publishState(entry, entry.status);
+    return {
+      recall: queued.recall,
+      ...(queued.thinkingLevel !== undefined ? { thinkingLevel: queued.thinkingLevel } : {}),
+    };
   }
 
   /**
@@ -1554,7 +1737,46 @@ export class SessionManager {
       type: "task_state",
       state,
       queued: entry.followUps.length,
-      ...(entry.pendingSteering.length > 0 ? { pendingSteering: entry.pendingSteering } : {}),
+      ...(entry.pendingSteering.length > 0
+        ? { pendingSteering: entry.pendingSteering.map((p) => p.info) }
+        : {}),
+      ...(entry.followUps.length > 0
+        ? { pendingFollowUps: entry.followUps.map(followUpInfo) }
+        : {}),
+    });
+    // The same flip again, this time on the user channel and carrying the Session id: a tab
+    // subscribes to the ONE conversation it has open, so the event above can never move any
+    // other row's badge. Only the queued/steering hints stay session-scoped — they belong to
+    // the composer of the conversation being watched, not to a list row.
+    const notify = this.deps.notifyProjectUsers;
+    if (!notify) return;
+    let lastActiveAt: string;
+    let hasTrace: boolean;
+    try {
+      // Read the stamp back rather than reconstruct it: the run-end flip is published right
+      // after the write that stamps it (touchLastActive in drive's finally), so this is what a
+      // list fetch would return right now and no clock of ours has to agree with the one that
+      // wrote it.
+      const row = this.deps.sessions.findById(entry.sessionId);
+      if (!row) return; // Row already deleted: no list row left to light up.
+      lastActiveAt = row.lastActiveAt;
+      // A running Session has by definition started a Task, whatever the row cache says yet:
+      // markDriven (which sets has_trace) runs inside drive(), and startTask has already
+      // published the first "running" by then. Reporting the raw flag there would tell a client
+      // the Session has never run at the exact moment it visibly is running — and a client that
+      // believed it would draw the hourglass, then nothing at all once the run settled.
+      hasTrace = row.hasTrace === true || state !== "idle";
+    } catch {
+      // Same failure touchRow guards against (DB handle closed by shutdown while a run
+      // outlives its drain window). A list badge is never worth breaking a run's finally over.
+      return;
+    }
+    notify(entry.projectId, {
+      type: "session_state",
+      sessionId: entry.sessionId,
+      state,
+      lastActiveAt,
+      hasTrace,
     });
   }
 

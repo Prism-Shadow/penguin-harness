@@ -1,7 +1,7 @@
 /**
  * Integration tests for the Session index: creation (default model / workspace
- * guard), listing (DB union Trace directory discovery), PATCH approval mode,
- * and createdAt parsing.
+ * guard), listing (DB union Trace directory discovery), PATCH approval mode and
+ * thinking level, and createdAt parsing.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -572,6 +572,28 @@ describe("session-index", () => {
     expect(
       (await api.patch(`/api/sessions/${session.sessionId}`, { approvalMode: "sometimes" })).status,
     ).toBe(400);
+  });
+
+  it("PATCH thinking level pins it on the Session and reads back (survives a reload)", async () => {
+    await configureModels();
+    const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;
+    // A fresh Session pins nothing: runs follow the Agent config (the field stays absent).
+    expect(session.thinkingLevel).toBeUndefined();
+    const patched = await api.patch(`/api/sessions/${session.sessionId}`, {
+      thinkingLevel: "high",
+    });
+    expect(patched.status).toBe(200);
+    expect(((await patched.json()) as SessionResponse).session.thinkingLevel).toBe("high");
+    // Read back through a fresh GET — this is what a page reload sees.
+    const got = (await (
+      await api.get(`/api/sessions/${session.sessionId}`)
+    ).json()) as SessionResponse;
+    expect(got.session.thinkingLevel).toBe("high");
+    // An invalid level returns 400, and an empty body still reports nothing to update.
+    expect(
+      (await api.patch(`/api/sessions/${session.sessionId}`, { thinkingLevel: "ultra" })).status,
+    ).toBe(400);
+    expect((await api.patch(`/api/sessions/${session.sessionId}`, {})).status).toBe(400);
   });
 
   it("insertOrIgnore is idempotent: concurrent first discovery of one Session doesn't throw on the UNIQUE constraint", async () => {

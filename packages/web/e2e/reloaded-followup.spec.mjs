@@ -83,10 +83,28 @@ test("a stale steer response after reload queues the follow-up instead of strand
   // rides an ordinary send: the server keeps it with the queued input and applies it when the
   // follow-up auto-starts. The picker is only disabled while a send is in flight, so it is
   // editable here; the pick is per-turn and does not write through to the Agent config.
+  //
+  // This conversation already has history, so the mid-chat switch guard (#310) stages the
+  // pick behind its dialog instead of applying it. Cancel first: the guard must leave the
+  // displayed level exactly where it was, never half-applied.
+  // The trigger carries the plain Chinese name ("中"); only the menu rows annotate it with the
+  // wire value ("高 (high)"), which is why the two are matched differently here.
   const thinkingBtn = page.getByRole("button", { name: "思考等级" });
   await expect(thinkingBtn).toContainText("中");
+  await expect(thinkingBtn).not.toContainText("medium");
   await thinkingBtn.click();
-  await page.getByRole("button", { name: "高", exact: true }).click();
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
+  // The dialog's title is its accessible name, not body text — assert on its choices.
+  await expect(page.getByRole("button", { name: "仍要切换", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "压缩后切换", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(thinkingBtn).toContainText("中");
+
+  // Now switch for real: a compaction cannot start while the task runs, so "压缩后切换" is
+  // disabled here and "仍要切换" is the applying choice.
+  await thinkingBtn.click();
+  await page.getByRole("button", { name: "高 (high)", exact: true }).click();
+  await page.getByRole("button", { name: "仍要切换", exact: true }).click();
   await expect(thinkingBtn).toContainText("高");
 
   await composer.fill("hello after reload");
@@ -101,7 +119,13 @@ test("a stale steer response after reload queues the follow-up instead of strand
     thinkingLevel: "high",
   });
   expect(await response.json()).toMatchObject({ queued: true });
-  await expect(page.getByText("1 条跟进消息已排队，本轮结束后自动发送")).toBeVisible();
+  // The queued hint is now one line per entry carrying that entry's own content (the bare
+  // "N queued" count is only the fallback for a server that predates pendingFollowUps), and
+  // it ends in the icon-only recall control — which must still answer to its name (#287).
+  await expect(
+    page.getByText("跟进消息已排队，本轮结束后自动发送：hello after reload"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "撤回" })).toHaveCount(1);
   await expect(composer).toHaveValue("");
 
   // The first task completes, then the accepted follow-up reaches the LLM and produces a

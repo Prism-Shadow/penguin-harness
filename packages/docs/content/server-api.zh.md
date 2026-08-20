@@ -10,7 +10,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 - 技术栈：Hono + @hono/node-server，要求 Node >= 24；
 - 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
 - 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
-- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），上限 20MB —— 按读取到的字节数统计，未声明长度（分块传输）的请求同样受限；
+- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），其上限**由附件预算推导**而非固定值——附件以 base64 `data:` URL 随请求送达（膨胀 4/3），故上限为 `base64(attachmentTotalMb) + 一张内嵌图片与 JSON 外壳的余量`，在默认 120MB 合计下约 190MB，管理员调低附件上限时随之回落。按读取到的字节数统计，未声明长度（分块传输）的请求同样受限；
 - 错误响应统一为：
 
 ```text
@@ -73,7 +73,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
+| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
@@ -83,6 +83,13 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 - `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 undici dispatcher 认可的代理 URL——`http://`、`https://` 与（undici 实验性支持的）`socks5://`/`socks://` 地址，允许携带凭据——以及裸 `主机[:端口]`（规范化为 `http://主机[:端口]`）；只存储规范化后的值，响应回显存储形态。其余（无法解析，或 undici 拒绝的协议如 `socks4://`）一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
 
 任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
+
+上传限制是两个整数 MB，约束输入框的文件附件；二者均在下一次请求即生效、无需重启（校验与请求体上限都按请求读取）：
+
+- `attachmentMaxMb`（默认 100）为单个附件上限，超出返回 `413` `file_too_large`。
+- `attachmentTotalMb`（默认 120）为单条消息解码后的合计上限，超出返回 `413` `payload_too_large`。
+- PUT 校验：两者都必须是 1 到 200 之间的整数，且**生效后**的合计值（本次 PUT 给出的值，或本次不修改时的存量值）不得低于生效后的单个上限。其余一律 `400`，错误码 `invalid_attachment_limit`，且被拒绝的 PUT 不写入任何字段。
+- 不可配置项：单条消息的附件数量（20）与内嵌图片上限（20MB，超出返回 `413` `image_too_large`）。内嵌图片会写入轨迹，并在每次翻阅历史与恢复会话时被重新读取，因此刻意不随附件上限放宽；`GET /api/me` 会在 `uploadLimits` 下报告以上全部数值，客户端据此按当前生效的上限预先校验。
 
 ### 版本与在线更新
 
@@ -114,6 +121,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
 | PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
+| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测并返回第一个被提供的协议：`{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
@@ -179,16 +188,19 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
-| PATCH | / | 更新：`{approvalMode?, archived?, title?}` |
+| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级固定在该 Session 上并持久化：此后凡是自身未携带等级的运行都改用它，而不再回落到 Agent 配置；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未固定） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
+| POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/docs/goal-mode) |
+| POST | /tasks | 发起 Task：`{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
 | POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
+| DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
+| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files, thinkingLevel?}`；已自动发出则 409 `not_pending` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
-| POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409 `nothing_to_compact` |
+| POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409，具体原因由 code 承载——`compaction_not_configured`（该 Agent 没有配置压缩）、`nothing_to_compact`（当前上下文尚未完成一轮对话）、`already_compacted`（上次压缩后还没有新的对话）。服务重启后恢复的 Session 依据 Trace 判断可压缩性，因此已有对话无需先跑一次 Task 即可压缩 |
 | GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表 |
 | POST | /processes/:processId/kill | 停止一个后台进程（对整个进程组先 SIGTERM、宽限期后 SIGKILL），条目随之从列表消失；已不存在时 404 `process_not_found` |
 | DELETE | /processes/:processId | 从列表移除一个**已退出**的进程条目：仍在运行时 409 `process_running`（应改用停止），已不存在时 404 `process_not_found`。条目连同该进程已捕获的输出一起离开运行时注册表，此后对该 `process_id` 调用 `input_command` 会失败 |
@@ -210,7 +222,7 @@ Trace 只存完整消息（流式 `partial_*` 永远不落盘），所以仅靠�
 
 ```ts
 interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // Session 通道最近分配的 SSE 事件 id（`<epoch>-<seq>`）：
     // 截至该 id（含）发布的所有事件都已累积进 `fragments`。
@@ -224,6 +236,8 @@ interface MessagesResponse {
 ```
 
 `cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
+
+`tracePosition` 只是历史响应元数据，不进入持久化 OmniMessage。Web App 将一轮最后一条模型文本的不可变坐标提交给 `/fork`，服务端再校验它确实闭合了一个完整 Task。分叉会克隆保留范围内的 Trace 分片，并把源 Session 的 scratchpad 快照到新 Session id 下；系统生成的本地附件路径同步改写，因此以后删除任一 Session 都不会破坏另一方。同一源 Session 在任意回复位置产生的分支共用持久编号，标题使用不依赖界面语言的后缀，依次为 `原标题 (1)`、`原标题 (2)`；删除旧分支不会复用编号。源 Session 正在运行或压缩时返回 409。
 
 Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
 
@@ -261,14 +275,15 @@ GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证
 // POST /api/sessions/:sessionId/tasks —— 发起一个 Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // 本次 Task 的思考等级（逐轮参数，五档之一；非法值 400）；缺省 = 回退到 Agent 配置的档位
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
+  // 本次 Task 的思考等级（逐轮参数，六档之一；非法值 400）；缺省 = 先回退到该 Session 固定的档位，再回退到 Agent 配置
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送
-  // 文件附件：base64 data: URL，单个 ≤10MB（超出返回 413 file_too_large），单次请求最多 20 个、
-  // 解码后合计 ≤12MB（超出返回 413 too_many_files / payload_too_large；三项校验都在落盘前完成）。
+  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送，≤20MB（超出返回 413 image_too_large）
+  // 文件附件：base64 data: URL，默认单个 ≤100MB（超出返回 413 file_too_large），单次请求最多 20 个、
+  // 解码后合计 ≤120MB（超出返回 413 too_many_files / payload_too_large；三项校验都在落盘前完成）。
+  // 两个尺寸均可由管理员调整（PUT /api/admin/settings），并由 GET /api/me 下发。
   // 服务端将其写入该 Session 的 scratchpad，并在消息文本末尾追加一行
   // `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符；落盘时保留
   // 原有词形（`报告 2026.pdf` → `报告-2026.pdf`：非 ASCII 字符原样保留，对 shell 不友好的
@@ -290,7 +305,7 @@ Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | Session 级 | GET /api/sessions/:sessionId/stream | 该 Session 的消息流与运行事件 |
-| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（schedule_fired / schedule_queued / session_created） |
+| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / schedule_fired / schedule_queued / session_created） |
 
 ### 传输格式
 
@@ -301,6 +316,7 @@ export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
+  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -314,6 +330,7 @@ export type ServerEvent =
 | approval_request | 工具调用升级为人工审批时发出：always-ask 下的所有调用，以及 read-only 下 rw / 未知权限的调用；重连时未决审批会重发 |
 | task_state | Session 运行状态翻转（idle / running / compacting） |
 | session_title | 首轮后模型生成的标题已持久化 |
+| session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |

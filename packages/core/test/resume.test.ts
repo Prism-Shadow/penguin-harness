@@ -16,6 +16,8 @@ import { createAgent } from "../src/index.js";
 import {
   abortEvent,
   assistantText,
+  compactionBegin,
+  compactionEnd,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -172,6 +174,49 @@ describe("agent.resumeSession", () => {
     expect(
       (session.resumedHistory ?? []).map((m) => (m.payload as { type?: string }).type),
     ).toEqual(["text", "text", "abort"]);
+  });
+
+  it("closes a compaction the user quit out of as failed, discarding its draft (issue #288)", async () => {
+    // The process died while a compaction ran: the shard ends inside the span (begin +
+    // prompt + an unfinished request that had started writing a summary). That compaction
+    // simply failed — resume closes the span before appending anything else, so the
+    // conversation that follows is not hidden as compaction-internal, and the half-written
+    // draft is discarded rather than adopted as a summary.
+    const agent = await createAgent({});
+    const file = await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      tokenUsage(usage(150), usage(150)),
+      requestEnd("completed"),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]half-writ"),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    const closed = await readTrace(file);
+    const last = closed[closed.length - 1]!;
+    expect(last.payload).toMatchObject({
+      type: "compaction_end",
+      reason: "context",
+      mode: "summarize",
+      status: "failed",
+    });
+    // Nothing was reconstructed from the interrupted compaction: the original context is
+    // resumed as it stood before it, with no `[context_summary]` injected.
+    const injected = (session.resumedHistory ?? []).some((m) =>
+      ((m.payload as { text?: string }).text ?? "").includes("[context_summary]"),
+    );
+    expect(injected).toBe(false);
+    session.dispose();
+
+    // Idempotent: a second resume sees the matched pair and appends nothing.
+    const again = await agent.resumeSession({ sessionId: SID });
+    again.dispose();
+    expect((await readTrace(file)).length).toBe(closed.length);
   });
 
   it("ignores a legacy trace's recorded thinking_level; the Agent config always wins", async () => {
@@ -339,6 +384,76 @@ describe("agent.resumeSession", () => {
     for await (const msg of session.compact()) messages.push(msg);
     expect(messages).toHaveLength(0);
     expect(await agent.latestSessionId()).toBeNull();
+  });
+
+  it("compactability reflects the replayed turn count before the first run", async () => {
+    // A process restart resumes a Session but does not run it, and the engine that holds
+    // `sessionTurns` is built lazily by the first run. Availability therefore has to be
+    // answered from the state the replay recovered, not from a not-yet-built engine —
+    // otherwise a user with a full conversation is told there is nothing to compact
+    // (the server turns this reason into a 409 `nothing_to_compact`).
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(42), usage(42)),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    expect(session.compactability()).toBe("ok");
+    session.dispose();
+  });
+
+  it("compactability keeps the just-compacted reason across a restart", async () => {
+    // The trace ends on a completed compaction: the resumed context is empty because it was
+    // *just compacted*, not because the user has never spoken. Both have zero turns and they
+    // must not collapse into the same explanation.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("a1"),
+      requestEnd("completed"),
+      tokenUsage(usage(150), usage(150)),
+      compactionBegin({ reason: "context", mode: "summarize", context: 150, turns: 1 }),
+      userText("COMPACT NOW"),
+      requestBegin(),
+      assistantText("[summary]the story so far[/summary]"),
+      requestEnd("completed"),
+      compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    expect(session.compactability()).toBe("just_compacted");
+    session.dispose();
+  });
+
+  it("compactability stays empty for a resumed session whose context has no completed turn", async () => {
+    // The genuine `empty` case survives the fix: the only request in the trace was interrupted,
+    // so no turn ever completed and there is truly nothing to fold.
+    const agent = await createAgent({});
+    await writeTraceFile(tmpRoot, SID, [
+      metaFor(SID, workspace),
+      userText("q1"),
+      requestBegin(),
+      assistantText("half-writ"),
+      abortEvent("user"),
+    ]);
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    expect(session.compactability()).toBe("empty");
+    session.dispose();
+  });
+
+  it("compactability is empty on a brand-new session that has never run", async () => {
+    const agent = await createAgent({});
+    const session = await agent.createSession({ workspaceDir: workspace });
+    expect(session.compactability()).toBe("empty");
+    session.dispose();
   });
 });
 

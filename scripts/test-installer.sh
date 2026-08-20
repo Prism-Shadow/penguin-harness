@@ -416,12 +416,22 @@ run_online_case() {
   CASE_INSTALL="$WORK_DIR/$name-install"
   : > "$CASE_LOG"
   set +e
-  REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
-    HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
-    PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
-    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
-    PENGUIN_DOWNLOAD_SOURCE="$source_mode" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
-    sh "$installer_path" >"$CASE_OUTPUT" 2>&1
+  if [ "$speed_probe" = "__unset" ]; then
+    unset PENGUIN_DOWNLOAD_SPEED_PROBE
+    REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+      HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
+      PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
+      PENGUIN_DOWNLOAD_SOURCE="$source_mode" \
+      sh "$installer_path" >"$CASE_OUTPUT" 2>&1
+  else
+    REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+      HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
+      PENGUIN_VERSION="$version" PENGUIN_DOWNLOAD_BASE_URL="$download_base_url" \
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="$download_fallback_base_url" \
+      PENGUIN_DOWNLOAD_SOURCE="$source_mode" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
+      sh "$installer_path" >"$CASE_OUTPUT" 2>&1
+  fi
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -460,6 +470,9 @@ run_online_case speed-probe-github-fast speed-probe-github-fast "" success 6 "" 
   || fail_test "speed probe selected more than one primary bundle download"
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-fast.log" \
   || fail_test "speed probe did not select GitHub when it met the minimum speed"
+run_online_case speed-probe-default-on speed-probe-github-fast "" success 6 "" "" "$STAMPED_INSTALLER" auto __unset
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/speed-probe-default-on.log" \
+  || fail_test "speed probe was not enabled by default"
 run_online_case speed-probe-github-below-threshold speed-probe-github-below-threshold "" success 6 "" "" "$STAMPED_INSTALLER" auto 1
 grep -q "penguin-harness-releases.oss-cn-beijing.aliyuncs.com/.*/$HOST_ASSET\$" "$WORK_DIR/speed-probe-github-below-threshold.log" \
   || fail_test "speed probe did not keep OSS when GitHub was below the minimum speed"
@@ -522,12 +535,22 @@ run_forwarder_case() {
     archive="$ARTIFACT_DIR/$HOST_ASSET"
   fi
   set +e
-  REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
-    HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
-    PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
-    PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
-    PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
-    sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+  if [ "$speed_probe" = "__unset" ]; then
+    unset PENGUIN_DOWNLOAD_SPEED_PROBE
+    REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+      HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
+      PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
+      PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" \
+      sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+  else
+    REQUEST_LOG="$CASE_LOG" MODE="$mode" PATH="$STUB_BIN:$PATH" \
+      HOME="$WORK_DIR/$name-home" PENGUIN_INSTALL_DIR="$CASE_INSTALL" \
+      PENGUIN_ARCHIVE="$archive" PENGUIN_VERSION="$version" \
+      PENGUIN_DOWNLOAD_SOURCE="$source" PENGUIN_DOWNLOAD_BASE_URL="" \
+      PENGUIN_DOWNLOAD_FALLBACK_BASE_URL="" PENGUIN_DOWNLOAD_SPEED_PROBE="$speed_probe" \
+      sh "$ROOT_DIR/packages/landing/public/install.sh" >"$CASE_OUTPUT" 2>&1
+  fi
   status=$?
   set -e
   if [ "$expected" = "success" ]; then
@@ -579,5 +602,8 @@ run_forwarder_case forwarder-speed-probe-handoff speed-probe-github-fast 7 auto 
   || fail_test "forwarder locked the payload source to OSS instead of letting the installer speed probe"
 grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/forwarder-speed-probe-handoff.log" \
   || fail_test "forwarder locked the payload source instead of letting the installer speed probe"
+run_forwarder_case forwarder-speed-probe-default-handoff speed-probe-github-fast 7 auto v0.0.0-test success __unset
+grep -q "github.com/.*/releases/download/v0.0.0-test/$HOST_ASSET\$" "$WORK_DIR/forwarder-speed-probe-default-handoff.log" \
+  || fail_test "forwarder handoff did not leave speed probing enabled by default"
 
 echo "Installer bundle, offline, rollback and online tests passed."

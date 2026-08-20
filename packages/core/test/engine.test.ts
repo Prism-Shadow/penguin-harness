@@ -1909,6 +1909,73 @@ describe("ContextEngine LLM timeout / network interruption (PRN-012)", () => {
     expect((abort!.payload as { reason?: string }).reason).toContain("llm request error");
   });
 
+  it("a permanent failed (fast-mode rejection) stops the run without burning the ladder", async () => {
+    let calls = 0;
+    const llm: LLMInterface = {
+      // GenerativeModel marks AgentHub's fast_mode UnsupportedParameterError as a permanent
+      // failed (see llm.test.ts): thrown before any network I/O, deterministic for the
+      // session's frozen config, so retrying the identical request can never succeed. The
+      // engine must abort with the actionable message instead of costing the ladder.
+      // eslint-disable-next-line require-yield
+      async *streamGenerate() {
+        calls += 1;
+        return {
+          status: "failed" as const,
+          permanent: true,
+          errorMessage:
+            "Kimi does not support fast mode. Fast mode is enabled for this model; " +
+            "turn it off in the model settings to use this model.",
+        };
+      },
+    };
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment, maxReconnects: 3, reconnectBackoffMs: 1 });
+
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(1); // Deterministic client-side rejection: one attempt, no reconnects.
+    // The classification stays an honest `failed` on the wire (not auth: hosts must not
+    // gate input for a credential fix — the fix is the model's fast-mode setting).
+    const end = all.find((m) => (m.payload as { type?: string }).type === "request_end");
+    expect((end!.payload as { status?: string }).status).toBe("failed");
+    // No planned retry is announced: the frontend must not render a countdown for a
+    // retry that never comes.
+    expect((end!.payload as { retry_in_ms?: number }).retry_in_ms).toBeUndefined();
+    const abort = all.find((m) => (m.payload as { type?: string }).type === "abort");
+    expect(abort).toBeDefined();
+    const reason = (abort!.payload as { reason?: string }).reason ?? "";
+    expect(reason).toContain("llm request error");
+    expect(reason).toContain("turn it off in the model settings");
+  });
+
+  it("a plain failed outcome (no permanent flag) still takes the ladder", async () => {
+    // The permanent flag is opt-in and narrowly scoped: an ordinary failed without it keeps
+    // the retry-everything policy (the classifier is an allowlist; a gateway phrasing a
+    // transient fault its own way must still reconnect).
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate() {
+        calls += 1;
+        if (calls === 1) return { status: "failed" as const, errorMessage: "flaky gateway" };
+        yield assistantText("recovered");
+        return { status: "completed" as const };
+      },
+    };
+    const engine = new ContextEngine({
+      llm,
+      environment: new Environment({
+        workspaceDir: workspace,
+        toolConfig: execCommandToolConfig(),
+      }),
+      reconnectBackoffMs: 0,
+    });
+    const all = await collectRun(engine, [userText("go")], allowAll);
+    expect(calls).toBe(2);
+    expect(all.find((m) => (m.payload as { type?: string }).type === "abort")).toBeUndefined();
+  });
+
   it("a bare 403 (classified failed) retries within the default cap and succeeds", async () => {
     let calls = 0;
     const llm: LLMInterface = {
@@ -2483,6 +2550,38 @@ describe("ContextEngine mid-run steering ([user_steering])", () => {
 
     // Task over: the queue window is closed again.
     expect(engine.steer([userText("late")])).toBe(false);
+  });
+
+  it("unsteer withdraws a queued entry before delivery; refuses once drained or idle", async () => {
+    const llm = new FakeLLM();
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_unsteer" });
+    const engine = new ContextEngine({ llm, environment: steeringEnvironment(), trace });
+
+    // Idle: nothing queued, nothing to withdraw.
+    const idleInput = [userText("never queued")];
+    expect(engine.unsteer(idleInput)).toBe(false);
+
+    const kept = [userText("focus on the tests")];
+    const recalled = [userText("actually, never mind")];
+    const approve: ApproveFn = async () => {
+      expect(engine.steer(kept)).toBe(true);
+      expect(engine.steer(recalled)).toBe(true);
+      // Withdraw the second entry while both are still queued; a second attempt on the
+      // same entry finds nothing.
+      expect(engine.unsteer(recalled)).toBe(true);
+      expect(engine.unsteer(recalled)).toBe(false);
+      return "allow";
+    };
+    const all = await collectRun(engine, [userText("go")], approve);
+
+    // Only the kept entry was delivered — streamed, and fed to the next turn's input.
+    const expected = ["[user_steering]\nfocus on the tests\n[/user_steering]"];
+    expect(steeringTexts(all)).toEqual(expected);
+    expect(steeringTexts(llm.receivedSecondInput!)).toEqual(expected);
+    expect(steeringTexts(await readTrace(trace.currentPath()))).toEqual(expected);
+
+    // After delivery (queue drained, run over): the kept entry can no longer be withdrawn.
+    expect(engine.unsteer(kept)).toBe(false);
   });
 
   it("delivers steering left at loop end as a [user_steering] continuation turn (traced, streamed)", async () => {

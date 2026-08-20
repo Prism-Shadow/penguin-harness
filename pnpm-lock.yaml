@@ -49,8 +49,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@prismshadow/agenthub':
-        specifier: ^0.4.2
-        version: 0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.4
+        version: 0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -95,8 +95,8 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       '@prismshadow/agenthub':
-        specifier: ^0.4.2
-        version: 0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.4
+        version: 0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills':
         specifier: workspace:*
         version: link:../skills
@@ -136,7 +136,7 @@ importers:
         version: 4.4.3
 
   packages/desktop:
-    dependencies:
+    devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
         version: file:packages/cli(supports-color@10.2.2)
@@ -146,10 +146,6 @@ importers:
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: link:../server
-      electron-updater:
-        specifier: ^6.8.9
-        version: 6.8.9(supports-color@10.2.2)
-    devDependencies:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -159,6 +155,9 @@ importers:
       electron-builder:
         specifier: ^26.0.12
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@10.2.2)
+      electron-updater:
+        specifier: ^6.8.9
+        version: 6.8.9(supports-color@10.2.2)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
@@ -186,6 +185,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.0
         version: 4.0.1(supports-color@10.2.2)
+      shiki:
+        specifier: ^4.3.1
+        version: 4.3.1
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.1.0
@@ -928,8 +930,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@prismshadow/agenthub@0.4.2':
-    resolution: {integrity: sha512-wI+S18fP/vESkVHUo9bMipsphxt1KXrjNSXgcwZmQp+NH+y61jalOANtp0hZW4oMP4YfkDB3Al/RvJJ5Jhp8QQ==}
+  '@prismshadow/agenthub@0.4.4':
+    resolution: {integrity: sha512-hKO5Zj5GxMabqClZph9xT/eZTi835Pv14/AcZpa0TeOtjixJwuy/YAUZKkXBsYCwFbcy31Uel+S81qifjVo5cA==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -4455,7 +4457,7 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/agenthub@0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -4473,7 +4475,7 @@ snapshots:
   '@prismshadow/penguin-cli@file:packages/cli(supports-color@10.2.2)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills': file:packages/skills
@@ -4492,7 +4494,7 @@ snapshots:
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
-      '@prismshadow/agenthub': 0.4.2(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.4(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-skills': file:packages/skills
       arktype: 2.2.3
       smol-toml: 1.6.1

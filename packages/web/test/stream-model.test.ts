@@ -505,6 +505,123 @@ describe("approvals and events", () => {
     expect(banner.durationMs).toBe(4500);
   });
 
+  it("the span's partial_text accumulates the streamed summary onto the running banner (issue #290)", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    const banner = items(m)[0] as CompactionItem;
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]the "));
+    pushMessage(m, partialText("delta", "plan[/summary]"));
+    pushMessage(m, partialText("stop"));
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // The span's text renders no transcript item of its own.
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(0);
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    // The accumulated text survives the end: the settled banner still shows the summary.
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // After the span, partial_text is ordinary model output again — it opens an assistant
+    // text item instead of appending to the settled banner.
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "next answer"));
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    const after = items(m).filter((i) => i.kind === "assistant_text") as AssistantTextItem[];
+    expect(after).toHaveLength(1);
+    expect(after[0]!.text).toBe("next answer");
+  });
+
+  it("history replay rebuilds the banner's summary text from the compaction span's assistant output", () => {
+    // Live, the deltas carried the text; the Trace records the same text as the span's
+    // complete assistant messages. A reload must show the same summary the live viewer saw.
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, assistantText("a1"));
+    pushMessage(m, tokenUsage(counts(1000), counts(1000)));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, userText("COMPACT NOW")); // the compaction prompt: user text, never summary material
+    pushMessage(m, requestBegin());
+    pushMessage(m, thinkingMessage("planning")); // thinking is not summary text either
+    pushMessage(m, assistantText("[summary]the plan[/summary]"));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "completed" }));
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+    // Span-internal messages still render nothing of their own.
+    expect(items(m).filter((i) => i.kind === "assistant_text")).toHaveLength(1);
+  });
+
+  it("a compaction the user quit out of is closed as failed on load; the conversation after it renders (issue #288)", () => {
+    // The process died mid-compaction, leaving compaction_begin with no end. Core's resume
+    // closes the span with a `failed` compaction_end before appending anything else, so
+    // everything after it is ordinary conversation again — not hidden as compaction-internal.
+    const m = createStreamModel();
+    pushMessage(m, userText("q1"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "context", mode: "summarize", context: 1000, turns: 1 }),
+    );
+    pushMessage(m, userText("COMPACT NOW"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, assistantText("[summary]half-writ")); // the draft the crash interrupted
+    // ...process died here; the resume closes the span as failed before writing anything else:
+    pushMessage(m, compactionEnd({ reason: "context", mode: "summarize", status: "failed" }));
+    // The conversation continues and must render.
+    pushMessage(m, userText("q2 after the crash"));
+    pushMessage(m, requestBegin());
+    pushMessage(m, toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }));
+    pushMessage(m, requestEnd("completed"));
+    pushMessage(m, toolCallOutput({ output: "ok", toolCallId: "t1" }));
+
+    const users = items(m).filter((i) => i.kind === "user_text") as UserTextItem[];
+    expect(users.map((u) => u.text)).toContain("q2 after the crash");
+    // The tool card carries its real name — no "(unknown tool)" orphan output card.
+    const cards = items(m).filter((i) => i.kind === "tool_call") as ToolCallItem[];
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.name).toBe("exec");
+    expect(cards[0]!.output).toBe("ok");
+    // The interrupted compaction reads as failed, and its half-written draft is discarded
+    // rather than shown as if it were the adopted summary.
+    const banner = items(m).find((i) => i.kind === "compaction") as CompactionItem;
+    expect(banner).toMatchObject({ running: false, status: "failed" });
+    expect(banner.summaryText).toBeUndefined();
+  });
+
+  it("an aborted compaction discards its partial summary too (live interrupt)", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]partial draft"));
+    const banner = items(m)[0] as CompactionItem;
+    expect(banner.summaryText).toBe("[summary]partial draft");
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "aborted" }));
+    expect(banner.status).toBe("aborted");
+    expect(banner.summaryText).toBeUndefined();
+  });
+
+  it("a completed compaction keeps its summary for the collapsed body", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, partialText("start"));
+    pushMessage(m, partialText("delta", "[summary]the plan[/summary]"));
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    const banner = items(m)[0] as CompactionItem;
+    expect(banner.status).toBe("completed");
+    expect(banner.summaryText).toBe("[summary]the plan[/summary]");
+  });
+
   it("mcp connect row: end sums the discovered-tool count, keeps per-server outcomes, and derives the wall time", () => {
     const m = createStreamModel();
     pushMessage(m, at(mcpConnectBegin(["fx", "bad"]), "2026-01-01T00:00:00.000Z"));
@@ -925,6 +1042,19 @@ describe("Task segmentation and stats triggering", () => {
     expect(stats.assistantText).toBe("Creating `package.json`.\n\nInstallation finished.");
   });
 
+  it("carries the final assistant Trace position into the forkable Task footer", () => {
+    const m = createStreamModel();
+    const reply = {
+      ...at(assistantText("fork here"), "2026-07-05T00:00:03.000Z"),
+      tracePosition: { fileIndex: 2, ordinal: 17 },
+    };
+    pushMessages(m, [at(userText("Q"), "2026-07-05T00:00:00.000Z"), reply]);
+    finalizeHistory(m);
+    const stats = items(m).find((item) => item.kind === "task_stats") as TaskStatsItem;
+    expect(stats.forkable).toBe(true);
+    expect(stats.forkPosition).toEqual({ fileIndex: 2, ordinal: 17 });
+  });
+
   it("stream end (finalizeHistory) closes the last Task; rounds without usage get no stats figures but still get a footer", () => {
     const m = createStreamModel();
     pushMessages(m, [
@@ -1148,6 +1278,139 @@ describe("compaction attribution by position: in-round counts toward the round, 
     const stats = items(m)[2] as TaskStatsItem;
     // This round: 00:00 -> last request_end 00:03 = 3s. Compaction sits entirely after the round end, none of it counts.
     expect(stats.stats!.elapsedDeltaMs).toBe(3_000);
+  });
+
+  it("a wrap-up compaction settles the round's stats row as it begins, so the banner is born below it", () => {
+    // The row's final position was already right, but it used to be spliced in at task-idle —
+    // after the compaction request had finished. A compaction runs against the largest
+    // context of the session, so for those seconds the banner sat directly under the reply
+    // and then jumped down once the row appeared above it. The round is over the moment a
+    // wrap-up compaction starts, so its ledger is settled right there.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.500Z"),
+      at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.900Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 600, turns: 1 }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+    ]);
+
+    // Already in place while the compaction is still running — no later reordering.
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+    ]);
+    expect((items(m)[3] as CompactionItem).running).toBe(true);
+    expect((items(m)[2] as TaskStatsItem).stats!.elapsedDeltaMs).toBe(3_000);
+
+    // Finishing the compaction adds nothing and moves nothing.
+    pushMessage(
+      m,
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:24.000Z",
+      ),
+    );
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+    ]);
+  });
+
+  it("a compaction after tool outputs is mid-Task: the round stays open and keeps one ledger, at the end", () => {
+    // The counter-case for the rule above: this turn owes the model its tool results, so the
+    // Task continues after the compaction and its row must not be settled early.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(out(100), out(100)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(toolCallOutput({ output: "ok", toolCallId: "t1" }), "2026-07-05T00:00:04.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 100, turns: 1 }),
+        "2026-07-05T00:00:05.000Z",
+      ),
+    ]);
+    // No ledger yet: the round is still working.
+    expect(items(m).filter((i) => i.kind === "task_stats")).toHaveLength(0);
+
+    pushMessages(m, [
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:06.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:07.000Z"),
+      at(assistantText("done"), "2026-07-05T00:00:08.000Z"),
+      at(tokenUsage(out(200), out(200)), "2026-07-05T00:00:08.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:09.000Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "tool_call",
+      "compaction",
+      "assistant_text",
+      "task_stats",
+    ]);
+  });
+
+  it("steering delivered during a wrap-up compaction opens the continuation's own round", () => {
+    // The one way a Task outlives a wrap-up compaction: steering queued while it ran is
+    // delivered afterwards and the loop keeps going. The settled row stands, and the
+    // continuation gets a ledger of its own rather than a reply with no footer.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("Q"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(assistantText("A"), "2026-07-05T00:00:02.000Z"),
+      at(tokenUsage(out(600), out(600)), "2026-07-05T00:00:02.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:03.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 600, turns: 1 }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:20.000Z",
+      ),
+      at(userText("[context_summary]\nsummary\n[/context_summary]"), "2026-07-05T00:00:21.000Z"),
+      at(
+        userText("[user_steering]\nalso check the tests\n[/user_steering]"),
+        "2026-07-05T00:00:22.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:23.000Z"),
+      at(assistantText("checked"), "2026-07-05T00:00:24.000Z"),
+      at(tokenUsage(out(100), out(700)), "2026-07-05T00:00:24.500Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:25.000Z"),
+    ]);
+    finalizeHistory(m);
+
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "task_stats",
+      "compaction",
+      "user_steering",
+      "assistant_text",
+      "task_stats",
+    ]);
+    const rows = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    // The first round's ledger stops at its own request_end; the continuation measures from
+    // the steering that started it.
+    expect(rows[0]!.stats!.elapsedDeltaMs).toBe(3_000);
+    expect(rows[1]!.stats!.elapsedDeltaMs).toBe(3_000);
+    expect(rows[1]!.assistantText).toBe("checked");
   });
 
   it("**mid-round** compaction: inside the round's span, both elapsed time and Tokens count toward the round", () => {
@@ -1590,6 +1853,12 @@ describe("overlap dedup (contract §7.2)", () => {
     expect(isDuplicate(index, m1)).toBe(false); // already slid out of the window
     expect(isDuplicate(index, m2)).toBe(true);
     expect(isDuplicate(index, { ...m3 })).toBe(true); // matches on identical structure
+  });
+
+  it("history-only Trace positions do not defeat overlap dedup against the live envelope", () => {
+    const live = at(assistantText("same"), "2026-07-05T00:00:01.000Z");
+    const history = { ...live, tracePosition: { fileIndex: 1, ordinal: 9 } };
+    expect(isDuplicate(buildDedupIndex([history]), live)).toBe(true);
   });
 
   it("a full message hitting dedup discards the matching in-flight fragment (discardFragmentFor)", () => {

@@ -280,10 +280,41 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     await manager.startTask("session-1", [userText("a")], { thinkingLevel: "high" });
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
-    // Omitted on the next Task: the session falls back to its default (nothing forwarded).
+    // Omitted on the next Task, with nothing pinned on the Session row either: nothing is
+    // forwarded and core falls back to the Agent config.
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
     expect(seen).toEqual(["high", undefined]);
+  });
+
+  it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const seen: (string | undefined)[] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run(_input: OmniMessage[], opts: { thinkingLevel?: string }) {
+        seen.push(opts.thinkingLevel);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    // What the Web App's in-chat picker writes (PATCH /api/sessions/:id).
+    sessions.updateThinkingLevel("session-1", "xhigh");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 1);
+    await manager.startTask("session-1", [userText("b")], { thinkingLevel: "low" });
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
+    // Re-pinning applies from the next Task on.
+    sessions.updateThinkingLevel("session-1", "medium");
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 3);
+    expect(seen).toEqual(["xhigh", "low", "medium"]);
   });
 
   it("LLM / tool failures in the message stream are persisted via drive (source=llm / environment, with the current Session context)", async () => {
@@ -340,6 +371,30 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
+  it("compact refusal: each reason gets its own error code, not one shared code", async () => {
+    // Clients localize by code (the Web looks it up in a table and falls back to the raw
+    // English message), so the three reasons cannot share one code: that forces either a
+    // single vague sentence for all three, or untranslated English in a non-English UI.
+    const cases = [
+      ["unsupported", "compaction_not_configured"],
+      ["empty", "nothing_to_compact"],
+      ["just_compacted", "already_compacted"],
+    ] as const;
+
+    for (const [why, code] of cases) {
+      const session: RuntimeSession = {
+        ...approvalFakeSession("session-1"),
+        compactability: () => why,
+      };
+      const manager = makeManager(loaderOf(session));
+      const err = await manager.startCompact("session-1").catch((e: unknown) => e);
+      expect((err as { status: number }).status).toBe(409);
+      expect((err as { code: string }).code).toBe(code);
+      // The message still names the reason, for a client that has not mapped the code.
+      expect((err as { message: string }).message).not.toBe("");
+    }
+  });
+
   it("steer: forwards to the running session; idle / lost race → 409 not_running", async () => {
     const steered: string[] = [];
     const fake = approvalFakeSession("session-1");
@@ -350,7 +405,7 @@ describe("session-manager", () => {
     const manager = makeManager(loaderOf(fake));
     const steerErr = (text: string): unknown => {
       try {
-        manager.steer("session-1", [userText(text)], { text, images: 0, files: 0 });
+        manager.steer("session-1", [userText(text)], { text, images: [], files: [] });
         return null;
       } catch (e) {
         return e;
@@ -402,11 +457,18 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
 
     // Two queued steering messages: the mirror keeps both, in queue order.
-    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: 0, files: 0 });
-    manager.steer("session-1", [userText("b")], { text: "later", images: 1, files: 2 });
+    manager.steer("session-1", [userText("a")], { text: "focus on tests", images: [], files: [] });
+    manager.steer("session-1", [userText("b")], {
+      text: "later",
+      images: ["data:image/png;base64,aa"],
+      files: [
+        { fileName: "a.txt", path: "/tmp/a.txt", mime: "text/plain" },
+        { fileName: "b.txt", path: "/tmp/b.txt", mime: "text/plain" },
+      ],
+    });
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "focus on tests", images: 0, files: 0 },
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "focus on tests", images: 0, files: 0 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // First delivery observed on the stream: the mirror shifts while the run is still going.
@@ -414,7 +476,7 @@ describe("session-manager", () => {
     await waitFor(() => manager.pendingSteeringOf("session-1").length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
     expect(manager.pendingSteeringOf("session-1")).toEqual([
-      { text: "later", images: 1, files: 2 },
+      { id: expect.any(String), text: "later", images: 1, files: 2 },
     ]);
 
     // Run end: core discards undelivered steering, and the mirror goes with it.

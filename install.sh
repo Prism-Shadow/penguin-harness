@@ -9,7 +9,7 @@
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (OSS, then same-version GitHub)
-#   PENGUIN_DOWNLOAD_SPEED_PROBE=1 enable same-version OSS/GitHub probe timing in auto mode
+#   PENGUIN_DOWNLOAD_SPEED_PROBE=0 disable same-version OSS/GitHub probe timing in auto mode
 #   PENGUIN_DOWNLOAD_BASE_URL=<url> exact online asset directory selected by the stable forwarder
 #   PENGUIN_DOWNLOAD_FALLBACK_BASE_URL=<url> fallback for PENGUIN_DOWNLOAD_BASE_URL
 #   --universal               install the universal package (no bundled Node runtime; needs system Node >= 24)
@@ -25,7 +25,7 @@
 #
 # The data dir (~/.penguin/data) sits under the install home but is never touched by reinstall/upgrade (which only replace bin/lib/web/node).
 #
-# Docs: https://penguin.ooo/docs/installation
+# Docs: https://penguin.ooo/docs/quickstart-cli
 set -eu
 
 REPO="https://github.com/Prism-Shadow/penguin-harness"
@@ -41,8 +41,11 @@ ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
 DOWNLOAD_BASE_URL="${PENGUIN_DOWNLOAD_BASE_URL:-}"
 DOWNLOAD_FALLBACK_BASE_URL="${PENGUIN_DOWNLOAD_FALLBACK_BASE_URL:-}"
-DOWNLOAD_SPEED_PROBE="${PENGUIN_DOWNLOAD_SPEED_PROBE:-0}"
-SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=8
+DOWNLOAD_SPEED_PROBE="${PENGUIN_DOWNLOAD_SPEED_PROBE:-1}"
+SPEED_PROBE_TOTAL_TIMEOUT_SECONDS=16
+SPEED_PROBE_MANIFEST_TIMEOUT_SECONDS=5
+SPEED_PROBE_SMALL_TIMEOUT_SECONDS=5
+SPEED_PROBE_LARGE_TIMEOUT_SECONDS=8
 SPEED_PROBE_GITHUB_MIN_BYTES_PER_SECOND=262144
 SPEED_PROBE_STARTED_AT=0
 PAYLOAD_NAME="payload.tar.gz"
@@ -309,10 +312,10 @@ load_release_download_manifest() {
   lrdm_tag="$1"
   lrdm_manifest="$TMP/release-download-manifest.tsv"
   rm -f "$lrdm_manifest"
-  if lrdm_timeout="$(speed_probe_curl_timeout 2)" \
+  if lrdm_timeout="$(speed_probe_curl_timeout "$SPEED_PROBE_MANIFEST_TIMEOUT_SECONDS")" \
     && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$OSS_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
     :
-  elif lrdm_timeout="$(speed_probe_curl_timeout 2)" \
+  elif lrdm_timeout="$(speed_probe_curl_timeout "$SPEED_PROBE_MANIFEST_TIMEOUT_SECONDS")" \
     && curl -fsSL --connect-timeout "$lrdm_timeout" --max-time "$lrdm_timeout" "$GITHUB_RELEASE_ROOT/$lrdm_tag/release-download-manifest.tsv" -o "$lrdm_manifest" 2>/dev/null; then
     :
   else
@@ -353,7 +356,7 @@ probe_download_source() {
   pds_size="$4"
   pds_hash="$5"
   pds_metrics="$6"
-  pds_timeout_cap="${7:-2}"
+  pds_timeout_cap="${7:-$SPEED_PROBE_SMALL_TIMEOUT_SECONDS}"
   pds_body="$TMP/probe-$pds_label-$pds_file"
   pds_write="$pds_metrics.tmp"
   rm -f "$pds_body" "$pds_metrics" "$pds_write"
@@ -464,7 +467,7 @@ speed_probe_release_sources() {
   fi
 
   GITHUB_PROBE_METRICS="$TMP/probe-github-$SPEED_PROBE_LARGE_PROBE.metrics"
-  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$GITHUB_PROBE_METRICS" 5
+  probe_download_source github "$GITHUB_SPEED_PROBE_BASE_URL" "$SPEED_PROBE_LARGE_PROBE" "$SPEED_PROBE_LARGE_SIZE" "$SPEED_PROBE_LARGE_HASH" "$GITHUB_PROBE_METRICS" "$SPEED_PROBE_LARGE_TIMEOUT_SECONDS"
   brs_choice="$(select_speed_probe_source_from_metrics "$GITHUB_PROBE_METRICS")"
   if [ "$brs_choice" = "github" ]; then
     SPEED_PROBE_BASE_URL="$GITHUB_SPEED_PROBE_BASE_URL"

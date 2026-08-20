@@ -18,7 +18,10 @@
  *      transport-shaped errors (network/transport drops, timeouts, 429/5xx, see
  *      `isRetryableError`) end with `timeout`; AgentHub JSON parse errors end with
  *      `malformed`; everything else — provider 4xx rejections included — ends with
- *      `failed`, and the engine reconnects on all three the same. User interruption ends
+ *      `failed`, and the engine reconnects on all three the same. One `failed` shape is
+ *      additionally marked `permanent`: AgentHub's fast-mode UnsupportedParameterError
+ *      (see `isFastModeUnsupportedError`), a deterministic client-side rejection the
+ *      engine aborts on instead of retrying. User interruption ends
  *      with `aborted`; credentials failures end with their own terminal status `auth` (see
  *      `isAuthenticationError`) — the one status the engine refuses to retry, and the one
  *      hosts key on to gate input.
@@ -31,6 +34,7 @@ import {
   EmptyResponseError,
   ThinkingLevel,
   ToolCallArgumentParseError,
+  UnsupportedParameterError,
 } from "@prismshadow/agenthub";
 import type {
   ContentItem,
@@ -892,6 +896,33 @@ export function isAuthenticationError(error: unknown): boolean {
 }
 
 /**
+ * Determines whether an error is AgentHub's `UnsupportedParameterError` for `fast_mode`:
+ * clients without a fast tier (and claude5 on Bedrock / Claude 4.6 ids) reject the
+ * parameter by throwing **before any network I/O**, so with the same frozen config the
+ * failure is deterministic — retrying the identical request can never succeed. Deliberately
+ * scoped to `parameter === "fast_mode"`: other UnsupportedParameterError sources keep the
+ * default `failed` classification (and the engine's ladder) unchanged. Judged by exception
+ * type with a `name` fallback (covers cross-realm or deserialization-reconstructed errors,
+ * same approach as isMalformedJsonParseError), probing down the `cause` chain.
+ */
+export function isFastModeUnsupportedError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { name?: unknown; parameter?: unknown };
+    const isUnsupportedParameter =
+      level instanceof UnsupportedParameterError || err.name === "UnsupportedParameterError";
+    return isUnsupportedParameter && err.parameter === "fast_mode";
+  });
+}
+
+/**
+ * Actionable tail appended to a fast-mode rejection's error text: the raw AgentHub message
+ * says what is unsupported ("Kimi does not support fast mode."); this says where the switch
+ * lives. Exported for the outcome-classification tests.
+ */
+export const FAST_MODE_UNSUPPORTED_GUIDANCE =
+  "Fast mode is enabled for this model; turn it off in the model settings to use this model.";
+
+/**
  * Determines whether an error is transport-shaped — the `timeout` vs `failed` LABEL for
  * an errored request, not the retry gate: the engine retries every LLM error except
  * `auth`, whatever this returns. What the label buys is honest taxonomy for
@@ -1136,7 +1167,11 @@ export class GenerativeModel implements LLMInterface {
    *   - **Every other error** (parameters etc., and input that never assembled into a
    *     request): `finishInterrupted("failed")` closes out, produces no usage → `failed`
    *     (carrying `message`), which `context_engine` reconnects on as well — the
-   *     classification stays honest, the retry decision is the engine's.
+   *     classification stays honest, the retry decision is the engine's. Exception: a
+   *     fast-mode rejection (`isFastModeUnsupportedError`, thrown deterministically before
+   *     any network I/O when this config enables `fast_mode` on a model without a fast
+   *     tier) is a `failed` marked `permanent: true`, which the engine aborts on with the
+   *     actionable message instead of retrying.
    *
    * Timeout detection: the idle timer resets on every event received; once idle exceeds
    * `requestTimeoutMs`, the underlying stream is aborted and handled as needing reconnection
@@ -1275,6 +1310,18 @@ export class GenerativeModel implements LLMInterface {
         // config on load) apart from a one-off failure. Checked before the retryable
         // branch as a belt — isRetryableError itself already refuses auth signals.
         outcome = { status: "auth", errorMessage: describeError(error) };
+      } else if (this.uniConfig.fast_mode === true && isFastModeUnsupportedError(error)) {
+        // Fast mode rejected by a model without a fast tier: AgentHub throws its
+        // UnsupportedParameterError before any network I/O, so with this object's frozen
+        // config the failure is deterministic — marked permanent so the engine surfaces
+        // the message immediately instead of burning the reconnect ladder on a request
+        // that can never succeed. The guard on our own config keeps the special case
+        // honest: without fast_mode on the wire this error cannot be ours to explain.
+        outcome = {
+          status: "failed",
+          permanent: true,
+          errorMessage: `${describeError(error)} ${FAST_MODE_UNSUPPORTED_GUIDANCE}`,
+        };
       } else if (isRetryableError(error)) {
         // Transport-shaped failure (network drop, 429/5xx) -> labeled timeout. The detail
         // rides on the outcome so observability (request_end -> the Cost center's errors
@@ -1386,6 +1433,7 @@ export function mapThinkingLevel(name: ThinkingLevelName | undefined): ThinkingL
     medium: ThinkingLevel.MEDIUM,
     high: ThinkingLevel.HIGH,
     xhigh: ThinkingLevel.XHIGH,
+    max: ThinkingLevel.MAX,
   };
   return table[name];
 }
@@ -1426,6 +1474,12 @@ export function buildUniConfig(config: GenerativeModelConfig): UniConfig {
   // negative max_tokens with a 400 (issue #55's sibling).
   if (config.maxTokens !== undefined && config.maxTokens > 0) {
     uniConfig.max_tokens = config.maxTokens;
+  }
+  // Fast mode (the model entry's `fast_mode` annotation): only ever set when enabled — the
+  // key stays off the config otherwise, so models without a fast tier are unaffected by
+  // default (AgentHub rejects the parameter wherever no fast tier exists).
+  if (config.fastMode === true) {
+    uniConfig.fast_mode = true;
   }
   return uniConfig;
 }

@@ -25,16 +25,23 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import {
-  MAX_ATTACHMENT_BYTES,
-  MAX_ATTACHMENT_COUNT,
-  MAX_TOTAL_ATTACHMENT_BYTES,
-} from "../src/services/task-attachments.js";
+import { MAX_ATTACHMENT_COUNT } from "../src/services/attachment-limits.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 const SID = "session-2026-07-29-10-00-00-aabb0001";
 const PROJECT_ID = "attacher-default_project";
+
+/**
+ * Deliberately tiny limits for the cap tests (see beforeEach), in whole MB and in bytes. The
+ * total is kept below twice the per-file cap so that "two individually legal files that together
+ * cross the aggregate" is expressible — with total >= 2x per-file, each half would trip the
+ * per-file check first and the aggregate cap would never be the thing under test.
+ */
+const TEST_MAX_MB = 2;
+const TEST_TOTAL_MB = 3;
+const TEST_MAX_BYTES = TEST_MAX_MB * 1024 * 1024;
+const TEST_TOTAL_BYTES = TEST_TOTAL_MB * 1024 * 1024;
 
 /** Fake Session that records each run's input and finishes immediately (no LLM, no approvals). */
 function recordingFakeSession(sessionId: string, runs: OmniMessage[][]): RuntimeSession {
@@ -104,6 +111,12 @@ describe("task input file attachments", () => {
     runs = [];
     t.deps.manager.adopt(row, recordingFakeSession(SID, runs));
     dir = path.join(scratchpadDir(t.root, PROJECT_ID, "default_agent"), SID);
+    // The shipped defaults are 100MB/120MB — allocating buffers that size to prove a cap works
+    // would cost hundreds of megabytes per assertion. The caps are read from the settings repo
+    // per request, so the tests turn them down instead: that also makes these the tests of the
+    // *configured* limit rather than of a compiled-in constant.
+    t.deps.serverSettingsRepo.setAttachmentMaxMb(TEST_MAX_MB);
+    t.deps.serverSettingsRepo.setAttachmentTotalMb(TEST_TOTAL_MB);
   });
   afterEach(async () => {
     await t.cleanup();
@@ -250,7 +263,7 @@ describe("task input file attachments", () => {
           type: "file",
           fileName: "big.bin",
           dataUrl: `data:application/octet-stream;base64,${Buffer.alloc(
-            MAX_ATTACHMENT_BYTES + 1,
+            TEST_MAX_BYTES + 1,
           ).toString("base64")}`,
         },
       ],
@@ -258,6 +271,63 @@ describe("task input file attachments", () => {
     expect(res.status).toBe(413);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("file_too_large");
     await expect(fs.access(dir)).rejects.toThrow();
+  });
+
+  it("what /api/me advertises is exactly what the upload path enforces", async () => {
+    // The composer refuses an oversize pick using the number this endpoint hands it, so the two
+    // must agree on the boundary itself, not merely be "about the same". A file of exactly the
+    // advertised limit has to be accepted and one byte more has to be refused — if the server
+    // were stricter by a byte, the composer would upload a file the server then rejects, which is
+    // precisely the failure the client-side check exists to prevent.
+    const me = (await api.get("/api/me")).clone();
+    const { uploadLimits } = (await me.json()) as {
+      uploadLimits: { attachmentMaxMb: number; attachmentTotalMb: number; imageMaxMb: number };
+    };
+    expect(uploadLimits.attachmentMaxMb).toBe(TEST_MAX_MB);
+    expect(uploadLimits.attachmentTotalMb).toBe(TEST_TOTAL_MB);
+
+    const atLimit = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        {
+          type: "file",
+          fileName: "exact.bin",
+          dataUrl: `data:application/octet-stream;base64,${Buffer.alloc(
+            uploadLimits.attachmentMaxMb * 1024 * 1024,
+          ).toString("base64")}`,
+        },
+      ],
+    });
+    expect(atLimit.status).toBe(202);
+    await waitFor(() => runs.length === 1);
+
+    const overLimit = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [
+        {
+          type: "file",
+          fileName: "over.bin",
+          dataUrl: `data:application/octet-stream;base64,${Buffer.alloc(
+            uploadLimits.attachmentMaxMb * 1024 * 1024 + 1,
+          ).toString("base64")}`,
+        },
+      ],
+    });
+    expect(overLimit.status).toBe(413);
+  });
+
+  it("an inline image over its own cap is a 413, and the cap does not follow the attachment limit", async () => {
+    // Images are bounded separately and far lower: they enter the conversation and the Trace,
+    // where the bytes are paid again on every history page and every resume. Raising the
+    // attachment ceiling must not raise this one — so the image here is well under the
+    // attachment cap that the surrounding suite configured, and still refused.
+    const me = (await api.get("/api/me")).clone();
+    const { uploadLimits } = (await me.json()) as { uploadLimits: { imageMaxMb: number } };
+    const oversize = Buffer.alloc(uploadLimits.imageMaxMb * 1024 * 1024 + 1).toString("base64");
+    const res = await api.post(`/api/sessions/${SID}/tasks`, {
+      input: [{ type: "image_url", imageUrl: `data:image/png;base64,${oversize}` }],
+    });
+    expect(res.status).toBe(413);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("image_too_large");
+    expect(runs).toHaveLength(0);
   });
 
   it("goal mode rejects attachments before anything is written", async () => {
@@ -310,7 +380,7 @@ describe("task input file attachments", () => {
   it("more than the per-request total size is a 413 and writes nothing", async () => {
     // Two files, each individually legal, that together cross the aggregate cap: the per-file
     // check alone would let this through and land both on disk.
-    const half = Buffer.alloc(Math.floor(MAX_TOTAL_ATTACHMENT_BYTES / 2) + 1).toString("base64");
+    const half = Buffer.alloc(Math.floor(TEST_TOTAL_BYTES / 2) + 1).toString("base64");
     const res = await api.post(`/api/sessions/${SID}/tasks`, {
       input: [
         {

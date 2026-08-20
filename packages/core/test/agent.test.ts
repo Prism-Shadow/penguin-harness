@@ -492,6 +492,43 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
     }
   });
 
+  it("pins an explicit spawn-time thinking level over inheritance (run_subagent's thinking_level)", async () => {
+    const agent = await createAgent();
+    agent.state.systemConfig.model = {
+      ...(agent.state.systemConfig.model ?? {}),
+      thinking_level: "high",
+    };
+    const ws = path.join(tmpRoot, "ws-thinking-override");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      const child = await spawnedChildMeta(runner, { thinkingLevel: "low" });
+      // The explicit level wins over the parent's effective "high"; the rest of the spawn
+      // still follows the parent (workspace locked here as the cheap witness).
+      expect(child.llm.thinkingLevel).toBe("low");
+      expect(child.workspace).toBe(ws);
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("pins an explicit spawn-time thinking level even when the parent has no level at all", async () => {
+    // With the parent suppressing the config chain (tri-state null), an explicit spawn level
+    // must still apply — the override sits above the inherit-or-null resolution, not below it.
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-thinking-override-none");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws, thinkingLevel: null });
+    const runner = lastSpawnedRunner();
+    try {
+      const child = await spawnedChildMeta(runner, { thinkingLevel: "xhigh" });
+      expect(child.llm.thinkingLevel).toBe("xhigh");
+    } finally {
+      parent.dispose();
+    }
+  });
+
   it("rejects half a model reference at the runner layer (never completed from the parent's half)", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-inherit-half");
@@ -665,6 +702,71 @@ describe("Agent.createSession max output tokens (per-model cap wins over the Age
       expect(uniConfigOf(bare).max_tokens).toBe(128);
     } finally {
       tiny.dispose();
+    }
+  });
+});
+
+describe("Agent.createSession fast mode (session requests only, never the meta ones)", () => {
+  const uniConfigOf = (llm: unknown) =>
+    (llm as { uniConfig?: { fast_mode?: boolean } }).uniConfig ?? {};
+
+  it("the entry's fast_mode reaches the session LLM and is withheld from the meta LLM", async () => {
+    // The scoping decision the whole feature rests on: the premium tier is what the user is
+    // waiting on, so it rides the session's own requests, while background one-shots (title
+    // generation here; the describe_image describer builds from the *vision* model's entry and
+    // so cannot inherit it at all) stay on the standard tier. Without this test the split is
+    // asserted only by comments, and a refactor that hoists fastMode into a shared config
+    // helper would start billing every session title at premium rates with all suites green.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "fast-on",
+      client_type: "openai",
+      fast_mode: true,
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-fast-mode");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "fast-on",
+      provider: "custom",
+    });
+    try {
+      await bootstrapped(session);
+      const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect(uniConfigOf(llm).fast_mode).toBe(true);
+      // The title one-shot on the same model must not carry it.
+      const bare = (session as unknown as { createBareLLM?: () => unknown }).createBareLLM?.();
+      expect("fast_mode" in uniConfigOf(bare)).toBe(false);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("an unannotated entry puts no fast_mode key on the wire at all", async () => {
+    // Absent, not false: models without a fast tier reject the parameter, so every existing
+    // config has to stay byte-identical on the wire.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "custom",
+      model_id: "fast-off",
+      client_type: "openai",
+    });
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-fast-mode-off");
+    await fs.mkdir(ws, { recursive: true });
+
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      modelId: "fast-off",
+      provider: "custom",
+    });
+    try {
+      await bootstrapped(session);
+      const llm = (session as unknown as { engine: { deps: { llm: unknown } } }).engine.deps.llm;
+      expect("fast_mode" in uniConfigOf(llm)).toBe(false);
+    } finally {
+      session.dispose();
     }
   });
 });

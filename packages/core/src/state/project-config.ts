@@ -69,11 +69,13 @@ export interface ModelEntry {
   model_id: string;
   context_window?: number;
   /**
-   * AgentHub client protocol (`openai-chat` / `claude-4-8` / `deepseek-v4` / …); defaults to
-   * being inferred by AgentHub from the request id (`model_id`). A third-party model speaking
-   * the OpenAI Chat Completions protocol should set this to `openai-chat` (the bare `openai`
-   * spelling from configs saved before AgentHub 0.4.2's rename is normalized to it on read —
-   * see canonicalClientType).
+   * AgentHub client protocol (`openai-responses` / `ant-messages` / `openai-chat` /
+   * `claude-4-8` / `deepseek-v4` / …); defaults to being inferred by AgentHub from the
+   * request id (`model_id`). Third-party endpoints use one of the generic protocol clients:
+   * `openai-responses` (OpenAI Responses API), `ant-messages` (Anthropic Messages API), or
+   * `openai-chat` (OpenAI Chat Completions; the bare `openai` spelling from configs saved
+   * before AgentHub 0.4.2's rename is normalized to it on read — see canonicalClientType).
+   * The Web models page can detect which one a custom base URL serves.
    */
   client_type?: string;
   /**
@@ -99,6 +101,16 @@ export interface ModelEntry {
    * the Agent value. User-only, never preset by the builtin catalog.
    */
   max_tokens?: number;
+  /**
+   * Per-model fast mode (AgentHub UniConfig `fast_mode`): opts session requests into the
+   * provider's faster serving tier at premium pricing (OpenAI-protocol clients send
+   * `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"`). Only `true`
+   * is ever persisted; absent = off (the default). Models without a fast tier reject the
+   * parameter (AgentHub raises UnsupportedParameterError), which ends the request with a
+   * clear non-retried failure (see llm/generative-model.ts). User-only, never preset by the
+   * builtin catalog.
+   */
+  fast_mode?: boolean;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
@@ -114,7 +126,7 @@ export const CHAT_APPROVAL_MODES = ["allow-all", "deny-all", "read-only", "alway
 export type ChatApprovalMode = (typeof CHAT_APPROVAL_MODES)[number];
 
 /**
- * Thinking levels storable in `[default_chat]`: the four selectable tiers only — never
+ * Thinking levels storable in `[default_chat]`: the selectable tiers only — never
  * `"none"` (the project default is a fallback for Agents without an explicit level, and
  * "no thinking" is not offered as a default; see the web picker's SELECTABLE_THINKING_LEVELS).
  */
@@ -124,6 +136,7 @@ export const DEFAULT_CHAT_THINKING_LEVELS: readonly DefaultChatThinkingLevel[] =
   "medium",
   "high",
   "xhigh",
+  "max",
 ];
 
 /**
@@ -395,6 +408,8 @@ export async function addModel(
     vision?: boolean;
     /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
     max_tokens?: number;
+    /** Per-model fast mode; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = off). */
+    fast_mode?: boolean;
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     api_key?: string;
@@ -435,6 +450,12 @@ export async function addModel(
   const maxTokens = entry.max_tokens ?? existing?.max_tokens;
   if (maxTokens !== undefined) {
     modelEntry.max_tokens = maxTokens;
+  }
+  // Only `true` is persisted (absent = off): an explicit `false` clears the stored annotation
+  // instead of writing `fast_mode = false`, and a hand-edited `false` normalizes to absent.
+  const fastMode = entry.fast_mode ?? existing?.fast_mode;
+  if (fastMode === true) {
+    modelEntry.fast_mode = true;
   }
   // The three price buckets are merged field by field: an unspecified bucket keeps its existing
   // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and

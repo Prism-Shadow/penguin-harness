@@ -170,6 +170,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   agent_id?: string;       // 子 Agent;缺省复用当前 Agent
   model_id?: string;       // 子 Session 模型,须与 provider 成对给出;两者都缺省时继承父 Session 的模型
   provider?: string;       // model_id 所属的 provider 组;给出 model_id 时必填
+  thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max";缺省继承父 Session 的思考等级
   yield_time_ms?: number;  // 前台等待时长;默认 300000
   description: string;     // 开关开启时必填
 }
@@ -184,7 +185,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 ```
 
 - 深度上限为 1:Subagent 不能再派生 Subagent。
-- 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level 与 Workspace 均继承父级，而非 Project 默认值。
+- 子 Session 跟随父 Session:模型(除非以 `model_id`/`provider` 显式指定)、thinking level(除非以 `thinking_level` 显式指定——机械性子任务可调低，深度分析可调高)与 Workspace 均继承父级，而非 Project 默认值。
 - 子 Session 继承父 Agent 的审批回调，审批模式随父生效。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
 

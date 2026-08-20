@@ -172,6 +172,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
   agent_id?: string;       // the child Agent; defaults to the current Agent
   model_id?: string;       // the child Session's model, paired with provider; omit both to inherit the parent Session's model
   provider?: string;       // the provider group model_id belongs to; required whenever model_id is given
+  thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max"; omit to inherit the parent Session's level
   yield_time_ms?: number;  // foreground wait; default 300000
   description: string;     // required while call_description is on
 }
@@ -186,7 +187,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 ```
 
 - Depth is capped at 1: a subagent cannot spawn another subagent.
-- The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level, and Workspace — never the Project defaults.
+- The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level (unless `thinking_level` picks another — lower for cheap mechanical subtasks, higher for hard analysis), and Workspace — never the Project defaults.
 - The child Session inherits the parent Agent's approval callback, so the approval mode follows the parent.
 - The child Session gets its own Trace, linked from the parent by a `subagent` pointer event; child messages stream back into the parent flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
 

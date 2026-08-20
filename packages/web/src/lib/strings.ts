@@ -44,6 +44,16 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Admin-only user-menu row opening the upload-limits dialog. */
+    uploadLimitsMenu: "上传限制",
+    uploadLimitsDialogTitle: "上传限制",
+    /** The dialog's two number fields, both in whole MB. */
+    attachmentMaxMb: "单个附件上限（MB）",
+    attachmentTotalMb: "单条消息附件合计上限（MB）",
+    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
+    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
+      `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
+      `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
     themeLight: "浅色",
     themeDark: "深色",
@@ -279,7 +289,8 @@ export const zh = {
       ["low", "开启较低强度的扩展推理。"],
       ["medium", "开启中等强度的扩展推理（新建 Agent 的缺省档位）。"],
       ["high", "开启较高强度的扩展推理，响应更慢。"],
-      ["xhigh", "开启最高强度的扩展推理，部分模型上效果与 high 相同。"],
+      ["xhigh", "在 high 之上再进一步的扩展推理，部分模型上效果与 high 相同。"],
+      ["max", "开启最高强度的扩展推理，最慢，部分模型上效果与 xhigh 相同。"],
     ] as ReadonlyArray<readonly [string, string]>,
     /** Row description shown only while the stored config is `none`: displayed as-is, never rewritten, and no longer offered as a choice. */
     thinkingLevelNoneKept: "已存的历史档位：新选择不再提供关闭档（多数模型不支持关闭思考）。",
@@ -441,7 +452,7 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：组内模型走 OpenAI Chat Completions 兼容协议（base URL 必填，API key 留空读取 OPENAI_API_KEY）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义：接口协议可手动选择，也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
@@ -481,10 +492,59 @@ export const zh = {
       "按模型限制单次请求的最大输出 Token 数；留空沿用 Agent 设置，小上下文模型建议调低",
     maxTokensInvalid: "必须为正整数",
     clientTypeLocked: (t: string): string => `协议：${t}（沿用原配置，不可修改）`,
+    /** Protocol selector (custom / user-defined groups): AgentHub's generic protocol clients. Protocol names are proper nouns, identical in both locales. */
+    protocol: "接口协议",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    /** Hover title on the in-field protocol picker (the base URL field's right-edge suffix). */
+    protocolTriggerTitle: (name: string): string => `接口协议：${name}。点击可更换。`,
+    /** Suffix placeholder while no protocol is selected — 不显示任何协议名，避免看起来已选好。 */
+    protocolUnset: "选择协议",
+    /** Detect button at the base URL field's top-right. */
+    detectProtocol: "检测协议",
+    /** Hover title on the detect button. */
+    detectProtocolHint: "探测 base URL，采用它实际提供的协议",
+    detecting: "检测中…",
+    /** Success toast；协议本身随后显示在 base URL 输入框的后缀处。 */
+    detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
+    /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
+    detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
+    /** 保存时检测无结果：按兼容协议继续保存。 */
+    detectFellBack: "未检测到协议，已按 OpenAI Chat Completions 保存",
+    /** Add-dialog note for custom / user-defined groups (protocol selectable): replaces the fixed-OpenAI wording. */
+    addProtocolHintDetect:
+      "可在 base URL 输入框右端的后缀处手动选择接口协议（OpenAI Responses / Anthropic Messages / OpenAI Chat Completions），也可点“检测协议”探测端点；未选协议时保存会先自动检测",
+    addTitleCustom: "新增模型",
     /** Switch label only — the dialog carries no explanation text for it (per owner). */
     vision: "支持视觉",
+    /** Detect action beside the vision switch. */
+    detectVision: "检测",
+    detectingVision: "测试中…",
+    detectVisionHint: "发送一张极小的测试图片，判断该模型是否接受图片输入(会消耗 API Key 额度)",
+    detectVisionNeedsId: "请先填写模型 id，再进行检测。",
+    detectVisionOk: "该模型接受图片输入，已开启视觉",
+    detectVisionNo: "该模型不接受图片输入，视觉保持关闭",
     /** Shown only while the vision switch is OFF: images are then read via the configured vision proxy model (describe_image). */
     visionOffProxyHint: "使用视觉代理模型读图",
+    /** Switch label for the per-model fast mode (the provider's premium faster serving tier); the switch is only rendered for models whose AgentHub client can carry the parameter. */
+    fastMode: "快速模式",
+    /** Shown while the fast-mode switch is ON (and as the label's hover title): what it buys, and that the recorded prices do not follow the premium rate. */
+    fastModeHint: "输出更快，按厂商的溢价档位计费；成本中心仍按条目记录的标准单价统计",
+    /** Amber line under an ON switch on a model whose client rejects the parameter (a hand-edited config or a renamed id): the switch stays visible only so it can be turned off. */
+    fastModeUnsupported: "该模型不支持快速模式，请关闭，否则请求会失败",
+    /** Accessible name of the warning dialog raised when the fast-mode switch is turned ON. */
+    fastModeConfirmTitle: "开启快速模式",
+    /** Body of that warning: premium billing, and that the recorded prices do not follow it. */
+    fastModeConfirmBody:
+      "快速模式按厂商的溢价价目计费（MiniMax 为标准价的 1.5 倍，OpenAI 与 Anthropic 另有溢价价目表）。条目记录的按 Token 单价不会随之调整，成本中心会低估这部分用量。",
+    /** Extra paragraph shown only for Anthropic-protocol models: fast mode there is a gated research preview. */
+    fastModeConfirmPreview:
+      "Anthropic 的快速模式目前是限量的 research preview：在你的组织获得授权之前，请求会返回 429 限流错误。",
+    /** Badge on a model row whose fast mode is on: a standing premium-billing choice should be visible without opening the dialog. */
+    fastModeBadge: "快速",
     visionBadge: "视觉",
     /** Light-yellow badge on zero-cost models (all three price buckets 0, e.g. the :free variants and openrouter/free). */
     freeBadge: "免费",
@@ -509,8 +569,8 @@ export const zh = {
     clearApiKey: "清除已存 API key",
     baseUrl: "自定义 base URL",
     baseUrlHint: "留空使用厂商默认地址",
-    /** Hover title for the base URL field: explains the grey in-field suffix (the protocol path the client appends to the base URL). */
-    baseUrlSuffixTitle: "客户端会在 base URL 后追加右侧灰色协议路径",
+    /** Hover title for the base URL field: explains the in-field suffix (the protocol path the client appends to the base URL); for custom groups that suffix is also the protocol picker. */
+    baseUrlSuffixTitle: "客户端会在 base URL 后追加字段右侧的协议路径",
     baseUrlRequired: "必须填写 base URL",
     contextWindowDefaultHint: (n: number): string => `留空按 ${n} 计`,
     confirmDeleteTitle: "删除模型",
@@ -803,14 +863,31 @@ export const zh = {
     chooseAgent: "选择 Agent",
     chooseModel: "选择模型",
     thinkingLevel: "思考等级",
-    /** Short tier names for the pre-conversation picker (per review: short names only, no descriptions, no "default" row). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
+    /** Tier names for every surface that DISPLAYS an already-chosen level — the composer picker's trigger and tooltip, the mid-chat switch dialog and its toasts, the Project chat-defaults control and its read-only row. Chinese only, no wire value (per maintainer request): once the tier is picked, the English spelling is noise on a control this narrow, and it reads badly inside the 「…」 of the switch prose. `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
       none: "无",
       low: "低",
       medium: "中",
       high: "高",
       xhigh: "极高",
+      max: "最高",
     } as Readonly<Record<string, string>>,
+    /** Dropdown-row variant of the name above: choosing is where the wire value earns its place, so a menu row annotates the Chinese name with the value the pick will send. Only the composer's own dropdown uses it — a native `<select>` renders the picked option's text on the collapsed control too, which would put the annotation straight back onto a trigger. */
+    thinkingLevelMenuName: (name: string, level: string): string => `${name} (${level})`,
+    /** Mid-chat switch guard (issue #310): confirm before a level change that costs prompt-cache hits over the existing history. Title is the dialog's accessible name only. */
+    thinkingSwitchTitle: "切换思考等级",
+    thinkingSwitchBody: (to: string): string =>
+      `将思考等级切换为「${to}」？会话中途切换会降低提示词缓存命中率、增加成本，先压缩上下文再切换更省。`,
+    /** Shown under the body when the session isn't idle — compaction can only start on an idle session. */
+    thinkingSwitchBusyHint: "会话正在运行，压缩要等空闲后才能开始。",
+    /** Primary (recommended) choice: compact first, then apply the switch. */
+    thinkingSwitchCompactFirst: "压缩后切换",
+    thinkingSwitchConfirm: "仍要切换",
+    /** Toast when the compaction starts: the switch is applied once it ends. */
+    thinkingSwitchCompacting: "正在压缩上下文，压缩结束后切换思考等级。",
+    thinkingSwitchApplied: (to: string): string => `上下文已压缩，思考等级已切换为「${to}」。`,
+    /** Compaction ended without completing — the switch still applies, so say both. */
+    thinkingSwitchCompactFailed: "压缩未成功完成，思考等级已照常切换。",
     workspaceUseThis: "使用此目录",
     workspaceUp: "上级目录",
     workspaceNoSubdirs: "无子目录",
@@ -983,6 +1060,8 @@ Benchmark：
     } as Record<string, string>,
     statusRunning: "运行中",
     statusCompacting: "压缩中",
+    /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
+    statusCompletedUnread: "运行完毕，未读",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1022,6 +1101,12 @@ Benchmark：
     followUpSend: "排队为下一条消息",
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) => `${n} 条跟进消息已排队，本轮结束后自动发送`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) => `跟进消息已排队，本轮结束后自动发送：${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "撤回",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "撤回到输入框，编辑后重新发送",
     send: "发送",
     stop: "停止",
     compact: "压缩上下文",
@@ -1169,9 +1254,8 @@ Benchmark：
     mcpToolsCount: (n: number): string => `${n} 个工具`,
     mcpServerFailed: "连接失败",
     mcpConnectAborted: "已中断，下次发送时重新连接",
-    compactionTitle: "压缩",
-    compactionDone: (mode: string): string =>
-      mode === "discard" ? "已丢弃旧上下文" : "已切换到摘要后的新上下文",
+    /** The row title names the step by what it actually did, so a `discard` is never announced as compaction: it clears the context rather than compacting it. Naming the mode in the title leaves nothing for a success line to add, which is why there is no outcome string beside this one; a `summarize` row needs none either, since it shows its adopted summary in its own expandable body. Only `compactionFailed` remains, carrying the one thing a title cannot. */
+    compactionTitle: (mode: string): string => (mode === "discard" ? "清空" : "压缩"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "已中断，保留当前上下文";
       return errorMessage !== undefined
@@ -1185,6 +1269,10 @@ Benchmark：
     approvalWaiting: "待审批",
     copyCode: "复制代码",
     copyReply: "复制回复",
+    forkSession: "从这里分叉对话",
+    forkSessionConfirmBody: "将把这段对话（截至这条回复）复制为一个新对话，原对话保持不变。",
+    forkSessionConfirmAction: "分叉",
+    forkSessionFailed: "无法定位这条回复，请刷新后重试。",
     copyMessage: "复制消息",
     deleteSession: "删除对话",
     renameSession: "重命名对话",
@@ -1199,7 +1287,6 @@ Benchmark：
     archiveSession: "归档",
     unarchiveSession: "取消归档",
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
-    sessionMenu: "对话选项",
     pinSession: "置顶",
     unpinSession: "取消置顶",
     pinnedSession: "已置顶",
@@ -1221,8 +1308,17 @@ Benchmark：
     uploadFile: "上传文件",
     uploadFileDesc: "文件存入会话临时目录，模型按路径读取",
     removeFile: "移除文件",
-    /** Toast for a picked file rejected before reading (the server's per-file cap is 10MB). */
-    attachmentTooLarge: (name: string): string => `${name} 超过 10MB 上限，未添加。`,
+    /**
+     * Toast for a picked file rejected before reading. The limit is admin-settable and differs
+     * between file attachments and inline images, so it is passed in rather than written here.
+     */
+    attachmentTooLarge: (name: string, limitMb: number): string =>
+      `${name} 超过 ${limitMb}MB 上限，未添加。`,
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
+    dropFilesTitle: "松开以添加附件",
+    dropFilesDesc: "图片与文件将添加到输入框",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "目标模式仅支持附加图片，文件未添加。",
     goalMode: "目标模式",
     goalModeDesc: "循环运行直至目标完成",
     goalBudgetLabel: "Token 预算",
@@ -1348,7 +1444,7 @@ Benchmark：
     cacheHit: "命中缓存",
     hitRate: "命中率",
     compactions: "压缩次数",
-    compactionRound: "压缩",
+    /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空), so the Trace page and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     empty: "该 Agent 暂无 Trace",
     inProgress: "进行中",
     systemPrompt: "系统提示词",
@@ -1407,31 +1503,58 @@ Benchmark：
       admin_required: "仅管理员可执行此操作。",
       desktop_single_user: "桌面应用为单用户模式，用户管理不可用。",
       not_found: "资源不存在，或你没有访问权限。",
+      internal: "服务器内部错误，请稍后重试。",
       agent_not_found: "该 Agent 已不存在。",
       unknown_agent: "该 Agent 不存在于本 Project。",
       agent_exists: "该 Agent id 已被占用。",
+      agent_deleting: "该 Agent 正在删除中。",
       project_exists: "该 Project id 已被占用。",
+      project_not_found: "该 Project 已不存在，或你没有访问权限。",
+      cannot_delete_last_project: "这是最后一个 Project，不能删除。",
       user_exists: "该用户名已被占用。",
       user_not_found: "该用户已不存在。",
       cannot_delete_admin: "内置 admin 不可删除。",
       member_not_found: "该用户不是本 Project 的成员。",
+      already_member: "该用户已是本 Project 的成员。",
+      already_owner: "该用户已是本 Project 的所有者。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",
+      skill_too_large: "该技能目录过大，超出了导入限制。",
       file_not_found: "该文件已不存在。",
+      not_pending: "该消息已发出，无法撤回。",
       file_too_large: "文件过大。",
       too_many_files: "一条消息附加的文件过多。",
       payload_too_large: "请求体过大。",
+      image_too_large: "图片过大，无法随对话发送。",
       dir_not_absolute: "目录必须是绝对路径。",
       dir_not_found: "该目录不存在或不可访问。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",
+      workspace_not_found: "该 Workspace 不存在或不是目录。",
+      session_not_found: "该 Session 已不存在，或你没有访问权限。",
+      session_deleting: "该 Session 正在删除中。",
+      approval_not_found: "该授权请求已处理或已失效。",
+      process_not_found: "该后台进程已结束或已被移除。",
+      process_running: "该后台进程仍在运行，请先结束再移除。",
+      memory_file_not_found: "该记忆文件已不存在。",
+      memory_scope_not_found: "该记忆范围已不存在。",
       task_in_progress: "该 Session 已有任务在运行。",
+      compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
+      shutting_down: "服务正在关闭，请稍后重试。",
+      // The three "cannot compact" reasons each have their own server code, so each keeps its
+      // own explanation here — collapsing them into one sentence would tell a user who just
+      // compacted that they have never spoken.
+      compaction_not_configured: "该 Agent 没有配置上下文压缩。",
+      nothing_to_compact: "当前上下文还没有可压缩的内容（尚未完成一轮对话）。",
+      already_compacted: "刚刚压缩过，之后还没有新的对话，无需重复压缩。",
       version_conflict: "快照版本不高于当前版本。",
       invalid_title: "标题无效。",
       invalid_proxy_url: "代理地址无效：应为 http(s):// 或 socks5:// 代理 URL，或 主机[:端口]。",
+      invalid_attachment_limit: "上传限制无效：请填写允许范围内的整数 MB，且合计不低于单个上限。",
       invalid_trace: "该文件不是有效的 Trace 文件。",
+      trace_not_found: "该 Trace 文件已不存在。",
       trace_session_exists: "该 Agent 已存在同名 Session，无法导入重复的 Trace。",
     },
   },

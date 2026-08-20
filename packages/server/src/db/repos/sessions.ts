@@ -3,6 +3,7 @@
  * Session index, approval mode, and auto-generated title; Session-level routes use this to look up project ownership.
  */
 import type { DatabaseSync } from "node:sqlite";
+import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { ApprovalMode } from "../../api/types.js";
 
 export interface SessionRow {
@@ -15,6 +16,12 @@ export interface SessionRow {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /**
+   * Thinking level pinned for THIS session (PATCH /api/sessions/:id); NULL = not pinned,
+   * so runs that carry no level of their own follow the Agent config as before. Sessions
+   * are never inserted with one — pinning is an explicit act inside a live conversation.
+   */
+  thinkingLevel?: ThinkingLevelName | null;
   /** Auto-generated session title; NULL = not yet generated (frontend shows "New Conversation"). */
   title: string | null;
   /** Archive timestamp, ISO; NULL = not archived (omitting on insert defaults to NULL). */
@@ -50,6 +57,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     modelId: r.model_id as string,
     workspace: r.workspace as string,
     approvalMode: r.approval_mode as ApprovalMode,
+    thinkingLevel: (r.thinking_level as ThinkingLevelName | null) ?? null,
     title: (r.title as string | null) ?? null,
     archivedAt: (r.archived_at as string | null) ?? null,
     client: (r.client as "web" | "cli" | null) ?? null,
@@ -71,6 +79,35 @@ export class SessionsRepo {
   /** Idempotent insert: used when Trace directory discovery backfills a row (concurrent listing discovering the same Session no longer triggers a UNIQUE violation). */
   insertOrIgnore(row: SessionRow): void {
     this.runInsert("INSERT OR IGNORE", row);
+  }
+
+  /**
+   * Allocate the source Session's next persistent fork number and insert its fork atomically.
+   * Keeping both writes in one transaction prevents concurrent requests from sharing a number,
+   * while retaining `fork_count` on the source means deleting an older fork never reuses it.
+   */
+  insertFork(sourceSessionId: string, row: SessionRow): SessionRow {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const source = this.db
+        .prepare(
+          `UPDATE sessions SET fork_count = fork_count + 1 WHERE session_id = ?
+           RETURNING title, fork_count`,
+        )
+        .get(sourceSessionId) as { title: string | null; fork_count: number } | undefined;
+      if (!source) throw new Error(`Source Session not found: ${sourceSessionId}`);
+
+      const forkTitle = source.title
+        ? `${source.title} (${source.fork_count})`
+        : `(${source.fork_count})`;
+      const forkRow = { ...row, title: forkTitle };
+      this.runInsert("INSERT", forkRow);
+      this.db.exec("COMMIT");
+      return forkRow;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   /**
@@ -164,6 +201,13 @@ export class SessionsRepo {
     this.db
       .prepare("UPDATE sessions SET approval_mode = ? WHERE session_id = ?")
       .run(mode, sessionId);
+  }
+
+  /** Pin the session's thinking level (runs without one of their own then use it). */
+  updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void {
+    this.db
+      .prepare("UPDATE sessions SET thinking_level = ? WHERE session_id = ?")
+      .run(level, sessionId);
   }
 
   updateTitle(sessionId: string, title: string): void {

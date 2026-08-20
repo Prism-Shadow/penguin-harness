@@ -8,7 +8,7 @@
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
-#   $env:PENGUIN_DOWNLOAD_SPEED_PROBE = "1" enable same-version OSS/GitHub probe timing in auto mode
+#   $env:PENGUIN_DOWNLOAD_SPEED_PROBE = "0" disable same-version OSS/GitHub probe timing in auto mode
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
 #   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." fallback for PENGUIN_DOWNLOAD_BASE_URL
 #
@@ -27,7 +27,7 @@
 # The data dir (%USERPROFILE%\.penguin\data) sits under the install home but is never touched by
 # reinstall/upgrade (which only replace bin/lib/web/node/git). Upgrading = re-running this installer.
 #
-# Docs: https://penguin.ooo/docs/installation
+# Docs: https://penguin.ooo/docs/quickstart-cli
 param(
   [string]$Version = "",
   [string]$InstallDir = "",
@@ -43,7 +43,10 @@ $OssReleaseRoot = "$OssOrigin/releases"
 $GitHubReleaseRoot = "$Repo/releases/download"
 $GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
-$SpeedProbeTotalTimeoutSeconds = 8
+$SpeedProbeTotalTimeoutSeconds = 16
+$SpeedProbeManifestTimeoutSeconds = 5
+$SpeedProbeSmallTimeoutSeconds = 5
+$SpeedProbeLargeTimeoutSeconds = 8
 $SpeedProbeGitHubMinBytesPerSecond = 262144
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the
@@ -161,9 +164,9 @@ function Test-SafeReleaseAssetName([string]$Value) {
 
 function Read-ReleaseDownloadManifest([string]$Tag, [string]$ManifestPath, [DateTime]$Deadline) {
   Remove-Item -LiteralPath $ManifestPath -Force -ErrorAction SilentlyContinue
-  $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline 2
+  $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline $SpeedProbeManifestTimeoutSeconds
   if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$OssReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
-    $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline 2
+    $TimeoutSec = Get-SpeedProbeTimeoutSec $Deadline $SpeedProbeManifestTimeoutSeconds
     if ($TimeoutSec -le 0 -or -not (Try-DownloadFile "$GitHubReleaseRoot/$Tag/release-download-manifest.tsv" $ManifestPath $TimeoutSec)) {
       return $null
     }
@@ -212,7 +215,7 @@ function Invoke-ProbeDownload(
   [string]$Tmp,
   [string]$Label,
   [DateTime]$Deadline,
-  [int]$MaxTimeoutSec = 2
+  [int]$MaxTimeoutSec = $SpeedProbeSmallTimeoutSeconds
 ) {
   $ProbePath = Join-Path $Tmp "probe-$Label-$($Probe.Name)"
   Remove-Item -LiteralPath $ProbePath -Force -ErrorAction SilentlyContinue
@@ -280,7 +283,7 @@ function Select-SpeedProbeDownloadSources([string]$Tag, [string]$Tmp) {
     return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
   }
 
-  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline 5
+  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline $SpeedProbeLargeTimeoutSeconds
   $Choice = Select-SpeedProbeSource $GitHubLarge $Manifest.LargeProbe.Size
   if ($Choice -eq "github") {
     Write-Host "Selected GitHub (meets minimum download speed)."
@@ -342,7 +345,7 @@ $SourceMode = if ($env:PENGUIN_DOWNLOAD_SOURCE) {
 $DownloadSpeedProbe = if ($env:PENGUIN_DOWNLOAD_SPEED_PROBE) {
   $env:PENGUIN_DOWNLOAD_SPEED_PROBE
 } else {
-  "0"
+  "1"
 }
 # An extracted installer bundle keeps install.cmd, this script, payload.zip and its checksum
 # together. `$PSScriptRoot` is empty for the documented `irm ... | iex` path, so online installs

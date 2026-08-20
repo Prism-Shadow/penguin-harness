@@ -24,30 +24,17 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import type { AttachmentLimits } from "./attachment-limits.js";
 
 /**
- * Per-file cap. Deliberately below the workspace upload's 14MB: several attachments can ride
- * one task request, and the whole body still has to fit the global 20MB limit (base64 inflates
- * by 4/3), so a smaller per-file ceiling keeps "one big file" working while leaving room for
- * "a handful of ordinary ones". Oversize is a 413, matching the workspace upload route.
+ * The size limits are no longer constants here: they are admin-settable (see attachment-limits.ts
+ * for the numbers and the reasoning) and are resolved per request, so a change applies to the very
+ * next upload without a restart. The caps are still enforced in THIS module rather than delegated
+ * to the global body cap — that cap is derived from these limits, and a validator that depends on
+ * the middleware upstream of it would be silently unbounded by a caller that never passes through
+ * it. Without the per-request caps a legal body fits ~350k minimal `file` parts, which is 350k
+ * sequential writes into one directory and 350k marker lines on one message.
  */
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-
-/**
- * Per-request caps, checked while the parts are validated — before a single byte reaches the
- * disk. They are deliberately NOT delegated to the global body cap: this module has to hold on
- * its own, so that a change to that middleware (or a caller that never goes through it) cannot
- * silently unbound it. Without them a legal 20MB body fits ~350k minimal `file` parts, which is
- * 350k sequential writes into one directory and 350k marker lines on one message.
- *
- * 20 files is far past any plausible composer use — the chip row stops being usable long before
- * that — while still allowing "drop a folder of small files in". 12MB of decoded bytes keeps one
- * full-size 10MB attachment usable next to a couple of ordinary ones; base64 inflates by 4/3, so
- * 12MB decoded is ~16MB of body and this cap, not the 20MB body cap, is the one a caller
- * actually reaches.
- */
-export const MAX_ATTACHMENT_COUNT = 20;
-export const MAX_TOTAL_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
 /**
  * Longest stem kept on disk, measured in **UTF-8 bytes**: filesystems cap a name near 255
@@ -100,6 +87,12 @@ export interface TaskAttachment {
   /** Original file name as submitted (validated: non-empty, no path separators, no `..`). */
   fileName: string;
   bytes: Buffer;
+  /**
+   * Media type from the submitted data URL (parameters included, e.g. `text/plain;charset=utf-8`);
+   * empty when the URL carried none. Kept so a queued message's recall can re-encode the
+   * on-disk bytes into the same data URL shape the composer submitted (see readRecalledFiles).
+   */
+  mime: string;
 }
 
 /**
@@ -112,6 +105,7 @@ export interface TaskAttachment {
 export function parseAttachmentPart(
   part: Record<string, unknown>,
   index: number,
+  limits: AttachmentLimits,
   field = "input",
 ): TaskAttachment {
   const fileName = part.fileName;
@@ -136,22 +130,57 @@ export function parseAttachmentPart(
   // type from the payload. The payload's character class is the actual check that it IS
   // base64 (whitespace tolerated — line-wrapped encoders decode fine).
   const match =
-    typeof dataUrl === "string" ? /^data:[^,]*;base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl) : null;
+    typeof dataUrl === "string" ? /^data:([^,]*);base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUrl) : null;
   if (!match) {
     throw badRequest(`${field}[${index}].dataUrl must be a base64 data: URL of the file's bytes.`);
   }
-  const bytes = Buffer.from(match[1]!, "base64");
+  const bytes = Buffer.from(match[2]!, "base64");
   if (bytes.length === 0) {
     throw badRequest(`${field}[${index}].dataUrl decodes to an empty file.`);
   }
-  if (bytes.length > MAX_ATTACHMENT_BYTES) {
+  if (bytes.length > limits.maxBytes) {
     throw new HttpError(
       413,
       "file_too_large",
-      `Attached file exceeds the ${MAX_ATTACHMENT_BYTES / (1024 * 1024)}MB limit.`,
+      `Attached file exceeds the ${limits.maxBytes / (1024 * 1024)}MB limit.`,
     );
   }
-  return { fileName, bytes };
+  return { fileName, bytes, mime: match[1]! };
+}
+
+/**
+ * A queued message's file attachment as held for recall: the scratchpad path it was written
+ * to, plus what is needed to rebuild the composer-shaped part — the submitted name and media
+ * type (the bytes stay on disk; queued entries never hold file payloads in memory).
+ */
+export interface RecallableFile {
+  fileName: string;
+  path: string;
+  mime: string;
+}
+
+/**
+ * Read recalled attachments back from the scratchpad into the `{fileName, dataUrl}` shape the
+ * composer submits. Best effort: a file that disappeared meanwhile (Session deleted from
+ * another tab, manual cleanup) is omitted rather than failing the whole recall — the text and
+ * images still come back. The caller deletes the on-disk copies afterwards (removeAttachments);
+ * reading first keeps the two steps safely ordered.
+ */
+export async function readRecalledFiles(
+  files: RecallableFile[],
+): Promise<{ fileName: string; dataUrl: string }[]> {
+  const read = await Promise.all(
+    files.map(async (f) => {
+      try {
+        const bytes = await fs.readFile(f.path);
+        const mime = f.mime || "application/octet-stream";
+        return { fileName: f.fileName, dataUrl: `data:${mime};base64,${bytes.toString("base64")}` };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return read.filter((f) => f !== null);
 }
 
 /**
@@ -161,21 +190,24 @@ export function parseAttachmentPart(
  * dedicated `too_many_files` code, the aggregate the `payload_too_large` the body cap already
  * uses — from the caller's side it is the same "this request is too big" outcome.
  */
-export function assertAttachmentBudget(attachments: TaskAttachment[]): void {
-  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+export function assertAttachmentBudget(
+  attachments: TaskAttachment[],
+  limits: AttachmentLimits,
+): void {
+  if (attachments.length > limits.maxCount) {
     throw new HttpError(
       413,
       "too_many_files",
-      `A message may carry at most ${MAX_ATTACHMENT_COUNT} attached files.`,
+      `A message may carry at most ${limits.maxCount} attached files.`,
     );
   }
   let total = 0;
   for (const a of attachments) total += a.bytes.length;
-  if (total > MAX_TOTAL_ATTACHMENT_BYTES) {
+  if (total > limits.totalBytes) {
     throw new HttpError(
       413,
       "payload_too_large",
-      `Attached files exceed the ${MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)}MB total limit for one message.`,
+      `Attached files exceed the ${limits.totalBytes / (1024 * 1024)}MB total limit for one message.`,
     );
   }
 }

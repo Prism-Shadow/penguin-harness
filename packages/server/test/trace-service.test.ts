@@ -306,7 +306,12 @@ describe("trace-service", () => {
     // The compaction turn is flagged (the UI shows a "compaction" badge); its
     // duration is measured from its request_begin (10:00:05) to compaction_end (10:00:16).
     expect(ct.compaction).toBe(true);
+    // ...and carries WHICH compaction it was, so the round card can name the operation rather
+    // than calling every mode "compaction". The flag stays the sole gate on "is this a
+    // compaction turn", so a client that only knows the boolean is unaffected.
+    expect(ct.compactionMode).toBe("summarize");
     expect(t.compaction).toBeUndefined();
+    expect(t.compactionMode).toBeUndefined();
     expect(Date.parse(ct.endTs) - Date.parse(ct.startTs)).toBe(11_000);
     // Overall elapsed time = **the sum of every turn (including compaction turns)**,
     // matching the same scope as the per-turn display — adding up the durations
@@ -314,6 +319,44 @@ describe("trace-service", () => {
     // 10:00:01 → token_usage 10:00:03.1) + compaction turn 11s.
     expect(Date.parse(t.endTs) - Date.parse(t.startTs)).toBe(2_100);
     expect(a.elapsedMs).toBe(2_100 + 11_000);
+  });
+
+  it("a discard compaction turn is flagged and carries mode 'discard', though it issues no request", async () => {
+    // `discard` drops the old context outright instead of summarizing it, and core emits
+    // compaction_begin/compaction_end back-to-back with **no request in between** (see
+    // context-engine's discardContext). It still forms its own turn — so the round card must
+    // be flagged from the compaction_begin itself, not from a compaction request that never
+    // happens, or a discarded round renders as a bare unlabelled card with no stats.
+    await writeTraceFile(root, P, A, "2026-07-06", S, 1, [
+      sessionMeta(metaPayload()),
+      at("2026-07-06T10:00:00.000Z", userText("hi")),
+      at("2026-07-06T10:00:01.000Z", requestBegin()),
+      at("2026-07-06T10:00:03.000Z", requestEnd("completed")),
+      at("2026-07-06T10:00:03.100Z", tokenUsage(counts(30_000), buckets(20_000, 9_000, 1_000))),
+      at(
+        "2026-07-06T10:00:04.000Z",
+        compactionBegin({ reason: "context", mode: "discard", context: 30_000, turns: 2 }),
+      ),
+      at(
+        "2026-07-06T10:00:04.100Z",
+        compactionEnd({ reason: "context", mode: "discard", status: "completed" }),
+      ),
+    ]);
+    const a = await service.analyze(P, A, S, 1);
+
+    expect(a.compactionCount).toBe(1);
+    expect(a.tasks.map((t) => t.taskIndex)).toEqual([0, 1]);
+    // The user turn is untouched...
+    expect(a.tasks[0]!.compaction).toBeUndefined();
+    expect(a.tasks[0]!.compactionMode).toBeUndefined();
+    // ...and the discard turn is flagged and named, so the badge reads "clear", not "compaction".
+    const ct = a.tasks[1]!;
+    expect(ct.compaction).toBe(true);
+    expect(ct.compactionMode).toBe("discard");
+    // It really did run no request: no duration to report, which is exactly why the badge is
+    // the only thing on the card that explains what the round was.
+    expect(ct.startTs).toBe("");
+    expect(ct.llmMs).toBe(0);
   });
 
   it("a compaction request exhausting retries (ending in timeout) doesn't fold the next user turn into the compaction Task", async () => {

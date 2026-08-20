@@ -22,6 +22,7 @@ import type {
   ApprovalMode,
   ModelRefDto,
   ModelsResponse,
+  SessionPatchRequest,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -41,7 +42,15 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { approvalKey, isModelAuthDead } from "../../lib/omni/stream-model";
+import { sessionActivity } from "../../lib/session-activity";
+import { noteSessionSeen } from "../../lib/session-seen";
+import {
+  approvalKey,
+  createStreamModel,
+  finalizeHistory,
+  isModelAuthDead,
+  pushMessage,
+} from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
@@ -50,17 +59,32 @@ import { useTheme } from "../../state/theme";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Truncated } from "../../components/ui/truncated";
 import { Dropdown } from "../../components/ui/dropdown";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { toastError } from "../../components/ui/toast";
+import {
+  SessionActivityIcon,
+  sessionActivityLabel,
+} from "../../components/ui/session-activity-icon";
+import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import {
+  compactionTally,
+  heldThinkingSwitch,
+  needsThinkingSwitchConfirm,
+  sessionThinkingLevel,
+  thinkingLevelLabel,
+} from "./thinking-level";
+import type { StagedThinkingSwitch } from "./thinking-level";
+import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
@@ -258,6 +282,7 @@ export function ChatPage() {
     loading: sessionsLoading,
     reload: reloadSessions,
     add: addSession,
+    isDeleted: isSessionDeleted,
     replace,
     setStatus,
     setTitle,
@@ -290,12 +315,14 @@ export function ChatPage() {
   // Latest trace file path (single-session GET only — list rows don't carry it), fetched
   // when the details popover opens; null = none yet (brand-new session) or still loading.
   const [tracePath, setTracePath] = useState<string | null>(null);
-  // Per-turn thinking level, local per-session UI state: "" = untouched — the picker then
-  // displays the Agent config's level and postTask omits thinkingLevel (auto-follow: the
-  // server/core fallback applies, so mid-session Agent-config edits keep taking effect).
-  // Once the user picks a level it sticks for the session and rides on every subsequent
-  // postTask. Never written through to the Agent config (that behavior stays draft-only).
-  const [turnThinkingLevel, setTurnThinkingLevel] = useState("");
+  // A mid-chat thinking-level pick staged behind the confirm dialog (issue #310): some
+  // providers key their prompt PREFIX on the thinking level, so switching with history in
+  // place invalidates the provider's prefix cache and the next request re-bills the whole
+  // history as uncached input. The pick is only applied on an explicit choice; null = no
+  // dialog, "ask" = dialog open, "compacting" = the user chose "compact, then switch" and
+  // the pick is held until the compaction completes. Logic in thinking-level.ts
+  // (needsThinkingSwitchConfirm / thinkingSwitchAfterCompaction).
+  const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanelRaw = useFilesPanel(routeSessionId);
@@ -445,6 +472,14 @@ export function ChatPage() {
   // causing the new chat to end up created on the old Agent.
   const selectedSessionId = selected?.sessionId ?? null;
   const selectedAgentId = selected?.agentId ?? null;
+  // The thinking level pinned on THIS Session, read straight off the Session row
+  // (SessionInfo.thinkingLevel, written by the picker through PATCH — see
+  // applyTurnThinkingLevel): "" = never pinned, and the picker then displays the Agent
+  // config's level while sends omit thinkingLevel (auto-follow — the server/core fallback
+  // applies, so Agent-config edits keep taking effect). A pin is DURABLE: it survives a
+  // reload, shows up in a second tab, and the server applies it to every later run of this
+  // Session. It is still never written through to the Agent config (that stays draft-only).
+  const turnThinkingLevel = selected?.thinkingLevel ?? "";
   useEffect(() => {
     if (selectedSessionId && selectedAgentId) setCurrentAgentId(selectedAgentId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -549,6 +584,15 @@ export function ChatPage() {
   useEffect(() => {
     if (draft || !routeSessionId || sessionsLoading) return;
     if (sessions.some((s) => s.sessionId === routeSessionId)) return;
+    // We deleted this Session ourselves: the row is gone from the list on purpose, so the
+    // lookup below could only 404 (and the server would record that as an error). Deleting
+    // the conversation you are looking at is the normal way to discard a Session fork, so
+    // this path runs on every such delete. Treat it as an already-failed probe, which
+    // releases the redirect effect below to move on to another conversation.
+    if (isSessionDeleted(routeSessionId)) {
+      setProbeFailedId(routeSessionId);
+      return;
+    }
     let cancelled = false;
     api.getSession(routeSessionId).then(
       (res) => {
@@ -561,7 +605,7 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [draft, routeSessionId, sessionsLoading, sessions, addSession]);
+  }, [draft, routeSessionId, sessionsLoading, sessions, addSession, isSessionDeleted]);
 
   // Auto-select the most recent conversation when the route doesn't select one (newest loaded
   // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
@@ -577,9 +621,17 @@ export function ChatPage() {
   }, [sessionsLoading, draft, routeSessionId, probeFailedId, sessions, navigate]);
 
   // Sync task_state to the sidebar list badge.
+  //
+  // Keyed on the session ID, not the `selected` row: the row object is replaced whenever
+  // anything about it changes — including by the user channel's own `session_state` event for
+  // this very Session, which arrives on a second connection with no ordering guarantee against
+  // this one. Depending on the object re-ran this effect on that replacement and re-asserted
+  // whatever `stream.taskState` still held, so a run that ended could be pushed back to
+  // "running" until this tab's Session stream caught up. Depending on the id means only a real
+  // state change writes, and the two sources agree instead of overwriting each other.
   useEffect(() => {
-    if (selected) setStatus(selected.sessionId, stream.taskState);
-  }, [stream.taskState, selected, setStatus]);
+    if (selectedSessionId !== null) setStatus(selectedSessionId, stream.taskState);
+  }, [stream.taskState, selectedSessionId, setStatus]);
 
   // Task returns from running/compacting to idle ON THE SAME SESSION: this turn may have
   // spawned a sub-session or auto-created a new Agent — reload both lists so they appear in
@@ -609,19 +661,34 @@ export function ChatPage() {
     }
   }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
 
+  // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
+  // again when a run finishes under the user's eyes, so the sidebar row left behind is not
+  // flagged unread. Depending on lastActiveAt is what keeps the marker honest across clock skew
+  // — the effect above reloads the list on that same active→idle edge, and the refreshed
+  // server timestamp re-runs this one.
+  const selectedLastActiveAt = selected?.lastActiveAt ?? null;
+  useEffect(() => {
+    if (selectedSessionId === null || selectedLastActiveAt === null) return;
+    if (stream.taskState !== "idle") return; // Still working: nothing settled to have read yet.
+    noteSessionSeen(projectId, selectedSessionId, selectedLastActiveAt);
+  }, [projectId, selectedSessionId, selectedLastActiveAt, stream.taskState]);
+
   // Positive-only existence cache for file summary cards (session-level): normalized relative
   // path -> true, or the shared in-flight lookup. Missing files aren't retained — a later Task may
   // create the same path, so its summary must re-check instead of inheriting stale false state.
   const statCacheRef = useRef(new Map<string, true | Promise<boolean>>());
 
-  // Session switch: resets the usage-fetch marker, the file-card existence cache, the
-  // per-turn thinking level (it's per-session UI state), and the popover's per-session
-  // data (process list / token buckets / trace path), avoiding stale data from the
-  // previous Session (Files panel state resets itself keyed on sessionId inside
-  // use-files-panel, and the cost hold re-keys itself on sessionId inside advanceCostStat).
+  // Session switch: resets the usage-fetch marker, the file-card existence cache, any
+  // thinking-level switch staged behind its dialog (per-session UI state — a compaction
+  // that self-heals to a new session id routes through here too and drops the held pick),
+  // and the popover's per-session data (process list / token buckets / trace path),
+  // avoiding stale data from the previous Session (Files panel state resets itself keyed
+  // on sessionId inside use-files-panel, and the cost hold re-keys itself inside
+  // advanceCostStat). The thinking level itself needs no reset — it is read off the
+  // selected Session row, so it changes with the session by construction.
   useEffect(() => {
     usageAppliedRef.current = null;
-    setTurnThinkingLevel("");
+    setThinkingSwitch(null);
     statCacheRef.current = new Map();
     setProcesses([]);
     setUsageBuckets(null);
@@ -1071,6 +1138,62 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
+  // returned row into the session store (the picker reads it back from there). Modeled on
+  // onChangeApprovalMode — a failed write surfaces as a toast and leaves the level as it
+  // was, rather than showing a level the server does not have. Declared above the recall
+  // callbacks because one of them lists it as a dependency, which is evaluated during
+  // render rather than when the callback runs.
+  const applyTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (!selected) return;
+      void api
+        .patchSession(selected.sessionId, {
+          thinkingLevel: level as SessionPatchRequest["thinkingLevel"],
+        })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        });
+    },
+    [selected, replace],
+  );
+
+  // Recall a queued message back into the composer (#287): the DELETE returns the original
+  // content (text / images / files) and the input area restores it as the draft. A 409
+  // not_pending (steering already delivered, follow-up already started) surfaces as a toast;
+  // the queued hint retires on its own via the re-broadcast task_state.
+  const onRecallSteering = useCallback(
+    async (steerId: string) => {
+      if (!selected) return null;
+      try {
+        return await api.recallSteer(selected.sessionId, steerId);
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected],
+  );
+
+  const onRecallFollowUp = useCallback(
+    async (followUpId: string) => {
+      if (!selected) return null;
+      try {
+        const res = await api.recallFollowUp(selected.sessionId, followUpId);
+        // The follow-up was queued with a per-turn thinking level: restore it with the draft,
+        // so an unedited resend goes out exactly as it was queued. The level now lives on the
+        // Session (#310), so restoring it pins it there rather than in local state.
+        if (res.thinkingLevel) applyTurnThinkingLevel(res.thinkingLevel);
+        return res;
+      } catch (e) {
+        toastError(apiErrorText(e));
+        return null;
+      }
+    },
+    [selected, applyTurnThinkingLevel],
+  );
+
   const onApprove = useCallback(
     async (toolCallId: string, decision: "allow" | "deny", origin: string[]) => {
       if (!selected) return;
@@ -1102,16 +1225,106 @@ export function ChatPage() {
     [selected, modeSaving, replace],
   );
 
-  const onCompact = useCallback(async () => {
-    if (!selected) return;
+  // Starts a context compaction — the single path to the server for it (the composer's
+  // /compact command and the thinking-switch dialog's "compact, then switch" both come
+  // through here). Returns whether the request was ACCEPTED: the endpoint answers 202 and
+  // the compaction itself runs asynchronously, so a true here means "started", not
+  // "finished" — the outcome only shows up on the stream (see the staged-switch watcher).
+  // false means the server refused it (409 while a task runs / nothing to compact / …) and
+  // the reason has already been surfaced as a toast.
+  const runCompaction = useCallback(async (): Promise<boolean> => {
+    if (!selected) return false;
     try {
       // compact shares get-or-resume-or-heal with tasks: it can likewise self-heal to a new session_id.
       const res = await api.postCompact(selected.sessionId);
       await syncHealedSessionId(selected.sessionId, res.sessionId);
+      return true;
     } catch (e) {
       toastError(apiErrorText(e, { modelId: selected.modelId }));
+      return false;
     }
   }, [selected, syncHealedSessionId]);
+
+  // The composer's /compact command: unchanged behavior (fire it, errors land as a toast).
+  const onCompact = useCallback(async () => {
+    await runCompaction();
+  }, [runCompaction]);
+
+  // Session picker pick: pinned directly while it cannot hurt (empty transcript, a re-pick
+  // of the displayed level, or right after a successful compaction), staged behind the
+  // confirm dialog otherwise — switching the level mid-chat costs prompt-cache hits over
+  // the whole history (issue #310), so the dialog offers compact-then-switch (recommended),
+  // switch anyway, or cancel. The transcript is always loaded when the picker is clickable
+  // (the composer only mounts once history load settles), so the live tail items are
+  // authoritative here.
+  const onPickTurnThinkingLevel = useCallback(
+    (level: string) => {
+      if (
+        needsThinkingSwitchConfirm(
+          stream.model.items,
+          sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel),
+          level,
+        )
+      ) {
+        setThinkingSwitch({ phase: "ask", level });
+      } else {
+        applyTurnThinkingLevel(level);
+      }
+    },
+    [stream.model, turnThinkingLevel, agentThinkingLevel, applyTurnThinkingLevel],
+  );
+
+  // Dialog choice 1 (recommended): compact first, then switch. The compaction is only
+  // STARTED here — POST /compact answers 202 — so the pick is held with a tally of the
+  // compactions already on record, and the watcher below releases it once a new one ends
+  // (either way it ends). Compaction cannot be started (nor queued) while the session is
+  // busy, so the dialog disables this choice unless idle; the guard here is the same rule.
+  const compactThenThinkingSwitch = useCallback(() => {
+    if (thinkingSwitch === null || stream.taskState !== "idle") return;
+    const staged: StagedThinkingSwitch = {
+      phase: "compacting",
+      level: thinkingSwitch.level,
+      baseline: compactionTally(stream.model.items),
+    };
+    setThinkingSwitch(staged);
+    toastInfo(S.chat.thinkingSwitchCompacting);
+    void runCompaction().then((ok) => {
+      // Refused (the toast already said why, e.g. nothing to compact): no compaction will
+      // ever settle, so hand the pick to the watcher below to release — the user asked to
+      // switch, and only the compaction half of that failed. A pick staged meanwhile owns
+      // the state instead.
+      if (!ok) {
+        setThinkingSwitch((cur) =>
+          cur === staged ? { phase: "settle", level: staged.level } : cur,
+        );
+      }
+    });
+  }, [thinkingSwitch, stream.taskState, stream.model, runCompaction]);
+
+  // Releases the pick held behind a running compaction: applied as soon as the compaction is
+  // over, whichever way it ended. A failed/aborted compaction is reported (the context was
+  // not rewritten, so this switch does cost cache hits) but never swallows the switch the
+  // user asked for. Runs on every stream version bump because the model's items are mutated
+  // in place.
+  useEffect(() => {
+    if (thinkingSwitch === null) return;
+    const next = heldThinkingSwitch(thinkingSwitch, stream.model.items);
+    if (next.act === "wait") return;
+    setThinkingSwitch(null);
+    applyTurnThinkingLevel(next.level);
+    if (next.notice === "compacted") {
+      toastSuccess(
+        S.chat.thinkingSwitchApplied(
+          thinkingLevelLabel(S.chat.thinkingLevelNames, next.level) ?? next.level,
+        ),
+      );
+    } else if (next.notice === "compaction-failed") {
+      toastError(S.chat.thinkingSwitchCompactFailed);
+    }
+    // notice "none": the compaction never started and runCompaction already said why.
+    // The items are read from the model per run; `version` is the change signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
@@ -1126,6 +1339,44 @@ export function ChatPage() {
   const openModels = useCallback(() => {
     navigate("/models");
   }, [navigate]);
+
+  const onFork = useCallback(
+    async (target: ForkTarget): Promise<void> => {
+      if (!selected) return;
+      try {
+        let position = target.position;
+        // Live SSE messages do not carry disk coordinates. Once the Task is idle, one history
+        // read resolves the just-finished footer onto the immutable Trace position; the fork
+        // request itself always sends that position, never display text or a timestamp.
+        if (position === undefined) {
+          const history = await api.getMessages(selected.sessionId);
+          const model = createStreamModel();
+          for (const message of history.messages) pushMessage(model, message);
+          finalizeHistory(model);
+          const match = [...model.items]
+            .reverse()
+            .find(
+              (item) =>
+                item.kind === "task_stats" &&
+                item.assistantText === target.assistantText &&
+                item.atMs === target.atMs &&
+                item.forkPosition !== undefined,
+            );
+          position = match?.kind === "task_stats" ? match.forkPosition : undefined;
+        }
+        if (position === undefined) {
+          toastError(S.chat.forkSessionFailed);
+          return;
+        }
+        const created = await api.forkSession(selected.sessionId, { position });
+        addSession(created.session);
+        navigate(`/chat/${created.session.sessionId}`);
+      } catch (e) {
+        toastError(apiErrorText(e, { modelId: selected.modelId }));
+      }
+    },
+    [selected, addSession, navigate],
+  );
 
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
   // (paired reference) current pricing; null if no pricing is configured.
@@ -1165,6 +1416,7 @@ export function ChatPage() {
     },
     workspace: selected?.workspace ?? null,
     statFiles,
+    onFork,
   };
 
   // Any pending approval sitting inside a subagent (approvalKey = "originChain toolCallId";
@@ -1248,18 +1500,22 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
+      pendingFollowUps={stream.pendingFollowUps}
+      onRecallFollowUp={onRecallFollowUp}
       onStop={onStop}
       onCompact={onCompact}
       modelRef={activeModelRef}
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
-      // Display value: the user's pick for this session, else the Agent config's level
-      // (auto-follow while untouched; the send path uses the raw pick — see onSend).
-      turnThinkingLevel={turnThinkingLevel || agentThinkingLevel}
-      onChangeTurnThinkingLevel={setTurnThinkingLevel}
+      // Display value: the level pinned on this Session, else the Agent config's level
+      // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
+      turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
+      // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
+      onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
@@ -1290,6 +1546,14 @@ export function ChatPage() {
     />
   );
 
+  /**
+   * Header glyph state. Never unread: this is the Session on screen, so its last reply is being
+   * read right now — the read/unread split is a sidebar affordance, and passing the live marker
+   * here would only flash the unread tone for the frame before the effect above stamps it.
+   */
+  const headerActivity =
+    selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
+
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Thin top toolbar */}
@@ -1299,15 +1563,18 @@ export function ChatPage() {
             <h1 className="flex min-w-0 text-[15px] font-semibold">
               <Truncated text={selected.title ?? S.chat.defaultSessionTitle} />
             </h1>
-            {/* Running indicator (placed to the right of the title); the compacting state is shown separately by the compaction banner within the message stream, not repeated here.
-                Below sm only the pulsing dot remains (title carries the wording) — the text would eat the title's room on phones. */}
-            {stream.taskState === "running" && (
+            {/* Session-level state: a turning hourglass while the run is active, and nothing at
+                all once it settles — the conversation on screen is by definition read, and the
+                unread dot is a sidebar affordance for the rows you are NOT looking at. The
+                compacting state stays in the stream banner rather than being repeated here.
+                Below sm only the glyph remains so the title keeps its room. */}
+            {headerActivity === "running" && (
               <span
-                title={S.chat.statusRunning}
+                title={sessionActivityLabel(headerActivity)}
                 className="flex shrink-0 items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
               >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-                <span className="hidden sm:inline">{S.chat.statusRunning}</span>
+                <SessionActivityIcon activity={headerActivity} />
+                <span className="hidden sm:inline">{sessionActivityLabel(headerActivity)}</span>
               </span>
             )}
           </div>
@@ -1647,7 +1914,12 @@ export function ChatPage() {
 
       {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The chat area, and the only region a dragged file may be dropped on (#311): it
+            covers the conversation and the composer in both branches below, and nothing else
+            — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
+            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
+            bounds the drop overlay to this column. */}
+        <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
             // selection panel; the Session is only created once the first message is sent. Keyed
@@ -1752,7 +2024,7 @@ export function ChatPage() {
               )}
             </div>
           )}
-        </div>
+        </ChatDropRegion>
 
         {selected && (
           <SubagentsPanel
@@ -1790,6 +2062,40 @@ export function ChatPage() {
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.noCredentialBody}</p>
       </Modal>
+
+      {/* Mid-chat thinking-level switch confirmation (issue #310), three choices: compact
+          first and switch when it finishes (primary — the recommended, cheap path), switch
+          anyway (immediate, today's force path), or cancel (keeps the current level). The
+          compact choice is unavailable while the session is busy — the server only starts a
+          compaction on an idle session and does not queue it — and the body then says so.
+          After a successful compaction the guard lets a re-pick through without asking. */}
+      <ConfirmModal
+        open={thinkingSwitch?.phase === "ask"}
+        title={S.chat.thinkingSwitchTitle}
+        tone="primary"
+        confirmLabel={S.chat.thinkingSwitchCompactFirst}
+        confirmDisabled={stream.taskState !== "idle"}
+        onConfirm={compactThenThinkingSwitch}
+        secondaryLabel={S.chat.thinkingSwitchConfirm}
+        onSecondary={() => {
+          if (thinkingSwitch !== null) applyTurnThinkingLevel(thinkingSwitch.level);
+          setThinkingSwitch(null);
+        }}
+        onClose={() => setThinkingSwitch(null)}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.chat.thinkingSwitchBody(
+            thinkingLevelLabel(S.chat.thinkingLevelNames, thinkingSwitch?.level) ??
+              thinkingSwitch?.level ??
+              "",
+          )}
+        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
+      </ConfirmModal>
     </div>
   );
 }

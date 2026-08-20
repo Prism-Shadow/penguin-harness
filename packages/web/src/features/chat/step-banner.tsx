@@ -35,7 +35,7 @@ export function StepBanner({
   liveSinceMs?: number;
   /** Settled wall time once finished. */
   durationMs?: number;
-  /** Expandable body; its presence adds the chevron (collapsed by default). */
+  /** Expandable body; its presence adds the chevron (collapsed by default, streaming included). */
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);

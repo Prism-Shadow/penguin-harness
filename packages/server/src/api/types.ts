@@ -13,7 +13,11 @@
  * Docs: packages/docs/content/server-api.{zh,en}.md (site path /docs/server-api) is the
  * public route/SSE reference for this contract — keep it in sync when changing DTOs.
  */
-import type { OmniMessage, ToolCallPayload } from "@prismshadow/penguin-core/omnimessage";
+import type {
+  CompactionMode,
+  OmniMessage,
+  ToolCallPayload,
+} from "@prismshadow/penguin-core/omnimessage";
 import type {
   MCPServerConfig,
   ThinkingLevelName,
@@ -87,6 +91,39 @@ export interface MeResponse {
    * token) may omit it.
    */
   sessionVia: "password" | "desktop";
+  /**
+   * The upload limits currently in force, so the composer can refuse an oversize pick before
+   * reading it and can name the real number in the message. They are admin-settable and ride
+   * `/api/me` rather than `/api/admin/settings` because every user's composer needs them, not
+   * just an admin's.
+   */
+  uploadLimits: UploadLimits;
+}
+
+/**
+ * Upload limits as the web app sees them: whole MB, the same unit the admin form uses, so the
+ * number in the error message is the number the admin typed.
+ */
+export interface UploadLimits {
+  /** Per-file cap for composer file attachments. */
+  attachmentMaxMb: number;
+  /** Per-message total of decoded attachment bytes. */
+  attachmentTotalMb: number;
+  /** Per-message file count. Fixed server-side, not admin-settable. */
+  attachmentMaxCount: number;
+  /**
+   * Per-image cap for images that ride the conversation inline. Fixed server-side and
+   * deliberately far below the attachment cap — an inline image enters the conversation and the
+   * Trace, where its size is paid again on every history page and every resume.
+   */
+  imageMaxMb: number;
+  /**
+   * The range the two admin-settable limits may be set to. Carried here so the admin form states
+   * the real bounds without compiling its own copy of them — the server is the only place that
+   * decides how large an upload it can survive.
+   */
+  attachmentLimitMinMb: number;
+  attachmentLimitMaxMb: number;
 }
 
 export interface PasswordChangeRequest {
@@ -149,6 +186,18 @@ export interface ServerSettings {
    * precedence over HTTP_PROXY / HTTPS_PROXY wherever the owning switch is on.
    */
   proxyUrl: string | null;
+  /**
+   * Per-file cap for composer file attachments, in whole MB (default 100). Applies to the very
+   * next upload — the validators read it per request, nothing is snapshotted at boot.
+   */
+  attachmentMaxMb: number;
+  /**
+   * Per-message total of decoded attachment bytes, in whole MB (default 120). Never below
+   * `attachmentMaxMb`, so a message may always carry one full-size attachment. The global request
+   * body cap is derived from this value (base64 inflates it by 4/3, plus headroom for one inline
+   * image and the JSON framing), which is why raising it needs no separate setting.
+   */
+  attachmentTotalMb: number;
 }
 
 export interface ServerSettingsResponse {
@@ -167,6 +216,19 @@ export interface ServerSettingsUpdateRequest {
    * (follow the environment variables); anything else is 400 `invalid_proxy_url`.
    */
   proxyUrl?: string | null;
+  /**
+   * New per-file attachment cap in whole MB. Must be an integer between 1 and 200; anything else
+   * — a fraction, a string, 102400 for "100GB" — is 400 `invalid_attachment_limit` and writes
+   * nothing.
+   */
+  attachmentMaxMb?: number;
+  /**
+   * New per-message total attachment cap in whole MB. Same 1..200 integer range, and additionally
+   * must not be below the *effective* per-file cap (the value in the same PUT, or the stored one
+   * when this PUT does not change it) — a total below the per-file cap would make a legal single
+   * attachment unsendable. Violations are 400 `invalid_attachment_limit`.
+   */
+  attachmentTotalMb?: number;
 }
 
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
@@ -304,6 +366,13 @@ export interface ModelInfo {
    * seeded per-Agent default (32000), which cannot fit into e.g. a 32k context window.
    */
   maxTokens?: number;
+  /**
+   * Per-model fast mode (TOML `fast_mode` annotation; user-only, never preset by the
+   * built-in catalog): when true, session requests opt into the provider's faster serving
+   * tier at premium pricing (AgentHub UniConfig `fast_mode`). Only `true` is reported;
+   * unset = off. Models without a fast tier reject requests carrying it.
+   */
+  fastMode?: boolean;
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
@@ -348,6 +417,8 @@ export interface ModelUpdateEntry {
   vision?: boolean;
   /** Per-model max output tokens, a positive integer (wins over the Agent config); omitted = inherit the Agent value (the annotation is cleared). */
   maxTokens?: number;
+  /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
+  fastMode?: boolean;
   pricing?: ModelPricingDto;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
@@ -390,6 +461,48 @@ export interface ModelTestRequest {
   baseUrl?: string | null;
   /** AgentHub client protocol; required for unsaved custom models (otherwise the id can't be auto-routed). */
   clientType?: string;
+  /**
+   * Test with fast mode (the frontend always sends the form's current value, so an unsaved
+   * toggle — either direction — is what gets tested); omitted falls back to the stored
+   * annotation. Lets "Test connection" surface a fast-mode rejection before saving.
+   */
+  fastMode?: boolean;
+}
+
+/**
+ * Vision capability probe: sends one 1x1 image and a one-word prompt on this model's
+ * credential, to decide whether the models dialog's "supports vision" switch should be
+ * turned on. The body mirrors the connectivity test (same paired reference and same
+ * not-yet-saved overrides), so an unsaved model can be probed before it exists on disk.
+ *
+ * Unlike protocol detection this is a real, billed completion — an image request cannot be
+ * shaped to cost nothing — so it only ever runs when the user presses the control.
+ */
+export interface ModelVisionDetectRequest {
+  provider: string;
+  modelId: string;
+  /** Newly entered API key (plaintext); the stored one backs the probe when omitted. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key. */
+  clearApiKey?: boolean;
+  /** Form's current base URL; null means "explicitly none" (as in the connectivity test). */
+  baseUrl?: string | null;
+  /** Protocol to speak, when the form has one; otherwise the stored/auto-routed client. */
+  clientType?: string;
+}
+
+/**
+ * Vision probe verdict. `supported` = the model took the image and answered; `unsupported`
+ * = it answered specifically that it will not take an image (a definitive negative, not an
+ * error); `failed` = the probe never got a usable answer (auth, network, an unrelated
+ * error), so nothing about the capability was learned and the setting is left alone.
+ */
+export type ModelVisionOutcome = "supported" | "unsupported" | "failed";
+
+/** Vision probe result; `message` carries the truncated provider error for the failed case. */
+export interface ModelVisionDetectResponse {
+  outcome: ModelVisionOutcome;
+  message?: string;
 }
 
 /**
@@ -410,6 +523,53 @@ export interface ModelTestResponse {
    */
   tps?: number;
   message?: string;
+}
+
+/**
+ * Protocol auto-detection (POST /api/projects/:p/models/detect, owner): probes which of
+ * AgentHub's generic protocol clients a custom base URL serves — `openai-responses` first,
+ * then `ant-messages`, then `openai-chat` — and reports the first hit. Used by the custom
+ * model dialog to fill `clientType` from the endpoint itself; costs no tokens (each probe
+ * is a minimal invalid request whose error reveals the protocol shape).
+ */
+export interface ModelProtocolDetectRequest {
+  /** Base URL to probe (as typed in the form); each probe appends its protocol path. */
+  baseUrl: string;
+  /** Newly entered API key (plaintext); used for probe auth if provided. Detection also works keyless: a protocol-shaped 401/403 still proves the route. */
+  apiKey?: string;
+  /** "Clear saved API key" is checked: do not fall back to the stored key (probe the current draft). */
+  clearApiKey?: boolean;
+  /** Optional paired reference: when it names a stored entry and no apiKey is given, that entry's saved key backs the probes (mirrors the connectivity test). */
+  provider?: string;
+  modelId?: string;
+}
+
+/**
+ * One probe's outcome: `served` = the route answered in an API shape (including auth
+ * failures — 401/403 with a protocol-shaped body proves the route exists);
+ * `route_missing` = 404/405; `server_error` = 5xx (proves nothing about the path);
+ * `junk` = HTML / non-JSON / JSON matching no API shape; `timeout` / `network_error` =
+ * the request itself failed.
+ */
+export type ProtocolProbeOutcome =
+  "served" | "route_missing" | "server_error" | "junk" | "timeout" | "network_error";
+
+/** One probe, for debugging display: the probed URL derives from baseUrl only (never contains the key). */
+export interface ModelProtocolProbeDto {
+  /** AgentHub client type this probe stands for (`openai-responses` / `ant-messages` / `openai-chat`). */
+  clientType: string;
+  /** Full URL probed (base URL + the protocol's path). */
+  url: string;
+  outcome: ProtocolProbeOutcome;
+  /** HTTP status, when a response arrived at all. */
+  status?: number;
+}
+
+/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+export interface ModelProtocolDetectResponse {
+  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  detected?: string;
+  probes: ModelProtocolProbeDto[];
 }
 
 /**
@@ -450,7 +610,7 @@ export interface ChatDefaultsDto {
   /**
    * Fallback thinking level for Agents whose config has no explicit `model.thinking_level`
    * (resolution chain: Agent explicit > this project default > built-in "medium"). Never
-   * "none" — only the four selectable tiers.
+   * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
 }
@@ -742,6 +902,14 @@ export interface SessionInfo {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /**
+   * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
+   * Unset = never pinned: runs that carry no level of their own fall back to the Agent
+   * config's `model.thinking_level`, so config edits keep taking effect. Once pinned it
+   * survives reloads and applies to every later run of this Session, and an Agent-config
+   * change no longer moves it.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Short title auto-generated by the model after the first turn; unset until generated (frontend shows "New Chat"). */
   title?: string;
   /** Session source (for list badges/folders), derived from core session_meta — the single source of truth (not stored in the DB); unset for user-created sessions. */
@@ -839,12 +1007,39 @@ export interface SessionCreateResponse {
   session: SessionInfo;
 }
 
+/** Immutable location of one record in a Session's append-only Trace. */
+export interface TracePosition {
+  /** Trace shard index (`001` on disk becomes `1`). */
+  fileIndex: number;
+  /** Zero-based record ordinal within the parsed shard. */
+  ordinal: number;
+}
+
+/** History-only transport metadata; `tracePosition` is never persisted into Trace JSONL. */
+export type HistoryMessage = OmniMessage & { tracePosition?: TracePosition };
+
+export interface SessionForkRequest {
+  /** The final root assistant text record of the completed Task to keep. */
+  position: TracePosition;
+}
+
+export interface SessionForkResponse {
+  session: SessionInfo;
+}
+
 export interface SessionResponse {
   session: SessionInfo;
 }
 
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
+  /**
+   * Pin this Session's thinking level (`none | low | medium | high | xhigh | max`, anything else
+   * is a 400). It applies to every later run of the Session that doesn't carry its own
+   * level, and replaces the Agent-config fallback for this Session. There is no unpin:
+   * the picker only offers concrete levels.
+   */
+  thinkingLevel?: ThinkingLevelName;
   /** Archive / unarchive (default list hides archived). */
   archived?: boolean;
   /** Manual rename; non-empty string, overrides the auto-generated title. */
@@ -915,7 +1110,7 @@ export interface MessagesPageInfo {
 
 /** Message history: the full messages and events from concatenating all of this Session's Trace files in order (excludes partial_*). */
 export interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: HistoryMessage[];
   /**
    * Present only while the Session is running/compacting: the in-progress stream tail
    * (open streaming fragments + the channel cursor they cover), so a client joining
@@ -942,14 +1137,22 @@ export interface MessagesResponse {
  */
 export type TaskInputPart =
   | { type: "text"; text: string }
+  /**
+   * An image that rides the conversation inline, as a base64 `data:` URL or an http(s) URL.
+   * A data URL is capped at 20MB (413 `image_too_large`) — a fixed limit that does NOT follow
+   * the admin-settable attachment cap, because an inline image is written into the Trace and
+   * read back on every history page and every resume.
+   */
   | { type: "image_url"; imageUrl: string }
   /**
    * File attachment (the composer's "+" menu): `dataUrl` is a base64 `data:` URL of the
-   * file's bytes, capped at 10MB each (413 `file_too_large` beyond that; the request as a
-   * whole still has to fit the global 20MB body limit). The server writes it into the
-   * Session scratchpad under a sanitized name and appends an `[attached file: <path>]` line
-   * to the message text — the bytes never enter the conversation, the model opens the file
-   * by path. `fileName` is the original name (no path separators, no `..`).
+   * file's bytes, capped per file and per message by the admin-settable upload limits
+   * (defaults 100MB / 120MB; 413 `file_too_large` / `payload_too_large` / `too_many_files`,
+   * and the request as a whole still has to fit the body cap those limits derive). The
+   * server writes it into the Session scratchpad under a sanitized name and appends an
+   * `[attached file: <path>]` line to the message text — the bytes never enter the
+   * conversation, the model opens the file by path. `fileName` is the original name (no path
+   * separators, no `..`).
    */
   | { type: "file"; fileName: string; dataUrl: string };
 
@@ -957,9 +1160,10 @@ export interface TaskCreateRequest {
   input: TaskInputPart[];
   /**
    * Thinking level for this Task's LLM requests (a per-turn parameter; one of
-   * `none | low | medium | high | xhigh`, anything else is a 400). Omitted = falls back to
-   * the session's default (the Agent config's `model.thinking_level`). A queued follow-up
-   * (`queueIfBusy`) keeps its level and applies it when it auto-starts.
+   * `none | low | medium | high | xhigh | max`, anything else is a 400). Omitted = falls back to
+   * the Session's pinned level (`SessionInfo.thinkingLevel`) and, when that is unset too,
+   * to the Agent config's `model.thinking_level`. A queued follow-up (`queueIfBusy`) keeps
+   * its level and applies it when it auto-starts.
    */
   thinkingLevel?: ThinkingLevelName;
   /**
@@ -1034,12 +1238,50 @@ export interface SteerRequest {
  * stream, and the whole list drops when the run exits (core discards undelivered steering).
  */
 export interface PendingSteeringInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /steer/:steerId recalls it by. */
+  id: string;
   /** The message text as accepted (trimmed); may be empty when images/files carry the message. */
   text: string;
   /** Number of images that rode along. */
   images: number;
   /** Number of file attachments that rode along. */
   files: number;
+}
+
+/**
+ * One follow-up task queued with `queueIfBusy` but not yet auto-started. Carried on
+ * `task_state` events and the SSE subscribe snapshot (like `pendingSteering`) so the
+ * composer can show each queued message's content with a recall affordance; entries leave
+ * the list when they auto-start on idle — or when DELETE /follow-ups/:followUpId recalls one.
+ */
+export interface PendingFollowUpInfo {
+  /** Server-assigned id, stable for the entry's queued lifetime: the handle DELETE /follow-ups/:followUpId recalls it by. */
+  id: string;
+  /** The queued input's text parts, joined; may be empty when images/files carry the message. */
+  text: string;
+  /** Number of images in the queued input. */
+  images: number;
+  /** Number of file attachments in the queued input. */
+  files: number;
+}
+
+/**
+ * Response of the two recall endpoints — DELETE /api/sessions/:id/steer/:steerId and
+ * DELETE /api/sessions/:id/follow-ups/:followUpId: the withdrawn message's original content,
+ * for the composer to restore into the input box for editing and resending (#287). File
+ * attachments are read back from the Session scratchpad (then deleted from it); one that
+ * disappeared meanwhile is omitted rather than failing the recall. 409 `not_pending` when
+ * the entry is no longer queued — steering already delivered to the model, or a follow-up
+ * already auto-started (or unknown id either way).
+ */
+export interface RecalledMessageResponse {
+  text: string;
+  /** The images as submitted (`data:` / http(s) URLs). */
+  images: string[];
+  /** The file attachments, re-encoded as base64 data URLs (the shape the composer submits them in). */
+  files: { fileName: string; dataUrl: string }[];
+  /** Follow-up recall only: the per-turn thinking level the entry was queued with, when one was. */
+  thinkingLevel?: ThinkingLevelName;
 }
 
 export interface ApprovalDecisionRequest {
@@ -1093,9 +1335,37 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
+      pendingFollowUps?: PendingFollowUpInfo[];
     }
   /** The model-generated title after the first turn has been persisted (for in-place list updates). */
   | { type: "session_title"; sessionId: string; title: string }
+  /**
+   * The user-channel counterpart of `task_state`: the same run-state flip, named by
+   * `sessionId`, delivered on GET /api/events.
+   *
+   * `task_state` is session-scoped and deliberately carries no id, so it only ever reaches the
+   * one conversation a tab has subscribed to — every OTHER row in that tab's Session list would
+   * otherwise keep whatever status its last list fetch returned. This event exists so the list
+   * can stay live without polling; the per-Session contract is unchanged.
+   *
+   * `lastActiveAt` and `hasTrace` are the row's own fields as they stand after the flip, both
+   * written just before publishing (`markDriven` at run start sets has_trace and stamps
+   * last_active_at; `touchLastActive` stamps again at run end). They are what let a list act on
+   * the flip without refetching: the stamp separates "this finished while I was looking
+   * elsewhere" from "this finished before I last looked", and `hasTrace` separates a Session
+   * that has now run from one that never has — a first run would otherwise settle back into the
+   * blank "never ran" row the client still believes in.
+   *
+   * Published only to the user channels of the Project's owner and members.
+   */
+  | {
+      type: "session_state";
+      sessionId: string;
+      state: SessionStatus;
+      lastActiveAt: string;
+      hasTrace: boolean;
+    }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -1208,12 +1478,22 @@ export interface TraceTaskStats {
   taskIndex: number;
   /**
    * This turn is a **compaction turn** (compaction forms its own turn); the UI marks it with
-   * a "Compaction" badge accordingly. It's treated the same as a user turn: it has Token /
+   * a badge accordingly. It's treated the same as a user turn: it has Token /
    * cost / duration / TPS, and **counts normally toward global stats** — the global totals are
    * just the sum of the per-turn cards below, the two scopes match, so adding up the per-turn
    * numbers must equal the total.
    */
   compaction?: boolean;
+  /**
+   * Which kind of compaction turn it is, from the turn's `compaction_begin`. Additive beside
+   * the flag rather than folded into it: `compaction` stays the sole gate on "is this a
+   * compaction turn", so a client that only knows the boolean keeps working unchanged, and one
+   * that reads this can name the turn for what it did — the two modes are different operations,
+   * and only `summarize` actually compacts anything (`discard` drops the old context outright).
+   * Absent on a turn analyzed before this field existed, or whose `compaction_begin` carried no
+   * mode; treat an absent value as `summarize`, which is what the badge said before the split.
+   */
+  compactionMode?: CompactionMode;
   /**
    * This turn's message index range within the **entire file** (inclusive). A single
    * sequential scan on the server tells which turn each message belongs to; the frontend

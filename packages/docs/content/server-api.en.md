@@ -10,7 +10,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 - Stack: Hono + @hono/node-server, requires Node >= 24;
 - Storage: SQLite (built-in `node:sqlite`, WAL mode) holds only indexes and aggregates — users, auth sessions, Project authorization, Agent / Session indexes, usage, UI preferences, error records, and Schedule state; all Agent, Trace, and Workspace data stays as files under `~/.penguin/data`, shared with the CLI / SDK — see the [Configuration Reference](/configuration);
 - Binding: defaults to `127.0.0.1:7364`, adjustable via the `PORT` / `HOST` environment variables;
-- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at 20MB — counted as the body is read, so a request that declares no length (chunked) is capped just the same;
+- Request bodies: writes accept JSON only (Content-Type check, one of the CSRF defenses), capped at a size **derived from the attachment budget** rather than fixed — attachments ride the request as base64 `data:` URLs (4/3 inflation), so the cap is `base64(attachmentTotalMb) + headroom for one inline image and the JSON framing`, about 190MB at the default 120MB total and falling again if an admin lowers it. It is counted as the body is read, so a request that declares no length (chunked) is capped just the same;
 - Errors share a single shape:
 
 ```text
@@ -73,7 +73,7 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl}}` |
+| GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
@@ -81,6 +81,13 @@ The proxy settings are two independent switches sharing one optional explicit ad
 - `proxyForApp` ("application uses the proxy", default on) governs the server's own outbound traffic (LLM requests, the update check, image fetches): on with `proxyUrl` set → that address for both http and https, **taking precedence over the proxy environment variables** — no environment variable needs to be configured; on without an address → the environment variables HTTP_PROXY / HTTPS_PROXY / NO_PROXY (both spellings); off → always direct.
 - `proxyForAgent` ("agent environment uses the proxy", default on) governs agent command subprocess environments: on with `proxyUrl` set → `HTTP_PROXY` / `HTTPS_PROXY` (plus lowercase twins) are injected as that address together with the merged NO_PROXY, overriding inherited values (a `socks5://` address is injected verbatim — tools vary in accepting SOCKS URLs in these variables); on without an address → the host environment passes through unchanged; off → the proxy variables are stripped (NO_PROXY is kept).
 - `proxyUrl` (default null = follow the environment variables) is the shared explicit address. Validation on PUT: the value is trimmed; empty or null clears the address; accepted are the proxy URLs undici's dispatcher takes — `http://`, `https://` and (experimental in undici) `socks5://` / `socks://` addresses, credentials allowed — plus bare `host[:port]` (normalized to `http://host[:port]`); only normalized values are stored, and the response echoes the stored form. Anything else — unparseable, or a scheme undici refuses, such as `socks4://` — is `400` with code `invalid_proxy_url`, and the rejected PUT writes nothing.
+
+The upload limits are two whole-MB integers governing composer file attachments; both apply to the next request with no restart (the validators and the body cap read them per request):
+
+- `attachmentMaxMb` (default 100) is the per-file cap — a larger file is `413` `file_too_large`.
+- `attachmentTotalMb` (default 120) is the per-message total of decoded bytes — `413` `payload_too_large` beyond it.
+- Validation on PUT: each must be an integer between 1 and 200, and the **effective** total (the value in this PUT, or the stored one when this PUT does not change it) must not be below the effective per-file cap. Anything else is `400` with code `invalid_attachment_limit`, and the rejected PUT writes nothing.
+- Not settable: the per-message file count (20) and the inline-image cap (20MB, `413` `image_too_large`). An inline image is written into the Trace and re-read on every history page and resume, so it deliberately does not follow the attachment cap up; `GET /api/me` reports all of these under `uploadLimits` so a client can pre-check a pick against the numbers actually in force.
 
 In every on-state the effective NO_PROXY always includes `localhost,127.0.0.1,::1` (loopback is never proxied).
 
@@ -114,6 +121,8 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 | GET | /api/projects/:projectId/models | List models (api_key masked) |
 | PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
+| POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order and reports the first served protocol: `{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/detect-vision | Vision capability probe: sends one 1x1 image on this model's credential (a real, billed completion): `{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
 
@@ -179,16 +188,19 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
-| PATCH | / | Update: `{approvalMode?, archived?, title?}` |
+| PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable): every later run that carries no level of its own uses it instead of the Agent config's, and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
 | GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
+| POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE event stream (next section) |
-| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead: it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/docs/goal-mode) |
+| POST | /tasks | Start a Task: `{input: TaskInputPart[], thinkingLevel?, queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead: it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/goal-mode) |
 | POST | /steer | Mid-run steering: `{text, images?}` queues a message for the running Task (delivered between turns as a standalone `[user_steering]` user message, with its images right behind it) → 202; either field can carry the message on its own, but a request with neither is a 400; 409 `not_running` when no Task is in progress |
+| DELETE | /steer/:steerId | Recall an undelivered steering message (ids ride `task_state`'s `pendingSteering`): withdraws it from the queue → 200 with its original content `{text, images, files}` (files read back from the scratchpad as data URLs, their disk copies deleted) so the composer can restore it for editing; 409 `not_pending` once it was delivered to the model |
+| DELETE | /follow-ups/:followUpId | Recall a queued follow-up task (ids ride `task_state`'s `pendingFollowUps`): removes it before it auto-starts → 200 with its original content `{text, images, files, thinkingLevel?}`; 409 `not_pending` once it already started |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
-| POST | /compact | Trigger context compaction: 202; 409 `nothing_to_compact` when there is nothing to compact |
+| POST | /compact | Trigger context compaction: 202; 409 when there is nothing to compact, the reason carried by the code — `compaction_not_configured` (this Agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet), `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart reports availability from its Trace, so an existing conversation stays compactable without running a Task first |
 | GET | /processes | Background processes the conversation started (`exec_command`s promoted past their yield window). Served from the active runtime only — an evicted or never-loaded session truthfully reports an empty list |
 | POST | /processes/:processId/kill | Stop one background process (SIGTERM to the whole process group, SIGKILL after a grace period); the entry drops from the list. 404 `process_not_found` when it is gone |
 | DELETE | /processes/:processId | Remove one **exited** process entry from the list: 409 `process_running` while it still runs (stop it instead), 404 `process_not_found` when it is already gone. The entry leaves the runtime registry with the output captured from it, so `input_command` on that `process_id` fails afterwards |
@@ -210,7 +222,7 @@ The Trace stores only complete messages (streaming `partial_*` never reaches dis
 
 ```ts
 interface MessagesResponse {
-  messages: OmniMessage[];
+  messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
     // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
     // every event published up to and including this id is already reflected in `fragments`.
@@ -225,6 +237,8 @@ interface MessagesResponse {
 ```
 
 `cursor` and `fragments` are captured atomically before the trace read starts. A client using the connect-first pattern (below) applies them after history: when the cursor's epoch matches the epoch of the SSE events it has buffered, it drops every buffered **partial** event with seq ≤ cursor (their content is already accumulated inside `fragments`), feeds `fragments` through its normal reducer, then replays the rest of the buffer. Buffered **complete** messages are never dropped by the cursor — the regular overlap dedup decides for them. `live` is omitted while idle.
+
+`tracePosition` is history-response metadata, not part of the persisted OmniMessage envelope. The Web App submits the final assistant record's immutable coordinate to `/fork`; the server validates that it closes a completed Task. A fork clones the retained Trace shards and snapshots the source scratchpad under the new Session id, rewriting system-generated local attachment markers so the fork remains usable if either Session is later deleted. Forks made from any reply in the same source Session share a persistent, language-neutral title sequence (`Source title (1)`, `Source title (2)`); deleting an older fork does not reuse its number. Running or compacting sources return 409.
 
 Workspace files may be Agent-generated, so `GET /files/content` treats them as untrusted: every response carries `X-Content-Type-Options: nosniff`, and the rest of the headers depend on the two flags (`download=1` wins over `preview=1`):
 
@@ -262,16 +276,17 @@ Key request bodies (explicit keys):
 // POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // Thinking level for this Task (a per-turn parameter, one of the five names; 400 otherwise);
-  // omitted = falls back to the Agent config
-  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh";
+  // Thinking level for this Task (a per-turn parameter, one of the six names; 400 otherwise);
+  // omitted = falls back to the Session's pinned level, then to the Agent config
+  thinkingLevel?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs
-  // File attachment: base64 data: URL, ≤10MB each (413 file_too_large beyond that), at most 20
-  // per request and 12MB of decoded bytes in total (413 too_many_files / payload_too_large;
-  // all three are checked before anything is written). The server writes it into the Session
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs, ≤20MB (413 image_too_large)
+  // File attachment: base64 data: URL, by default ≤100MB each (413 file_too_large beyond that),
+  // at most 20 per request and 120MB of decoded bytes in total (413 too_many_files /
+  // payload_too_large; all three are checked before anything is written). The two sizes are
+  // admin-settable (PUT /api/admin/settings) and reported by GET /api/me. The server writes it into the Session
   // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
   // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
   // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes
@@ -293,7 +308,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two channels (the 
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | GET /api/sessions/:sessionId/stream | The Session's message stream and run events |
-| Per user | GET /api/events | `hello` handshake and cross-Session notifications (schedule_fired / schedule_queued / session_created) |
+| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / schedule_fired / schedule_queued / session_created) |
 
 ### Wire Format
 
@@ -304,6 +319,7 @@ export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
+  | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -317,6 +333,7 @@ export type ServerEvent =
 | approval_request | A tool call escalated to human approval: every call under always-ask, plus rw / unknown-permission calls under read-only; pending approvals are resent on reconnect |
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
+| session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |

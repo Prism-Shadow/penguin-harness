@@ -42,7 +42,7 @@ import type {
 } from "./interfaces.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
-import { ContextEngine } from "./engine/context-engine.js";
+import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
   CompactionSettings,
@@ -553,6 +553,16 @@ export class Session {
   }
 
   /**
+   * Withdraws a steering input queued via `steer` before the engine delivers it: `input` is
+   * the exact list that was passed to `steer` (matched by identity). Returns false when it
+   * is no longer queued — already delivered to the model, or the run exited — so the host
+   * reports "already delivered" instead of silently pretending the recall worked.
+   */
+  unsteer(input: OmniMessage[]): boolean {
+    return this.engine?.unsteer(input) ?? false;
+  }
+
+  /**
    * Skips the in-progress reconnect backoff and fires the next retry immediately (the
    * user's "retry now" on the reconnect countdown): the attempt counter is unchanged —
    * the skipped wait does not consume an extra attempt. Returns false (a benign no-op)
@@ -574,11 +584,28 @@ export class Session {
    * Docs: /docs/agent-loop § "Compaction".
    */
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
-    // Before the first run there is no context to compact: stay a strict no-op, without
-    // bootstrapping — a session that never ran must not leave trace records (meta /
-    // tool_list_ready) behind, or an untouched session would look resumable.
-    if (!this.engine) return;
-    yield* this.engine.compact(opts);
+    if (!this.engine) {
+      // Nothing compactable and no engine: stay a strict no-op, without bootstrapping — a
+      // session that never ran must not leave trace records (meta / tool_list_ready) behind,
+      // or an untouched session would look resumable.
+      if (this.compactability() !== "ok") return;
+      // A Session resumed after a restart is the opposite case: its history is real and
+      // already on disk, and the engine simply has not been built yet (that happens on the
+      // first run). Build it here — the bootstrap injects the replayed history into the LLM,
+      // so the compaction request folds the actual conversation — rather than silently doing
+      // nothing and leaving the user waiting for a banner that never arrives.
+      const ready = yield* this.ensureReady(opts?.signal);
+      if (!ready) {
+        // Aborted mid-bootstrap: no engine exists to write the records, so the Session writes
+        // them itself (as runTask does), keeping the interruption visible in the Trace.
+        for (const m of this.abortedBootstrapRecords) {
+          await this.writeTrace(m, "aborted bootstrap record");
+        }
+        this.abortedBootstrapRecords = [];
+        return;
+      }
+    }
+    yield* this.engine!.compact(opts);
   }
 
   /**
@@ -587,8 +614,18 @@ export class Session {
    * give feedback based on this rather than triggering a silent, fruitless compaction.
    */
   compactability(): CompactAvailability {
-    // Before the first run's bootstrap there is no context at all — "empty" is the accurate answer.
-    return this.engine?.compactability() ?? "empty";
+    if (this.engine) return this.engine.compactability();
+    // No engine yet: it is built by the first run's bootstrap (ensureReady). For a Session
+    // created in this process that genuinely means an empty context, but a Session **resumed**
+    // after a process restart already carries what the Trace replay recovered — answer from
+    // that, or a user who just restarted the client is told their whole conversation has
+    // nothing to compact (the server renders this reason as a 409 `nothing_to_compact`).
+    const init = this.engineDeps.initialState;
+    return compactAvailability({
+      configured: Boolean(this.engineDeps.compaction && this.engineDeps.createLLM),
+      sessionTurns: init?.sessionTurns ?? 0,
+      fromCompaction: init?.fromCompaction ?? false,
+    });
   }
 
   /** Writes `session_meta` to the Trace before the first run/compaction; best-effort — failure doesn't interrupt the run. */

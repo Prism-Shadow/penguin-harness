@@ -40,6 +40,7 @@ import {
   type ProjectConfig,
   addModel,
   catalogEntryFor,
+  fastModeProtocol,
   formatModelRef,
   getModel,
   loadAgentVault,
@@ -129,6 +130,9 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     // Tri-state: --vision marks it supported / --no-vision marks it unsupported / neither given keeps the existing value (defaults to supported).
     .option("--vision", t.config.addVision)
     .option("--no-vision", t.config.addNoVision)
+    // Tri-state like --vision: --fast-mode enables it / --no-fast-mode clears it / neither keeps the existing value (defaults to off; only `true` is persisted).
+    .option("--fast-mode", t.config.addFastMode)
+    .option("--no-fast-mode", t.config.addNoFastMode)
     .option("--price-cache-read <n>", t.config.addPriceCacheRead, parseFloatArg)
     .option("--price-cache-write <n>", t.config.addPriceCacheWrite, parseFloatArg)
     .option("--price-output <n>", t.config.addPriceOutput, parseFloatArg)
@@ -182,6 +186,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
           ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
           ...(clientType !== undefined ? { client_type: clientType } : {}),
           ...(opts.vision !== undefined ? { vision: opts.vision } : {}),
+          ...(opts.fastMode !== undefined ? { fast_mode: opts.fastMode } : {}),
           ...(Object.keys(pricing).length > 0 ? { pricing } : {}),
           ...(opts.apiKey !== undefined ? { api_key: opts.apiKey } : {}),
           ...(baseUrl !== undefined ? { base_url: baseUrl } : {}),
@@ -193,6 +198,19 @@ export function registerConfigCommand(program: Command, t: Messages): void {
         ? t.modelUpdated(formatModelRef(ref), defaultRef)
         : t.modelAdded(formatModelRef(ref), defaultRef);
       process.stdout.write(`${line}\n`);
+      // Fast mode on a model whose AgentHub client cannot carry it makes every session
+      // request fail. The Web dialog does not offer the switch there at all, so this flag is
+      // the remaining way into that state: warn rather than silently write a config that only
+      // reveals itself at request time. A warning, not a refusal — the entry may point at an
+      // endpoint whose capability we cannot see from here (see fastModeProtocol).
+      const saved = getModel(cfg, ref);
+      if (
+        opts.fastMode === true &&
+        saved !== undefined &&
+        fastModeProtocol(saved.model_id, saved.client_type, saved.base_url) === undefined
+      ) {
+        process.stderr.write(`${t.config.fastModeUnsupported(formatModelRef(ref))}\n`);
+      }
     });
 
   model

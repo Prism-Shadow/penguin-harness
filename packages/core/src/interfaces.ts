@@ -101,7 +101,7 @@ export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<Appr
 // LLM interface
 // ---------------------------------------------------------------------------
 
-export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh";
+export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * GenerativeModel initialization config.
@@ -135,6 +135,14 @@ export interface GenerativeModelConfig {
    * llm/context-limits.ts) so small-window models never fail provider validation.
    */
   maxTokens?: number;
+  /**
+   * Per-model fast mode (from the model entry's `fast_mode` annotation): when true, every
+   * request opts into the provider's faster serving tier at premium pricing (AgentHub
+   * UniConfig `fast_mode`). Off by default. Models without a fast tier reject the parameter
+   * before any network I/O (AgentHub `UnsupportedParameterError`); `streamGenerate` reports
+   * that as a permanent `failed` outcome so the engine surfaces it instead of retrying.
+   */
+  fastMode?: boolean;
   /** Construction-time default thinking level; a per-request `GenerativeModelParameters.thinkingLevel` overrides it for that request. */
   thinkingLevel?: ThinkingLevelName;
   /** LLM Request timeout (ms): from system_config.model.timeoutMs; <=0 disables it. Defaults to 120000. */
@@ -191,6 +199,15 @@ export interface LLMOutcome {
    * can show the real reason behind a retried request.
    */
   errorMessage?: string;
+  /**
+   * Marks a `failed` outcome as deterministic: a client-side rejection thrown before any
+   * network I/O (currently AgentHub's `UnsupportedParameterError` for `fast_mode` on a model
+   * without a fast tier), which the identical request can never retry into working. The
+   * engine skips the reconnect ladder for it and aborts the run with `errorMessage` — the
+   * same terminal handling as `auth`, but the fix is a config change (turn off fast mode for
+   * the model), not a credential update, so it stays a `failed` and hosts don't gate input.
+   */
+  permanent?: boolean;
 }
 
 /**
@@ -239,6 +256,22 @@ export interface SubagentHandle {
 }
 
 /**
+ * Thinking levels the model may request for a spawned child Session (`run_subagent`'s
+ * `thinking_level` argument): the selectable tiers only — never `"none"`, mirroring the
+ * user-facing pickers (many models cannot disable thinking; see the web picker's
+ * SELECTABLE_THINKING_LEVELS and project-config's DEFAULT_CHAT_THINKING_LEVELS). Omitting the
+ * argument inherits the parent Session's effective level, so a parent genuinely running
+ * without a level still passes that down.
+ */
+export const SUBAGENT_THINKING_LEVELS: readonly ThinkingLevelName[] = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+/**
  * Child Agent runner: injected into the `run_subagent` tool so it can
  * derive and run a child Agent without a reverse dependency on Agent/Session, avoiding circular
  * dependencies. The concrete implementation is provided by the SDK composition layer (where
@@ -263,6 +296,12 @@ export interface SubagentRunner {
     modelId?: string;
     /** Provider group for `modelId`; required whenever `modelId` is given. */
     provider?: string;
+    /**
+     * Explicit thinking level for the child Session; omitted inherits the parent Session's
+     * effective level (including "no level" when the parent has none). The `run_subagent`
+     * tool restricts its `thinking_level` argument to {@link SUBAGENT_THINKING_LEVELS}.
+     */
+    thinkingLevel?: ThinkingLevelName;
   }): Promise<SubagentHandle>;
 }
 

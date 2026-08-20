@@ -12,20 +12,30 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
+  attachedFileLine,
+  attachedImageLine,
   isSessionMeta,
+  matchAttachedFileLine,
+  matchAttachedImageLine,
+  modelVisiblePath,
   parseTraceLines,
   parseUserSteeringText,
   readTraceTolerant,
+  resumeTrace,
+  scratchpadDir,
   tracesDir,
 } from "@prismshadow/penguin-core";
-import type { OmniMessage } from "@prismshadow/penguin-core";
+import type { CompactionMode, OmniMessage } from "@prismshadow/penguin-core";
 import type {
   AgentTraceSessionEntry,
   AgentTracesResponse,
   RequestSpan,
   SessionCategory,
   SessionCategoryCounts,
+  HistoryMessage,
+  TracePosition,
   ToolCallSpan,
   TraceAnalysisResponse,
   TraceEventsResponse,
@@ -71,6 +81,69 @@ const IMPORT_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 /** Recursion depth cap for sub-session expansion (run_subagent depth is already constrained by the SDK; this is just a defensive backstop against cycles). */
 const MAX_SUBAGENT_DEPTH = 4;
 
+function forkSessionId(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `session-${formatLocalDate(date)}-${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${randomUUID().replaceAll("-", "").slice(0, 8)}`;
+}
+
+function isAssistantText(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: unknown };
+  return (
+    msg.type === "model_msg" &&
+    p.type === "text" &&
+    p.role === "assistant" &&
+    typeof p.text === "string" &&
+    p.text.trim() !== ""
+  );
+}
+
+function isTaskStartingUser(msg: OmniMessage): boolean {
+  const p = msg.payload as { type?: string; role?: string; text?: unknown };
+  if (msg.type !== "model_msg") return false;
+  if (p.type === "image_url") return true;
+  if (p.type !== "text" || p.role !== "user" || typeof p.text !== "string") return false;
+  if (parseUserSteeringText(p.text) !== null) return false;
+  return !p.text.startsWith("[context_summary]") && !p.text.startsWith("<context_summary>");
+}
+
+function rewriteForkText(text: string, sourceScratchpad: string, forkScratchpad: string): string {
+  const source = modelVisiblePath(sourceScratchpad).replace(/\/$/, "");
+  const target = modelVisiblePath(forkScratchpad).replace(/\/$/, "");
+  const rewriteTarget = (value: string): string | null => {
+    if (value === source) return target;
+    if (value.startsWith(`${source}/`)) return `${target}${value.slice(source.length)}`;
+    return null;
+  };
+  return text
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      const image = matchAttachedImageLine(trimmed);
+      if (image !== null) {
+        const rewritten = rewriteTarget(image);
+        return rewritten === null ? line : line.replace(trimmed, attachedImageLine(rewritten));
+      }
+      const file = matchAttachedFileLine(trimmed);
+      if (file !== null) {
+        const rewritten = rewriteTarget(file);
+        return rewritten === null ? line : line.replace(trimmed, attachedFileLine(rewritten));
+      }
+      return line;
+    })
+    .join("\n");
+}
+
+function positioned(
+  messages: readonly OmniMessage[],
+  fileIndex: number,
+  fromOrdinal = 0,
+): HistoryMessage[] {
+  return messages.map((msg, i) => ({
+    ...msg,
+    tracePosition: { fileIndex, ordinal: fromOrdinal + i },
+  }));
+}
+
 interface LocatedFile {
   path: string;
   date: string;
@@ -90,6 +163,11 @@ export interface MessagesPageResult {
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+}
+
+export interface ForkTraceResult {
+  sessionId: string;
+  createdAt: string;
 }
 
 /**
@@ -219,7 +297,7 @@ export class TraceService {
     projectId: string,
     agentId: string,
     sessionId: string,
-  ): Promise<OmniMessage[]> {
+  ): Promise<HistoryMessage[]> {
     const ctx: ExpandCtx = {
       projectScanned: false,
       ancestry: new Set([sessionId]),
@@ -229,7 +307,8 @@ export class TraceService {
     const files = await this.locateAll(projectId, agentId, sessionId);
     const out: OmniMessage[] = [];
     for (const file of files) {
-      out.push(...(await this.expandMessages(projectId, await this.readShard(file.path), ctx)));
+      const raw = await this.readShard(file.path);
+      out.push(...(await this.expandMessages(projectId, positioned(raw, file.index), ctx)));
     }
     return out;
   }
@@ -482,7 +561,7 @@ export class TraceService {
       prior = initialScanState().totals;
     }
 
-    const windowRaw: OmniMessage[] = [];
+    const windowRaw: HistoryMessage[] = [];
     for (let pos = start.pos; pos <= endPos; pos++) {
       const messages = shardMessages.get(pos) ?? (await this.readShard(files[pos]!.path));
       const from = pos === start.pos ? start.ordinal : 0;
@@ -490,10 +569,188 @@ export class TraceService {
         pos === endPos && endOrdinal !== null
           ? Math.min(endOrdinal, messages.length)
           : messages.length;
-      for (let i = from; i < to; i++) windowRaw.push(messages[i]!);
+      for (let i = from; i < to; i++) {
+        windowRaw.push({
+          ...messages[i]!,
+          tracePosition: { fileIndex: files[pos]!.index, ordinal: i },
+        });
+      }
     }
     const expanded = await this.expandMessages(projectId, windowRaw, ctx);
     return { messages: expanded, ...(before !== undefined ? { before } : {}), prior };
+  }
+
+  /**
+   * Clone a source Session through one completed root-assistant reply. The supplied position
+   * names the reply record itself; this method validates it against raw Trace structure and
+   * chooses the exclusive cut after the request's closing records but before a later Task or
+   * compaction. Earlier shards stay intact so the fork renders the same history, while core
+   * resumes from the selected shard exactly as it would after a restart.
+   */
+  async forkSessionTrace(
+    projectId: string,
+    agentId: string,
+    sourceSessionId: string,
+    position: TracePosition,
+  ): Promise<ForkTraceResult> {
+    const invalid = (message: string) => new HttpError(400, "invalid_fork_position", message);
+    const files = await this.locateAll(projectId, agentId, sourceSessionId);
+    const targetFilePos = files.findIndex((file) => file.index === position.fileIndex);
+    if (targetFilePos < 0) throw invalid("The selected reply no longer exists in this Session.");
+
+    const shards: OmniMessage[][] = [];
+    for (let i = 0; i <= targetFilePos; i++) shards.push(await this.readShard(files[i]!.path));
+    const targetShard = shards[targetFilePos]!;
+    const target = targetShard[position.ordinal];
+    if (!target || !isAssistantText(target)) {
+      throw invalid("The fork position must identify a completed assistant reply.");
+    }
+
+    // A compaction's assistant summary is a real model message in Trace but never a visible
+    // assistant reply. Reject a forged position inside that hidden span.
+    let inCompaction = false;
+    for (let filePos = 0; filePos <= targetFilePos; filePos++) {
+      const messages = shards[filePos]!;
+      const stop = filePos === targetFilePos ? position.ordinal : messages.length;
+      for (let i = 0; i < stop; i++) {
+        const p = messages[i]!.payload as { type?: string };
+        if (messages[i]!.type === "event_msg" && p.type === "compaction_begin") {
+          inCompaction = true;
+        } else if (messages[i]!.type === "event_msg" && p.type === "compaction_end") {
+          inCompaction = false;
+        }
+      }
+    }
+    if (inCompaction) throw invalid("A compaction summary cannot be used as a fork point.");
+
+    let cutOrdinal = position.ordinal + 1;
+    let completedRequest = false;
+    for (let i = position.ordinal + 1; i < targetShard.length; i++) {
+      const msg = targetShard[i]!;
+      const p = msg.payload as { type?: string; status?: string };
+      // The next user Task and housekeeping compaction both belong after the selected reply.
+      if (isTaskStartingUser(msg) || (msg.type === "event_msg" && p.type === "compaction_begin")) {
+        break;
+      }
+      // A Task may contain several assistant segments/requests. Only the final visible reply
+      // gets a footer-level fork action; an intermediate segment is not a safe boundary.
+      if (isAssistantText(msg)) {
+        throw invalid("The selected record is not the final assistant reply of its Task.");
+      }
+      cutOrdinal = i + 1;
+      if (msg.type === "event_msg" && p.type === "request_end") {
+        if (p.status === "completed") completedRequest = true;
+        else throw invalid("The selected assistant reply belongs to an incomplete request.");
+      }
+    }
+    if (!completedRequest) throw invalid("The selected assistant reply has not completed yet.");
+
+    const resumed = resumeTrace(targetShard.slice(0, cutOrdinal));
+    if (
+      resumed.contextClosed ||
+      resumed.carryOver.length > 0 ||
+      !resumed.history.some((message) => message === target)
+    ) {
+      throw invalid("The selected reply is not a complete resumable Task boundary.");
+    }
+
+    const firstMeta = shards.flat().find(isSessionMeta);
+    if (!firstMeta) throw invalid("The source Trace has no session metadata.");
+
+    const created = new Date();
+    const createdAt = created.toISOString();
+    const newSessionId = forkSessionId(created);
+    const scratchpadRoot = scratchpadDir(this.root, projectId, agentId);
+    const sourceScratchpad = path.join(scratchpadRoot, sourceSessionId);
+    const forkScratchpad = path.join(scratchpadRoot, newSessionId);
+    const written: string[] = [];
+
+    const rewrite = (msg: OmniMessage): OmniMessage => {
+      if (isSessionMeta(msg)) {
+        const sourcePrompt = msg.payload.system_prompt;
+        const sourceVisible = modelVisiblePath(sourceScratchpad);
+        const forkVisible = modelVisiblePath(forkScratchpad);
+        const payload = {
+          ...msg.payload,
+          session_id: newSessionId,
+          system_prompt: sourcePrompt
+            .split(sourceSessionId)
+            .join(newSessionId)
+            .split(sourceVisible)
+            .join(forkVisible),
+        };
+        delete payload.source;
+        return { ...msg, payload };
+      }
+      const p = msg.payload as { type?: string; role?: string; text?: unknown };
+      if (
+        msg.type === "model_msg" &&
+        p.type === "text" &&
+        p.role === "user" &&
+        typeof p.text === "string"
+      ) {
+        return {
+          ...msg,
+          payload: {
+            ...msg.payload,
+            text: rewriteForkText(p.text, sourceScratchpad, forkScratchpad),
+          },
+        } as OmniMessage;
+      }
+      return msg;
+    };
+
+    try {
+      // Snapshot the whole Session scratchpad: besides composer attachments it may contain
+      // recovery archives or temporary files explicitly referenced by the retained history.
+      try {
+        const stat = await fs.stat(sourceScratchpad);
+        if (stat.isDirectory()) {
+          await fs.mkdir(scratchpadRoot, { recursive: true });
+          await fs.cp(sourceScratchpad, forkScratchpad, {
+            recursive: true,
+            force: false,
+            errorOnExist: true,
+          });
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+
+      for (let filePos = 0; filePos <= targetFilePos; filePos++) {
+        const sourceFile = files[filePos]!;
+        const sourceMessages = shards[filePos]!;
+        const limit = filePos === targetFilePos ? cutOrdinal : sourceMessages.length;
+        const records = sourceMessages.slice(0, limit).map(rewrite);
+        if (!isSessionMeta(records[0]!)) {
+          throw invalid(`Trace shard ${sourceFile.index} does not start with session metadata.`);
+        }
+        const dir = path.join(tracesDir(this.root, projectId, agentId), sourceFile.date);
+        await fs.mkdir(dir, { recursive: true });
+        const file = path.join(
+          dir,
+          `${newSessionId}_${String(sourceFile.index).padStart(3, "0")}.jsonl`,
+        );
+        const body = records.map((record) => JSON.stringify(record)).join("\n") + "\n";
+        await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
+        written.push(file);
+        this.deps.index.registerImportedFile({
+          projectId,
+          agentId,
+          sessionId: newSessionId,
+          fileIndex: sourceFile.index,
+          date: sourceFile.date,
+          sizeBytes: Buffer.byteLength(body, "utf8"),
+          records,
+        });
+      }
+      return { sessionId: newSessionId, createdAt };
+    } catch (err) {
+      await Promise.all(written.map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
+      await fs.rm(forkScratchpad, { recursive: true, force: true }).catch(() => undefined);
+      this.deps.index.removeSession(projectId, agentId, newSessionId);
+      throw err;
+    }
   }
 
   /** List of Trace files (index / date / size / mtime). */
@@ -586,6 +843,12 @@ export class TraceService {
     // compaction request entirely from TPS — matching the same convention as
     // compactionActive in the Chat page's task-stats.
     let compactionActive = false;
+    // The active compaction's mode, read off its `compaction_begin`, so the turn can be
+    // reported as the operation it actually was: `discard` drops the old context outright and
+    // compacts nothing, so calling it a compaction turn in the UI reads wrong. Null outside a
+    // compaction and for a `compaction_begin` carrying no recognizable mode — the DTO field is
+    // then simply left absent, which consumers read as the historical `summarize`.
+    let compactionMode: CompactionMode | null = null;
     // Token / duration totals per Task (computed server-side over the whole file:
     // frontend events are fetched in pages, so summing them there would be
     // mismatched).
@@ -706,7 +969,12 @@ export class TraceService {
           requests.push(openRequest);
           if (!hasOrigin) {
             const t = ensureTask(taskIndex);
-            if (compactionActive) t.compaction = true; // This turn is a compaction turn
+            if (compactionActive) {
+              t.compaction = true; // This turn is a compaction turn
+              // Carried alongside the flag, never instead of it: the flag stays the sole gate
+              // on "is this a compaction turn" for clients that predate the mode.
+              if (compactionMode !== null) t.compactionMode = compactionMode;
+            }
             // This turn's duration starts at the first request_begin. It doesn't
             // use the timestamp of the user Prompt / compaction summary or other
             // user text: `[context_summary]` is created during compaction but only
@@ -816,6 +1084,8 @@ export class TraceService {
           if (!hasOrigin) {
             continuation = false;
             compactionActive = true;
+            const mode = p.mode;
+            compactionMode = mode === "summarize" || mode === "discard" ? mode : null;
           }
         } else if (p.type === "compaction_end") {
           // Both ends of compaction break a continuation. This closing one can't
@@ -826,6 +1096,7 @@ export class TraceService {
           if (!hasOrigin) {
             continuation = false;
             compactionActive = false;
+            compactionMode = null;
           }
         } else if (p.type === "token_usage") {
           const request = p.request as
@@ -962,6 +1233,20 @@ export class TraceService {
       const t = ensureTask(ti);
       if (t.messageFrom < 0 || k < t.messageFrom) t.messageFrom = k;
       if (k > t.messageTo) t.messageTo = k;
+      // Flag the compaction turn from its own `compaction_begin` rather than only from the
+      // compaction request: a `discard` issues no request at all (core emits begin/end
+      // back-to-back, see context-engine's discardContext), so keying off request_begin alone
+      // left a discarded round as a bare, unlabelled card. Attribution has resolved the owning
+      // turn by this pass, and for `summarize` it lands on the same turn the request-side path
+      // already flagged. Subagent messages are skipped for the same reason the main loop skips
+      // them — a child's compaction is not this turn's.
+      const cur = messages[k]!;
+      const cp = cur.payload as { type?: string; mode?: unknown };
+      const fromSubagent = cur.origin !== undefined && cur.origin.length > 0;
+      if (!fromSubagent && cur.type === "event_msg" && cp.type === "compaction_begin") {
+        t.compaction = true;
+        if (cp.mode === "summarize" || cp.mode === "discard") t.compactionMode = cp.mode;
+      }
       // session_meta is only **listed** in the first turn, and doesn't count
       // toward the end-of-turn time: it's metadata written when the session was
       // created, and its timestamp has nothing to do with this turn (it also gets

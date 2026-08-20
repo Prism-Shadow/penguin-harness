@@ -59,10 +59,11 @@ Model entry (`[[models]]`) fields:
 | `provider` | Provider group; together with `model_id` forms the entry's unique key |
 | `model_id` | Upstream request id, sent to AgentHub unchanged |
 | `context_window` | Context window size |
-| `client_type` | AgentHub client protocol; inferred from `model_id` by default — third-party OpenAI-compatible models should set `openai-chat` (the pre-0.4.2 `openai` spelling is a deprecated alias, normalized on read) |
+| `client_type` | AgentHub client protocol; inferred from `model_id` by default — custom endpoints use a generic protocol client: `openai-responses`, `ant-messages`, or `openai-chat` (the Web dialog can detect which one a base URL serves; the pre-0.4.2 `openai` spelling is a deprecated alias of `openai-chat`, normalized on read) |
 | `display_name` | Display name; persisted only when it differs from the built-in catalog |
 | `vision` | Whether image input is supported; defaults to supported |
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
+| `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
 | `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |
@@ -102,7 +103,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `system_prompt` | built-in template | Required; the only template with placeholder substitution |
 | `max_turns` | `-1` | Maximum LLM turns per Task (`-1` = unlimited; a positive integer caps the Task) |
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
-| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh`; the session default, overridable per-Task |
+| `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
 | `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction; the effective threshold is capped at the model's `context_window` − 2048 so compaction fires before a small window overflows |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |

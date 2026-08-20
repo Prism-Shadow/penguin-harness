@@ -54,6 +54,9 @@ interface LLMOutcome {
   message?: string;     // 失败详情:failed/auth 时携带;timeout/malformed 捕获到具体
                         // 错误时也携带——透传到 request_end,错误面板据此展示被重试
                         // 请求背后的真实原因
+  permanent?: boolean;  // 标记该 failed 为确定性失败(发起网络请求前在客户端就被拒绝,
+                        // 如在没有 fast 档位的模型上启用 fast_mode):引擎直接带消息
+                        // 终止,不再重试
 }
 ```
 
@@ -62,7 +65,7 @@ interface LLMOutcome {
 | `completed` | 正常完成(已产出 token_usage) | 继续下一步 |
 | `timeout` | 超时/传输层断连 | 同一 run 内自动重连 |
 | `malformed` | 响应解析失败 | 同一 run 内自动重连 |
-| `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed` |
+| `failed` | 分类器未判定为瞬时的错误(参数等) | 同样在同一 run 内自动重连——状态本身仍如实上报为 `failed`。例外：携带 `permanent: true`（确定性的客户端拒绝，如在没有 fast 档位的模型上启用快速模式）时立即带消息停止 |
 | `aborted` | 用户中断 | 停止交还用户 |
 | `auth` | 凭据被拒绝 | 停止交还用户——唯一从不重试的 LLM 终态；宿主据此禁用输入，直到该模型的 API key 被更新 |
 
@@ -82,7 +85,8 @@ interface GenerativeModelConfig {
   systemPrompt?: string;           // 占位符替换完成后的完整系统提示词
   contextWindow?: number;
   maxTokens?: number;
-  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh"
+  fastMode?: boolean;              // 单模型快速模式(AgentHub fast_mode;溢价快速档位),默认关闭
+  thinkingLevel?: ThinkingLevelName;   // 构造期默认档位(逐请求参数可覆盖);"none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // 单次 Request 超时,默认 120000;<=0 关闭
   toolCallIds?: ToolCallIdAllocator;   // Session 级 tool_call_id 唯一性登记表(压缩重建时传同一实例)
 }
@@ -226,7 +230,9 @@ interface SubagentRunner {
   // 深度超限、目标 Agent 不存在等前置错误以抛出表达(由 Environment 收敛为 failed)
   spawn(input: {
     agentId?: string;     // 缺省复用当前 Agent(自派生)
-    modelId?: string;     // 缺省继承父 Session 的模型
+    modelId?: string;     // 与 provider 成对给出;两者都缺省时继承父 Session 的模型
+    provider?: string;    // 给出 modelId 时必填(模型引用即二元组)
+    thinkingLevel?: ThinkingLevelName; // 缺省继承父 Session 的有效思考等级
   }): Promise<SubagentHandle>;
 }
 

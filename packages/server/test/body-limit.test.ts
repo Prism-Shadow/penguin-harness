@@ -1,17 +1,24 @@
 /**
- * Global request body cap (`/api/*`, 20MB).
+ * Global request body cap (`/api/*`).
  *
  * The cap used to read `content-length` only, which a chunked request simply does not carry —
  * `Number(undefined ?? 0)` is 0, so a body of any size passed straight through to the sinks
  * behind it (task input images, file attachments, Trace import). These tests post a body with
  * **no declared length** and require the same 413 `payload_too_large` a declared one gets, plus
  * an under-cap streamed body still arriving intact (the cap has to re-feed what it counted).
+ *
+ * The cap is no longer a constant: it is derived from the admin-settable attachment budget
+ * (bodyLimitBytes). So these tests turn that budget down to its floor and compute the expected
+ * cap with the same helper the server uses — which makes them a test of the derivation too, not
+ * just of the middleware. A hardcoded byte count here would silently stop testing the cap the
+ * moment the defaults moved.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assistantText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
+import { bodyLimitBytes, MIN_ATTACHMENT_MB } from "../src/services/attachment-limits.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -57,6 +64,8 @@ describe("request body cap", () => {
   let api: ReturnType<typeof apiClient>;
   let cookie: string;
   let runs: OmniMessage[][];
+  /** The body cap implied by the budget set in beforeEach. */
+  let cap: number;
 
   const postStream = (fill: number) =>
     t.app.request(`/api/sessions/${SID}/tasks`, {
@@ -100,13 +109,21 @@ describe("request body cap", () => {
       async *compact() {},
     };
     t.deps.manager.adopt(row, session);
+    // Smallest budget an admin can set, so the derived cap is as low as it goes and the
+    // over-cap body these tests have to stream stays cheap to produce.
+    t.deps.serverSettingsRepo.setAttachmentMaxMb(MIN_ATTACHMENT_MB);
+    t.deps.serverSettingsRepo.setAttachmentTotalMb(MIN_ATTACHMENT_MB);
+    cap = bodyLimitBytes({
+      attachmentMaxMb: MIN_ATTACHMENT_MB,
+      attachmentTotalMb: MIN_ATTACHMENT_MB,
+    });
   });
   afterEach(async () => {
     await t.cleanup();
   });
 
   it("a body with no declared length is still capped", async () => {
-    const res = await postStream(24 * MB);
+    const res = await postStream(cap + 2 * MB);
     expect(res.status).toBe(413);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
       "payload_too_large",
@@ -122,7 +139,7 @@ describe("request body cap", () => {
       headers: {
         cookie,
         "content-type": "application/json",
-        "content-length": String(21 * MB),
+        "content-length": String(cap + MB),
       },
       body: JSON.stringify({ input: [{ type: "text", text: "small" }] }),
     });

@@ -42,6 +42,18 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Admin-only user-menu row opening the upload-limits dialog. */
+    uploadLimitsMenu: "Upload limits…",
+    uploadLimitsDialogTitle: "Upload limits",
+    /** The dialog's two number fields, both in whole MB. */
+    attachmentMaxMb: "Max attachment size (MB)",
+    attachmentTotalMb: "Max total per message (MB)",
+    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
+    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
+      `${min}–${max} MB; the total may not be below the per-file limit. A message may carry at ` +
+      `most ${count} attachments. Images placed inline in the conversation keep a separate ` +
+      `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
+      `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
@@ -301,7 +313,11 @@ export const en: Strings = {
       ["high", "Enables a higher tier of extended reasoning; slower responses."],
       [
         "xhigh",
-        "Enables the highest tier of extended reasoning; identical to high on some models.",
+        "Enables an extended tier of reasoning beyond high; identical to high on some models.",
+      ],
+      [
+        "max",
+        "Enables the deepest tier of extended reasoning; slowest and identical to xhigh on some models.",
       ],
     ] as ReadonlyArray<readonly [string, string]>,
     thinkingLevelNoneKept:
@@ -469,7 +485,7 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: models use the OpenAI Chat Completions protocol (base URL required; an empty API key reads OPENAI_API_KEY). Groups live on model entries — the group appears once its first model is saved.",
+      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
@@ -509,8 +525,48 @@ export const en: Strings = {
       "Caps output tokens per request; leave empty to inherit the agent setting — lower it for small-context models",
     maxTokensInvalid: "Must be a positive integer",
     clientTypeLocked: (t: string): string => `Protocol: ${t} (kept as configured; not editable)`,
+    protocol: "Protocol",
+    protocolNames: {
+      "openai-responses": "OpenAI Responses",
+      "ant-messages": "Anthropic Messages",
+      "openai-chat": "OpenAI Chat Completions",
+    } as Record<string, string | undefined>,
+    protocolTriggerTitle: (name: string): string => `Protocol: ${name}. Click to change it.`,
+    /** Suffix placeholder while no protocol is selected — never a protocol name, so nothing looks pre-chosen. */
+    protocolUnset: "Select protocol",
+    detectProtocol: "Detect",
+    detectProtocolHint: "Probe the base URL and apply the protocol it serves",
+    detecting: "Detecting…",
+    /** Success toast; the protocol itself then shows in the base URL field's suffix. */
+    detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
+    detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
+    /** Save-time detection came back empty: the save proceeds on the compatible client. */
+    detectFellBack: "Protocol not detected; saved as OpenAI Chat Completions",
+    addProtocolHintDetect:
+      "Pick the protocol from the base URL field's suffix (OpenAI Responses / Anthropic Messages / OpenAI Chat Completions), or press Detect to probe the endpoint — saving without one detects it first",
+    addTitleCustom: "Add model",
     vision: "Vision support",
+    /** Detect action beside the vision switch. */
+    detectVision: "Detect",
+    detectingVision: "Testing…",
+    detectVisionHint:
+      "Send one tiny test image to see whether this model accepts images (uses your API key)",
+    detectVisionNeedsId: "Fill in the model id first, then detect.",
+    detectVisionOk: "This model accepts images; vision turned on",
+    detectVisionNo: "This model does not accept images; vision left off",
     visionOffProxyHint: "Images are read via the vision proxy model",
+    fastMode: "Fast mode",
+    fastModeHint:
+      "Faster output, billed at the provider's premium tier; the Cost center still counts it at the entry's standard prices",
+    fastModeUnsupported:
+      "This model does not support fast mode — turn it off, or its requests will fail",
+    fastModeConfirmTitle: "Enable fast mode",
+    fastModeConfirmBody:
+      "Fast mode is billed at the provider's premium price list (MiniMax charges 1.5x standard; OpenAI and Anthropic publish separate premium rates). The entry's recorded per-token prices are not adjusted, so the Cost center will under-report this usage.",
+    fastModeConfirmPreview:
+      "Anthropic's fast mode is a limited research preview: until your organization is granted access, requests return a 429 rate-limit error.",
+    fastModeBadge: "Fast",
     visionBadge: "Vision",
     freeBadge: "Free",
     visionModelBadge: "Proxy vision",
@@ -534,7 +590,8 @@ export const en: Strings = {
     clearApiKey: "Clear stored API key",
     baseUrl: "Custom base URL",
     baseUrlHint: "Leave empty to use the provider default",
-    baseUrlSuffixTitle: "The client appends the grey protocol path to the base URL",
+    baseUrlSuffixTitle:
+      "The client appends the protocol path shown at the field's right edge to the base URL",
     baseUrlRequired: "A base URL is required",
     contextWindowDefaultHint: (n: number): string => `Defaults to ${n} if empty`,
     confirmDeleteTitle: "Delete model",
@@ -849,13 +906,28 @@ export const en: Strings = {
     chooseAgent: "Choose agent",
     chooseModel: "Choose model",
     thinkingLevel: "Thinking level",
+    /** Tier names for the thinking-level controls: the wire value itself, so the label names the value actually sent (per maintainer request). `none` exists purely to display a stored legacy value — it is never offered as a choice (many models cannot disable thinking). */
     thinkingLevelNames: {
-      none: "None",
-      low: "Low",
-      medium: "Medium",
-      high: "High",
-      xhigh: "Extreme High",
+      none: "none",
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
     },
+    /** English has no trigger/menu split to make: the name above already IS the wire value, so a menu row annotating it would only repeat itself. Taking just the name (the second parameter is dropped) is how this locale says "same text on every surface". */
+    thinkingLevelMenuName: (name: string): string => name,
+    thinkingSwitchTitle: "Switch thinking level",
+    thinkingSwitchBody: (to: string): string =>
+      `Switch the thinking level to "${to}"? Switching mid-conversation lowers the prompt-cache hit rate and raises cost; compacting the context first is cheaper.`,
+    thinkingSwitchBusyHint: "This conversation is still working — compaction has to wait for it.",
+    thinkingSwitchCompactFirst: "Compact, then switch",
+    thinkingSwitchConfirm: "Switch anyway",
+    thinkingSwitchCompacting: "Compacting the context — the thinking level switches when it ends.",
+    thinkingSwitchApplied: (to: string): string =>
+      `Context compacted; thinking level switched to "${to}".`,
+    thinkingSwitchCompactFailed:
+      "The compaction did not finish; the thinking level was switched anyway.",
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -1027,6 +1099,8 @@ Scenarios:
     } as Record<string, string>,
     statusRunning: "Running",
     statusCompacting: "Compacting",
+    /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
+    statusCompletedUnread: "Done, unread",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1069,6 +1143,13 @@ Scenarios:
     /** Server-side queued follow-up count (auto-sent once the current run finishes). */
     followUpQueuedChip: (n: number) =>
       `${n} follow-up ${n === 1 ? "message" : "messages"} queued — sent when this run finishes`,
+    /** One queued follow-up's hint line, with its content (per-entry variant of followUpQueuedChip). */
+    followUpQueuedItem: (content: string) =>
+      `Follow-up queued — sent when this run finishes: ${content}`,
+    /** Accessible name of the recall control on a queued steering / follow-up line — it is icon-only (a curved-back arrow), so this is what names it for screen readers (#287). */
+    recallQueued: "Recall",
+    /** Its tooltip: what the icon does, spelled out. */
+    recallQueuedTitle: "Recall to the input box to edit and resend",
     send: "Send",
     stop: "Stop",
     compact: "Compact context",
@@ -1217,9 +1298,7 @@ Scenarios:
     mcpToolsCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
-    compactionTitle: "Compaction",
-    compactionDone: (mode: string) =>
-      mode === "discard" ? "old context discarded" : "switched to the summarized context",
+    compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       return errorMessage !== undefined
@@ -1233,6 +1312,11 @@ Scenarios:
     approvalWaiting: "awaiting approval",
     copyCode: "Copy code",
     copyReply: "Copy reply",
+    forkSession: "Fork chat from here",
+    forkSessionConfirmBody:
+      "This copies the conversation up to this reply into a new chat. The original chat stays unchanged.",
+    forkSessionConfirmAction: "Fork",
+    forkSessionFailed: "This reply could not be located. Refresh and try again.",
     copyMessage: "Copy message",
     deleteSession: "Delete chat",
     renameSession: "Rename chat",
@@ -1248,7 +1332,6 @@ Scenarios:
     archiveSession: "Archive",
     unarchiveSession: "Unarchive",
     /** Per-row ellipsis overflow menu (pin / rename / archive / delete live inside it) and the row-level pin. */
-    sessionMenu: "Chat options",
     pinSession: "Pin",
     unpinSession: "Unpin",
     pinnedSession: "Pinned",
@@ -1271,8 +1354,13 @@ Scenarios:
     uploadFile: "Upload file",
     uploadFileDesc: "Saved to the session scratchpad; the model reads them by path",
     removeFile: "Remove file",
-    attachmentTooLarge: (name: string): string =>
-      `${name} exceeds the 10MB limit and was not attached.`,
+    attachmentTooLarge: (name: string, limitMb: number): string =>
+      `${name} exceeds the ${limitMb}MB limit and was not attached.`,
+    /** Overlay covering the chat area while files are dragged over it (drag-and-drop upload). */
+    dropFilesTitle: "Drop files to attach",
+    dropFilesDesc: "Images and files are added to the message draft",
+    /** Toast when non-image files are dropped in goal mode (the objective carries images only). */
+    dropFilesGoalHint: "Goal mode takes images only; the files were not attached.",
     goalMode: "Goal mode",
     goalModeDesc: "Loop until the goal completes",
     goalBudgetLabel: "Token budget",
@@ -1401,7 +1489,6 @@ Scenarios:
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
     compactions: "compactions",
-    compactionRound: "Compaction",
     empty: "No Traces for this agent",
     inProgress: "in progress",
     systemPrompt: "System prompt",
@@ -1456,32 +1543,62 @@ Scenarios:
       admin_required: "Only an admin can perform this operation.",
       desktop_single_user: "The desktop app is single-user; user management is unavailable.",
       not_found: "This resource does not exist, or you do not have access.",
+      internal: "The server hit an internal error. Please try again shortly.",
       agent_not_found: "This agent no longer exists.",
       unknown_agent: "That agent does not exist in this Project.",
       agent_exists: "This agent id is already taken.",
+      agent_deleting: "This agent is being deleted.",
       project_exists: "This Project id is already taken.",
+      project_not_found: "This Project no longer exists, or you do not have access.",
+      cannot_delete_last_project: "This is the last Project and cannot be deleted.",
       user_exists: "This username is already taken.",
       user_not_found: "This user no longer exists.",
       cannot_delete_admin: "The built-in admin cannot be deleted.",
       member_not_found: "This user is not a member of the Project.",
+      already_member: "This user is already a member of the Project.",
+      already_owner: "This user is already an owner of the Project.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",
+      skill_too_large: "This skill directory exceeds the import limits.",
       file_not_found: "This file no longer exists.",
+      not_pending: "This message already went out and can no longer be recalled.",
       file_too_large: "The file is too large.",
       too_many_files: "Too many files attached to one message.",
       payload_too_large: "The request is too large.",
+      image_too_large: "The image is too large to send inline.",
       dir_not_absolute: "The directory must be an absolute path.",
       dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
       workspace_missing: "This Session's Workspace no longer exists.",
+      workspace_not_found: "That Workspace does not exist, or is not a directory.",
+      session_not_found: "This Session no longer exists, or you do not have access.",
+      session_deleting: "This Session is being deleted.",
+      approval_not_found: "This approval request was already answered, or is no longer valid.",
+      process_not_found: "This background process already exited, or was removed.",
+      process_running: "This background process is still running — stop it before removing it.",
+      memory_file_not_found: "This memory file no longer exists.",
+      memory_scope_not_found: "This memory scope no longer exists.",
       task_in_progress: "This Session already has a task running.",
+      compacting: "This Session is compacting its context and is not accepting new input.",
+      shutting_down: "The server is shutting down. Please try again shortly.",
+      // The three "cannot compact" reasons each have their own server code, so each keeps its
+      // own explanation here — collapsing them into one sentence would tell a user who just
+      // compacted that they have never spoken.
+      compaction_not_configured: "This agent does not have context compaction configured.",
+      nothing_to_compact:
+        "There is nothing to compact in the current context yet (no completed conversation turn).",
+      already_compacted:
+        "The context was just compacted and nothing has been said since — no need to compact again.",
       version_conflict: "The snapshot's version is not newer than the current one.",
       invalid_title: "The title is invalid.",
       invalid_proxy_url:
         "Invalid proxy address — use an http(s):// or socks5:// proxy URL, or host[:port].",
+      invalid_attachment_limit:
+        "Invalid upload limit — use a whole number of MB inside the allowed range, with the total no lower than the per-file limit.",
       invalid_trace: "This file is not a valid Trace file.",
+      trace_not_found: "This Trace file no longer exists.",
       trace_session_exists:
         "This agent already has a Session with that id; a duplicate Trace cannot be imported.",
     },

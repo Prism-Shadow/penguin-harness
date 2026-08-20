@@ -47,7 +47,7 @@ import {
   formatSessionId,
   sessionEnvironment,
 } from "./internal/session-support.js";
-import { userText, withOrigin } from "./omnimessage/index.js";
+import { compactionEnd, userText, withOrigin } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
   MessageOrigin,
@@ -113,9 +113,10 @@ export interface CreateSessionOptions {
    *   `"medium"` (see `configuredThinkingLevel`);
    * - `null` means "no thinking level": the config fallback is suppressed entirely
    *   (nothing goes into the LLM config; session_meta echoes `"default"`).
-   * Subagent spawning always passes the parent Session's effective level (its level, or
-   * `null` when the parent has none), so a child Session thinks at the parent's level and
-   * never falls back to the child Agent's own config.
+   * Subagent spawning passes the parent Session's effective level (its level, or `null`
+   * when the parent has none) unless the spawn requests an explicit level (`run_subagent`'s
+   * `thinking_level`) — either way a child Session never falls back to the child Agent's
+   * own config.
    */
   thinkingLevel?: ThinkingLevelName | null;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
@@ -484,6 +485,25 @@ export class Agent {
       startIndex: located.index,
     });
 
+    // A compaction the user quit out of (a compaction_begin with no end — the process died
+    // mid-request) is simply a **failed** compaction: close the span with a `failed`
+    // compaction_end before any new record lands, and discard whatever half-summary it had
+    // written — nothing is reconstructed from it (the original context is intact and the
+    // standing threshold makes the compaction up at the next trigger). Closing the span is
+    // what keeps the rest of the conversation visible: readers treat messages between the
+    // paired events as compaction-internal, so an unclosed span would hide everything the
+    // user sends afterwards, and tool outputs whose calls it swallowed would render as
+    // "unknown tool" cards (issue #288). Best-effort like every Trace write: a failure here
+    // must not block the resume itself.
+    if (resumed.danglingCompaction) {
+      try {
+        await trace.write(compactionEnd({ ...resumed.danglingCompaction, status: "failed" }));
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[trace] interrupted-compaction closure failed: ${detail}\n`);
+      }
+    }
+
     return new Session({
       // Invariants only — meta writes never contain a thinking level.
       meta: {
@@ -537,6 +557,10 @@ export class Agent {
         sessionTokens: resumed.sessionTokens,
         lastRequestTotal: resumed.lastRequestTotal,
         pendingTraceRotation: resumed.contextClosed,
+        // A closed context is one a completed compaction opened: the same fact drives the
+        // deferred Trace rotation above and the "just compacted" compaction reason, but they
+        // are separate meanings and stay separate fields.
+        fromCompaction: resumed.contextClosed,
       },
       resumedHistory: resumed.renderMessages,
     });
@@ -597,8 +621,9 @@ export class Agent {
     } = args;
     // Child-Agent runner: injected into the run_subagent tool so it doesn't need to
     // depend on Agent/Session (breaking a circular dependency). The model can
-    // optionally choose agentId (omitted = call the current Agent) and the child
-    // Session's model (omitted = the parent Session's model); an explicit model reference
+    // optionally choose agentId (omitted = call the current Agent), the child
+    // Session's model (omitted = the parent Session's model), and its thinking level
+    // (omitted = the parent Session's effective level); an explicit model reference
     // is forwarded to createSession as-is and must be a complete (provider, model_id)
     // pair — half a reference is rejected there rather than being guessed here. Precheck
     // errors (depth limit exceeded / agent doesn't exist) are expressed as throws, which
@@ -610,7 +635,7 @@ export class Agent {
       // Spawn and run are separate: the same child Session can run for multiple turns
       // (continuing via input_subagent appending a prompt); resource cleanup is
       // consolidated in handle.dispose (called by the managing ManagedSubagentSession).
-      async spawn({ agentId, modelId, provider }) {
+      async spawn({ agentId, modelId, provider, thinkingLevel: spawnThinkingLevel }) {
         if (subagentDepth >= MAX_SUBAGENT_DEPTH) {
           throw new Error(
             `subagent depth limit ${MAX_SUBAGENT_DEPTH} reached; not spawning another subagent`,
@@ -650,13 +675,15 @@ export class Agent {
                 ...(modelId !== undefined ? { modelId } : {}),
                 ...(provider !== undefined ? { provider } : {}),
               };
-        // The parent Session's effective thinking level (`thinkingLevel` in scope) is passed
-        // down too, as a tri-state: `null` when the parent has none, so the child never falls
-        // back to its own Agent config (which would otherwise apply on a cross-agent spawn).
+        // An explicit spawn-time level (run_subagent's `thinking_level`) pins the child;
+        // otherwise the parent Session's effective thinking level (`thinkingLevel` in scope)
+        // is passed down, as a tri-state: `null` when the parent has none, so the child never
+        // falls back to its own Agent config (which would otherwise apply on a cross-agent
+        // spawn).
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...childModel,
-          thinkingLevel: thinkingLevel ?? null,
+          thinkingLevel: spawnThinkingLevel ?? thinkingLevel ?? null,
           subagentDepth: subagentDepth + 1,
           source: "subagent",
         });
@@ -828,6 +855,12 @@ export class Agent {
           ? { contextWindow: modelEntry.context_window }
           : {}),
         ...(maxTokens !== undefined ? { maxTokens } : {}),
+        // Fast mode is a session-request annotation: it rides llmConfig (and therefore the
+        // post-compaction rebuild), while the bare/meta LLM below and the vision describer
+        // deliberately skip it — their background requests gain nothing user-facing from a
+        // premium tier, and skipping keeps them working (titles included) even while the
+        // annotation is enabled on a model that rejects it.
+        ...(modelEntry.fast_mode === true ? { fastMode: true } : {}),
         ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
         ...(this.state.systemConfig.model?.timeoutMs !== undefined
           ? { requestTimeoutMs: this.state.systemConfig.model.timeoutMs }
