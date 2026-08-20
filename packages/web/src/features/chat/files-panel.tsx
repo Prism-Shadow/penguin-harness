@@ -48,6 +48,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
     <>
       {panel.open && (
         <div
+          data-testid="files-panel-resizer"
           onMouseDown={panel.startResize}
           onDoubleClick={panel.resetWidth}
           title={S.files.resizeHandle}

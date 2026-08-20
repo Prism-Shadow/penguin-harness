@@ -84,12 +84,13 @@ const POSITION_CLASSES: Record<DockPosition, string> = {
   right: "",
 };
 
-/** Resize handle placement: a 6px strip straddling the pane's inner edge. */
-const RESIZER_CLASSES: Record<DockPosition, string> = {
+/**
+ * Overlay handle placement for TOP/BOTTOM panes: a 6px strip straddling the pane's inner
+ * edge, costing no layout height. Side panes use a layout sibling instead (see sideHandle).
+ */
+const RESIZER_CLASSES: Partial<Record<DockPosition, string>> = {
   bottom: "left-0 right-0 -top-[3px] h-1.5 cursor-ns-resize",
   top: "left-0 right-0 -bottom-[3px] h-1.5 cursor-ns-resize",
-  left: "top-0 bottom-0 -right-[3px] w-1.5 cursor-ew-resize",
-  right: "top-0 bottom-0 -left-[3px] w-1.5 cursor-ew-resize",
 };
 
 /** Small icon-sized header button shared by the pane's controls. */
@@ -644,139 +645,168 @@ export function TerminalDock({
         .filter(Boolean)
         .join(" ");
 
-  return (
+  /**
+   * A side pane's resize handle, as its own flex child rather than an overlay on the pane.
+   * The chat panels do it this way, and the slot they share has to measure the same either
+   * way: an overlay costs no layout width, so the chat column came out ~7px wider under a
+   * terminal than under the Workspace panel, and swapping the two nudged it sideways.
+   * Rendered only while open, or a displaced pane would leave a bare strip behind.
+   */
+  const sideHandle = !horizontal && open && (
     <div
-      data-testid="terminal-dock"
-      data-position={position}
-      data-status={status}
-      style={
-        horizontal ? { height: `${ratio * 100}%` } : { width: open && entered ? sideWidth : 0 }
-      }
-      // Mounted-but-collapsed rather than unmounted, exactly like the chat panels: the width
-      // transition needs the node, and `inert` keeps a pane nobody can see out of the tab
-      // order and the accessibility tree. Not applied while resizing — a transition would
-      // make the pane lag a frame behind the cursor.
-      inert={!open}
-      className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden ${chrome.surface} ${POSITION_CLASSES[position]} ${sideClasses}`}
-    >
-      {/* Boundary resize handle: invisible until hovered/active, forgiving 6px hit strip. */}
-      <div
-        data-testid="terminal-dock-resizer"
-        role="separator"
-        aria-orientation={horizontal ? "horizontal" : "vertical"}
-        aria-label={S.terminal.resize}
-        title={S.terminal.resize}
-        {...resizerDragProps}
-        onDoubleClick={onResizerDoubleClick}
-        className={`absolute z-20 transition-colors duration-150 ${RESIZER_CLASSES[position]} ${
-          resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
-        }`}
-      />
+      data-testid="terminal-dock-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={S.terminal.resize}
+      title={S.terminal.resize}
+      {...resizerDragProps}
+      onDoubleClick={onResizerDoubleClick}
+      className={`w-1.5 shrink-0 cursor-col-resize transition-colors duration-150 ${
+        resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
+      }`}
+    />
+  );
 
-      {/* Fixed-width content inside the clipping window (the chat panels do the same): while
+  return (
+    <>
+      {position === "right" && sideHandle}
+      <div
+        data-testid="terminal-dock"
+        data-position={position}
+        data-status={status}
+        style={
+          horizontal ? { height: `${ratio * 100}%` } : { width: open && entered ? sideWidth : 0 }
+        }
+        // Mounted-but-collapsed rather than unmounted, exactly like the chat panels: the width
+        // transition needs the node, and `inert` keeps a pane nobody can see out of the tab
+        // order and the accessibility tree. Not applied while resizing — a transition would
+        // make the pane lag a frame behind the cursor.
+        inert={!open}
+        className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden ${chrome.surface} ${POSITION_CLASSES[position]} ${sideClasses}`}
+      >
+        {/* Top/bottom: the handle straddles the boundary as an overlay, costing no height. A
+          side pane's is a layout sibling instead — see sideHandle. */}
+        {horizontal && (
+          <div
+            data-testid="terminal-dock-resizer"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={S.terminal.resize}
+            title={S.terminal.resize}
+            {...resizerDragProps}
+            onDoubleClick={onResizerDoubleClick}
+            className={`absolute z-20 transition-colors duration-150 ${RESIZER_CLASSES[position]} ${
+              resizing ? "bg-sky-500/60" : "bg-transparent hover:bg-sky-500/40"
+            }`}
+          />
+        )}
+
+        {/* Fixed-width content inside the clipping window (the chat panels do the same): while
           the outer element animates through intermediate widths, the terminal must not
           reflow frame by frame — xterm would refit its grid on every one of them. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        style={horizontal ? undefined : { width: sideWidth }}
-      >
-        <header
-          data-testid="terminal-dock-header"
-          {...headerDragProps}
-          className={`flex shrink-0 cursor-grab select-none items-center gap-2 border-b px-3 py-1.5 text-xs ${chrome.border}`}
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          style={horizontal ? undefined : { width: sideWidth }}
         >
-          {/* Grip: the visual "this bar drags" affordance (any non-interactive spot of the
-            header drags the pane; the grip is the always-present, unmistakable one). */}
-          <span
-            data-testid="terminal-dock-grip"
-            aria-hidden
-            className={`flex h-6 shrink-0 items-center ${chrome.grip}`}
+          <header
+            data-testid="terminal-dock-header"
+            {...headerDragProps}
+            className={`flex shrink-0 cursor-grab select-none items-center gap-2 border-b px-3 py-1.5 text-xs ${chrome.border}`}
           >
-            <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-              <circle cx="2.5" cy="2.5" r="1.2" />
-              <circle cx="7.5" cy="2.5" r="1.2" />
-              <circle cx="2.5" cy="7" r="1.2" />
-              <circle cx="7.5" cy="7" r="1.2" />
-              <circle cx="2.5" cy="11.5" r="1.2" />
-              <circle cx="7.5" cy="11.5" r="1.2" />
-            </svg>
-          </span>
+            {/* Grip: the visual "this bar drags" affordance (any non-interactive spot of the
+            header drags the pane; the grip is the always-present, unmistakable one). */}
+            <span
+              data-testid="terminal-dock-grip"
+              aria-hidden
+              className={`flex h-6 shrink-0 items-center ${chrome.grip}`}
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+                <circle cx="2.5" cy="2.5" r="1.2" />
+                <circle cx="7.5" cy="2.5" r="1.2" />
+                <circle cx="2.5" cy="7" r="1.2" />
+                <circle cx="7.5" cy="7" r="1.2" />
+                <circle cx="2.5" cy="11.5" r="1.2" />
+                <circle cx="7.5" cy="11.5" r="1.2" />
+              </svg>
+            </span>
 
-          {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
+            {/* Tab strip: this pane's terminals, current one highlighted; drag sideways to
             reorder, drag out to move onto another edge. Scrolls when the shells outgrow
             the header. */}
-          <div
-            ref={stripRef}
-            data-testid="terminal-tab-strip"
-            {...stripDragProps}
-            className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
-          >
-            {paneTerminals.map((terminal, index) => (
-              <TerminalTab
-                key={terminal.id}
-                terminal={terminal}
-                index={index}
-                active={terminal.id === currentId}
-                onSelect={() => selectTerminal(terminal.id)}
-                onKill={() => onKillTerminal(terminal.id)}
-              />
-            ))}
-          </div>
-          <span className="min-w-0 flex-1" />
-
-          {/* Right-hand action cluster with uniform spacing, ending in close. */}
-          <div className="flex shrink-0 items-center gap-1.5">
-            {/* Detach: box with an arrow escaping to the top right */}
-            <DockButton
-              label={S.terminal.detach}
-              testId="terminal-dock-detach"
-              onClick={detach}
-              d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
-            />
-            {/* New shell: plus, beside close per the product spec. */}
-            <DockButton
-              label={S.terminal.newShell}
-              testId="terminal-dock-new-shell"
-              onClick={newShell}
-              d="M12 5v14M5 12h14"
-            />
-            {/* Close pane: X (its shells keep running; they fold into the primary pane) */}
-            <DockButton
-              label={S.terminal.close}
-              testId="terminal-dock-close"
-              onClick={() => closePane(position)}
-              d="M6 6l12 12M18 6L6 18"
-            />
-          </div>
-        </header>
-
-        {/* The shown terminal's pooled view is adopted here (see the body effect). */}
-        <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1" />
-        {/* Resolution/creation failure: say so instead of sitting blank. The server's error
-          message is shown verbatim (e.g. terminal_spawn_failed with the spawn error). */}
-        {currentId === null && resolveError !== null && (
-          <div
-            data-testid="terminal-dock-error"
-            className="absolute inset-x-0 bottom-0 top-9 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
-          >
-            <div className={`text-sm ${chrome.danger}`}>{S.terminal.createFailed}</div>
-            <div className={`max-w-xl break-all text-xs ${chrome.muted}`}>{resolveError}</div>
-            <button
-              type="button"
-              data-testid="terminal-dock-retry"
-              onClick={() => {
-                setPaneError(position, null);
-                void resolvePaneCurrent(position);
-              }}
-              className={`rounded border px-3 py-1 text-xs ${chrome.outlineButton}`}
+            <div
+              ref={stripRef}
+              data-testid="terminal-tab-strip"
+              {...stripDragProps}
+              className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
             >
-              {S.common.retry}
-            </button>
-          </div>
-        )}
-      </div>
+              {paneTerminals.map((terminal, index) => (
+                <TerminalTab
+                  key={terminal.id}
+                  terminal={terminal}
+                  index={index}
+                  active={terminal.id === currentId}
+                  onSelect={() => selectTerminal(terminal.id)}
+                  onKill={() => onKillTerminal(terminal.id)}
+                />
+              ))}
+            </div>
+            <span className="min-w-0 flex-1" />
 
-      {overlayActive && <DockLayoutOverlay candidate={overlayCandidate} />}
-    </div>
+            {/* Right-hand action cluster with uniform spacing, ending in close. */}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {/* Detach: box with an arrow escaping to the top right */}
+              <DockButton
+                label={S.terminal.detach}
+                testId="terminal-dock-detach"
+                onClick={detach}
+                d="M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"
+              />
+              {/* New shell: plus, beside close per the product spec. */}
+              <DockButton
+                label={S.terminal.newShell}
+                testId="terminal-dock-new-shell"
+                onClick={newShell}
+                d="M12 5v14M5 12h14"
+              />
+              {/* Close pane: X (its shells keep running; they fold into the primary pane) */}
+              <DockButton
+                label={S.terminal.close}
+                testId="terminal-dock-close"
+                onClick={() => closePane(position)}
+                d="M6 6l12 12M18 6L6 18"
+              />
+            </div>
+          </header>
+
+          {/* The shown terminal's pooled view is adopted here (see the body effect). */}
+          <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1" />
+          {/* Resolution/creation failure: say so instead of sitting blank. The server's error
+          message is shown verbatim (e.g. terminal_spawn_failed with the spawn error). */}
+          {currentId === null && resolveError !== null && (
+            <div
+              data-testid="terminal-dock-error"
+              className="absolute inset-x-0 bottom-0 top-9 z-10 flex flex-col items-center justify-center gap-3 px-6 text-center"
+            >
+              <div className={`text-sm ${chrome.danger}`}>{S.terminal.createFailed}</div>
+              <div className={`max-w-xl break-all text-xs ${chrome.muted}`}>{resolveError}</div>
+              <button
+                type="button"
+                data-testid="terminal-dock-retry"
+                onClick={() => {
+                  setPaneError(position, null);
+                  void resolvePaneCurrent(position);
+                }}
+                className={`rounded border px-3 py-1 text-xs ${chrome.outlineButton}`}
+              >
+                {S.common.retry}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {overlayActive && <DockLayoutOverlay candidate={overlayCandidate} />}
+      </div>
+      {position === "left" && sideHandle}
+    </>
   );
 }

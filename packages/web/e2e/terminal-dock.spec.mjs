@@ -948,7 +948,11 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
   await expect.poll(() => dockScreenText(page), { timeout: 15000 }).toContain("SIDE_SWAP_MARKER");
 
   const workspace = page.locator('[data-testid="panel-btn-workspace"]');
-  const paneWidth = (await dock(page).boundingBox()).width;
+  const paneBox = await dock(page).boundingBox();
+  const paneWidth = paneBox.width;
+  // Where the chat column ends: the outer edge of the resize handle, which the panel counts
+  // as layout and the pane has to as well, or swapping them nudges the column sideways.
+  const paneEdge = (await page.locator('[data-testid="terminal-dock-resizer"]').boundingBox()).x;
 
   // Workspace wins: the side pane goes away, and the shell behind it keeps running.
   await workspace.click();
@@ -968,6 +972,11 @@ test("a side pane and the Workspace panel take turns: whichever was asked for la
       return Math.abs((box?.width ?? 0) - paneWidth);
     })
     .toBeLessThanOrEqual(2);
+  // Same slot down to the handle: identical left edges, so the chat column does not shift.
+  const panelBox = await page.locator('[data-testid="files-panel"]').boundingBox();
+  expect(Math.abs(panelBox.x - paneBox.x), "panel vs pane left edge").toBeLessThanOrEqual(2);
+  const panelEdge = (await page.locator('[data-testid="files-panel-resizer"]').boundingBox()).x;
+  expect(Math.abs(panelEdge - paneEdge), "handle left edge").toBeLessThanOrEqual(2);
   const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
   expect(terminals.filter((t) => t.alive)).toHaveLength(1);
 
