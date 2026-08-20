@@ -21,6 +21,7 @@ export const zh = {
     plugins: "插件库",
     models: "模型库",
     machines: "机器",
+    extensions: "扩展市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -1342,6 +1343,14 @@ export const zh = {
         "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
       savedToast: "已保存，自下一轮对话起生效",
     },
+  },
+
+  extensions: {
+    pageTitle: "扩展市场",
+    pageDesc: "扩展索引：部署可安装的扩展包（在数据目录的 extensions.json 中配置）。",
+    empty: "暂无扩展",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "写入 extensions.json 的包名",
   },
 
   skills: {

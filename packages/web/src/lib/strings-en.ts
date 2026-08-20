@@ -17,6 +17,7 @@ export const en: Strings = {
     plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
+    extensions: "Extensions",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -1368,6 +1369,14 @@ export const en: Strings = {
         "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
       savedToast: "Saved — takes effect from the next turn",
     },
+  },
+
+  extensions: {
+    pageTitle: "Extensions",
+    pageDesc:
+      "Extension index: packages a deployment can install (configured in extensions.json under the data root).",
+    empty: "No extensions yet",
+    specifierHint: "Package specifier for extensions.json",
   },
 
   skills: {
