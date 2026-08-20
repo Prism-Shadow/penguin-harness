@@ -41,7 +41,10 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import type { PenguinInterface, WorkflowFactory } from "./plugin.js";
-import { instantiateWorkflows, pluginHostFrom } from "./plugin.js";
+import { pluginHostFrom } from "./plugin.js";
+import { WorkflowRegistry, restoreWorkflows } from "../workflows/registry.js";
+import { WorkflowStore } from "../workflows/store.js";
+import type { WorkflowRef } from "../workflows/store.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -83,6 +86,13 @@ export type PlatformCtx = {
   motd: string;
   terminals?: string[];
   /**
+   * The installations this App carries, as refs into the store (../workflows/store.ts).
+   * Parked for the same reason terminal handle ids are: the scripts live in agent folders
+   * and outlive every push, so the next App reloads exactly these rather than sweeping
+   * the disk for whatever happens to be there.
+   */
+  workflows?: WorkflowRef[];
+  /**
    * Active sandbox settings — parked state, not service memory: a hot swap constructs a
    * fresh SandboxService, and without this the swap would silently reset a confining
    * deployment to unconfined. Optional so a document parked before the field existed
@@ -98,6 +108,7 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
     type({
       motd: "string",
       "terminals?": "string[]",
+      "workflows?": [{ projectId: "string", agentId: "string", workflowId: "string" }, "[]"],
       "sandbox?": {
         mode: "'read-only' | 'workspace-write' | 'danger-full-access'",
         "network?": "'none'",
@@ -239,8 +250,20 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // would construct a fresh service on defaults and silently un-confine a deployment
     // that had confinement on.
     if (context.sandbox !== undefined) sandbox.configure(context.sandbox);
+    // Claimed here rather than at deps-build time below: the workflow store is anchored at
+    // the runtime's own root, and a runtime publishing no business capabilities has no
+    // root to anchor at - the same degradation that leaves this App terminals-only.
+    const caps = claimRuntimeCapabilities(ctx.resources);
+    // Installed workflows register into the very map plugins just wrote, so both kinds are
+    // one thing downstream. Only the refs parked in this document are reloaded: an
+    // installation is remembered, never discovered by sweeping agent folders.
+    const workflows = new WorkflowRegistry(pluginIface.workflow);
+    const workflowStore = caps === null ? null : new WorkflowStore(caps.config.root);
+    if (workflowStore !== null) {
+      await restoreWorkflows(workflowStore, workflows, context.workflows ?? []);
+    }
     plugins.emit("create", {
-      workflows: instantiateWorkflows(pluginIface.workflow),
+      workflows: workflows.instanceView(),
       terminals,
       sandbox: {
         configure: (settings) => sandbox.configure(settings),
@@ -270,7 +293,14 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // ONE app, ONE pointer: every route this App serves — terminal group and business
     // groups — registers into a single Hono table, and the swap publishes deps + table +
     // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
-    const app = createApp(deps, terminals, identity);
+    const app = createApp(
+      deps,
+      terminals,
+      identity,
+      workflowStore === null || caps === null
+        ? undefined
+        : { store: workflowStore, registry: workflows },
+    );
     const business = deps;
     // The runtime's two mid-request needs of the CURRENT App are hooks installed over the
     // claimed capabilities — ordinary capability use, overwrite-only across swaps (a dead
@@ -337,9 +367,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         // bundle's schema; once confinement is configured, pushing a sandbox-ignorant
         // bundle blocks rather than silently un-confining.
         const parkedSandbox = sandbox.parkedSettings();
+        const parkedWorkflows = workflows.refs();
         return {
           motd: context.motd,
           terminals: terminals.handleIds(),
+          ...(parkedWorkflows.length > 0 ? { workflows: parkedWorkflows } : {}),
           ...(parkedSandbox !== undefined ? { sandbox: parkedSandbox } : {}),
         };
       },
