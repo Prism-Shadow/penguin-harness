@@ -22,7 +22,7 @@ import type { Resources } from "@prismshadow/penguin-core/kernel";
 import { loadNodePty } from "./pty-module.js";
 import { defaultTerminalShell, shellArgs } from "./shell.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
-import { ensureSpawnHelperExecutable } from "../../terminal/spawn-helper.js";
+import { ensureSpawnHelperExecutable } from "../terminal/spawn-helper.js";
 import {
   captureLines,
   renderRestoreAnsi,

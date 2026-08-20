@@ -9,7 +9,7 @@ and hot-swaps everything else. Read this before changing anything here (or in
 | Layer        | Lives in                                        | How it ships                      |
 | ------------ | ----------------------------------------------- | --------------------------------- |
 | **runtime**  | `hmr/`, `packages/desktop/`, server transport   | Rebuild + redeploy every install  |
-| **platform** | `packages/server/src/platform/`                 | One HTTP push, seconds, no restart|
+| **platform** | `packages/server/src/hmr/platform.ts` + `app.ts` | One HTTP push, seconds, no restart|
 | **workflow** | An agent's own folder                           | Installed/reloaded per agent      |
 | **state**    | Parked context documents / runtime resources    | Rides across swaps, not restarts  |
 

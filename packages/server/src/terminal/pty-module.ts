@@ -16,7 +16,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
-import { ASSETS_RESOURCE_ID } from "../../hmr/host.js";
+import { ASSETS_RESOURCE_ID } from "../hmr/host.js";
 
 /** The slice of node-pty this package uses (kept narrow so the fallback stays checkable). */
 export interface NodePty {

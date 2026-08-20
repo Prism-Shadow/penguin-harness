@@ -74,8 +74,8 @@ import type { Instance, Json } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
-import type { PlatformApi } from "../platform/platform.js";
-import { packagedPlatform } from "../platform/platform.js";
+import type { PlatformApi } from "../hmr/platform.js";
+import { packagedPlatform } from "../hmr/platform.js";
 import type { AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
 
 /**
