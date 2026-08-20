@@ -14,4 +14,4 @@
 - 列表能力来自 AgentHub 0.4.5 的 `listModels()`（agenthub [#183](https://github.com/Prism-Shadow/agenthub/pull/183)）：core 暴露对 `AutoLLMClient` 的薄封装 `listEndpointModels`，server 以 `POST /api/projects/:p/models/list` 对外提供（仅 owner，base URL 校验与 DTO 约束同 `/detect`；列表请求限时 20s）。
 - 省略 API key 时沿用连通性测试的环境变量链（按协议读取 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`）。key 只出现在上游请求头中，绝不回显。
 - 模型 id 按端点返回顺序保留；重复项——无论出现在列表内部还是与已配置的 `(provider, model_id)` 对撞——都会被跳过并计入成功提示。
-- 协议不支持列出模型（AgentHub `UnsupportedOperationError`）、检测失败或列表为空时,错误在对话框内呈现,手动路径始终一步可达;列表成功之前不落盘任何内容。
+- 协议不支持列出模型（AgentHub `UnsupportedOperationError`）、检测失败或列表为空时，错误在对话框内呈现，手动路径始终一步可达；列表成功之前不落盘任何内容。
