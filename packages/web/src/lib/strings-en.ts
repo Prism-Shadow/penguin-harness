@@ -1345,6 +1345,13 @@ Scenarios:
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
     showLess: "Show less",
+    memoryChangesTitle: (n: number) => `${n} memory ${n === 1 ? "update" : "updates"}`,
+    memoryScopeUser: "User memory",
+    memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
+    memoryOpWrite: "Wrote",
+    memoryOpEdit: "Edited",
+    openAgentMemory: "View memory in agent settings",
+    memoryShowMore: (n: number) => `Show ${n} more`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `More groups (${n})`,
     contextUsage: "Context usage",

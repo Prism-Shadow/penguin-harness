@@ -80,6 +80,8 @@ import {
   trackSubagentUsage,
 } from "./task-stats";
 import type { TaskStats, TaskStatsTracker } from "./task-stats";
+import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
+import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -336,6 +338,8 @@ export interface TaskStatsItem {
   forkPosition?: TracePosition;
   /** True only when the final assistant segment and its Request completed normally. */
   forkable?: boolean;
+  /** Memory topic files this Task changed through the structured file tools (merged, one row per file); absent when there were none. */
+  memoryChanges?: MemoryChangeRow[];
 }
 
 export type ChatItem =
@@ -376,6 +380,8 @@ export interface StreamModel {
   nested: boolean;
   /** Child-session identity from its session_meta (nested models only; null until it arrives). */
   meta: NestedSessionMeta | null;
+  /** Absolute `agent_state` path from session_meta (null until it arrives); the Memory root `<agent_state>/memory/` for the Task summary's memory-change rows. */
+  agentState: string | null;
   /**
    * Elapsed-time stamps for the subagents panel's topology nodes (nested models only — the main
    * session's timing is covered by task stats). Stamped in routeNested: the `firstSeen` pair when
@@ -525,6 +531,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     items: [],
     nested,
     meta: null,
+    agentState: null,
     stats: createTaskStatsTracker(),
     openText: null,
     openThinking: null,
@@ -651,6 +658,12 @@ export function pushMessage(
   // session no DTO is loaded here, so capture the identity the subagents panel needs (which
   // agent runs this child, on which model) — a rewritten session_meta (file rotation) simply
   // overwrites with the same values.
+  if (msg.type === "session_meta") {
+    // Both levels keep the agent_state path: the main session's Task summary classifies
+    // file-tool writes against `<agent_state>/memory/` (a rewritten meta overwrites with
+    // the same values, like the nested identity below).
+    model.agentState = (msg.payload as SessionMetaPayload).agent_state;
+  }
   if (msg.type === "session_meta" && model.nested) {
     const p = msg.payload as SessionMetaPayload;
     const meta: NestedSessionMeta = {
@@ -870,6 +883,7 @@ function finalizeOpenTask(model: StreamModel): void {
   const stats = endTask(model.stats, elapsed);
   if (model.nested) return;
   const reply = collectTaskAssistant(model);
+  const memoryChanges = collectTaskMemoryChanges(model);
   // No token_usage (the reply was interrupted mid-way) → there are no stats
   // to show, but as long as this round produced any text, there still needs
   // to be a footer: the timestamp and copy are both rendered by the stats
@@ -884,6 +898,7 @@ function finalizeOpenTask(model: StreamModel): void {
     forkable: reply.completed,
     ...(reply.atMs !== undefined ? { atMs: reply.atMs } : {}),
     ...(reply.tracePosition !== undefined ? { forkPosition: reply.tracePosition } : {}),
+    ...(memoryChanges.length > 0 ? { memoryChanges } : {}),
   };
   // The stats row is inserted **before any trailing run of compaction banners**: compaction
   // is its own round, housekeeping outside this one, so it belongs after this round's ledger
@@ -932,6 +947,37 @@ function collectTaskAssistant(model: StreamModel): {
     ...(tracePosition !== undefined ? { tracePosition } : {}),
     completed,
   };
+}
+
+/**
+ * Collect this Task's memory changes (same walk as collectTaskAssistant: backward until the
+ * previous task_stats): successfully completed `write_file` / `edit_file` calls whose path
+ * falls under `<agent_state>/memory/`, merged to one row per file. Only this level's tool
+ * cards are consulted — a subagent's memory writes belong to that child's own Agent and are
+ * out of this Task summary's scope.
+ */
+function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
+  if (model.agentState === null) return [];
+  const entries: MemoryChangeEntry[] = [];
+  for (let i = model.items.length - 1; i >= 0; i--) {
+    const it = model.items[i]!;
+    if (it.kind === "task_stats") break;
+    if (it.kind !== "tool_call" || !it.outputComplete || it.outputStopReason !== "completed")
+      continue;
+    if (it.name !== "write_file" && it.name !== "edit_file") continue;
+    let args: unknown;
+    try {
+      args = JSON.parse(it.argumentsText);
+    } catch {
+      continue; // a malformed argument record can't name a file
+    }
+    const filePath = (args as { file_path?: unknown }).file_path;
+    if (typeof filePath !== "string") continue;
+    const classed = classifyMemoryPath(filePath, model.agentState);
+    if (classed !== null)
+      entries.push({ ...classed, op: it.name === "write_file" ? "write" : "edit" });
+  }
+  return mergeMemoryChanges(entries.reverse()); // walked backward; merge in call order
 }
 
 // ---------------------------------------------------------------------------

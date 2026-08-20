@@ -16,6 +16,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
+import { MemoryChangesCard } from "./memory-changes-card";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentChip } from "./subagent-chip";
@@ -385,6 +386,15 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
                 onOpenFile={ctx.onOpenFile}
               />
             )}
+          {/* Memory changes sit below the file list: same Task-level summary, but sourced from
+              the structured tool record (stream model) rather than the reply text, so it also
+              renders when the reply never named the files. */}
+          {ctx.origin.length === 0 && item.memoryChanges !== undefined && (
+            <MemoryChangesCard
+              rows={item.memoryChanges}
+              {...(ctx.onOpenMemory ? { onOpenMemory: ctx.onOpenMemory } : {})}
+            />
+          )}
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}

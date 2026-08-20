@@ -1301,6 +1301,14 @@ Benchmark：
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Memory-change card below the file summary: title, scope/op tooltips, header jump, collapsed row. */
+    memoryChangesTitle: (n: number) => `${n} 条记忆更新`,
+    memoryScopeUser: "用户记忆",
+    memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
+    memoryOpWrite: "写入",
+    memoryOpEdit: "编辑",
+    openAgentMemory: "在 Agent 设置中查看记忆",
+    memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",

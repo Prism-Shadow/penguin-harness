@@ -1452,6 +1452,11 @@ export function ChatPage() {
       subagentsPanel.setOpen(true);
       subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
     },
+    onOpenMemory: () => {
+      // Memory files live outside the Workspace, so the Files panel can't preview them; the
+      // Agent settings memory tab is the existing full view.
+      if (selected) navigate(`/agents/${selected.agentId}?tab=memory`);
+    },
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,

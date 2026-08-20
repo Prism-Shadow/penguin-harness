@@ -2164,3 +2164,73 @@ describe("fidelity-only messages render nothing (empty assistant bubble after th
     expect((texts[0] as AssistantTextItem).streaming).toBe(false);
   });
 });
+
+describe("task_stats memory changes", () => {
+  const MEM = "/a/memory"; // meta() sets agent_state to "/a"
+
+  /** One completed file-tool call (write_file / edit_file) against `path`. */
+  function fileTool(m: StreamModel, name: string, path: string, id: string, stop = "completed") {
+    pushMessage(
+      m,
+      toolCall({ name, arguments: JSON.stringify({ file_path: path }), toolCallId: id }),
+    );
+    pushMessage(
+      m,
+      toolCallOutput({ output: "ok", toolCallId: id, stopReason: stop as "completed" }),
+    );
+  }
+
+  it("collects completed write_file/edit_file under the memory root; write dominates the merged row", () => {
+    const m = createStreamModel();
+    pushMessage(m, meta("s1"));
+    pushMessage(m, userText("remember this"));
+    fileTool(m, "write_file", `${MEM}/user/prefs.md`, "t1");
+    fileTool(m, "edit_file", `${MEM}/user/prefs.md`, "t2");
+    fileTool(m, "edit_file", `${MEM}/ws-1/conventions.md`, "t3");
+    pushMessage(m, tokenUsage(counts(100), counts(100)));
+    notifyTaskIdle(m);
+    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(stats.memoryChanges).toEqual([
+      { scope: "user", file: "prefs.md", op: "write" },
+      { scope: "workspace", scopeKey: "ws-1", file: "conventions.md", op: "edit" },
+    ]);
+  });
+
+  it("excludes failed/denied calls, index rewrites, non-memory paths, and other tools", () => {
+    const m = createStreamModel();
+    pushMessage(m, meta("s1"));
+    pushMessage(m, userText("q"));
+    fileTool(m, "write_file", `${MEM}/user/failed.md`, "t1", "failed");
+    fileTool(m, "write_file", `${MEM}/user/denied.md`, "t2", "aborted");
+    fileTool(m, "edit_file", `${MEM}/user/MEMORY.md`, "t3");
+    fileTool(m, "write_file", "/w/src/app.ts", "t4");
+    fileTool(m, "exec_command", `${MEM}/user/via-shell.md`, "t5");
+    pushMessage(m, tokenUsage(counts(100), counts(100)));
+    notifyTaskIdle(m);
+    const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(stats.memoryChanges).toBeUndefined();
+  });
+
+  it("without session_meta no rows are derived; a later Task doesn't inherit an earlier Task's rows", () => {
+    const m = createStreamModel();
+    pushMessage(m, userText("q"));
+    fileTool(m, "write_file", `${MEM}/user/x.md`, "t0");
+    pushMessage(m, tokenUsage(counts(100), counts(100)));
+    notifyTaskIdle(m);
+    const first = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
+    expect(first.memoryChanges).toBeUndefined(); // no agent_state known yet
+
+    pushMessage(m, meta("s1"));
+    pushMessage(m, userText("task 2 with memory"));
+    fileTool(m, "edit_file", `${MEM}/user/y.md`, "t6");
+    pushMessage(m, tokenUsage(counts(100), counts(100)));
+    notifyTaskIdle(m);
+    pushMessage(m, userText("task 3 without memory"));
+    pushMessage(m, tokenUsage(counts(100), counts(100)));
+    notifyTaskIdle(m);
+    const all = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    expect(all).toHaveLength(3);
+    expect(all[1]!.memoryChanges).toEqual([{ scope: "user", file: "y.md", op: "edit" }]);
+    expect(all[2]!.memoryChanges).toBeUndefined(); // walk stops at the previous task_stats
+  });
+});
