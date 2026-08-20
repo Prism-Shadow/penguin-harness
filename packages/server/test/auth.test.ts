@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
-import { buildAppDeps } from "../src/app.js";
+import { bootAppDeps } from "../src/app.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
   apiClient,
@@ -197,7 +197,7 @@ describe("auth", () => {
 
   it("seedAdmin rejects an override below the password policy before creating the account", async () => {
     const root = await makeTempRoot();
-    const deps = await buildAppDeps(
+    const deps = await bootAppDeps(
       { ...testConfig(root), seedAdminPassword: "x" },
       { log: () => {} },
     );

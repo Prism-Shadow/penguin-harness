@@ -18,7 +18,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { buildAppDeps, createApp, type AppDeps } from "./app.js";
+import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import {
@@ -68,7 +68,7 @@ class PenguinServer {
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: AppDeps;
   /** Assigned by buildApp(). */
-  private app!: ReturnType<typeof createApp>;
+  private app!: ReturnType<typeof createRuntimeApp>;
   /** Assigned by listen(). */
   private httpServer!: ReturnType<typeof serve>;
 
@@ -122,7 +122,7 @@ class PenguinServer {
    * place before the server serves anything.
    */
   async buildDeps(): Promise<void> {
-    this.deps = await buildAppDeps(this.config);
+    this.deps = await bootAppDeps(this.config);
   }
 
   /**
@@ -140,7 +140,7 @@ class PenguinServer {
 
   /** Assembles the runtime shell's middleware and routes. Nothing is listening yet. */
   buildApp(): void {
-    this.app = createApp(this.deps);
+    this.app = createRuntimeApp(this.deps);
   }
 
   /**

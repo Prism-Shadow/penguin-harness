@@ -1,14 +1,14 @@
 /**
  * App assembly, both halves of it.
  *
- * The RUNTIME shell — `createApp(deps)` — mounts the mechanism surface: the network
+ * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
  * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `buildAppDeps(config)` builds the runtime core (database, auth, channels, HmrHost),
+ * `bootAppDeps(config)` builds the runtime core (database, auth, channels, HmrHost),
  * publishes its capabilities into the resource registry (see hmr/capabilities.ts), and
  * boots the platform — which returns the merged view. Neither listens on a port: tests
  * inject requests via `app.request()`, and the startup entry point is index.ts.
  *
- * The BUSINESS surface — `buildBusinessDeps` + `createPlatformApp`, at the bottom of this
+ * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
  * file — is what a hot push replaces. Both are called from `platformImpl.create`
  * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
  * registry, so every business service and route travels with the platform version rather
@@ -202,7 +202,7 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  */
-export async function buildAppDeps(
+export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
 ): Promise<AppDeps> {
@@ -265,7 +265,7 @@ export async function buildAppDeps(
     const authed = token === null ? null : authService.authenticateWithMeta(token);
     return authed === null ? null : { userId: authed.user.userId };
   });
-  // The capability set buildBusinessDeps claims (see hmr/capabilities.ts) — every
+  // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot.
   hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
@@ -288,7 +288,7 @@ export async function buildAppDeps(
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createApp(deps: AppDeps): Hono<AppEnv> {
+export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
@@ -506,7 +506,7 @@ function readSessionCookie(header: string | null): string | null {
  * claim — one live instance per process, shared with the runtime. Everything else is
  * built fresh per App, which is exactly what makes it hot-swappable.
  */
-export function buildBusinessDeps(
+export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
 ): AppDeps {
@@ -727,7 +727,7 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
  * `deps` is null when the runtime published no business capabilities (an older runtime, a
  * bare kernel): the terminal group still serves, everything else declines.
  */
-export function createPlatformApp(
+export function createApp(
   deps: AppDeps | null,
   terminals: TerminalManager,
   identity: Identity,

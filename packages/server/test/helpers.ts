@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Hono } from "hono";
 import type { OmniMessage } from "@prismshadow/penguin-core";
-import { buildAppDeps, createApp } from "../src/app.js";
+import { bootAppDeps, createRuntimeApp } from "../src/app.js";
 import type { AppDeps, BuildDepsOverrides } from "../src/app.js";
 import { openDatabase } from "../src/db/database.js";
 import { TraceIndexRepo } from "../src/db/repos/trace-index.js";
@@ -80,14 +80,14 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = await buildAppDeps(
+  const deps = await bootAppDeps(
     { ...testConfig(root), ...config },
     { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
   );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
   const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
-  const app = createApp(deps);
+  const app = createRuntimeApp(deps);
   return {
     app,
     deps,
