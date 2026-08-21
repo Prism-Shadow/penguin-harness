@@ -9,8 +9,8 @@
 
 MCP Server 条目新增可选的 `permission` 字段，三种取值——`auto`（缺省）、`r`、`rw`——固定该
 Server 所暴露的全部工具的审批等级。`auto` 下每个工具仍按自己的 `readOnlyHint` 注解取值，与此前
-一致。`readOnlyHint` 在 MCP 规范中是可选注解，大量 Server 从不设置，其整个工具集因此落到 `rw`、
-每次调用都要停下来审批；显式的 `r` 或 `rw` 现在可以一次性覆盖它们的注解。
+一致。`readOnlyHint` 在 MCP 规范中是可选注解，大量 Server 从不设置，其整个工具集因此落到 `rw`，
+在 read-only 审批模式下每次调用都要停下来审批；显式的 `r` 或 `rw` 现在可以一次性覆盖它们的注解。
 
 ## 细节
 
@@ -24,6 +24,8 @@ Server 所暴露的全部工具的审批等级。`auto` 下每个工具仍按自
 
 ## 这个开关管的是什么
 
-`permission` 决定 PenguinHarness 会把该 Server 的哪些工具调用停下来交人工审批，仅此而已。它不是
-沙箱：不限制该 Server 的工具运行时的行为，不会发给 Server、也不向 Server 核验，Server 依旧拥有其
-transport 赋予的全部能力。把一个实际能写的 Server 标为 `r`，等于撤掉了本该拦住那次写入的审批。
+`permission` 固定该 Server 每个工具对外报出的等级，而读这个等级的审批模式只有一个。`read-only`
+下 `r` 工具自动放行、`rw` 工具需人工确认；`allow-all` / `deny-all` / `always-ask` 根本不查询它，
+标成 `rw` 的条目在 `read-only` 之外并不会多出一次审批。除此之外该字段什么都不做。它不是沙箱：不限制
+该 Server 的工具运行时的行为，不会发给 Server、也不向 Server 核验，Server 依旧拥有其 transport
+赋予的全部能力。把一个实际能写的 Server 标为 `r`，撤掉的就是 `read-only` 本会索要的那次确认。

@@ -11,8 +11,8 @@ An MCP Server entry gained an optional `permission` key with three states — `a
 default), `r` and `rw` — that fixes the approval level of every tool that server exposes.
 Under `auto` each tool keeps the level its own `readOnlyHint` annotation implies, which is
 what shipped before. `readOnlyHint` is optional in the MCP spec and many servers never set
-it, so their whole toolset landed on `rw` and stopped for approval on every call; an
-explicit `r` or `rw` now overrides the annotation for all of them at once.
+it, so their whole toolset landed on `rw`, which the read-only approval mode stops for on
+every call; an explicit `r` or `rw` now overrides the annotation for all of them at once.
 
 ## Details
 
@@ -29,8 +29,11 @@ explicit `r` or `rw` now overrides the annotation for all of them at once.
 
 ## What the flag governs
 
-`permission` decides which of a server's tool calls PenguinHarness stops for human
-approval. That is the whole of it. It is not a sandbox: it does not restrict what the
-server's tools do once they run, it is never sent to or verified against the server, and
-the server keeps whatever capabilities its transport gives it. Marking a server `r` that
-can in fact write removes the prompt that would have caught the write.
+`permission` fixes the level each of the server's tools reports, and exactly one approval
+mode reads that level. Under `read-only` an `r` tool is auto-approved and an `rw` tool
+needs manual confirmation; `allow-all`, `deny-all` and `always-ask` never consult it, so an
+entry marked `rw` adds no prompt outside `read-only`. Beyond that the key does nothing. It
+is not a sandbox: it does not restrict what the server's tools do once they run, it is
+never sent to or verified against the server, and the server keeps whatever capabilities
+its transport gives it. Marking a server `r` that can in fact write removes the
+confirmation `read-only` would have asked for.
