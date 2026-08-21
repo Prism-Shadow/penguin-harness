@@ -61,21 +61,33 @@ export const zh = {
 
   settings: {
     language: "语言",
+    languageHint: "界面语言，可跟随浏览器设置",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "系统设置",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "个人",
+    groupServer: "服务器",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "通用",
+    appearanceTitle: "外观",
+    accountTitle: "账户",
+    updatesTitle: "更新",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "代理选项",
-    proxyDialogTitle: "代理选项",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "代理选项",
+    proxyHint: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "上传限制",
-    uploadLimitsDialogTitle: "上传限制",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "上传限制",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
@@ -83,18 +95,24 @@ export const zh = {
       `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
       `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
+    themeHint: "应用的明暗外观",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
     terminalTheme: "终端主题",
+    terminalThemeHint: "终端面板的配色，默认跟随应用主题",
     followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
+    fontSizeHint: "界面整体字号",
     fontSmall: "小",
     fontMedium: "中",
     fontLarge: "大",
     accent: "主题色",
+    accentHint: "界面强调色",
+    currencyHint: "价格显示币种；存储始终为美元",
+    changePasswordHint: "更改当前账号的登录密码",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",
@@ -136,6 +154,35 @@ export const zh = {
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
     /** Copy shown to non-admins in place of confirmBody (they can read the release notes but cannot run the update here). */
     adminOnly: "只有管理员可以在这里执行更新。",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "检查更新",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `重启并安装 v${v}` : "重启并安装更新",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
+    clientInstallConfirmTitle: "重启并安装更新",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    clientInstallConfirmAction: "立即重启",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "开发运行不支持自更新",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -379,6 +426,17 @@ export const zh = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto（readOnlyHint）",
+    mcpPermissionAutoDescription:
+      "每个工具按自己的 readOnlyHint 注解取值：声明了就是只读，否则为读写。",
+    mcpPermissionReadDescription:
+      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为 read-only 时自动放行。",
+    mcpPermissionReadWriteDescription:
+      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为 read-only 时需人工确认。",
+    mcpPermissionHint:
+      "只有 read-only 审批模式会读这个等级，allow-all / deny-all / always-ask 一律不看。它不限制 Server 本身能做什么——把并非只读的 Server 标为只读，只是撤掉了 read-only 模式本会索要的那次确认。",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
@@ -486,12 +544,29 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：接口协议可手动选择，也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+    groupModeCreate: "仅新增分组",
+    groupModeImport: "导入模型",
+    groupImportAll: "批量导入模型",
+    groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
+    groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
+    groupImportListing: "正在获取模型列表…",
+    groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
+    groupImportUnsupported: "该协议不支持列出模型，请手动添加",
+    groupImportFailed: "获取模型列表失败",
+    groupImportEmpty: "该端点没有可导入的模型",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0 ? `已导入 ${added} 个模型，跳过 ${skipped} 个条目` : `已导入 ${added} 个模型`,
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
     groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    deleteGroup: "删除分组",
+    deleteGroupTitle: "删除分组",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `确定删除分组「${label}」？组内 ${n} 个模型及其 API key 配置将一并移除。`,
+    groupDeleted: (n: number): string => `已删除分组（${n} 个模型）`,
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
     syncCatalog: "同步预置",
@@ -639,6 +714,12 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /**
+     * Model dialog credential slot: sits where a stored key shows its created-at line. It
+     * names no variable — the slot next to it already shows that variable's value masked,
+     * which is what identifies the key to the reader.
+     */
+    readFromEnv: "读取自环境变量",
     /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
@@ -707,6 +788,36 @@ export const zh = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
+    exportScope: "导出",
+    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeLabel: (scope: string): string => `导出${scope}`,
+    importScope: "导入",
+    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeLabel: (scope: string): string => `导入到${scope}`,
+    importTitle: "导入记忆",
+    importWhy:
+      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
+    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+    importModeLabel: "当这一组里已有同名记忆时",
+    importModeSkip: "保留现有的这条",
+    importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
+    importModeOverwrite: "改用文件里的版本",
+    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeReplace: "整组替换",
+    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importAction: "导入",
+    importInvalidFile: "这个文件不是记忆导出文件。",
+    importEmptyFile: "这个文件里没有记忆。",
+    importConfirmTitle: "确认导入",
+    importWillOverwrite: (names: string[]): string =>
+      `将覆盖 ${names.length} 条记忆：${names.join("、")}`,
+    importWillRemove: (names: string[]): string =>
+      `将删除 ${names.length} 条记忆：${names.join("、")}`,
+    importWillReplaceIndex: "这一组的 MEMORY.md 索引将被替换。",
+    importIrreversible: "此操作不可恢复。",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
+    importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
   },
 
   vault: {
@@ -1242,6 +1353,21 @@ Benchmark：
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Memory-change card below the file summary and the Memory side panel: titles, scope/op tooltips, collapsed row. */
+    memoryChangesTitle: (n: number) => `${n} 条记忆更新`,
+    memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
+    memoryOpWrite: "写入",
+    memoryOpEdit: "编辑",
+    memoryViewTitle: "记忆",
+    memoryChangedMark: "本次对话已更改",
+    memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
+    openMemoryPanel: "打开记忆",
+    memoryRowOpen: "查看内容",
+    memoryBack: "返回列表",
+    memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "在 Agent 设置中管理",
+    memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",
@@ -1566,6 +1692,7 @@ Benchmark：
       member_not_found: "该用户不是本 Project 的成员。",
       already_member: "该用户已是本 Project 的成员。",
       already_owner: "该用户已是本 Project 的所有者。",
+      memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",

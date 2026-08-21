@@ -635,7 +635,7 @@ describe("session-manager", () => {
     );
   });
 
-  it("sub-session (origin) registration: session_meta persists; the title is left to the model using the sub-session's own conversation", async () => {
+  it("sub-session (origin) registration: session_meta persists; the title is generated from the spawning prompt", async () => {
     const fake: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
@@ -692,16 +692,17 @@ describe("session-manager", () => {
     // predates the source field (this fake omits it): the registration path is the fallback.
     expect(sources.get("child-1")).toBe("subagent");
     expect(child && "source" in child).toBe(false);
-    // Title left blank: produced by the title generator from the sub-session's own conversation (falls back to the prompt's first line on failure).
+    // The row itself is inserted with a blank title: the title generator (faked here) is
+    // notified at registration and owns the write.
     expect(child?.title).toBeNull();
 
     await waitFor(() => notified.length === 2);
     const childTitle = notified.find((n) => n.ctx.sessionId === "child-1");
     expect(childTitle).toBeTruthy();
-    // Explicit material override for the sub-session: user material = the prompt that spawned it; assistant material = the sub-session's **own** model output.
+    // Explicit material override for the sub-session: the prompt that spawned it, alone — its own output is never waited for.
     expect(childTitle!.req.material).toEqual({
       userText: "Research the background of this question",
-      assistantText: "child done",
+      assistantText: "",
     });
     expect(childTitle!.req.fallbackText).toBe("Research the background of this question");
     // Session/Agent record the sub-session, but modelId records the parent — the request runs on the parent's bare LLM.
@@ -984,7 +985,7 @@ describe("session-manager", () => {
     ]);
   });
 
-  it("notifies title generation after a Task completes: fallback material is the user text, generation material is self-collected by the Session; compaction doesn't notify", async () => {
+  it("notifies title generation at Task start: fallback and generation material are the user input alone; compaction doesn't notify", async () => {
     const notified: { ctx: UsageContext; session: unknown; req: TitleRequest }[] = [];
     const plainSession: RuntimeSession = {
       sessionId: "session-1",
@@ -1019,8 +1020,11 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("question 1"), userText("question 2")]);
     await waitFor(() => notified.length === 1);
     expect(notified[0]!.req.fallbackText).toBe("question 1\nquestion 2");
-    // No material override for the main session: material is gathered by the core Session during run.
-    expect(notified[0]!.req.material).toBeUndefined();
+    // The generation material is the user input alone — no assistant text, nothing waits on it.
+    expect(notified[0]!.req.material).toEqual({
+      userText: "question 1\nquestion 2",
+      assistantText: "",
+    });
     expect(notified[0]!.session).toBe(plainSession);
     expect(notified[0]!.ctx).toMatchObject({
       projectId: "p1",
@@ -1030,18 +1034,23 @@ describe("session-manager", () => {
       provider: "custom",
     });
 
+    // The notification fires at start, so the Task is still running here — let it finish
+    // (completion adds no second trigger), then compact.
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(notified.length).toBe(1);
     await manager.startCompact("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle");
     await new Promise((r) => setTimeout(r, 10));
     expect(notified.length).toBe(1);
   });
 
-  it("fires title generation early once 1000 chars of body text have streamed (mid-run, before the Task finishes)", async () => {
+  it("fires title generation at Task start, before any model output has streamed", async () => {
     const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
-    // Gate the run after the big body text so the early trigger provably happens mid-run.
+    // Gate the run before its first yield: a notification while the gate is closed proves
+    // generation starts without waiting on any model output.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const longSession: RuntimeSession = {
+    const gatedRun: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
@@ -1049,13 +1058,8 @@ describe("session-manager", () => {
       steer: () => false,
       skipReconnectWait: () => false,
       async *run() {
-        yield assistantText("x".repeat(600));
-        // Sub-session text doesn't count toward the main-session body threshold
-        // (asserted on its own in the next test).
-        yield withOrigin(assistantText("z".repeat(2000)), "session-sub");
-        yield assistantText("y".repeat(600)); // crosses the 1000-char threshold
         await gate;
-        yield assistantText("tail");
+        yield assistantText("answer");
       },
       async *compact() {},
     };
@@ -1063,7 +1067,7 @@ describe("session-manager", () => {
       sessions,
       channels,
       sources,
-      loader: loaderOf(longSession),
+      loader: loaderOf(gatedRun),
       recorder: { record: async () => {} },
       titles: {
         maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
@@ -1072,25 +1076,24 @@ describe("session-manager", () => {
     });
 
     await manager.startTask("session-1", [userText("long question")]);
-    // The early trigger fires while the run is still in flight (gated before completion).
+    // The trigger fires while the run is still parked before its first message.
     await waitFor(() => notified.length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
     expect(notified[0]!.req.fallbackText).toBe("long question");
-    expect(notified[0]!.req.material).toBeUndefined();
+    expect(notified[0]!.req.material).toEqual({ userText: "long question", assistantText: "" });
 
-    // Completion still notifies as the short-answer fallback path (the generator itself dedups).
+    // Completion adds no second trigger — the start is the only one.
     release();
     await waitFor(() => manager.statusOf("session-1") === "idle");
-    await waitFor(() => notified.length === 2);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(notified.length).toBe(1);
   });
 
-  it("a subagent's output never fires the early title: only main-session body text counts toward the 1000 chars", async () => {
+  it("a subagent's title fires at registration (mid-run), from its spawning prompt alone", async () => {
     const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
     const driven: OmniMessage[] = [];
-    // Gate the run right after the sub-session's long output: while the parent is parked
-    // here the completion trigger hasn't run yet, so an empty `notified` proves the child's
-    // text alone never crossed the threshold (without the gate an early fire would be
-    // indistinguishable from the completion one).
+    // Gate the run right after the sub-session's output: both notifications must already
+    // be in by then, proving neither waited for the run to complete.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const delegating: RuntimeSession = {
@@ -1119,10 +1122,9 @@ describe("session-manager", () => {
           }),
           hop,
         );
-        // Far past the threshold, but it belongs to the sub-session's own conversation.
         yield withOrigin(assistantText("z".repeat(3000)), hop);
         await gate;
-        yield assistantText("short answer"); // the parent's whole body, well under 1000 chars
+        yield assistantText("short answer");
       },
       async *compact() {},
     };
@@ -1143,17 +1145,23 @@ describe("session-manager", () => {
     });
 
     await manager.startTask("session-1", [userText("delegate this")]);
-    // Recording happens after the early-title check, so once the sub-session's 3000 chars
-    // have been driven through the parent's counter has already seen everything it will
-    // ever see from the child — and it must still be at zero.
+    // By the time the sub-session's output has been driven through, both titles have
+    // already fired: the parent's at Task start, the child's at registration.
     await waitFor(() => driven.length === 3);
     expect(manager.statusOf("session-1")).toBe("running");
-    expect(notified.length).toBe(0);
+    expect(notified.map((n) => n.ctx.sessionId)).toEqual(["session-1", "child-1"]);
+    const child = notified[1]!;
+    // The child's material is its spawning prompt alone — its own output is never waited for.
+    expect(child.req.material).toEqual({
+      userText: "Research the background of this question",
+      assistantText: "",
+    });
+    expect(child.req.notifyOn).toBe("session-1");
 
-    // Only the completion path notifies: once for the parent, once for the sub-session's own title.
+    // Completion adds nothing further.
     release();
     await waitFor(() => manager.statusOf("session-1") === "idle");
-    await waitFor(() => notified.length === 2);
-    expect(notified.map((n) => n.ctx.sessionId)).toEqual(["session-1", "child-1"]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(notified.length).toBe(2);
   });
 });

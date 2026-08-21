@@ -20,6 +20,7 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — a random `penguin-<4 digits>` password is generated and printed once at seed time |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
 | `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | Any non-empty value stops the desktop app from importing the login shell's environment on macOS/Linux GUI launches (see [Desktop quickstart](/quickstart-desktop)) | unset — the import runs, filling only variables the launch left unset |
 
 These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and the internal `PENGUIN_CLI_ENTRY` are **removed from the environment of commands the Agent runs** — otherwise a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own. The rest of the host environment passes through, with one further exception: `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` are always forced to fixed values, so that a command cannot hang waiting on an editor, a credential prompt or a pager. The Agent's [vault](#vault) is applied on top of the host environment — setting `PORT` there does reach commands — but not on top of those six.
 
@@ -105,7 +106,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `model.max_tokens` | `32000` | Output Token ceiling per Request (-1 = no cap, provider default); each request clamps the effective value to the model's `context_window` minus the estimated input, so a small-window model never gets asked for more than fits |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`; the session default, overridable per-Task |
 | `model.timeoutMs` | `120000` | Per-Request timeout (milliseconds) |
-| `compaction.max_context_length` | `128000` | Context Token threshold that triggers compaction; the effective threshold is capped at the model's `context_window` − 2048 so compaction fires before a small window overflows |
+| `compaction.max_context_length` | `256000` | Context Token threshold that triggers compaction; the effective threshold is the smaller of this and the model's `context_window` − 2048, so a small-window model compacts inside its window while a window above 258048 fires at this number (an entry with no `context_window` assumes a 128000 window) |
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
@@ -119,7 +120,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 | `schedules.enabled` | `true` | Whether the scheduled-tasks section enters the context (with it off, the server still fires tasks — the model just isn't taught the task system) |
 | `schedules.prompt` | built-in template | The `{{SCHEDULES}}` block, editable on the Schedules tab — teaches the model file-based task management, carries `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | full default toolset when omitted | Tool entries: `name` / `description` / `parameters` / `permission` (`r` or `rw`) / `forModel` / `timeoutMs` / `maxOutputLength` / `call_description` (per-tool toggle for the `description` call argument, required while on; missing = kept); once written it replaces the default list wholesale |
-| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; see the MCP Servers section of [Tools & Approval](/tools) |
+| `tools.mcpServers` | `[]` | MCP Server configuration (`name` + `config`): transport is `stdio` / `http` / `sse`, and discovered tools join the toolset as `mcp__<server>__<tool>`; `config.permission` (`auto` / `r` / `rw`, default `auto`) fixes the approval level of every tool of that Server instead of trusting its `readOnlyHint`; see the MCP Servers section of [Tools & Approval](/tools) |
 
 Tool permissions and approval semantics are covered in [Tools & Approval](/tools).
 
@@ -143,7 +144,7 @@ model:
   timeoutMs: 120000
 
 compaction:
-  max_context_length: 128000
+  max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 

@@ -32,6 +32,8 @@ import type {
   DefaultModelResponse,
   DefaultModelUpdateRequest,
   DirListResponse,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
@@ -42,7 +44,10 @@ import type {
   MembersResponse,
   MemoryFileResponse,
   MemoryFilesResponse,
+  MemoryImportRequest,
+  MemoryImportResponse,
   MemoryOverviewResponse,
+  MemoryScopeExport,
   MessagesResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
@@ -89,6 +94,7 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateRunResponse,
+  DesktopUpdateStatusResponse,
   UsageErrorsPage,
   UsageGranularity,
   UsageGroupBy,
@@ -216,6 +222,13 @@ export const detectProtocol = (projectId: string, body: ModelProtocolDetectReque
     { method: "POST", body },
   );
 
+/** Endpoint model listing: given a base URL plus the protocol /detect reported, returns every model id the endpoint serves (the add-group import). */
+export const listEndpointModels = (projectId: string, body: EndpointModelListRequest) =>
+  apiFetch<EndpointModelListResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/list`,
+    { method: "POST", body },
+  );
+
 /** Vision probe: sends one 1x1 image on this model's credential and reports whether it was accepted (a real, billed completion — unlike the protocol probes). */
 export const detectVision = (projectId: string, body: ModelVisionDetectRequest) =>
   apiFetch<ModelVisionDetectResponse>(
@@ -292,6 +305,30 @@ export const deleteMemoryFile = (
 ) =>
   apiFetch<void>(`${memoryFilesBase(projectId, agentId, scopeKey)}/${encodeURIComponent(name)}`, {
     method: "DELETE",
+  });
+
+const memoryScopeBase = (projectId: string, agentId: string, scopeKey: string) =>
+  `${memoryBase(projectId, agentId)}/scopes/${encodeURIComponent(scopeKey)}`;
+
+/**
+ * One scope as a transfer document. Fetched as ordinary JSON rather than followed as a download
+ * link so a failure arrives as an ApiError and reaches the user as a toast — a bare `<a download>`
+ * would save the error body as a file (the skills tab hit the same wall). The server still sets
+ * Content-Disposition, for anyone opening the URL directly.
+ */
+export const exportMemoryScope = (projectId: string, agentId: string, scopeKey: string) =>
+  apiFetch<MemoryScopeExport>(`${memoryScopeBase(projectId, agentId, scopeKey)}/export`);
+
+/** Writes a transfer document into one scope (owner only); `confirm` is required by the modes that would destroy something. */
+export const importMemoryScope = (
+  projectId: string,
+  agentId: string,
+  scopeKey: string,
+  body: MemoryImportRequest,
+) =>
+  apiFetch<MemoryImportResponse>(`${memoryScopeBase(projectId, agentId, scopeKey)}/import`, {
+    method: "POST",
+    body,
   });
 
 // Agent & its configuration ----------------------------------------------------------------
@@ -849,3 +886,13 @@ export const checkUpdate = (force = false) =>
 /** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
 export const runUpdate = () =>
   apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+
+// Desktop client update (desktop-shell sessions only) ----------------------------------
+
+export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+export const desktopUpdateCheck = () =>
+  apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
+
+export const desktopUpdateInstall = () =>
+  apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });

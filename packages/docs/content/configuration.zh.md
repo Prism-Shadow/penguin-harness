@@ -20,6 +20,7 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
+| `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |
 
 这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
 
@@ -105,7 +106,7 @@ output = 0.857143
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
-| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
+| `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
@@ -119,7 +120,7 @@ output = 0.857143
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集，详见[工具与审批](/tools)的 MCP Server 一节 |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
 
 工具权限与审批语义见[工具与审批](/tools)。
 
@@ -143,7 +144,7 @@ model:
   timeoutMs: 120000
 
 compaction:
-  max_context_length: 128000
+  max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 

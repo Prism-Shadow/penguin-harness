@@ -376,6 +376,14 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
+  /**
+   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
+   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
+   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
+   * entry is not first-party.
+   */
+  envKeyMasked?: string;
   credential?: CredentialInfo;
   isDefault: boolean;
 }
@@ -570,6 +578,31 @@ export interface ModelProtocolDetectResponse {
   /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
   detected?: string;
   probes: ModelProtocolProbeDto[];
+}
+
+/**
+ * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
+ * the protocol `/detect` reported, returns every model id the endpoint serves (AgentHub's
+ * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
+ * whole listing in one go; the ids come back in the endpoint's own order.
+ */
+export interface EndpointModelListRequest {
+  /** Endpoint base URL (as typed in the add-group dialog). */
+  baseUrl: string;
+  /** AgentHub client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
+  clientType: string;
+  /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
+  apiKey?: string;
+}
+
+/** Listing outcome: model ids on success, a truncated provider/SDK reason otherwise. */
+export interface EndpointModelListResponse {
+  ok: boolean;
+  /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
+  models?: string[];
+  /** The routed client has no models endpoint (AgentHub UnsupportedOperationError) — callers offer the manual path. */
+  unsupported?: boolean;
+  message?: string;
 }
 
 /**
@@ -844,6 +877,8 @@ export interface MemoryScopeInfo {
   workspacePath?: string;
   /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
   fileCount: number;
+  /** Whether the directory holds a `MEMORY.md` index, so an import confirmation can say whether one would be replaced. */
+  hasIndex: boolean;
   /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
   updatedAt?: string;
 }
@@ -886,6 +921,69 @@ export interface MemoryFileResponse {
   scopeKey: string;
   file: MemoryFileInfo;
   content: string;
+}
+
+/** One topic file inside a transfer document: the name it had in its scope, and its whole text. */
+export interface MemoryTransferFile {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md` — a name, never a path. */
+  name: string;
+  /** The file's full Markdown text, frontmatter included. */
+  content: string;
+}
+
+/**
+ * GET …/memory/scopes/:key/export, and the body a POST …/import carries back: everything one
+ * scope holds, as one JSON document — the topic files and the scope's own `MEMORY.md`.
+ */
+export interface MemoryScopeExport {
+  /** Format marker, so a foreign JSON file is refused with a clear reason rather than half-imported. */
+  format: "penguin-memory-scope";
+  /** Document version. A reader accepts exactly this; a later format bumps it and states its own compatibility. */
+  version: 1;
+  /** The scope this was exported from. Informational: an import writes into the scope its URL names. */
+  scopeKey: string;
+  kind: MemoryScopeInfo["kind"];
+  /** The Workspace the source scope stood for, when it had a `.workspace` marker. */
+  workspacePath?: string;
+  /** When the document was produced (ISO 8601). */
+  exportedAt: string;
+  /** The scope's `MEMORY.md`, or null when the scope has none. Only the index reaches the model's context. */
+  index: string | null;
+  files: MemoryTransferFile[];
+}
+
+/**
+ * What an import does with a name the target scope already holds:
+ *   - `skip` — keep what is on disk, write only names the scope does not have (destroys nothing);
+ *   - `overwrite` — replace a same-named file's content;
+ *   - `replace` — additionally delete every topic file the document does not carry.
+ * The two destructive modes require `confirm`.
+ */
+export type MemoryImportMode = "skip" | "overwrite" | "replace";
+
+/** POST …/memory/scopes/:key/import */
+export interface MemoryImportRequest {
+  /** Defaults to `skip`. */
+  mode?: MemoryImportMode;
+  /** Required by `overwrite` and `replace`; without it they are refused with 409 `memory_import_confirm_required`. */
+  confirm?: boolean;
+  payload: MemoryScopeExport;
+}
+
+/** What one import did, name by name, so the UI can report it rather than claim success. */
+export interface MemoryImportResponse {
+  scopeKey: string;
+  mode: MemoryImportMode;
+  /** Names written that the scope did not have. */
+  added: string[];
+  /** Names whose existing content was replaced. */
+  overwritten: string[];
+  /** Names left untouched because the scope already had them (`skip` only). */
+  skipped: string[];
+  /** Names deleted because `replace` dropped everything the document did not carry. */
+  removed: string[];
+  /** Whether the scope's `MEMORY.md` was written or extended. */
+  indexWritten: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -2150,6 +2248,60 @@ export interface UpdateCheckResponse {
   disabled?: true;
   /** Why the lookup failed: unreachable network / GitHub rate limit / unusable response. */
   error?: "network" | "rate_limited" | "bad_response";
+}
+
+// ---------------------------------------------------------------------------
+// Desktop client update (desktop mode only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The desktop shell's updater snapshot, pushed to the embedded server over the
+ * utilityProcess message channel and served at GET /api/desktop/update. `state` is the
+ * discriminator; the optional fields belong to the states named on them.
+ *
+ * A `downloaded` build stays the reported state until it is installed: a later periodic
+ * check (or its failure) must not hide the actionable "restart to install" step.
+ */
+export interface DesktopUpdateStatus {
+  /** Installed shell version (Electron app.getVersion()). */
+  appVersion: string;
+  /**
+   * Bumped by the shell on every updater event it folds, whether or not the visible
+   * state changed. A row-initiated check settles when the seq has moved past its
+   * at-click value and the state is no longer `checking` — snapshot equality can't
+   * carry that signal (a check that ends where it started is byte-identical).
+   */
+  seq?: number;
+  state:
+    "idle" | "checking" | "up-to-date" | "downloading" | "downloaded" | "error" | "unsupported";
+  /** Newer release being fetched / ready to install (`downloading`, `downloaded`). */
+  version?: string;
+  /** Download progress 0–100 (`downloading`). */
+  percent?: number;
+  /** Updater failure text (`error`). */
+  message?: string;
+  /** Why this install form cannot update itself (`unsupported`): dev run, or a Linux install that is not an AppImage (e.g. .deb — the system package manager owns it). */
+  reason?: "dev" | "linux-not-appimage";
+}
+
+/**
+ * GET /api/desktop/update (desktop-shell sessions only): the latest shell snapshot.
+ * `status` is null until the shell's first push lands (a beat after server start).
+ */
+export interface DesktopUpdateStatusResponse {
+  status: DesktopUpdateStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopUpdaterStatusMessage {
+  type: "desktop-updater-status";
+  status: DesktopUpdateStatus;
+}
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/update/check|install). */
+export interface DesktopUpdaterCommandMessage {
+  type: "desktop-updater-command";
+  action: "check" | "install";
 }
 
 /**

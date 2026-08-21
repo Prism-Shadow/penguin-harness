@@ -59,21 +59,34 @@ export const en: Strings = {
 
   settings: {
     language: "Language",
+    languageHint: "Interface language; can follow the browser",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "System settings",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "Personal",
+    groupServer: "Server",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "General",
+    appearanceTitle: "Appearance",
+    accountTitle: "Account",
+    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "Proxy options…",
-    proxyDialogTitle: "Proxy options",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "Proxy options",
+    proxyHint:
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "Upload limits…",
-    uploadLimitsDialogTitle: "Upload limits",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "Upload limits",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
     attachmentTotalMb: "Max total per message (MB)",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
@@ -83,18 +96,24 @@ export const en: Strings = {
       `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
       `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
+    themeHint: "Light or dark look of the app",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
     terminalTheme: "Terminal theme",
+    terminalThemeHint: "Colors of the terminal panel; follows the app theme by default",
     followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
+    fontSizeHint: "Overall interface font size",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
+    accentHint: "Interface accent color",
+    currencyHint: "Display currency for prices; storage is always USD",
+    changePasswordHint: "Change this account's sign-in password",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -136,6 +155,41 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "Check for updates",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null
+        ? `Version v${v} found — downloading in the background…`
+        : "New version found — downloading in the background…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `Restart to install v${v}` : "Restart to install the update",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null
+        ? `Version v${v} is ready — restart to install`
+        : "The update is ready — restart to install",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
+    clientInstallConfirmTitle: "Restart and install the update",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody:
+      "PenguinHarness will restart to finish updating. Running tasks will be interrupted.",
+    clientInstallConfirmAction: "Restart now",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "A dev run does not update itself",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage:
+      "This install is managed by the system package manager — update it there",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -415,6 +469,17 @@ export const en: Strings = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermissionAutoDescription:
+      "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
+    mcpPermissionReadDescription:
+      "Treat every tool of this server as read-only, whatever it declares. Auto-approved when the approval mode is read-only.",
+    mcpPermissionReadWriteDescription:
+      "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
+    mcpPermissionHint:
+      "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
@@ -519,13 +584,32 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+    groupModeCreate: "Create only",
+    groupModeImport: "Import models",
+    groupImportAll: "Import all models",
+    groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
+    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportListing: "Fetching model list…",
+    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportUnsupported: "This protocol cannot list models — add them manually",
+    groupImportFailed: "Fetching the model list failed",
+    groupImportEmpty: "No models to import from this endpoint",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0
+        ? `Imported ${added} models, skipped ${skipped} entries`
+        : `Imported ${added} models`,
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
       "Group names may only use lowercase letters, digits, - and _ (starting with a letter or digit), up to 32 characters",
     groupNameExists: "This name is taken by a built-in group or an existing entry",
     groupEmptyHint: "No models in this group yet; use “Add model” to create one",
+    deleteGroup: "Delete group",
+    deleteGroupTitle: "Delete group",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",
@@ -658,6 +742,7 @@ export const en: Strings = {
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
     empty: "No models configured yet",
     noKey: "No key",
+    readFromEnv: "Read from environment variable",
     showModelsWithoutKey: (n: number): string =>
       `Show model${n === 1 ? "" : "s"} without a key (${n})`,
     modelIdExists: "This model id already exists",
@@ -732,6 +817,36 @@ export const en: Strings = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
+    exportScope: "Export",
+    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeLabel: (scope: string): string => `Export ${scope}`,
+    importScope: "Import",
+    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeLabel: (scope: string): string => `Import into ${scope}`,
+    importTitle: "Import memories",
+    importWhy:
+      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
+    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importModeLabel: "When this group already has a memory of the same name",
+    importModeSkip: "Keep the one that is here",
+    importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
+    importModeOverwrite: "Take the file's version",
+    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeReplace: "Replace the whole group",
+    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importAction: "Import",
+    importInvalidFile: "This file is not a memory export.",
+    importEmptyFile: "This file carries no memories.",
+    importConfirmTitle: "Confirm the import",
+    importWillOverwrite: (names: string[]): string =>
+      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+    importWillRemove: (names: string[]): string =>
+      `${names.length} memories will be deleted: ${names.join(", ")}`,
+    importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
+    importIrreversible: "This cannot be undone.",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
+    importNothingNew: "Nothing to import — this group already has every memory in the file",
   },
 
   vault: {
@@ -1285,6 +1400,20 @@ Scenarios:
     openPreview: "Click to preview",
     showMoreFiles: (n: number) => `Show ${n} more ${n === 1 ? "file" : "files"}`,
     showLess: "Show less",
+    memoryChangesTitle: (n: number) => `${n} memory ${n === 1 ? "update" : "updates"}`,
+    memoryScopeWorkspace: (key: string) => `Workspace memory (${key})`,
+    memoryOpWrite: "Wrote",
+    memoryOpEdit: "Edited",
+    memoryViewTitle: "Memory",
+    memoryChangedMark: "Changed in this conversation",
+    memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
+    openMemoryPanel: "Open memory",
+    memoryRowOpen: "View content",
+    memoryBack: "Back to the list",
+    memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "Manage in agent settings",
+    memoryShowMore: (n: number) => `Show ${n} more`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `More groups (${n})`,
     contextUsage: "Context usage",
@@ -1606,6 +1735,8 @@ Scenarios:
       member_not_found: "This user is not a member of the Project.",
       already_member: "This user is already a member of the Project.",
       already_owner: "This user is already an owner of the Project.",
+      memory_import_confirm_required:
+        "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",

@@ -122,6 +122,7 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 | PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order and reports the first served protocol: `{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/list | Endpoint model listing for the add-group import: the ids the endpoint serves on a detected protocol: `{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | Vision capability probe: sends one 1x1 image on this model's credential (a real, billed completion): `{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
@@ -142,6 +143,8 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | POST | /agents/:agentId/memory/template-placeholder | Insert the `{{MEMORY}}` placeholder into the prompt template (idempotent; the explicit adoption path for an Agent created before Memory) |
 | GET | /agents/:agentId/memory/scopes/:key/files | List one scope's topic files (frontmatter + stats); `:key` is a workspace key or `user` |
 | GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | Read one topic file / delete it (also pruning its `MEMORY.md` index lines) |
+| GET | /agents/:agentId/memory/scopes/:key/export | One scope as a single JSON document: every topic file plus its `MEMORY.md`, downloaded as an attachment |
+| POST | /agents/:agentId/memory/scopes/:key/import | Write such a document back (owner only): `{payload, mode?, confirm?}`. `mode` is `skip` (the default — adds only names the scope lacks), `overwrite` (replaces same-named files) or `replace` (also deletes what the document omits); anything that would overwrite or delete needs `confirm`, else 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | Export the Agent State snapshot (tar.gz download) |
 | POST | /agents/:agentId/import | Import a snapshot: `{dataBase64, confirm?}`; 409 on version conflict without confirm |
 | GET / POST | /agents/:agentId/skills | List / install installed Skills |
