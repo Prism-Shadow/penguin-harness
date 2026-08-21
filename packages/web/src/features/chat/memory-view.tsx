@@ -17,7 +17,6 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { apiErrorText } from "../../lib/api-error";
 import { formatRelativeDate } from "../../lib/format";
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 import { diffLines } from "../../lib/line-diff";
@@ -44,6 +43,9 @@ const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a
 const OPEN_SETTINGS_ICON =
   "M14 4h6v6M20 4 10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3";
 const BACK_ICON = "M19 12H5m6-6-6 6 6 6";
+/** Trash can (the memory-tab's delete glyph): the deleted-row marker. */
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** The scope glyph + tooltip pair, shared with the memory-changes card's rows. */
 export function scopeGlyph(scope: "user" | "workspace", scopeKey?: string) {
@@ -214,9 +216,9 @@ function DetailContent({
     );
   }
   if (replay.kind === "rewritten") {
+    // Written whole this conversation: the all-added diff says it by itself.
     return (
-      <div className={`space-y-2 ${flashClass}`}>
-        <SubtleNote text={S.chat.memoryRewrittenNote} />
+      <div className={flashClass}>
         <DiffBlock lines={diffLines("", afterBody)} />
       </div>
     );
@@ -235,53 +237,26 @@ function DetailContent({
 export function ChatMemoryView({
   session,
   changes,
+  scopes,
+  listingError,
   request,
   active,
   onOpenSettings,
 }: {
   session: SessionInfo;
-  /** This conversation's aggregated memory changes (chat-page derives them from the stream's task_stats items). */
+  /** This conversation's aggregated memory changes (identity-stable — chat-page only swaps the array when the content moved). */
   changes: MemoryChangeRow[];
+  /** The server listing, loaded by chat-page's use-memory-listing (shared with the card's deleted-row marking); null = not loaded. */
+  scopes: ScopeFiles[] | null;
+  listingError: string | null;
   /** Navigation command from openMemory (object identity re-triggers): with a target it lands on that memory's detail, without one on the list. */
   request: { target: MemoryLocateTarget | null } | null;
-  /** Whether the Memory tab is showing (the view stays mounted behind the other tab; loading waits for the first activation). */
+  /** Whether the panel is showing (detail loading waits for it). */
   active: boolean;
   /** Opens the agent-settings memory tab, where management (add / edit / delete) lives. */
   onOpenSettings?: () => void;
 }) {
   const { locale } = useLocale();
-
-  // ---- server listing ----
-  const [scopes, setScopes] = useState<ScopeFiles[] | null>(null);
-  const [browseError, setBrowseError] = useState<string | null>(null);
-
-  // Load on first activation, and reload whenever this conversation lands new changes —
-  // `changes` identity moves once per settled Task, so this stays cheap and the listing
-  // never shows a file the transcript just rewrote at its old mtime. While the tab is
-  // hidden the effect just returns; the activation itself re-fires it.
-  useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    setBrowseError(null);
-    void (async () => {
-      try {
-        const overview = await api.getMemoryOverview(session.projectId, session.agentId);
-        const loaded = await Promise.all(
-          overview.scopes.map(async (info) => ({
-            info,
-            files: (await api.getMemoryFiles(session.projectId, session.agentId, info.scopeKey))
-              .files,
-          })),
-        );
-        if (!cancelled) setScopes(loaded);
-      } catch (err) {
-        if (!cancelled) setBrowseError(apiErrorText(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [active, session.projectId, session.agentId, changes]);
 
   // ---- navigation (memory-nav.ts): entry routing + back ----
   const [mode, setMode] = useState<MemoryNavMode>({ kind: "list" });
@@ -409,8 +384,8 @@ export function ChatMemoryView({
           </button>
         )}
       </div>
-      {browseError !== null && groups.length === 0 ? (
-        <p className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">{browseError}</p>
+      {listingError !== null && groups.length === 0 ? (
+        <p className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">{listingError}</p>
       ) : scopes === null && groups.length === 0 ? (
         <div className="px-3.5 py-2">
           <SkeletonList rows={3} />
@@ -441,16 +416,21 @@ export function ChatMemoryView({
                 </span>
               </div>
               <ul>
-                {group.rows.map((row) => (
-                  <li key={memoryRowKey(row.target)}>
-                    <button
-                      type="button"
-                      onClick={() => setMode({ kind: "detail", target: row.target })}
-                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                    >
+                {group.rows.map((row) => {
+                  // A changed file the loaded listing doesn't carry was deleted after the
+                  // change: the row stays visible but can't open — its detail would only 404.
+                  const deleted = scopes !== null && row.changed !== undefined && !row.listed;
+                  const inner = (
+                    <>
                       <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
-                          {row.changed !== undefined && (
+                        <p
+                          className={`flex items-center gap-1.5 truncate font-mono text-[13px] font-medium ${
+                            deleted
+                              ? "text-gray-400 line-through dark:text-gray-500"
+                              : "text-gray-800 dark:text-gray-200"
+                          }`}
+                        >
+                          {row.changed !== undefined && !deleted && (
                             <span
                               title={S.chat.memoryChangedMark}
                               className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500"
@@ -466,17 +446,41 @@ export function ChatMemoryView({
                           </p>
                         )}
                       </div>
-                      {(row.updatedAt !== undefined || row.modifiedAt !== undefined) && (
-                        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-                          {row.updatedAt ??
-                            (row.modifiedAt !== undefined
-                              ? formatRelativeDate(row.modifiedAt, locale)
-                              : "")}
+                      {deleted ? (
+                        <span title={S.chat.memoryDeleted} className="shrink-0 text-gray-400">
+                          <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.inlineGlyph} />
+                          <span className="sr-only">{S.chat.memoryDeleted}</span>
                         </span>
+                      ) : (
+                        (row.updatedAt !== undefined || row.modifiedAt !== undefined) && (
+                          <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                            {row.updatedAt ??
+                              (row.modifiedAt !== undefined
+                                ? formatRelativeDate(row.modifiedAt, locale)
+                                : "")}
+                          </span>
+                        )
                       )}
-                    </button>
-                  </li>
-                ))}
+                    </>
+                  );
+                  return (
+                    <li key={memoryRowKey(row.target)}>
+                      {deleted ? (
+                        <div className="flex w-full items-center gap-3 px-3.5 py-2 text-left">
+                          {inner}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setMode({ kind: "detail", target: row.target })}
+                          className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        >
+                          {inner}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ),

@@ -116,6 +116,48 @@ export function mergeMemoryChanges(entries: readonly MemoryChangeEntry[]): Memor
 }
 
 /**
+ * Content equality of two aggregated row lists. The chat page re-derives rows from the
+ * stream on every streamed message; consumers key effects (listing refetch, detail refetch)
+ * and memos on the rows' identity, so the page keeps the previous array whenever this says
+ * nothing actually changed — a streaming tick must not re-fire those effects.
+ */
+export function sameMemoryChanges(
+  a: readonly MemoryChangeRow[],
+  b: readonly MemoryChangeRow[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ra = a[i]!;
+    const rb = b[i]!;
+    if (
+      ra.scope !== rb.scope ||
+      ra.scopeKey !== rb.scopeKey ||
+      ra.file !== rb.file ||
+      ra.op !== rb.op ||
+      ra.events.length !== rb.events.length
+    ) {
+      return false;
+    }
+    for (let j = 0; j < ra.events.length; j++) {
+      const ea = ra.events[j]!;
+      const eb = rb.events[j]!;
+      if (
+        ea.op !== eb.op ||
+        ea.content !== eb.content ||
+        ea.oldString !== eb.oldString ||
+        ea.newString !== eb.newString ||
+        ea.replaceAll !== eb.replaceAll ||
+        ea.atMs !== eb.atMs
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
  * Merges several Tasks' row lists (in Task order) into one per-file list for the side
  * panel's "changes this conversation" section: events concatenate chronologically, the
  * summary op stays write-dominant, order is first appearance across the whole session.

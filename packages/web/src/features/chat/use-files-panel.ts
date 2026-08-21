@@ -17,7 +17,6 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { SheetSnap } from "../../components/ui/sheet";
-import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import { usePanelWidth } from "./use-panel-width";
 import type { PanelWidthState } from "./use-panel-width";
 
@@ -27,15 +26,8 @@ export interface FilesPanelState extends PanelWidthState {
   /** Snap point for the mobile bottom Sheet (half = browsing / full = preview); unused in the desktop docked state. */
   sheetSnap: SheetSnap;
   setSheetSnap: (snap: SheetSnap) => void;
-  /** Which of the panel's two sibling views is showing: the Workspace directory tree or the Agent's Memory. */
-  view: "files" | "memory";
-  setView: (view: "files" | "memory") => void;
   /** Clicking a file chip in a message: commands WorkspaceBrowser to navigate to and locate that file. */
   browsePath: (path: string) => void;
-  /** Switches to the memory view; a non-null target commands it to locate that row's diff (memory-changes card row click). */
-  openMemory: (target: MemoryLocateTarget | null) => void;
-  /** The external memory navigation command produced by openMemory; a new object per call so repeating the same target still re-triggers the locate effect (compared by identity, like openRequest). */
-  memoryRequest: { target: MemoryLocateTarget | null } | null;
   /** The external navigation command produced by browsePath; each call creates a new object
    *  reference, ensuring that clicking the same file again still re-triggers WorkspaceBrowser's
    *  locate effect (compared by object identity, not by path value). */
@@ -52,10 +44,6 @@ export function useFilesPanel(sessionId: string | null): FilesPanelState {
   const [open, setOpenRaw] = useState(false);
   const [sheetSnap, setSheetSnap] = useState<SheetSnap>("half");
   const [openRequest, setOpenRequest] = useState<{ path: string } | null>(null);
-  const [view, setView] = useState<"files" | "memory">("files");
-  const [memoryRequest, setMemoryRequest] = useState<{
-    target: MemoryLocateTarget | null;
-  } | null>(null);
 
   /** Opening the panel defaults to browsing intent (Sheet snaps to half); browsePath's preview
    *  intent overrides it to full within the same batch, without flickering. Closing doesn't
@@ -67,13 +55,10 @@ export function useFilesPanel(sessionId: string | null): FilesPanelState {
   const widthState = usePanelWidth();
   const [isDocked, setIsDocked] = useState(() => window.matchMedia(DOCK_QUERY).matches);
 
-  // Switching Session/Agent only resets the navigation commands (which pointed at files in the
-  // old session) and the view (memory rows are per-conversation); the open/closed state
-  // deliberately survives — see the header note.
+  // Switching Session/Agent only resets the navigation command (which pointed at a file in the
+  // old session); the open/closed state deliberately survives — see the header note.
   useEffect(() => {
     setOpenRequest(null);
-    setMemoryRequest(null);
-    setView("files");
   }, [sessionId]);
 
   useEffect(() => {
@@ -85,14 +70,7 @@ export function useFilesPanel(sessionId: string | null): FilesPanelState {
 
   const browsePath = useCallback((path: string) => {
     setSheetSnap("full"); // Preview intent: opens the mobile Sheet fully
-    setView("files"); // A file locate must land on the tree, whichever view was up
     setOpenRequest({ path });
-  }, []);
-
-  const openMemory = useCallback((target: MemoryLocateTarget | null) => {
-    setSheetSnap("full"); // A located diff needs the space, same as file preview
-    setView("memory");
-    setMemoryRequest({ target });
   }, []);
 
   return {
@@ -100,10 +78,6 @@ export function useFilesPanel(sessionId: string | null): FilesPanelState {
     setOpen,
     sheetSnap,
     setSheetSnap,
-    view,
-    setView,
-    openMemory,
-    memoryRequest,
     browsePath,
     openRequest,
     isDocked,

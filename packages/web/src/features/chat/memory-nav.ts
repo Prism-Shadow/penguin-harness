@@ -129,6 +129,30 @@ export function buildMemoryList(
   return groups;
 }
 
+/**
+ * Keys (memoryRowKey) of changed files the loaded listing no longer carries — they were
+ * deleted after the change, so every entry point (card row, panel list row) renders them
+ * unopenable instead of letting a click land on a 404. Null while the listing hasn't
+ * loaded: "not loaded yet" must not be mistaken for "deleted".
+ */
+export function deletedChangeKeys(
+  scopes: readonly ScopeFiles[] | null,
+  changes: readonly MemoryChangeRow[],
+): ReadonlySet<string> | null {
+  if (scopes === null) return null;
+  const listed = new Set<string>();
+  for (const { info, files } of scopes) {
+    const group = { scope: info.kind, scopeKey: info.scopeKey };
+    for (const f of files) listed.add(memoryRowKey(targetOf(group, f.name)));
+  }
+  const deleted = new Set<string>();
+  for (const change of changes) {
+    const key = memoryRowKey(change);
+    if (!listed.has(key)) deleted.add(key);
+  }
+  return deleted;
+}
+
 /** This conversation's change row for one memory, if it has one (the detail view's diff section). */
 export function findChangeRow(
   changes: readonly MemoryChangeRow[],

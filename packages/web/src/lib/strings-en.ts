@@ -1357,9 +1357,10 @@ Scenarios:
     memoryChangesSection: "Changes this conversation",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
-    memoryRewrittenNote: "Written in full this conversation — no earlier version to compare",
     memoryUnalignedNote:
       "The file was also changed outside this conversation, so a whole-file diff can't be aligned",
+    memoryDeleted: "Deleted",
+    openMemoryPanel: "Open memory",
     memoryPerCallToggle: "Per-call diffs",
     memoryBodyUnchanged: "Body unchanged (only metadata was updated this conversation)",
     memoryRowOpen: "View diff",

@@ -1,85 +1,18 @@
 /**
- * The chat's side panel: on desktop (≥1024px, see isDocked in use-files-panel.ts) it docks to
- * the right of the chat with a drag-to-resize edge; on narrower viewports it becomes a bottom
- * Sheet (snaps to half for browsing / full for preview, gesture-draggable) so the vertical
- * layout keeps the chat transcript above it visible. Content is two proper tabs (the shared
- * underline Tabs): the WorkspaceBrowser directory tree (a file chip in a message navigates it
- * via openRequest) and the Agent's Memory view (a memory-changes card row navigates it via
- * memoryRequest — see use-files-panel.ts for both commands). Entering the Memory tab through
- * its tab button always lands on the list level (openMemory(null)); only a card row's locate
- * target lands on a detail.
+ * Files panel: on desktop (≥1024px, see isDocked in use-files-panel.ts) it docks to the right
+ * of the chat with a drag-to-resize edge; on narrower viewports it becomes a bottom Sheet
+ * (snaps to half for browsing / full for preview, gesture-draggable) so the vertical layout
+ * keeps the chat transcript above it visible. Content is a single WorkspaceBrowser directory-tree
+ * view; clicking a file chip in a message navigates the tree via openRequest (use-files-panel.ts).
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Sheet } from "../../components/ui/sheet";
 import { CloseIcon } from "../../components/ui/icons";
-import { Tabs } from "../../components/ui/tabs";
-import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { WorkspaceBrowser } from "./workspace-browser";
-import { ChatMemoryView } from "./memory-view";
 import type { FilesPanelState } from "./use-files-panel";
 
-interface FilesPanelProps {
-  session: SessionInfo;
-  panel: FilesPanelState;
-  /** This conversation's aggregated memory changes, for the Memory tab's markers and diffs. */
-  memoryChanges: MemoryChangeRow[];
-  /** Opens the agent-settings memory tab (the Memory view's management link). */
-  onOpenMemorySettings?: (() => void) | undefined;
-}
-
-/** The panel's tab bar. The memory tab routes through openMemory(null) so entering it always resets to the list level. */
-function PanelTabs({ panel }: { panel: FilesPanelState }) {
-  // Inside the component, not module-level: `S` is a live binding the locale switch swaps.
-  const items = [
-    { key: "files" as const, label: S.files.title },
-    { key: "memory" as const, label: S.chat.memoryViewTitle },
-  ];
-  return (
-    <Tabs
-      items={items}
-      active={panel.view}
-      onChange={(key) => {
-        if (key === "memory") panel.openMemory(null);
-        else panel.setView("files");
-      }}
-    />
-  );
-}
-
-export function FilesPanel({
-  session,
-  panel,
-  memoryChanges,
-  onOpenMemorySettings,
-}: FilesPanelProps) {
-  // Both tabs stay mounted, the inactive one hidden — collapsing the tree would drop the
-  // user's expanded-directory state on every switch, and the memory view keeps its listing
-  // and navigation level the same way (its entry routing is command-driven, see openMemory).
-  const body = (previewToFull: boolean) => (
-    <>
-      <div className={panel.view === "files" ? "h-full min-h-0" : "hidden"}>
-        <WorkspaceBrowser
-          session={session}
-          openRequest={panel.openRequest}
-          active={panel.open && panel.view === "files"}
-          {...(previewToFull ? { onPreviewOpen: () => panel.setSheetSnap("full") } : {})}
-        />
-      </div>
-      <div className={panel.view === "memory" ? "h-full min-h-0" : "hidden"}>
-        {/* Keyed by session: a new conversation starts back at the list level with a fresh listing. */}
-        <ChatMemoryView
-          key={session.sessionId}
-          session={session}
-          changes={memoryChanges}
-          request={panel.memoryRequest}
-          active={panel.open && panel.view === "memory"}
-          {...(onOpenMemorySettings ? { onOpenSettings: onOpenMemorySettings } : {})}
-        />
-      </div>
-    </>
-  );
-
+export function FilesPanel({ session, panel }: { session: SessionInfo; panel: FilesPanelState }) {
   if (!panel.isDocked) {
     return (
       <Sheet
@@ -87,14 +20,18 @@ export function FilesPanel({
         snap={panel.sheetSnap}
         onSnapChange={panel.setSheetSnap}
         onClose={() => panel.setOpen(false)}
-        title={panel.view === "memory" ? S.chat.memoryViewTitle : S.files.title}
+        title={S.files.title}
       >
         <div className="flex h-full min-h-0 flex-col">
-          <div className="shrink-0 px-3">
-            <PanelTabs panel={panel} />
+          <div className="min-h-0 flex-1">
+            <WorkspaceBrowser
+              session={session}
+              openRequest={panel.openRequest}
+              active={panel.open}
+              // Entering preview from list view: bump the snap point up to full (preview needs the space)
+              onPreviewOpen={() => panel.setSheetSnap("full")}
+            />
           </div>
-          {/* Preview from the tree's list view bumps the snap to full (preview needs the space) */}
-          <div className="min-h-0 flex-1">{body(true)}</div>
         </div>
       </Sheet>
     );
@@ -149,22 +86,25 @@ export function FilesPanel({
             behaves as a rigid body that slides in and out past the clipping edge with zero
             reflow. While dragging to resize, both values stay in sync, so this isn't affected. */}
         <div style={{ width: panel.width }} className="flex h-full min-h-0 flex-col">
-          {/* Tab row for docked state: the tab bar is the panel's title (the Sheet state keeps
-              its own title bar via Sheet and carries the tab bar as its first content row). */}
-          <div className="flex shrink-0 items-end gap-1 px-3 pt-1">
-            <div className="min-w-0 flex-1">
-              <PanelTabs panel={panel} />
-            </div>
+          {/* Title row for docked state (the Sheet state has its own title bar via Sheet, no duplication needed) */}
+          <div className="flex shrink-0 items-center gap-1 px-3 pt-2">
+            <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">{S.files.title}</h4>
             <button
               type="button"
               onClick={() => panel.setOpen(false)}
               title={S.common.close}
-              className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
               <CloseIcon />
             </button>
           </div>
-          <div className="min-h-0 flex-1">{body(false)}</div>
+          <div className="min-h-0 flex-1">
+            <WorkspaceBrowser
+              session={session}
+              openRequest={panel.openRequest}
+              active={panel.open}
+            />
+          </div>
         </div>
       </div>
     </>

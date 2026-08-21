@@ -8,6 +8,7 @@ import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-serve
 import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
 import {
   buildMemoryList,
+  deletedChangeKeys,
   findChangeRow,
   memoryNavBack,
   memoryNavForRequest,
@@ -134,5 +135,23 @@ describe("findChangeRow", () => {
       findChangeRow(rows, { scope: "workspace", scopeKey: "ws-2", file: "b.md" }),
     ).toBeUndefined();
     expect(findChangeRow(rows, { scope: "user", file: "b.md" })).toBeUndefined();
+  });
+});
+
+describe("deletedChangeKeys", () => {
+  const changes = [change("user", "prefs.md", "edit"), change("user", "gone.md", "write")];
+
+  it("null while the listing hasn't loaded — unknown must not read as deleted", () => {
+    expect(deletedChangeKeys(null, changes)).toBeNull();
+  });
+
+  it("marks exactly the changed files the loaded listing no longer carries", () => {
+    const keys = deletedChangeKeys(LISTING, changes);
+    expect(keys).not.toBeNull();
+    expect([...keys!]).toEqual(["user  gone.md"]);
+  });
+
+  it("empty set when every changed file is still listed", () => {
+    expect([...deletedChangeKeys(LISTING, [change("user", "prefs.md", "edit")])!]).toEqual([]);
   });
 });

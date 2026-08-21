@@ -15,6 +15,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Chevron } from "../../components/ui/chevron";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
+import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
 import { scopeGlyph } from "./memory-view";
 
@@ -26,12 +27,19 @@ const MEMORY_ICON =
 const WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
 const EDIT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 
+/** Trash can (the memory-tab's delete glyph): the deleted-row marker. */
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
+
 export function MemoryChangesCard({
   rows,
+  deletedKeys,
   onLocateChange,
   onOpenPanel,
 }: {
   rows: MemoryChangeRow[];
+  /** Keys (memoryRowKey) of changed files that no longer exist: their rows render unopenable with a deleted marker. Absent = the listing hasn't loaded, which must not read as deleted. */
+  deletedKeys?: ReadonlySet<string>;
   /** Row click: open the side panel's Memory view located at this row's diffs; rows render as plain rows if this isn't wired up. */
   onLocateChange?: (row: MemoryChangeRow) => void;
   /** Header button: open the Memory view unlocated; the button doesn't render if this isn't wired up. */
@@ -43,7 +51,7 @@ export function MemoryChangesCard({
   const visible = expanded ? rows : rows.slice(0, MAX_VISIBLE);
   const hidden = rows.length - visible.length;
 
-  const rowInner = (row: MemoryChangeRow) => {
+  const rowInner = (row: MemoryChangeRow, deleted: boolean) => {
     const glyph = scopeGlyph(row.scope, row.scopeKey);
     return (
       <>
@@ -51,14 +59,26 @@ export function MemoryChangesCard({
           <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
           <span className="sr-only">{glyph.title}</span>
         </span>
-        <PathLabel path={row.file} />
-        <span className="min-w-0 flex-1" />
-        <span
-          title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
-          className="shrink-0 text-gray-400"
-        >
-          <GlyphIcon d={row.op === "write" ? WRITE_ICON : EDIT_ICON} size={ICON_SIZE.inlineGlyph} />
+        <span className={deleted ? "min-w-0 line-through opacity-60" : "contents"}>
+          <PathLabel path={row.file} />
         </span>
+        <span className="min-w-0 flex-1" />
+        {deleted ? (
+          <span title={S.chat.memoryDeleted} className="shrink-0 text-gray-400">
+            <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.inlineGlyph} />
+            <span className="sr-only">{S.chat.memoryDeleted}</span>
+          </span>
+        ) : (
+          <span
+            title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
+            className="shrink-0 text-gray-400"
+          >
+            <GlyphIcon
+              d={row.op === "write" ? WRITE_ICON : EDIT_ICON}
+              size={ICON_SIZE.inlineGlyph}
+            />
+          </span>
+        )}
       </>
     );
   };
@@ -85,16 +105,18 @@ export function MemoryChangesCard({
         )}
       </div>
       <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-        {visible.map((row) =>
-          onLocateChange ? (
+        {visible.map((row) => {
+          const key = memoryRowKey(row);
+          const deleted = deletedKeys?.has(key) === true;
+          return !deleted && onLocateChange ? (
             <button
-              key={`${row.scope} ${row.scopeKey ?? ""} ${row.file}`}
+              key={key}
               type="button"
               title={S.chat.memoryRowOpen}
               onClick={() => onLocateChange(row)}
               className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
             >
-              {rowInner(row)}
+              {rowInner(row, false)}
               {/* Right-aligned action hint, the file card's affordance (span, not a nested button: the row itself is the button). */}
               <span
                 aria-hidden
@@ -104,14 +126,13 @@ export function MemoryChangesCard({
               </span>
             </button>
           ) : (
-            <div
-              key={`${row.scope} ${row.scopeKey ?? ""} ${row.file}`}
-              className="flex w-full items-center gap-2 px-3 py-2"
-            >
-              {rowInner(row)}
+            // Deleted (or handler-less) rows keep their place but never open — a click
+            // would only land on a 404 detail.
+            <div key={key} className="flex w-full items-center gap-2 px-3 py-2">
+              {rowInner(row, deleted)}
             </div>
-          ),
-        )}
+          );
+        })}
         {(hidden > 0 || expanded) && rows.length > MAX_VISIBLE && (
           <button
             type="button"

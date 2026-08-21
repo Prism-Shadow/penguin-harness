@@ -61,7 +61,7 @@ import {
   pushMessage,
 } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
-import { aggregateMemoryChanges } from "../../lib/omni/memory-changes";
+import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
@@ -110,6 +110,11 @@ import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
 import type { FilesPanelState } from "./use-files-panel";
+import { MemoryPanel } from "./memory-panel";
+import { useMemoryPanel } from "./use-memory-panel";
+import type { MemoryPanelState } from "./use-memory-panel";
+import { useMemoryListing } from "./use-memory-listing";
+import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsPanel } from "./subagents-panel";
 import { TerminalDockSlot } from "../terminal/terminal-dock-slot";
 import {
@@ -315,8 +320,9 @@ export function ChatPage() {
 
   const routeSessionId = params.sessionId ?? null;
   const filesPanelRaw = useFilesPanel(routeSessionId);
+  const memoryPanelRaw = useMemoryPanel(routeSessionId);
   const subagentsPanelRaw = useSubagentsPanel(routeSessionId);
-  // The two docked panels are MUTUALLY EXCLUSIVE — side by side they'd crush the chat column at
+  // The three docked panels are MUTUALLY EXCLUSIVE — side by side they'd crush the chat column at
   // the 1024px breakpoint (and two stacked Sheets on mobile would be worse). Exclusivity is
   // enforced here, on the panel objects every consumer receives, rather than at each call site:
   // ANY path that opens one panel (toolbar toggles, message file cards via onOpenFile, subagent
@@ -368,19 +374,37 @@ export function ChatPage() {
   // they cost height, not width.
   /** A visible left/right terminal pane — read BEFORE the flag below starts hiding it. */
   const sidePaneShowing = () => visiblePanes().some((p) => p === "left" || p === "right");
+  /**
+   * Tri-panel exclusivity: at most one of the three docked panels is open, so opening one
+   * hard-closes the sibling that is already closed (a no-op) and hands the OPEN sibling to
+   * swapPanels for the sequenced close→open (the collapse-transition dance above). Closing
+   * asks the two siblings whether the side is still held — this panel's own `open` is the
+   * render-time value and still reads true here.
+   */
+  const exclusiveOpen = (
+    self: { setOpen: (v: boolean) => void },
+    siblings: [
+      { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
+      { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
+    ],
+  ) => {
+    const retracting = sidePaneShowing();
+    setChatSidePanelOpen(true);
+    const [a, b] = siblings;
+    const openSibling = a.open ? a : b;
+    const otherSibling = openSibling === a ? b : a;
+    otherSibling.setOpen(false);
+    swapPanels(openSibling, self.setOpen, retracting);
+  };
   const filesPanel: FilesPanelState = {
     ...filesPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
       if (next) {
-        const retracting = sidePaneShowing();
-        setChatSidePanelOpen(true);
-        swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen, retracting);
+        exclusiveOpen(filesPanelRaw, [subagentsPanelRaw, memoryPanelRaw]);
       } else {
         filesPanelRaw.setOpen(false);
-        // The OTHER panel decides whether the side is still held: this one's `open` is the
-        // render-time value and still reads true here.
-        setChatSidePanelOpen(subagentsPanelRaw.open);
+        setChatSidePanelOpen(subagentsPanelRaw.open || memoryPanelRaw.open);
       }
     },
   };
@@ -389,12 +413,22 @@ export function ChatPage() {
     setOpen: (next: boolean) => {
       cancelPanelSwap();
       if (next) {
-        const retracting = sidePaneShowing();
-        setChatSidePanelOpen(true);
-        swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen, retracting);
+        exclusiveOpen(subagentsPanelRaw, [filesPanelRaw, memoryPanelRaw]);
       } else {
         subagentsPanelRaw.setOpen(false);
-        setChatSidePanelOpen(filesPanelRaw.open);
+        setChatSidePanelOpen(filesPanelRaw.open || memoryPanelRaw.open);
+      }
+    },
+  };
+  const memoryPanel: MemoryPanelState = {
+    ...memoryPanelRaw,
+    setOpen: (next: boolean) => {
+      cancelPanelSwap();
+      if (next) {
+        exclusiveOpen(memoryPanelRaw, [filesPanelRaw, subagentsPanelRaw]);
+      } else {
+        memoryPanelRaw.setOpen(false);
+        setChatSidePanelOpen(filesPanelRaw.open || subagentsPanelRaw.open);
       }
     },
   };
@@ -412,6 +446,7 @@ export function ChatPage() {
     cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
+    memoryPanelRaw.setOpen(false);
     // Panel objects are recreated every render; the raw hooks' setters are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalHasTheSide]);
@@ -489,9 +524,9 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
-  // This conversation's memory changes, aggregated across every visible Task for the side
-  // panel's Memory view (backfilled windows included; version keys the memo like panelModel).
-  const sessionMemoryChanges = useMemo(
+  // This conversation's memory changes, aggregated across every visible Task for the Memory
+  // panel and the card (backfilled windows included; version keys the memo like panelModel).
+  const rawMemoryChanges = useMemo(
     () =>
       aggregateMemoryChanges(
         allItems.flatMap((it) =>
@@ -500,6 +535,30 @@ export function ChatPage() {
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
+  );
+  // Identity-stable view of the rows: the memo above re-derives on EVERY streamed message
+  // (version bumps per tick), but downstream effects — the listing fetch, the detail
+  // refetch — and memos key on the array's identity. Keeping the previous reference while
+  // the content is unchanged is what stops the Memory panel flashing during a streaming
+  // reply; only a settled Task that actually changed memory swaps it.
+  const memoryChangesRef = useRef(rawMemoryChanges);
+  if (!sameMemoryChanges(memoryChangesRef.current, rawMemoryChanges)) {
+    memoryChangesRef.current = rawMemoryChanges;
+  }
+  const sessionMemoryChanges = memoryChangesRef.current;
+  // The Agent's memory listing, fetched once memory is on screen or this conversation has
+  // changes to mark; shared by the Memory panel and the card's deleted-row marking.
+  const memoryListing = useMemoryListing(
+    projectId,
+    selected?.agentId ?? null,
+    memoryPanelRaw.open || sessionMemoryChanges.length > 0,
+    sessionMemoryChanges,
+  );
+  // Changed files the loaded listing no longer carries: those entries render unopenable
+  // (undefined while the listing hasn't loaded — "unknown" must not read as "deleted").
+  const deletedMemoryKeys = useMemo(
+    () => deletedChangeKeys(memoryListing.scopes, sessionMemoryChanges) ?? undefined,
+    [memoryListing.scopes, sessionMemoryChanges],
   );
   // The message stream's scroll container, exposed by MessageStream for the outline's
   // jump/scrollspy (anchors are queried inside it, never document-wide).
@@ -542,6 +601,7 @@ export function ChatPage() {
     cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
+    memoryPanelRaw.setOpen(false);
     setChatSidePanelOpen(false); // nothing holds the side any more: side panes come back
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
@@ -573,7 +633,8 @@ export function ChatPage() {
       action === "autoOpen" &&
       subagentsPanelRaw.isDocked &&
       !subagentsPanelRaw.open &&
-      !filesPanelRaw.open
+      !filesPanelRaw.open &&
+      !memoryPanelRaw.open
     ) {
       setChatSidePanelOpen(true);
       subagentsPanelRaw.setOpen(true);
@@ -1466,18 +1527,19 @@ export function ChatPage() {
       subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
     },
     onOpenMemory: () => {
-      // The side panel's Memory view (the wrapped setOpen closes the subagents panel).
-      filesPanel.setOpen(true);
-      filesPanel.openMemory(null);
+      // The Memory panel on its list (the wrapped setOpen closes the sibling panels).
+      memoryPanel.setOpen(true);
+      memoryPanelRaw.openMemory(null);
     },
     onLocateMemoryChange: (row) => {
-      filesPanel.setOpen(true);
-      filesPanel.openMemory({
+      memoryPanel.setOpen(true);
+      memoryPanelRaw.openMemory({
         scope: row.scope,
         ...(row.scopeKey !== undefined ? { scopeKey: row.scopeKey } : {}),
         file: row.file,
       });
     },
+    ...(deletedMemoryKeys !== undefined ? { deletedMemoryKeys } : {}),
     workspace: selected?.workspace ?? null,
     statFiles,
     onFork,
@@ -1654,6 +1716,16 @@ export function ChatPage() {
             agentsPending={anySubagentPending}
             workspaceOpen={filesPanel.open}
             onToggleWorkspace={() => filesPanel.setOpen(!filesPanel.open)}
+            memoryOpen={memoryPanel.open}
+            onToggleMemory={() => {
+              if (memoryPanel.open) {
+                memoryPanel.setOpen(false);
+              } else {
+                // Toolbar entry lands on the list level (memory-nav entry routing).
+                memoryPanel.setOpen(true);
+                memoryPanelRaw.openMemory(null);
+              }
+            }}
           />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
@@ -2027,11 +2099,14 @@ export function ChatPage() {
             ctx={ctx}
           />
         )}
+        {selected && <FilesPanel session={selected} panel={filesPanel} />}
         {selected && (
-          <FilesPanel
+          <MemoryPanel
             session={selected}
-            panel={filesPanel}
+            panel={memoryPanel}
             memoryChanges={sessionMemoryChanges}
+            scopes={memoryListing.scopes}
+            listingError={memoryListing.error}
             // Management (add / edit / delete) lives on the agent-settings memory tab.
             onOpenMemorySettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
           />

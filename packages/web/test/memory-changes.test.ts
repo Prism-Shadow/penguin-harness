@@ -8,6 +8,7 @@ import {
   aggregateMemoryChanges,
   classifyMemoryPath,
   mergeMemoryChanges,
+  sameMemoryChanges,
 } from "../src/lib/omni/memory-changes";
 import type { MemoryChangeEntry } from "../src/lib/omni/memory-changes";
 
@@ -151,5 +152,25 @@ describe("aggregateMemoryChanges", () => {
     expect(aggregateMemoryChanges([])).toEqual([]);
     const task = mergeMemoryChanges([edit("a.md", "x", "y")]);
     expect(aggregateMemoryChanges([task])).toEqual(task);
+  });
+});
+
+describe("sameMemoryChanges", () => {
+  it("treats re-derived rows with identical content as the same — a streaming tick must not re-fire effects keyed on identity", () => {
+    const a = mergeMemoryChanges([edit("a.md", "x", "y"), write("b.md", "B")]);
+    const b = mergeMemoryChanges([edit("a.md", "x", "y"), write("b.md", "B")]);
+    expect(a).not.toBe(b);
+    expect(sameMemoryChanges(a, b)).toBe(true);
+  });
+
+  it("detects every content move: rows, ops, events, and event material", () => {
+    const base = mergeMemoryChanges([edit("a.md", "x", "y")]);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("a.md", "x", "z")]))).toBe(false);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([write("a.md", "A")]))).toBe(false);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("b.md", "x", "y")]))).toBe(false);
+    expect(
+      sameMemoryChanges(base, mergeMemoryChanges([edit("a.md", "x", "y"), edit("a.md", "y", "z")])),
+    ).toBe(false);
+    expect(sameMemoryChanges(base, [])).toBe(false);
   });
 });

@@ -47,10 +47,12 @@ export interface StreamRenderContext {
   onOpenFile?: (path: string) => void;
   /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
   onOpenSubagent?: (sessionId: string, origin: string[]) => void;
-  /** Opens the side panel's Memory view (memory-changes card header); the button doesn't render if this isn't wired up. */
+  /** Opens the Memory panel on its list (memory-changes card header); the button doesn't render if this isn't wired up. */
   onOpenMemory?: () => void;
-  /** Opens the Memory view located at this row's diffs (memory-changes card row click); rows render inert if this isn't wired up. */
+  /** Opens the Memory panel located at this row's diffs (memory-changes card row click); rows render inert if this isn't wired up. */
   onLocateMemoryChange?: (row: MemoryChangeRow) => void;
+  /** Keys of changed memory files that no longer exist (deleted after the change): the card renders those rows unopenable. Absent while the listing hasn't loaded. */
+  deletedMemoryKeys?: ReadonlySet<string>;
   /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
   workspace?: string | null;
   /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */
