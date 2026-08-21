@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { Chevron } from "../../components/ui/chevron";
+import { DISCLOSURE_CARD_CLASS } from "./disclosure-row";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
@@ -94,10 +95,7 @@ export function WorkGroup({
     // the exact same clipping (rounded corners included) without creating a scroll
     // container, and a sticky element never leaves its containing block, so the stuck
     // header itself is never clipped.
-    <div
-      ref={rootRef}
-      className="anim-msg my-2 overflow-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900"
-    >
+    <div ref={rootRef} className={DISCLOSURE_CARD_CLASS}>
       {/* Group header: a distinct title bar (solid background), on a separate layer from the
           step rows below it. Sticky against the message list's scrollport so a long expanded
           group can be collapsed from anywhere inside it — without this, finding the start of
