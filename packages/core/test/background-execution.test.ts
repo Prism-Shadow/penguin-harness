@@ -219,12 +219,16 @@ describe("exec_command run_in_background", () => {
     const events: BackgroundTaskDoneEvent[] = [];
     env.setBackgroundTaskListener((e) => events.push(e));
     const res = await runTool(env, "exec_command", {
-      cmd: "printf pre; sleep 30",
+      cmd: "printf 'pre http://localhost:5199/\\n'; sleep 30",
       run_in_background: true,
     });
     const id = extractProcessId(res.output);
-    // Give the pipe a moment to deliver the pre-kill output into the session buffer.
-    await new Promise((r) => setTimeout(r, 500));
+    // Wait for the pre-kill output to reach the session buffer kill_command drains. A fixed
+    // sleep raced the pipe on loaded Windows runners, and that buffer is not readable without
+    // draining it — so wait on the URL scanner instead: ManagedSession pushes each chunk to
+    // the scanner immediately before appending it to that buffer, so a detected serviceUrl
+    // proves the line is already buffered.
+    await waitFor(() => env.listBackgroundCommands().some((p) => p.serviceUrl !== undefined));
     const killed = await runTool(env, "kill_command", { process_id: id });
     expect(killed.stopReason).toBe("completed");
     expect(killed.output).toContain("pre");
