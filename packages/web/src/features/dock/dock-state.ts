@@ -226,6 +226,7 @@ function persist(): void {
 
 const listeners = new Set<() => void>();
 let version = 0;
+let instant = 0;
 
 function notify(): void {
   version += 1;
@@ -235,6 +236,17 @@ function notify(): void {
 /** Monotonic change counter — subscribe with this snapshot to re-render on ANY change. */
 export function dockVersion(): number {
   return version;
+}
+
+/**
+ * Counter of changes that must NOT animate: scope switches (a context swap, not a
+ * collapse gesture) and cross-dock moves (the tab jumps to the other edge — animating
+ * the source's collapse and the target's expansion would read as two motions for one
+ * action). The renderer compares it across updates: bumped together with the change ⇒
+ * apply the new layout instantly; otherwise play the expand/collapse transition.
+ */
+export function instantVersion(): number {
+  return instant;
 }
 
 export function subscribeDock(listener: () => void): () => void {
@@ -266,6 +278,7 @@ export function adoptDockScope(sessionId: string): void {
 
 function switchScope(target: string, mayHandOver: boolean): void {
   if (target === scope) return;
+  instant += 1;
   persist();
   const staged = scopes[scope];
   // Never clobbers: a target with an arrangement of its own keeps it.
@@ -466,6 +479,7 @@ export function removeTab(key: string): void {
 export function moveTab(key: string, to: DockPosition): void {
   const found = findTab(key);
   if (!found) return;
+  instant += 1;
   const tab = layout[found.position].tabs[found.index]!;
   insertTab(tab, to);
   if (layout[found.position].tabs.length === 0) layout[found.position].open = false;
@@ -478,6 +492,7 @@ export function moveDock(from: DockPosition, to: DockPosition): void {
   if (from === to) return;
   const source = area(from);
   if (source.tabs.length === 0) return;
+  instant += 1;
   const shown = source.active;
   const target = area(to);
   target.tabs = [...target.tabs, ...source.tabs];
@@ -596,6 +611,29 @@ export function addTerminalTab(id: string, position?: DockPosition): void {
  */
 export function showTerminal(id: string): void {
   addTerminalTab(id);
+}
+
+/**
+ * Puts a terminal tab back into a NAMED conversation's dock — the detach round trip: the
+ * tab left scope X when its shell moved to a window, and closing that window must return
+ * it to X even when another conversation is on screen by then. No-op when any scope
+ * already holds the shell (the user re-tabbed it meanwhile).
+ */
+export function restoreTerminalTab(scopeId: string, id: string, position: DockPosition): void {
+  if (unownedTerminals([id]).length === 0) return;
+  if (scopeId === scope) {
+    addTerminalTab(id, position);
+    return;
+  }
+  const target = scopes[scopeId] ?? emptyScope();
+  const state = target[position];
+  state.tabs = [...state.tabs, { kind: "terminal", terminalId: id }];
+  state.active = terminalKey(id);
+  state.open = true;
+  const { [scopeId]: _previous, ...rest } = scopes;
+  scopes = { ...rest, [scopeId]: target };
+  persist();
+  notify();
 }
 
 /**

@@ -107,6 +107,7 @@ import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { DockPanel } from "../dock/dock-panel";
+import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 import { adoptDockScope } from "../dock/dock-state";
 import {
@@ -1440,9 +1441,11 @@ export function ChatPage() {
   // view arrives as a bottom view). They render on the draft page too — the arrangement is
   // the user's workbench, and a terminal opened while drafting must be visible — with the
   // session-bound panels showing a placeholder until the first send creates the Session.
+  // useDockMount keeps a closing dock mounted through its collapse transition and skips
+  // the animation for instant changes (scope switches, cross-dock moves).
   const views = dockViews();
-  const rightDockView = views.find((view) => view.position === "right") ?? null;
-  const bottomDockView = views.find((view) => view.position === "bottom") ?? null;
+  const rightMount = useDockMount(views.find((view) => view.position === "right") ?? null);
+  const bottomMount = useDockMount(views.find((view) => view.position === "bottom") ?? null);
   const terminalSupported = terminalApiSupported();
 
   /**
@@ -2055,9 +2058,11 @@ export function ChatPage() {
           )}
         </ChatDropRegion>
 
-        {rightDockView && (
+        {rightMount.view && (
           <DockPanel
-            view={rightDockView}
+            view={rightMount.view}
+            open={rightMount.open}
+            animateEntrance={rightMount.animateEntrance}
             renderPanel={renderPanel}
             panelBadges={{ agents: anySubagentPending }}
             terminalSupported={terminalSupported}
@@ -2065,9 +2070,11 @@ export function ChatPage() {
         )}
       </div>
 
-      {bottomDockView && (
+      {bottomMount.view && (
         <DockPanel
-          view={bottomDockView}
+          view={bottomMount.view}
+          open={bottomMount.open}
+          animateEntrance={bottomMount.animateEntrance}
           renderPanel={renderPanel}
           panelBadges={{ agents: anySubagentPending }}
           terminalSupported={terminalSupported}

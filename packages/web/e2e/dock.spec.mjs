@@ -92,6 +92,12 @@ async function openViaPicker(page, position, kind) {
   await page.getByTestId(`dock-pick-${kind}`).click();
 }
 
+/** A terminal tab's × asks first (an easy mis-click); confirm through the dialog. */
+async function killTabConfirmed(page, tabLocator) {
+  await tabLocator.getByTestId("dock-tab-close").click();
+  await page.getByRole("dialog").getByRole("button", { name: "关闭此终端" }).click();
+}
+
 async function runInTerminal(page, command) {
   await terminalBody(page).locator(".xterm-screen").click();
   await page.keyboard.type(command);
@@ -143,11 +149,12 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   await expect(dockAt(page, "bottom")).toBeVisible();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
 
-  // A terminal tab's × (always visible) kills the shell; the last tab gone puts the dock away.
-  await dockAt(page, "bottom")
-    .locator('[data-testid="dock-tab"][data-terminal-id]')
-    .getByTestId("dock-tab-close")
-    .click();
+  // A terminal tab's × (always visible) asks first — killing ends the shell for real —
+  // and confirming kills it; the last tab gone puts the dock away.
+  await killTabConfirmed(
+    page,
+    dockAt(page, "bottom").locator('[data-testid="dock-tab"][data-terminal-id]'),
+  );
   await expect(anyDock(page)).toHaveCount(0);
   await expect
     .poll(
@@ -315,6 +322,19 @@ test("sizes and the arrangement survive a reload; hidden stays hidden", async ({
   const after = (await bottom.boundingBox()).height;
   expect(after - before).toBeGreaterThan(80);
 
+  // The RIGHT dock's boundary drags too (its handle is a layout sibling of the dock —
+  // the regression where it could not reach the box it resizes).
+  const right = dockAt(page, "right");
+  const wBefore = (await right.boundingBox()).width;
+  const vHandle = page.locator('[data-testid="dock-resizer"][aria-orientation="vertical"]');
+  const vb = await vHandle.boundingBox();
+  await page.mouse.move(vb.x + vb.width / 2, vb.y + vb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(vb.x - 100, vb.y + vb.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const wAfter = (await right.boundingBox()).width;
+  expect(wAfter - wBefore).toBeGreaterThan(60);
+
   // Hide the right dock (its tab stays behind), then reload: the bottom dock comes back
   // at its size, the right dock stays hidden, and reopening restores its tab.
   await page.getByTestId("dock-toggle-right").click();
@@ -325,8 +345,11 @@ test("sizes and the arrangement survive a reload; hidden stays hidden", async ({
     dockAt(page, "bottom").locator('[data-tab-id="trace"][data-active="true"]'),
   ).toBeVisible();
   await expect(dockAt(page, "right")).toHaveCount(0);
-  const reloaded = (await dockAt(page, "bottom").boundingBox()).height;
-  expect(Math.abs(reloaded - after)).toBeLessThan(24);
+  // Polled: the initial restore slides the dock in, so a one-shot measure can catch the
+  // entrance transition mid-flight.
+  await expect
+    .poll(async () => Math.abs((await dockAt(page, "bottom").boundingBox()).height - after))
+    .toBeLessThan(24);
   await page.getByTestId("dock-toggle-right").click();
   await expect(
     dockAt(page, "right").locator('[data-tab-id="workspace"][data-active="true"]'),
@@ -400,7 +423,14 @@ test("Detach hands the terminal to /terminal?id=… and its tab leaves the strip
     .toContain("DETACH_ME");
   // The dock let go: no terminal tab left (the dock hid with its last tab gone).
   await expect(anyDock(page)).toHaveCount(0);
+  // Closing the window hands the shell BACK: its tab returns to the dock it left.
   await popup.close();
+  await expect(
+    dockAt(page, "bottom").locator(
+      '[data-testid="dock-tab"][data-terminal-id][data-active="true"]',
+    ),
+  ).toBeVisible({ timeout: 10000 });
+  await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DETACH_ME");
   await killAllTerminals(page.request);
 });
 

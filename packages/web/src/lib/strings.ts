@@ -71,6 +71,9 @@ export const zh = {
     bottomDock: "下侧栏",
     /** A session-bound panel's body on the draft page, where no Session exists yet. */
     draftEmpty: "发送第一条消息后可用",
+    /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
+    killConfirmTitle: "关闭此终端？",
+    killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

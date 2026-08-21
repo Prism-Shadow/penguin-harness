@@ -64,6 +64,9 @@ export const en: Strings = {
     rightDock: "Right sidebar",
     bottomDock: "Bottom panel",
     draftEmpty: "Available once the conversation starts",
+    killConfirmTitle: "Close this terminal?",
+    killConfirmBody: (name: string): string =>
+      `This ends the shell "${name}" — it cannot be restored.`,
   },
 
   tracePanel: {

@@ -41,12 +41,18 @@ the drawers.
 - Ctrl+` walks the conversation's terminal states: front when a panel covers it, hide
   when shown, restore — or adopt/create a shell when no terminal tab exists here. A
   failed shell create surfaces as an error toast.
+- Opening and closing a dock animates (a 200ms slide, contents pinned at their settled
+  size so nothing reflows mid-transition); cross-dock moves and conversation switches
+  apply instantly. The bottom surface's picker lays its choices out in a row, the right
+  one as a list. A terminal tab's × confirms before ending the shell, and detaching a
+  terminal to its own window returns the tab to the dock it left when that window closes.
 - Below 1024px the two docks render as one merged bottom surface listing both docks'
   tabs; the stored arrangement splits back apart when the window widens. The mobile
   bottom-Sheet variant of the panels was removed with the drawers.
 - Fixed the Trace panel's dev-mode first load: under React StrictMode's double-invoked
   effects the listing fetch was cancelled and never retried, leaving the skeleton up
-  until the tab was toggled.
+  until the tab was toggled. Also fixed the right dock's resize handle, which could not
+  reach the box it resizes (it is a layout sibling of the dock, not a descendant).
 
 ## Compatibility
 

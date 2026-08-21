@@ -298,6 +298,51 @@ describe("persistence", () => {
   });
 });
 
+describe("instant changes (no animation)", () => {
+  it("bumps instantVersion for scope switches and moves, not for toggles", () => {
+    const before = dock.instantVersion();
+    dock.openPanel("workspace", "right");
+    dock.toggleDock("bottom");
+    dock.removeTab("workspace");
+    expect(dock.instantVersion()).toBe(before); // animated changes leave it alone
+    dock.openPanel("workspace", "right");
+    dock.moveTab("workspace", "bottom");
+    expect(dock.instantVersion()).toBe(before + 1);
+    dock.openPanel("memory", "bottom");
+    dock.moveDock("bottom", "right");
+    expect(dock.instantVersion()).toBe(before + 2);
+    dock.setDockScope(`scope-instant-${scopeSeq}`);
+    expect(dock.instantVersion()).toBe(before + 3);
+  });
+});
+
+describe("the detach round trip", () => {
+  it("restores a terminal tab into the scope it left, even while another is on screen", () => {
+    const a = `scope-detach-a-${scopeSeq}`;
+    dock.setDockScope(a);
+    dock.addTerminalTab("term-win", "bottom");
+    dock.removeTab("terminal:term-win"); // the detach: tab leaves while the shell moves out
+    expect(dock.isDockVisible("bottom")).toBe(false);
+
+    dock.setDockScope(`scope-detach-b-${scopeSeq}`); // the user wandered off meanwhile
+    dock.restoreTerminalTab(a, "term-win", "bottom");
+    expect(dock.terminalTabIds()).toEqual([]); // not into the scope on screen
+    dock.setDockScope(a);
+    expect(dock.terminalTabIds()).toEqual(["term-win"]);
+    expect(dock.isDockVisible("bottom")).toBe(true);
+    expect(dock.dockActiveKey("bottom")).toBe("terminal:term-win");
+  });
+
+  it("does nothing when some conversation already holds the shell again", () => {
+    const a = `scope-detach-c-${scopeSeq}`;
+    dock.setDockScope(a);
+    dock.addTerminalTab("term-back", "bottom"); // the user re-tabbed it before the window closed
+    dock.restoreTerminalTab(`scope-detach-d-${scopeSeq}`, "term-back", "right");
+    dock.setDockScope(`scope-detach-d-${scopeSeq}`);
+    expect(dock.terminalTabIds()).toEqual([]);
+  });
+});
+
 describe("view models", () => {
   it("renders one view per open dock", () => {
     dock.openPanel("workspace", "right");
