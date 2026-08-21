@@ -38,6 +38,7 @@ import {
   latestTaskStart,
   layoutTopology,
   modelAtOrigin,
+  modelTaskStartCount,
   NODE_H,
   NODE_W,
   PAD,
@@ -563,5 +564,8 @@ describe("background subagents in the topology", () => {
     pushMessage(m, userText(DONE("subagent-0011aabb")));
     expect(taskStartCount(m.items)).toBe(1);
     expect(latestTaskStart(m.items)).toBe(0);
+    // The model's own count still sees both: the notice DID open a Task there (and zeroed the
+    // per-Task usage buckets), which is what the header's cost fold keys on.
+    expect(modelTaskStartCount(m.items)).toBe(2);
   });
 });

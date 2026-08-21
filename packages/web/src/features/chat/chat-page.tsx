@@ -83,7 +83,7 @@ import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
-import { latestTaskHasSubagent, taskStartCount } from "./agent-topology";
+import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import {
   compactionTally,
@@ -1488,7 +1488,11 @@ export function ChatPage() {
     stream.model,
     advanceCostStat(costHoldRef.current, {
       sessionId: selected?.sessionId ?? null,
-      taskCount,
+      // The cost tracker's Task boundary is the MODEL's, not the panel's: a completion notice
+      // opens a new Task (zeroing the per-Task usage buckets) even though the panel keeps it
+      // inside the launching Task's scope, so it must be counted here or the finished half's
+      // live cost is dropped instead of folded.
+      taskCount: modelTaskStartCount(stream.model.items),
       taskOpen: stream.model.taskOpen,
       loading: stream.loading,
       liveUsd: liveTaskUsd,

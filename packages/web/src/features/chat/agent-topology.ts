@@ -22,6 +22,9 @@
 import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
 import { parseBackgroundTaskDoneMessage } from "./agent-handoff";
 
+/** Marker tag of a harness completion notice; the cheap prefilter before the marker parse. */
+const BACKGROUND_DONE_TAG = "background_task_done";
+
 export interface TopologyNode {
   sessionId: string;
   /** Agent running this node: the child's session_meta capture first, else the run_subagent `agent_id` argument; null when unknown (root: filled by the view from the Session DTO). */
@@ -63,6 +66,9 @@ export interface TopologyNode {
 function isScopeStart(item: ChatItem): boolean {
   if (item.kind === "user_image") return true;
   if (item.kind !== "user_text") return false;
+  // Cheap reject first: these predicates run over every item on every render, and the marker
+  // parse is two full-text regex scans — only text that actually carries the tag pays for it.
+  if (!item.text.includes(`[${BACKGROUND_DONE_TAG}]`)) return true;
   return parseBackgroundTaskDoneMessage(item.text) === null;
 }
 
@@ -72,6 +78,21 @@ export function latestTaskStart(items: readonly ChatItem[]): number {
     if (isScopeStart(items[i]!)) return i;
   }
   return 0;
+}
+
+/**
+ * Task starts as the STREAM MODEL counts them — every user_text/user_image, notices included,
+ * so the number stays 1:1 with the reducer's own `startTask` calls. The header's cost tracker
+ * keys its Task-boundary fold on exactly that (see header-stats.ts): a notice-triggered task
+ * zeroes the model's per-Task usage buckets, so a count that skipped it would drop the finished
+ * Task's live cost without ever folding it into the settled base.
+ */
+export function modelTaskStartCount(items: readonly ChatItem[]): number {
+  let n = 0;
+  for (const item of items) {
+    if (item.kind === "user_text" || item.kind === "user_image") n += 1;
+  }
+  return n;
 }
 
 /**
