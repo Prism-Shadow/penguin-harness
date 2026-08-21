@@ -28,31 +28,46 @@ export function effectiveCommandPolicyRules(
 /**
  * Block devices whose overwrite is unrecoverable — shared by the `dd` and shell-redirect
  * factory rules. Deliberately excludes `null` / `zero` / `stdout` and friends:
- * `dd of=/dev/null` is a common benchmarking idiom, not an accident.
+ * `dd of=/dev/null` is a common benchmarking idiom, not an accident. The trailing
+ * `[a-zA-Z0-9]*` is greedy, so the token is already consumed to its end and neither rule
+ * needs a boundary assertion after it — which is what lets `of=/dev/sda; sync` match.
  */
 const BLOCK_DEVICES = "(?:sd|hd|vd|xvd|nvme|mmcblk|loop|disk|rdisk)[a-zA-Z0-9]*";
+
+/**
+ * Command-word prefix: a separator (or the start), then the optional directory part of a
+ * path. `/bin/rm` and `/sbin/mkfs.ext4` are ordinary spellings — `mkfs` in particular is
+ * usually reached by path — so a rule that only anchors on the bare word misses the plain
+ * case, never mind an evasive one.
+ */
+const CMD_START = "(?:^|[\\s;&|(])(?:[^\\s;&|]*/)?";
+
+/** An operand may be quoted: `of="/dev/sda"` and `> '/dev/sda'` are the same write. */
+const QUOTE = "[\"']?";
 
 export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   {
     name: "rm-recursive-force",
     // `rm` with both a recursive and a force flag anywhere in the same command segment:
-    // `-rf`, `-fr`, `-r -f`, `-Rf`, `--recursive --force`, with or without `sudo`. The two
-    // lookaheads scan the segment independently so flag order and grouping don't matter;
-    // each flag token must end at a word break so `-rf` matches but `--red-flag` doesn't.
-    pattern:
-      "(?:^|[\\s;&|(])rm(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*f[a-zA-Z]*|-force)(?:\\s|$))",
-    description: "rm with recursive + force flags, in any spelling (rm -rf and friends)",
+    // `-rf`, `-fr`, `-r -f`, `-Rf`, `-rF`, `--recursive --force`, with or without `sudo` or
+    // a leading path. The two lookaheads scan the segment independently so flag order and
+    // grouping don't matter; each flag token must end at a word break so `-rf` matches but
+    // `--red-flag` doesn't.
+    pattern: `${CMD_START}rm(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*[rR][a-zA-Z]*|-recursive)(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-(?:[a-zA-Z]*[fF][a-zA-Z]*|-force)(?:\\s|$))`,
+    description: "rm with recursive + force flags in one command (rm -rf and friends)",
   },
   {
     name: "mkfs",
-    // Formatting a filesystem (`mkfs`, `mkfs.ext4`, …) destroys the target wholesale.
-    pattern: "(?:^|[\\s;&|(])mkfs(?:\\.[a-zA-Z0-9]+)?(?:\\s|$)",
+    // Formatting a filesystem (`mkfs`, `mkfs.ext4`, `/sbin/mkfs.ext4`, …) destroys the
+    // target wholesale. The word itself is the risk signal, so the rule also fires on a
+    // file merely named `mkfs.sh` — a false positive the guardrail accepts.
+    pattern: `${CMD_START}mkfs(?:\\.[a-zA-Z0-9]+)?(?![a-zA-Z0-9])`,
     description: "mkfs — formatting a filesystem destroys it wholesale",
   },
   {
     name: "dd-to-block-device",
     // `dd` writing straight to a block device. `of=/dev/null` stays legal (see BLOCK_DEVICES).
-    pattern: `(?:^|[\\s;&|(])dd\\s[^;&|]*\\bof=/dev/${BLOCK_DEVICES}(?:\\s|$)`,
+    pattern: `${CMD_START}dd\\s[^;&|]*\\bof=${QUOTE}/dev/${BLOCK_DEVICES}`,
     description: "dd writing directly to a block device (of=/dev/null stays allowed)",
   },
   {
@@ -65,7 +80,7 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   {
     name: "overwrite-block-device",
     // Shell redirection onto a block device (`> /dev/sda`); `/dev/null` etc. stay legal.
-    pattern: `>\\s*/dev/${BLOCK_DEVICES}(?:\\s|$)`,
+    pattern: `>\\s*${QUOTE}/dev/${BLOCK_DEVICES}`,
     description: "shell redirection onto a block device (/dev/null stays allowed)",
   },
 ];

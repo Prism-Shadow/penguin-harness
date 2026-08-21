@@ -39,6 +39,10 @@ describe("command policy factory rules", () => {
       "rm -rfv cache",
       "rm  -rf   spaced", // whitespace runs normalize before matching
       "rm foo -rf", // GNU rm accepts flags after operands
+      "rm -rF caps", // recursive already accepted -R; force now accepts -F too
+      "/bin/rm -rf /tmp/x", // reached by path: an ordinary spelling, not obfuscation
+      "sudo /usr/bin/rm -rf /tmp/x",
+      "echo hi; rm -rf /tmp/x", // a second command after a separator is its own segment
     ]) {
       expect(hit(cmd), cmd).toBe("rm-recursive-force");
     }
@@ -52,6 +56,7 @@ describe("command policy factory rules", () => {
       "npm rm -g pkg", // npm's rm subcommand carries no recursive+force pair here
       "grep -rf patterns.txt . | head", // -rf flag on a command that is not rm
       "firmware-tool --reflash", // "rm" only as a substring of another word
+      "/opt/bin/confirm -rf x", // a path whose last segment merely ends in "rm"
     ]) {
       expect(hit(cmd), cmd).toBeNull();
     }
@@ -60,6 +65,8 @@ describe("command policy factory rules", () => {
   it("catches mkfs including dotted variants, not lookalikes", () => {
     expect(hit("mkfs /dev/sdb1")).toBe("mkfs");
     expect(hit("sudo mkfs.ext4 /dev/sdb1")).toBe("mkfs");
+    // mkfs usually lives in /sbin, so the path spelling is the common one.
+    expect(hit("/sbin/mkfs.ext4 /dev/sda1")).toBe("mkfs");
     expect(hit("man mkfs")).toBe("mkfs"); // guardrail accepts this false positive: the word is the risk signal
     expect(hit("mkfsomething else")).toBeNull();
   });
@@ -70,6 +77,10 @@ describe("command policy factory rules", () => {
     expect(hit("dd if=/dev/rdisk2 of=/dev/rdisk3")).toBe("dd-to-block-device");
     expect(hit("dd if=/dev/zero of=/dev/null bs=1M count=1")).toBeNull();
     expect(hit("dd if=in.bin of=out.bin")).toBeNull();
+    // Quoting the target, or continuing past it, is the same write.
+    expect(hit('dd if=/dev/zero of="/dev/sda"')).toBe("dd-to-block-device");
+    expect(hit("dd if=/dev/zero of=/dev/sda; sync")).toBe("dd-to-block-device");
+    expect(hit("/bin/dd if=/dev/zero of=/dev/sda")).toBe("dd-to-block-device");
   });
 
   it("catches the classic fork bomb", () => {
@@ -82,6 +93,8 @@ describe("command policy factory rules", () => {
     expect(hit("cat img >/dev/mmcblk0")).toBe("overwrite-block-device");
     expect(hit("echo x > /dev/null")).toBeNull();
     expect(hit("echo x 2>/dev/null")).toBeNull();
+    expect(hit("echo x > '/dev/sda'")).toBe("overwrite-block-device");
+    expect(hit("echo x > /dev/sda; echo done")).toBe("overwrite-block-device");
   });
 });
 
