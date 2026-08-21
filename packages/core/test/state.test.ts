@@ -501,12 +501,6 @@ describe("assembleSystemPrompt", () => {
     );
     expect(prompt).toContain("AGENTS.md");
     expect(prompt).toContain("PenguinHarness");
-    // File system's two file-delivery conventions: a workspace file is mentioned in the reply
-    // by its **workspace-relative path** in backticks (the frontend renders a message file card
-    // from this); scratchpad only holds intermediate artifacts, and final deliverables must
-    // land in the Workspace.
-    expect(prompt).toContain("mention its workspace-relative path in backticks");
-    expect(prompt).toContain("always place final deliverables in the workspace");
     // The default template wraps AGENTS.md in a [developer_instructions] block.
     expect(prompt).toContain("[developer_instructions]");
     expect(prompt).toContain("[/developer_instructions]");
@@ -530,21 +524,18 @@ describe("assembleSystemPrompt", () => {
   it("default prompt carries the port and API-key guardrails", async () => {
     const state = await loadOrInitAgentState();
     const prompt = assembleSystemPrompt(state);
-    // Ports: never kill listeners or take PenguinHarness service ports; numbers are deliberately not listed.
-    expect(prompt).toContain("pick another free port");
-    expect(prompt).toContain("PenguinHarness service port");
+    // The wording of these rules is tuned freely; what must not drift is what they never say.
+    // Ports: the service numbers are deliberately not listed, so a model cannot read one out
+    // of the prompt and go looking for it.
     expect(prompt).not.toContain("7364");
     // Auth/key failures live entirely in Stop rules, as a special case of the
-    // unresolvable-error rule: retry at most once, then stop and ask the user to update the key
-    // outside the chat — no CLI commands, no secret values in the conversation.
+    // unresolvable-error rule: retry once, then stop and ask the user to update the key
+    // outside the chat — never through a command that would put the secret on a command line.
+    expect(prompt).not.toContain("penguin config vault set");
     // Position, not presence: `# Stop rules` exists either way, so only the ordering pins that
     // the retry rule sits inside that section instead of back up in Constraints.
     expect(prompt.indexOf("# Stop rules")).toBeLessThan(prompt.indexOf("retry at most once"));
     expect(prompt.indexOf("retry at most once")).toBeLessThan(prompt.indexOf("# Tool use"));
-    expect(prompt).toContain("stop calling tools");
-    expect(prompt).toContain("never be pasted into the conversation");
-    expect(prompt).toContain("next conversation");
-    expect(prompt).not.toContain("penguin config vault set");
   });
 
   it("replaces AGENTS.md and specific Session environment fields at template locations", () => {

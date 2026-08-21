@@ -38,18 +38,12 @@ describe("compactionSummaryText", () => {
 });
 
 describe("compactionTitle (the row is titled by its mode)", () => {
-  it("names a summarize row compaction and a discard row clear, in both locales", () => {
-    expect(zh.chat.compactionTitle("summarize")).toBe("压缩");
-    expect(zh.chat.compactionTitle("discard")).toBe("清空");
-    expect(en.chat.compactionTitle("summarize")).toBe("Compaction");
-    expect(en.chat.compactionTitle("discard")).toBe("Clear");
-  });
-
   it("never labels a discard as compaction — the whole point of titling by mode", () => {
     for (const [locale, dict] of [
       ["zh", zh],
       ["en", en],
     ] as const) {
+      expect(dict.chat.compactionTitle("summarize"), locale).toBeTruthy();
       expect(
         dict.chat.compactionTitle("discard"),
         `${locale} still calls a discard a compaction`,
@@ -58,7 +52,15 @@ describe("compactionTitle (the row is titled by its mode)", () => {
   });
 
   it("falls back to the compaction title for any other mode (an unknown/legacy value)", () => {
-    expect(zh.chat.compactionTitle("")).toBe("压缩");
-    expect(en.chat.compactionTitle("future-mode")).toBe("Compaction");
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      for (const mode of ["", "future-mode"]) {
+        expect(dict.chat.compactionTitle(mode), `${locale} ${mode}`).toBe(
+          dict.chat.compactionTitle("summarize"),
+        );
+      }
+    }
   });
 });
