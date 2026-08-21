@@ -7,7 +7,13 @@
  *   - 404 for foreign/unknown sessions (via the shared resolveSession lookup).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
+import {
+  approvalDecision,
+  approvalDecisionOf,
+  assistantText,
+  toolCall,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { RetryNowResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -32,7 +38,7 @@ function backoffFakeSession(sessionId: string, skips: number[]): RuntimeSession 
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-retry" });
       yield tc;
-      const decision = await opts.approve(tc);
+      const decision = approvalDecisionOf(await opts.approve(tc));
       yield approvalDecision(decision, "tc-retry");
       yield assistantText("done");
     },

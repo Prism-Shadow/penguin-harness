@@ -72,6 +72,7 @@ import type {
   ToolCallOutputPayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
+import { approvalDecisionOf } from "../interfaces.js";
 import type {
   ApprovalRefusal,
   ApproveFn,
@@ -1139,7 +1140,7 @@ export class ContextEngine {
             if (signal?.aborted) continue;
             // approve is a callback; context_engine emits its decision as an approval_decision
             // OmniMessage: pushed to the stream for frontend rendering, and written to Trace.
-            const decision = typeof outcome === "string" ? outcome : outcome.decision;
+            const decision = approvalDecisionOf(outcome);
             const decisionMsg = approvalDecision(decision, toolCallId);
             queue.push(decisionMsg);
             await this.write(decisionMsg);
@@ -1148,10 +1149,14 @@ export class ContextEngine {
               // tool_use never dangles. A refusal states its own reason and stop_reason (the
               // Session's command-policy wrapper answers "failed" — refused on the merits,
               // change course); a bare "deny" is a person canceling the call.
+              const reason =
+                typeof outcome === "string"
+                  ? { message: "Tool call denied by user.", stopReason: "aborted" as const }
+                  : outcome;
               const refused = toolCallOutput({
-                output: typeof outcome === "string" ? "Tool call denied by user." : outcome.message,
+                output: reason.message,
                 toolCallId,
-                stopReason: typeof outcome === "string" ? "aborted" : outcome.stopReason,
+                stopReason: reason.stopReason,
               });
               queue.push(refused);
               await this.write(refused);

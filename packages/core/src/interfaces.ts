@@ -104,6 +104,15 @@ export interface ApprovalRefusal {
 }
 
 /**
+ * The bare decision of an approval outcome — a refusal narrows to `"deny"`. Anything that
+ * reads a callback's answer (rendering it, building the `approval_decision` event) goes
+ * through here rather than switching on the shape itself.
+ */
+export function approvalDecisionOf(outcome: ApprovalDecision | ApprovalRefusal): ApprovalDecision {
+  return typeof outcome === "string" ? outcome : outcome.decision;
+}
+
+/**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.

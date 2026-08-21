@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   approvalDecision,
+  approvalDecisionOf,
   assistantText,
   partialText,
   partialThinking,
@@ -55,7 +56,7 @@ function midStreamFakeSession(sessionId: string): RuntimeSession {
       yield withOrigin(partialText("start", "child says "), "child-1");
       yield partialToolCallOutput({ eventType: "start", toolCallId: "tc-lv" });
       yield partialToolCallOutput({ eventType: "delta", output: "line 1\n", toolCallId: "tc-lv" });
-      const decision = await opts.approve(tc); // blocks until the test decides
+      const decision = approvalDecisionOf(await opts.approve(tc)); // blocks until the test decides
       yield approvalDecision(decision, "tc-lv");
       yield toolCallOutput({ output: "line 1\nline 2\n", toolCallId: "tc-lv" });
       yield assistantText("done");

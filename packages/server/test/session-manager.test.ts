@@ -11,6 +11,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   abortEvent,
   approvalDecision,
+  approvalDecisionOf,
   assistantText,
   compactionBegin,
   compactionEnd,
@@ -64,7 +65,7 @@ function approvalFakeSession(sessionId: string, toolName = "write_file"): Runtim
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: toolName, arguments: "{}", toolCallId: "tc-1" });
       yield tc;
-      const decision = await opts.approve(tc);
+      const decision = approvalDecisionOf(await opts.approve(tc));
       yield approvalDecision(decision, "tc-1");
       if (opts.signal.aborted) {
         yield abortEvent();
@@ -443,11 +444,11 @@ describe("session-manager", () => {
       async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
         const tc1 = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
-        yield approvalDecision(await opts.approve(tc1), "tc-1");
+        yield approvalDecision(approvalDecisionOf(await opts.approve(tc1)), "tc-1");
         yield userText(userSteeringText("focus on tests"));
         const tc2 = toolCall({ name: "write_file", arguments: "{}", toolCallId: "tc-2" });
         yield tc2;
-        yield approvalDecision(await opts.approve(tc2), "tc-2");
+        yield approvalDecision(approvalDecisionOf(await opts.approve(tc2)), "tc-2");
         yield assistantText("done");
       },
     };
@@ -722,10 +723,10 @@ describe("session-manager", () => {
       async *run(_input, opts) {
         const tc1 = toolCall({ name: "t1", arguments: "{}", toolCallId: "tc-1" });
         yield tc1;
-        yield approvalDecision(await opts.approve(tc1), "tc-1");
+        yield approvalDecision(approvalDecisionOf(await opts.approve(tc1)), "tc-1");
         const tc2 = toolCall({ name: "t2", arguments: "{}", toolCallId: "tc-2" });
         yield tc2;
-        yield approvalDecision(await opts.approve(tc2), "tc-2");
+        yield approvalDecision(approvalDecisionOf(await opts.approve(tc2)), "tc-2");
       },
       async *compact() {},
     };

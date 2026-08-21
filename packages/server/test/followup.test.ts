@@ -7,7 +7,12 @@
  * (The queued count on task_state events is covered by the session-manager unit tests.)
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
+import {
+  approvalDecision,
+  approvalDecisionOf,
+  assistantText,
+  toolCall,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { TaskCreateResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -30,7 +35,7 @@ function parkingFakeSession(sessionId: string, runs: string[][]): RuntimeSession
       runs.push(input.map((m) => (m.payload as { text?: string }).text ?? ""));
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-fu" });
       yield tc;
-      const decision = await opts.approve(tc);
+      const decision = approvalDecisionOf(await opts.approve(tc));
       yield approvalDecision(decision, "tc-fu");
       yield assistantText("done");
     },

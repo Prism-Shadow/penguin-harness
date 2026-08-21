@@ -12,7 +12,12 @@
  * a dim round line at each `[goal]` round boundary, per-round stats via `endTask`, and the
  * outcome summary read from the stream's terminal `goal_finished` event.
  */
-import { goalFinishedOf, isEventMessage, isGoalRoundInput } from "@prismshadow/penguin-core";
+import {
+  approvalDecisionOf,
+  goalFinishedOf,
+  isEventMessage,
+  isGoalRoundInput,
+} from "@prismshadow/penguin-core";
 import type {
   ApproveFn,
   GoalOutcome,
@@ -79,9 +84,9 @@ export async function runTask(
     const result = promptChain.then(async () => {
       opts.renderer.beginUserPrompt(tc);
       try {
-        const decision = await basePrompt(tc);
-        opts.renderer.noteApprovalDecision(tc, decision);
-        return decision;
+        const outcome = await basePrompt(tc);
+        opts.renderer.noteApprovalDecision(tc, approvalDecisionOf(outcome));
+        return outcome;
       } finally {
         opts.renderer.endUserPrompt();
       }
@@ -101,9 +106,11 @@ export async function runTask(
   // likewise renders the "call line → approval result" pair in place; the interactive path's
   // already-rendered copy is idempotently de-duplicated inside note.
   const approve: ApproveFn = async (tc) => {
-    const decision = await approveByMode(tc);
-    opts.renderer.noteApprovalDecision(tc, decision);
-    return decision;
+    // A refusal (the sandbox command policy answers with one) is forwarded whole: the
+    // renderer only needs the allow/deny, but the engine needs the reason it carries.
+    const outcome = await approveByMode(tc);
+    opts.renderer.noteApprovalDecision(tc, approvalDecisionOf(outcome));
+    return outcome;
   };
 
   // A single run drives the whole ReAct loop (the engine requests approval per call and runs

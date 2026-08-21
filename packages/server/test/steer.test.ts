@@ -16,6 +16,7 @@ import { readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import {
   approvalDecision,
+  approvalDecisionOf,
   assistantText,
   scratchpadDir,
   toolCall,
@@ -60,7 +61,7 @@ function steeringFakeSession(sessionId: string, steered: OmniMessage[][]): Runti
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-steer" });
       yield tc;
-      const decision = await opts.approve(tc);
+      const decision = approvalDecisionOf(await opts.approve(tc));
       yield approvalDecision(decision, "tc-steer");
       yield assistantText("done");
     },

@@ -6,7 +6,13 @@
  *     first; a buffer hit → replays events after it.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { approvalDecision, assistantText, toolCall, userText } from "@prismshadow/penguin-core";
+import {
+  approvalDecision,
+  approvalDecisionOf,
+  assistantText,
+  toolCall,
+  userText,
+} from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
@@ -68,7 +74,7 @@ function approvalFakeSession(sessionId: string): RuntimeSession {
     async *run(_input: OmniMessage[], opts: { approve: ApproveFn; signal: AbortSignal }) {
       const tc = toolCall({ name: "exec_command", arguments: "{}", toolCallId: "tc-sse" });
       yield tc;
-      const decision = await opts.approve(tc);
+      const decision = approvalDecisionOf(await opts.approve(tc));
       yield approvalDecision(decision, "tc-sse");
       yield assistantText("done");
     },
