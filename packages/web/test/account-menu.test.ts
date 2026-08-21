@@ -71,7 +71,15 @@ describe("the sidebar user menu", () => {
 
   it("keeps sign-out on its own desktopMode gate", () => {
     // Sign out is hidden for the whole desktop-mode server, not just the shell's window.
-    expect(source).toContain("{!desktopMode && (");
+    // Anchored to sign-out's own block: the server update row above it carries the same
+    // gate, so a bare `toContain("{!desktopMode && (")` would keep passing once this one
+    // was deleted.
+    const signOut = source.indexOf("S.auth.logout");
+    expect(signOut).toBeGreaterThan(-1);
+    const gate = source.lastIndexOf("{!desktopMode && (", signOut);
+    expect(gate).toBeGreaterThan(-1);
+    // Only sign-out's own <button> stands between that gate and the label it renders.
+    expect(source.slice(gate, signOut).match(/<\w/g)).toEqual(["<b"]);
   });
 
   it("reaches the settings it no longer holds through one ungated System settings entry", () => {
