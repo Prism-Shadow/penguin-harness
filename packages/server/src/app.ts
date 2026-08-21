@@ -70,7 +70,7 @@ import type { TitleNotifier } from "./runtime/title-generator.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { desktopRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -498,6 +498,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const auth = authMiddleware(deps.authService);
   app.use("/api/*", auth);
   app.route("/api/me", meRoutes(deps));
+  // Cookie-authed (unlike the Bearer-token shutdown above): the page reads updater state
+  // and posts check/install here, gated to the shell's own window inside the routes.
+  if (deps.desktop) {
+    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+  }
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));

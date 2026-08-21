@@ -27,6 +27,7 @@ import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js
 import { attachTerminalWebSocket } from "./terminal/ws.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
+import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
 
 loadDotenv({ quiet: true });
 
@@ -213,6 +214,15 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 // shutdown as the signals, reachable over HTTP because a Windows child kill is a hard
 // TerminateProcess with no signal delivery.
 deps.desktop?.onShutdownRequest(() => void shutdown("desktop-shutdown"));
+
+// Client-update relay: under the shell this process is an Electron utilityProcess and
+// carries process.parentPort; wire it to the desktop service so the update routes can
+// read the shell's updater snapshot and forward check/install. Absent port (a plain
+// `penguin server|web` run, or tests) wires nothing.
+if (deps.desktop !== null) {
+  const shellPort = shellPortOf(process);
+  if (shellPort !== null) wireShellUpdatePort(deps.desktop, shellPort);
+}
 
 // Process-level error fallback: once a background
 // fire-and-forget promise (title generation, Session drive, etc.) throws, the error

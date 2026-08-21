@@ -136,6 +136,26 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+    /**
+     * Desktop client-update row (the desktop-mode stand-in for the row above, shell
+     * window only): check → download progress → restart-to-install, driven by the
+     * shell's updater snapshot. Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "Check for client updates",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null
+        ? `Version v${v} found — downloading in the background…`
+        : "New version found — downloading in the background…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `Restart to install v${v}` : "Restart to install the update",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "A dev run of the client does not update itself",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage:
+      "This install is managed by the system package manager — update it there",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

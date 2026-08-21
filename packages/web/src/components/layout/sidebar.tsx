@@ -147,6 +147,8 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
+import { DesktopUpdateRow } from "../account/desktop-update-row";
+import { offersClientUpdate } from "../../lib/desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
@@ -1894,6 +1896,14 @@ export function Sidebar({
                   </span>
                 )}
               </button>
+            )}
+            {/* Desktop stand-in for the row above, in the shell's own window only: the
+                same slot updates the CLIENT through the shell's updater (relayed via
+                /api/desktop/update). A browser signed into the same desktop-mode server
+                gets neither row — it can't run the CLI self-update there, nor restart
+                someone's GUI app (offersClientUpdate mirrors the server's own gate). */}
+            {offersClientUpdate({ desktopMode, sessionVia }) && (
+              <DesktopUpdateRow active={userOpen} menuItemClass={menuItemClass} />
             )}
             {/* User management is visible only to admins (the page route also has its own
                 guard as a fallback), and never in desktop mode: the desktop app is

@@ -2123,6 +2123,53 @@ export interface UpdateCheckResponse {
   error?: "network" | "rate_limited" | "bad_response";
 }
 
+// ---------------------------------------------------------------------------
+// Desktop client update (desktop mode only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The desktop shell's updater snapshot, pushed to the embedded server over the
+ * utilityProcess message channel and served at GET /api/desktop/update. `state` is the
+ * discriminator; the optional fields belong to the states named on them.
+ *
+ * A `downloaded` build stays the reported state until it is installed: a later periodic
+ * check (or its failure) must not hide the actionable "restart to install" step.
+ */
+export interface DesktopUpdateStatus {
+  /** Installed shell version (Electron app.getVersion()). */
+  appVersion: string;
+  state:
+    "idle" | "checking" | "up-to-date" | "downloading" | "downloaded" | "error" | "unsupported";
+  /** Newer release being fetched / ready to install (`downloading`, `downloaded`). */
+  version?: string;
+  /** Download progress 0–100 (`downloading`). */
+  percent?: number;
+  /** Updater failure text (`error`). */
+  message?: string;
+  /** Why this install form cannot update itself (`unsupported`): dev run, or a Linux install that is not an AppImage (e.g. .deb — the system package manager owns it). */
+  reason?: "dev" | "linux-not-appimage";
+}
+
+/**
+ * GET /api/desktop/update (desktop-shell sessions only): the latest shell snapshot.
+ * `status` is null until the shell's first push lands (a beat after server start).
+ */
+export interface DesktopUpdateStatusResponse {
+  status: DesktopUpdateStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopUpdaterStatusMessage {
+  type: "desktop-updater-status";
+  status: DesktopUpdateStatus;
+}
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/update/check|install). */
+export interface DesktopUpdaterCommandMessage {
+  type: "desktop-updater-command";
+  action: "check" | "install";
+}
+
 /**
  * POST /api/version/update (admin only): runs the CLI self-update (`penguin update --yes`)
  * on the server host. `unsupported` covers both a server not launched via the CLI and the
