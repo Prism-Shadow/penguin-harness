@@ -3,10 +3,11 @@
  * (including touching endpoints and zero-duration spans), overlapping or
  * nested same-name calls split lanes, names never mix, lane order follows
  * each name's earliest start with same-name lanes adjacent, greedy first-fit
- * reuses the earliest free lane, and unsorted input is handled.
+ * reuses the earliest free lane, and unsorted input is handled; plus the
+ * footprint a single call claims, including timestamps recorded out of order.
  */
 import { describe, expect, it } from "vitest";
-import { packToolLanes } from "../src/features/traces/lane-packing";
+import { packToolLanes, toolSpanBounds } from "../src/features/traces/lane-packing";
 
 interface Span {
   name: string;
@@ -124,5 +125,69 @@ describe("packToolLanes", () => {
       { name: "exec_command", ids: ["open"] },
       { name: "exec_command", ids: ["later"] },
     ]);
+  });
+});
+
+describe("toolSpanBounds", () => {
+  const TASK_END = 1000;
+
+  it("runs from the call to the output", () => {
+    expect(toolSpanBounds({ callMs: 10, approvalMs: null, outputMs: 40 }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: 40,
+    });
+  });
+
+  it("spans the approval wait and the execution as one footprint", () => {
+    expect(toolSpanBounds({ callMs: 10, approvalMs: 25, outputMs: 40 }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: 40,
+    });
+  });
+
+  it("blocks the row through the task end while the call is still open", () => {
+    expect(toolSpanBounds({ callMs: 10, approvalMs: null, outputMs: null }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: TASK_END,
+    });
+    expect(toolSpanBounds({ callMs: 10, approvalMs: 25, outputMs: null }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: TASK_END,
+    });
+  });
+
+  it("covers a decision recorded before its own call", () => {
+    // A clock step between two appends; the execution bar is drawn from the
+    // decision, so the footprint has to start there too.
+    expect(toolSpanBounds({ callMs: 10, approvalMs: 4, outputMs: 40 }, TASK_END)).toEqual({
+      startMs: 4,
+      endMs: 40,
+    });
+  });
+
+  it("covers an output recorded before its own decision", () => {
+    // The approval-wait bar still reaches the decision, so the footprint must too.
+    expect(toolSpanBounds({ callMs: 10, approvalMs: 60, outputMs: 40 }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: 60,
+    });
+  });
+
+  it("never returns an end before its start", () => {
+    expect(toolSpanBounds({ callMs: 10, approvalMs: null, outputMs: 4 }, TASK_END)).toEqual({
+      startMs: 10,
+      endMs: 10,
+    });
+  });
+
+  it("keeps out-of-order calls from sharing a row with their neighbour", () => {
+    const taskEnd = 1000;
+    const calls = [
+      { name: "exec_command", id: "a", callMs: 0, approvalMs: null, outputMs: 200 },
+      // Approved before it was called: drawn from 150, i.e. inside "a".
+      { name: "exec_command", id: "b", callMs: 200, approvalMs: 150, outputMs: 400 },
+    ];
+    const lanes = packToolLanes(calls.map((c) => ({ ...c, ...toolSpanBounds(c, taskEnd) })));
+    expect(lanes.map((l) => l.spans.map((s) => s.id))).toEqual([["a"], ["b"]]);
   });
 });

@@ -31,7 +31,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
-import { packToolLanes } from "./lane-packing";
+import { packToolLanes, toolSpanBounds } from "./lane-packing";
 import type { PackedLane } from "./lane-packing";
 
 /**
@@ -136,7 +136,6 @@ interface PlacedSpan {
 interface TaskGroup {
   taskIndex: number;
   segs: PlacedSegment[];
-  spans: PlacedSpan[];
   others: PlacedOther[];
   t0: number;
   total: number;
@@ -237,12 +236,8 @@ function buildGroups(
     const total = Math.max(1, tEnd - t0);
     spans.sort((a, b) => a.callMs - b.callMs);
     others.sort((a, b) => a.startMs - b.startMs);
-    // A span's row footprint runs from the call to its output; a still-open
-    // span keeps its lane blocked through the task end (it is rendered that wide).
-    const toolRows = packToolLanes(
-      spans.map((s) => ({ ...s, startMs: s.callMs, endMs: s.outputMs ?? t0 + total })),
-    );
-    groups.push({ taskIndex, segs, spans, others, t0, total, toolRows });
+    const toolRows = packToolLanes(spans.map((s) => ({ ...s, ...toolSpanBounds(s, t0 + total) })));
+    groups.push({ taskIndex, segs, others, t0, total, toolRows });
   }
   return groups;
 }
@@ -340,12 +335,16 @@ export function TimelineChart({
     };
     for (const g of groups) {
       g.segs.forEach((s, i) => put(s.ts, `s-${g.taskIndex}-${i}`));
-      for (const s of g.spans) {
-        if (s.approvalMs !== null && s.approvalMs > s.callMs) {
-          put(s.approvalTsRaw ?? s.callTs, `w-${s.toolCallId}`);
+      // Walked row by row, so "first bar at this timestamp" stays the topmost
+      // one on screen — packing reorders tool bars relative to their call order.
+      for (const row of g.toolRows) {
+        for (const s of row.spans) {
+          if (s.approvalMs !== null && s.approvalMs > s.callMs) {
+            put(s.approvalTsRaw ?? s.callTs, `w-${s.toolCallId}`);
+          }
+          if (s.approvalMs === null && s.outputMs === null) put(s.callTs, `p-${s.toolCallId}`);
+          else put(s.outputTsRaw ?? s.callTs, `e-${s.toolCallId}`);
         }
-        if (s.approvalMs === null && s.outputMs === null) put(s.callTs, `p-${s.toolCallId}`);
-        else put(s.outputTsRaw ?? s.callTs, `e-${s.toolCallId}`);
       }
       for (const o of g.others) put(o.ts, `o-${o.key}`);
     }

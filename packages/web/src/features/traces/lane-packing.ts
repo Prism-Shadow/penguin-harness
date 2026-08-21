@@ -6,11 +6,32 @@
  * into as many rows as the overlap requires.
  */
 
-/** A packable interval; for a still-open span the caller passes the task end as `endMs`. */
+/** A packable interval; `toolSpanBounds` derives one from a tool call's timestamps. */
 export interface PackableSpan {
   name: string;
   startMs: number;
   endMs: number;
+}
+
+/**
+ * The stretch of row a tool call occupies: the union of the two bars the
+ * timeline draws for it — the approval-wait bar from the call to the decision,
+ * and the execution bar from the decision (or from the call, when nothing was
+ * approved) to the output. A call with no output yet is drawn to the task end
+ * and so blocks its row that far.
+ *
+ * The `min`/`max` rather than a plain call → output: a clock step between two
+ * appends can record a decision before the call it belongs to, or an output
+ * before the decision, and a footprint narrower than what gets drawn would let
+ * two calls sharing a row draw over each other.
+ */
+export function toolSpanBounds(
+  call: { callMs: number; approvalMs: number | null; outputMs: number | null },
+  taskEndMs: number,
+): { startMs: number; endMs: number } {
+  const startMs = Math.min(call.callMs, call.approvalMs ?? call.callMs);
+  const endMs = Math.max(startMs, call.approvalMs ?? startMs, call.outputMs ?? taskEndMs);
+  return { startMs, endMs };
 }
 
 /** One output row: every span in it has the same `name` and none overlap. */
