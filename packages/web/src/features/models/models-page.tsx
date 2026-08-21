@@ -1152,7 +1152,8 @@ function AddGroupDialog({
         toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
       } else {
         setDetectFailed(true);
-        setError(S.models.groupImportNoProtocol);
+        // Same condition the model dialog reports, so it gets the same sentence.
+        setError(S.models.detectFailedBody);
       }
     } catch (e) {
       if (seq !== detectSeq.current) return;

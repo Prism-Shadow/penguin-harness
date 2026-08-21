@@ -557,7 +557,6 @@ export const en: Strings = {
     groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
     groupImportListing: "Fetching model list…",
     groupImportSaving: (n: number): string => `Importing ${n} models…`,
-    groupImportNoProtocol: "No compatible protocol detected — check the base URL and API key",
     groupImportUnsupported: "This protocol cannot list models — add them manually",
     groupImportFailed: "Fetching the model list failed",
     groupImportEmpty: "No models to import from this endpoint",

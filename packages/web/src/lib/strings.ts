@@ -523,7 +523,6 @@ export const zh = {
     groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
     groupImportListing: "正在获取模型列表…",
     groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
-    groupImportNoProtocol: "未检测到兼容协议，请检查 base URL 与 API key",
     groupImportUnsupported: "该协议不支持列出模型，请手动添加",
     groupImportFailed: "获取模型列表失败",
     groupImportEmpty: "该端点没有可导入的模型",
