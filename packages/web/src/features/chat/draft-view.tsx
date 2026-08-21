@@ -62,6 +62,7 @@ import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
+import { adoptDockScope } from "../dock/dock-state";
 import { buildSkillsMessage } from "./skill-use";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
@@ -633,6 +634,10 @@ export function DraftView({
         const fresh = await api.getSession(res.sessionId).catch(() => null);
         add(fresh?.session ?? created.session);
         if (!keepDraft) discardDraft();
+        // The draft now has an id of its own, so its docks move with it: anything left
+        // behind under the draft's scope would surface in the NEXT new conversation
+        // instead (dock-state.ts).
+        adoptDockScope(res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;
       } catch (e) {

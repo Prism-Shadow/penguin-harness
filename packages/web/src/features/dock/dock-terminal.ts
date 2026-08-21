@@ -10,9 +10,8 @@ import { liveTerminals, noteTerminalCreated, refreshTerminals } from "../termina
 import {
   addTerminalTab,
   showTerminal,
-  terminalTabDock,
-  terminalDefaultDock,
   toggleTerminalDocks,
+  unownedTerminals,
   type DockPosition,
 } from "./dock-state";
 
@@ -20,7 +19,7 @@ import {
 const DOCK_CWD = "~";
 
 /**
- * Creates a fresh shell and tabs it into `position` (the terminal home dock by default).
+ * Creates a fresh shell and tabs it into `position` (the bottom dock by default).
  * Failures surface as a toast — with no tab created there is no surface of its own to
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
  * how a server-side spawn failure used to present.
@@ -32,7 +31,7 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
       body: JSON.stringify({ cwd: DOCK_CWD }),
     });
     noteTerminalCreated(created);
-    addTerminalTab(created.id, position ?? terminalDefaultDock());
+    addTerminalTab(created.id, position);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // A 404 here is not "this terminal is gone" — the endpoint itself is absent, which
@@ -50,17 +49,17 @@ export async function createShellInDock(position?: DockPosition): Promise<void> 
 }
 
 /**
- * Puts a terminal on screen in `position` (or the terminal home dock): the newest live
- * shell that has no tab yet is adopted — one started through the API or the CLI, or whose
- * tab was closed — rather than answered with a second shell running beside it; only when
- * every live shell is already tabbed (or none exists) is a new one created.
+ * Puts a terminal on screen in `position` (or the bottom dock): the newest live shell no
+ * conversation holds is adopted — one started through the API or the CLI, or whose tab
+ * was closed — rather than answered with a second shell running beside it; only when
+ * every live shell is already tabbed somewhere (or none exists) is a new one created.
  */
 export async function openTerminalInDock(position?: DockPosition): Promise<void> {
   const listed = await fetchJson<{ terminals: TerminalInfo[] }>("/api/terminals").catch(() => null);
   const live = (listed?.terminals ?? liveTerminals()).filter((t) => t.alive);
-  const adoptable = live.filter((t) => terminalTabDock(t.id) === null).at(-1);
+  const adoptable = unownedTerminals(live.map((t) => t.id)).at(-1);
   if (adoptable !== undefined) {
-    addTerminalTab(adoptable.id, position ?? terminalDefaultDock());
+    addTerminalTab(adoptable, position);
     void refreshTerminals();
     return;
   }
@@ -68,9 +67,9 @@ export async function openTerminalInDock(position?: DockPosition): Promise<void>
 }
 
 /**
- * The toolbar's terminal click and Ctrl+`: hide the shown terminals, or bring them back —
- * and with no terminal tab at all, adopt or create a shell (the async tail the store's
- * synchronous toggle hands off).
+ * Ctrl+`: hide the shown terminals, or bring them back — and with no terminal tab in
+ * this conversation, adopt or create a shell (the async tail the store's synchronous
+ * toggle hands off).
  */
 export function toggleTerminal(): void {
   if (!toggleTerminalDocks()) void openTerminalInDock();

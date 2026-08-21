@@ -108,6 +108,7 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { DockPanel } from "../dock/dock-panel";
 import { panelLabel } from "../dock/panel-meta";
+import { adoptDockScope } from "../dock/dock-state";
 import {
   dockViews,
   dockVersion,
@@ -935,6 +936,9 @@ export function ChatPage() {
     async (currentId: string, respondedId: string) => {
       if (respondedId === currentId) return;
       await reloadSessions();
+      // Same conversation under a new id: its docks follow, or they are stranded under
+      // an id nothing routes to again.
+      adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],

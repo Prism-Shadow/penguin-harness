@@ -1,17 +1,18 @@
 /**
- * The dock system (features/dock) and the chat toolbar's panel switcher: every side
+ * The dock system (features/dock) and the chat toolbar's two dock toggles: every side
  * element — subagents panel, Workspace files, Memory, Trace, terminals — is a tab in the
  * right or bottom dock.
+ * - the toolbar has exactly two pull-open buttons; an opened dock with no tabs shows a
+ *   picker (choose what to open here), and each dock's own "+" menu adds more tabs;
  * - Ctrl+` toggles the terminal tabs (front → hide → restore); the shell keeps running
  *   while hidden and reattaches on reopen;
- * - tabs of different kinds mix in one strip; a panel tab's × closes the panel, a
- *   terminal tab's × kills the shell;
- * - the toolbar's create menu carries per-element placement actions (right / bottom) and
- *   pin toggles that persist; agents + workspace are pinned by default;
+ * - tabs of different kinds mix in one strip with always-visible per-tab ×s: a panel
+ *   tab's × closes the panel, a terminal tab's × kills the shell, the last tab closing
+ *   puts the dock away;
  * - a whole dock moves to the other edge via its header button, a single tab via drag
  *   onto the drop targets;
- * - the bottom dock's height ratio and the whole arrangement (tabs, active, hidden docks)
- *   survive a reload, and the arrangement is GLOBAL — switching conversations keeps it;
+ * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
+ *   style) and survives a reload; the bottom dock's height ratio is a global preference;
  * - "Detach" hands the terminal off to /terminal?id=… in a new window and its tab leaves;
  * - a failed shell create surfaces as an error toast instead of silence.
  */
@@ -59,10 +60,10 @@ async function createSession(request, projectId) {
 }
 
 /**
- * The dock adopts the user's newest tab-less live terminal before creating one, so a
- * leftover shell from a previous test would leak into the next test's screen. Each test
- * starts from zero terminals; kill is async (SIGHUP → pty exit), so poll until none is
- * alive. The persisted arrangement is per-browser-context (fresh per test), so only the
+ * The dock adopts a live shell no conversation holds before creating one, so a leftover
+ * shell from a previous test would leak into the next test's screen. Each test starts
+ * from zero terminals; kill is async (SIGHUP → pty exit), so poll until none is alive.
+ * The persisted arrangement is per-browser-context (fresh per test), so only the
  * server-side shells need cleaning.
  */
 async function killAllTerminals(request) {
@@ -84,6 +85,12 @@ const dockAt = (page, position) =>
 const anyDock = (page) => page.locator('[data-testid="dock"]');
 const terminalBody = (page) => page.locator('[data-testid="dock-terminal-body"]:visible');
 const screenText = (page) => terminalBody(page).locator(".xterm-rows").innerText();
+
+/** Pull a dock open from the toolbar and pick an element on its picker. */
+async function openViaPicker(page, position, kind) {
+  await page.getByTestId(`dock-toggle-${position}`).click();
+  await page.getByTestId(`dock-pick-${kind}`).click();
+}
 
 async function runInTerminal(page, command) {
   await terminalBody(page).locator(".xterm-screen").click();
@@ -136,10 +143,11 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
   await expect(dockAt(page, "bottom")).toBeVisible();
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("DOCK_KEEPS_RUNNING");
 
-  // A terminal tab's × kills the shell itself; the last tab gone hides the dock.
-  const tab = dockAt(page, "bottom").locator('[data-testid="dock-tab"][data-terminal-id]');
-  await tab.hover();
-  await tab.getByTestId("dock-tab-close").click();
+  // A terminal tab's × (always visible) kills the shell; the last tab gone puts the dock away.
+  await dockAt(page, "bottom")
+    .locator('[data-testid="dock-tab"][data-terminal-id]')
+    .getByTestId("dock-tab-close")
+    .click();
   await expect(anyDock(page)).toHaveCount(0);
   await expect
     .poll(
@@ -152,6 +160,52 @@ test("Ctrl+` opens a shell in the bottom dock; hiding keeps it running, reopenin
     .toBe(0);
 });
 
+test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps tabs", async ({
+  page,
+}) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+
+  // Exactly two dock buttons, both reading closed; no per-element toolbar icons.
+  await expect(page.getByTestId("dock-toggle-bottom")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("panels-toolbar").locator("button")).toHaveCount(2);
+
+  // Pull open the right dock: the picker lists every element; picking Trace opens its tab.
+  await page.getByTestId("dock-toggle-right").click();
+  const right = dockAt(page, "right");
+  await expect(right.getByTestId("dock-picker")).toBeVisible();
+  for (const kind of ["agents", "terminal", "workspace", "memory", "trace"]) {
+    await expect(right.getByTestId(`dock-pick-${kind}`)).toBeVisible();
+  }
+  await right.getByTestId("dock-pick-trace").click();
+  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "true");
+
+  // The bottom dock opens independently — both docks on screen at once.
+  await openViaPicker(page, "bottom", "memory");
+  await expect(
+    dockAt(page, "bottom").locator('[data-tab-id="memory"][data-active="true"]'),
+  ).toBeVisible();
+  await expect(anyDock(page)).toHaveCount(2);
+
+  // Toggling the right dock hides it (tab kept); reopening comes back on the tab, not the picker.
+  await page.getByTestId("dock-toggle-right").click();
+  await expect(dockAt(page, "right")).toHaveCount(0);
+  await page.getByTestId("dock-toggle-right").click();
+  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
+  await expect(right.getByTestId("dock-picker")).toHaveCount(0);
+
+  // A panel tab's × closes it; the last tab closing puts the dock away entirely.
+  await right.locator('[data-tab-id="trace"]').getByTestId("dock-tab-close").click();
+  await expect(dockAt(page, "right")).toHaveCount(0);
+  await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
+});
+
 test("tabs of every kind share a dock: switch, close a panel tab, terminals numbered", async ({
   page,
 }) => {
@@ -162,8 +216,7 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
 
-  // Workspace via its pinned toolbar trigger → a right-dock tab.
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await openViaPicker(page, "right", "workspace");
   const right = dockAt(page, "right");
   await expect(right.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 
@@ -188,62 +241,10 @@ test("tabs of every kind share a dock: switch, close a panel tab, terminals numb
   await expect.poll(() => screenText(page), { timeout: 20000 }).toContain("MIXED_DOCK");
 
   // A panel tab's × closes just the panel; the terminal tab remains, dock stays.
-  const wsTab = right.locator('[data-tab-id="workspace"]');
-  await wsTab.hover();
-  await wsTab.getByTestId("dock-tab-close").click();
+  await right.locator('[data-tab-id="workspace"]').getByTestId("dock-tab-close").click();
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(1);
   await expect(right).toBeVisible();
   await killAllTerminals(page.request);
-});
-
-test("panel switcher: default pins, placement actions, pin/unpin persists", async ({ page }) => {
-  await provisionAndLogin(page.request, U, P);
-  const projectId = await configureProjectModel(page.request);
-  await killAllTerminals(page.request);
-  const sessionId = await createSession(page.request, projectId);
-  await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByPlaceholder(/输入消息/).waitFor();
-
-  // Defaults: agents + workspace pinned; terminal / memory / trace only in the menu.
-  await expect(page.getByTestId("panel-btn-agents")).toBeVisible();
-  await expect(page.getByTestId("panel-btn-workspace")).toBeVisible();
-  await expect(page.getByTestId("panel-btn-terminal")).toHaveCount(0);
-  await expect(page.getByTestId("panel-btn-memory")).toHaveCount(0);
-  await expect(page.getByTestId("panel-btn-trace")).toHaveCount(0);
-
-  // The create menu lists all five entries.
-  await page.getByTestId("panels-all").click();
-  for (const key of ["agents", "terminal", "workspace", "memory", "trace"]) {
-    await expect(page.getByTestId(`panels-menu-${key}`)).toBeVisible();
-  }
-
-  // Placement: trace to the RIGHT dock; memory to the BOTTOM dock — both from the menu.
-  await page.getByTestId("panels-place-right-trace").click();
-  await expect(
-    dockAt(page, "right").locator('[data-tab-id="trace"][data-active="true"]'),
-  ).toBeVisible();
-  await page.getByTestId("panels-place-bottom-memory").click();
-  await expect(
-    dockAt(page, "bottom").locator('[data-tab-id="memory"][data-active="true"]'),
-  ).toBeVisible();
-  await page.keyboard.press("Escape");
-
-  // Both docks visible at once — the exclusivity of the old drawer panels is gone.
-  await expect(anyDock(page)).toHaveCount(2);
-
-  // Toggling a SHOWN panel closes its tab (memory is unpinned: toggle through the menu).
-  await page.getByTestId("panels-all").click();
-  await page.getByTestId("panels-menu-memory").click();
-  await expect(dockAt(page, "bottom")).toHaveCount(0); // its only tab closed → dock gone
-
-  // Pinning the terminal persists across reloads.
-  await page.getByTestId("panels-all").click();
-  await page.getByTestId("panels-pin-terminal").click();
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("panel-btn-terminal")).toBeVisible();
-  await page.reload();
-  await page.getByPlaceholder(/输入消息/).waitFor();
-  await expect(page.getByTestId("panel-btn-terminal")).toBeVisible();
 });
 
 test("a whole dock moves to the other edge; a single tab moves by drag onto the drop target", async ({
@@ -256,12 +257,12 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
 
-  await page.getByRole("button", { name: "打开工作区" }).click();
-  await page.getByTestId("panels-all").click();
-  await page.getByTestId("panels-place-right-trace").click();
-  await page.keyboard.press("Escape");
+  await openViaPicker(page, "right", "workspace");
   const right = dockAt(page, "right");
+  await right.getByTestId("dock-add").click();
+  await page.getByTestId("dock-add-trace").click();
   await expect(right.locator('[data-testid="dock-tab"]')).toHaveCount(2);
+  await expect(right.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
 
   // Header button: the whole dock (both tabs) onto the bottom edge.
   await right.getByTestId("dock-move").click();
@@ -290,7 +291,7 @@ test("a whole dock moves to the other edge; a single tab moves by drag onto the 
   await expect(bottom.locator('[data-tab-id="trace"]')).toBeVisible();
 });
 
-test("sizes and the whole arrangement survive a reload; hidden stays hidden", async ({ page }) => {
+test("sizes and the arrangement survive a reload; hidden stays hidden", async ({ page }) => {
   await provisionAndLogin(page.request, U, P);
   const projectId = await configureProjectModel(page.request);
   await killAllTerminals(page.request);
@@ -298,12 +299,10 @@ test("sizes and the whole arrangement survive a reload; hidden stays hidden", as
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
 
-  await page.getByTestId("panels-all").click();
-  await page.getByTestId("panels-place-bottom-trace").click();
-  await page.getByTestId("panels-place-right-workspace").click();
-  await page.keyboard.press("Escape");
+  await openViaPicker(page, "bottom", "trace");
+  await openViaPicker(page, "right", "workspace");
   const bottom = dockAt(page, "bottom");
-  await expect(bottom).toBeVisible();
+  await expect(bottom.locator('[data-tab-id="trace"][data-active="true"]')).toBeVisible();
 
   // Drag the bottom boundary up ~120px: the height ratio grows and persists.
   const before = (await bottom.boundingBox()).height;
@@ -318,7 +317,7 @@ test("sizes and the whole arrangement survive a reload; hidden stays hidden", as
 
   // Hide the right dock (its tab stays behind), then reload: the bottom dock comes back
   // at its size, the right dock stays hidden, and reopening restores its tab.
-  await dockAt(page, "right").getByTestId("dock-close").click();
+  await page.getByTestId("dock-toggle-right").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
   await page.reload();
   await page.getByPlaceholder(/输入消息/).waitFor();
@@ -328,13 +327,13 @@ test("sizes and the whole arrangement survive a reload; hidden stays hidden", as
   await expect(dockAt(page, "right")).toHaveCount(0);
   const reloaded = (await dockAt(page, "bottom").boundingBox()).height;
   expect(Math.abs(reloaded - after)).toBeLessThan(24);
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
   await expect(
     dockAt(page, "right").locator('[data-tab-id="workspace"][data-active="true"]'),
   ).toBeVisible();
 });
 
-test("the arrangement is global: switching conversations keeps the docks and the shell", async ({
+test("each conversation manages its own tabs: nothing leaks, and each side survives the round trip", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -345,25 +344,34 @@ test("the arrangement is global: switching conversations keeps the docks and the
 
   await page.goto(`${BASE}/chat/${sidA}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await openViaPicker(page, "right", "workspace");
   await page.keyboard.press("Control+Backquote");
   await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
-  await waitForShell(page, "GLOBAL_SHELL");
-
-  // Switch to the other conversation: both docks stay, the same shell stays in the
-  // strip, and the Workspace re-binds to B. The identity check rides on the tab's id and
-  // a FRESH probe typed after the switch — not on the scrollback replay, whose stream has
-  // a known load-sensitive flake that predates the dock rework.
-  const preId = await page
+  await waitForShell(page, "SCOPED_SHELL");
+  const shellId = await page
     .locator('[data-testid="dock-tab"][data-terminal-id]')
     .getAttribute("data-terminal-id");
+
+  // B starts with no docks of its own — A's tabs (terminal included) never leak in.
   await page.goto(`${BASE}/chat/${sidB}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await expect(anyDock(page)).toHaveCount(0);
+  await openViaPicker(page, "bottom", "memory");
+  await expect(
+    dockAt(page, "bottom").locator('[data-tab-id="memory"][data-active="true"]'),
+  ).toBeVisible();
+
+  // Back to A: its arrangement returns — the same shell tab in the bottom dock, live
+  // (identity via the tab id plus a fresh probe; scrollback replay has a known
+  // load-sensitive flake that predates the docks). B's memory tab did not follow.
+  await page.goto(`${BASE}/chat/${sidA}`);
   await page.getByPlaceholder(/输入消息/).waitFor();
   await expect(dockAt(page, "right").locator('[data-tab-id="workspace"]')).toBeVisible();
   await expect(
-    page.locator(`[data-testid="dock-tab"][data-terminal-id="${preId}"][data-active="true"]`),
+    page.locator(`[data-testid="dock-tab"][data-terminal-id="${shellId}"][data-active="true"]`),
   ).toBeVisible();
   await waitForShell(page, "STILL_SAME_SHELL");
+  await expect(page.locator('[data-tab-id="memory"]')).toHaveCount(0);
   await killAllTerminals(page.request);
 });
 

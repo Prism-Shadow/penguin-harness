@@ -165,25 +165,22 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
 
   // --- Tabs coexist: the agents tab and the Workspace tab share the right dock — opening
   // one COVERS the other (it stays in the strip, inactive) instead of closing it, which is
-  // exactly what the old drawer exclusivity forbade.
-  const agentsToggle = page.getByTestId("panel-btn-agents");
-  const filesToggle = page.getByRole("button", { name: "打开工作区" });
+  // exactly what the old drawer exclusivity forbade. The workspace joins through the
+  // dock's own "+" menu.
   const rightDock = page.locator('[data-testid="dock"][data-position="right"]');
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true"); // shown from the chip click above
-  await filesToggle.click(); // workspace up -> agents covered, not closed
-  await expect(filesToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(agentsTabActive(page)).toBeVisible(); // shown from the chip click above
+  await rightDock.getByTestId("dock-add").click();
+  await page.getByTestId("dock-add-workspace").click(); // workspace up -> agents covered, not closed
   await expect(rightDock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
   await expect(rightDock.locator('[data-tab-id="agents"][data-active="false"]')).toBeVisible();
-  await agentsToggle.click(); // and back: agents up front, workspace stays tabbed
+  await rightDock.locator('[data-tab-id="agents"]').click(); // and back: agents up front, workspace stays tabbed
   await expect(rightDock.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
   await expect(rightDock.locator('[data-tab-id="workspace"][data-active="false"]')).toBeVisible();
   // The covered tab's body renders nothing on screen (display:none, not a stray strip).
   await expect(page.getByText("根目录")).toBeHidden();
-  // Put the workspace tab away for the blocks below: bring it to the front, close it —
-  // the dock falls back to the agents tab on its own.
-  await filesToggle.click();
-  await filesToggle.click();
+  // Put the workspace tab away for the blocks below via its always-visible ×; the dock
+  // stays on the agents tab.
+  await rightDock.locator('[data-tab-id="workspace"]').getByTestId("dock-tab-close").click();
   await expect(rightDock.locator('[data-tab-id="workspace"]')).toHaveCount(0);
   await expect(agentsTabActive(page)).toBeVisible();
 
@@ -207,8 +204,14 @@ test("subagent renders as a chip; the panel shows the call graph and child conve
     "true",
   );
   await expect(page.getByText("Subagent report: 3 TODOs")).toBeVisible();
-  await agentsToggle.click(); // close (the tab leaves the strip, dropping its pinned scope)
-  await agentsToggle.click(); // reopen from the toolbar -> back to the DEFAULT latest-Task scope
+  // Close the tab (its × — the last tab, so the dock goes away with it, dropping the
+  // pinned scope), then reopen through the toolbar toggle and the picker -> back to the
+  // DEFAULT latest-Task scope.
+  await rightDock.locator('[data-tab-id="agents"]').getByTestId("dock-tab-close").click();
+  await expect(rightDock).toHaveCount(0);
+  await page.getByTestId("dock-toggle-right").click();
+  await page.getByTestId("dock-pick-agents").click();
+  await expect(agentsTabActive(page)).toBeVisible();
   // Two renders of the note (the graph section and the selection empty state) are fine —
   // both say the same thing about the latest Task.
   await expect(page.getByText("本次任务尚未派生子智能体").first()).toBeVisible();
@@ -261,34 +264,35 @@ test("auto-open lifecycle: spawn opens the tab, a plain task keeps it, manual cl
   await page.goto(`${BASE}/chat/${sessionId}`);
   const ta = page.getByPlaceholder(/输入消息/);
   await ta.waitFor();
-  const agentsToggle = page.getByTestId("panel-btn-agents");
+  const closeAgentsTab = () =>
+    page.locator('[data-tab-id="agents"]').getByTestId("dock-tab-close").click();
 
   // Task 1 spawns: the tab comes up ITSELF once the spawn goes live (no clicks).
   await ta.fill("run a subagent");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(agentsTabActive(page)).toBeVisible();
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true"); // stays up after the task
+  await expect(agentsTabActive(page)).toBeVisible(); // stays up after the task
 
   // Task 2 (plain): an open tab SURVIVES the boundary — the arrangement is the user's, and
   // a task that spawns nothing neither opens nor closes anything.
   await ta.fill("hello again");
   await page.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("Command finished; the result looks as expected.")).toHaveCount(2);
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(agentsTabActive(page)).toBeVisible();
 
   // Task 3 spawns again after a manual close: the auto-open is RE-ARMED per task (the mock
   // delays this spawn ~800ms, keeping close -> auto-open observable in order); a manual
   // close mid-task is then respected until the next boundary.
-  await agentsToggle.click(); // manual close between tasks
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "false");
+  await closeAgentsTab(); // manual close between tasks (the tab's ×)
+  await expect(agentsTabActive(page)).toHaveCount(0);
   await ta.fill("run another subagent");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true"); // spawn -> auto-open again
-  await agentsToggle.click(); // manual close mid-task: the task's one attempt is consumed
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(agentsTabActive(page)).toBeVisible(); // spawn -> auto-open again
+  await closeAgentsTab(); // manual close mid-task: the task's one attempt is consumed
+  await expect(agentsTabActive(page)).toHaveCount(0);
   await expect(page.getByText("Command finished; the result looks as expected.")).toHaveCount(3);
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "false"); // stayed closed for the task
+  await expect(agentsTabActive(page)).toHaveCount(0); // stayed closed for the task
 });
 
 test("an approval inside the subagent stays discoverable via the chip badge and actionable from the panel", async ({
@@ -308,11 +312,11 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
   await page.getByRole("button", { name: "允许" }).click();
 
   // The child's exec_command approval surfaces on the chip (待审批 joins its accessible name)
-  // and as an amber dot on the toolbar toggle — discoverable with the panel closed.
+  // and as an amber dot on the right-dock toggle — discoverable with the panel closed.
   const pendingChip = page.getByRole("button", { name: /子会话.*待审批/ });
   await expect(pendingChip).toBeVisible();
-  const toolbarToggle = page.getByTestId("panel-btn-agents");
-  await expect(toolbarToggle.locator("span.bg-amber-500")).toBeVisible();
+  const rightToggle = page.getByTestId("dock-toggle-right");
+  await expect(rightToggle.locator("span.bg-amber-500")).toBeVisible();
 
   // Open the panel from the chip and approve the child's tool call from inside it.
   await pendingChip.click();
@@ -325,7 +329,7 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
   await expect(page.getByText("Command finished; the result looks as expected.")).toBeVisible();
   // The pending badge is gone once the approval is decided (asserted on the always-visible
   // toolbar toggle — the chip itself collapses with its group when the turn ends).
-  await expect(toolbarToggle.locator("span.bg-amber-500")).toHaveCount(0);
+  await expect(rightToggle.locator("span.bg-amber-500")).toHaveCount(0);
 });
 
 test("draft flow: the panel auto-opens on the first live spawn and the child conversation shows its user prompt", async ({
@@ -363,8 +367,6 @@ test("draft flow: the panel auto-opens on the first live spawn and the child con
   // The panel auto-opens as soon as the spawn goes live — no clicks (the child's exec_command
   // sleeps ~1s, so the Task reliably outlives the draft navigation and the client attaches
   // while the spawn is still running).
-  const agentsToggle = page.getByTestId("panel-btn-agents");
-  await expect(agentsToggle).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
   // The child conversation INCLUDES its user side while LIVE: run_subagent forwards the child's
   // input message itself (origin-tagged), not just the model's output.

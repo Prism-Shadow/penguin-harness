@@ -37,7 +37,6 @@ export const en: Strings = {
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
     /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "No terminals",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "Could not start a terminal",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -61,9 +60,9 @@ export const en: Strings = {
     hideDock: "Hide sidebar",
     moveToRight: "Move to the right",
     moveToBottom: "Move to the bottom",
-    openInRight: "Open on the right",
-    openInBottom: "Open at the bottom",
     resize: "Resize panel",
+    rightDock: "Right sidebar",
+    bottomDock: "Bottom panel",
     draftEmpty: "Available once the conversation starts",
   },
 
@@ -1436,14 +1435,9 @@ Scenarios:
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openWorkspace: "Open workspace",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "Create",
     workspacePanel: "Workspace",
-    pinPanel: "Pin to toolbar",
-    unpinPanel: "Unpin",
-    openTracePanel: "Open traces",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1456,7 +1450,6 @@ Scenarios:
     memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
-    openMemoryPanel: "Open memory",
     memoryRowOpen: "View content",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",

@@ -4,7 +4,7 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -22,6 +22,7 @@ import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
@@ -174,6 +175,16 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
 
 export function AppLayout() {
   const { user, desktopMode } = useAuth();
+  // The docks belong to the conversation they were arranged in, so switching Sessions
+  // switches the arrangement with it (dock-state.ts). The draft page's route id ("new" /
+  // a parked draft id) is a scope of its own, handed to the Session the first send
+  // creates; pages with no Session scope to a placeholder. Layout effect, not a plain
+  // one: it has to land before the chat page's docks paint, or the outgoing
+  // conversation's docks flash on the incoming one.
+  const dockScope = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
+  useLayoutEffect(() => {
+    setDockScope(dockScope);
+  }, [dockScope]);
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();

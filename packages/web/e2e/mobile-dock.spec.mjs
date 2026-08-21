@@ -1,8 +1,9 @@
 /**
  * Narrow viewport (<1024px, the dock store's merge breakpoint): the right and bottom
  * docks render as ONE merged bottom surface — a 320px-minimum right panel does not fit a
- * phone. Opening the Workspace lands its tab there; drilling into a directory and opening
- * a Markdown file renders the preview; the dock's × puts the whole surface away.
+ * phone. Pulling open a dock lands on the merged surface's picker; picking the Workspace
+ * opens its tab there; drilling into a directory and opening a Markdown file renders the
+ * preview; the dock's × puts the whole surface away.
  * Upload uses a nested path (notes/demo.md): also covers the server's sandbox
  * auto-creating a missing parent directory.
  */
@@ -52,12 +53,15 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   expect(up.ok(), "upload nested md").toBeTruthy();
 
   await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  // Pull open the right dock: at this width it renders as the merged bottom surface,
+  // whose picker then opens the Workspace (the tab still records its right-dock home).
+  await page.getByTestId("dock-toggle-right").click();
 
   // One merged bottom surface, never a right dock at this width.
   const dock = page.locator('[data-testid="dock"][data-position="bottom"]');
   await expect(dock).toBeVisible();
   await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
+  await dock.getByTestId("dock-pick-workspace").click();
   await expect(dock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 
   // Drill into the directory → open the md → default rendered view (h1 shown, not source).
@@ -65,11 +69,8 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   await dock.getByText("demo.md").first().click();
   await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
 
-  // The dock's × puts the surface away; the toolbar trigger reads closed again.
+  // The dock's × puts the surface away; the toolbar toggle reads closed again.
   await dock.getByTestId("dock-close").click();
   await expect(dock).toBeHidden();
-  await expect(page.getByRole("button", { name: "打开工作区" })).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
+  await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
 });

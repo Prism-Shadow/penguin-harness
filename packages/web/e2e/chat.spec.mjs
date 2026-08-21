@@ -280,7 +280,8 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   expect(up.ok(), "upload html").toBeTruthy();
 
   await page.goto(`${BASE}/chat/${sessionId}`);
-  await page.getByRole("button", { name: "打开工作区" }).click();
+  await page.getByTestId("dock-toggle-right").click();
+  await page.getByTestId("dock-pick-workspace").click();
   const fileNode = page.getByText("demo.html").first();
   await expect(fileNode).toBeVisible();
   await fileNode.click();

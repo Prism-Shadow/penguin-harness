@@ -38,14 +38,21 @@ export function TracePanel({ session, active }: { session: SessionInfo; active: 
   const [showAllFiles, setShowAllFiles] = useState(false);
   const [highlight, setHighlight] = useState<TraceHighlight | null>(null);
 
-  // Fetch on show: first activation loads, later activations re-list (a Task may have
-  // written a new file meanwhile). The selected pill survives a re-list when its file
+  // Fetch on show: the first activation loads, later re-activations re-list (a Task may
+  // have written a new file while the tab was hidden). Split into a rising-edge tick and
+  // a fetch effect keyed on it — a single edge-detecting fetch effect would lose the
+  // FIRST load under StrictMode's dev-mode double-invoke (the ref flips on the first run,
+  // whose fetch the cleanup cancels; the second run then sees no edge and never refetches,
+  // leaving the skeleton up forever). The selected pill survives a re-list while its file
   // still exists; a vanished selection falls back to the newest file.
-  const prevActive = useRef(false);
+  const [listTick, setListTick] = useState(0);
+  const prevActive = useRef(active);
   useEffect(() => {
-    const becameActive = active && !prevActive.current;
+    if (active && !prevActive.current) setListTick((t) => t + 1);
     prevActive.current = active;
-    if (!becameActive) return;
+  }, [active]);
+  useEffect(() => {
+    if (!active) return;
     let cancelled = false;
     void api
       .getSessionTraces(session.sessionId)
@@ -64,7 +71,9 @@ export function TracePanel({ session, active }: { session: SessionInfo; active: 
     return () => {
       cancelled = true;
     };
-  }, [active, session.sessionId]);
+    // listTick re-runs the fetch on every re-show; `active` alone would only load once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, listTick, session.sessionId]);
 
   if (files === null) {
     return (

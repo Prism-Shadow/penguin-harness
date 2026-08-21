@@ -37,8 +37,6 @@ export const zh = {
     newShell: "新建 Shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
-    /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "暂无终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "终端创建失败",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -66,11 +64,11 @@ export const zh = {
     hideDock: "收起侧边栏",
     moveToRight: "移到右侧",
     moveToBottom: "移到下方",
-    /** Placement actions in the toolbar's panels menu. */
-    openInRight: "在右侧打开",
-    openInBottom: "在下方打开",
     /** Boundary drag handle between a dock and the chat content (double-click resets). */
     resize: "调整面板大小",
+    /** The toolbar's two pull-open buttons (aria-expanded carries the open state). */
+    rightDock: "右侧栏",
+    bottomDock: "下侧栏",
     /** A session-bound panel's body on the draft page, where no Session exists yet. */
     draftEmpty: "发送第一条消息后可用",
   },
@@ -1395,14 +1393,8 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openWorkspace: "打开工作区",
     openAgents: "智能体面板",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "创建",
     workspacePanel: "工作区",
-    pinPanel: "置顶到栏目",
-    unpinPanel: "取消置顶",
-    openTracePanel: "打开轨迹",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -1417,7 +1409,6 @@ Benchmark：
     memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
-    openMemoryPanel: "打开记忆",
     memoryRowOpen: "查看内容",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
