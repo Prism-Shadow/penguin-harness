@@ -20,7 +20,9 @@
  * Approval: `run_subagent` itself is a read-write tool (`rw`), so its invocation requires Human
  * approval; the child session's tool approval requests are forwarded to the same Human within
  * the window via the session's approval queue (tagged with origin), and queued for the next
- * access while running in the background. An interruption within the startup window kills the
+ * access while a promoted session runs in the background. A `run_in_background` launch instead
+ * attaches this call's own approval callback as a standing sink (see the branch below) — the
+ * child never parks waiting for a poll. An interruption within the startup window kills the
  * child session per exec_command semantics; precheck errors such as exceeding the depth limit or
  * a nonexistent agent are expressed by the runner as a throw, and collapsed to failed.
  * Docs: /docs/tools § "Subagents".
@@ -150,11 +152,20 @@ export function createSubagentTool(
       // report (fires at the end of every round until the session is killed), start the run,
       // and hand back the subagent_id. The completion reaches the conversation as a harness
       // user message; the model can still poll or follow up with input_subagent, or stop it
-      // with kill_subagent. The child's live message forwarding starts with the first
-      // input_subagent access (its own Trace records everything from the start regardless).
+      // with kill_subagent. The child's messages stream to the host live through the
+      // forwarding tap below (its own Trace stays the durable record).
       if (background) {
         const id = manager.register(session);
         armSubagentDoneReport(session, id, prompt, services);
+        // Decouple the child's lifecycle from this call: a standing approval sink (this
+        // call's own ctx.approve — without it the child's first read-write tool would park
+        // at the approval queue forever, since no collect window ever attaches one) and a
+        // live message tap, so the child streams to the frontend past this turn's end. The
+        // child's abort signal is its own (ManagedSubagentSession.abortCtrl) — only
+        // kill_subagent, dispose, or registry eviction ends it.
+        if (approve) session.setPersistentApprovalSink(approve);
+        const forward = services?.backgroundForward;
+        if (forward) session.setMessageTap(forward);
         // Forward the child's session_meta upfront (run skips its own copy): the frontend's
         // subagents panel and the server's subagent registry learn of the child at launch,
         // not at the first input_subagent access.

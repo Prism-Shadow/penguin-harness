@@ -346,6 +346,14 @@ export interface EnvironmentServices {
    * Injected internally by Environment.
    */
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void;
+  /**
+   * Live forwarding sink for background-launched subagents: the child's origin-tagged
+   * messages flow here the moment its pump produces them, so hosts can stream them to the
+   * frontend past the launching turn's end (display copies only — the child's own Trace is
+   * the durable record). Injected internally by Environment; forwarded to the listener the
+   * Session attached (see EnvironmentInterface.setBackgroundMessageListener).
+   */
+  backgroundForward?: (msg: OmniMessage) => void;
 }
 
 /**
@@ -481,6 +489,12 @@ export interface EnvironmentInterface {
    * `dispose()` no further events fire. Optional — environments without background tools omit it.
    */
   setBackgroundTaskListener?(listener: (event: BackgroundTaskDoneEvent) => void): void;
+  /**
+   * Attaches the single listener for live-forwarded background-subagent messages (see
+   * EnvironmentServices.backgroundForward). Same buffering and dispose semantics as
+   * setBackgroundTaskListener. Optional.
+   */
+  setBackgroundMessageListener?(listener: (msg: OmniMessage) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

@@ -269,6 +269,8 @@ export class Session {
   private pendingNotices: OmniMessage[] = [];
   /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
   private noticeListener: (() => void) | null = null;
+  /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
+  private bgMessageListener: ((msg: OmniMessage) => void) | null = null;
 
   constructor(config: SessionConfig) {
     this.sessionId = config.meta.session_id;
@@ -316,6 +318,10 @@ export class Session {
     // Completion events of run_in_background launches flow from the Environment into the
     // notice queue (events fired before this attach are buffered by the Environment).
     config.environment.setBackgroundTaskListener?.((event) => this.handleBackgroundDone(event));
+    // Live-forwarded background-subagent messages flow straight to the host's subscriber —
+    // display copies only (the child's own Trace is the durable record), so with no
+    // subscriber they are simply dropped.
+    config.environment.setBackgroundMessageListener?.((msg) => this.bgMessageListener?.(msg));
   }
 
   /**
@@ -779,6 +785,16 @@ export class Session {
   /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */
   hasPendingBackgroundNotices(): boolean {
     return this.pendingNotices.length > 0;
+  }
+
+  /**
+   * Subscribes the host to live-forwarded background-subagent messages (origin-tagged, the
+   * same stream a foreground collect window would relay): the server publishes them to the
+   * session's event channel so the frontend sees a background child working in real time.
+   * One listener; a later call replaces the earlier one.
+   */
+  onBackgroundMessage(listener: (msg: OmniMessage) => void): void {
+    this.bgMessageListener = listener;
   }
 
   /**

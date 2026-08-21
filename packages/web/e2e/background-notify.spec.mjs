@@ -65,7 +65,7 @@ test("a run_in_background completion reaches the open chat page unprompted", asy
 
   // From here on: NO interaction. The command exits ~6s in; the harness user message must
   // appear as the collapsed one-line banner, and the model's acknowledgement turn after it.
-  await expect(page.getByText("后台命令已完成")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("后台命令完成")).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByText("Acknowledged: the background command finished (bg-ack)."),
   ).toBeVisible({ timeout: 30_000 });

@@ -233,6 +233,8 @@ A task launched with `run_in_background: true` reports its completion as a **use
 
 Delivery: while a Task is running, the report rides the next turn boundary — a final reply already streaming does not lose it, the Task simply continues for one more turn to react. While the Session is idle, the hosting server starts a new Task carrying the report (SDK embedders subscribe via `Session.onBackgroundNotice` / `takeBackgroundNotices`, or get it prepended to the next run). A task stopped through `kill_command` / `kill_subagent` sends no report — the kill's own result already carries the outcome.
 
+A background subagent's lifecycle is decoupled from the call that launched it: its abort signal is its own (only `kill_subagent`, Session end, or registry eviction ends it), its messages stream to the frontend live through the launching Session (same origin-tagged channel a foreground window relays), and its tool approvals resolve through the launching call's own approval callback as a standing sink — so an `allow-all` launch runs unattended, and a failure still ends in a `status: failed` report rather than a child parked forever.
+
 ### Background session caps
 
 | Session type | Cap | Eviction |

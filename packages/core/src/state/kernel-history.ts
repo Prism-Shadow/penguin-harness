@@ -338,8 +338,10 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
     "model.max_tokens": "492f431bae35265f2e5f4ed49bd8c58dda912431be561504846988d00d05d117",
     "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
     "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
-    "compaction.max_context_length": "b412afcc00967650c9e51efd8cdc35ae59d3d6c30234331b7bf75b382d982ee9",
-    "compaction.max_session_turns": "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
+    "compaction.max_context_length":
+      "b412afcc00967650c9e51efd8cdc35ae59d3d6c30234331b7bf75b382d982ee9",
+    "compaction.max_session_turns":
+      "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
     "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",
     "compaction.prompt": "8ed55781e8071083f8246ed70d9e063ee729d3872d5bc6a2bedfa9c99aed6ae5",
     "memory.enabled": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
@@ -354,14 +356,21 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
     "tools.builtin.read_file": "858f128945421043f5f373c908a0ee081e93e9413debaa49c8c7af1c1c76db3c",
     "tools.builtin.edit_file": "165a3e2dabe3d13200a1670f3c23ed2d6561c508439db1972db066719f3549ef",
     "tools.builtin.write_file": "c98253bd5a3b6ff021accda91af016a809a9b50ce56f38a3ed60eeb673c0b130",
-    "tools.builtin.exec_command": "c7cf0639eb9434b2eecdd064aabeead52e22c966ddce348f987c744e93f9686f",
-    "tools.builtin.input_command": "071daddb34cba05556cda2b6a87d18d5bd73fb863e6e3bd62f033626fbabf017",
-    "tools.builtin.kill_command": "1d35d3be0408349c0bb099c442abfde3975c720e2c85cda3c2b749b359bef891",
-    "tools.builtin.run_subagent": "6d890081b3dcd0405bab35590ee5d85c1ffa4815faf3b1b4de62b2617da77ec6",
-    "tools.builtin.input_subagent": "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
-    "tools.builtin.kill_subagent": "8d8c11a1ae565b9b8334a498c5fc5b8903a2f657ac4e46d1c3dc9b7288e12ce4",
+    "tools.builtin.exec_command":
+      "c7cf0639eb9434b2eecdd064aabeead52e22c966ddce348f987c744e93f9686f",
+    "tools.builtin.input_command":
+      "071daddb34cba05556cda2b6a87d18d5bd73fb863e6e3bd62f033626fbabf017",
+    "tools.builtin.kill_command":
+      "1d35d3be0408349c0bb099c442abfde3975c720e2c85cda3c2b749b359bef891",
+    "tools.builtin.run_subagent":
+      "6d890081b3dcd0405bab35590ee5d85c1ffa4815faf3b1b4de62b2617da77ec6",
+    "tools.builtin.input_subagent":
+      "22cc4648d773e8422e80a12a7a095b00b7f7eb01ab5a9ea080858dcd7517b4e3",
+    "tools.builtin.kill_subagent":
+      "8d8c11a1ae565b9b8334a498c5fc5b8903a2f657ac4e46d1c3dc9b7288e12ce4",
     "tools.builtin.read_image": "05b797a88df1e6a90fb3da67ec654b206f8d81291f89d160a505620afcea38bb",
-    "tools.builtin.describe_image": "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
+    "tools.builtin.describe_image":
+      "fad6d0cdd483eb53b5d243c0508024ab3b708ce6d3c81933acd291f05d4a265f",
   },
 };
 

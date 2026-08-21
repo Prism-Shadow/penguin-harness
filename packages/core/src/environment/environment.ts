@@ -130,6 +130,8 @@ export class Environment implements EnvironmentInterface {
       // Completion reports of run_in_background launches converge here; the Session attaches
       // the single consumer via setBackgroundTaskListener (events before that are buffered).
       backgroundDone: (event: BackgroundTaskDoneEvent) => this.emitBackgroundDone(event),
+      // Live-forwarded background-subagent messages, same single-consumer pattern.
+      backgroundForward: (msg: OmniMessage) => this.emitBackgroundForward(msg),
     };
     // Assemble the tools supported by config into BuiltinTool instances; unrecognized tool
     // names are skipped (neither exposed to the LLM nor executable).
@@ -155,6 +157,7 @@ export class Environment implements EnvironmentInterface {
     // their exits must not masquerade as task completions after the Session has ended.
     this.bgDisposed = true;
     this.bgBuffer = [];
+    this.bgFwdBuffer = [];
     this.commandSessions.dispose();
     this.subagentSessions.dispose();
     this.mcp?.closeQuietly();
@@ -178,6 +181,25 @@ export class Environment implements EnvironmentInterface {
     const buffered = this.bgBuffer;
     this.bgBuffer = [];
     for (const event of buffered) this.emitBackgroundDone(event);
+  }
+
+  // Live-forwarded background-subagent messages: same single-listener + buffer-until-attach
+  // pattern as the completion reports above.
+  private bgFwdListener: ((msg: OmniMessage) => void) | null = null;
+  private bgFwdBuffer: OmniMessage[] = [];
+
+  private emitBackgroundForward(msg: OmniMessage): void {
+    if (this.bgDisposed) return;
+    if (this.bgFwdListener) this.bgFwdListener(msg);
+    else this.bgFwdBuffer.push(msg);
+  }
+
+  /** Attaches the single background-message listener, flushing buffered messages (see EnvironmentInterface). */
+  setBackgroundMessageListener(listener: (msg: OmniMessage) => void): void {
+    this.bgFwdListener = listener;
+    const buffered = this.bgFwdBuffer;
+    this.bgFwdBuffer = [];
+    for (const msg of buffered) this.emitBackgroundForward(msg);
   }
 
   /** Background command processes registered by exec_command (still-listed exited ones included; the host UI filters as it sees fit). */

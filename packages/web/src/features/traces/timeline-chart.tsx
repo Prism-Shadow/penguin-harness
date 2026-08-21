@@ -550,16 +550,18 @@ export function TimelineChart({
                   </div>
                 )}
 
-                {/* User lane: point events for the round's user-side messages — the human's
-                    prompt as a filled dot, machine injections (harness completion reports,
-                    scheduler triggers) as a ring; tooltip names which. First group only —
-                    the grouped-by-Task view embeds exactly one round per chart. */}
+                {/* User lane: the round's user-side messages as minimal bars in the same
+                    style family as the model segments — a sliver at the moment each message
+                    landed. The human's prompt is the darker bar; machine injections (harness
+                    completion reports, scheduler triggers) the lighter one; the tooltip names
+                    which. First group only — the grouped-by-Task view embeds exactly one
+                    round per chart. */}
                 {g === groups[0] && userMarks.length > 0 && (
                   <Lane label={S.traces.laneUser}>
                     {userMarks.map((u, i) => {
                       const key = `u-${i}`;
                       const active = isActive(key);
-                      const left = clamp(((Date.parse(u.ts) - g.t0) / g.total) * 100, 0, 100);
+                      const t = Date.parse(u.ts);
                       return (
                         <span
                           key={key}
@@ -567,12 +569,12 @@ export function TimelineChart({
                           onMouseLeave={leave}
                           onClick={() => onJump?.(u.ts)}
                           title={`${u.machine ? S.traces.markHarness : S.traces.markUser} · ${new Date(u.ts).toLocaleTimeString()}`}
-                          className={`absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full ${
+                          className={`absolute inset-y-0 min-w-[3px] cursor-pointer ${
                             u.machine
-                              ? "border border-gray-400 bg-transparent dark:border-gray-500"
+                              ? "bg-gray-300 dark:bg-gray-600"
                               : "bg-gray-400 dark:bg-gray-500"
                           } ${dimClass(active, legendKey === null)}`}
-                          style={{ left: `${left}%` }}
+                          style={placeExact(t, t, g.t0, g.total)}
                         />
                       );
                     })}

@@ -153,6 +153,8 @@ export interface RuntimeSession {
   hasPendingBackgroundNotices?(): boolean;
   /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
   probeBackgroundCommandServices?(): Promise<void>;
+  /** Subscribes live-forwarded background-subagent messages (core `Session.onBackgroundMessage`); the manager publishes them to the session channel. Optional: test fakes may omit it. */
+  onBackgroundMessage?(listener: (msg: OmniMessage) => void): void;
   /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
@@ -592,13 +594,35 @@ export class SessionManager {
   }
 
   /**
-   * Subscribes the idle-arrival signal for background completion notices on a runtime
-   * Session entering the active table — every insertion path must call it (ensureEntry's
-   * loads, adopt's fresh creations): mid-run arrivals are delivered inside the run by
-   * core, and this signal is the only trigger left when the session sits idle.
+   * Subscribes the background hooks on a runtime Session entering the active table — every
+   * insertion path must call it (ensureEntry's loads, adopt's fresh creations):
+   * - the idle-arrival signal for completion notices (mid-run arrivals are delivered inside
+   *   the run by core; this signal is the only trigger left when the session sits idle);
+   * - live-forwarded background-subagent messages, published to the session channel (the
+   *   same feed SSE relays) and recorded for usage — a background child streams to the
+   *   frontend in real time past the launching turn's end, until its terminal state.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
     session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
+    session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
+  }
+
+  /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
+  private forwardBackgroundMessage(sessionId: string, msg: OmniMessage): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    this.deps.channels.get(entry.sessionId).publish(msg);
+    const ctx: UsageContext = {
+      projectId: entry.projectId,
+      agentId: entry.agentId,
+      sessionId: entry.sessionId,
+      provider: entry.provider,
+      modelId: entry.modelId,
+    };
+    void this.deps.recorder.record(ctx, msg).catch((err: unknown) => {
+      this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.deps.errors?.record({ source: "usage", err, ctx, code: "usage_insert_failed" });
+    });
   }
 
   /**

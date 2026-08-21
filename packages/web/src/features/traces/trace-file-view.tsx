@@ -369,15 +369,29 @@ export function TraceFileView({
       const b = boundsByTask.get(from);
       if (b) ensure(to).durationMs += Math.max(0, b.max - b.min);
     }
-    for (const s of analysis.modelSegments) ensure(resolve(s.taskIndex)).segments.push(s);
+    // Merged content is re-stamped with the TARGET round index: the timeline groups bars
+    // by taskIndex, and a mixed-index round would render as two stacked timelines instead
+    // of one continuous one.
+    const retarget = <T extends { taskIndex: number }>(s: T): T => {
+      const target = resolve(s.taskIndex);
+      return s.taskIndex === target ? s : { ...s, taskIndex: target };
+    };
+    for (const s of analysis.modelSegments) {
+      const r = retarget(s);
+      ensure(r.taskIndex).segments.push(r);
+    }
     for (const s of analysis.toolSpans) {
-      const d = ensure(resolve(s.taskIndex));
-      d.spans.push(s);
+      const r = retarget(s);
+      const d = ensure(r.taskIndex);
+      d.spans.push(r);
       d.toolCalls += 1;
     }
     // Non-tool auxiliary phases (MCP connect); pre-otherSpans analysis payloads (cached
     // responses) may omit the field.
-    for (const s of analysis.otherSpans ?? []) ensure(resolve(s.taskIndex)).otherSpans.push(s);
+    for (const s of analysis.otherSpans ?? []) {
+      const r = retarget(s);
+      ensure(r.taskIndex).otherSpans.push(r);
+    }
     // Message attribution: **by the server-given index range**, never guessed
     // from timestamps. The same millisecond can be crowded with "the previous
     // round's last reply, compaction_begin, the compaction prompt, the next

@@ -231,6 +231,8 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `kill_command` / `kill_subagent` 终止的任务不发回报——kill 自身的结果已说明结局。
 
+后台 Subagent 的生命周期与发起它的调用解耦：中止信号只属于它自己（仅 `kill_subagent`、Session 终结或注册表淘汰会结束它），其消息经发起 Session 实时流向前端（与前台窗口转发同一条 origin 通道），工具审批经发起调用自身的审批回调作为常驻 sink 解决——`allow-all` 下即发即忘可全程无人值守，失败也以 `status: failed` 的回报收尾，而不是子会话永久卡住。
+
 ### 后台会话上限
 
 | 会话类型 | 上限 | 淘汰策略 |

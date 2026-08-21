@@ -344,6 +344,30 @@ describe("session-manager", () => {
     expect(runInputs).toHaveLength(2);
   });
 
+  it("live-forwarded background-subagent messages publish to the channel and record usage", async () => {
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(sessions.findById("session-1")!, fake);
+    expect(forward).not.toBeNull();
+    const events = capture("session-1");
+    const child = withOrigin(assistantText("child progress"), "session-child-1");
+    forward!(child);
+    expect(events.some((e) => e.data.includes("child progress"))).toBe(true);
+    // Usage recording rode along (same recorder drive uses).
+    expect(recorded).toContain(child);
+  });
+
   it("adopt registers the notice listener too (a freshly created session, no loader involved)", async () => {
     // Regression guard: POST /sessions enters the active table through adopt, not
     // ensureEntry — a listener registered only on the loader path left brand-new sessions

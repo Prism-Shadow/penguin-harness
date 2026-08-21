@@ -16,6 +16,7 @@ import { SubagentSessionManager } from "../src/environment/tools/subagent/index.
 import { DEFAULT_EMPTY_POLL_YIELD_MS } from "../src/environment/tools/command/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
 import {
+  abortEvent,
   assistantText,
   buildBackgroundTaskDoneMessage,
   emptyTokenCounts,
@@ -27,7 +28,12 @@ import {
   userText,
 } from "../src/omnimessage/index.js";
 import { Session } from "../src/index.js";
-import type { OmniMessage, SessionMetaPayload, TextPayload } from "../src/omnimessage/index.js";
+import type {
+  OmniMessage,
+  SessionMetaPayload,
+  TextPayload,
+  ToolCallPayload,
+} from "../src/omnimessage/index.js";
 import type {
   ApproveFn,
   BackgroundTaskDoneEvent,
@@ -294,8 +300,9 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
 async function drive(
   tool: ReturnType<typeof createSubagentTool>,
   args: Record<string, unknown>,
+  ctx: ToolExecutionContext = CTX,
 ): Promise<{ output: string; stopReason?: string; note: string; yielded: OmniMessage[] }> {
-  const gen = tool.execute(args, CTX);
+  const gen = tool.execute(args, ctx);
   let output = "";
   const yielded: OmniMessage[] = [];
   for (;;) {
@@ -397,6 +404,63 @@ describe("run_subagent run_in_background", () => {
     expect(manager.get(id)).toBeUndefined();
     await new Promise((r) => setTimeout(r, 100));
     expect(events).toHaveLength(0);
+  });
+
+  it("a failing background subagent still reports (status failed) and taps its messages live", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const runner = runnerOf(async function* () {
+      // A child-session failure surfaces as an origin-tagged abort event, never a throw.
+      yield withHop(abortEvent("llm request failed after 5 retries"));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const tapped: OmniMessage[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+      backgroundForward: (m: OmniMessage) => tapped.push(m),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const res = await drive(tool, { prompt: "will fail", run_in_background: true });
+    extractSubagentId(res.note);
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "subagent", status: "failed" });
+    expect(events[0]!.detail).toContain("aborted");
+    // The failure event reached the live tap too (origin-tagged), not a poll buffer.
+    expect(tapped.some((m) => (m.payload as { type?: string }).type === "abort")).toBe(true);
+  });
+
+  it("a background child's approvals resolve through the launching call's standing sink", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const runner = runnerOf(async function* ({ approve }) {
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      const d = await approve!(tc as OmniMessage<ToolCallPayload>);
+      decisions.push(d);
+      yield withHop(partialText("delta", `approved:${d}`));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const approveSpy: ApproveFn = async () => "allow";
+    const res = await drive(
+      tool,
+      { prompt: "needs approval", run_in_background: true },
+      { ...CTX, approve: approveSpy },
+    );
+    extractSubagentId(res.note);
+    // Without the standing sink this parks forever: the child's first approval request has
+    // no collect window to consult through.
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
+    await waitFor(() => events.length === 1);
+    expect(events[0]!.status).toBe("completed");
   });
 
   it("kill_subagent fails on an unknown subagent_id", async () => {
