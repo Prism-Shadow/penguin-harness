@@ -1,10 +1,11 @@
 /**
  * Completion notice of a background task (`[background_task_done]`, a harness-injected user
- * message reporting that a run_in_background command/subagent settled): a standalone
- * single-row card built on the shared disclosure shell — collapsed it reads exactly like a
- * thinking row (same width, padding and color states), showing only the outcome label;
- * expanded, the report body (registry handle, what ran, exit detail, output tail) renders in
- * the tool cards' output styling. The Trace page shows the raw marker text as-is.
+ * message reporting that a run_in_background command/subagent settled): a standalone card in
+ * the work group's own form — collapsed it reads exactly like a settled "Done" group header
+ * (same chrome, title styling, sticky pinning against the scrollport), showing only the
+ * outcome label; expanded, the report body (registry handle, what ran, exit detail, output
+ * tail) renders in the tool cards' output styling. The Trace page shows the raw marker text
+ * as-is.
  */
 import { S } from "../../lib/strings";
 import type { BackgroundTaskDone } from "./agent-handoff";
@@ -20,6 +21,8 @@ export function BackgroundDoneBanner({ done, body }: { done: BackgroundTaskDone;
   return (
     <div className={DISCLOSURE_CARD_CLASS}>
       <DisclosureRow
+        variant="header"
+        sticky
         icon={<StatusIcon state={ok ? "done" : "failed"} label={done.status} />}
         label={S.chat.backgroundDone(done.kind, ok)}
       >

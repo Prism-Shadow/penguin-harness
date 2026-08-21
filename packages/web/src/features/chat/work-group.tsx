@@ -21,7 +21,12 @@ import { useEffect, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import { Chevron } from "../../components/ui/chevron";
-import { DISCLOSURE_CARD_CLASS } from "./disclosure-row";
+import {
+  DISCLOSURE_CARD_CLASS,
+  DISCLOSURE_HEADER_ROW_CLASS,
+  DISCLOSURE_HEADER_STICKY_CLASS,
+  DISCLOSURE_HEADER_TITLE_CLASS,
+} from "./disclosure-row";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ChatItem } from "../../lib/omni/stream-model";
@@ -128,12 +133,12 @@ export function WorkGroup({
             requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
           }
         }}
-        className="sticky -top-4 z-[5] flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800"
+        className={`${DISCLOSURE_HEADER_STICKY_CLASS} ${DISCLOSURE_HEADER_ROW_CLASS}`}
       >
         <StatusIcon state={active ? "running" : "done"} />
         {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
         <span
-          className={`shrink-0 text-[11px] font-semibold uppercase tracking-wide ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
+          className={`${DISCLOSURE_HEADER_TITLE_CLASS} ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
         >
           {active ? S.chat.workRunning : S.chat.workDone}
         </span>

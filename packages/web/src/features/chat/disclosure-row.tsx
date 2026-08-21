@@ -29,6 +29,21 @@ export const DISCLOSURE_ROW_STICKY_CLASS = "sticky top-4 z-[4]";
 export const DISCLOSURE_LABEL_CLASS = "shrink-0 text-xs text-gray-500 dark:text-gray-400";
 
 /**
+ * The header-family row — the work group's "Running / Done" summary bar (its exact chrome:
+ * gray ground, taller padding, stronger hover). A standalone disclosure that should read
+ * like a settled work group (the background completion notice) uses this variant.
+ */
+export const DISCLOSURE_HEADER_ROW_CLASS =
+  "flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800";
+
+/** Header-level sticky positioning (the work-group header's own: pins against the message list's scrollport, one z level above the nested rows). */
+export const DISCLOSURE_HEADER_STICKY_CLASS = "sticky -top-4 z-[5]";
+
+/** The header-family title (the work-group header's title styling, minus the state-dependent color the caller appends). */
+export const DISCLOSURE_HEADER_TITLE_CLASS =
+  "shrink-0 text-[11px] font-semibold uppercase tracking-wide";
+
+/**
  * Expanded plain-text body, the tool cards' output styling (an exec_command's expanded
  * output): a bordered mono <pre> block. Referenced by tool-call-card and every disclosure
  * body that shows raw output.
@@ -48,17 +63,23 @@ export function DisclosureRow({
   icon,
   label,
   trailing,
+  variant = "row",
   sticky = false,
   defaultOpen = false,
   children,
 }: {
   /** Leading status icon slot (a StatusIcon, matching the thinking/tool rows). */
   icon: ReactNode;
-  /** The row's one-line label (rendered in DISCLOSURE_LABEL_CLASS). */
+  /** The row's one-line label (DISCLOSURE_LABEL_CLASS, or the header title styling for the header variant). */
   label: string;
   /** Optional detail between the label and the spacer (duration, a failure tag). */
   trailing?: ReactNode;
-  /** Rows inside the work group pin under its stuck header; standalone rows don't. */
+  /**
+   * "row" = a line inside the work group (the thinking block's form); "header" = the work
+   * group's own summary-bar form (the background notice's standalone card).
+   */
+  variant?: "row" | "header";
+  /** Pins the row while its body scrolls: nested rows under the stuck group header, a header against the scrollport (per variant). */
   sticky?: boolean;
   defaultOpen?: boolean;
   /** Expanded body; the caller styles it (md body, output <pre>, …). */
@@ -66,6 +87,12 @@ export function DisclosureRow({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const rootRef = useRef<HTMLDivElement>(null);
+  const header = variant === "header";
+  const rowClass = header ? DISCLOSURE_HEADER_ROW_CLASS : DISCLOSURE_ROW_CLASS;
+  const stickyClass = header ? DISCLOSURE_HEADER_STICKY_CLASS : DISCLOSURE_ROW_STICKY_CLASS;
+  const labelClass = header
+    ? `${DISCLOSURE_HEADER_TITLE_CLASS} text-gray-500 dark:text-gray-400`
+    : DISCLOSURE_LABEL_CLASS;
   return (
     <div ref={rootRef}>
       <button
@@ -80,10 +107,10 @@ export function DisclosureRow({
           }
         }}
         aria-expanded={open}
-        className={`${sticky ? `${DISCLOSURE_ROW_STICKY_CLASS} ` : ""}${DISCLOSURE_ROW_CLASS}`}
+        className={`${sticky ? `${stickyClass} ` : ""}${rowClass}`}
       >
         {icon}
-        <span className={DISCLOSURE_LABEL_CLASS}>{label}</span>
+        <span className={labelClass}>{label}</span>
         {trailing}
         <span className="min-w-0 flex-1" />
         <Chevron open={open} className="text-gray-400" />
