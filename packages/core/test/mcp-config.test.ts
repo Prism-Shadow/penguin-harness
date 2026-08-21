@@ -48,6 +48,19 @@ describe("resolveMCPServer — transports", () => {
     });
   });
 
+  it('carries an explicit permission and treats "auto" (and absence) as unset', () => {
+    expect(
+      resolveMCPServer({ name: "a", config: { command: "x", permission: "r" } }).permission,
+    ).toBe("r");
+    expect(
+      resolveMCPServer({ name: "a", config: { command: "x", permission: "rw" } }).permission,
+    ).toBe("rw");
+    expect(
+      resolveMCPServer({ name: "a", config: { command: "x", permission: "auto" } }).permission,
+    ).toBeUndefined();
+    expect(resolveMCPServer({ name: "a", config: { command: "x" } }).permission).toBeUndefined();
+  });
+
   it("passes through per-server budgets, flooring fractions", () => {
     const resolved = resolveMCPServer({
       name: "t",
@@ -90,6 +103,16 @@ describe("resolveMCPServer — transports", () => {
       /"connectTimeoutMs"/,
     ],
     ["negative timeoutMs", { name: "a", config: { command: "x", timeoutMs: -5 } }, /"timeoutMs"/],
+    [
+      "unknown permission",
+      { name: "a", config: { command: "x", permission: "read-only" } },
+      /"permission" must be "auto", "r" or "rw"/,
+    ],
+    [
+      "non-string permission",
+      { name: "a", config: { command: "x", permission: true } },
+      /"permission" must be "auto", "r" or "rw"/,
+    ],
   ])("rejects %s", (_label, entry, pattern) => {
     expect(() => resolveMCPServer(entry as never)).toThrow(pattern);
   });
@@ -107,6 +130,18 @@ describe("resolveMCPServers — list semantics", () => {
     expect(warnings).toHaveLength(2);
     expect(warnings[0]).toMatch(/"bad entry" skipped: invalid server name/);
     expect(warnings[1]).toMatch(/"one" skipped: duplicate server name/);
+  });
+
+  it("skips an entry with an invalid permission, keeping the valid ones", () => {
+    const { servers, warnings } = resolveMCPServers([
+      { name: "ok", config: { command: "a", permission: "r" } },
+      { name: "typo", config: { command: "b", permission: "readonly" } },
+    ]);
+    expect(servers.map((s) => s.name)).toEqual(["ok"]);
+    expect(servers[0]!.permission).toBe("r");
+    expect(warnings).toEqual([
+      'MCP server "typo" skipped: "permission" must be "auto", "r" or "rw"',
+    ]);
   });
 
   it("returns empty results for an empty list", () => {

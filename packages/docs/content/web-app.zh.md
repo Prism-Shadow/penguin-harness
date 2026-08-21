@@ -90,7 +90,7 @@ penguin web
 | Prompt | AGENTS.md 与 system_prompt |
 | Memory | Agent 级开关，以及按作用域分组的全部记忆——用户记忆在前、每个 Workspace 一组，分组可折叠并带添加入口——每行提供查看 / 删除 / 对话编辑 |
 | Runtime | max_turns、model.*、compaction.* 等运行参数 |
-| Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 管理：表格 + 添加/编辑表单（默认 http，字段随 transport 切换，改动即时保存，服务端按 transport 完整校验）；测试连接与模型页同款——表单内独立按钮测当前条目（toast 报工具数与耗时），区块级按钮逐一测试全部 Server 并在各行显示结果徽标 |
+| Tools | 内置工具表格（含条目级 call_description 开关）与 MCP Server 管理：表格 + 添加/编辑表单（默认 http，字段随 transport 切换，改动即时保存，服务端按 transport 完整校验；permission 控件把该 Server 工具的审批等级固定为 `auto` / `r` / `rw`，表格列出各 Server 的生效等级）；测试连接与模型页同款——表单内独立按钮测当前条目（toast 报工具数与耗时），区块级按钮逐一测试全部 Server 并在各行显示结果徽标 |
 | Vault | 环境变量条目，值以掩码显示 |
 | Schedule | 定时任务（TOML 定义）：创建、编辑、启停、删除 |
 

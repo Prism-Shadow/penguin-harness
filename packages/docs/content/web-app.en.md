@@ -91,7 +91,7 @@ The list page creates and deletes Agents; clicking through opens the `/agents/:a
 | Prompt | AGENTS.md and system_prompt |
 | Memory | The Agent-level switch, then every memory grouped by scope — user memory first, then one group per Workspace, each group collapsible with an add entry — with view / delete / edit-via-chat actions per row |
 | Runtime | Runtime parameters such as max_turns, model.*, compaction.* |
-| Tools | Built-in tool table (incl. per-tool call_description switches) and MCP Server management: a table plus an add/edit form whose fields follow the transport (http by default; changes save immediately; full transport validation server-side); connectivity testing mirrors the models page — a standalone button in the form probes the current entry (toast with tool count and latency), and a section-level button tests every server in turn with a result badge on each row |
+| Tools | Built-in tool table (incl. per-tool call_description switches) and MCP Server management: a table plus an add/edit form whose fields follow the transport (http by default; changes save immediately; full transport validation server-side; a permission control fixes the approval level of that server's tools at `auto` / `r` / `rw`, and the table shows each server's effective level); connectivity testing mirrors the models page — a standalone button in the form probes the current entry (toast with tool count and latency), and a section-level button tests every server in turn with a result badge on each row |
 | Vault | Environment-variable entries with masked values |
 | Schedule | Scheduled tasks (TOML-defined): create, edit, toggle, delete |
 

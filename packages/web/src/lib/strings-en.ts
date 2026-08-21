@@ -415,6 +415,17 @@ export const en: Strings = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermissionAutoDescription:
+      "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
+    mcpPermissionReadDescription:
+      "Treat every tool of this server as read-only, whatever it declares. Auto-approved when the approval mode is read-only.",
+    mcpPermissionReadWriteDescription:
+      "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
+    mcpPermissionHint:
+      "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",

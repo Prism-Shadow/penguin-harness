@@ -379,6 +379,17 @@ export const zh = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto（readOnlyHint）",
+    mcpPermissionAutoDescription:
+      "每个工具按自己的 readOnlyHint 注解取值：声明了就是只读，否则为读写。",
+    mcpPermissionReadDescription:
+      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为 read-only 时自动放行。",
+    mcpPermissionReadWriteDescription:
+      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为 read-only 时需人工确认。",
+    mcpPermissionHint:
+      "只有 read-only 审批模式会读这个等级，allow-all / deny-all / always-ask 一律不看。它不限制 Server 本身能做什么——把并非只读的 Server 标为只读，只是撤掉了 read-only 模式本会索要的那次确认。",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
