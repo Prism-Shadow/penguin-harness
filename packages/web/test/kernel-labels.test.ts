@@ -12,16 +12,26 @@ afterEach(() => setActiveStrings(zh));
 
 describe("kernelFieldLabel", () => {
   it("maps fixed paths through the active dictionary", () => {
-    expect(kernelFieldLabel("system_prompt")).toBe("系统提示词模板");
-    expect(kernelFieldLabel("memory.prompt")).toBe("记忆提示词");
-    setActiveStrings(en);
-    expect(kernelFieldLabel("system_prompt")).toBe("system prompt template");
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      setActiveStrings(dict);
+      for (const path of Object.keys(dict.agent.kernelFields)) {
+        expect(kernelFieldLabel(path), `${locale} ${path}`).toBe(dict.agent.kernelFields[path]);
+      }
+    }
   });
 
   it("renders per-tool paths with the tool name", () => {
-    expect(kernelFieldLabel("tools.builtin.read_file")).toBe("工具 read_file");
-    setActiveStrings(en);
-    expect(kernelFieldLabel("tools.builtin.my_tool")).toBe("tool my_tool");
+    for (const dict of [zh, en]) {
+      setActiveStrings(dict);
+      // The tool name is interpolated, not dropped, and the rest comes from the dictionary.
+      expect(kernelFieldLabel("tools.builtin.read_file")).toBe(
+        dict.agent.kernelFieldTool("read_file"),
+      );
+      expect(kernelFieldLabel("tools.builtin.read_file")).toContain("read_file");
+    }
   });
 
   it("covers every fixed kernel merge leaf in both dictionaries (no raw-path fallbacks for known paths)", () => {

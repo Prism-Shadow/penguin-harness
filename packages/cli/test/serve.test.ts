@@ -177,11 +177,17 @@ describe("readiness probe diagnostics", () => {
 
   it("includes actionable localized firewall guidance for connection timeouts", () => {
     const detail = "UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error";
-    expect(
-      getMessages("en").webProbeFailed("http://127.0.0.1:7364/", detail, "timeout", 7364),
-    ).toContain("Allow PenguinHarness to communicate on local port 7364");
-    expect(
-      getMessages("zh").webProbeFailed("http://127.0.0.1:7364/", detail, "timeout", 7364),
-    ).toContain("请允许 PenguinHarness 在本机端口 7364 上通信");
+    const url = "http://127.0.0.1:7364/";
+    for (const lang of ["en", "zh"] as const) {
+      const timeout = getMessages(lang).webProbeFailed(url, detail, "timeout", 7364);
+      // Actionable means naming the port the user has to let through, not just reporting a
+      // timeout; the probe error stays visible either way.
+      expect(timeout, lang).toContain("7364");
+      expect(timeout, lang).toContain(detail);
+      // The kind picks the hint: a timeout must not read like a refused connection.
+      expect(timeout, lang).not.toBe(
+        getMessages(lang).webProbeFailed(url, detail, "refused", 7364),
+      );
+    }
   });
 });

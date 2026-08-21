@@ -87,6 +87,8 @@ import { agentDisplayName } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CheckIcon, ChevronDown } from "../../components/ui/icons";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
 import { SkillIcon } from "../skills/skill-icon-view";
@@ -118,6 +120,7 @@ import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { toneInk } from "../../lib/tone";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -176,40 +179,12 @@ function ApprovalModeSelect({
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
           {/* Icon changes with the current mode (allow-all = warning triangle, grayscale, no color-coding) */}
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-            className="shrink-0"
-          >
-            <path d={APPROVAL_MODE_ICONS[value]} />
-          </svg>
+          <GlyphIcon d={APPROVAL_MODE_ICONS[value]} />
           {/* Button shows only the description (the mode id is spelled out in the menu); when the card is narrower than @md, only the icon remains (title shows the full name). */}
           <span className="hidden min-w-0 truncate @md:block">
             {S.chat.approvalModeNames[value] ?? value}
           </span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -384,25 +359,10 @@ function ThinkingLevelSelect({
           onClick={() => setOpen(!open)}
           className="flex h-8 max-w-36 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={SPARK_ICON} size={14} className="shrink-0" />
+          <GlyphIcon d={SPARK_ICON} className="shrink-0" />
           {/* When the card is narrower than @md, only the icon remains (title shows the full state). */}
           <span className="hidden min-w-0 truncate @md:block">{label}</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -488,7 +448,7 @@ function SteerModeRow({
   );
   return (
     <div className="flex w-full items-center gap-2 px-3 py-1 text-xs">
-      <GlyphIcon d={SLIDERS_ICON} size={14} className="shrink-0 text-gray-400 dark:text-gray-500" />
+      <GlyphIcon d={SLIDERS_ICON} className="shrink-0 text-gray-400 dark:text-gray-500" />
       <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-400">
         {S.chat.steerModeLabel}
       </span>
@@ -552,7 +512,7 @@ function SkillSelect({
           }}
           className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={BOOK_ICON} size={14} className="shrink-0" />
+          <GlyphIcon d={BOOK_ICON} className="shrink-0" />
           {/* When the card is narrower than @md, only the icon + badge remain (title shows the full name). */}
           <span className="hidden min-w-0 truncate @md:block">{S.chat.skillsSelect}</span>
           {/* Selected-count badge (the chip row above the input mirrors the selection too). */}
@@ -561,22 +521,7 @@ function SkillSelect({
               {selected.length}
             </span>
           )}
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -615,7 +560,7 @@ function SkillSelect({
                 {/* Each skill's custom icon (icon.svg, sanitized and inlined; falls back to the book icon if missing). */}
                 <SkillIcon
                   icon={s.icon}
-                  size={14}
+                  size={ICON_SIZE.inlineGlyph}
                   className="shrink-0 text-gray-400 dark:text-gray-500"
                 />
                 <span className="shrink-0 font-mono">{s.name}</span>
@@ -707,11 +652,7 @@ function PlusMenu({
               : "text-gray-600 dark:text-gray-400"
           }`}
         >
-          <GlyphIcon
-            d={item.icon}
-            size={14}
-            className="shrink-0 text-gray-400 dark:text-gray-500"
-          />
+          <GlyphIcon d={item.icon} className="shrink-0 text-gray-400 dark:text-gray-500" />
           <span className="shrink-0">{item.label}</span>
           <span className="min-w-0 flex-1 truncate text-gray-400 dark:text-gray-500">
             {item.desc}
@@ -759,8 +700,8 @@ function ContextGauge({
     unknown || pct <= 0.8
       ? "text-gray-400 dark:text-gray-500"
       : pct > 0.95
-        ? "text-red-500"
-        : "text-amber-500";
+        ? toneInk.danger
+        : toneInk.attention;
   const R = 5;
   const C = 2 * Math.PI * R;
   return (
@@ -2214,7 +2155,7 @@ export function ChatInput({
             <span
               key={i}
               title={file.name}
-              className="anim-pop flex max-w-56 items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              className={`anim-pop flex max-w-56 items-center ${ICON_GAP.tight} rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200`}
             >
               <GlyphIcon
                 d={PAPERCLIP_ICON}
@@ -2397,20 +2338,7 @@ export function ChatInput({
                       className="flex h-5 min-w-0 items-center gap-1 rounded px-1.5 text-xs text-gray-600 transition-colors duration-150 hover:bg-white/80 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
                     >
                       <span className="truncate">{goalBudgetSummary}</span>
-                      <svg
-                        width="9"
-                        height="9"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="shrink-0"
-                        aria-hidden
-                      >
-                        <path d="M3 4.5l3 3 3-3" />
-                      </svg>
+                      <ChevronDown size={ICON_SIZE.caretDense} />
                     </button>
                   }
                 >
@@ -2458,7 +2386,7 @@ export function ChatInput({
                         onClick={saveGoalBudget}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-white transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-35 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
                       >
-                        <GlyphIcon d="M5 12l4 4L19 6" size={14} />
+                        <CheckIcon size={14} />
                       </button>
                     </div>
                     <p

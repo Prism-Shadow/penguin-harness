@@ -116,6 +116,26 @@ export function UploadIcon({ size = 13, className = "" }: { size?: number; class
 }
 
 /**
+ * The close cross. Drawn on a 14x14 grid at stroke 1.5 rather than the 24x24 icon grid: a
+ * two-stroke mark aliases badly when its grid and its render size disagree.
+ */
+export function CloseIcon({ size = 14, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+      className={`block shrink-0 ${className}`}
+    >
+      <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
  * The X close button shared by the Modal / Drawer / Sheet headers: same glyph,
  * padding and hover treatment. Extra button props (e.g. Sheet's onPointerDown
  * guard) pass through.
@@ -136,12 +156,13 @@ export function CloseButton({
       className={`rounded-md p-1.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 ${className}`}
       {...rest}
     >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
-        <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
+      <CloseIcon />
     </button>
   );
 }
+
+/** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
+export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /** Standard gear (lucide settings): full tooth outline + center circle, crisp and undistorted at 16px. */
 export const GEAR_ICON =

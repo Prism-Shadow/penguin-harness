@@ -16,6 +16,9 @@ import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { FOLDER_ICON } from "../../components/ui/group-list";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import {
   dockStateVersion,
   holdsTerminal,
@@ -25,6 +28,7 @@ import {
 } from "../terminal/terminal-dock-state";
 import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
 import { liveTerminals, subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
+import { toneDot } from "../../lib/tone";
 
 export type PanelKey = "agents" | "terminal" | "workspace";
 
@@ -33,8 +37,6 @@ const DEFAULT_PINS: readonly PanelKey[] = ["agents", "workspace"];
 /** Display order of pinned icons and dropdown rows (the product-specified order). */
 const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace"];
 
-/** Folder glyph, duplicated from the chat stats icons to avoid exporting page internals. */
-const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
 /** Plus: the "create" trigger opening the panels menu. */
 const CREATE_ICON = "M12 5v14M5 12h14";
 /** Pin (map-pin style tack), shown filled while pinned. */
@@ -53,26 +55,7 @@ function loadPins(): PanelKey[] {
 }
 
 /** The subagents spawn-tree glyph is multi-element (circles + edges), so it is a component. */
-function AgentsGlyph({ size = 15 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      aria-hidden
-    >
-      <circle cx="5" cy="12" r="2.5" />
-      <circle cx="19" cy="5.5" r="2.5" />
-      <circle cx="19" cy="18.5" r="2.5" />
-      <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
-    </svg>
-  );
-}
-
-function PathGlyph({ d, size = 15 }: { d: string; size?: number }) {
+function AgentsGlyph({ size = ICON_SIZE.iconButton }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -85,7 +68,10 @@ function PathGlyph({ d, size = 15 }: { d: string; size?: number }) {
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d={d} />
+      <circle cx="5" cy="12" r="2.5" />
+      <circle cx="19" cy="5.5" r="2.5" />
+      <circle cx="19" cy="18.5" r="2.5" />
+      <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
     </svg>
   );
 }
@@ -208,10 +194,10 @@ function TerminalListMenu({ onPick }: { onPick: (id: string) => void }) {
           data-testid="terminal-menu-item"
           data-terminal-id={terminal.id}
           onMouseDown={() => onPick(terminal.id)}
-          className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+          className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
         >
           <span className="shrink-0 text-gray-500 dark:text-gray-400">
-            <PathGlyph d={NAV_ICONS.terminal} size={13} />
+            <GlyphIcon d={NAV_ICONS.terminal} />
           </span>
           <span className="min-w-0 truncate">
             {terminal.seq ?? index + 1}: {displayTitle(terminal.title) || terminal.name}
@@ -276,7 +262,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
       key: "terminal",
       label: S.terminal.title,
       buttonLabel: S.terminal.title,
-      glyph: () => <PathGlyph d={NAV_ICONS.terminal} />,
+      glyph: () => <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
       open: terminalOpen,
       toggle: toggleTerminalDock,
     },
@@ -285,7 +271,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
       label: S.chat.workspacePanel,
       // The established accessible name ("打开工作区") — several flows and tests target it.
       buttonLabel: S.chat.openWorkspace,
-      glyph: () => <PathGlyph d={FOLDER_ICON} />,
+      glyph: () => <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.iconButton} />,
       open: props.workspaceOpen,
       toggle: props.onToggleWorkspace,
     },
@@ -317,7 +303,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
             >
               {entry.glyph()}
               {entry.pending && (
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${toneDot.attention}`} />
               )}
               {entry.key === "terminal" && <TerminalCountBadge count={terminalCount} />}
             </button>
@@ -359,7 +345,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
               data-testid="panels-all"
               className={triggerClass(menuOpen)}
             >
-              <PathGlyph d={CREATE_ICON} />
+              <GlyphIcon d={CREATE_ICON} size={ICON_SIZE.iconButton} />
               {!terminalPinned && <TerminalCountBadge count={terminalCount} />}
             </button>
           }
@@ -400,7 +386,10 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                   )}
                   <span className="min-w-0 flex-1" />
                   {entry.pending && (
-                    <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <span
+                      aria-hidden
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${toneDot.attention}`}
+                    />
                   )}
                 </button>
                 {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
@@ -417,19 +406,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                       : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 focus-visible:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
                   }`}
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill={pinned ? "currentColor" : "none"}
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <path d={PIN_ICON} />
-                  </svg>
+                  <GlyphIcon d={PIN_ICON} filled={pinned} />
                 </button>
               </div>
             );

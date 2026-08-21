@@ -82,6 +82,7 @@ import {
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
+import { ICON_GAP } from "../../lib/icon-scale";
 
 /** Coalescing window for writing body text to the cache: keystrokes are frequent, so a short batch accumulates before persisting (option changes are still written immediately). */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
@@ -952,7 +953,7 @@ function AgentSelect({
                 onSelect(a);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className={`flex w-full items-center ${ICON_GAP.menu} px-3 py-1.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
             >
               <AgentAvatar
                 id={a.agentId}

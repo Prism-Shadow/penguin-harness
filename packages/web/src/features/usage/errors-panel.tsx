@@ -17,6 +17,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { Badge } from "../../components/ui/badge";
 import { Empty } from "./usage-charts";
+import { toneInk } from "../../lib/tone";
 
 /** The two error categories. */
 type ErrorKindKey = "unexpected" | "expected";
@@ -56,7 +57,7 @@ function Stat({
   muted?: boolean;
 }) {
   const tone = alert
-    ? "text-rose-600 dark:text-rose-400"
+    ? toneInk.danger
     : muted
       ? "text-gray-500 dark:text-gray-400"
       : "text-gray-900 dark:text-gray-100";

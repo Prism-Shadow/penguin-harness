@@ -18,6 +18,7 @@
 import { TOKEN_COLORS } from "../../lib/token-colors";
 import { humanizeTokens } from "../../lib/format";
 import { S } from "../../lib/strings";
+import { toneInk } from "../../lib/tone";
 
 export function TokenDonut({
   cacheRead,
@@ -46,7 +47,11 @@ export function TokenDonut({
   const pct = max > 0 ? total / max : 0;
   // The base ring's (i.e. "empty ring / remainder") color shifts to amber / red as usage approaches the limit, as a warning.
   const ringTone =
-    pct > 0.95 ? "text-red-500" : pct > 0.8 ? "text-amber-500" : "text-gray-300 dark:text-gray-700";
+    pct > 0.95
+      ? toneInk.danger
+      : pct > 0.8
+        ? toneInk.attention
+        : "text-gray-300 dark:text-gray-700";
   const segs = [
     {
       key: "cacheRead",

@@ -35,6 +35,8 @@ import {
   type McpServerFormState,
   type McpTransportKind,
 } from "./mcp-servers-form";
+import { toneInk } from "../../lib/tone";
+import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {
@@ -77,7 +79,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   }
   if (result.ok) {
     return (
-      <span className="text-[11px] font-medium whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+      <span className={`text-[11px] font-medium whitespace-nowrap ${toneInk.success}`}>
         {S.agent.mcpTestBadge(result.tools?.length ?? 0, result.latencyMs)}
       </span>
     );
@@ -85,7 +87,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   return (
     <span
       title={result.error}
-      className="text-[11px] font-medium whitespace-nowrap text-red-600 dark:text-red-400"
+      className={`text-[11px] font-medium whitespace-nowrap ${toneInk.danger}`}
     >
       {S.agent.mcpTestBadgeFail}
     </span>
@@ -264,10 +266,10 @@ export function McpServersSection({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
-      </div>
+      <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+        {S.agent.mcpServers}
+        <InfoPopover label={S.agent.mcpServers}>{S.agent.mcpDesc}</InfoPopover>
+      </p>
 
       {servers.length === 0 ? (
         <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpEmpty}</p>

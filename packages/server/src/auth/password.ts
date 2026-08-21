@@ -9,7 +9,14 @@
  */
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
-const SCRYPT_N = 16384;
+/**
+ * Work factor for new hashes. `hashPassword` takes it as a defaulted argument so the server's
+ * own test suite can hash at a token cost: almost every case there seeds an admin, provisions
+ * users and logs them in, and one derivation at this strength costs on the order of 100ms.
+ * Nothing on the production path passes the argument, and no configuration reaches it —
+ * `buildAppDeps`, which carries the test override, is not part of this package's exports.
+ */
+export const SCRYPT_COST = 16384;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const SALT_BYTES = 16;
@@ -31,13 +38,17 @@ function scryptAsync(
   });
 }
 
-/** Generates a password hash in `scrypt$N$r$p$salt$hash` format. */
-export async function hashPassword(password: string): Promise<string> {
+/**
+ * Generates a password hash in `scrypt$N$r$p$salt$hash` format. `cost` is scrypt's N and
+ * is recorded in the hash, so `verifyPassword` re-derives at whatever cost produced the
+ * stored string.
+ */
+export async function hashPassword(password: string, cost: number = SCRYPT_COST): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
-  const key = await scryptAsync(password, salt, KEY_BYTES, SCRYPT_N, SCRYPT_R, SCRYPT_P);
+  const key = await scryptAsync(password, salt, KEY_BYTES, cost, SCRYPT_R, SCRYPT_P);
   return [
     "scrypt",
-    String(SCRYPT_N),
+    String(cost),
     String(SCRYPT_R),
     String(SCRYPT_P),
     salt.toString("base64"),
