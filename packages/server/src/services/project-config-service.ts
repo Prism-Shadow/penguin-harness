@@ -403,11 +403,11 @@ export class ProjectConfigService {
    * Model connectivity test: the model reference `(provider, modelId)` is submitted
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
-   * system prompt, thinking disabled, a tiny output cap, 20s timeout — just to see
+   * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout — just to see
    * whether the endpoint answers. The model id sent to AgentHub is `modelId`
    * itself (the upstream id verbatim; client_type inference follows it).
    *
-   * A reasoning-heavy model may ignore the disabled thinking level and burn the
+   * A reasoning-heavy model may still burn the
    * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
    * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
    * demonstrably streamed model output, which is everything a connectivity test
@@ -450,7 +450,9 @@ export class ProjectConfigService {
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         maxTokens: VISION_PROBE_MAX_TOKENS,
         requestTimeoutMs: VISION_PROBE_TIMEOUT_MS,
       });
@@ -516,7 +518,9 @@ export class ProjectConfigService {
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         // Speed mode pairs a raised cap with a prompt that keeps generating (see
         // SPEED_PROBE_PROMPT), so the stream lasts long enough for TTFT/TPS to describe
         // decoding rather than one round trip; the plain connectivity test keeps the
@@ -909,8 +913,8 @@ export function isProbeContent(msg: OmniMessage): boolean {
 /**
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
- * model that ignores the disabled thinking level and burns the probe's tiny max_tokens
- * entirely on thinking (finish_reason=length -> AgentHub's EmptyResponseError) — the
+ * model that burns the probe's tiny max_tokens entirely on thinking
+ * (finish_reason=length -> AgentHub's EmptyResponseError) — the
  * endpoint, credential, and model id all demonstrably work, which is what a connectivity
  * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
  * received) fails with the outcome's message.

@@ -7,11 +7,13 @@
 
 [中文版](2026-08-20-model-list-import.zh.md)
 
-The models page's "add group" dialog gained optional Base URL and API key fields and a "Detect & import" action: it detects the endpoint's protocol with the existing probes, fetches every model id the endpoint serves, and appends them all as entries of the new group in one save — each entry carrying the base URL, the detected protocol, and the typed key inline. The manual path (name only, then the add-model dialog) is unchanged.
+The models page's "add group" dialog gained two modes. **Create only** keeps the light path: a valid name hands off to that group's add-model dialog. **Import models** fills the brand-new group from its endpoint in the add-model dialog's field rhythm — API key first, then the base URL with the detect action at its top-right and the in-field protocol picker as manual override; once a protocol is determined, **Import all models** fetches every model id the endpoint serves and appends them all as entries of the new group in one save, each carrying the base URL, protocol, and typed key inline.
 
 ## Details
 
 - Listing rides on AgentHub 0.4.5's `listModels()` (agenthub [#183](https://github.com/Prism-Shadow/agenthub/pull/183)): core exposes a thin `listEndpointModels` wrapper over `AutoLLMClient`, and the server serves it as `POST /api/projects/:p/models/list` (owner-only, same base-URL validation and DTO discipline as `/detect`; listings are bounded at 20s).
 - An omitted API key follows the same environment chain as the connectivity test (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` per protocol). Keys travel only in request headers upstream and are never echoed.
 - Ids come back in the endpoint's own order; duplicates — within the listing or against already-configured `(provider, model_id)` pairs — are skipped and counted in the success toast.
-- A protocol with no models endpoint (AgentHub `UnsupportedOperationError`), a failed detection, or an empty listing is reported inside the dialog, leaving the manual path one click away; nothing is persisted until the listing succeeded.
+- A failed detection turns the protocol suffix amber and blocks nothing: the protocol can be picked by hand, or the dialog switched back to create-only. A protocol with no models endpoint (AgentHub `UnsupportedOperationError`) or an empty listing is reported inside the dialog; nothing is persisted until the listing succeeded.
+- User-defined group headers gained a **Delete group** action: one confirmation naming the group and its model count, then one table write removes every model in it, dropping a default/vision-model pointer into the deleted group the same way single-model delete does. Built-in groups are unaffected.
+- The connectivity test and the vision probe now send the lowest thinking level (`low`) instead of disabling thinking — several reasoning endpoints reject a request that turns thinking off outright, which failed the probe on the knob it sent rather than on the endpoint.
