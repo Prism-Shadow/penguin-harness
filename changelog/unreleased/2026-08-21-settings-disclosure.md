@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** refactor
 - **Scope:** `web`
+- **PR:** [#392](https://github.com/Prism-Shadow/penguin-harness/pull/392)
 
 [中文版](2026-08-21-settings-disclosure.zh.md)
 
