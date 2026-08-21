@@ -66,6 +66,21 @@ describe("toRow (DTO → row edit state)", () => {
     expect(rowRef(row)).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
   });
 
+  it("carries the env-fallback name and its presence through to the row", () => {
+    const row = toRow({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      envKey: "ANTHROPIC_API_KEY",
+      envKeyPresent: false,
+      isDefault: false,
+    });
+    expect(row.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(row.envKeyPresent).toBe(false);
+    expect(toRow({ provider: "custom", modelId: "m", isDefault: false }).envKeyPresent).toBe(
+      undefined,
+    );
+  });
+
   it("providers outside the catalog list are kept as-is (only the display layer buckets them under custom)", () => {
     const row = toRow({ provider: "myproxy", modelId: "claude-sonnet-4-6", isDefault: false });
     expect(row.provider).toBe("myproxy");

@@ -376,6 +376,12 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
+  /**
+   * Whether the server process currently holds a non-empty value for `envKey` — presence
+   * only, the value itself is never serialized. Reported exactly when `envKey` is, so the
+   * client can tell a fallback that will work from one that will fail to authenticate.
+   */
+  envKeyPresent?: boolean;
   credential?: CredentialInfo;
   isDefault: boolean;
 }

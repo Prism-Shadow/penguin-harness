@@ -688,6 +688,10 @@ export const en: Strings = {
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
     empty: "No models configured yet",
     noKey: "No key",
+    envKeyPresentTitle: (name: string): string =>
+      `No stored key; the API key will be read from environment variable ${name} (detected in the server process)`,
+    envKeyMissingTitle: (name: string): string =>
+      `No key configured and environment variable ${name} is not set — requests will fail to authenticate. Configure a key here; the desktop app also imports variables exported in your login shell`,
     showModelsWithoutKey: (n: number): string =>
       `Show model${n === 1 ? "" : "s"} without a key (${n})`,
     modelIdExists: "This model id already exists",

@@ -37,7 +37,7 @@ description: 双击安装，打开即已登录——对终端要求最少的那�
 
 打开应用，在左侧进入**模型**页，点「添加模型」填入 Provider、模型 id 与 API key，保存后设为默认模型。
 
-已在 shell 配置里 export 过的 API key（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等）无需重复填写：macOS 与 Linux 上从 Dock / 桌面启动时，应用会导入登录 shell 的环境变量，且只补启动环境中缺失的项（agent shell 的 `PATH` 同样受益；设置 `PENGUIN_NO_LOGIN_SHELL_ENV` 可关闭导入）。
+已在 shell 配置里 export 过的 API key（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等）无需重复填写：macOS 与 Linux 上从 Dock / 桌面启动时，应用会导入登录 shell 的环境变量，且只补启动环境中缺失的项（agent shell 的 `PATH` 同样受益；设置 `PENGUIN_NO_LOGIN_SHELL_ENV` 可关闭导入）。未配置存储 key 的模型，**模型**页会直接显示它将读取哪个环境变量、以及该变量当前是否已检测到。
 
 模型引用始终是 `(provider, model_id)` 二元组，Provider 绝不由模型 id 推断；内置分组见[模型与 Provider](/models)。
 

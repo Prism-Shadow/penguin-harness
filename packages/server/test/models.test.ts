@@ -125,6 +125,38 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
   });
 
+  it("GET reports env-fallback presence (empty counts as absent) and never the value", async () => {
+    const saved = {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      deepseek: process.env.DEEPSEEK_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+    };
+    process.env.ANTHROPIC_API_KEY = "sk-test-env-presence-secret";
+    delete process.env.DEEPSEEK_API_KEY;
+    process.env.OPENAI_API_KEY = "";
+    try {
+      const res = await api.get(url());
+      expect(res.status).toBe(200);
+      // Presence is a boolean; the value must never be serialized anywhere in the response.
+      const text = await res.text();
+      expect(text).not.toContain("sk-test-env-presence-secret");
+      const body = JSON.parse(text) as ModelsResponse;
+      expect(pick(body, "anthropic", "claude-sonnet-4-6").envKeyPresent).toBe(true);
+      expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyPresent).toBe(false);
+      // Empty string would not authenticate either, so it reports absent.
+      expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").envKeyPresent).toBe(false);
+    } finally {
+      for (const [key, value] of [
+        ["ANTHROPIC_API_KEY", saved.anthropic],
+        ["DEEPSEEK_API_KEY", saved.deepseek],
+        ["OPENAI_API_KEY", saved.openai],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("PUT a custom model: the vision flag persists; the openai protocol falls back to OPENAI_API_KEY; provider is required", async () => {
     const put = await api.put(url(), {
       defaultModel: { provider: "custom", modelId: "my-model" },

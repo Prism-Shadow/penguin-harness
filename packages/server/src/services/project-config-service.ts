@@ -651,7 +651,11 @@ export class ProjectConfigService {
           ...(vision !== undefined ? { vision } : {}),
           ...(maxTokens !== undefined ? { maxTokens } : {}),
           ...(fastMode !== undefined ? { fastMode } : {}),
-          ...(envKey ? { envKey } : {}),
+          // Presence only, never the value: enough for the UI to tell a fallback that
+          // will work from one that will fail to authenticate. An empty string counts
+          // as absent — it would not authenticate either. Read from this process's env,
+          // which on the desktop already includes the imported login-shell variables.
+          ...(envKey ? { envKey, envKeyPresent: (process.env[envKey] ?? "") !== "" } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
