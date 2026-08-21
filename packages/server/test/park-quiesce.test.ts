@@ -11,7 +11,11 @@ import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import type { PlatformApi } from "../src/hmr/platform.js";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
-import { BARE_KERNEL_RESOURCE_ID, PLATFORM_DRAIN_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import {
+  BARE_KERNEL_RESOURCE_ID,
+  PLATFORM_CURRENT_RESOURCE_ID,
+  PLATFORM_DRAIN_RESOURCE_ID,
+} from "../src/hmr/capabilities.js";
 import { TerminalManager } from "../src/terminal/manager.js";
 import type { TerminalSession } from "../src/terminal/session.js";
 import { waitFor } from "./helpers.js";
@@ -144,6 +148,25 @@ describe("upgrade boot failure", () => {
       expect(rebooted.api.info()).toMatchObject({ impl: "packaged" });
       rebooted.dispose();
     }
+  });
+});
+
+describe("the current-App pointer is released by owner only", () => {
+  it("a stale generation's dispose never deletes the successor's live pointer", async () => {
+    // Two live Apps over one registry — the shape where a naked release() would be a
+    // dead generation deleting the successor's registration (the registry's release is
+    // an unconditional map.delete; nothing pairs it with the matching register).
+    const r = bareKernel();
+    const instA = await quietBoot(r);
+    const instB = await quietBoot(r); // overwrites A's pointer with B's
+    const current = r.claim(PLATFORM_CURRENT_RESOURCE_ID);
+    expect(current).toBeDefined();
+
+    instA.dispose(); // A finds the slot holding B's pointer, not its own: hands off
+    expect(r.claim(PLATFORM_CURRENT_RESOURCE_ID)).toBe(current);
+
+    instB.dispose(); // B owns it, so B's dispose really releases
+    expect(r.claim(PLATFORM_CURRENT_RESOURCE_ID)).toBeUndefined();
   });
 });
 

@@ -273,7 +273,17 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         PLATFORM_DRAIN_RESOURCE_ID,
         Promise.allSettled(drains).then(() => undefined),
       );
-      ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
+      // Ownership-checked, because the registry does not pair register with release: both
+      // are unconditional writes to a shared slot, so a naked release here would be
+      // ordering-dependent — correct only while the kernel happens to dispose the old App
+      // before booting the new one. If generations ever overlap (tests boot two live Apps
+      // over one registry; recovery paths reorder things), an unconditional delete is a
+      // dead generation releasing the successor's live pointer — the exact bug-class the
+      // DETACHED list exists for. Releasing only what is provably ours makes the pair
+      // real instead of positional.
+      if (ctx.resources.claim(PLATFORM_CURRENT_RESOURCE_ID) === current) {
+        ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
+      }
     });
 
     const http = seamHttp(app);
