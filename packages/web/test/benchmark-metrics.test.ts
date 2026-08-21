@@ -1,10 +1,10 @@
 /**
  * Unit tests for the Evaluation center's Score-only chart helpers: Score extraction,
- * dynamic y-axis range, gap segmentation across runtime series, and runtime grouping.
+ * dynamic y-axis range, and runtime grouping. The gap segmentation these series are drawn
+ * with is shared chart geometry (chart-geom's lineSegments, covered in usage-charts.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import {
-  lineSegments,
   modelSeries,
   scoreScale,
   scoreValues,
@@ -58,37 +58,6 @@ describe("scoreScale (dynamic padded Score axis)", () => {
       max: 100,
       ticks: [0, 20, 40, 60, 80, 100],
     });
-  });
-});
-
-describe("lineSegments (gap segmentation)", () => {
-  it("no gaps: one segment with everything (consecutive indexes)", () => {
-    expect(lineSegments([60, 75.25, 85.5])).toEqual([
-      [
-        { index: 0, value: 60 },
-        { index: 1, value: 75.25 },
-        { index: 2, value: 85.5 },
-      ],
-    ]);
-  });
-
-  it("a middle gap breaks into two segments (a lone point still forms a segment: point drawn, no line)", () => {
-    expect(lineSegments([0.12, null, 0.2])).toEqual([
-      [{ index: 0, value: 0.12 }],
-      [{ index: 2, value: 0.2 }],
-    ]);
-    expect(lineSegments([null, 1, 2, null, 3])).toEqual([
-      [
-        { index: 1, value: 1 },
-        { index: 2, value: 2 },
-      ],
-      [{ index: 4, value: 3 }],
-    ]);
-  });
-
-  it("all missing / empty list: no segments", () => {
-    expect(lineSegments([null, null])).toEqual([]);
-    expect(lineSegments([])).toEqual([]);
   });
 });
 

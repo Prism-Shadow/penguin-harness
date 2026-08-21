@@ -30,16 +30,10 @@ import { Truncated } from "../../components/ui/truncated";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { seriesColor } from "../../lib/category-colors";
-import { makeRangeGeom } from "../usage/chart-geom";
+import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
+import { lineSegments, makeRangeGeom } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
-import {
-  lineSegments,
-  modelSeries,
-  scoreScale,
-  scoreValues,
-  seriesValues,
-} from "./benchmark-metrics";
+import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 
@@ -195,7 +189,7 @@ function ScoreTrendChart({
             return (
               <g
                 key={s.key === "" ? "unlabeled" : s.key}
-                className={s.modelId ? seriesColor(si).text : "text-gray-400 dark:text-gray-500"}
+                className={(s.modelId ? seriesColor(si) : NEUTRAL_SERIES).text}
               >
                 {segments.map((seg, k) => {
                   const line = seg
@@ -256,9 +250,7 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
               className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
             >
               <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${
-                  s.modelId ? seriesColor(i).swatch : "bg-gray-400 dark:bg-gray-500"
-                }`}
+                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.modelId ? seriesColor(i) : NEUTRAL_SERIES).swatch}`}
               />
               <span className="font-mono">{labelOf(s)}</span>
             </span>

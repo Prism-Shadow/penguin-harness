@@ -5,11 +5,12 @@
  * stack, the cost line) share one coordinate system — canvas width, padding,
  * the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
  * container (fitBarWidth — no horizontal scrolling), per-segment geometry
- * (including per-segment hit bands) is produced by barSegments, and the cache
- * hit rate's smooth curve comes from monotonePath (Fritsch–Carlson monotone
- * cubic: no overshoot, so a 0–100% rate stays bounded); there's also
- * success-rate normalization and hover-bubble placement (pointer lower-right,
- * flipping at the edges). See chart-svg.tsx for the render skeleton.
+ * (including per-segment hit bands) is produced by barSegments, a series with
+ * holes in it is split by lineSegments so no stroke bridges an interval that
+ * has no value, and the cache hit rate's smooth curve comes from monotonePath
+ * (Fritsch–Carlson monotone cubic: no overshoot, so a 0–100% rate stays
+ * bounded); there's also hover-bubble placement (pointer lower-right, flipping
+ * at the edges). See chart-svg.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -109,10 +110,44 @@ export function areaPath(geom: ChartGeom, values: number[]): string {
   return parts.join(" ");
 }
 
-// —— Smooth (monotone cubic) curves ——
-
 /** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
 const rnd = (v: number): number => Math.round(v * 100) / 100;
+
+/** A value-bearing point of a gapped series: its index on the shared x axis, and its value. */
+export interface LinePoint {
+  index: number;
+  value: number;
+}
+
+/**
+ * Split a value sequence with gaps into **contiguous value-bearing** segments
+ * (each holding at least one point): points inside a segment are connected,
+ * segments are drawn apart, and a segment of one point draws only a point —
+ * a line must never bridge an interval where the series has no value.
+ */
+export function lineSegments(values: readonly (number | null)[]): LinePoint[][] {
+  const segments: LinePoint[][] = [];
+  let current: LinePoint[] = [];
+  values.forEach((value, index) => {
+    if (value === null) {
+      if (current.length > 0) segments.push(current);
+      current = [];
+      return;
+    }
+    current.push({ index, value });
+  });
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+/** Straight-line path through one gap-free segment (`M` + `L`s); a one-point segment yields a bare `M` that strokes nothing, so callers draw its dot instead. */
+export function segmentPath(geom: ChartGeom, segment: readonly LinePoint[]): string {
+  return segment
+    .map((p, i) => `${i === 0 ? "M" : "L"}${rnd(geom.x(p.index))},${rnd(geom.y(p.value))}`)
+    .join(" ");
+}
+
+// —— Smooth (monotone cubic) curves ——
 
 /**
  * Fritsch–Carlson tangents for a contiguous value run (uniform x spacing of 1
@@ -202,12 +237,7 @@ export function autoLabelIdx(n: number, step: number): number[] {
   return idx;
 }
 
-/** Request success rate: no requests (total=0) is treated as 1 (matches the old bar's convention, avoiding 0/0). */
-export function successRate(completed: number, total: number): number {
-  return total > 0 ? completed / total : 1;
-}
-
-// —— Hover bubble placement (shared by both daily charts) ——
+// —— Hover bubble placement (shared by every chart) ——
 
 /** Gap between the pointer and the bubble's near corner: close enough to read as attached, far enough that the bubble never sits under the pointer. */
 export const BUBBLE_OFFSET = 12;

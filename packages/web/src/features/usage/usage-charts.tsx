@@ -1,42 +1,43 @@
 /**
  * Cost center stat charts: hand-drawn SVG / flex, no chart library. Every
  * chart is a time series over the page's shared date range and precision —
- * - RequestsChart: the requests + success-rate combo — request bars from the
- *   bottom on the left axis, the success-rate line on top against its own
- *   right-hand 0–100% axis (a dot marks the line's end), a legend underneath.
- *   A dimension toggle (by Agent / by Model) and an entity dropdown live in
- *   the card header: "all" stacks the bars by entity (top entities keep their
- *   own CVD-checked hue, the tail folds into a neutral "other") under the
- *   overall success line; picking one entity shows that entity's bars and its
- *   own success line — the per-model success rate, labeled.
+ * - RequestsChart: one dimension's requests and success rate on one pair of
+ *   axes — per-bucket requests stacked by entity on the left count axis, one
+ *   success-rate line per entity on the right-hand 0–100% axis, a legend
+ *   underneath. The page mounts it twice, by Agent and by Model, so both
+ *   breakdowns are on screen without a toggle. Top entities keep their own
+ *   CVD-checked hue and the tail folds into a neutral series labelled with
+ *   how many it swallowed.
  * - TokenBarChart: per-bucket Token buckets as a three-segment stacked bar
  *   (bottom-to-top output → cacheWrite → cacheRead, same blue family, darkest
  *   at the bottom), with the cache hit rate as a dashed smooth curve **in
  *   front of the bars** on its own right-hand 0–100% axis — continuous: a
  *   bucket with no cache traffic counts as 0, never a gap. Bars always fit
  *   the card (fitBarWidth) — the charts never scroll.
- * Cost reuses TrendChart (straight line + points + area fill).
+ * Cost reuses TrendChart (straight line + area fill, with a dot per point
+ * wherever the cells are wide enough to keep the dots apart).
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
  * out the rest. Hovering anywhere in a Token column reports the whole bucket
  * (all three Token buckets plus the hit rate); hovering a segment additionally
- * highlights just that segment.
+ * highlights just that segment; hovering a requests legend item leaves only
+ * that entity's bars and line at full strength.
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatPercent, humanizeTokens } from "../../lib/format";
 import { TOKEN_COLORS } from "../../lib/token-colors";
-import { seriesColor } from "../../lib/category-colors";
-import { Select } from "../../components/ui/select";
+import { NEUTRAL_SERIES, seriesColor, type SeriesColor } from "../../lib/category-colors";
 import {
   makeGeom,
   makeRangeGeom,
   autoLabelIdx,
   barSegments,
   fitBarWidth,
-  linePath,
+  lineSegments,
   monotonePath,
+  segmentPath,
   PAD_R_AXIS,
   type TokenBucketKey,
 } from "./chart-geom";
@@ -47,7 +48,8 @@ import {
   foldEntitySeries,
   hitRateValues,
   rateSeries,
-  successRateValues,
+  sumCounts,
+  type EntityCounts,
   type EntitySeries,
 } from "./usage-controls";
 
@@ -63,98 +65,55 @@ function bucketLabel(key: TokenBucketKey): string {
   return S.usage.colOutput;
 }
 
-/** The neutral color of the folded "other" series (a line series color, not a category hue). */
-const OTHER_SERIES = {
-  text: "text-gray-400 dark:text-gray-500",
-  swatch: "bg-gray-400 dark:bg-gray-500",
-};
-
-/** The single-entity bar color (the site's primary blue, like the Token chart's family). */
-const SINGLE_BAR = { text: "text-sky-500 dark:text-sky-400", swatch: "bg-sky-500 dark:bg-sky-400" };
-
-/** The success-rate line's color classes (distinct from every bar hue). */
-const RATE_TEXT = "text-emerald-500 dark:text-emerald-400";
-const RATE_SWATCH = "bg-emerald-500 dark:bg-emerald-400";
-
-/** Text/swatch classes for the i-th stacked series (the folded tail is neutral). */
-function stackColor(s: EntitySeries, i: number): { text: string; swatch: string } {
-  return s.other ? OTHER_SERIES : seriesColor(i);
+/** Smallest multiple of 4 that covers the data (at least 4), so quartered gridlines land on integers. */
+function niceCountMax(...values: number[]): number {
+  return Math.max(4, Math.ceil(Math.max(0, ...values) / 4) * 4);
 }
 
-// —— Requests + success rate: the dual-axis combo ——
-
-/** The requests chart's dimension: stack/pick by Agent or by Model. */
-export type RequestsDimension = "agent" | "model";
-
-/** One selectable entity of the requests chart, shaped by the page from byAgentSeries / byModelSeries. */
-export interface RequestsEntity {
-  label: string;
-  requests: number[];
-  completed: number[];
-  denominator: number[];
+/** Text/swatch classes for the i-th drawn entity (the folded tail wears the neutral). */
+function entityColor(s: EntitySeries, i: number): SeriesColor {
+  return s.other ? NEUTRAL_SERIES : seriesColor(i);
 }
+
+// —— Requests + success rate, broken down by entity ——
 
 /**
- * The combo card's header controls: the dimension toggle and the entity
- * dropdown ("all" = stack every entity). Lives in the card header (ChartCard's
- * extra), so the state is lifted to the page like the other chart legends.
+ * Legend row under a requests chart: one square swatch per drawn entity —
+ * that entity's bar segments and its success-rate line share the hue, so one
+ * item covers both — plus a neutral line swatch naming what the lines are.
+ * Hovering an item highlights that entity (site-wide convention: highlight =
+ * fade out the rest).
  */
-export function RequestsControls({
-  dim,
-  onDim,
+function RequestsLegend({
   entities,
-  entity,
-  onEntity,
+  active,
+  onHover,
 }: {
-  dim: RequestsDimension;
-  onDim: (d: RequestsDimension) => void;
-  entities: RequestsEntity[];
-  /** Index into entities as a string; "" = all. */
-  entity: string;
-  onEntity: (v: string) => void;
+  entities: EntitySeries[];
+  active: number | null;
+  onHover: (i: number | null) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <Select
-        size="sm"
-        value={dim}
-        aria-label={S.usage.dimLabel}
-        onChange={(e) => onDim(e.target.value as RequestsDimension)}
-      >
-        <option value="agent">{S.usage.dimByAgent}</option>
-        <option value="model">{S.usage.dimByModel}</option>
-      </Select>
-      <Select
-        size="sm"
-        value={entity}
-        aria-label={S.usage.entityLabel}
-        onChange={(e) => onEntity(e.target.value)}
-      >
-        <option value="">
-          {dim === "agent" ? S.usage.filterAllAgents : S.usage.filterAllModels}
-        </option>
-        {entities.map((s, i) => (
-          <option key={`${s.label}:${i}`} value={String(i)}>
-            {s.label}
-          </option>
-        ))}
-      </Select>
-    </div>
-  );
-}
-
-/** Legend row under the combo chart: square swatches for the bar series, a round dot for the success-rate line. */
-function RequestsLegend({ bars }: { bars: Array<{ label: string; swatch: string }> }) {
-  return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400">
-      {bars.map((b) => (
-        <span key={b.label} className="flex min-w-0 items-center gap-1.5">
-          <span className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${b.swatch}`} />
-          <span className="max-w-40 truncate font-mono">{b.label}</span>
-        </span>
+      {entities.map((e, i) => (
+        <button
+          key={`${e.label}:${i}`}
+          type="button"
+          onMouseEnter={() => onHover(i)}
+          onMouseLeave={() => onHover(null)}
+          className={`flex min-w-0 items-center gap-1.5 transition-opacity duration-150 ${
+            active != null && active !== i ? "opacity-30" : ""
+          }`}
+        >
+          <span
+            className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(e, i).swatch}`}
+          />
+          <span className="max-w-40 truncate font-mono">{e.label}</span>
+        </button>
       ))}
+      {/* The lines wear each entity's own hue, so their legend item is about shape, not color: a neutral dash saying "the lines are the success rate, on the right axis". */}
       <span className="flex items-center gap-1.5">
-        <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${RATE_SWATCH}`} />
+        <span className={`inline-block h-0.5 w-3 shrink-0 rounded-sm ${NEUTRAL_SERIES.swatch}`} />
         {S.usage.legendSuccessRate}
       </span>
     </div>
@@ -162,44 +121,68 @@ function RequestsLegend({ bars }: { bars: Array<{ label: string; swatch: string 
 }
 
 /**
- * Requests per bucket + success rate → the dual-axis combo: bars from the
- * bottom (left axis, requests), the success-rate polyline on top (right axis,
- * fixed 0–100%, a dot at the line's end). With no entity selected the bars
- * stack by entity and the line is the overall rate; with one selected both
- * marks narrow to that entity. An idle bucket draws 0 requests and a 100%
- * rate (the site-wide "no requests = nothing failed" convention).
+ * One dimension's requests and success rate on one pair of axes: per-bucket
+ * request counts stacked by entity against the left count axis, and one
+ * success-rate line per entity against the right-hand 0-100% axis. The page
+ * mounts this twice, once per dimension, so both breakdowns are on screen at
+ * once with no toggle between them.
+ *
+ * Only the top MAX_NAMED_SERIES entities are drawn by name; the rest fold
+ * into a neutral tail labelled with how many it swallowed, so the chart never
+ * implies the head is everything.
+ *
+ * A rate line stops wherever its entity has no rated request in the bucket
+ * (see rateSeries): a gap says "this entity did not run here", where a filled
+ * 100% would claim a perfect record it never earned. A run of one bucket
+ * strokes nothing, so it is drawn as a dot instead.
  */
 export function RequestsChart({
   series,
   entities,
-  selected,
   granularity,
 }: {
   series: UsageSeriesPoint[];
-  entities: RequestsEntity[];
-  /** Index into entities; null = all (stacked). */
-  selected: number | null;
+  entities: EntityCounts[];
   granularity: UsageGranularity;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const [focus, setFocus] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
-  if (series.length === 0) return <Empty />;
+  const drawn = foldEntitySeries(entities, S.usage.legendOther);
+  if (series.length === 0 || drawn.length === 0) return <Empty />;
 
-  const one = selected !== null ? entities[selected] : undefined;
-  const stacked: EntitySeries[] = one ? [] : foldEntitySeries(entities, S.usage.callsOther);
-  const totals = one
-    ? one.requests
-    : series.map((_, i) => stacked.reduce((s, e) => s + (e.requests[i] ?? 0), 0));
-  const rate = one ? rateSeries(one) : successRateValues(series);
-
-  const maxReq = Math.max(1, ...totals);
-  const geom = makeGeom(series.length, maxReq, width, PAD_R_AXIS);
+  const totals = sumCounts(drawn);
+  const totalRate = rateSeries(totals);
+  const rates = drawn.map((e) => rateSeries(e));
+  // Requests are whole numbers and ChartFrame quarters the axis, so the top is
+  // rounded up to a multiple of 4: a max of 5 would otherwise label its
+  // gridlines 0 / 1 / 3 / 4 / 5, skipping 2 and pretending the spacing is even.
+  const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const barW = fitBarWidth(geom.step);
   const buckets = series.map((p) => p.bucket);
-  const legendBars = one
-    ? [{ label: one.label, swatch: SINGLE_BAR.swatch }]
-    : stacked.map((s, i) => ({ label: s.label, swatch: stackColor(s, i).swatch }));
+  const faded = (i: number) => focus !== null && focus !== i;
+  const pct = (v: number | null | undefined) => formatPercent(v == null ? null : v / 100);
+
+  /** One bubble row: swatch + label + the bucket's request count + that entity's rate. */
+  const bubbleRow = (
+    key: string,
+    swatch: React.ReactNode,
+    label: string,
+    requests: number,
+    rate: number | null | undefined,
+    muted = false,
+  ) => (
+    <p
+      key={key}
+      className={`flex items-center gap-1.5 font-mono ${muted ? "text-gray-500 dark:text-gray-400" : ""}`}
+    >
+      {swatch}
+      <span className="max-w-32 truncate">{label}</span>
+      <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">{requests}</span>
+      <span className="min-w-10 pl-1.5 text-right tabular-nums">{pct(rate)}</span>
+    </p>
+  );
 
   return (
     <div ref={ref}>
@@ -218,100 +201,89 @@ export function RequestsChart({
             bubble={(i) => (
               <>
                 <p className="text-gray-400">{bucketFullLabel(granularity, buckets[i]!)}</p>
-                {one ? (
-                  <p className="flex items-center gap-1.5 font-mono">
+                {drawn.map((e, si) =>
+                  bubbleRow(
+                    `${e.label}:${si}`,
                     <span
-                      className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${SINGLE_BAR.swatch}`}
-                    />
-                    <span className="max-w-40 truncate">{one.label}</span>
-                    <span className="ml-auto pl-2 tabular-nums">{one.requests[i] ?? 0}</span>
-                  </p>
-                ) : (
-                  stacked.map((s, si) => (
-                    <p key={s.label} className="flex items-center gap-1.5 font-mono">
-                      <span
-                        className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${stackColor(s, si).swatch}`}
-                      />
-                      <span className="max-w-40 truncate">{s.label}</span>
-                      <span className="ml-auto pl-2 tabular-nums">{s.requests[i] ?? 0}</span>
-                    </p>
-                  ))
+                      className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(e, si).swatch}`}
+                    />,
+                    e.label,
+                    e.requests[i] ?? 0,
+                    rates[si]![i],
+                  ),
                 )}
-                <p className="flex items-center gap-1.5 font-mono">
-                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${RATE_SWATCH}`} />
-                  {S.usage.legendSuccessRate}
-                  <span className="ml-auto pl-2 tabular-nums">
-                    {formatPercent((rate[i] ?? 100) / 100)}
-                  </span>
-                </p>
+                {drawn.length > 1 &&
+                  bubbleRow(
+                    "total",
+                    <span className="inline-block h-2 w-2 shrink-0" />,
+                    S.usage.bucketTotal,
+                    totals.requests[i] ?? 0,
+                    totalRate[i],
+                    true,
+                  )}
               </>
             )}
           >
-            {/* Bars: a single entity's plain bars, or the all-entities stack (bottom-up in list order, 1px seams between segments would over-fragment thin bars, so segments sit flush). */}
-            {one
-              ? one.requests.map((v, i) =>
-                  v > 0 ? (
-                    <rect
-                      key={buckets[i]}
-                      x={geom.x(i) - barW / 2}
-                      y={geom.y(v)}
-                      width={barW}
-                      height={geom.y(0) - geom.y(v)}
-                      className={`${SINGLE_BAR.text} transition-opacity duration-150`}
-                      fill="currentColor"
-                      opacity={hover !== null && hover !== i ? 0.35 : 1}
-                    />
-                  ) : null,
-                )
-              : series.map((_, i) => {
-                  let cum = 0;
-                  return stacked.map((s, si) => {
-                    const v = s.requests[i] ?? 0;
-                    if (v <= 0) return null;
-                    const y0 = geom.y(cum);
-                    cum += v;
-                    const y1 = geom.y(cum);
-                    return (
-                      <rect
-                        key={`${buckets[i]}-${s.label}`}
-                        x={geom.x(i) - barW / 2}
-                        y={y1}
-                        width={barW}
-                        height={y0 - y1}
-                        className={`${stackColor(s, si).text} transition-opacity duration-150`}
-                        fill="currentColor"
-                        opacity={hover !== null && hover !== i ? 0.35 : 1}
+            {/* Stacked request bars, bottom-up in list order (1px seams would over-fragment thin bars, so segments sit flush). */}
+            {series.map((_, i) => {
+              let cum = 0;
+              return drawn.map((e, si) => {
+                const v = e.requests[i] ?? 0;
+                if (v <= 0) return null;
+                const y0 = geom.y(cum);
+                cum += v;
+                const y1 = geom.y(cum);
+                return (
+                  <rect
+                    key={`${buckets[i]}-${e.label}-${si}`}
+                    x={geom.x(i) - barW / 2}
+                    y={y1}
+                    width={barW}
+                    height={y0 - y1}
+                    className={`${entityColor(e, si).text} transition-opacity duration-150`}
+                    fill="currentColor"
+                    opacity={faded(si) ? 0.15 : hover !== null && hover !== i ? 0.35 : 1}
+                  />
+                );
+              });
+            })}
+            {/* One success-rate line per entity on the right-hand scale, in that entity's hue.
+                Dashed, like the Token chart's hit-rate curve: a dash is what tells the reader a
+                stroke belongs to the right-hand percentage axis rather than to the bars — and
+                here the lines share their entity's bar color, so shape is the only thing left
+                to separate the two marks with. */}
+            {drawn.map((e, si) => (
+              <g
+                key={`rate-${e.label}-${si}`}
+                className={`${entityColor(e, si).text} pointer-events-none transition-opacity duration-150`}
+                opacity={faded(si) ? 0.15 : 1}
+              >
+                {lineSegments(rates[si]!).map((seg) => (
+                  <g key={seg[0]!.index}>
+                    {seg.length > 1 && (
+                      <path
+                        d={segmentPath(rateGeom, seg)}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
                       />
-                    );
-                  });
-                })}
-            {/* Success-rate polyline on the right-hand scale, a dot at its end (and one under the pointer). */}
-            <g className={`${RATE_TEXT} pointer-events-none`}>
-              <path
-                d={linePath(rateGeom, rate)}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-              />
-              {rate.length > 0 && (
-                <circle
-                  cx={rateGeom.x(rate.length - 1)}
-                  cy={rateGeom.y(rate[rate.length - 1]!)}
-                  r={3}
-                  className="fill-current"
-                />
-              )}
-              {hover !== null && hover !== rate.length - 1 && (
-                <circle
-                  cx={rateGeom.x(hover)}
-                  cy={rateGeom.y(rate[hover] ?? 100)}
-                  r={3}
-                  className="fill-current"
-                />
-              )}
-            </g>
+                    )}
+                    {/* A lone bucket strokes nothing: draw its point so a one-off run is still visible. */}
+                    {seg.length === 1 && (
+                      <circle
+                        cx={rateGeom.x(seg[0]!.index)}
+                        cy={rateGeom.y(seg[0]!.value)}
+                        r={2}
+                        className="fill-current"
+                      />
+                    )}
+                  </g>
+                ))}
+              </g>
+            ))}
           </ChartFrame>
-          <RequestsLegend bars={legendBars} />
+          <RequestsLegend entities={drawn} active={focus} onHover={setFocus} />
         </>
       )}
     </div>

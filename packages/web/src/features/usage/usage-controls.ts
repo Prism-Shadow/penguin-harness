@@ -1,7 +1,7 @@
 /**
  * Pure helpers behind the cost center's global controls (date-range presets +
- * time-series precision) and series shaping — no React, unit-tested in
- * test/usage-controls.test.ts.
+ * time-series precision) and the per-entity series shaping the requests charts
+ * draw — no React, unit-tested in test/usage-controls.test.ts.
  *
  * The range and the precision constrain each other, per preset: the trailing
  * "last hour" window is the only way to reach minute buckets (a calendar range
@@ -11,12 +11,9 @@
  * precision, the page snaps to the preset's default rather than sending an
  * invalid combination.
  */
-import type {
-  UsageAgentSeries,
-  UsageGranularity,
-  UsageSeriesPoint,
-} from "@prismshadow/penguin-server/api";
+import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { cacheHitRate } from "../../lib/format";
+import { SERIES_COLORS } from "../../lib/category-colors";
 
 /** Quick range choices; `1h`/`1d` are trailing timestamp windows, the rest calendar ranges (`custom` reveals the two date inputs). */
 export type RangePreset = "1h" | "1d" | "7d" | "30d" | "90d" | "custom";
@@ -130,46 +127,70 @@ export function bucketFullLabel(g: UsageGranularity, key: string): string {
   return g === "minute" || g === "hour" ? key.replace("T", " ") : key;
 }
 
-/** One drawable series of the requests chart's stacked bars: an entity's per-bucket request counts, or the folded tail. */
-export interface EntitySeries {
+/** One entity's per-bucket request and success counts, index-aligned with the chart's buckets. */
+export interface EntityCounts {
   label: string;
   requests: number[];
-  /** The folded "everything else" series (drawn in neutral gray, after the named ones). */
+  completed: number[];
+  denominator: number[];
+}
+
+/** A drawable series of a requests chart: one entity's counts, or the folded tail. */
+export interface EntitySeries extends EntityCounts {
+  /** The folded tail (drawn in neutral gray, after the named ones). */
   other?: boolean;
 }
 
 /**
- * Shape entity series for stacking: the top `max` entities keep their own bar
- * color (the palette has that many distinct, CVD-checked hues), the rest fold
- * into one neutral "other" series instead of cycling colors into ambiguity.
- * Input is already sorted by total requests descending (the server's contract).
+ * How many entities keep a hue of their own. The palette holds exactly this
+ * many distinct, CVD-checked line colors, and past it the stack and the lines
+ * would repeat a color — so this is the cap, not a taste setting.
+ */
+export const MAX_NAMED_SERIES = SERIES_COLORS.length;
+
+/**
+ * Shape entity series for stacking: the top `max` entities keep their own
+ * color, the rest fold into one neutral tail whose label is built from the
+ * number folded — the chart says how many entities it stopped naming instead
+ * of quietly presenting the head as the whole picture. Input is already
+ * sorted by total requests descending (the server's contract).
  */
 export function foldEntitySeries(
-  entities: Array<{ label: string; requests: number[] }>,
-  otherLabel: string,
-  max = 4,
+  entities: readonly EntityCounts[],
+  otherLabel: (folded: number) => string,
+  max = MAX_NAMED_SERIES,
 ): EntitySeries[] {
-  const named = entities.slice(0, max).map((s) => ({ label: s.label, requests: s.requests }));
+  const named: EntitySeries[] = entities.slice(0, max).map((s) => ({ ...s }));
   const rest = entities.slice(max);
   if (rest.length === 0) return named;
-  if (rest.length === 1) {
-    // A tail of one is not "other": name it (the color is still the neutral one — labels beat a mystery bucket).
-    return [...named, { label: rest[0]!.label, requests: rest[0]!.requests, other: true }];
-  }
-  const requests = rest[0]!.requests.map((_, i) =>
-    rest.reduce((s, r) => s + (r.requests[i] ?? 0), 0),
-  );
-  return [...named, { label: otherLabel, requests, other: true }];
+  // A tail of one is not "other": name it (the color is still the neutral one — a label beats a mystery bucket).
+  if (rest.length === 1) return [...named, { ...rest[0]!, other: true }];
+  return [...named, { ...sumCounts(rest), label: otherLabel(rest.length), other: true }];
 }
 
-/** Per-bucket success rate in percent from paired count arrays; an idle bucket (denominator 0) counts as 100 — the site-wide "no requests = nothing failed" convention, and it keeps the line continuous. */
-export function rateSeries(counts: Pick<UsageAgentSeries, "completed" | "denominator">): number[] {
-  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : 100));
+/** Column sums over a set of series: the stack's height per bucket, and the counts its combined rate comes from. */
+export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "label"> {
+  const buckets = series[0]?.requests.length ?? 0;
+  const column = (pick: (e: EntityCounts) => number[]) =>
+    Array.from({ length: buckets }, (_, i) => series.reduce((s, e) => s + (pick(e)[i] ?? 0), 0));
+  return {
+    requests: column((e) => e.requests),
+    completed: column((e) => e.completed),
+    denominator: column((e) => e.denominator),
+  };
 }
 
-/** Per-bucket success rate in percent for the whole filtered series (same idle-bucket convention as rateSeries). */
-export function successRateValues(series: UsageSeriesPoint[]): number[] {
-  return series.map((p) => (p.denominator > 0 ? (p.completed / p.denominator) * 100 : 100));
+/**
+ * Per-bucket success rate in percent, or null where the bucket holds no rated
+ * request (denominator 0 — the entity was idle, or every request was
+ * aborted). Null is a hole in the line, not a value: with one line per
+ * entity, scoring an idle bucket 100% would draw a confident full-height line
+ * across every interval an entity never ran in.
+ */
+export function rateSeries(
+  counts: Pick<EntityCounts, "completed" | "denominator">,
+): (number | null)[] {
+  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : null));
 }
 
 /** Per-bucket cache hit rate in percent; a bucket with no cache traffic counts as 0 — the curve runs continuously instead of leaving gaps. */

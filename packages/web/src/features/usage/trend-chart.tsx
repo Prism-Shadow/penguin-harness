@@ -15,6 +15,9 @@ import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-se
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { makeGeom, linePath, areaPath } from "./chart-geom";
+
+/** Cell width (CSS pixels) below which per-point dots stop being drawn: 2.5px radius plus breathing room. */
+const MIN_DOT_STEP = 8;
 import { ChartFrame, useChartWidth } from "./chart-svg";
 import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
 
@@ -34,10 +37,11 @@ export function TrendChart({
   const max = Math.max(1e-9, ...cost);
   const geom = makeGeom(series.length, max, width);
   const buckets = series.map((p) => p.bucket);
-  // Dots on every point read fine up to daily density; past that (hourly and
-  // finer zero-filled series) they would fuse into a rope, so the line stands
-  // alone and the hovered point still gets its dot.
-  const everyDot = series.length <= 92;
+  // Dots are drawn only where the cells are wide enough to hold them apart: a
+  // 2.5px-radius dot needs roughly this much room or the row fuses into a rope
+  // (61 minute buckets in a half-width card sit ~7px apart). Below that the
+  // line stands alone and only the hovered point gets its dot.
+  const everyDot = geom.step >= MIN_DOT_STEP;
 
   return (
     <div ref={ref}>

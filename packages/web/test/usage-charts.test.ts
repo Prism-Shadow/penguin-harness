@@ -1,10 +1,10 @@
 /**
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
- * assembly (straight and monotone-cubic smooth paths — the smooth curve must never
- * overshoot its endpoints, so a 0–100% rate stays bounded), container-fitting bar width
- * (charts never scroll), stacked-bar segment geometry and per-segment hit bands, success
- * rate, hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit
- * rate shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
+ * assembly (straight, gap-split and monotone-cubic smooth paths — the smooth curve must
+ * never overshoot its endpoints, so a 0–100% rate stays bounded), container-fitting bar
+ * width (charts never scroll), stacked-bar segment geometry and per-segment hit bands, and
+ * hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
+ * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
  * format.test.ts). Component interaction isn't covered here (vitest runs in a node
  * environment, no DOM).
  *
@@ -20,9 +20,10 @@ import {
   linePath,
   areaPath,
   monotonePath,
+  lineSegments,
+  segmentPath,
   sparseLabelIdx,
   autoLabelIdx,
-  successRate,
   bubblePosition,
   fitBarWidth,
   barSegments,
@@ -83,6 +84,49 @@ describe("linePath / areaPath", () => {
 
   it("an empty series returns an empty string", () => {
     expect(areaPath(g, [])).toBe("");
+  });
+});
+
+describe("lineSegments / segmentPath (gap segmentation)", () => {
+  it("no gaps: one segment with everything (consecutive indexes)", () => {
+    expect(lineSegments([60, 75.25, 85.5])).toEqual([
+      [
+        { index: 0, value: 60 },
+        { index: 1, value: 75.25 },
+        { index: 2, value: 85.5 },
+      ],
+    ]);
+  });
+
+  it("a middle gap breaks into two segments (a lone point still forms a segment: point drawn, no line)", () => {
+    expect(lineSegments([0.12, null, 0.2])).toEqual([
+      [{ index: 0, value: 0.12 }],
+      [{ index: 2, value: 0.2 }],
+    ]);
+    expect(lineSegments([null, 1, 2, null, 3])).toEqual([
+      [
+        { index: 1, value: 1 },
+        { index: 2, value: 2 },
+      ],
+      [{ index: 4, value: 3 }],
+    ]);
+  });
+
+  it("all missing / empty list: no segments", () => {
+    expect(lineSegments([null, null])).toEqual([]);
+    expect(lineSegments([])).toEqual([]);
+  });
+
+  it("a segment strokes only its own indexes, so nothing bridges the hole between two segments", () => {
+    const g = makeRangeGeom(3, 0, 100, 640);
+    /** Path coordinates are rounded to 2 decimals (see chart-geom's rnd). */
+    const at = (i: number, v: number) => `${Math.round(g.x(i) * 100) / 100},${g.y(v)}`;
+    const [first, second] = lineSegments([100, null, 0]);
+    expect(segmentPath(g, first!)).toBe(`M${at(0, 100)}`);
+    expect(segmentPath(g, second!)).toBe(`M${at(2, 0)}`);
+    expect(segmentPath(g, [])).toBe("");
+    // A two-point run is one straight stroke between exactly those two indexes.
+    expect(segmentPath(g, lineSegments([100, 0, null])[0]!)).toBe(`M${at(0, 100)} L${at(1, 0)}`);
   });
 });
 
@@ -243,14 +287,6 @@ describe("sparseLabelIdx", () => {
     expect(sparseLabelIdx(2)).toEqual([0, 1]);
     expect(sparseLabelIdx(5)).toEqual([0, 2, 4]);
     expect(sparseLabelIdx(30)).toEqual([0, 14, 29]);
-  });
-});
-
-describe("successRate", () => {
-  it("completed/total; no requests counts as 1", () => {
-    expect(successRate(99, 100)).toBeCloseTo(0.99);
-    expect(successRate(5, 10)).toBe(0.5);
-    expect(successRate(0, 0)).toBe(1);
   });
 });
 

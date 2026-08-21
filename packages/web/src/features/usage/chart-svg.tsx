@@ -79,7 +79,6 @@ export function ChartFrame({
   yTicks,
   rightAxis,
   hoverLine = true,
-  scrollToEnd = false,
   children,
 }: {
   geom: ChartGeom;
@@ -105,8 +104,6 @@ export function ChartFrame({
   rightAxis?: { y: (v: number) => number; ticks: number[]; fmt: (v: number) => string };
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
-  /** Scroll to the far right by default when the canvas is wider than the container: the daily chart shows the most recent days first (scroll left for earlier ones). */
-  scrollToEnd?: boolean;
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
@@ -115,15 +112,6 @@ export function ChartFrame({
     yTicks ?? [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + (max - min) * fraction);
   const labelIdx = labels ?? sparseLabelIdx(dates.length);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // The daily chart defaults to sitting on the most recent day (there's only
-  // room to scroll when the canvas is wider than the container). It
-  // re-snaps whenever the data or canvas width changes, without disturbing a position the user has manually scrolled to in the meantime.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!scrollToEnd || !el) return;
-    el.scrollLeft = el.scrollWidth - el.clientWidth;
-  }, [scrollToEnd, w, dates.length]);
 
   // The bubble follows the pointer **imperatively** (lower-right, flipping
   // at the edges — see chart-geom's bubblePosition): mousemove only records
@@ -175,9 +163,9 @@ export function ChartFrame({
   useLayoutEffect(placeBubble, [bubble, hover]);
 
   return (
-    // Horizontal scroll when the canvas is wider than the container (bar
-    // width has a pixel floor, so 30 days won't fit in a half-width panel);
-    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the pointer in content pixels is enough.
+    // The canvas is measured from this container and bars shrink to fit it, so
+    // there is nothing to scroll; the box stays scroll-aware because the bubble
+    // is its absolutely-positioned child and is anchored in content pixels.
     <div ref={scrollRef} className="relative overflow-x-auto">
       <svg
         ref={svgRef}

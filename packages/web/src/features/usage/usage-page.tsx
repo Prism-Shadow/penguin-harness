@@ -6,13 +6,14 @@
  * the preset — controls have no external title, the explanation is written
  * into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
- * time-series charts over the shared range and precision — the full-width
- * requests + success-rate combo (bars on the left axis, the rate line on a
- * right 0–100% axis, dimension/entity controls in the card header), then
- * Token buckets (stacked bars + a dashed cache-hit-rate curve in front) and
- * cost (line + points + area) side by side. Charts always fit their card —
- * nothing scrolls; below them is a full-width "errors" panel (stats + a paged
- * errors table). Currency follows the user's settings.
+ * a 2x2 grid of time-series charts over the shared range and precision —
+ * requests + success rate broken down by Agent and, beside it, the same by
+ * Model (requests stacked on the left axis, one rate line per entity on a
+ * right 0–100% axis), then Token buckets (stacked bars + a dashed
+ * cache-hit-rate curve in front) and cost (line + points + area). Charts
+ * always fit their card — nothing scrolls; below them is a full-width
+ * "errors" panel (stats + a paged errors table). Currency follows the user's
+ * settings.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -34,21 +35,14 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
-import {
-  RequestsChart,
-  RequestsControls,
-  TokenBarChart,
-  TokenLegend,
-  type RequestsDimension,
-  type RequestsEntity,
-  type TokenLegendKey,
-} from "./usage-charts";
+import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
   coerceGranularity,
   presetGranularities,
   presetRange,
   presetTsWindow,
   rangeDays,
+  type EntityCounts,
   type RangePreset,
 } from "./usage-controls";
 import { ErrorsPanel } from "./errors-panel";
@@ -169,8 +163,6 @@ export function UsagePage() {
   // The legend / control state that lives in the card headers (ChartCard's
   // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
-  const [reqDim, setReqDim] = useState<RequestsDimension>("agent");
-  const [reqEntity, setReqEntity] = useState("");
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -234,29 +226,23 @@ export function UsagePage() {
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
 
-  // Precision choices follow the selected preset/range; the requests chart's
-  // entity list follows its dimension toggle (its controls live in the card
-  // header, so both are built here).
+  // Precision choices follow the selected preset/range. The two requests
+  // charts each get one dimension's entity list, already sorted by total
+  // requests descending and index-aligned with `series` (the server's
+  // contract); the charts fold their own tails.
   const gOptions = presetGranularities(preset, rangeDays(from, to));
-  const entityOptions: RequestsEntity[] = !data
-    ? []
-    : reqDim === "agent"
-      ? data.byAgentSeries.map((s) => ({
-          label: s.agentId,
-          requests: s.requests,
-          completed: s.completed,
-          denominator: s.denominator,
-        }))
-      : data.byModelSeries.map((s) => ({
-          label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
-          requests: s.requests,
-          completed: s.completed,
-          denominator: s.denominator,
-        }));
-  // Self-healing selection: a stale index (the entity list shrank under a new
-  // filter or dimension) falls back to "all" instead of a blank dropdown.
-  const reqSelected =
-    reqEntity !== "" && Number(reqEntity) < entityOptions.length ? Number(reqEntity) : null;
+  const agentEntities: EntityCounts[] = (data?.byAgentSeries ?? []).map((s) => ({
+    label: s.agentId,
+    requests: s.requests,
+    completed: s.completed,
+    denominator: s.denominator,
+  }));
+  const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
+    label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+    requests: s.requests,
+    completed: s.completed,
+    denominator: s.denominator,
+  }));
   const granularityLabel = (g: UsageGranularity): string => {
     if (g === "minute") return S.usage.granularityMinute;
     if (g === "hour") return S.usage.granularityHour;
@@ -387,36 +373,26 @@ export function UsagePage() {
           </div>
         )}
 
-        {/* Time-series charts, all over the shared range + precision: the
-            full-width requests + success-rate combo, then Token buckets +
-            cache hit rate and cost side by side. Charts always fit their card — nothing scrolls. */}
+        {/* Time-series charts, all over the shared range + precision: requests +
+            success rate by Agent and by Model on the first row, Token buckets +
+            cache hit rate and cost on the second. Charts always fit their card — nothing scrolls. */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {/* The controls/legends live in the card headers, the marks inside the cards: that state is lifted to this level to be shared */}
-            <div className="lg:col-span-2">
-              <ChartCard
-                title={S.usage.chartRequests}
-                extra={
-                  <RequestsControls
-                    dim={reqDim}
-                    onDim={(d) => {
-                      setReqDim(d);
-                      setReqEntity("");
-                    }}
-                    entities={entityOptions}
-                    entity={reqSelected === null ? "" : reqEntity}
-                    onEntity={setReqEntity}
-                  />
-                }
-              >
-                <RequestsChart
-                  series={data.series}
-                  entities={entityOptions}
-                  selected={reqSelected}
-                  granularity={data.granularity}
-                />
-              </ChartCard>
-            </div>
+            <ChartCard title={S.usage.chartRequestsByAgent}>
+              <RequestsChart
+                series={data.series}
+                entities={agentEntities}
+                granularity={data.granularity}
+              />
+            </ChartCard>
+            <ChartCard title={S.usage.chartRequestsByModel}>
+              <RequestsChart
+                series={data.series}
+                entities={modelEntities}
+                granularity={data.granularity}
+              />
+            </ChartCard>
+            {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
             <ChartCard
               title={S.usage.chartTokenTrend}
               extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}

@@ -3,7 +3,7 @@
  * presets (calendar and trailing timestamp windows), the preset↔precision
  * matrix (offered options, defaults, snapping), bucket-key labels, entity
  * folding for the requests chart's stacked bars (top entities + a neutral
- * "other" tail), and the per-bucket success / cache-hit rate values the lines
+ * counted tail), and the per-bucket success / cache-hit rate values the lines
  * draw.
  */
 import { describe, expect, it } from "vitest";
@@ -17,14 +17,16 @@ import {
   granularityOptions,
   hitRateValues,
   isoDate,
+  MAX_NAMED_SERIES,
   presetDefaultGranularity,
   presetGranularities,
   presetRange,
   presetTsWindow,
   rangeDays,
   rateSeries,
-  successRateValues,
+  sumCounts,
 } from "../src/features/usage/usage-controls";
+import { SERIES_COLORS } from "../src/lib/category-colors";
 
 const point = (over: Partial<UsageSeriesPoint>): UsageSeriesPoint => ({
   bucket: "2026-08-20",
@@ -117,53 +119,109 @@ describe("bucket labels", () => {
 });
 
 describe("foldEntitySeries", () => {
-  const s = (label: string, requests: number[]) => ({ label, requests });
+  /** An entity's counts, spelled out per bucket: requests, of which `completed`, over `denominator` rated ones. */
+  const e = (label: string, requests: number[], completed = requests, denominator = requests) => ({
+    label,
+    requests,
+    completed,
+    denominator,
+  });
 
-  it('top entities keep their own series; a tail of two or more folds into one summed "other"', () => {
+  it("top entities keep their own series; a tail of two or more folds into one summed, counted tail", () => {
     const folded = foldEntitySeries(
       [
-        s("a", [5, 5]),
-        s("b", [4, 0]),
-        s("c", [1, 2]),
-        s("d", [1, 1]),
-        s("e", [1, 0]),
-        s("f", [0, 1]),
+        e("a", [5, 5]),
+        e("b", [4, 0]),
+        e("c", [1, 2]),
+        e("d", [1, 1]),
+        e("e", [1, 0]),
+        e("f", [0, 1]),
       ],
-      "other",
+      (n) => `other:${n}`,
       4,
     );
-    expect(folded.map((x) => x.label)).toEqual(["a", "b", "c", "d", "other"]);
-    expect(folded[4]).toEqual({ label: "other", requests: [1, 1], other: true });
+    expect(folded.map((x) => x.label)).toEqual(["a", "b", "c", "d", "other:2"]);
+    // The label carries the fold count, so the chart never implies the head is everything.
+    expect(folded[4]).toEqual({
+      label: "other:2",
+      requests: [1, 1],
+      completed: [1, 1],
+      denominator: [1, 1],
+      other: true,
+    });
+  });
+
+  it("the tail sums success counts too, so its line is the combined rate rather than one entity's", () => {
+    const folded = foldEntitySeries(
+      [
+        e("a", [1]),
+        e("b", [1]),
+        e("c", [1]),
+        e("d", [1]),
+        e("e", [4], [1], [4]),
+        e("f", [4], [3], [4]),
+      ],
+      (n) => `other:${n}`,
+      4,
+    );
+    expect(folded[4]!.completed).toEqual([4]);
+    expect(folded[4]!.denominator).toEqual([8]);
+    expect(rateSeries(folded[4]!)).toEqual([50]);
   });
 
   it("a tail of exactly one keeps its name (a mystery bucket of one is worse than a fifth label)", () => {
     const folded = foldEntitySeries(
-      [s("a", [1]), s("b", [1]), s("c", [1]), s("d", [1]), s("e", [2])],
-      "other",
+      [e("a", [1]), e("b", [1]), e("c", [1]), e("d", [1]), e("e", [2])],
+      (n) => `other:${n}`,
       4,
     );
-    expect(folded[4]).toEqual({ label: "e", requests: [2], other: true });
+    expect(folded[4]).toEqual({
+      label: "e",
+      requests: [2],
+      completed: [2],
+      denominator: [2],
+      other: true,
+    });
   });
 
-  it("no tail, no other", () => {
-    expect(foldEntitySeries([s("a", [1])], "other", 4)).toEqual([{ label: "a", requests: [1] }]);
-    expect(foldEntitySeries([], "other", 4)).toEqual([]);
+  it("no tail, no fold", () => {
+    expect(foldEntitySeries([e("a", [1])], (n) => `other:${n}`, 4)).toEqual([
+      { label: "a", requests: [1], completed: [1], denominator: [1] },
+    ]);
+    expect(foldEntitySeries([], (n) => `other:${n}`, 4)).toEqual([]);
+  });
+
+  it("the default cap is the palette's length: every named series gets a color of its own", () => {
+    expect(MAX_NAMED_SERIES).toBe(SERIES_COLORS.length);
+    const many = Array.from({ length: MAX_NAMED_SERIES + 3 }, (_, i) => e(`e${i}`, [1]));
+    const folded = foldEntitySeries(many, (n) => `other:${n}`);
+    expect(folded).toHaveLength(MAX_NAMED_SERIES + 1);
+    expect(folded.at(-1)).toMatchObject({ label: "other:3", other: true });
+  });
+});
+
+describe("sumCounts", () => {
+  it("adds the drawn series column by column: the stack's height and the counts behind its combined rate", () => {
+    const totals = sumCounts([
+      { label: "a", requests: [2, 0], completed: [1, 0], denominator: [2, 0] },
+      { label: "b", requests: [1, 3], completed: [1, 3], denominator: [1, 3] },
+    ]);
+    expect(totals).toEqual({ requests: [3, 3], completed: [2, 3], denominator: [3, 3] });
+    expect(rateSeries(totals)).toEqual([(2 / 3) * 100, 100]);
+  });
+
+  it("no series at all sums to nothing (an empty chart, not a crash)", () => {
+    expect(sumCounts([])).toEqual({ requests: [], completed: [], denominator: [] });
   });
 });
 
 describe("rate values", () => {
-  it("overall success rate is percent of the non-aborted denominator; an idle bucket counts as 100", () => {
-    expect(
-      successRateValues([
-        point({ completed: 3, denominator: 4 }),
-        point({}),
-        point({ completed: 0, denominator: 2 }),
-      ]),
-    ).toEqual([75, 100, 0]);
+  it("per-entity success rate is percent of the non-aborted denominator", () => {
+    expect(rateSeries({ completed: [3, 1, 0], denominator: [4, 1, 2] })).toEqual([75, 100, 0]);
   });
 
-  it("per-entity success rate reads the paired count arrays with the same idle convention", () => {
-    expect(rateSeries({ completed: [3, 0, 0], denominator: [4, 0, 2] })).toEqual([75, 100, 0]);
+  it("a bucket with nothing rated is a hole, not a 100%: the line breaks instead of claiming a perfect record", () => {
+    expect(rateSeries({ completed: [0, 2, 0], denominator: [0, 2, 0] })).toEqual([null, 100, null]);
   });
 
   it("cache hit rate is percent of read/(read+write); no cache traffic counts as 0 so the curve runs continuously", () => {
