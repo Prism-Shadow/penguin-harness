@@ -98,12 +98,14 @@ export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
 
 /**
  * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
- * start with. Set well above every current model window on purpose — the model's own
- * `context_window` is the real backstop, since the effective threshold is capped at
- * `context_window − COMPACTION_HEADROOM` at use (see llm/context-limits.ts), so a small-window
- * model still compacts inside its window rather than never. A model entry with no usable
- * `context_window` falls back to the assumed window (128000), which is a different number
- * from this one and must not be conflated with it.
+ * start with. Set high on purpose, because the model's own `context_window` is the backstop:
+ * the effective threshold is the smaller of this value and the window minus
+ * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
+ * this value plus that headroom therefore decides the trigger point, so a small-window model
+ * still compacts inside its window rather than never; on a roomier window — most built-in
+ * catalog entries — this value is what fires. A model entry with no usable `context_window`
+ * falls back to the assumed window (128000), which is a different number from this one and
+ * must not be conflated with it.
  *
  * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
  */

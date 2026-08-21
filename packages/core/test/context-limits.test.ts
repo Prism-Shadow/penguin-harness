@@ -195,9 +195,9 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
     );
   });
 
-  // The seeded threshold is deliberately larger than any current model window: what actually
-  // bounds compaction is the model's own context_window, so this covers the shipped value
-  // rather than a stand-in for it.
+  // The effective threshold is the smaller of the seeded value and the window's cap, so the
+  // window decides on anything too small to hold it and the seeded value decides above that.
+  // Covers the shipped constant rather than a stand-in literal.
   it("backstops the seeded default threshold with the model's context window", () => {
     // Windows smaller than the seeded threshold: the window decides, and always leaves
     // COMPACTION_HEADROOM for the summary request itself.

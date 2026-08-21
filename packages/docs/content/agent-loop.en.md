@@ -122,7 +122,7 @@ Three triggers (`compaction_begin.reason`):
 
 | reason | Condition |
 | --- | --- |
-| `context` | last turn's `token_usage.request.total` ≥ `maxContextLength` (default 512000; the effective threshold is capped at the model's `context_window` − 2048, so it is the model's window that decides — a 32k local vLLM compacts at ~30.7k instead of overflowing the window first, and an entry without `context_window` derives from an assumed 128000 window, i.e. ~126k) |
+| `context` | last turn's `token_usage.request.total` ≥ `maxContextLength` (default 512000; the effective threshold is the smaller of that and the model's `context_window` − 2048, so a 32k local vLLM compacts at ~30.7k instead of overflowing the window first while a 1M-window model fires at the configured 512000; an entry without `context_window` derives from an assumed 128000 window, i.e. ~126k) |
 | `turns` | Session turn count ≥ `maxSessionTurns` (default -1 = unlimited) |
 | `manual` | the user runs `/compact` or calls `session.compact()` |
 

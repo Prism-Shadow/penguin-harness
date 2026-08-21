@@ -119,7 +119,7 @@ interface CompactionSettings {
 
 | reason | 触发条件 |
 | --- | --- |
-| `context` | 上一轮 `token_usage.request.total` ≥ `maxContextLength`(默认 512000；生效阈值不超过模型 `context_window` − 2048，故实际触发点由模型窗口决定——32k 的本地 vLLM 约在 30.7k 处压缩，而不是先撞上窗口硬限制；条目未配置 `context_window` 时按 128000 的假定窗口推导，即约 126k) |
+| `context` | 上一轮 `token_usage.request.total` ≥ `maxContextLength`(默认 512000；生效阈值取它与模型 `context_window` − 2048 中的较小者，故 32k 的本地 vLLM 约在 30.7k 处压缩、而不是先撞上窗口硬限制，1M 窗口的模型则在配置的 512000 处触发；条目未配置 `context_window` 时按 128000 的假定窗口推导，即约 126k) |
 | `turns` | Session 轮数 ≥ `maxSessionTurns`(默认 -1，即不限) |
 | `manual` | 用户执行 `/compact` 或调用 `session.compact()` |
 

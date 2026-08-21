@@ -46,6 +46,6 @@ small-window model compacts exactly where it did before.
 
 ## Docs
 
-- The bilingual configuration and agent-loop pages record the new default and state that the
-  number which actually fires is the model window's, plus what an entry without a
-  `context_window` derives.
+- The bilingual configuration and agent-loop pages record the new default and state which
+  number actually fires — the smaller of the seeded threshold and the model window's cap —
+  plus what an entry without a `context_window` derives.
