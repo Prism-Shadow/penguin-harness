@@ -159,6 +159,8 @@ export interface RuntimeSession {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
+  hasRunningBackgroundSubagents?(): boolean;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -611,6 +613,9 @@ export class SessionManager {
   private forwardBackgroundMessage(sessionId: string, msg: OmniMessage): void {
     const entry = this.entries.get(sessionId);
     if (!entry) return;
+    // A child producing messages IS session activity: without this stamp the idle sweep
+    // measures only the launching task, and a long background run ages into eviction.
+    entry.lastActivityMs = Date.now();
     this.deps.channels.get(entry.sessionId).publish(msg);
     const ctx: UsageContext = {
       projectId: entry.projectId,
@@ -1339,6 +1344,10 @@ export class SessionManager {
       // environment, so the process list and its stop control would go blind while the
       // OS process kept running. Exited-but-listed processes don't pin anything.
       if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
+      // A background subagent still working pins it for the same reason: a run_in_background
+      // child outlives the call that launched it, and its completion report and live messages
+      // are delivered through the very Session object eviction would drop.
+      if (entry.session.hasRunningBackgroundSubagents?.()) continue;
       // Undelivered background completion notices pin the entry too: they live in the core
       // Session object, so evicting it would silently drop them.
       if (entry.session.hasPendingBackgroundNotices?.()) continue;

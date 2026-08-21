@@ -37,6 +37,16 @@ export class SubagentSessionManager {
   }
 
   /**
+   * Whether any managed subagent session is mid-round. Hosts use it the same way they use a
+   * running background command: a child that outlives the call which launched it must keep
+   * its Session's runtime entry alive, or its completion report and live messages land on an
+   * object nobody holds any more.
+   */
+  hasRunning(): boolean {
+    return this.registry.list().some(({ task }) => task.running);
+  }
+
+  /**
    * Registers a still-running session as a background session, allocating and returning a
    * unique `subagent_id`: `subagent-<last 8 hex of child Session id>` (falls back to random on
    * collision), whose suffix aligns with the message origin/frontend nesting label

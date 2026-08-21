@@ -222,6 +222,11 @@ export class Environment implements EnvironmentInterface {
     );
   }
 
+  /** Whether a managed subagent session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
+  hasRunningBackgroundSubagents(): boolean {
+    return this.subagentSessions.hasRunning();
+  }
+
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.commandSessions.kill(processId);

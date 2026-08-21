@@ -355,9 +355,13 @@ describe("run_subagent run_in_background", () => {
     expect(metas).toHaveLength(1);
     expect(metas[0]!.origin).toEqual([HOP]);
     expect(events).toHaveLength(0); // still running behind the gate
+    // A mid-round child pins its Session's runtime entry against idle eviction: evicting it
+    // would strand the completion report and the live message stream.
+    expect(manager.hasRunning()).toBe(true);
     await waitFor(() => gates.has("long analysis task"));
     gates.get("long analysis task")!();
     await waitFor(() => events.length === 1);
+    expect(manager.hasRunning()).toBe(false);
     expect(events[0]).toMatchObject({ kind: "subagent", id, status: "completed" });
     expect(events[0]!.output).toContain("answer to: long analysis task");
     expect(events[0]!.label).toBe("long analysis task");

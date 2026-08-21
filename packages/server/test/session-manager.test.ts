@@ -1186,6 +1186,57 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
+  it("sweepIdle: a working background subagent pins the entry, and its live messages count as activity", async () => {
+    // A run_in_background child outlives the task that launched it. Evicting the entry
+    // while it works drops the very Session its completion report is queued on.
+    let running = true;
+    let loads = 0;
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake = (): RuntimeSession => ({
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      hasRunningBackgroundSubagents: () => running,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    });
+    const manager = makeManager({
+      load: async () => {
+        loads++;
+        return fake();
+      },
+    });
+    manager.adopt(ROW, fake());
+    const long = 31 * 60 * 1000;
+
+    // Far past the idle timeout, but the child is still working: the entry stays.
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    sessions.updateApprovalMode("session-1", "allow-all");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // The child streaming is activity in its own right, so the idle clock restarts with it.
+    expect(forward).not.toBeNull();
+    const before = Date.now();
+    forward!(withOrigin(assistantText("child progress"), "session-child-1"));
+    manager.sweepIdle(before + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // Once it settles, the entry is an ordinary idle one again and evicts on schedule.
+    running = false;
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+  });
+
   it("compact: sets compacting, output goes to the channel, returns to idle at the end", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");

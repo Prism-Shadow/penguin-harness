@@ -756,6 +756,11 @@ export class Session {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
   }
 
+  /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
+  hasRunningBackgroundSubagents(): boolean {
+    return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
   /** Queues a background completion event as a harness user notice; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
   private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
     this.pendingNotices.push(backgroundDoneNotice(event));

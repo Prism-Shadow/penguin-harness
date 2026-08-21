@@ -477,6 +477,13 @@ export interface EnvironmentInterface {
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
   /**
+   * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
+   * on it: a `run_in_background` child outlives the call that launched it, and evicting the
+   * Session while it works strands its completion report and live messages. Optional, like
+   * listBackgroundCommands.
+   */
+  hasRunningBackgroundSubagents?(): boolean;
+  /**
    * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
    * sessions whose output printed no URL (TTL-cached and time-bounded per session; see
    * command/port-probe.ts). Hosts call it before reading the list when they want probed
