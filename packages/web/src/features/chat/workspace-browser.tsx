@@ -32,6 +32,9 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { CodeBlock } from "./code-block";
 import { languageForExtension } from "./code-languages";
+import { toneInk } from "../../lib/tone";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 const TEXT_EXTS = new Set([
   "txt",
@@ -436,19 +439,7 @@ export function WorkspaceBrowser({
             title={S.files.backToList}
             className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
+            <GlyphIcon d="M15 18l-6-6 6-6" size={ICON_SIZE.rowLead} />
             {S.files.backToList}
           </button>
           {/* Shows only the filename (full path goes into the title hover tooltip): the
@@ -498,10 +489,7 @@ export function WorkspaceBrowser({
             >
               {S.files.openInNewTab}
               {!previewIsolated && (
-                <span
-                  aria-label={S.files.previewNotIsolatedHint}
-                  className="text-amber-600 dark:text-amber-500"
-                >
+                <span aria-label={S.files.previewNotIsolatedHint} className={toneInk.attention}>
                   ⚠
                 </span>
               )}

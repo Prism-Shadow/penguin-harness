@@ -17,6 +17,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { GOAL_ICON, UNLIMITED_BUDGET } from "./goal-use";
 import type { GoalBannerState } from "./goal-use";
+import { toneSurface } from "../../lib/tone";
 
 /** Image glyph (24×24 line path) for the collapsed attachment chip on later goal rounds. */
 const ATTACHMENT_ICON = "M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 8.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0";
@@ -118,8 +119,8 @@ export function GoalStatusBanner({ goal }: { goal: GoalBannerState }) {
         className={`shrink-0 rounded px-1.5 py-0.5 ${
           finished
             ? goal.status === "complete"
-              ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-              : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
+              ? toneSurface.success
+              : toneSurface.attention
             : "bg-gray-200 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
         }`}
       >

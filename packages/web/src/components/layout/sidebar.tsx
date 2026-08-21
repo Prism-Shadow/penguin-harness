@@ -148,6 +148,7 @@ import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -1523,7 +1524,7 @@ export function Sidebar({
               onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
               icon={
                 <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={NEW_CHAT_ICON} size={14} />
+                  <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                 </span>
               }
               label={S.chat.draftGroup}
@@ -1586,7 +1587,7 @@ export function Sidebar({
                           onClick={() => newChat(agent.agentId)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         <button
                           type="button"
@@ -1594,7 +1595,7 @@ export function Sidebar({
                           onClick={() => go(`/agents/${agent.agentId}`)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d={GEAR_ICON} size={16} />
+                          <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
                         </button>
                       </>
                     }
@@ -1651,7 +1652,10 @@ export function Sidebar({
                     icon={
                       /* Folder opens and closes with the group */
                       <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
+                        <Icon
+                          d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                          size={ICON_SIZE.groupHeaderGlyph}
+                        />
                       </span>
                     }
                     label={group.temp ? S.chat.tempWorkspaces : group.label}
@@ -1672,7 +1676,7 @@ export function Sidebar({
                           onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
@@ -2163,7 +2167,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={15} />
+      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }

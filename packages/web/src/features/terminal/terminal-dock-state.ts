@@ -10,10 +10,11 @@
  * switches the whole dock with it — a Session that never opened a terminal shows none, and
  * coming back restores the panes and tabs that were there. The shells themselves are
  * per-user and keep running regardless; a scope only decides which of them are on screen
- * here. Pages with no Session of their own (settings, Agents, …) keep the last one's dock
- * rather than blanking it, since navigating to a settings page is not leaving the
- * conversation; and a dock opened before any conversation was chosen is handed to the
- * first one that is (see setDockScope).
+ * here. Pages with no Session of their own (settings, Agents, …) scope to a placeholder
+ * that holds no arrangement, so the dock is not on screen there — a terminal belongs to a
+ * conversation, not beside a settings page — and returning to the conversation restores it.
+ * A dock opened while on that placeholder is handed to the first conversation chosen
+ * afterwards (see setDockScope).
  *
  * A side pane and the chat's Agents/Workspace panel both want the horizontal half of the
  * content area, so only one of them is on screen: whichever the user opened last. That is
@@ -308,21 +309,32 @@ export function openPanes(): DockPosition[] {
 }
 
 /**
- * A chat side panel (Agents / Workspace) is on screen, displacing this dock's left and
- * right panes. Not persisted: it mirrors panel state that is itself per-visit, and a reload
- * with no panel open should show the panes again.
+ * A chat side panel (Agents / Workspace) holds the side. Not persisted: it mirrors panel
+ * state that is itself per-visit.
+ *
+ * Taking the side CLOSES a side pane rather than parking it behind the panel. The pane
+ * stays in the arrangement, so reopening the dock brings it back on the edge it was on —
+ * but closing the panel leaves the slot empty, because from where the user sits, opening
+ * the panel is what closed the terminal, and closing the panel should not conjure it back.
  */
-let sidePanelDisplacing = false;
+let sidePanelHoldsTheSide = false;
 
 /** Whether a chat side panel currently holds the side. */
 export function chatSidePanelOpen(): boolean {
-  return sidePanelDisplacing;
+  return sidePanelHoldsTheSide;
 }
 
 export function setChatSidePanelOpen(open: boolean): void {
-  if (open) cancelHandover(); // the panel is back: nothing left to hand over
-  if (sidePanelDisplacing === open) return;
-  sidePanelDisplacing = open;
+  if (open) {
+    cancelHandover(); // the panel is back: nothing left to hand over
+    // Only a side pane competes for this space; a top/bottom one costs height and stays.
+    if (visible && panes.some((p) => !isHorizontal(p))) {
+      visible = false;
+      persist();
+    }
+  }
+  if (sidePanelHoldsTheSide === open) return;
+  sidePanelHoldsTheSide = open;
   notify();
 }
 
@@ -358,8 +370,8 @@ function cancelHandover(): void {
  * expanding into a slot that is still occupied.
  */
 function terminalTakesTheSide(): void {
-  if (!sidePanelDisplacing) return;
-  sidePanelDisplacing = false; // the chat page reads this and retracts its panels
+  if (!sidePanelHoldsTheSide) return;
+  sidePanelHoldsTheSide = false; // the chat page reads this and retracts its panels
   handingOver = true;
   if (handoverTimer !== null) clearTimeout(handoverTimer);
   handoverTimer = setTimeout(() => {
@@ -371,9 +383,13 @@ function terminalTakesTheSide(): void {
 
 let visibleSnapshot: DockPosition[] = [];
 
-/** Panes to actually render: the arrangement minus what a chat side panel is displacing. */
+/**
+ * Panes to actually render: the arrangement, minus a side pane still waiting out an
+ * outgoing panel's retraction (see handingOver). Nothing else is ever filtered — a panel
+ * taking the side closes the pane outright rather than parking it.
+ */
 export function visiblePanes(): DockPosition[] {
-  const next = sidePanelDisplacing || handingOver ? panes.filter(isHorizontal) : panes;
+  const next = handingOver ? panes.filter(isHorizontal) : panes;
   if (next.length === panes.length) return panes; // nothing displaced: keep the stable ref
   if (next.length !== visibleSnapshot.length || next.some((p, i) => p !== visibleSnapshot[i])) {
     visibleSnapshot = next;

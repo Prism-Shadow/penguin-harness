@@ -4,7 +4,7 @@
  * and the label/hint/error scaffolding with the other form controls via field.tsx.
  */
 import { forwardRef, useId } from "react";
-import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 import { Field, controlBase } from "./field";
 
 // Adds width, placeholder and disabled styling on top of the shared control look; each of Input/Textarea appends its own font size and padding (see their size).
@@ -24,6 +24,14 @@ export const sizeClass: Record<ControlSize, string> = {
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   label?: string;
   hint?: string;
+  /**
+   * Semantic explanation — what the field means, what it affects, when it takes effect —
+   * disclosed by a "?" beside the label. A rule about the *shape* of the input ("one per line",
+   * "leave empty for unlimited") belongs in `hint`, which stays on screen while the user types.
+   */
+  info?: ReactNode;
+  /** Accessible name for that "?" (defaults to the generic "More info"). */
+  infoLabel?: string;
   error?: string;
   /**
    * Marks the field red without rendering error text: use this when the input has a
@@ -84,22 +92,39 @@ export const noAutofill = autofillProps(undefined, false);
 export function Input({
   label,
   hint,
+  info,
+  infoLabel,
   error,
   invalid,
   required,
   size = "base",
   className,
   autoComplete,
+  id,
   ...rest
 }: InputProps) {
   const bad = Boolean(error) || Boolean(invalid);
   const errorId = useId();
+  // The info layout moves the label out of the wrapping <label> and associates it by htmlFor
+  // (see Field), so an info field needs the control to carry an id.
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
   // `required` drives the label's asterisk + aria-required only; the native `required`
   // attribute is intentionally not forwarded (the app validates on submit, so browser
   // validation bubbles would collide with the inline field errors).
   return (
-    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
+    <Field
+      label={label}
+      hint={hint}
+      error={error}
+      errorId={errorId}
+      required={required}
+      info={info}
+      infoLabel={infoLabel}
+      controlId={controlId}
+    >
       <input
+        id={info !== undefined ? controlId : id}
         className={`${baseClass} ${sizeClass[size]} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
@@ -116,6 +141,10 @@ export function Input({
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   hint?: string;
+  /** Semantic explanation behind a "?" beside the label (see InputProps.info). */
+  info?: ReactNode;
+  /** Accessible name for that "?" (defaults to the generic "More info"). */
+  infoLabel?: string;
   error?: string;
   /** Marks the field red without rendering error text (see Input.invalid). */
   invalid?: boolean;
@@ -126,15 +155,41 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, hint, error, invalid, required, mono, size = "base", className, autoComplete, ...rest },
+  {
+    label,
+    hint,
+    info,
+    infoLabel,
+    error,
+    invalid,
+    required,
+    mono,
+    size = "base",
+    className,
+    autoComplete,
+    id,
+    ...rest
+  },
   ref,
 ) {
   const bad = Boolean(error) || Boolean(invalid);
   const errorId = useId();
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
   return (
-    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
+    <Field
+      label={label}
+      hint={hint}
+      error={error}
+      errorId={errorId}
+      required={required}
+      info={info}
+      infoLabel={infoLabel}
+      controlId={controlId}
+    >
       <textarea
         ref={ref}
+        id={info !== undefined ? controlId : id}
         className={`${baseClass} px-3 py-2 ${size === "sm" ? "text-xs leading-relaxed" : "text-base"} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
