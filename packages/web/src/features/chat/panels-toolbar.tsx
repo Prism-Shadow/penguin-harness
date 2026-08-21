@@ -1,15 +1,17 @@
 /**
  * Top-right panel switcher of the chat toolbar (Codex-style): icon-only buttons for the
- * pinned panels, then an "all panels" dropdown listing every panel with icon + name.
+ * pinned panels, then a "create" dropdown listing every panel with icon + name.
  *
- * Four panels exist: the subagents panel, the terminal dock, the Workspace files panel and
- * the Memory panel. Which of them get their own toolbar icon is user-configurable via the
- * pin toggles inside the dropdown (persisted per browser); the default pins the subagents
- * panel and the Workspace, leaving the terminal and Memory reachable through the dropdown
- * (the terminal also via Ctrl+`) until pinned.
+ * Five side elements exist — the subagents panel, the terminal, the Workspace files
+ * panel, the Memory panel and the Trace panel — and every one of them is a dock tab
+ * (features/dock): a trigger toggles the element on/off screen, and the dropdown rows
+ * carry placement actions (open on the right / at the bottom) plus a pin toggle deciding
+ * which elements get their own toolbar icon (persisted per browser). The default pins the
+ * subagents panel and the Workspace; the terminal stays reachable through the dropdown
+ * and Ctrl+`.
  *
- * The open/close state itself lives with each panel's own hook/store — this component only
- * renders triggers, so pinning/unpinning never touches panel state.
+ * The open/close state itself lives in the dock store — this component only renders
+ * triggers, so pinning/unpinning never touches dock state.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
@@ -17,34 +19,41 @@ import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import {
-  dockStateVersion,
-  holdsTerminal,
+  dockVersion,
+  isTabShown,
+  openPanel,
   showTerminal,
-  subscribeTerminalDock,
-  toggleTerminalDock,
-} from "../terminal/terminal-dock-state";
-import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
-import { liveTerminals, subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
+  subscribeDock,
+  togglePanel,
+  type DockPosition,
+  type PanelKind,
+} from "../dock/dock-state";
+import { openTerminalInDock, toggleTerminal } from "../dock/dock-terminal";
+import { AgentsGlyph, panelGlyph, panelLabel } from "../dock/panel-meta";
+import {
+  displayTitle,
+  liveTerminals,
+  subscribeTerminals,
+  terminalApiSupported,
+} from "../terminal/terminal-list";
 import { toneDot } from "../../lib/tone";
 
-export type PanelKey = "agents" | "terminal" | "workspace" | "memory";
+export type PanelKey = PanelKind | "terminal";
 
 const PIN_STORAGE_KEY = "penguin.chat.pinnedPanels";
 const DEFAULT_PINS: readonly PanelKey[] = ["agents", "workspace"];
 /** Display order of pinned icons and dropdown rows (the product-specified order). */
-const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace", "memory"];
-
-/** Open book: the Memory panel's mark (same glyph as the memory-changes card header). */
-const MEMORY_ICON =
-  "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
+const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace", "memory", "trace"];
 
 /** Plus: the "create" trigger opening the panels menu. */
 const CREATE_ICON = "M12 5v14M5 12h14";
 /** Pin (map-pin style tack), shown filled while pinned. */
 const PIN_ICON = "M12 17v5M7 4h10l-1.5 6.5L18 13H6l2.5-2.5z";
+/** Window with a right pane / a bottom pane: the placement actions. */
+const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
+const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
 
 function loadPins(): PanelKey[] {
   try {
@@ -58,37 +67,9 @@ function loadPins(): PanelKey[] {
   }
 }
 
-/** The subagents spawn-tree glyph is multi-element (circles + edges), so it is a component. */
-function AgentsGlyph({ size = ICON_SIZE.iconButton }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <circle cx="5" cy="12" r="2.5" />
-      <circle cx="19" cy="5.5" r="2.5" />
-      <circle cx="19" cy="18.5" r="2.5" />
-      <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
-    </svg>
-  );
-}
-
 export interface PanelsToolbarProps {
-  agentsOpen: boolean;
-  onToggleAgents: () => void;
   /** A pending approval inside a subagent: amber dot on the agents trigger. */
   agentsPending: boolean;
-  workspaceOpen: boolean;
-  onToggleWorkspace: () => void;
-  memoryOpen: boolean;
-  onToggleMemory: () => void;
 }
 
 interface PanelEntry {
@@ -100,6 +81,8 @@ interface PanelEntry {
   glyph: () => ReactNode;
   open: boolean;
   toggle: () => void;
+  /** The row's placement actions: put this element in a specific dock. */
+  place: (position: DockPosition) => void;
   pending?: boolean;
 }
 
@@ -112,7 +95,7 @@ const triggerClass = (active: boolean) =>
 
 /**
  * Floating count of live terminals. It rides on the terminal's own trigger when the
- * terminal is pinned, and on the "all panels" trigger otherwise — so the number stays
+ * terminal is pinned, and on the "create" trigger otherwise — so the number stays
  * visible wherever the terminal is actually reachable from. Zero renders nothing.
  */
 function TerminalCountBadge({ count }: { count: number }) {
@@ -178,7 +161,7 @@ function useHoverMenu(): {
 }
 
 /**
- * Rows of live terminals; picking one brings it on screen in its pane. The pick fires on
+ * Rows of live terminals; picking one brings it on screen in its dock. The pick fires on
  * mousedown: the flyout variant lives outside the Dropdown's panel, whose outside-click
  * dismissal would otherwise unmount the row before its click event ever dispatched.
  */
@@ -214,16 +197,12 @@ function TerminalListMenu({ onPick }: { onPick: (id: string) => void }) {
   );
 }
 
-export function PanelsToolbar(props: PanelsToolbarProps) {
-  const terminalOpen = useTerminalDockOpen();
-  // This conversation's terminals, not every live shell. The panel shows one group per
-  // conversation (terminal-dock-state.ts), so a global count promises tabs this panel will
-  // not show: closing the last terminal here would leave the badge sitting at another
-  // conversation's, with no way to reach zero from this one. The menu below still lists
-  // every live shell, which is how one opened elsewhere stays reachable.
+export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
+  useSyncExternalStore(subscribeDock, dockVersion);
   const allTerminals = useSyncExternalStore(subscribeTerminals, liveTerminals);
-  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
-  const terminalCount = allTerminals.filter((t) => holdsTerminal(t.id)).length;
+  // Every live shell: the docks are global now, so any of them is one click from a tab
+  // here (the hover menu lists exactly these).
+  const terminalCount = allTerminals.length;
   const [pins, setPins] = useState<PanelKey[]>(loadPins);
   const createMenu = useHoverMenu();
   const terminalMenu = useHoverMenu();
@@ -251,44 +230,36 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
     });
   };
 
+  const terminalShown = allTerminals.some((t) => isTabShown(`terminal:${t.id}`));
+
   // An older runtime (hot update can leave the Web App ahead of it) has no terminal API;
   // offering the panel would only produce a 404 on click.
   const terminalSupported = useSyncExternalStore(subscribeTerminals, terminalApiSupported);
+  const panelEntry = (kind: PanelKind, buttonLabel: string): PanelEntry => ({
+    key: kind,
+    label: panelLabel(kind),
+    buttonLabel,
+    glyph: () => (kind === "agents" ? <AgentsGlyph /> : panelGlyph(kind)),
+    open: isTabShown(kind),
+    toggle: () => togglePanel(kind),
+    place: (position) => openPanel(kind, position),
+    ...(kind === "agents" ? { pending: agentsPending } : {}),
+  });
   const entries: PanelEntry[] = [
-    {
-      key: "agents",
-      label: S.chat.openAgents,
-      buttonLabel: S.chat.openAgents,
-      glyph: () => <AgentsGlyph />,
-      open: props.agentsOpen,
-      toggle: props.onToggleAgents,
-      pending: props.agentsPending,
-    },
+    panelEntry("agents", S.chat.openAgents),
     {
       key: "terminal",
       label: S.terminal.title,
       buttonLabel: S.terminal.title,
       glyph: () => <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
-      open: terminalOpen,
-      toggle: toggleTerminalDock,
+      open: terminalShown,
+      toggle: toggleTerminal,
+      place: (position) => void openTerminalInDock(position),
     },
-    {
-      key: "workspace",
-      label: S.chat.workspacePanel,
-      // The established accessible name ("打开工作区") — several flows and tests target it.
-      buttonLabel: S.chat.openWorkspace,
-      glyph: () => <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.iconButton} />,
-      open: props.workspaceOpen,
-      toggle: props.onToggleWorkspace,
-    },
-    {
-      key: "memory",
-      label: S.chat.memoryViewTitle,
-      buttonLabel: S.chat.openMemoryPanel,
-      glyph: () => <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.iconButton} />,
-      open: props.memoryOpen,
-      toggle: props.onToggleMemory,
-    },
+    // The established accessible name ("打开工作区") — several flows and tests target it.
+    panelEntry("workspace", S.chat.openWorkspace),
+    panelEntry("memory", S.chat.openMemoryPanel),
+    panelEntry("trace", S.chat.openTracePanel),
   ];
 
   const panels = entries.filter((entry) => entry.key !== "terminal" || terminalSupported);
@@ -297,7 +268,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
     <div className="flex shrink-0 items-center gap-1" data-testid="panels-toolbar">
       {/* Pinned panels: icon-only triggers in fixed order. The terminal trigger also
           shows the terminal list on hover (first-level dropdown); its click still toggles
-          the dock. */}
+          the terminal tabs. */}
       {panels
         .filter((entry) => pins.includes(entry.key))
         .map((entry) => {
@@ -341,14 +312,14 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
         })}
 
       {/* "Create" menu: opens on hover (click keeps it open for touch/keyboard); every
-          panel as a row with a pin toggle, and the terminal row carries a second-level
-          terminal list on hover. */}
+          panel as a row with placement actions and a pin toggle, and the terminal row
+          carries a second-level terminal list on hover. */}
       <div {...createMenu.hoverProps}>
         <Dropdown
           open={menuOpen}
           setOpen={setMenuOpen}
           focusOnOpen={createMenu.focusOnOpen}
-          menuClass="right-0 top-full mt-1 w-56 origin-top-right"
+          menuClass="right-0 top-full mt-1 w-64 origin-top-right"
           button={
             <button
               type="button"
@@ -388,7 +359,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                   <span className="shrink-0 text-gray-500 dark:text-gray-400">{entry.glyph()}</span>
                   <span className="min-w-0 truncate">{entry.label}</span>
                   {/* Live shell count, right beside the name — the row's right edge belongs
-                    to the pin toggle (a hover-revealed slot that must not look like a gap
+                    to the hover-revealed action cluster (which must not look like a gap
                     next to content). */}
                   {entry.key === "terminal" && terminalCount > 0 && (
                     <span
@@ -406,6 +377,29 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                     />
                   )}
                 </button>
+                {/* Placement actions: this element straight into a chosen dock. Hover-revealed
+                    with the pin, so the resting row stays a clean name. They keep the menu
+                    open — placing several panels in one visit is the point of having them. */}
+                <button
+                  type="button"
+                  title={S.dock.openInRight}
+                  aria-label={`${S.dock.openInRight}: ${entry.label}`}
+                  data-testid={`panels-place-right-${entry.key}`}
+                  onClick={() => entry.place("right")}
+                  className="shrink-0 rounded p-1 text-gray-300 opacity-0 transition-colors duration-150 hover:text-gray-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <GlyphIcon d={PANEL_RIGHT_ICON} />
+                </button>
+                <button
+                  type="button"
+                  title={S.dock.openInBottom}
+                  aria-label={`${S.dock.openInBottom}: ${entry.label}`}
+                  data-testid={`panels-place-bottom-${entry.key}`}
+                  onClick={() => entry.place("bottom")}
+                  className="shrink-0 rounded p-1 text-gray-300 opacity-0 transition-colors duration-150 hover:text-gray-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <GlyphIcon d={PANEL_BOTTOM_ICON} />
+                </button>
                 {/* Pin toggle: keeps the menu open so several pins can be adjusted in one go. */}
                 <button
                   type="button"
@@ -417,7 +411,7 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
                   className={`shrink-0 rounded p-1 transition-colors duration-150 ${
                     pinned
                       ? "text-gray-700 dark:text-gray-200"
-                      : "text-gray-300 opacity-0 hover:text-gray-600 group-hover:opacity-100 focus-visible:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
+                      : "text-gray-300 opacity-0 hover:text-gray-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-gray-600 dark:hover:text-gray-300"
                   }`}
                 >
                   <GlyphIcon d={PIN_ICON} filled={pinned} />

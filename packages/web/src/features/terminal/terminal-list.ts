@@ -1,8 +1,8 @@
 /**
  * The user's live terminals, as a tiny module-level store. Every shell the user has is in
- * here, whichever conversation it was opened in: the dock's tab strip and the toolbar's
- * badge narrow it to the ones the current scope holds (terminal-dock-state.ts), while the
- * toolbar's terminal menu lists all of them, so any shell can be pulled into view here.
+ * here, tabbed into a dock or not: the docks' strips show the tabbed ones (dock-state.ts),
+ * while the toolbar's terminal menu lists all of them, so any shell can be pulled into
+ * view here.
  *
  * The server is the source of truth (`GET /api/terminals`, alive only); this store decides
  * *when* to look. There is no push channel for terminal lifecycle yet, so:
@@ -12,7 +12,23 @@
  *   tab cannot see (a shell exiting on its own, terminals opened from another window).
  */
 import type { TerminalInfo } from "./terminal-view";
-import { pruneAssignments } from "./terminal-dock-state";
+import { pruneTerminalTabs } from "../dock/dock-state";
+
+/**
+ * Shell titles usually open with a `user@host` marker (bash and zsh default title
+ * strings). The host says nothing useful in a single-server UI and eats the tab's width,
+ * so it is dropped at display time only — the stored title stays untouched.
+ *
+ * The host part must exclude `:` explicitly: in a spaceless title like
+ * `user@host:~/work`, a greedy `\S+` would swallow the path along with the host and leave
+ * nothing of the title at all.
+ */
+export function displayTitle(title: string | null | undefined): string {
+  return (title ?? "")
+    .trim()
+    .replace(/^[^@\s]+@[^:\s]+:?\s*/, "")
+    .trim();
+}
 
 const POLL_MS = 30_000;
 
@@ -137,7 +153,7 @@ export function refreshTerminals(): Promise<void> {
         if (!listed.has(id)) pendingKills.delete(id); // fully gone: nothing left to hide
       }
       const live = data.terminals.filter((t) => t.alive && !isPendingKill(t.id));
-      pruneAssignments(new Set(live.map((t) => t.id)));
+      pruneTerminalTabs(new Set(live.map((t) => t.id)));
       commit(live);
     } catch {
       // Network hiccup: the next poll/focus refresh will catch up.

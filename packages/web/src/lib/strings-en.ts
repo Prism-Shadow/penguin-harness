@@ -36,7 +36,6 @@ export const en: Strings = {
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "Resize terminal panel",
     /** Hover menu when the user has no live terminal yet. */
     noTerminals: "No terminals",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -46,7 +45,6 @@ export const en: Strings = {
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
-    close: "Close",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -55,6 +53,23 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
+  dock: {
+    addTab: "Add panel",
+    closeTab: "Close panel",
+    hideDock: "Hide sidebar",
+    moveToRight: "Move to the right",
+    moveToBottom: "Move to the bottom",
+    openInRight: "Open on the right",
+    openInBottom: "Open at the bottom",
+    resize: "Resize panel",
+  },
+
+  tracePanel: {
+    empty: "No traces yet",
+    emptyHint: "This session has not produced a Trace file yet",
+    loadFailed: "Failed to load traces",
   },
 
   settings: {
@@ -202,12 +217,12 @@ export const en: Strings = {
   common: {
     save: "Save",
     cancel: "Cancel",
+    close: "Close",
     create: "Create",
     delete: "Delete",
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
-    close: "Close",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -1420,6 +1435,7 @@ Scenarios:
     workspacePanel: "Workspace",
     pinPanel: "Pin to toolbar",
     unpinPanel: "Unpin",
+    openTracePanel: "Open traces",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1590,12 +1606,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "Agents panel",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
     nodeRunning: "running",
     nodeDone: "done",
+    openAsSession: "Jump to this session",
   },
 
   files: {
@@ -1621,7 +1637,6 @@ Scenarios:
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
-    resizeHandle: "Drag to resize, double-click to reset",
   },
 
   usage: {
