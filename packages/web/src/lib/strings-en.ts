@@ -283,7 +283,7 @@ export const en: Strings = {
     deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
     /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
     commandPolicyIntro:
-      "Every command launched with exec_command passes through the policy before approval: a hit on any enabled rule is rejected outright, even when the approval mode is allow-all; the model receives the matched rule's name and is steered to another approach. Matching runs each rule's regular expression against the whitespace-normalized command text. This is an accident guardrail, not a defense against deliberate evasion: a nested shell, quoting tricks, and keystrokes sent to an already-running command all go around it.",
+      "Both ways the model reaches a shell pass through the policy before approval — the command exec_command launches, and what input_command types into an already-running one. A hit on any enabled rule is rejected outright, even when the approval mode is allow-all; the model receives the matched rule's name and is steered to another approach. Matching runs each rule's regular expression against the command text, normalized for whitespace and quoting. This is an accident guardrail, not a defense against deliberate evasion: a command assembled at run time (from a variable, eval, or a decoded string) is not something patterns can read, and is not covered.",
     commandPolicyEnable: "Enable policy",
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",

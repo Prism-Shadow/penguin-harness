@@ -84,7 +84,7 @@ describe("project command policy", () => {
   it("rules are editable data: edit, disable, delete and add all round-trip", async () => {
     const before = (await (await owner.get(url)).json()) as CommandPolicyDto;
     const edited = before.rules
-      .filter((r) => r.name !== "fork-bomb") // delete one
+      .filter((r) => r.name !== "fork-bomb") // delete one (its Windows counterpart stays)
       .map((r) =>
         r.name === "rm-recursive-force"
           ? { ...r, enabled: false } // disable one (the rm -rf node_modules escape hatch)
@@ -103,7 +103,8 @@ describe("project command policy", () => {
 
     const toml = await fs.readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
     expect(toml).toContain('name = "no-mkfs"');
-    expect(toml).not.toContain("fork-bomb");
+    // Keyed on the exact stored line: "fork-bomb" is also a substring of windows-fork-bomb.
+    expect(toml).not.toContain('name = "fork-bomb"');
 
     // Restore defaults = PUT the served factory set back.
     const restore = await owner.put(url, { enabled: true, rules: stored.defaultRules });

@@ -93,7 +93,7 @@ Edit this file via the CLI (`penguin config model …`) or the Web Models page �
 
 ### Command policy
 
-The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied to every `exec_command` launch at the approval boundary itself — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model is told which rule fired so it can change course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration cannot reach it, and each Session snapshots it at creation, so a mid-Session edit takes effect only from the next load. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself.
+The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied at the approval boundary itself to both tools that reach a shell — `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into an already-running one) — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model is told which rule fired so it can change course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration cannot reach it, and each Session snapshots it at creation, so a mid-Session edit takes effect only from the next load. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself.
 
 The rules are **plain data with no special tiers**: the factory set is seeded into each new project exactly like the model presets — copied in at creation, never rewritten afterward — and every rule can then be edited, disabled, deleted, or joined by new ones. A project from before the seeding (no `rules` list stored) behaves as the factory set until its first saved edit materializes the list; the settings page's "Restore defaults" loads the factory set back into the editor, and Save writes it.
 
@@ -102,7 +102,9 @@ The rules are **plain data with no special tiers**: the factory set is seeded in
 | `enabled` | Master switch; absent = **on** (stored only as `enabled = false`) |
 | `[[command_policy.rules]]` | The deny-rule list, matched in order: `name` (echoed in the denial) + `pattern` (a JavaScript regex source, matched against the whitespace-normalized command) + optional `description` + per-rule `enabled` (absent = on). A stored empty list means no rules; an absent list means the factory set |
 
-The factory set is deliberately small — commands whose verbatim execution is destructive with no undo: `rm` carrying both a recursive and a force flag, `mkfs`, `dd` writing straight to a block device, the classic fork bomb, and shell redirection onto a block device (`/dev/null` and friends stay legal). Each of those matches the plain spellings, a leading path (`/bin/rm`) and `sudo` included.
+The factory set is deliberately small — commands whose verbatim execution is destructive with no undo: `rm` carrying both a recursive and a force flag, `mkfs`, `dd` writing straight to a block device, the classic fork bomb, and shell redirection onto a block device (`/dev/null` and friends stay legal). Four more are the Windows counterparts of the same five, since `exec_command` will resolve pwsh or cmd there: a recursive force delete (`Remove-Item -Recurse -Force`, `rd /s /q`), a volume format (`format C:`, `Format-Volume`), a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`), and the cmd fork bomb.
+
+Matching normalizes ordinary spellings before the rules run, so plain typing does not slip through by accident: a leading path (`/bin/rm`), a wrapper (`sudo`, `env`, `command`, `nice`, `xargs`), quoting or a backslash escape of the command word (`"rm"`, `r''m`, `\rm`), and a literal `sh -c 'rm -rf /'` payload all match. Removing quote marks is all that happens — nothing is expanded, substituted, or decoded.
 
 ```toml
 [command_policy]
@@ -119,15 +121,15 @@ pattern = "git push [^;|&]*--force"
 enabled = false
 ```
 
-This is an **accident guardrail, not a security boundary**: matching is normalized-text regex over one tool's launch command, and a regex over shell syntax cannot be made to hold. Known and accepted gaps, none of which the rules try to close:
+This is an **accident guardrail, not a security boundary**, and that is a statement about what pattern matching can do rather than modesty about this implementation. Shell is a programming language; deciding what a program will do by reading its text before it runs is not a problem more rules get closer to solving. So the policy covers the spellings people and models actually type, and stops there:
 
-- **A nested interpreter.** `sh -c 'rm -rf /'`, `eval`, a pipe into `bash`, or `python -c` hides the command inside a quoted argument.
-- **`input_command`.** The policy covers the spawn path, not typing: launching `bash` (which no rule matches) and sending `rm -rf /\n` to its stdin walks straight past. The guardrail is exactly one interpreter launch deep.
-- **Shell-level indirection.** Quoting or escaping the command word (`\rm`, `"rm"`, `r''m`), `$IFS` in place of spaces, a variable or alias (`X=rm; $X -rf /`), a command substitution.
-- **MCP tools.** Only `exec_command` is checked; a shell exposed by an MCP server is not.
-- **Anything not on the list.** `shred`, `wipefs`, `find -delete`, `git clean -xfd`, `chmod -R 000 /` and the Windows equivalents (`Remove-Item -Recurse -Force`, `format`) match no factory rule. Add your own rules for what your project cares about.
+- **A command computed at run time is not covered and will not be.** `$IFS` in place of spaces, a variable or alias (`X=rm; $X -rf /`), a command substitution, `eval`, base64 piped into a shell, `python -c`, an interpreter reached through a pipe. Each would take a pattern that costs maintenance forever and buys only the appearance of coverage. Anyone who wants the command to run can get it to run.
+- **MCP tools are a different surface with a different control.** This policy reads `exec_command` and `input_command` only; a shell exposed by an MCP server is governed by that server's own `permission` level (see [Tools & Approval](/tools)).
+- **Commands not on the list.** `shred`, `wipefs`, `find -delete`, `git clean -xfd`, `chmod -R 000 /` match no factory rule — the list is deliberately small. Add your own rules for what your project cares about.
 
-It stops an unquoted destructive one-liner typed straight into `exec_command`, which is the accident it is for. Manage it from the Security policy tab of Project Settings in the Web App (owner-only to edit; members see the effective policy).
+What it does buy is that a destructive one-liner does not run by accident, in either of the two ways a model reaches a shell, in either the POSIX or the Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary — a process that *cannot* reach the rest of the filesystem regardless of what it runs — the mechanism is confinement (bubblewrap, dsh), which is a separate layer this policy complements rather than replaces.
+
+Manage it from the Security policy tab of Project Settings in the Web App (owner-only to edit; members see the effective policy).
 
 ## Agent config
 

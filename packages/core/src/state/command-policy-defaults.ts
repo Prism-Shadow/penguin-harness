@@ -45,6 +45,12 @@ const CMD_START = "(?:^|[\\s;&|(])(?:[^\\s;&|]*/)?";
 /** An operand may be quoted: `of="/dev/sda"` and `> '/dev/sda'` are the same write. */
 const QUOTE = "[\"']?";
 
+/**
+ * The raw physical-disk device on Windows (`\\.\PhysicalDrive0`) — what `/dev/sda` is on a
+ * POSIX host, and destroyed the same way by a raw write.
+ */
+const WINDOWS_RAW_DISK = "\\\\\\\\\\.\\\\(?i:physicaldrive)[0-9]+";
+
 export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
   {
     name: "rm-recursive-force",
@@ -82,5 +88,39 @@ export const DEFAULT_COMMAND_POLICY_RULES: readonly CommandPolicyRule[] = [
     // Shell redirection onto a block device (`> /dev/sda`); `/dev/null` etc. stay legal.
     pattern: `>\\s*${QUOTE}/dev/${BLOCK_DEVICES}`,
     description: "shell redirection onto a block device (/dev/null stays allowed)",
+  },
+  // The four below are the Windows counterparts of the five above — no new command classes,
+  // just the same destruction spelled for pwsh and cmd, which `shell.ts` will happily resolve.
+  // Patterns are case-insensitive inline (`(?i:…)`) because both shells are.
+  {
+    name: "windows-recursive-delete",
+    // PowerShell `Remove-Item … -Recurse … -Force` (order-independent, `-Rec`/`-r`/`-f`
+    // abbreviations included) and the cmd forms `rd|rmdir|del|erase … /s … /q`. cmd allows
+    // switches to run together (`/s/q`), so each is only required to appear in the segment.
+    pattern:
+      `${CMD_START}(?i:remove-item)(?![a-zA-Z0-9])(?=(?:\\s[^;&|]*)?\\s-(?i:rec[a-z]*|r)(?:\\s|$))(?=(?:\\s[^;&|]*)?\\s-(?i:force|f)(?:\\s|$))` +
+      `|${CMD_START}(?i:rmdir|rd|del|erase)(?![a-zA-Z0-9])(?=[^;&|]*/(?i:s)(?![a-zA-Z]))(?=[^;&|]*/(?i:q)(?![a-zA-Z]))`,
+    description: "Windows recursive force delete (Remove-Item -Recurse -Force, rd /s /q)",
+  },
+  {
+    name: "windows-format-volume",
+    // `format C:` (the drive letter is required, so `pnpm format` is not a hit) and the
+    // PowerShell cmdlet.
+    pattern:
+      `${CMD_START}(?i:format)(?![a-zA-Z0-9-])(?=[^;&|]*\\s[a-zA-Z]:(?![a-zA-Z0-9]))` +
+      `|${CMD_START}(?i:format-volume)(?![a-zA-Z0-9])`,
+    description: "Windows volume format (format C:, Format-Volume) — destroys it wholesale",
+  },
+  {
+    name: "windows-disk-overwrite",
+    // A raw write to the physical disk device, and the cmdlet that wipes one.
+    pattern: `${WINDOWS_RAW_DISK}|${CMD_START}(?i:clear-disk)(?![a-zA-Z0-9])`,
+    description: "Windows raw disk overwrite (\\\\.\\PhysicalDriveN, Clear-Disk)",
+  },
+  {
+    name: "windows-fork-bomb",
+    // The cmd batch fork bomb: a script that pipes itself into itself.
+    pattern: "%0\\s*\\|\\s*%0",
+    description: "the cmd fork bomb (%0|%0) — exhausts the process table in seconds",
   },
 ];
