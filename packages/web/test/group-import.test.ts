@@ -1,6 +1,6 @@
 /**
- * Add-group bulk import row building: listing order preserved, duplicates skipped and
- * counted (within the listing and against already-configured pairs), and every imported
+ * Add-group bulk import row building: listing order preserved, entries that produce no row
+ * skipped and counted (duplicates, and ids the config could not hold), and every imported
  * row carrying the endpoint config inline in the shape rowToEntry persists.
  */
 import { describe, expect, it } from "vitest";
@@ -21,7 +21,8 @@ describe("buildImportedRows", () => {
       expect(row.clientType).toBe("openai-chat");
       expect(row.baseUrl).toBe("https://gw.example/v1");
       expect(row.apiKeyInput).toBe("sk-g1");
-      expect(row.vision).toBe(true);
+      // The same start a hand-added model in a user-defined group gets: no vision claim.
+      expect(row.vision).toBe(false);
     }
   });
 
@@ -42,12 +43,36 @@ describe("buildImportedRows", () => {
     expect(rows.map((r) => r.modelId)).toEqual(["m-b", "m-c"]);
   });
 
-  it("produces rows that persist as full entries (protocol, base URL, key; vision omitted as supported)", () => {
+  it("drops ids the config could not hold instead of letting one entry 400 the whole PUT", () => {
+    const listing = [
+      "  m-trim  ",
+      "",
+      "   ",
+      "x".repeat(201),
+      "m-\u0000nul",
+      "m-\nnewline",
+      "x".repeat(200),
+    ];
+    const { rows, added, skipped } = buildImportedRows([], "mygw", listing, config);
+    // Trimmed, and the 200-character id (exactly the server's bound) still lands.
+    expect(rows.map((r) => r.modelId)).toEqual(["m-trim", "x".repeat(200)]);
+    expect(added).toBe(2);
+    expect(skipped).toBe(5);
+  });
+
+  it("counts a listing entry that only duplicates another after trimming", () => {
+    const { added, skipped } = buildImportedRows([], "mygw", ["m-a", " m-a "], config);
+    expect(added).toBe(1);
+    expect(skipped).toBe(1);
+  });
+
+  it("produces rows that persist as full entries (protocol, base URL, key; vision unset)", () => {
     const { rows } = buildImportedRows([], "mygw", ["m-x"], config);
     expect(rowToEntry(rows[0]!)).toEqual({
       provider: "mygw",
       modelId: "m-x",
       clientType: "openai-chat",
+      vision: false,
       baseUrl: "https://gw.example/v1",
       apiKey: "sk-g1",
     });
@@ -59,6 +84,7 @@ describe("buildImportedRows", () => {
       provider: "mygw",
       modelId: "m-x",
       clientType: "openai-chat",
+      vision: false,
       baseUrl: "https://gw.example/v1",
     });
   });

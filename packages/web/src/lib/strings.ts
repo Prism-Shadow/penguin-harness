@@ -526,9 +526,9 @@ export const zh = {
     groupImportNoProtocol: "未检测到兼容协议，请检查 base URL 与 API key",
     groupImportUnsupported: "该协议不支持列出模型，请手动添加",
     groupImportFailed: "获取模型列表失败",
-    groupImportEmpty: "端点未返回任何模型",
+    groupImportEmpty: "该端点没有可导入的模型",
     groupImported: (added: number, skipped: number): string =>
-      skipped > 0 ? `已导入 ${added} 个模型，跳过 ${skipped} 个重复条目` : `已导入 ${added} 个模型`,
+      skipped > 0 ? `已导入 ${added} 个模型，跳过 ${skipped} 个条目` : `已导入 ${added} 个模型`,
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",

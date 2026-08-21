@@ -560,10 +560,10 @@ export const en: Strings = {
     groupImportNoProtocol: "No compatible protocol detected — check the base URL and API key",
     groupImportUnsupported: "This protocol cannot list models — add them manually",
     groupImportFailed: "Fetching the model list failed",
-    groupImportEmpty: "The endpoint returned no models",
+    groupImportEmpty: "No models to import from this endpoint",
     groupImported: (added: number, skipped: number): string =>
       skipped > 0
-        ? `Imported ${added} models, skipped ${skipped} duplicates`
+        ? `Imported ${added} models, skipped ${skipped} entries`
         : `Imported ${added} models`,
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
