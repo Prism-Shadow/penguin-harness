@@ -171,6 +171,8 @@ export const zh = {
     /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
     clientDownloadReady: (v: string | null) =>
       v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
     /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
     clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
     clientInstallConfirmTitle: "重启并安装更新",

@@ -58,7 +58,11 @@ function settleWatch(): void {
       );
       break;
     default:
-      toastError(S.update.checkFailed);
+      toastError(
+        settle.message !== null
+          ? S.update.clientUpdateFailed(settle.message)
+          : S.update.checkFailed,
+      );
   }
 }
 

@@ -111,7 +111,13 @@ export type ClientCheckSettle =
   /** The check ran into a build already sitting on disk: point at the install step, not at a download. */
   | { kind: "ready"; version: string | null }
   | { kind: "unsupported"; reason: "dev" | "linux-not-appimage" | null }
-  | { kind: "failed" };
+  /**
+   * `message` is the shell's own failure text when there is one — an updater error is
+   * not always a failed check (a download that fails its sha512 or, on Windows, its
+   * Authenticode publisher check lands here too), so the generic "check failed" wording
+   * is only correct for the case with nothing to report: the watch timing out.
+   */
+  | { kind: "failed"; message: string | null };
 
 /** An armed check that saw no outcome for this long settles as failed (shell gone, frame lost). */
 export const CLIENT_CHECK_TIMEOUT_MS = 60_000;
@@ -132,11 +138,11 @@ export function clientCheckSettle(
   elapsedMs: number,
 ): ClientCheckSettle | null {
   const timedOut = elapsedMs >= CLIENT_CHECK_TIMEOUT_MS;
-  if (now === null) return timedOut ? { kind: "failed" } : null;
+  if (now === null) return timedOut ? { kind: "failed", message: null } : null;
   if (now.state === "checking") return null; // visibly in flight — the row spins
   const moved =
     now.seq !== undefined && atClickSeq !== null ? now.seq !== atClickSeq : elapsedMs >= 4_000;
-  if (!moved) return timedOut ? { kind: "failed" } : null;
+  if (!moved) return timedOut ? { kind: "failed", message: null } : null;
   switch (now.state) {
     case "up-to-date":
       return { kind: "up-to-date" };
@@ -147,9 +153,9 @@ export function clientCheckSettle(
     case "unsupported":
       return { kind: "unsupported", reason: now.reason ?? null };
     case "error":
-      return { kind: "failed" };
+      return { kind: "failed", message: now.message ?? null };
     // idle: the seq moved but no check began (shouldn't happen); only the timeout ends it.
     default:
-      return timedOut ? { kind: "failed" } : null;
+      return timedOut ? { kind: "failed", message: null } : null;
   }
 }

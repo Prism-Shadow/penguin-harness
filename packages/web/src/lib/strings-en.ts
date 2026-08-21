@@ -176,6 +176,8 @@ export const en: Strings = {
       v !== null
         ? `Version v${v} is ready — restart to install`
         : "The update is ready — restart to install",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
     /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
     clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
     clientInstallConfirmTitle: "Restart and install the update",

@@ -113,6 +113,7 @@ describe("clientCheckSettle", () => {
     });
     expect(clientCheckSettle(1, at("error", { seq: 3, message: "x" }), 3_000)).toEqual({
       kind: "failed",
+      message: "x",
     });
     expect(
       clientCheckSettle(1, at("downloading", { seq: 3, version: "0.3.0", percent: 1 }), 3_000),
@@ -133,13 +134,37 @@ describe("clientCheckSettle", () => {
     expect(clientCheckSettle(null, noSeq, 5_000)).toEqual({ kind: "up-to-date" });
   });
 
-  it("times out an armed check that never sees an outcome", () => {
-    expect(clientCheckSettle(1, null, CLIENT_CHECK_TIMEOUT_MS)).toEqual({ kind: "failed" });
+  it("times out an armed check that never sees an outcome, with nothing to report", () => {
+    expect(clientCheckSettle(1, null, CLIENT_CHECK_TIMEOUT_MS)).toEqual({
+      kind: "failed",
+      message: null,
+    });
     expect(clientCheckSettle(1, at("up-to-date", { seq: 1 }), CLIENT_CHECK_TIMEOUT_MS)).toEqual({
       kind: "failed",
+      message: null,
     });
     expect(clientCheckSettle(1, at("idle", { seq: 2 }), CLIENT_CHECK_TIMEOUT_MS)).toEqual({
       kind: "failed",
+      message: null,
+    });
+  });
+
+  it("keeps the shell's failure text when the updater reported one", () => {
+    // A download that fails its sha512, or (Windows) its Authenticode publisher check,
+    // arrives as `error` too — reporting it as a failed *check* would be wrong, and
+    // would flatten a signature rejection into a network hiccup.
+    const invalidSignature = at("error", {
+      seq: 9,
+      message: "New version 0.3.0 is not signed by the application owner",
+    });
+    expect(clientCheckSettle(1, invalidSignature, 3_000)).toEqual({
+      kind: "failed",
+      message: "New version 0.3.0 is not signed by the application owner",
+    });
+    // An `error` snapshot the shell left messageless still settles, with nothing to add.
+    expect(clientCheckSettle(1, at("error", { seq: 9 }), 3_000)).toEqual({
+      kind: "failed",
+      message: null,
     });
   });
 });
