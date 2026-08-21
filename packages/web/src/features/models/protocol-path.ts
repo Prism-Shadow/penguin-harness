@@ -1,7 +1,7 @@
 /**
  * Protocol-path suffix for the config dialog's base URL field: the path the AgentHub
  * client appends to a custom base URL, shown inside the field so the user knows which
- * endpoint shape the URL must serve. Verified against the vendored agenthub 0.4.5
+ * endpoint shape the URL must serve. Verified against the vendored agenthub 0.4.6
  * clients and the SDKs they construct:
  * - Anthropic direct (claude-* clients, `@anthropic-ai/sdk`): POST {base}/v1/messages —
  *   the SDK's default base URL (https://api.anthropic.com) carries no /v1; the request
@@ -15,10 +15,13 @@
  *   the SDK joins base URL + API version (v1beta) + the models path.
  * - MiniMax direct (minimax-m3 client): MiniMax's Responses API, POST {base}/responses
  *   (its default base URL https://api.minimax.io/v1 already ends in /v1).
+ * - DeepSeek direct (deepseek-v4 client): DeepSeek's Responses API, POST {base}/responses
+ *   (agenthub 0.4.6 moved this client off Chat Completions; its default base URL
+ *   https://api.deepseek.com carries no /v1, and the request path adds none).
  * - Every OpenAI Chat Completions compatible client — explicit
  *   `client_type: "openai-chat"` (gateways, custom and user-defined groups; the bare
- *   "openai" spelling is a deprecated pre-0.4.2 alias) plus the DeepSeek / GLM / Kimi
- *   direct clients — POST {base}/chat/completions.
+ *   "openai" spelling is a deprecated pre-0.4.2 alias) plus the GLM / Kimi direct
+ *   clients — POST {base}/chat/completions.
  *
  * The three generic protocol clients — `openai-responses`, `ant-messages`,
  * `openai-chat` — are also what the custom-model protocol detection stores.
@@ -46,7 +49,8 @@ export function protocolPathForModel(provider: string, clientType: string): stri
   if (t.includes("gemini")) return "/v1beta/models";
   if (t.includes("gpt")) return "/responses";
   if (t.includes("minimax")) return "/responses";
-  // Any other explicit client type (deepseek-v4 / glm-* / kimi-*): all speak chat completions.
+  if (t.includes("deepseek")) return "/responses";
+  // Any other explicit client type (glm-* / kimi-*): all speak chat completions.
   if (t !== "") return "/chat/completions";
   switch (provider) {
     case "anthropic":
@@ -54,6 +58,8 @@ export function protocolPathForModel(provider: string, clientType: string): stri
     case "openai":
       return "/responses";
     case "minimax":
+      return "/responses";
+    case "deepseek":
       return "/responses";
     case "google":
       return "/v1beta/models";

@@ -77,7 +77,7 @@ api_key = "sk-..."
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3、kimi-k3、qwen3.8-max 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。
+预置目录中的部分模型：deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(DeepSeek 分组中唯一支持图像输入的模型)、MiniMax-M3、gemini-3.7-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-5.6 / gpt-5.5、glm-5.3、kimi-k3、qwen3.8-max 等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的价格记录官方低谷时段档(高峰时段——北京时间 9:00–12:00、14:00–18:00——按双倍计费)。
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 
