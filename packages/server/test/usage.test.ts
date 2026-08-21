@@ -15,7 +15,7 @@ import { UsageRepo } from "../src/db/repos/usage.js";
 import { UsageService } from "../src/services/usage-service.js";
 import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
-import { formatLocalDate } from "../src/internal/dates.js";
+import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import type { DatabaseSync } from "node:sqlite";
 
 const CTX = {
@@ -490,6 +490,50 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
         granularity: "hour",
       }),
     ).rejects.toThrow(/granularity/);
+  });
+});
+
+describe("bucket enumeration across a DST transition", () => {
+  // The zero-fill skeleton and SQLite's `strftime(..., 'localtime')` must agree key for key.
+  // A fall-back replays a whole local hour, so two instants an hour apart share one key;
+  // the enumeration has to emit that key once, or one of the two points it feeds stays empty.
+  const realTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = "America/New_York";
+  });
+  afterEach(() => {
+    if (realTz === undefined) delete process.env.TZ;
+    else process.env.TZ = realTz;
+  });
+
+  /** 2026-11-01 01:00 EDT (UTC-4) — the hour after this one is replayed as EST (UTC-5). */
+  const foldStart = new Date(Date.UTC(2026, 10, 1, 5, 0));
+  const foldEnd = new Date(Date.UTC(2026, 10, 1, 7, 0)); // 02:00 EST, past the replay
+
+  it("minute keys over a replayed hour are unique and stay ascending", () => {
+    const keys = enumerateTsBuckets(foldStart, foldEnd, "minute");
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort()).toEqual(keys);
+    expect(keys.filter((k) => k === "2026-11-01T01:30")).toEqual(["2026-11-01T01:30"]);
+    expect(keys.at(0)).toBe("2026-11-01T01:00");
+    expect(keys.at(-1)).toBe("2026-11-01T02:00");
+  });
+
+  it("hour keys over the same window collapse the replayed hour to one bucket", () => {
+    expect(enumerateTsBuckets(foldStart, foldEnd, "hour")).toEqual([
+      "2026-11-01T01:00",
+      "2026-11-01T02:00",
+    ]);
+    // The date-driven path walks the same clock: a 25-hour local day still has 24 hour keys.
+    const day = enumerateBuckets("2026-11-01", "2026-11-01", "hour");
+    expect(new Set(day).size).toBe(day.length);
+    expect(day).toHaveLength(24);
+  });
+
+  it("a spring-forward day is short a key rather than inventing the hour that never happened", () => {
+    const day = enumerateBuckets("2026-03-08", "2026-03-08", "hour");
+    expect(day).toHaveLength(23);
+    expect(day).not.toContain("2026-03-08T02:00");
   });
 });
 

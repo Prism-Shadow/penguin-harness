@@ -201,12 +201,18 @@ export class UsageService {
       from: seriesFrom,
       to: seriesTo,
     });
-    const modelBucketRows = this.usage.seriesByModel(projectId, granularity, {
-      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
-      from: seriesFrom,
-      to: seriesTo,
-      ...ts,
-    });
+    // With no model filter set, dropping the model filter leaves exactly the
+    // query `seriesRows` already ran: reuse its rows instead of running the
+    // heaviest query on this route (bucket x model) a second time.
+    const modelFiltered = q.provider !== undefined || q.modelId !== undefined;
+    const modelBucketRows = modelFiltered
+      ? this.usage.seriesByModel(projectId, granularity, {
+          ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+          from: seriesFrom,
+          to: seriesTo,
+          ...ts,
+        })
+      : seriesRows;
     // Model success-rate chart: not affected by the model filter (shows all models), but still affected by the date + agent filter.
     const statusRows = this.usage.statusByModel(projectId, {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
@@ -407,8 +413,9 @@ export class UsageService {
    * enumerated bucket appears exactly once, in order, so line charts never
    * connect across a silent gap. A row whose key falls outside the skeleton
    * cannot happen for day/week/month (keys derive from the filtered date
-   * column) and is dropped defensively for hour (a ts recorded under a
-   * different clock than `date`).
+   * column) and is dropped defensively for minute/hour, whose keys come from
+   * `ts` and can therefore fall outside a skeleton built from `date` if a row
+   * was recorded under a different clock.
    */
   private foldSeries(
     keys: string[],

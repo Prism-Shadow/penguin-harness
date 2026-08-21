@@ -57,8 +57,12 @@ export function formatLocalMinuteKey(date: Date): string {
  * the zero-fill skeleton behind the "last hour" / "last 24 hours" trailing
  * windows, whose bounds are instants rather than calendar dates. The first key
  * is the window start floored to its unit; enumeration steps real timestamps
- * (DST-duplicated local times collapse to one key) and stops one key past
- * `cap`, mirroring enumerateBuckets.
+ * and stops one key past `cap`, mirroring enumerateBuckets.
+ *
+ * Keys are deduplicated because a DST fall-back replays a whole local hour:
+ * 01:30 happens twice, an hour apart, and both instants aggregate into the one
+ * key `strftime(..., 'localtime')` gives them. Emitting that key twice would
+ * hand the same bucket to two chart points and leave one of them empty.
  */
 export function enumerateTsBuckets(
   fromTs: Date,
@@ -73,9 +77,12 @@ export function enumerateTsBuckets(
   if (granularity === "hour") start.setMinutes(0);
   const stepMs = granularity === "hour" ? 3_600_000 : 60_000;
   const fmt = granularity === "hour" ? formatLocalHourKey : formatLocalMinuteKey;
+  const seen = new Set<string>();
   for (let t = start.getTime(); t <= toTs.getTime() && keys.length <= cap; t += stepMs) {
     const key = fmt(new Date(t));
-    if (keys[keys.length - 1] !== key) keys.push(key);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
   }
   return keys;
 }
@@ -99,7 +106,7 @@ export function localMonthKey(date: string): string {
  * as a point, or a line chart would silently connect across the gap).
  * `from > to` yields an empty list. Hour keys are enumerated by stepping real
  * timestamps (not a fixed 24 per day), so a DST-shifted day keeps the same keys
- * SQLite's `localtime` produces; duplicate fall-back hours collapse to one key.
+ * SQLite's `localtime` produces; a fall-back's replayed local hour is emitted once.
  * Enumeration stops one key past `cap`, so a caller rejecting oversized ranges
  * (`keys.length > cap`) never materializes an unbounded array first.
  */
@@ -115,9 +122,12 @@ export function enumerateBuckets(
   if (granularity === "hour") {
     const end = parseLocalDate(to);
     end.setHours(23);
+    const seen = new Set<string>();
     for (let t = parseLocalDate(from).getTime(); t <= end.getTime() && !full(); t += 3_600_000) {
       const key = formatLocalHourKey(new Date(t));
-      if (keys[keys.length - 1] !== key) keys.push(key);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      keys.push(key);
     }
     return keys;
   }
