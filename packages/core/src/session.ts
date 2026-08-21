@@ -740,6 +740,11 @@ export class Session {
     return this.environment.listBackgroundCommands?.() ?? [];
   }
 
+  /** Refreshes the listen-port probes behind `BackgroundCommandInfo.serviceUrl` (see EnvironmentInterface.probeBackgroundCommandServices). No-op for environments without it. */
+  async probeBackgroundCommandServices(): Promise<void> {
+    await this.environment.probeBackgroundCommandServices?.();
+  }
+
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;

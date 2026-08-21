@@ -189,7 +189,15 @@ export class Environment implements EnvironmentInterface {
       cwd: session.cwd,
       startedAt: session.startedAt,
       running: session.running,
+      ...(session.serviceUrl !== null ? { serviceUrl: session.serviceUrl } : {}),
     }));
+  }
+
+  /** Refreshes the listen-port probes behind serviceUrl (running sessions only; each internally TTL-cached and time-bounded — see EnvironmentInterface). */
+  async probeBackgroundCommandServices(): Promise<void> {
+    await Promise.all(
+      this.commandSessions.list().map(({ session }) => session.refreshServiceProbe()),
+    );
   }
 
   /** Kills one background command process (whole process group) and drops it from the registry; false when the id is unknown. */

@@ -1781,9 +1781,26 @@ export function ChatPage() {
                           <span className="block truncate font-mono text-xs" title={p.cmd}>
                             {p.cmd}
                           </span>
-                          <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                          <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
+                            {/* Detected service URL (output scan or port probe), running rows
+                                only — an exited process serves nothing to open. Scheme dropped
+                                at this size; the tooltip and the link carry the full URL. */}
+                            {p.running && p.serviceUrl !== undefined && (
+                              <>
+                                {" · "}
+                                <a
+                                  href={p.serviceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={p.serviceUrl}
+                                  className="text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-700 hover:decoration-gray-500 dark:text-gray-400 dark:decoration-gray-600 dark:hover:text-gray-200"
+                                >
+                                  {p.serviceUrl.replace(/^https?:\/\//i, "")}
+                                </a>
+                              </>
+                            )}
                           </span>
                         </span>
                         {p.running ? (

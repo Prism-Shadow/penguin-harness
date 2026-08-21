@@ -432,6 +432,13 @@ export interface BackgroundCommandInfo {
   cwd: string;
   startedAt: number;
   running: boolean;
+  /**
+   * The service the process serves, when one was detected: the last local URL its output
+   * printed (may carry a path), else `http://localhost:<port>` synthesized from a listen-port
+   * probe of its process group (refresh via `probeBackgroundCommandServices`). Absent when
+   * neither source has one.
+   */
+  serviceUrl?: string;
 }
 
 /**
@@ -453,6 +460,13 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
+   * sessions whose output printed no URL (TTL-cached and time-bounded per session; see
+   * command/port-probe.ts). Hosts call it before reading the list when they want probed
+   * URLs; the list itself stays synchronous. Optional, like listBackgroundCommands.
+   */
+  probeBackgroundCommandServices?(): Promise<void>;
   /**
    * Attaches the single listener for background-task completion reports (`run_in_background`
    * launches). Events fired before a listener exists are buffered and flushed on attach; after

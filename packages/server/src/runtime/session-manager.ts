@@ -149,6 +149,8 @@ export interface RuntimeSession {
   onBackgroundNotice?(listener: () => void): void;
   /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
   takeBackgroundNotices?(): OmniMessage[];
+  /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
+  probeBackgroundCommandServices?(): Promise<void>;
   /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
@@ -1128,6 +1130,16 @@ export class SessionManager {
    */
   listProcesses(sessionId: string): BackgroundCommandInfo[] {
     return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
+  }
+
+  /**
+   * Refreshes the listen-port probes behind the process list's `serviceUrl` (core
+   * `Session.probeBackgroundCommandServices`): called by the processes route before
+   * listing, so the first fetch already carries probed URLs. Bounded by core's own probe
+   * timeout and TTL; a session that isn't loaded has no processes to probe.
+   */
+  async probeProcessServices(sessionId: string): Promise<void> {
+    await this.entries.get(sessionId)?.session.probeBackgroundCommandServices?.();
   }
 
   /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
