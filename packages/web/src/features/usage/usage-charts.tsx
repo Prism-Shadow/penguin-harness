@@ -11,11 +11,22 @@
  * - TokenBarChart: per-bucket Token buckets as a three-segment stacked bar
  *   (bottom-to-top output → cacheWrite → cacheRead, same blue family, darkest
  *   at the bottom), with the cache hit rate as a dashed line **in front of the
- *   bars** on its own right-hand 0–100% axis — continuous: a bucket with no
- *   cache traffic counts as 0, never a gap. Bars always fit the card
+ *   bars** on its own right-hand 0–100% axis. Bars always fit the card
  *   (fitBarWidth) — the charts never scroll.
  * Cost reuses TrendChart (straight line + area fill, with a dot per point
  * wherever the cells are wide enough to keep the dots apart).
+ *
+ * Two kinds of x axis on one page, and the difference is deliberate. The
+ * requests charts draw every bucket in the selected range, because a bucket
+ * one entity was idle in is a bucket another one worked in. The Token and
+ * cost charts are handed a series whose empty buckets were already dropped
+ * (compactSeries), so they run left to right over only the intervals that
+ * recorded something — and they mark the skips on the axis, while the page
+ * captions them.
+ *
+ * Every data line is drawn at DATA_STROKE_W, and a bucket with no rate to
+ * show is drawn at NO_RATE_PLOT so the stroke stays continuous. Neither is a
+ * claim about the data: the hover table prints a dash there.
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
  * out the rest, and every chart offers the same three ways in: hover a column
@@ -41,13 +52,13 @@ import {
   PAD_R_AXIS,
   type TokenBucketKey,
 } from "./chart-geom";
-import { ChartFrame, LineHits, useChartWidth } from "./chart-svg";
+import { ChartFrame, DATA_STROKE_W, LineHits, useChartWidth } from "./chart-svg";
 import {
   bucketAxisLabel,
   bucketFullLabel,
   foldEntitySeries,
   hitRateValues,
-  idleBuckets,
+  plotRates,
   rateSeries,
   sumCounts,
   type EntityCounts,
@@ -57,6 +68,23 @@ import {
 /** Empty state for a chart card (defaults to "no usage records yet"; the errors chart passes its own copy). */
 export function Empty({ text }: { text?: string }) {
   return <p className="py-6 text-center text-xs text-gray-400">{text ?? S.usage.empty}</p>;
+}
+
+/**
+ * Caption under a chart whose x axis dropped the range's empty buckets: how
+ * many intervals are missing, and that this axis is therefore not the one the
+ * requests charts above it use. Two cards in one grid carrying different time
+ * axes look directly comparable, and this is what says they are not. It sits
+ * inside the chart rather than beside it, so a chart that ended up with
+ * nothing to draw does not caption its missing axis.
+ */
+export function AxisSkipNote({ skipped }: { skipped: number }) {
+  if (skipped <= 0) return null;
+  return (
+    <p className="mt-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+      {S.usage.skippedBuckets(skipped)}
+    </p>
+  );
 }
 
 /** Bucket name copy: S is a runtime live binding (switching language remounts the whole tree), so it must be read at render time and never cached at module scope. */
@@ -69,6 +97,17 @@ function bucketLabel(key: TokenBucketKey): string {
 /** Smallest multiple of 4 that covers the data (at least 4), so quartered gridlines land on integers. */
 function niceCountMax(...values: number[]): number {
   return Math.max(4, Math.ceil(Math.max(0, ...values) / 4) * 4);
+}
+
+/**
+ * A rate in the hover table. A real 0 prints `0%`; a bucket that had nothing
+ * to rate has no number at all and prints formatPercent's dash — the same
+ * dash the rest of the app uses for an undefined ratio. The 100 those buckets
+ * are *drawn* at (NO_RATE_PLOT) never reaches this table: the line is a shape,
+ * the table is the data.
+ */
+function rateCell(v: number | null | undefined): string {
+  return formatPercent(v == null ? null : v / 100);
 }
 
 /** Text/swatch classes for the i-th drawn entity (the folded tail wears the neutral). */
@@ -144,9 +183,10 @@ function RequestsLegend({
  * into a neutral tail labelled with how many it swallowed, so the chart never
  * implies the head is everything.
  *
- * A bucket an entity did nothing in plots 0, not a gap and not 100% — see
- * rateSeries. 0 therefore carries two meanings, so the bubble marks the ones
- * that mean "made no request" rather than "failed everything".
+ * A bucket an entity had nothing to rate in has no rate: the line crosses it
+ * at the top of the axis (NO_RATE_PLOT) so the stroke stays continuous, and
+ * the bubble's table prints a dash there — never a number the bucket does not
+ * have, and never the 0% that would read as "failed everything".
  *
  * Three ways to single out a series, all resolving to one RequestsMark: hover
  * a bar segment (that entity in that bucket), hover a rate line, or hover a
@@ -171,8 +211,10 @@ export function RequestsChart({
 
   const totals = sumCounts(drawn);
   const totalRate = rateSeries(totals);
+  // Two readings of the same rates: `rates` keeps the nulls for the table,
+  // `lines` gives every bucket a height so the strokes stay unbroken.
   const rates = drawn.map((e) => rateSeries(e));
-  const idle = drawn.map((e) => idleBuckets(e));
+  const lines = rates.map(plotRates);
   const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const barW = fitBarWidth(geom.step);
@@ -230,12 +272,8 @@ export function RequestsChart({
                     <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">
                       {e.requests[i] ?? 0}
                     </span>
-                    <span
-                      className={`min-w-10 pl-1.5 text-right tabular-nums ${
-                        idle[si]![i] ? "text-gray-400 dark:text-gray-500" : ""
-                      }`}
-                    >
-                      {formatPercent((rates[si]![i] ?? 0) / 100)}
+                    <span className="min-w-10 pl-1.5 text-right tabular-nums">
+                      {rateCell(rates[si]![i])}
                     </span>
                   </p>
                 ))}
@@ -247,13 +285,9 @@ export function RequestsChart({
                       {totals.requests[i] ?? 0}
                     </span>
                     <span className="min-w-10 pl-1.5 text-right tabular-nums">
-                      {formatPercent((totalRate[i] ?? 0) / 100)}
+                      {rateCell(totalRate[i])}
                     </span>
                   </p>
-                )}
-                {/* 0% reads two ways; say which one this bucket means rather than leaving the reader to infer it from the count beside it. */}
-                {idle.some((flags) => flags[i]) && (
-                  <p className="pt-0.5 text-[10px] text-gray-400">{S.usage.rateIdleNote}</p>
                 )}
               </>
             )}
@@ -298,7 +332,7 @@ export function RequestsChart({
                 <LineHits
                   key={`line-${e.label}:${si}`}
                   geom={rateGeom}
-                  values={rates[si]!}
+                  values={lines[si]!}
                   onEnter={(i) => {
                     setHover(i);
                     setMark({ entity: si, bucket: null });
@@ -330,10 +364,10 @@ export function RequestsChart({
             {drawn.map((e, si) => (
               <path
                 key={`rate-${e.label}:${si}`}
-                d={linePath(rateGeom, rates[si]!)}
+                d={linePath(rateGeom, lines[si]!)}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth={1.5}
+                strokeWidth={DATA_STROKE_W}
                 strokeDasharray="4 3"
                 className={`${entityColor(e, si).text} pointer-events-none transition-opacity duration-150`}
                 opacity={lineLit(si) ? 1 : 0.15}
@@ -371,11 +405,15 @@ const HIT_RATE_SWATCH = "bg-amber-500 dark:bg-amber-600";
  * shared coordinate system and grid), bottom-to-top output → cacheWrite →
  * cacheRead, with the cache hit rate drawn as a dashed line **in front of the
  * bars** on its own right-hand 0–100% axis (same x positions — the two geoms
- * share n / w / padR). The line is continuous: a bucket with no cache traffic
- * counts as 0.
+ * share n / w / padR). A bucket with no cache traffic has no hit rate: the
+ * line crosses it at NO_RATE_PLOT rather than dipping to a 0% it did not
+ * measure, and the bubble prints a dash for it.
  *
- * Bars always fit the card: fitBarWidth caps them at 25px and shrinks them
- * with the cell so the chart never scrolls horizontally.
+ * The series arrives with its empty buckets already dropped (compactSeries),
+ * so the bars run left to right over only the intervals that recorded
+ * something; `breaks` is where the axis skipped one. Bars always fit the
+ * card: fitBarWidth caps them at 25px and shrinks them with the cell so the
+ * chart never scrolls horizontally.
  *
  * Hovering anywhere in a column shows the whole bucket's bubble — all three
  * Token counts plus the hit rate; hovering a segment's own rect additionally
@@ -390,11 +428,17 @@ export function TokenBarChart({
   series,
   granularity,
   legend,
+  breaks,
+  skipped = 0,
 }: {
   series: UsageSeriesPoint[];
   granularity: UsageGranularity;
   /** The legend item currently hovered (highlights matching segments / the curve); null = none. */
   legend?: TokenLegendKey | null;
+  /** Indices after which the series skipped at least one empty bucket (see compactSeries): ChartFrame marks the axis there. */
+  breaks?: number[];
+  /** How many empty buckets the caller dropped, for the caption under the chart. */
+  skipped?: number;
 }) {
   const [hover, setHover] = useState<SegHover | null>(null);
   const [ref, width] = useChartWidth();
@@ -407,7 +451,10 @@ export function TokenBarChart({
   const barW = fitBarWidth(geom.step);
   const buckets = series.map((p) => p.bucket);
   const segs = series.map((p) => barSegments(geom, p));
+  // As in the requests charts: `rates` keeps the nulls for the bubble, `line`
+  // gives every bucket a height so the curve stays unbroken.
   const rates = hitRateValues(series);
+  const line = plotRates(rates);
 
   // Highlight = fade out the rest: segment-level hover leaves only "that bucket's that segment" (column-level hover highlights nothing), legend hover leaves all segments of the matching bucket (or the curve alone).
   const dimmed = (i: number, key: TokenBucketKey) =>
@@ -431,128 +478,132 @@ export function TokenBarChart({
   return (
     <div ref={ref}>
       {width > 0 && (
-        <ChartFrame
-          geom={geom}
-          fmtY={(v) => humanizeTokens(Math.round(v))}
-          dates={buckets}
-          fmtX={(b) => bucketAxisLabel(granularity, b)}
-          hover={hover?.i ?? null}
-          labels={autoLabelIdx(series.length, geom.step)}
-          // The bar itself indicates x position: no hover vertical line spanning the whole chart.
-          hoverLine={false}
-          rightAxis={{ y: rateGeom.y, ticks: [0, 50, 100], fmt: (v) => `${v}%` }}
-          // Hits go through hitLayer below; ChartFrame only calls back when the mouse leaves the whole chart (i=null).
-          onHover={(i) => {
-            if (i === null) setHover(null);
-          }}
-          bubble={(i) => {
-            const p = series[i]!;
-            const key = hover?.key ?? null;
-            const sq = (color: string) => (
-              <span
-                className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
-                style={{ backgroundColor: color }}
-              />
-            );
-            return (
-              <>
-                <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
-                {(["cacheRead", "cacheWrite", "output"] as const).map((k) =>
-                  bubbleRow(sq(TOKEN_COLORS[k]), bucketLabel(k), humanizeTokens(p[k]), key === k),
-                )}
-                {bubbleRow(
-                  <span
-                    className={`inline-block h-0.5 w-2 shrink-0 rounded-sm ${HIT_RATE_SWATCH}`}
-                  />,
-                  S.usage.legendHitRate,
-                  formatPercent((rates[i] ?? 0) / 100),
-                  key === "hitRate",
-                )}
-              </>
-            );
-          }}
-          hitLayer={[
-            // Column-level hits first (underneath): anywhere in the column — the empty
-            // space and the curve included — reports the whole bucket's bubble.
-            ...series.map((p, i) => (
-              <rect
-                key={`col-${p.bucket}`}
-                x={geom.x(i) - geom.step / 2}
-                y={0}
-                width={geom.step}
-                height={geom.y(0)}
-                fill="transparent"
-                className="cursor-crosshair"
-                onMouseEnter={() => setHover({ i, key: null })}
-              />
-            )),
-            // Per-segment hits on top: the hit band is as wide as the bar horizontally,
-            // split by segment vertically with no overlap (small segments raised to the
-            // minimum hit height, see hitHeights). Leaving a segment falls back to the
-            // column hit underneath, so the bubble never flickers off inside the chart.
-            ...series.map((p, i) =>
-              segs[i]!.map((s) => (
+        <>
+          <ChartFrame
+            geom={geom}
+            fmtY={(v) => humanizeTokens(Math.round(v))}
+            dates={buckets}
+            fmtX={(b) => bucketAxisLabel(granularity, b)}
+            hover={hover?.i ?? null}
+            labels={autoLabelIdx(series.length, geom.step)}
+            // The bar itself indicates x position: no hover vertical line spanning the whole chart.
+            hoverLine={false}
+            rightAxis={{ y: rateGeom.y, ticks: [0, 50, 100], fmt: (v) => `${v}%` }}
+            axisBreaks={breaks}
+            // Hits go through hitLayer below; ChartFrame only calls back when the mouse leaves the whole chart (i=null).
+            onHover={(i) => {
+              if (i === null) setHover(null);
+            }}
+            bubble={(i) => {
+              const p = series[i]!;
+              const key = hover?.key ?? null;
+              const sq = (color: string) => (
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-[2px]"
+                  style={{ backgroundColor: color }}
+                />
+              );
+              return (
+                <>
+                  <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
+                  {(["cacheRead", "cacheWrite", "output"] as const).map((k) =>
+                    bubbleRow(sq(TOKEN_COLORS[k]), bucketLabel(k), humanizeTokens(p[k]), key === k),
+                  )}
+                  {bubbleRow(
+                    <span
+                      className={`inline-block h-0.5 w-2 shrink-0 rounded-sm ${HIT_RATE_SWATCH}`}
+                    />,
+                    S.usage.legendHitRate,
+                    rateCell(rates[i]),
+                    key === "hitRate",
+                  )}
+                </>
+              );
+            }}
+            hitLayer={[
+              // Column-level hits first (underneath): anywhere in the column — the empty
+              // space and the curve included — reports the whole bucket's bubble.
+              ...series.map((p, i) => (
                 <rect
-                  key={`hit-${p.bucket}-${s.key}`}
-                  x={geom.x(i) - barW / 2}
-                  y={s.hitY}
-                  width={barW}
-                  height={s.hitH}
+                  key={`col-${p.bucket}`}
+                  x={geom.x(i) - geom.step / 2}
+                  y={0}
+                  width={geom.step}
+                  height={geom.y(0)}
                   fill="transparent"
-                  className="cursor-pointer"
-                  onMouseEnter={() => setHover({ i, key: s.key })}
-                  onMouseLeave={() =>
-                    setHover((h) => (h?.i === i && h.key === s.key ? { i, key: null } : h))
-                  }
+                  className="cursor-crosshair"
+                  onMouseEnter={() => setHover({ i, key: null })}
                 />
               )),
-            ),
-            // The hit-rate curve last, so it answers the pointer where it crosses a bar.
-            <LineHits
-              key="hit-rate-line"
-              geom={rateGeom}
-              values={rates}
-              onEnter={(i) => setHover({ i, key: "hitRate" })}
-            />,
-          ]}
-        >
-          {series.map((p, i) =>
-            segs[i]!.map((s) => (
-              <rect
-                key={`${p.bucket}-${s.key}`}
-                x={geom.x(i) - barW / 2}
-                y={s.y}
-                width={barW}
-                height={s.h}
-                fill={TOKEN_COLORS[s.key]}
-                className="transition-opacity duration-150"
-                opacity={dimmed(i, s.key) ? 0.2 : 1}
-              />
-            )),
-          )}
-          {/* Cache-hit-rate curve, dashed, in front of the bars on the right-hand 0–100% scale.
-              pointer-events-none: the column/segment hit rects stay hoverable through it. */}
-          <g
-            className={`${HIT_RATE_TEXT} pointer-events-none transition-opacity duration-150`}
-            opacity={curveDim ? 0.3 : 1}
+              // Per-segment hits on top: the hit band is as wide as the bar horizontally,
+              // split by segment vertically with no overlap (small segments raised to the
+              // minimum hit height, see hitHeights). Leaving a segment falls back to the
+              // column hit underneath, so the bubble never flickers off inside the chart.
+              ...series.map((p, i) =>
+                segs[i]!.map((s) => (
+                  <rect
+                    key={`hit-${p.bucket}-${s.key}`}
+                    x={geom.x(i) - barW / 2}
+                    y={s.hitY}
+                    width={barW}
+                    height={s.hitH}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onMouseEnter={() => setHover({ i, key: s.key })}
+                    onMouseLeave={() =>
+                      setHover((h) => (h?.i === i && h.key === s.key ? { i, key: null } : h))
+                    }
+                  />
+                )),
+              ),
+              // The hit-rate curve last, so it answers the pointer where it crosses a bar.
+              <LineHits
+                key="hit-rate-line"
+                geom={rateGeom}
+                values={line}
+                onEnter={(i) => setHover({ i, key: "hitRate" })}
+              />,
+            ]}
           >
-            <path
-              d={linePath(rateGeom, rates)}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeDasharray="5 4"
-            />
-            {hover !== null && (
-              <circle
-                cx={rateGeom.x(hover.i)}
-                cy={rateGeom.y(rates[hover.i] ?? 0)}
-                r={2.5}
-                className="fill-current"
-              />
+            {series.map((p, i) =>
+              segs[i]!.map((s) => (
+                <rect
+                  key={`${p.bucket}-${s.key}`}
+                  x={geom.x(i) - barW / 2}
+                  y={s.y}
+                  width={barW}
+                  height={s.h}
+                  fill={TOKEN_COLORS[s.key]}
+                  className="transition-opacity duration-150"
+                  opacity={dimmed(i, s.key) ? 0.2 : 1}
+                />
+              )),
             )}
-          </g>
-        </ChartFrame>
+            {/* Cache-hit-rate curve, dashed, in front of the bars on the right-hand 0–100% scale.
+              pointer-events-none: the column/segment hit rects stay hoverable through it. */}
+            <g
+              className={`${HIT_RATE_TEXT} pointer-events-none transition-opacity duration-150`}
+              opacity={curveDim ? 0.3 : 1}
+            >
+              <path
+                d={linePath(rateGeom, line)}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={DATA_STROKE_W}
+                strokeDasharray="5 4"
+              />
+              {hover !== null && (
+                <circle
+                  cx={rateGeom.x(hover.i)}
+                  cy={rateGeom.y(line[hover.i] ?? 0)}
+                  r={2.5}
+                  className="fill-current"
+                />
+              )}
+            </g>
+          </ChartFrame>
+          <AxisSkipNote skipped={skipped} />
+        </>
       )}
     </div>
   );

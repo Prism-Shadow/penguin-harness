@@ -23,6 +23,10 @@
  * necessary x-position indicator, while on the bar chart the bar itself
  * already indicates the x position — an extra vertical line would just be
  * noise, so the bar chart passes hoverLine={false} to turn it off.
+ *
+ * A chart whose caller dropped the empty buckets passes axisBreaks: the x
+ * axis then covers unequal spans of time, and the "//" mark between two
+ * points is what keeps it from being read as a continuous one.
  */
 import {
   useEffect,
@@ -41,8 +45,20 @@ import {
   type ChartGeom,
 } from "./chart-geom";
 
-/** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 1.5–2px stroke is too thin to aim at. */
+/** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
 export const LINE_HIT_H = 10;
+
+/**
+ * Stroke width of every data line on the page — the cost line, the
+ * success-rate lines, the cache-hit-rate curve. One weight for all of them,
+ * so no line reads as more important than another just because it was written
+ * later. Chrome (grid lines, the hover indicator, axis-break marks) stays at
+ * 1 and is deliberately not this.
+ */
+export const DATA_STROKE_W = 2;
+
+/** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
+const AXIS_BREAK_MIN_STEP = 8;
 
 /**
  * Hover bands for a line series, one per bucket: a transparent rect the width
@@ -119,6 +135,7 @@ export function ChartFrame({
   yTicks,
   rightAxis,
   hoverLine = true,
+  axisBreaks,
   children,
 }: {
   geom: ChartGeom;
@@ -144,6 +161,8 @@ export function ChartFrame({
   rightAxis?: { y: (v: number) => number; ticks: number[]; fmt: (v: number) => string };
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
+  /** Indices after which the x axis skips at least one interval (the cost and Token charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
+  axisBreaks?: number[];
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
@@ -276,6 +295,34 @@ export function ChartFrame({
 
         {/* Data marks (provided by the caller) */}
         {children}
+
+        {/* Axis breaks: the "//" that says the two points either side of it are
+            not neighbours in time. Drawn over the marks (the cost chart's area
+            fill reaches the baseline) but never hoverable — the hit layer below
+            owns the pointer. */}
+        {step >= AXIS_BREAK_MIN_STEP &&
+          axisBreaks?.map((i) =>
+            i + 1 < geom.n ? (
+              <g
+                key={`break-${i}`}
+                className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
+                strokeWidth={1}
+              >
+                {[-2, 2].map((dx) => {
+                  const cx = (x(i) + x(i + 1)) / 2 + dx / 2;
+                  return (
+                    <line
+                      key={dx}
+                      x1={cx - 2}
+                      y1={PAD_T + innerH + 3}
+                      x2={cx + 2}
+                      y2={PAD_T + innerH - 3}
+                    />
+                  );
+                })}
+              </g>
+            ) : null,
+          )}
 
         {/* x-axis dates */}
         {labelIdx.map((i) => {

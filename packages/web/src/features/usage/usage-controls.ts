@@ -1,7 +1,9 @@
 /**
  * Pure helpers behind the cost center's global controls (date-range presets +
- * time-series precision) and the per-entity series shaping the requests charts
- * draw — no React, unit-tested in test/usage-controls.test.ts.
+ * time-series precision) and the series shaping the charts draw — the
+ * per-entity counts the requests charts stack, the rate values their lines
+ * follow, and the empty-bucket compaction the cost and Token charts apply.
+ * No React, unit-tested in test/usage-controls.test.ts.
  *
  * The range picks the precision; there is no separate control for it. The
  * trailing "last hour" window is the only thing that reaches minute buckets (a
@@ -156,23 +158,81 @@ export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "
 }
 
 /**
- * Per-bucket success rate in percent. A bucket with nothing to rate
- * (denominator 0 — the entity was idle, or every request was aborted) reads
- * **0**, so the line stays continuous and never leaves a hole a reader has to
- * interpret. It is deliberately not 100: an interval an entity never ran in
- * has not earned a perfect record. Because 0 therefore means two different
- * things, the hover text names which one — see idleBuckets.
+ * Per-bucket success rate in percent, or **null where there is nothing to
+ * rate** (denominator 0 — the entity was idle, or every request it made was
+ * aborted). Null is not a number the reader may be shown: the hover table
+ * prints a dash for it, and plotRates below turns it into a drawing height so
+ * the line still crosses the interval.
  */
-export function rateSeries(counts: Pick<EntityCounts, "completed" | "denominator">): number[] {
-  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : 0));
+export function rateSeries(
+  counts: Pick<EntityCounts, "completed" | "denominator">,
+): (number | null)[] {
+  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : null));
 }
 
-/** Buckets where a rate of 0 means "nothing was rated here" rather than "everything failed" (denominator 0). */
-export function idleBuckets(counts: Pick<EntityCounts, "denominator">): boolean[] {
-  return counts.denominator.map((d) => d === 0);
+/** Per-bucket cache hit rate in percent, null where the bucket had no cache traffic at all — the same "no rate here" as a success rate with an empty denominator. */
+export function hitRateValues(series: readonly UsageSeriesPoint[]): (number | null)[] {
+  return series.map((p) => {
+    const rate = cacheHitRate(p.cacheRead, p.cacheWrite);
+    return rate === null ? null : rate * 100;
+  });
 }
 
-/** Per-bucket cache hit rate in percent; a bucket with no cache traffic counts as 0 — the curve runs continuously instead of leaving gaps. */
-export function hitRateValues(series: UsageSeriesPoint[]): number[] {
-  return series.map((p) => (cacheHitRate(p.cacheRead, p.cacheWrite) ?? 0) * 100);
+/**
+ * The height a rate line is drawn at across a bucket that has no rate. The
+ * stroke has to cross the interval at *some* height — a hole reads as a claim
+ * of its own, and so does dropping to the floor, which is where "made
+ * requests and failed every one" lives. The top of the axis is the one height
+ * that invents no failure.
+ *
+ * It is a drawing choice and nothing more: the hover table prints a dash for
+ * the same bucket, so the number the reader takes away is never this 100.
+ */
+export const NO_RATE_PLOT = 100;
+
+/** Drawing values for a rate line: every bucket gets a height, the ones with no rate at NO_RATE_PLOT. */
+export function plotRates(values: readonly (number | null)[]): number[] {
+  return values.map((v) => v ?? NO_RATE_PLOT);
+}
+
+/** A time series with its empty buckets dropped, and what dropping them did to the x axis. */
+export interface CompactSeries {
+  /** The buckets that recorded something, in order. */
+  points: UsageSeriesPoint[];
+  /** Indices in `points` after which at least one bucket was dropped — where the axis jumps in time. */
+  breaks: number[];
+  /** How many buckets were dropped. */
+  skipped: number;
+}
+
+/**
+ * Drop the buckets that recorded nothing. The survivors are handed to
+ * makeGeom as the entire series, so the coordinate system spreads them evenly
+ * over the plot area on its own: one point sits in the middle of the card,
+ * two at a quarter and three quarters, and the divisions subdivide as points
+ * are added. Left to right, only what happened — the shape the cost and Token
+ * charts had before the range control existed.
+ *
+ * What it costs is an x axis that is no longer the selected range's: it skips
+ * intervals, and it no longer matches the requests charts, which keep every
+ * bucket in the range. `breaks` and `skipped` are how the charts say so.
+ */
+export function compactSeries(series: readonly UsageSeriesPoint[]): CompactSeries {
+  const points: UsageSeriesPoint[] = [];
+  const breaks: number[] = [];
+  let dropping = false;
+  for (const p of series) {
+    // Nothing was recorded in this bucket: no request, and no tokens either
+    // (a request that spent nothing is still a request, and keeps its bucket).
+    if (p.requests === 0 && p.total === 0) {
+      dropping = true;
+      continue;
+    }
+    // A break belongs *between* two drawn points; buckets dropped before the
+    // first one (or after the last) shorten the axis without breaking it.
+    if (dropping && points.length > 0) breaks.push(points.length - 1);
+    dropping = false;
+    points.push(p);
+  }
+  return { points, breaks, skipped: series.length - points.length };
 }

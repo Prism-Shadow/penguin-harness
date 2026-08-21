@@ -8,30 +8,47 @@
  *
  * Canvas width = the container's measured pixels (1 unit = 1 pixel, see
  * chart-svg): the chart simply fills the container and never scrolls
- * horizontally. An unpriced or empty bucket reads as 0, not a dash.
+ * horizontally.
+ *
+ * The caller hands over a series whose empty buckets have already been
+ * dropped (usage-controls' compactSeries), so the points sit left to right
+ * over only the intervals that recorded something and the geometry spreads
+ * them across the card. A bucket that ran but has no priced model still
+ * counts: it reads as a cost of 0, not a dash. `breaks` marks where the axis
+ * skipped an interval.
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { formatMoney } from "../../lib/format";
 import type { Currency } from "../../state/theme";
 import { makeGeom, linePath, areaPath } from "./chart-geom";
+import { ChartFrame, DATA_STROKE_W, useChartWidth } from "./chart-svg";
+import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
+import { AxisSkipNote, Empty } from "./usage-charts";
 
 /** Cell width (CSS pixels) below which per-point dots stop being drawn: 2.5px radius plus breathing room. */
 const MIN_DOT_STEP = 8;
-import { ChartFrame, useChartWidth } from "./chart-svg";
-import { bucketAxisLabel, bucketFullLabel } from "./usage-controls";
 
 export function TrendChart({
   series,
   granularity,
   currency = "USD",
+  breaks,
+  skipped = 0,
 }: {
   series: UsageSeriesPoint[];
   granularity: UsageGranularity;
   currency?: Currency;
+  /** Indices after which the series skipped at least one empty bucket (see compactSeries): ChartFrame marks the axis there. */
+  breaks?: number[];
+  /** How many empty buckets the caller dropped, for the caption under the chart. */
+  skipped?: number;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [ref, width] = useChartWidth();
+  // Nothing was recorded anywhere in the range: an empty grid would read as a
+  // flat zero cost, so say there is nothing rather than draw nothing.
+  if (series.length === 0) return <Empty />;
 
   const cost = series.map((p) => p.cost ?? 0);
   const max = Math.max(1e-9, ...cost);
@@ -46,59 +63,63 @@ export function TrendChart({
   return (
     <div ref={ref}>
       {width > 0 && (
-        <ChartFrame
-          geom={geom}
-          fmtY={(v) => formatMoney(v, currency)}
-          dates={buckets}
-          fmtX={(b) => bucketAxisLabel(granularity, b)}
-          hover={hover}
-          onHover={setHover}
-          bubble={(i) => {
-            const p = series[i]!;
-            return (
-              <>
-                <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
-                <p className="font-mono">{formatMoney(p.cost ?? 0, currency)}</p>
-              </>
-            );
-          }}
-        >
-          <g>
-            {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
-            <path
-              d={areaPath(geom, cost)}
-              className="fill-current"
-              stroke="none"
-              opacity={hover !== null ? 0.06 : 0.1}
-            />
-            <path
-              d={linePath(geom, cost)}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              opacity={hover !== null ? 0.35 : 1}
-            />
-            {everyDot &&
-              series.map((p, i) => (
-                <circle
-                  key={p.bucket}
-                  cx={geom.x(i)}
-                  cy={geom.y(cost[i] ?? 0)}
-                  r={hover === i ? 4 : 2.5}
-                  className="fill-current"
-                  opacity={hover !== null && hover !== i ? 0.25 : 1}
-                />
-              ))}
-            {!everyDot && hover !== null && (
-              <circle
-                cx={geom.x(hover)}
-                cy={geom.y(cost[hover] ?? 0)}
-                r={4}
+        <>
+          <ChartFrame
+            geom={geom}
+            fmtY={(v) => formatMoney(v, currency)}
+            dates={buckets}
+            fmtX={(b) => bucketAxisLabel(granularity, b)}
+            hover={hover}
+            onHover={setHover}
+            axisBreaks={breaks}
+            bubble={(i) => {
+              const p = series[i]!;
+              return (
+                <>
+                  <p className="text-gray-400">{bucketFullLabel(granularity, p.bucket)}</p>
+                  <p className="font-mono">{formatMoney(p.cost ?? 0, currency)}</p>
+                </>
+              );
+            }}
+          >
+            <g>
+              {/* Area fill: the line closes down to the baseline, low opacity reinforces the trend's sense of "volume" */}
+              <path
+                d={areaPath(geom, cost)}
                 className="fill-current"
+                stroke="none"
+                opacity={hover !== null ? 0.06 : 0.1}
               />
-            )}
-          </g>
-        </ChartFrame>
+              <path
+                d={linePath(geom, cost)}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={DATA_STROKE_W}
+                opacity={hover !== null ? 0.35 : 1}
+              />
+              {everyDot &&
+                series.map((p, i) => (
+                  <circle
+                    key={p.bucket}
+                    cx={geom.x(i)}
+                    cy={geom.y(cost[i] ?? 0)}
+                    r={hover === i ? 4 : 2.5}
+                    className="fill-current"
+                    opacity={hover !== null && hover !== i ? 0.25 : 1}
+                  />
+                ))}
+              {!everyDot && hover !== null && (
+                <circle
+                  cx={geom.x(hover)}
+                  cy={geom.y(cost[hover] ?? 0)}
+                  r={4}
+                  className="fill-current"
+                />
+              )}
+            </g>
+          </ChartFrame>
+          <AxisSkipNote skipped={skipped} />
+        </>
       )}
     </div>
   );

@@ -14,6 +14,16 @@
  * always fit their card — nothing scrolls; below them is a full-width
  * "errors" panel (stats + a paged errors table). Currency follows the user's
  * settings.
+ *
+ * The two rows do not share an x axis, and the page is where that is owned.
+ * The requests charts draw every bucket in the range — an interval one entity
+ * skipped is an interval another one worked in, so dropping it would erase
+ * real data. The Token and cost charts draw only the buckets that recorded
+ * something, packed left to right: that is what those two showed before the
+ * range control existed, and an unbroken run of empty days is noise in a
+ * total, not a shape. Both are handed **one** compacted series (compactSeries
+ * runs once, here) so they at least agree with each other; each chart marks
+ * the skips on its own axis and captions how many intervals are missing.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -32,6 +42,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
+  compactSeries,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
@@ -226,6 +237,11 @@ export function UsagePage() {
     completed: s.completed,
     denominator: s.denominator,
   }));
+
+  // One compaction for the Token and cost charts (see the file header): both
+  // draw the same buckets and the same axis, or they would be as misleading
+  // against each other as against the requests charts.
+  const plotted = compactSeries(data?.series ?? []);
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -358,13 +374,21 @@ export function UsagePage() {
               extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}
             >
               <TokenBarChart
-                series={data.series}
+                series={plotted.points}
                 granularity={data.granularity}
                 legend={tokenBucket}
+                breaks={plotted.breaks}
+                skipped={plotted.skipped}
               />
             </ChartCard>
             <ChartCard title={S.usage.chartCostTrend}>
-              <TrendChart series={data.series} granularity={data.granularity} currency={currency} />
+              <TrendChart
+                series={plotted.points}
+                granularity={data.granularity}
+                currency={currency}
+                breaks={plotted.breaks}
+                skipped={plotted.skipped}
+              />
             </ChartCard>
           </div>
         ) : (

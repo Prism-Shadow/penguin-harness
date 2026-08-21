@@ -4,20 +4,23 @@
  * derives (there is no precision control) and the bucket counts that keeps
  * inside the server's cap, bucket-key labels, entity
  * folding for the requests chart's stacked bars (top entities + a neutral
- * counted tail), and the per-bucket success / cache-hit rate values the lines
- * draw.
+ * counted tail), the per-bucket success / cache-hit rates (a bucket with
+ * nothing to rate has no rate, and is only given a height when a line has to
+ * cross it), and the empty-bucket compaction the cost and Token charts draw over.
  */
 import { describe, expect, it } from "vitest";
 import type { UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import {
   bucketAxisLabel,
   bucketFullLabel,
+  compactSeries,
   defaultGranularity,
   foldEntitySeries,
   hitRateValues,
-  idleBuckets,
   isoDate,
   MAX_NAMED_SERIES,
+  NO_RATE_PLOT,
+  plotRates,
   presetDefaultGranularity,
   presetRange,
   presetTsWindow,
@@ -245,20 +248,85 @@ describe("rate values", () => {
     expect(rateSeries({ completed: [3, 1, 0], denominator: [4, 1, 2] })).toEqual([75, 100, 0]);
   });
 
-  it("a bucket with nothing rated plots 0 — not a gap, and emphatically not 100%", () => {
-    expect(rateSeries({ completed: [0, 2, 0], denominator: [0, 2, 0] })).toEqual([0, 100, 0]);
-    // 0 therefore means two things; idleBuckets is what lets the hover text say which.
-    expect(idleBuckets({ denominator: [0, 2, 0] })).toEqual([true, false, true]);
-    expect(idleBuckets({ denominator: [1, 0] })).toEqual([false, true]);
+  it("a bucket with nothing to rate has no rate at all — null, which is neither the 0 of 'failed everything' nor a number the table may print", () => {
+    expect(rateSeries({ completed: [0, 2, 0], denominator: [0, 2, 0] })).toEqual([null, 100, null]);
+    // A real 0 survives as 0: requests were made and every one of them failed.
+    expect(rateSeries({ completed: [0], denominator: [3] })).toEqual([0]);
   });
 
-  it("cache hit rate is percent of read/(read+write); no cache traffic counts as 0 so the curve runs continuously", () => {
+  it("cache hit rate is percent of read/(read+write); a bucket with no cache traffic has no rate either", () => {
     expect(
       hitRateValues([
         point({ cacheRead: 3, cacheWrite: 1 }),
         point({}),
         point({ cacheRead: 0, cacheWrite: 5 }),
       ]),
-    ).toEqual([75, 0, 0]);
+    ).toEqual([75, null, 0]);
+  });
+
+  it("plotRates gives every bucket a height so the stroke stays continuous, absent rates at the top of the axis", () => {
+    expect(NO_RATE_PLOT).toBe(100);
+    expect(plotRates([75, null, 0])).toEqual([75, NO_RATE_PLOT, 0]);
+    // Drawing at 100 and reading 0 are different questions: a rated 0 is not lifted.
+    expect(plotRates(rateSeries({ completed: [0, 0], denominator: [0, 4] }))).toEqual([
+      NO_RATE_PLOT,
+      0,
+    ]);
+  });
+});
+
+describe("compactSeries", () => {
+  const at = (bucket: string, over: Partial<UsageSeriesPoint> = {}) =>
+    point({ bucket, requests: 1, total: 10, ...over });
+
+  it("drops the buckets that recorded nothing and keeps the rest in order", () => {
+    const c = compactSeries([at("d1"), point({ bucket: "d2" }), at("d3")]);
+    expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d3"]);
+    expect(c.skipped).toBe(1);
+  });
+
+  it("a request that spent no tokens keeps its bucket; only a bucket with neither is empty", () => {
+    const c = compactSeries([
+      point({ bucket: "d1", requests: 1, total: 0 }),
+      point({ bucket: "d2", requests: 0, total: 5 }),
+      point({ bucket: "d3" }),
+    ]);
+    expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d2"]);
+    expect(c.skipped).toBe(1);
+  });
+
+  it("breaks mark the drawn point each skip follows, however many buckets it swallowed", () => {
+    const c = compactSeries([
+      at("d1"),
+      point({ bucket: "d2" }),
+      point({ bucket: "d3" }),
+      at("d4"),
+      at("d5"),
+      point({ bucket: "d6" }),
+      at("d7"),
+    ]);
+    expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d4", "d5", "d7"]);
+    expect(c.breaks).toEqual([0, 2]);
+    expect(c.skipped).toBe(3);
+  });
+
+  it("empty buckets before the first point or after the last shorten the axis without breaking it", () => {
+    const c = compactSeries([point({ bucket: "d1" }), at("d2"), point({ bucket: "d3" })]);
+    expect(c.points.map((p) => p.bucket)).toEqual(["d2"]);
+    expect(c.breaks).toEqual([]);
+    expect(c.skipped).toBe(2);
+  });
+
+  it("a range that recorded nothing compacts to nothing (the charts show their empty state, not a flat zero line)", () => {
+    expect(compactSeries([point({}), point({})])).toEqual({ points: [], breaks: [], skipped: 2 });
+    expect(compactSeries([])).toEqual({ points: [], breaks: [], skipped: 0 });
+  });
+
+  it("nothing to drop leaves the series and its axis exactly as they came", () => {
+    const full = [at("d1"), at("d2")];
+    const c = compactSeries(full);
+    expect(c.points).toEqual(full);
+    expect(c.breaks).toEqual([]);
+    expect(c.skipped).toBe(0);
   });
 });

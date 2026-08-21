@@ -1486,9 +1486,11 @@ Scenarios:
     chartRequestsByAgent: "Requests & success rate by agent",
     chartRequestsByModel: "Requests & success rate by model",
     legendSuccessRate: "Success rate",
-    rateIdleNote: "0% where nothing was counted toward the rate",
     chartTokenTrend: "Token trend",
     chartCostTrend: "Cost trend",
+    /** Under the Token / cost charts, which plot only the buckets that recorded something: their x axis is not the requests charts' axis, and saying so is the only thing that keeps the two rows from looking comparable. */
+    skippedBuckets: (n: number): string =>
+      `Skips ${n} empty interval${n === 1 ? "" : "s"} — this axis is not aligned with the charts above`,
     legendOther: (n: number): string => `Other (${n})`,
     bucketTotal: "Total",
     legendHitRate: "Cache hit rate",
