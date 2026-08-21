@@ -1323,26 +1323,26 @@ Scenarios:
 - candidate_round_limit: \`5\``,
       },
       dailyPlan: {
-        label: "A 9am weekday planning check-in",
-        desc: "Weekday 09:00: talk through the day's plan in this same chat, and review yesterday's progress",
-        prompt: `Set up a scheduled task: every weekday at 9am my local time, talk through the day's work plan with me — right here in this conversation, so the progress review has context to work from.
+        label: "A 9am daily planning check-in",
+        desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
+        prompt: `Set up a scheduled task: every day at 9am my local time, talk through the day's work plan with me — right here in this conversation, so the progress review has context to work from.
 
 ## Before you start
 - Check that your system prompt has a "Scheduled Tasks" section. If it does not, stop and tell me to open Agent settings → Schedules and insert the {{SCHEDULES}} placeholder into the template first.
-- Run \`date\` for the server's current date, weekday and UTC offset — computing the first trigger needs all three. Ask me if my timezone differs from the server's.
+- Run \`date\` for the server's current date and UTC offset — computing the first trigger needs both. Ask me if my timezone differs from the server's.
 
-## The task files
-- Scheduled tasks are TOML files in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\`, one file per task (create the directory if it is missing). \`period\` only accepts a fixed interval (\`30m\` / \`12h\` / \`7d\`) and has no "weekdays only" syntax, so weekday firing means five weekly tasks rather than one daily one.
-- Write \`daily-plan-mon.toml\` through \`daily-plan-fri.toml\`. Each one: \`enabled = true\`, \`period = "7d"\`, and \`start_at\` at the next occurrence of that weekday at 09:00 local, written as an ISO 8601 instant with the offset. Weekends therefore never fire.
-- Put this conversation's Session ID (it is in your Environment section) in every file's \`session_id\`, so each morning lands back here instead of opening a new chat.
-- If my timezone observes DST, flag it: a fixed 7d period drifts by an hour across the switch, and \`start_at\` needs a nudge then.
+## The task file
+- Scheduled tasks are TOML files in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\`, one file per task (create the directory if it is missing).
+- Write one \`daily-plan.toml\`: \`enabled = true\`, \`period = "24h"\`, and \`start_at\` at the next 09:00 local, written as an ISO 8601 instant with the offset.
+- Put this conversation's Session ID (it is in your Environment section) in \`session_id\`, so each morning lands back here instead of opening a new chat.
+- If my timezone observes DST, flag it: a fixed 24h period drifts by an hour across the switch, and \`start_at\` needs a nudge then.
 
 ## What it says each morning
-The \`prompt\` field is the message that arrives every weekday. Have it: read back over this conversation for yesterday's plan and say what got done, what slipped and where it is stuck; then ask what today needs, offering an ordered shortlist with one line of reasoning per item rather than an open question; and once I confirm, write today's plan out as a checklist. Keep it short — this is a morning check-in, not a report.
+The \`prompt\` field is the message that arrives every morning. Have it: read back over this conversation for yesterday's plan and say what got done, what slipped and where it is stuck; then ask what today needs, offering an ordered shortlist with one line of reasoning per item rather than an open question; and once I confirm, write today's plan out as a checklist. Keep it short — this is a morning check-in, not a report.
 
 ## Wrap-up
 - Scheduled tasks only fire while the web service is running, and the server picks up a new file within about 30 seconds — there is nothing to register.
-- List the five files with their first trigger times and the Session they are bound to, and tell me that Agent settings → Schedules is where I can view, edit or disable them.`,
+- Tell me the file name, its first trigger time and the Session it is bound to, and that Agent settings → Schedules is where I can view, edit or disable it.`,
       },
       githubDigest: {
         label: "Daily GitHub project digest",
