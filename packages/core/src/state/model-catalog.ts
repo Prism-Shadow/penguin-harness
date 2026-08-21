@@ -1046,12 +1046,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
   },
   // -- Anthropic (official USD pricing; cache write = 1.25 x input). Re-read 2026-08-20 from
-  // platform.claude.com/docs/en/about-claude/pricing. Sonnet 5's $2 / $10 is its standard
-  // rate rather than an introductory one, so it prices below Sonnet 4.6 — that inversion is
-  // Anthropic's list, not a transcription slip. Anthropic bills the full 1M window at a
-  // single rate, so none of the long-context tiers named in the file header apply here, and
-  // the fast-mode premium on Opus 5 / Opus 4.8 ($10 / $50) is a separate tier these rows do
-  // not record. --
+  // platform.claude.com/docs/en/about-claude/pricing. Sonnet 5's $2 input / $10 output is its
+  // standard rate rather than an introductory one, so it prices below Sonnet 4.6 — that
+  // inversion is Anthropic's list, not a transcription slip. Anthropic bills the full 1M
+  // window at a single rate, so none of the long-context tiers named in the file header apply
+  // here, and the fast-mode premium on Opus 5 / Opus 4.8 ($10 input / $50 output) is a
+  // separate tier these rows do not record. --
   {
     modelId: "claude-fable-5",
     displayName: "Claude Fable 5",

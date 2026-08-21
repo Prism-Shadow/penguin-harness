@@ -21,7 +21,7 @@
 ## 文档与 Skill
 
 - 中英文 `models` 文档页在预置目录的示例清单中列出了 `claude-opus-5`。
-- `agenthub-models` skill（v13）把 `claude-opus-5` 加进官方 Claude 5 id 一列，与表中本就有的网关变体 `anthropic/claude-opus-5` 并列。
+- `agenthub-models` skill（v13）把 `claude-opus-5` 加进官方 Claude 5 id 一列，与表中本就有的网关变体 `anthropic/claude-opus-5` 并列，并记下 AgentHub 0.4.4 的受支持模型注册表这两个 id 都未收录——尽管它们都能正常路由。
 
 ## 兼容性
 

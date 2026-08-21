@@ -97,7 +97,7 @@ for (const m of listSupportedModels()) {
 - Modalities are `"Text" | "Image" | "Video" | "Audio" | "Embed"`. Coverage includes the official vendor endpoints plus the OpenRouter and SiliconFlow gateways; `context_window` and `pricing` are omitted where the platform publishes no authoritative value (image and TTS models, for instance).
 - `pricing` is per million tokens, keyed by the same usage buckets as `usage_metadata`: `prompt_tokens` (non-cached input), `thoughts_tokens` / `response_tokens` (both the output price) and optional `cached_tokens` (cache-hit price). Values are stored in USD; pass `listSupportedModels("CNY")` to convert at 7 CNY/USD.
 
-The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is narrower than the routing rules: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine but no longer appear in it.
+The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is not the routing table, and it lags in both directions: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine without appearing in it, and AgentHub 0.4.4 lists neither `claude-opus-5` nor `anthropic/claude-opus-5` although both route. For an id the registry omits, take the context window and price from the vendor's own page.
 
 ## Routing and credentials
 

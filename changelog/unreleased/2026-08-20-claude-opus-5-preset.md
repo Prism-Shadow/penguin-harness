@@ -21,7 +21,7 @@
 ## Docs and skill
 
 - The bilingual `models` docs page names `claude-opus-5` in its sample of the preset catalog.
-- The `agenthub-models` skill (v13) lists `claude-opus-5` among the official Claude 5 ids, next to the `anthropic/claude-opus-5` gateway variant its table already carried.
+- The `agenthub-models` skill (v13) lists `claude-opus-5` among the official Claude 5 ids, next to the `anthropic/claude-opus-5` gateway variant its table already carried, and records that AgentHub 0.4.4's supported-model registry carries neither id even though both route.
 
 ## Compatibility
 
