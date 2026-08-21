@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** process
 - **Scope:** `ci`
+- **PR:** [#385](https://github.com/Prism-Shadow/penguin-harness/pull/385)
 
 [中文版](2026-08-21-ci-windows-speed.zh.md)
 
