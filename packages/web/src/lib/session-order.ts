@@ -65,9 +65,9 @@ export function storeSessionSortMode(mode: SessionSortMode, storage?: SessionOrd
 /**
  * Storage key of one Project's manual order (sidebar key-naming convention,
  * `penguin.pinnedSessions.<projectId>` &c.), scoped BY GROUPING MODE: the stored
- * sequence is only ever read within a partition, and the two modes cut the same
- * Sessions into different partitions — one shared array would let a drag in workspace
- * mode scramble the agent-mode order (and vice versa).
+ * sequence is only ever read within a partition, and the modes cut the same Sessions
+ * into different partitions — one shared array would let a drag in one mode scramble
+ * another mode's order.
  */
 export const sessionOrderKey = (projectId: string, mode: GroupMode): string =>
   `penguin.sessionOrder.${projectId}.${mode}`;

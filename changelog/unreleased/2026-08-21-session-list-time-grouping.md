@@ -7,7 +7,7 @@
 
 [中文版](2026-08-21-session-list-time-grouping.zh.md)
 
-The chat sidebar's list options gained a third grouping mode next to Workspace and Agent: by time, which cuts the conversations into 近一天 / 近一月 / 更早 (past day / past month / earlier) on each conversation's last activity — the same stamp the rows' compact timestamps and the recency sort already read. Empty buckets are dropped, and the mode persists like the other two. The chat header's details card also gained an Agent row above the Model row.
+The chat sidebar's list options gained a third grouping mode next to Workspace and Agent: by time, which cuts the conversations into past day / past month / earlier on each conversation's last activity — the same stamp the rows' compact timestamps and the recency sort already read. Empty buckets are dropped, and the mode persists like the other two. The chat header's details card also gained an Agent row above the Model row.
 
 ## Details
 

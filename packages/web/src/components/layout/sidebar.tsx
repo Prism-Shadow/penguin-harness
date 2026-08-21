@@ -11,9 +11,11 @@
  * draft in that Workspace), by Agent (group header = Agent name + new chat + Agent settings;
  * shows all Agents, including empty groups), or by time (last day / last month / earlier,
  * bucketed on last activity; the buckets span every Agent, so the Subagents / Scheduled /
- * Archived folders and the paging row sit below them as one Project-wide set). Groups can be pinned via the header's hover pin
- * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
- * order. Conversations can be pinned too (row context menu; persisted per Project in
+ * Archived folders and the paging row sit below them as one Project-wide set). Groups can
+ * be pinned via the header's hover pin toggle: pinned groups sort before unpinned within
+ * their mode, keeping each partition's own order — the time buckets excepted, whose order
+ * IS the timeline and which therefore carry no pin. Conversations can be pinned too (row
+ * context menu; persisted per Project in
  * localStorage): pinned rows bubble to the top of their group's active list. Each row's
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
@@ -1122,6 +1124,27 @@ export function Sidebar({
     />
   );
 
+  /**
+   * Time mode's one shared, Project-wide set of folders (rendered once below the buckets):
+   * their rows load only on first expand, so an unloaded Session has no known bucket and no
+   * bucket could honestly claim a share of them. Counts and fetch fan-out are summed over
+   * every Agent. A null entry means the Project holds no rows of that category at all —
+   * which is also what tells the empty-list line whether it is telling the truth.
+   */
+  const timeFolders =
+    timeParts === null
+      ? []
+      : FOLDER_CATEGORIES.map((category) =>
+          renderFolder(
+            TIME_FOLDERS_GROUP_KEY,
+            category,
+            timeParts,
+            true,
+            projectAgentsFor(category),
+            projectCounts,
+          ),
+        );
+
   /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest). Always mounted — the collapse animates their height to zero and turns them inert. */
   const navItems: Array<{ to: string; label: string; icon: string }> = NAV_GROUP_KEYS.map(
     (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
@@ -1740,7 +1763,9 @@ export function Sidebar({
               );
             })}
 
-            {timeGroups.length === 0 && !searching && (
+            {/* Empty only when the shared folders below are empty too (renderGroupBody's own
+                rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
+            {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
               <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
                 {S.chat.noSessions}
               </p>
@@ -1761,21 +1786,8 @@ export function Sidebar({
                 />
               )}
 
-            {/* One shared, Project-wide set of folders: their rows load only on first expand,
-                so an unloaded Session has no known bucket and no bucket could honestly claim
-                a share of them. Counts and fetch fan-out are summed over every Agent. */}
-            <div className="pt-2.5">
-              {FOLDER_CATEGORIES.map((category) =>
-                renderFolder(
-                  TIME_FOLDERS_GROUP_KEY,
-                  category,
-                  timeParts,
-                  true,
-                  projectAgentsFor(category),
-                  projectCounts,
-                ),
-              )}
-            </div>
+            {/* The shared, Project-wide folders (see timeFolders). */}
+            <div className="pt-2.5">{timeFolders}</div>
           </>
         )}
 
