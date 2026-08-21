@@ -625,6 +625,11 @@ export function ModelsPage() {
    * Import-mode landing from the add-group dialog: one table PUT with the appended rows,
    * then the new group is opened so the result is visible immediately. Returns persist's
    * verdict so the dialog stays up (fields intact) when saving failed.
+   *
+   * A failed save is rolled back to the table as it stood: persist otherwise keeps the
+   * attempted rows on screen (right for a field edit the user is still holding), which
+   * here would show the whole group as if it existed and make the dialog's own name check
+   * report the name as taken on the retry.
    */
   const importGroup = async (
     nextRows: RowState[],
@@ -633,20 +638,25 @@ export function ModelsPage() {
     skipped: number,
   ): Promise<boolean> => {
     if (!projectId) return false;
+    const before = rows;
     const ok = await persist(
       nextRows,
       defaultModel,
       visionModel,
       S.models.groupImported(added, skipped),
     );
-    if (ok && !expanded.has(name)) {
+    if (!ok) {
+      setRows(before);
+      return false;
+    }
+    if (!expanded.has(name)) {
       const next = new Set(expanded);
       next.add(name);
       setExpanded(next);
       saveExpandedProviders(projectId, next);
     }
-    if (ok) setAddGroupOpen(false);
-    return ok;
+    setAddGroupOpen(false);
+    return true;
   };
   const editingRow =
     editing !== null ? rows?.find((r) => sameModelRef(rowRef(r), editing)) : undefined;
@@ -1271,7 +1281,7 @@ function AddGroupDialog({
           <>
             <PasswordInput
               size="sm"
-              label="API key"
+              label={S.models.apiKey}
               value={apiKey}
               onChange={(e) => {
                 setApiKey(e.target.value);
@@ -1286,7 +1296,7 @@ function AddGroupDialog({
             <div className="block">
               <span className="mb-1 flex items-baseline justify-between gap-2">
                 <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                  Base URL
+                  {S.models.baseUrl}
                   <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
                     *
                   </span>
@@ -1310,7 +1320,7 @@ function AddGroupDialog({
               <div className="relative">
                 <Input
                   size="sm"
-                  aria-label="Base URL"
+                  aria-label={S.models.baseUrl}
                   required
                   value={baseUrl}
                   disabled={busy}
