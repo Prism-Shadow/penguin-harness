@@ -158,21 +158,29 @@ export function resolveLoginShellEnv(opts: {
     }
     let stdout = "";
     let settled = false;
-    // Settle exactly once. On timeout or cap overrun the promise resolves immediately
-    // after the kill instead of waiting for "close": a hung rc file's own children
-    // inherit the stdout pipe and would hold "close" open for as long as they live.
+    // Settle exactly once, and stop reading. On timeout or cap overrun the promise resolves
+    // immediately after the kill instead of waiting for "close": a hung rc file's own
+    // children inherit the stdout pipe and would hold "close" open for as long as they live
+    // — and would keep feeding the buffer below, so the pipe is dropped here rather than
+    // left collecting output nobody will read.
     const settle = (value: Record<string, string> | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      child.stdout?.destroy();
       resolve(value);
     };
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
       settle(null);
     }, opts.timeoutMs ?? PROBE_TIMEOUT_MS);
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += String(chunk);
+    // Decode across chunk boundaries: the dump arrives in pipe-sized reads that cut wherever
+    // they land, and a per-chunk Buffer -> string would turn every UTF-8 sequence straddling
+    // a boundary into replacement characters (a value with any non-ASCII in it, in an
+    // environment large enough to need a second read).
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      stdout += chunk;
       if (stdout.length > PROBE_OUTPUT_CAP) {
         child.kill("SIGKILL");
         settle(null);

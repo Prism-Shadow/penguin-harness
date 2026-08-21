@@ -141,6 +141,23 @@ describe.skipIf(process.platform === "win32")("resolveLoginShellEnv (fake shells
     expect(resolved).toEqual({ FROM_LOGIN: "1", MULTI: "a\nb" });
   });
 
+  it("keeps a value whose UTF-8 bytes straddle a read boundary", async () => {
+    // One write larger than the pipe buffer, so the reader takes it in several chunks that
+    // cut wherever they land: decoding chunk by chunk would corrupt the characters spanning
+    // a cut. Built in the shell — an argument this size does not survive exec.
+    const shell = fakeShell(
+      "wide.sh",
+      [
+        `big=$(i=0; while [ $i -lt 5000 ]; do printf '中中中中中中中中中中'; i=$((i+1)); done)`,
+        `printf '%s' '${SENTINEL}'`,
+        `printf 'WIDE=%s\\0' "$big"`,
+        `printf '%s' '${SENTINEL}'`,
+      ].join("\n"),
+    );
+    const resolved = await resolveLoginShellEnv({ shell, env: {} });
+    expect(resolved?.["WIDE"]).toBe("中".repeat(50_000));
+  });
+
   it("accepts a dump despite a non-zero exit code", async () => {
     const shell = fakeShell(
       "grumpy.sh",
