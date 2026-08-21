@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
+import { EXAMPLE_FOLDERS, EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
@@ -100,4 +100,66 @@ describe("draft example tasks", () => {
       expect(normalizedOptimization).not.toContain("Phase 3");
     },
   );
+});
+
+describe("draft example catalog", () => {
+  it("gives every folder and every example copy in both dictionaries", () => {
+    const ids = EXAMPLE_TASKS.map((task) => task.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const dict of [zh, en]) {
+      for (const folder of EXAMPLE_FOLDERS) {
+        expect(dict.chat.exampleFolders[folder.id]).not.toBe("");
+      }
+      for (const id of ids) {
+        const copy = dict.chat.exampleTasks[id];
+        expect(copy.label).not.toBe("");
+        expect(copy.desc).not.toBe("");
+        // The submitted prompt is the working brief, not a longer version of the row tooltip.
+        expect(copy.prompt.length).toBeGreaterThan(copy.desc.length);
+      }
+    }
+  });
+
+  // The draft page reserves no scroll area: its height is the folder rows plus the open
+  // folder's rows, so a folder much longer than its siblings makes that height jump.
+  it("keeps the folders within one row of each other", () => {
+    const sizes = EXAMPLE_FOLDERS.map((folder) => folder.tasks.length);
+    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("scheduled-task examples", () => {
+  const scheduleIds = ["dailyPlan", "githubDigest", "memoryReview"] as const;
+
+  it("files them all in the schedules folder", () => {
+    const folder = EXAMPLE_FOLDERS.find((candidate) => candidate.id === "schedules");
+    expect(folder?.tasks.map((task) => task.id)).toEqual([...scheduleIds]);
+  });
+
+  it.each(scheduleIds)("%s describes the real schedule mechanism in both locales", (id) => {
+    for (const dict of [zh, en]) {
+      const prompt = dict.chat.exampleTasks[id].prompt;
+      // A schedule is a TOML file in this directory, explicitly enabled, with a first trigger
+      // time — a prompt missing any of the three is instructing against an API that does not
+      // exist. `period` is a fixed interval (30m / 12h / 7d); there is no cron syntax to reach for.
+      expect(prompt).toContain("agent_state/schedule/");
+      expect(prompt).toContain("enabled = true");
+      expect(prompt).toContain("start_at");
+      expect(prompt).not.toContain("cron");
+    }
+  });
+});
+
+describe("investment copilot example", () => {
+  // The brief is analysis with stated evidence, never a recommendation to act.
+  it.each([
+    { locale: "zh", prompt: zh.chat.exampleTasks.investmentCopilot.prompt, marker: "不是投资建议" },
+    {
+      locale: "en",
+      prompt: en.chat.exampleTasks.investmentCopilot.prompt,
+      marker: "not investment advice",
+    },
+  ])("$locale keeps the not-advice framing", ({ prompt, marker }) => {
+    expect(prompt).toContain(marker);
+  });
 });
