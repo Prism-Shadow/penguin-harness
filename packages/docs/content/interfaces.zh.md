@@ -144,6 +144,8 @@ interface EnvironmentServices {
   visionDescriber?: VisionDescriberService; // text-only 模型的 describe_image 所需
   commandSessions?: CommandSessionManager;  // 长驻命令会话登记表(Environment 内部构造)
   subagentSessions?: SubagentSessionManager;// 后台 Subagent 会话登记表(同上)
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // run_in_background 完成回报的汇聚点(同上)
+  backgroundForward?: (msg: OmniMessage) => void;           // 后台 Subagent 消息的实时转发出口(同上)
 }
 
 interface MCPServerConfig {

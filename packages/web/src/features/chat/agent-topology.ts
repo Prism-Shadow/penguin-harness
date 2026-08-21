@@ -20,6 +20,10 @@
  * text measurement; graphs are small (≲15 nodes) and the view scrolls horizontally on overflow.
  */
 import type { ChatItem, StreamModel } from "../../lib/omni/stream-model";
+import { parseBackgroundTaskDoneMessage } from "./agent-handoff";
+
+/** Marker tag of a harness completion notice; the cheap prefilter before the marker parse. */
+const BACKGROUND_DONE_TAG = "background_task_done";
 
 export interface TopologyNode {
   sessionId: string;
@@ -52,13 +56,43 @@ export interface TopologyNode {
   elapsedMs?: number;
 }
 
-/** Index of the latest Task's first item (the last user_text/user_image — the reducer's "starts a new Task" predicate); 0 when there is none (mid-stream join). */
+/**
+ * Whether an item opens a new PANEL scope. The reducer's "starts a new Task" predicate
+ * (user_text/user_image), minus one exception: a `[background_task_done]` harness notice does
+ * start a chat Task (its auto-run answers it), but for the topology it belongs to the Task
+ * that launched the background work — slicing there would split a background subagent's spawn
+ * from its completion and reset the panel the moment the report lands.
+ */
+function isScopeStart(item: ChatItem): boolean {
+  if (item.kind === "user_image") return true;
+  if (item.kind !== "user_text") return false;
+  // Cheap reject first: these predicates run over every item on every render, and the marker
+  // parse is two full-text regex scans — only text that actually carries the tag pays for it.
+  if (!item.text.includes(`[${BACKGROUND_DONE_TAG}]`)) return true;
+  return parseBackgroundTaskDoneMessage(item.text) === null;
+}
+
+/** Index of the latest Task's first item (see isScopeStart); 0 when there is none (mid-stream join). */
 export function latestTaskStart(items: readonly ChatItem[]): number {
   for (let i = items.length - 1; i >= 0; i--) {
-    const kind = items[i]!.kind;
-    if (kind === "user_text" || kind === "user_image") return i;
+    if (isScopeStart(items[i]!)) return i;
   }
   return 0;
+}
+
+/**
+ * Task starts as the STREAM MODEL counts them — every user_text/user_image, notices included,
+ * so the number stays 1:1 with the reducer's own `startTask` calls. The header's cost tracker
+ * keys its Task-boundary fold on exactly that (see header-stats.ts): a notice-triggered task
+ * zeroes the model's per-Task usage buckets, so a count that skipped it would drop the finished
+ * Task's live cost without ever folding it into the settled base.
+ */
+export function modelTaskStartCount(items: readonly ChatItem[]): number {
+  let n = 0;
+  for (const item of items) {
+    if (item.kind === "user_text" || item.kind === "user_image") n += 1;
+  }
+  return n;
 }
 
 /**
@@ -70,7 +104,7 @@ export function latestTaskStart(items: readonly ChatItem[]): number {
 export function taskStartCount(items: readonly ChatItem[]): number {
   let n = 0;
   for (const item of items) {
-    if (item.kind === "user_text" || item.kind === "user_image") n += 1;
+    if (isScopeStart(item)) n += 1;
   }
   return n;
 }
@@ -143,16 +177,14 @@ export function extractTopologyForChild(
   // the latest Task). Same "starts a new Task" predicate as latestTaskStart.
   let start = 0;
   for (let i = at; i >= 0; i--) {
-    const kind = items[i]!.kind;
-    if (kind === "user_text" || kind === "user_image") {
+    if (isScopeStart(items[i]!)) {
       start = i;
       break;
     }
   }
   let end = items.length;
   for (let i = at + 1; i < items.length; i++) {
-    const kind = items[i]!.kind;
-    if (kind === "user_text" || kind === "user_image") {
+    if (isScopeStart(items[i]!)) {
       end = i;
       break;
     }
@@ -160,6 +192,40 @@ export function extractTopologyForChild(
   return extractFromSlice(items.slice(start, end), rootSessionId, {
     running: end === items.length && taskRunning,
   });
+}
+
+/** Launch note of a run_in_background subagent: binds the card to its registry handle. */
+const BG_SUBAGENT_LAUNCH_RE =
+  /\[subagent running in background with subagent_id (subagent-[0-9a-f]+)/;
+
+/**
+ * Terminal knowledge about background subagents in one scope slice, from the notes the
+ * harness itself writes: the `[background_task_done]` notice (kind subagent), an
+ * input_subagent poll reporting the session idle, and kill_subagent's removal notes all mean
+ * "no longer running"; a later `still running` poll (or a follow-up round) flips it back.
+ * Ids are the registry handles (`subagent-<hex8>`); last mention wins, in item order.
+ */
+function backgroundSubagentStates(slice: readonly ChatItem[]): Map<string, "running" | "done"> {
+  const states = new Map<string, "running" | "done">();
+  for (const item of slice) {
+    if (item.kind === "user_text") {
+      const done = parseBackgroundTaskDoneMessage(item.text);
+      if (done !== null && done.done.kind === "subagent") states.set(done.done.id, "done");
+      continue;
+    }
+    if (item.kind !== "tool_call" || item.output.length === 0) continue;
+    for (const m of item.output.matchAll(
+      /\[subagent (?:running in background|still running) with subagent_id (subagent-[0-9a-f]+)/g,
+    )) {
+      states.set(m[1]!, "running");
+    }
+    for (const m of item.output.matchAll(
+      /\[subagent idle with subagent_id (subagent-[0-9a-f]+)|\[subagent (subagent-[0-9a-f]+) (?:aborted and removed|was idle; session removed)/g,
+    )) {
+      states.set(m[1] ?? m[2]!, "done");
+    }
+  }
+  return states;
 }
 
 /** Shared walker behind both extractions: builds the node list from one Task slice of the main items. */
@@ -218,13 +284,17 @@ function extractFromSlice(
     walk(child.items, sessionId, origin);
   };
 
+  const bgStates = backgroundSubagentStates(slice);
   const walk = (items: readonly ChatItem[], parentId: string, parentOrigin: string[]): void => {
     for (const item of items) {
       if (item.kind === "tool_call" && item.subagent && item.subagentSessionId) {
+        // A background launch's card completes immediately, so its running state comes from
+        // the harness's own notes about the handle instead of the card's output stream.
+        const bgId = BG_SUBAGENT_LAUNCH_RE.exec(item.output)?.[1] ?? null;
         addChild(
           item.subagentSessionId,
           item.subagent,
-          !item.outputComplete,
+          bgId !== null ? bgStates.get(bgId) !== "done" : !item.outputComplete,
           parentId,
           parentOrigin,
           agentIdFromRunSubagentArgs(item.argumentsText),

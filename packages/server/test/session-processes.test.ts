@@ -26,6 +26,7 @@ function processesFakeSession(
   sessionId: string,
   procs: BackgroundCommandInfo[],
   kills: string[],
+  probes?: string[],
 ): RuntimeSession {
   return {
     sessionId,
@@ -37,6 +38,9 @@ function processesFakeSession(
     async *run(_input: OmniMessage[], _opts: { approve: ApproveFn; signal: AbortSignal }) {},
     async *compact() {},
     listBackgroundCommands: () => [...procs],
+    probeBackgroundCommandServices: async () => {
+      probes?.push(sessionId);
+    },
     killBackgroundCommand: (processId: string) => {
       const i = procs.findIndex((p) => p.processId === processId);
       if (i === -1) return false;
@@ -53,6 +57,7 @@ describe("session processes routes", () => {
   let outsider: ReturnType<typeof apiClient>;
   let procs: BackgroundCommandInfo[];
   let kills: string[];
+  let probes: string[];
 
   const sessionRow = (sessionId: string): SessionRow => ({
     sessionId,
@@ -81,6 +86,7 @@ describe("session processes routes", () => {
         cwd: "/tmp/w",
         startedAt: STARTED_AT,
         running: true,
+        serviceUrl: "http://localhost:5173/",
       },
       {
         processId: "proc-22222222",
@@ -92,8 +98,9 @@ describe("session processes routes", () => {
       },
     ];
     kills = [];
+    probes = [];
     t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(sessionRow(SID), processesFakeSession(SID, procs, kills));
+    t.deps.manager.adopt(sessionRow(SID), processesFakeSession(SID, procs, kills, probes));
     // A second session with no runtime entry: truthfully reports no processes.
     t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
   });
@@ -113,6 +120,7 @@ describe("session processes routes", () => {
         cwd: "/tmp/w",
         startedAt: new Date(STARTED_AT).toISOString(),
         running: true,
+        serviceUrl: "http://localhost:5173/",
       },
       {
         processId: "proc-22222222",
@@ -123,6 +131,9 @@ describe("session processes routes", () => {
         running: false,
       },
     ]);
+
+    // The route refreshed the listen-port probes before listing (first fetch carries probed URLs).
+    expect(probes).toEqual([SID]);
 
     const unloaded = await api.get(`/api/sessions/${SID_UNLOADED}/processes`);
     expect(unloaded.status).toBe(200);

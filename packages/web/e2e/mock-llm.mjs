@@ -27,6 +27,8 @@ import http from "node:http";
 
 /** The run_subagent prompt; also the marker the mock uses to detect "this is the child session's own request". */
 const SUBAGENT_PROMPT = "Count the TODO items in the repository";
+/** Background-subagent FAILURE prompt: the child session's every request is rejected 400, so its run fails after the retry ladder. */
+const SUBAGENT_FAIL_PROMPT = "Fail the TODO count on purpose";
 
 const PORT = Number(process.env.MOCK_PORT || 8931);
 
@@ -141,6 +143,24 @@ const server = http.createServer((req, res) => {
         { type: "text_delta", text: "Auth restored; hello again." },
       ]);
       messageStop(res, "end_turn", 8);
+      return;
+    }
+
+    // Background-subagent FAILURE case (background-subagent.spec): the child session's own
+    // requests (its context is just the fail prompt) are rejected 401 invalid_api_key —
+    // classified `auth`, which the engine never retries, so the child's run fails at once
+    // and the FAILED completion report must still arrive promptly (a retryable failure
+    // would climb the full ~60s reconnect ladder first — same terminal state, just slow).
+    // Gated on !isTitle so the failed child's title request falls back quietly.
+    if (
+      flat.includes(SUBAGENT_FAIL_PROMPT) &&
+      !flat.includes("background subagent fail test") &&
+      !isTitle
+    ) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ error: { code: "invalid_api_key", message: "mock child failure" } }),
+      );
       return;
     }
 
@@ -276,6 +296,84 @@ const server = http.createServer((req, res) => {
         );
         messageStop(res, "tool_use", 15);
       }, 800);
+      return;
+    }
+
+    // Background-notify test case (background-notify.spec): turn 1 launches a command with
+    // run_in_background (returns a process_id immediately); turn 2 closes the task while
+    // the command is still running; ~2s later the command exits and the harness injects a
+    // [background_task_done] user message that auto-starts a task — whose turn is keyed on
+    // the LAST message (the whole-history flags can't shadow it) and acknowledges.
+    const lastText = JSON.stringify(messages[messages.length - 1] ?? {});
+    if (lastText.includes("background_task_done")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Acknowledged: the background command finished (bg-ack)." },
+      ]);
+      messageStop(res, "end_turn", 9);
+      return;
+    }
+    if (flat.includes("background subagent fail test")) {
+      if (!hasToolResult) {
+        block(res, 0, { type: "tool_use", id: "toolu_bgsubf_1", name: "run_subagent", input: {} }, [
+          { type: "input_json_delta", partial_json: '{"prompt": ' },
+          {
+            type: "input_json_delta",
+            partial_json: `${JSON.stringify(SUBAGENT_FAIL_PROMPT)}, "run_in_background": true}`,
+          },
+        ]);
+        messageStop(res, "tool_use", 15);
+        return;
+      }
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Failing subagent dispatched in the background." },
+      ]);
+      messageStop(res, "end_turn", 11);
+      return;
+    }
+
+    // Background-subagent test case (background-subagent.spec): the parent launches the
+    // subagent with run_in_background and closes its turn; the child branch (isSubagentTurn)
+    // runs its usual exec_command (sleep 1) then reports. The completion arrives as a
+    // [background_task_done] user message handled by the lastText branch above.
+    if (flat.includes("background subagent test")) {
+      if (!hasToolResult) {
+        setTimeout(() => {
+          block(
+            res,
+            0,
+            { type: "tool_use", id: "toolu_bgsub_1", name: "run_subagent", input: {} },
+            [
+              { type: "input_json_delta", partial_json: '{"prompt": ' },
+              {
+                type: "input_json_delta",
+                partial_json: `${JSON.stringify(SUBAGENT_PROMPT)}, "run_in_background": true}`,
+              },
+            ],
+          );
+          messageStop(res, "tool_use", 15);
+        }, 300);
+        return;
+      }
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Subagent dispatched in the background." },
+      ]);
+      messageStop(res, "end_turn", 11);
+      return;
+    }
+
+    if (flat.includes("background notify test")) {
+      if (!hasToolResult) {
+        block(res, 0, { type: "tool_use", id: "toolu_bgn_1", name: "exec_command", input: {} }, [
+          { type: "input_json_delta", partial_json: '{"cmd": "echo bg-notify; sleep 6",' },
+          { type: "input_json_delta", partial_json: ' "run_in_background": true}' },
+        ]);
+        messageStop(res, "tool_use", 14);
+        return;
+      }
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Started in the background; the report will follow." },
+      ]);
+      messageStop(res, "end_turn", 11);
       return;
     }
 

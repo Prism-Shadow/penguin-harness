@@ -19,10 +19,12 @@
  */
 import {
   abortEvent,
+  buildBackgroundTaskDoneMessage,
   mcpConnectBegin,
   mcpConnectEnd,
   sessionMeta,
   toolListReady,
+  userText,
 } from "./omnimessage/index.js";
 import type {
   McpServerConnectResult,
@@ -36,6 +38,7 @@ import { runGoalLoop } from "./goal/goal-loop.js";
 import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   BackgroundCommandInfo,
+  BackgroundTaskDoneEvent,
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
@@ -161,6 +164,28 @@ const TITLE_USER_MATERIAL_LIMIT = 2000;
 const TITLE_ASSISTANT_MATERIAL_LIMIT = 1000;
 
 /**
+ * A background-task completion event as the harness user message that reports it: the
+ * `[background_task_done]` block carries the structured facts, the body the display text —
+ * what settled, then the tail of its yet-undelivered output. `sender: "harness"` marks the
+ * non-human origin in the Trace.
+ */
+function backgroundDoneNotice(event: BackgroundTaskDoneEvent): OmniMessage {
+  const what = event.kind === "command" ? "Background command" : "Background subagent";
+  const idField = event.kind === "command" ? "process_id" : "subagent_id";
+  const verb = event.status === "completed" ? "finished" : "failed";
+  const detail = event.detail ? ` — ${event.detail}` : "";
+  const head = `${what} ${verb}: \`${event.label}\` (${idField} ${event.id})${detail}`;
+  const body = event.output.trim() ? `${head}\n\n${event.output}` : head;
+  return userText(
+    buildBackgroundTaskDoneMessage(
+      { kind: event.kind, id: event.id, status: event.status, detail: event.detail },
+      body,
+    ),
+    "harness",
+  );
+}
+
+/**
  * Accumulates title material: the body text of complete text messages from the main session
  * (no origin) — thinking and tool calls naturally don't count — and stops once the cap is hit.
  */
@@ -233,6 +258,19 @@ export class Session {
   private titleAssistantText = "";
   /** Material-frozen flag: becomes true once the first Task containing user text finishes; subsequent runs stop accumulating. */
   private titleMaterialFrozen = false;
+  /**
+   * Background-task completion notices not yet delivered (harness user messages built from
+   * the Environment's completion events). Single source of truth for delivery: a running
+   * Task's engine drains it at every input-assembly boundary (yield + Trace write + request
+   * input); an idle Session fires `noticeListener` so the host can take the queue
+   * (`takeBackgroundNotices`) and submit it as an ordinary task — whichever consumes first,
+   * each notice is delivered exactly once. With neither, the next run's start drains it.
+   */
+  private pendingNotices: OmniMessage[] = [];
+  /** Idle-arrival signal for the host (see `onBackgroundNotice`); null until a host subscribes. */
+  private noticeListener: (() => void) | null = null;
+  /** Live background-subagent message subscriber (see `onBackgroundMessage`); null until a host subscribes — messages are display copies and drop without one. */
+  private bgMessageListener: ((msg: OmniMessage) => void) | null = null;
 
   constructor(config: SessionConfig) {
     this.sessionId = config.meta.session_id;
@@ -270,7 +308,20 @@ export class Session {
       // isn't given the function, which is all the engine needs to know about the subject.
       ...(config.modelHasVision ? {} : { foldInputImages: this.foldImages }),
       sessionMeta: this.meta,
+      // Background completion notices: the engine pulls from the Session's queue at every
+      // input-assembly boundary (see pendingNotices for the exactly-once contract).
+      backgroundNotices: {
+        drain: () => this.pendingNotices.splice(0),
+        pending: () => this.pendingNotices.length,
+      },
     };
+    // Completion events of run_in_background launches flow from the Environment into the
+    // notice queue (events fired before this attach are buffered by the Environment).
+    config.environment.setBackgroundTaskListener?.((event) => this.handleBackgroundDone(event));
+    // Live-forwarded background-subagent messages flow straight to the host's subscriber —
+    // display copies only (the child's own Trace is the durable record), so with no
+    // subscriber they are simply dropped.
+    config.environment.setBackgroundMessageListener?.((msg) => this.bgMessageListener?.(msg));
   }
 
   /**
@@ -695,9 +746,60 @@ export class Session {
     return this.environment.listBackgroundCommands?.() ?? [];
   }
 
+  /** Refreshes the listen-port probes behind `BackgroundCommandInfo.serviceUrl` (see EnvironmentInterface.probeBackgroundCommandServices). No-op for environments without it. */
+  async probeBackgroundCommandServices(): Promise<void> {
+    await this.environment.probeBackgroundCommandServices?.();
+  }
+
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
+  }
+
+  /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */
+  hasRunningBackgroundSubagents(): boolean {
+    return this.environment.hasRunningBackgroundSubagents?.() ?? false;
+  }
+
+  /** Queues a background completion event as a harness user notice; a running Task delivers it at the next boundary, otherwise the host is signaled (see pendingNotices). */
+  private handleBackgroundDone(event: BackgroundTaskDoneEvent): void {
+    this.pendingNotices.push(backgroundDoneNotice(event));
+    if (!(this.engine?.isTaskRunning ?? false)) this.noticeListener?.();
+  }
+
+  /**
+   * Subscribes the host's idle-arrival signal for background completion notices: called
+   * (without payload) whenever a notice is queued while no Task is running. The host then
+   * takes the queue with `takeBackgroundNotices` and submits it as an ordinary task — a host
+   * that never subscribes still gets delivery on the next run's start. One listener; a later
+   * call replaces the earlier one.
+   */
+  onBackgroundNotice(listener: () => void): void {
+    this.noticeListener = listener;
+  }
+
+  /**
+   * Takes the queued background completion notices (harness user messages) for submission as
+   * a task's input. Empties the queue — the caller owns delivery of what it took; anything
+   * queued after this call is signaled/drained separately.
+   */
+  takeBackgroundNotices(): OmniMessage[] {
+    return this.pendingNotices.splice(0);
+  }
+
+  /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */
+  hasPendingBackgroundNotices(): boolean {
+    return this.pendingNotices.length > 0;
+  }
+
+  /**
+   * Subscribes the host to live-forwarded background-subagent messages (origin-tagged, the
+   * same stream a foreground collect window would relay): the server publishes them to the
+   * session's event channel so the frontend sees a background child working in real time.
+   * One listener; a later call replaces the earlier one.
+   */
+  onBackgroundMessage(listener: (msg: OmniMessage) => void): void {
+    this.bgMessageListener = listener;
   }
 
   /**

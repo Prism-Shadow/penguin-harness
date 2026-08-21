@@ -72,40 +72,45 @@ Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读�
 
 ## 内置工具
 
-共 9 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
+共 11 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
 | `input_command` | rw | 130000 | 按 `process_id` 驱动运行中的命令：写 stdin、发 Ctrl-C、轮询输出 |
+| `kill_command` | rw | 30000 | 按 `process_id` 终止命令会话（整个进程组），返回尚未送达的输出 |
 | `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
 | `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台 Subagent，或在其空闲时追加后续 Prompt |
+| `kill_subagent` | rw | 30000 | 按 `subagent_id` 中止并移除后台 Subagent，返回尚未送达的文本 |
 | `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
 | `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
 
-注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：本工具集之前创建的 Agent 不会自动获得文件工具——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（文件工具、`kill_command`、`kill_subagent`）与新增参数（`run_in_background`）——需手工编辑该 Agent 的 `system_config.yaml`，把新条目补进去（可从 `packages/core/src/state/default-config.ts` 的默认定义复制）。
 
 ### 调用描述
 
-命令 / Subagent 类工具（`exec_command`、`input_command`、`run_subagent`、`input_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
+命令 / Subagent 类工具（`exec_command`、`input_command`、`kill_command`、`run_subagent`、`input_subagent`、`kill_subagent`）带 `description` 参数：由模型写一句"本次调用在做什么"，CLI 与 Web 在调用运行期间展示给用户。该参数作为普通的 `description` 属性直接写在各条目的 `parameters` 中（工具 schema 完全存于可编辑配置），并且是**必填**的——提供该参数的工具每次调用都会带上它，前端据 schema 即可确定这次调用的展示形态，无需在参数流式过程中猜测；同时要求模型最先输出它。整个参数由条目级 `call_description` 字段控制——缺省保留，写 `call_description: false` 时装配阶段将该属性连同其 `required` 项一起从 schema 中滤除（仅内存内，不改写 YAML）。文件工具不带此参数——其 `file_path` 参数本身已说明用途。
 
 ### 命令会话
 
-`exec_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动：
+`exec_command` 先在前台等待；命令超过 `yield_time_ms` 仍未结束时转入后台，返回已有输出和一个 `process_id`，之后用 `input_command` 驱动。传 `run_in_background: true` 则完全跳过前台窗口：调用立即返回 `process_id`，进程退出时其结果以自动 user message 送达（见[后台完成回报](#后台完成回报)）。两种方式启动的会话都可用 `kill_command` 终止：
 
 ```text
 exec_command(cmd)
   ├─ 前台窗口(yield_time_ms,默认 60000)内结束 ──► 完整输出 + 退出码
-  └─ 未结束 ──► 转入后台,返回已有输出 + process_id
-                     │
-    input_command(process_id[, chars]) ──► 写 stdin / 发 Ctrl-C / 轮询
-                     └─ 循环驱动,直至命令退出
+  ├─ 未结束 ──► 转入后台,返回已有输出 + process_id
+  │                  │
+  │  input_command(process_id[, chars]) ──► 写 stdin / 发 Ctrl-C / 轮询
+  │                  └─ 循环驱动,直至命令退出
+  └─ run_in_background: true ──► 立即返回 process_id
+                     └─ 退出时:完成回报以 user message 送达
+     kill_command(process_id) ──► 向进程组发 SIGTERM(宽限期后 SIGKILL)
 ```
 
-两个工具的参数（明确键名）：
+各工具的参数（明确键名）：
 
 ```ts
 // exec_command
@@ -113,6 +118,7 @@ exec_command(cmd)
   cmd: string;             // 必填:要执行的 shell 命令
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
+  run_in_background?: boolean; // true = 立即返回 process_id;完成回报以 user message 送达
   description: string;     // 开关开启时必填:一句话说明,最先输出,调用运行期间展示给用户
 }
 
@@ -120,7 +126,13 @@ exec_command(cmd)
 {
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
-  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 5000
+  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 120000(一次轮询等完多数构建;想快速查看可传更小值)
+  description: string;     // 开关开启时必填
+}
+
+// kill_command
+{
+  process_id: string;      // 必填:要终止的命令会话(已退出的会话也会被移除)
   description: string;     // 开关开启时必填
 }
 ```
@@ -161,7 +173,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### Subagent
 
-`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 轮询或追加 Prompt；子 Agent 的待审批项会在轮询等待期间浮出。
+`run_subagent` 把一段能一次说清的子任务交给子 Agent 执行，同样是两段式：前台窗口(默认 300000ms)过后转入后台并返回 `subagent_id`，由 `input_subagent` 轮询或追加 Prompt；子 Agent 的待审批项会在轮询等待期间浮出。传 `run_in_background: true` 则立即返回 `subagent_id`，每轮完成都以自动 user message 送达（见[后台完成回报](#后台完成回报)）；`kill_subagent` 中止并移除后台 Subagent（空闲的也可移除，腾出并发额度）。
 
 ```ts
 // run_subagent
@@ -172,6 +184,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   provider?: string;       // model_id 所属的 provider 组;给出 model_id 时必填
   thinking_level?: string; // "low" | "medium" | "high" | "xhigh" | "max";缺省继承父 Session 的思考等级
   yield_time_ms?: number;  // 前台等待时长;默认 300000
+  run_in_background?: boolean; // true = 立即返回 subagent_id;完成回报以 user message 送达
   description: string;     // 开关开启时必填
 }
 
@@ -180,6 +193,12 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   subagent_id: string;     // 必填:run_subagent 返回的后台 Subagent id
   prompt?: string;         // 追加任务,仅在子 Session 空闲时接受;缺省仅轮询
   yield_time_ms?: number;  // 等待时长;有追加默认 300000,空轮询默认 10000
+  description: string;     // 开关开启时必填
+}
+
+// kill_subagent
+{
+  subagent_id: string;     // 必填:要中止并移除的后台 Subagent
   description: string;     // 开关开启时必填
 }
 ```
@@ -205,6 +224,14 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
   prompt?: string;         // 要对图片提出的问题;缺省为详细描述
 }
 ```
+
+### 后台完成回报
+
+以 `run_in_background: true` 启动的任务在结束时，以**Harness 注入的 user message** 回报完成——模型无需轮询。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
+
+送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `kill_command` / `kill_subagent` 终止的任务不发回报——kill 自身的结果已说明结局。
+
+后台 Subagent 的生命周期与发起它的调用解耦：中止信号只属于它自己（仅 `kill_subagent`、Session 终结或注册表淘汰会结束它），其消息经发起 Session 实时流向前端（与前台窗口转发同一条 origin 通道），工具审批经发起调用自身的审批回调作为常驻 sink 解决——`allow-all` 下即发即忘可全程无人值守，失败也以 `status: failed` 的回报收尾，而不是子会话永久卡住。
 
 ### 后台会话上限
 

@@ -238,6 +238,16 @@ export interface ContextEngineDeps {
    * degrades a failure into text saying the images were dropped.
    */
   foldInputImages?: (messages: OmniMessage[]) => Promise<OmniMessage[]>;
+  /**
+   * Background-task completion notices (harness user messages the Session queues when a
+   * `run_in_background` task settles — see Session's notice queue). Pull seam: the engine
+   * drains at every input-assembly point — run start included — yielding each message to the
+   * output stream and writing it to Trace (like steering, this text never reached the
+   * consumer any other way); `pending` is the boundary peek that keeps a discard/summary
+   * from ending the run while notices still wait. Absent = no notice source (tests,
+   * standalone embedders).
+   */
+  backgroundNotices?: { drain(): OmniMessage[]; pending(): number };
 }
 
 const isImageMessage = (m: OmniMessage): boolean =>
@@ -467,6 +477,31 @@ export class ContextEngine {
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
 
+  /** Whether a `run` is in flight (the Session's notice routing keys on this: a running task delivers notices at the next boundary; an idle one goes through the host). */
+  get isTaskRunning(): boolean {
+    return this.taskRunning;
+  }
+
+  /** Background notices still waiting at the source (boundary peek; see ContextEngineDeps.backgroundNotices). */
+  private pendingNoticeCount(): number {
+    return this.deps.backgroundNotices?.pending() ?? 0;
+  }
+
+  /**
+   * Drains queued background-task notices into the stream: each is yielded and written to
+   * Trace (mid-run input the consumer has never seen, same rationale as deliverSteering),
+   * and returned for the caller to append to the next request input. Delivered BEFORE
+   * steering at every assembly point — the user's own words come last.
+   */
+  private async *deliverBackgroundNotices(): AsyncGenerator<OmniMessage, OmniMessage[]> {
+    const messages = this.deps.backgroundNotices?.drain() ?? [];
+    for (const msg of messages) {
+      yield msg;
+      await this.write(msg);
+    }
+    return messages;
+  }
+
   constructor(private readonly deps: ContextEngineDeps) {
     this.pendingBootstrapRecords = deps.bootstrapRecords ?? null;
     this.maxTurns = deps.maxTurns ?? -1;
@@ -650,8 +685,11 @@ export class ContextEngine {
 
     let turnCount = 0;
     // Each turn's LLM input: the first turn is the Prompt, later turns are the previous turn's
-    // tool outputs.
+    // tool outputs. Background notices that arrived while the session sat idle (and were not
+    // taken by the host as their own task input) ride the first request, behind the Prompt.
     let nextInput: OmniMessage[] = input;
+    const startNotices = yield* this.deliverBackgroundNotices();
+    if (startNotices.length > 0) nextInput = [...nextInput, ...startNotices];
 
     for (;;) {
       // max_turns guard: emit a length notice and stop once exceeded. A non-positive cap
@@ -776,9 +814,9 @@ export class ContextEngine {
         const mode = this.deps.compaction!.mode;
         if (mode === "discard") {
           // Once discarded, the current Task can't continue: defer until the Task really
-          // ends (mid-Task, or steering still queued that must continue the loop). The
-          // queue is only peeked here — delivery happens at the input assembly below.
-          if (!midTask && this.steeringQueue.length === 0) {
+          // ends (mid-Task, or steering/notices still queued that must continue the loop).
+          // The queues are only peeked here — delivery happens at the input assembly below.
+          if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
             yield* this.discardContext(compactionReason);
             return;
           }
@@ -789,10 +827,11 @@ export class ContextEngine {
             signal,
           );
           if (result.status === "completed") {
-            // Boundary check against the **live** queue: steering may have arrived during
-            // the multi-second compaction request and must not be swallowed (no await sits
-            // between this check and the return, so the window cannot reopen).
-            if (!midTask && this.steeringQueue.length === 0) {
+            // Boundary check against the **live** queues: steering or a background notice
+            // may have arrived during the multi-second compaction request and must not be
+            // swallowed (no await sits between this check and the return, so the window
+            // cannot reopen).
+            if (!midTask && this.steeringQueue.length === 0 && this.pendingNoticeCount() === 0) {
               // Task boundary: the summary is merged with the next user Prompt as the new
               // context's first input.
               this.pendingSummary = result.summary!;
@@ -805,8 +844,11 @@ export class ContextEngine {
             // steering (including anything that arrived during the compaction request) is
             // delivered right after the summary as standalone [user_steering] user turns.
             await this.write(result.summary!);
-            const steering = yield* this.deliverSteering();
-            nextInput = [result.summary!, ...steering];
+            const injected = [
+              ...(yield* this.deliverBackgroundNotices()),
+              ...(yield* this.deliverSteering()),
+            ];
+            nextInput = [result.summary!, ...injected];
             continue;
           }
           // failed or aborted: keep the original context and Trace index — the compaction is
@@ -839,20 +881,24 @@ export class ContextEngine {
         }
       }
 
-      // Next-input assembly — the steering delivery point: everything queued so far becomes
-      // standalone [user_steering] user messages riding alongside this turn's tool outputs
-      // (or alone as the continuation input when the turn produced no tool calls, instead of
-      // ending the Task — subject to the max-turns guard at the top of the loop).
-      const steering = yield* this.deliverSteering();
-      // No tool_call this turn and no steering left -> the Task ends (the final reply has
+      // Next-input assembly — the injection delivery point: queued background notices
+      // (harness user messages) and steering ([user_steering] user messages) ride alongside
+      // this turn's tool outputs (or alone as the continuation input when the turn produced
+      // no tool calls, instead of ending the Task — subject to the max-turns guard at the
+      // top of the loop). Notices first; the user's own words come last.
+      const injected = [
+        ...(yield* this.deliverBackgroundNotices()),
+        ...(yield* this.deliverSteering()),
+      ];
+      // No tool_call this turn and nothing injected -> the Task ends (the final reply has
       // already been streamed out). A compaction stash, if any, rides the next run.
-      if (!midTask && steering.length === 0) return;
+      if (!midTask && injected.length === 0) return;
       // Anything a failed boundary compaction stashed (synthesized repair outputs from
       // rejected attempts) rides the very next request, ahead of the turn outputs so
       // tool_results stay contiguous and first.
       const stashed = this.pendingCarryOver;
       this.pendingCarryOver = [];
-      nextInput = [...stashed, ...turn.toolOutputs, ...steering];
+      nextInput = [...stashed, ...turn.toolOutputs, ...injected];
       if (nextInput.length === 0) return;
     }
   }

@@ -252,8 +252,10 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
+      "kill_command",
       "run_subagent",
       "input_subagent",
+      "kill_subagent",
       "read_image",
       "describe_image",
     ]);
@@ -262,12 +264,12 @@ describe("buildToolConfig", () => {
     expect(exec.timeoutMs).toBe(120000);
     expect(exec.maxOutputLength).toBe(16000);
     expect((exec.parameters as { required?: string[] }).required).toEqual(["description", "cmd"]);
-    // The four command/subagent tools declare the description call argument in config,
+    // The command/subagent tools declare the description call argument in config,
     // toggled by the per-entry call_description field (default true).
     expect(exec.call_description).toBe(true);
     expect(
       Object.keys((exec.parameters as { properties: Record<string, unknown> }).properties),
-    ).toEqual(["description", "cmd", "workdir", "yield_time_ms"]);
+    ).toEqual(["description", "cmd", "workdir", "yield_time_ms", "run_in_background"]);
     const write = cfg.customTools.find((t) => t.name === "input_command")!;
     expect(write.permission).toBe("rw");
     expect(write.call_description).toBe(true);
@@ -380,8 +382,10 @@ describe("buildToolConfig", () => {
       "write_file",
       "exec_command",
       "input_command",
+      "kill_command",
       "run_subagent",
       "input_subagent",
+      "kill_subagent",
       "read_image",
       "describe_image",
     ]);

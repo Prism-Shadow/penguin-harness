@@ -8,23 +8,37 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  Environment,
+  Session,
   abortEvent,
   approvalDecision,
   assistantText,
   compactionBegin,
   compactionEnd,
+  emptyTokenCounts,
   requestBegin,
   requestEnd,
   sessionMeta,
   thinkingMessage,
+  tokenUsage,
   toolCall,
   toolCallOutput,
   userSteeringText,
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  GenerativeModelParameters,
+  LLMInterface,
+  LLMOutcome,
+  OmniMessage,
+  TextPayload,
+} from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -285,6 +299,207 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
     expect(seen).toEqual(["high", undefined]);
+  });
+
+  it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    // First task loads the entry (which registers the notice listener) and finishes.
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(noticeCb).not.toBeNull();
+
+    // A completion notice lands while idle: the manager takes the queue and starts a task with it.
+    const events = capture("session-1");
+    const notice = userText("[background_task_done]\nkind: command\n[/background_task_done]");
+    queue.push(notice);
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 2);
+    expect(runInputs[1]).toEqual([notice]);
+    expect(queue).toHaveLength(0);
+    // The notice input was published to subscribers like any task input.
+    expect(events.some((e) => e.data.includes("background_task_done"))).toBe(true);
+
+    // An empty queue signal is a no-op (no phantom task).
+    noticeCb!();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runInputs).toHaveLength(2);
+  });
+
+  it("live-forwarded background-subagent messages publish to the channel and record usage", async () => {
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(sessions.findById("session-1")!, fake);
+    expect(forward).not.toBeNull();
+    const events = capture("session-1");
+    const child = withOrigin(assistantText("child progress"), "session-child-1");
+    forward!(child);
+    expect(events.some((e) => e.data.includes("child progress"))).toBe(true);
+    // Usage recording rode along (same recorder drive uses).
+    expect(recorded).toContain(child);
+  });
+
+  it("adopt registers the notice listener too (a freshly created session, no loader involved)", async () => {
+    // Regression guard: POST /sessions enters the active table through adopt, not
+    // ensureEntry — a listener registered only on the loader path left brand-new sessions
+    // unable to deliver idle-arrival completion reports (the real-app no-notification bug).
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    const row = sessions.findById("session-1")!;
+    manager.adopt(row, fake);
+    expect(noticeCb).not.toBeNull();
+    queue.push(userText("[background_task_done]\nkind: command\n[/background_task_done]"));
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(queue).toHaveLength(0);
+  });
+
+  it("end-to-end: a run_in_background command finishing after idle reaches the event channel as a harness user message", async () => {
+    // Full production chain with the REAL core pieces — Session, engine, Environment and an
+    // actual OS process — under the real SessionManager (loaded via the loader, which is
+    // what registers the notice listener). Only the LLM is scripted. This is the frontend's
+    // exact feed: the channel events asserted on are what SSE relays byte-for-byte.
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bge2e-"));
+    const environment = new Environment({
+      workspaceDir: dir,
+      toolConfig: {
+        customTools: [
+          {
+            name: "exec_command",
+            description: "run",
+            permission: "rw",
+            timeoutMs: 120000,
+            maxOutputLength: 16000,
+          },
+        ],
+        mcpServers: [],
+      },
+    });
+    // Turn 1: launch a command that outlives the task; turn 2: final reply (task ends,
+    // session idle, process still running); turn 3 is the auto-started notice task.
+    const llm = new (class implements LLMInterface {
+      calls = 0;
+      inputs: OmniMessage[][] = [];
+      async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        this.inputs.push(params.newMessages);
+        if (this.calls === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({
+              cmd: "printf 'serving'; sleep 1",
+              run_in_background: true,
+            }),
+            toolCallId: "tc_bg",
+            stopReason: "completed",
+          });
+        } else {
+          yield assistantText(`reply ${this.calls}`);
+        }
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 2,
+        });
+        return { status: "completed" };
+      }
+    })();
+    const session = new Session({
+      meta: {
+        session_id: "session-1",
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 100000,
+        system_prompt: "sp",
+        agent_state: dir,
+        workspace: dir,
+      },
+      bootstrap: async () => ({ tools: await environment.listTools(), llm, mcp: [] }),
+      mcpServers: [],
+      environment,
+      imagesDir: path.join(dir, "images"),
+      modelHasVision: true,
+    });
+    try {
+      const manager = makeManager(loaderOf(session as unknown as RuntimeSession));
+      const events = capture("session-1");
+      await manager.startTask("session-1", [userText("start a dev server")]);
+      await waitFor(() => manager.statusOf("session-1") === "idle" && llm.calls === 2, 5000);
+      // The task is over, the background process is still alive, and no notice exists yet —
+      // what follows is genuinely the idle-arrival path.
+      expect(events.some((e) => e.data.includes("background_task_done"))).toBe(false);
+
+      // The process exits ~1s in: the completion report must land on the channel as a
+      // harness user message and auto-start a task the model answers.
+      await waitFor(() => events.some((e) => e.data.includes("background_task_done")), 8000);
+      const notice = events.find((e) => e.data.includes("background_task_done"))!;
+      expect(notice.data).toContain('"sender":"harness"');
+      expect(notice.data).toContain('"role":"user"');
+      expect(notice.data).toContain("serving");
+      await waitFor(() => llm.calls === 3 && manager.statusOf("session-1") === "idle", 5000);
+      const turn3 = llm.inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
+      expect(turn3.join("\n")).toContain("[background_task_done]");
+      // The auto task's state flips were broadcast too (the frontend's input gating):
+      // one running per task, so the notice task makes it at least two.
+      const running = events.filter(
+        (e) => e.data.includes('"type":"task_state"') && e.data.includes('"state":"running"'),
+      );
+      expect(running.length).toBeGreaterThan(1);
+    } finally {
+      session.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {
@@ -970,6 +1185,57 @@ describe("session-manager", () => {
     expect(manager.statusOf("session-1")).toBe("running");
     expect(manager.decideApproval("session-1", "tc-1", "allow")).toBe(true);
     await waitFor(() => manager.statusOf("session-1") === "idle");
+  });
+
+  it("sweepIdle: a working background subagent pins the entry, and its live messages count as activity", async () => {
+    // A run_in_background child outlives the task that launched it. Evicting the entry
+    // while it works drops the very Session its completion report is queued on.
+    let running = true;
+    let loads = 0;
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake = (): RuntimeSession => ({
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      hasRunningBackgroundSubagents: () => running,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    });
+    const manager = makeManager({
+      load: async () => {
+        loads++;
+        return fake();
+      },
+    });
+    manager.adopt(ROW, fake());
+    const long = 31 * 60 * 1000;
+
+    // Far past the idle timeout, but the child is still working: the entry stays.
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    sessions.updateApprovalMode("session-1", "allow-all");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // The child streaming is activity in its own right, so the idle clock restarts with it.
+    expect(forward).not.toBeNull();
+    const before = Date.now();
+    forward!(withOrigin(assistantText("child progress"), "session-child-1"));
+    manager.sweepIdle(before + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // Once it settles, the entry is an ordinary idle one again and evicts on schedule.
+    running = false;
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
   });
 
   it("compact: sets compacting, output goes to the channel, returns to idle at the end", async () => {

@@ -11,3 +11,12 @@ export {
   DEFAULT_WRITE_YIELD_MS,
   DEFAULT_EMPTY_POLL_YIELD_MS,
 } from "./limits.js";
+export { ServiceUrlScanner, extractLastLocalUrl } from "./service-url.js";
+export {
+  parsePsPids,
+  parseSsListenPorts,
+  parseLsofListenPorts,
+  parseWindowsProbe,
+  probeGroupListenPorts,
+} from "./port-probe.js";
+export type { ListenSocket } from "./port-probe.js";

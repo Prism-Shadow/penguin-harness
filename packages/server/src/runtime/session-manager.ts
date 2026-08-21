@@ -140,10 +140,27 @@ export interface RuntimeSession {
     material?: { userText: string; assistantText: string };
     signal?: AbortSignal;
   }): Promise<SessionTitleResult>;
+  /**
+   * Subscribes the idle-arrival signal for background-task completion notices (core
+   * `Session.onBackgroundNotice`): fired when a `run_in_background` launch settles while no
+   * Task is running — the manager then takes the queue and submits it as an ordinary task.
+   * Optional: test fakes may omit it.
+   */
+  onBackgroundNotice?(listener: () => void): void;
+  /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
+  takeBackgroundNotices?(): OmniMessage[];
+  /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the entry against idle eviction. Optional, like onBackgroundNotice. */
+  hasPendingBackgroundNotices?(): boolean;
+  /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
+  probeBackgroundCommandServices?(): Promise<void>;
+  /** Subscribes live-forwarded background-subagent messages (core `Session.onBackgroundMessage`); the manager publishes them to the session channel. Optional: test fakes may omit it. */
+  onBackgroundMessage?(listener: (msg: OmniMessage) => void): void;
   /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
+  hasRunningBackgroundSubagents?(): boolean;
   /** Releases environment resources — kills the remaining background processes (core `Session.dispose`). Optional, idempotent. */
   dispose?(): void;
 }
@@ -550,6 +567,45 @@ export class SessionManager {
       pendingBootstrap: [],
       pendingSteering: [],
       lastActivityMs: Date.now(),
+    });
+    // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
+    // process (POST /sessions), and a listener registered only on the loader path left
+    // freshly created sessions unable to deliver idle-arrival completion reports.
+    this.registerNoticeListener(row.sessionId, session);
+  }
+
+  /**
+   * Subscribes the background hooks on a runtime Session entering the active table — every
+   * insertion path must call it (ensureEntry's loads, adopt's fresh creations):
+   * - the idle-arrival signal for completion notices (mid-run arrivals are delivered inside
+   *   the run by core; this signal is the only trigger left when the session sits idle);
+   * - live-forwarded background-subagent messages, published to the session channel (the
+   *   same feed SSE relays) and recorded for usage — a background child streams to the
+   *   frontend in real time past the launching turn's end, until its terminal state.
+   */
+  private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
+    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
+    session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
+  }
+
+  /** Publishes one live background-subagent message and records its usage (fire-and-forget; the child's own Trace is the durable record). */
+  private forwardBackgroundMessage(sessionId: string, msg: OmniMessage): void {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return;
+    // A child producing messages IS session activity: without this stamp the idle sweep
+    // measures only the launching task, and a long background run ages into eviction.
+    entry.lastActivityMs = Date.now();
+    this.deps.channels.get(entry.sessionId).publish(msg);
+    const ctx: UsageContext = {
+      projectId: entry.projectId,
+      agentId: entry.agentId,
+      sessionId: entry.sessionId,
+      provider: entry.provider,
+      modelId: entry.modelId,
+    };
+    void this.deps.recorder.record(ctx, msg).catch((err: unknown) => {
+      this.log(`[usage] Insert failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.deps.errors?.record({ source: "usage", err, ctx, code: "usage_insert_failed" });
     });
   }
 
@@ -1100,6 +1156,16 @@ export class SessionManager {
     return this.entries.get(sessionId)?.session.listBackgroundCommands?.() ?? [];
   }
 
+  /**
+   * Refreshes the listen-port probes behind the process list's `serviceUrl` (core
+   * `Session.probeBackgroundCommandServices`): called by the processes route before
+   * listing, so the first fetch already carries probed URLs. Bounded by core's own probe
+   * timeout and TTL; a session that isn't loaded has no processes to probe.
+   */
+  async probeProcessServices(sessionId: string): Promise<void> {
+    await this.entries.get(sessionId)?.session.probeBackgroundCommandServices?.();
+  }
+
   /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */
   killProcess(sessionId: string, processId: string): boolean {
     const entry = this.entries.get(sessionId);
@@ -1257,6 +1323,13 @@ export class SessionManager {
       // environment, so the process list and its stop control would go blind while the
       // OS process kept running. Exited-but-listed processes don't pin anything.
       if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
+      // A background subagent still working pins it for the same reason: a run_in_background
+      // child outlives the call that launched it, and its completion report and live messages
+      // are delivered through the very Session object eviction would drop.
+      if (entry.session.hasRunningBackgroundSubagents?.()) continue;
+      // Undelivered background completion notices pin the entry too: they live in the core
+      // Session object, so evicting it would silently drop them.
+      if (entry.session.hasPendingBackgroundNotices?.()) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -1376,7 +1449,44 @@ export class SessionManager {
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
+    this.registerNoticeListener(currentId, session);
     return entry;
+  }
+
+  /**
+   * Auto-start of queued background completion notices: called when core signals an
+   * idle-session arrival, and from drive's finally for notices that raced a run's exit.
+   * Revalidates under the session lock; only an idle entry launches, and only when the
+   * queue is non-empty — a busy entry skips, because the running/queued task's engine
+   * drains the same queue at its own boundaries (each notice is delivered exactly once).
+   */
+  private async startBackgroundNoticeTask(sessionId: string): Promise<void> {
+    try {
+      await this.withLock(sessionId, async () => {
+        if (this.closed || this.deletingSessions.has(sessionId)) return;
+        const row = this.deps.sessions.findById(sessionId);
+        if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
+        const entry = this.entries.get(sessionId);
+        if (!entry) {
+          // The runtime entry left the active table between the signal and this lock —
+          // the queued notices left with the released Session object. Say so instead of
+          // dropping the report invisibly (the sweep pins entries with pending notices,
+          // so this is a genuine anomaly worth a trace in the log).
+          this.log(`[background] notice for ${sessionId} dropped: runtime entry not loaded`);
+          return;
+        }
+        // Busy or queued-behind: not a loss — the running/next run's engine drains the
+        // same notice queue at its own input-assembly boundaries.
+        if (entry.status !== "idle" || entry.followUps.length > 0) return;
+        const input = entry.session.takeBackgroundNotices?.() ?? [];
+        if (input.length === 0) return;
+        this.launchTask(entry, input);
+      });
+    } catch (err) {
+      this.log(
+        `[background] notice task start failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -1585,6 +1695,10 @@ export class SessionManager {
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
       if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
+      // Background completion notices that raced this run's exit (arrived after its last
+      // input-assembly boundary): start their delivery task now. No-op when a follow-up
+      // just launched — that run's engine drains the same queue.
+      else void this.startBackgroundNoticeTask(entry.sessionId);
     }
   }
 

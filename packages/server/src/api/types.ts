@@ -1409,6 +1409,8 @@ export interface SessionProcessInfo {
   cwd: string;
   startedAt: string;
   running: boolean;
+  /** The service the process serves, when detected: the last local URL its output printed, else an origin probed from its listening ports. */
+  serviceUrl?: string;
 }
 
 export interface SessionProcessesResponse {

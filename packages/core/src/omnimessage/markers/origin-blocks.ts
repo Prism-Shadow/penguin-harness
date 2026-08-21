@@ -283,6 +283,70 @@ export function parseModelSwitchMessage(text: string): ModelSwitchOrigin | null 
 }
 
 // ---------------------------------------------------------------------------
+// [background_task_done] — completion report of a run_in_background task
+// ---------------------------------------------------------------------------
+
+/** Structured facts of one background-task completion (the block's field lines). */
+export interface BackgroundTaskDone {
+  /** Which background family finished. */
+  kind: "command" | "subagent";
+  /** The registry handle the model already holds: `process_id` or `subagent_id`. */
+  id: string;
+  /** Terminal status of the run. */
+  status: "completed" | "failed";
+  /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
+  detail: string;
+}
+
+/**
+ * Harness-injected user message reporting that a background task finished (`exec_command` /
+ * `run_subagent` launched with `run_in_background`): the `[background_task_done]` block carries
+ * the structured facts, and the body after it is the display text — what the task was, followed
+ * by the tail of its yet-undelivered output (already capped by the producer). The frontend
+ * collapses the block into a one-line notice (the Trace page shows it verbatim); the model reads
+ * the whole thing.
+ */
+export function buildBackgroundTaskDoneMessage(done: BackgroundTaskDone, body: string): string {
+  const block = markerBlock(
+    MARKER_TAGS.backgroundTaskDone,
+    [
+      "Automatic notification from the harness, not the user: a background task you started has finished.",
+      `kind: ${done.kind}`,
+      `id: ${done.id}`,
+      `status: ${done.status}`,
+      ...(done.detail ? [`detail: ${done.detail}`] : []),
+    ].join("\n"),
+  );
+  return body ? `${block}\n\n${body}` : block;
+}
+
+const BACKGROUND_DONE_PATTERNS = dualFormPatterns(
+  MARKER_TAGS.backgroundTaskDone,
+  "\\n([\\s\\S]*?)\\n",
+);
+
+/**
+ * Inverse of `buildBackgroundTaskDoneMessage`: returns the completion facts and the body when
+ * the message **starts with** a `[background_task_done]` block, otherwise null. Prefix-block
+ * semantics like `[scheduled_task]`: the body after the block is returned for normal rendering.
+ */
+export function parseBackgroundTaskDoneMessage(
+  text: string,
+): { done: BackgroundTaskDone; rest: string } | null {
+  const m = matchDualForm(BACKGROUND_DONE_PATTERNS, text);
+  if (!m || m.index !== 0) return null;
+  const done: BackgroundTaskDone = { kind: "command", id: "", status: "completed", detail: "" };
+  for (const [key, value] of fieldLines(m[1]!, ["kind", "id", "status", "detail"])) {
+    if (key === "kind" && (value === "command" || value === "subagent")) done.kind = value;
+    else if (key === "id") done.id = value;
+    else if (key === "status" && (value === "completed" || value === "failed")) done.status = value;
+    else if (key === "detail") done.detail = value;
+  }
+  if (!done.id) return null;
+  return { done, rest: text.slice(m[0].length).replace(/^\n+/, "") };
+}
+
+// ---------------------------------------------------------------------------
 // Shared predicate over the whole-message origin blocks
 // ---------------------------------------------------------------------------
 
