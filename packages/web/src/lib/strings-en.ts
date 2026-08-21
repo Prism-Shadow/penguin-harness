@@ -69,7 +69,6 @@ export const en: Strings = {
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
-    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
     showCliSessionsHint:
@@ -139,8 +138,8 @@ export const en: Strings = {
      */
     checkNow: "Check for updates",
     checking: "Checking…",
-    /** Success toast when the manual check finds a newer release; the row below turns into the update entry. */
-    foundNew: (v: string) => `New version v${v} found — use the update entry below to install`,
+    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
+    foundNew: (v: string) => `New version v${v} found — use the update entry to install`,
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
