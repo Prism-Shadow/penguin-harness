@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#387](https://github.com/Prism-Shadow/penguin-harness/pull/387)
 
 推送 platform（[热更新](../0.2.3/2026-08-18-hot-update.zh.md)）有三种出错方式的结局不是「推送失败」：
 目标跑不了的 bundle 只落地半个版本、交换之后旧 App 的工作还在新 App 背后跑、启动失败的 bundle

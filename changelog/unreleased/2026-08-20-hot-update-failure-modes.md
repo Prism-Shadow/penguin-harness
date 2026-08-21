@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** fix
 - **Scope:** `core`, `server`
+- **PR:** [#387](https://github.com/Prism-Shadow/penguin-harness/pull/387)
 
 Pushing a platform ([hot update](../0.2.3/2026-08-18-hot-update.md)) had three ways to go
 wrong that ended somewhere other than "the push failed": a bundle the target could not run
