@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 13
-updated: 2026-08-20T00:00:00Z
+version: 14
+updated: 2026-08-21T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -97,7 +97,7 @@ for (const m of listSupportedModels()) {
 - Modalities are `"Text" | "Image" | "Video" | "Audio" | "Embed"`. Coverage includes the official vendor endpoints plus the OpenRouter and SiliconFlow gateways; `context_window` and `pricing` are omitted where the platform publishes no authoritative value (image and TTS models, for instance).
 - `pricing` is per million tokens, keyed by the same usage buckets as `usage_metadata`: `prompt_tokens` (non-cached input), `thoughts_tokens` / `response_tokens` (both the output price) and optional `cached_tokens` (cache-hit price). Values are stored in USD; pass `listSupportedModels("CNY")` to convert at 7 CNY/USD.
 
-The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is not the routing table, and it lags in both directions: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine without appearing in it, and AgentHub 0.4.4 lists neither `claude-opus-5` nor `anthropic/claude-opus-5` although both route. For an id the registry omits, take the context window and price from the vendor's own page.
+The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is not the routing table, and it lags in both directions: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine without appearing in it, and a newly launched id can route before the registry carries it. For an id the registry omits, take the context window and price from the vendor's own page.
 
 ## Routing and credentials
 
