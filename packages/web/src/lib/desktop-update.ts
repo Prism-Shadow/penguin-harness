@@ -1,10 +1,9 @@
 /**
  * Client-update row logic for the sidebar user menu (desktop shell only).
  *
- * The row's data is the shell's updater snapshot, polled from GET /api/desktop/update
- * while the menu is open; these helpers keep the mapping pure (vitest runs node-only
- * here, so nothing renders — same split as account-menu.ts). The component in
- * components/account/desktop-update-row.tsx owns the polling and the toasts.
+ * The row's data is the shell's updater snapshot; use-desktop-update.ts owns the
+ * polling, the armed-check watch and the toasts, these helpers keep the mapping pure
+ * (vitest runs node-only here, so nothing renders — same split as account-menu.ts).
  */
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
 import type { AccountMenuSession } from "./account-menu";
@@ -21,13 +20,35 @@ export function offersClientUpdate(session: AccountMenuSession): boolean {
   return session.desktopMode && session.sessionVia === "desktop";
 }
 
-/** What the row renders for one snapshot (`status` null = the shell has not pushed yet). */
+/** The row's render mode; action and busy derive from it (ROW_BEHAVIOR), so they cannot disagree. */
+export type ClientUpdateLabelKind =
+  | "check"
+  | "checking"
+  | "downloading"
+  | "install"
+  | "unsupported"
+  /** No snapshot yet (the shell wires its port a beat after boot): render disabled until one lands. */
+  | "unknown";
+
+const ROW_BEHAVIOR: Record<
+  ClientUpdateLabelKind,
+  { action: "check" | "install" | "none"; busy: boolean }
+> = {
+  check: { action: "check", busy: false },
+  checking: { action: "none", busy: true },
+  downloading: { action: "none", busy: true },
+  install: { action: "install", busy: false },
+  unsupported: { action: "none", busy: false },
+  unknown: { action: "none", busy: false },
+};
+
+/** What the row renders for one snapshot. */
 export interface ClientUpdateRowModel {
-  /** What a click does; `none` renders the row disabled. */
+  labelKind: ClientUpdateLabelKind;
+  /** What a click does; `none` renders the row disabled. Derived from labelKind. */
   action: "check" | "install" | "none";
-  /** Spinner + no click while the shell is checking or downloading. */
+  /** Spinner + no click while the shell is checking or downloading. Derived from labelKind. */
   busy: boolean;
-  labelKind: "check" | "checking" | "downloading" | "install" | "unsupported";
   /** Newer release the label names (`downloading`, `install`). */
   version: string | null;
   /** Download progress 0–100, when the shell reported one. */
@@ -38,80 +59,97 @@ export interface ClientUpdateRowModel {
   unsupportedReason: "dev" | "linux-not-appimage" | null;
 }
 
-export function clientUpdateRow(status: DesktopUpdateStatus | null): ClientUpdateRowModel {
-  const base = {
+function rowOf(
+  labelKind: ClientUpdateLabelKind,
+  status: DesktopUpdateStatus | null,
+  rest: Partial<Pick<ClientUpdateRowModel, "version" | "percent" | "unsupportedReason">> = {},
+): ClientUpdateRowModel {
+  return {
+    labelKind,
+    ...ROW_BEHAVIOR[labelKind],
     version: null,
     percent: null,
-    appVersion: status !== null && status.appVersion !== "" ? status.appVersion : null,
+    appVersion: status?.appVersion ?? null,
     unsupportedReason: null,
+    ...rest,
   };
-  // No push yet: offer the check anyway — the POST either lands once the shell wires
-  // the port (a beat after boot) or answers 503, which the row surfaces as a failure.
-  if (status === null) return { ...base, action: "check", busy: false, labelKind: "check" };
+}
+
+/**
+ * Maps one snapshot to the row. `checkPending` is the gap between clicking the check
+ * and the shell's `checking` frame landing: the row already spins, so a second click
+ * cannot arm a second watch.
+ */
+export function clientUpdateRow(
+  status: DesktopUpdateStatus | null,
+  checkPending = false,
+): ClientUpdateRowModel {
+  if (status === null) return rowOf("unknown", status);
   switch (status.state) {
     case "unsupported":
-      return {
-        ...base,
-        action: "none",
-        busy: false,
-        labelKind: "unsupported",
-        unsupportedReason: status.reason ?? null,
-      };
+      return rowOf("unsupported", status, { unsupportedReason: status.reason ?? null });
     case "checking":
-      return { ...base, action: "none", busy: true, labelKind: "checking" };
+      return rowOf("checking", status);
     case "downloading":
-      return {
-        ...base,
-        action: "none",
-        busy: true,
-        labelKind: "downloading",
+      return rowOf("downloading", status, {
         version: status.version ?? null,
         percent: status.percent ?? null,
-      };
+      });
     case "downloaded":
-      return {
-        ...base,
-        action: "install",
-        busy: false,
-        labelKind: "install",
-        version: status.version ?? null,
-      };
+      return rowOf("install", status, { version: status.version ?? null });
     // idle / up-to-date / error all offer the (re-)check; error details reach the user
     // through the settle toast of the check that produced them, not a persistent row.
     default:
-      return { ...base, action: "check", busy: false, labelKind: "check" };
+      return checkPending ? rowOf("checking", status) : rowOf("check", status);
   }
 }
 
 /** How one row-initiated check ended, for exactly one toast per outcome (the same rule as the server-update row's manual check). */
 export type ClientCheckSettle =
-  { kind: "up-to-date" } | { kind: "found"; version: string | null } | { kind: "failed" };
+  | { kind: "up-to-date" }
+  | { kind: "found"; version: string | null }
+  /** The check ran into a build already sitting on disk: point at the install step, not at a download. */
+  | { kind: "ready"; version: string | null }
+  | { kind: "unsupported"; reason: "dev" | "linux-not-appimage" | null }
+  | { kind: "failed" };
+
+/** An armed check that saw no outcome for this long settles as failed (shell gone, frame lost). */
+export const CLIENT_CHECK_TIMEOUT_MS = 60_000;
 
 /**
- * Decides whether a click's check has settled, given the snapshot at click time, the
- * latest poll, and whether any `checking` frame was seen since. The pair comparison
- * covers the common path (the terminal snapshot differs from the stale one); the
- * `sawChecking` escape hatch covers a check whose terminal state equals the
- * pre-click one byte for byte (up to date → still up to date) with the intermediate
- * frame caught by a poll in between. Returns null while still in flight.
+ * Decides whether an armed check has settled, given the snapshot seq at click time,
+ * the latest snapshot and the time since the click. The shell bumps `seq` on every
+ * event it folds — snapshot equality cannot carry the signal, since a check that ends
+ * where it started (still up to date) is byte-identical. A concurrent automatic check
+ * moving the seq settles the watch too; its outcome is a real, just-completed check,
+ * so reporting it answers the user truthfully. Without a seq on either side the
+ * fallback settles on any terminal state once two poll rounds have passed. Returns
+ * null while still in flight.
  */
 export function clientCheckSettle(
-  atClick: DesktopUpdateStatus | null,
+  atClickSeq: number | null,
   now: DesktopUpdateStatus | null,
-  sawChecking: boolean,
+  elapsedMs: number,
 ): ClientCheckSettle | null {
-  if (now === null || now.state === "checking") return null;
-  const changed = JSON.stringify(atClick) !== JSON.stringify(now);
-  if (!changed && !sawChecking) return null;
+  const timedOut = elapsedMs >= CLIENT_CHECK_TIMEOUT_MS;
+  if (now === null) return timedOut ? { kind: "failed" } : null;
+  if (now.state === "checking") return null; // visibly in flight — the row spins
+  const moved =
+    now.seq !== undefined && atClickSeq !== null ? now.seq !== atClickSeq : elapsedMs >= 4_000;
+  if (!moved) return timedOut ? { kind: "failed" } : null;
   switch (now.state) {
     case "up-to-date":
       return { kind: "up-to-date" };
     case "downloading":
-    case "downloaded":
       return { kind: "found", version: now.version ?? null };
+    case "downloaded":
+      return { kind: "ready", version: now.version ?? null };
+    case "unsupported":
+      return { kind: "unsupported", reason: now.reason ?? null };
     case "error":
       return { kind: "failed" };
+    // idle: the seq moved but no check began (shouldn't happen); only the timeout ends it.
     default:
-      return null;
+      return timedOut ? { kind: "failed" } : null;
   }
 }

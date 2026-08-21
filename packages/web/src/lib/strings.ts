@@ -149,6 +149,15 @@ export const zh = {
       `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
     clientRestartToInstall: (v: string | null) =>
       v !== null ? `重启并安装 v${v}` : "重启并安装更新",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
+    clientInstallConfirmTitle: "重启并安装更新",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    clientInstallConfirmAction: "立即重启",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
     clientUnsupportedDev: "开发运行不支持自更新",
     /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */

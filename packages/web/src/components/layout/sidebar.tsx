@@ -148,7 +148,9 @@ import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { DesktopUpdateRow } from "../account/desktop-update-row";
+import { UpdateMenuRow } from "../account/update-menu-row";
 import { offersClientUpdate } from "../../lib/desktop-update";
+import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
@@ -334,6 +336,13 @@ export function Sidebar({
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  // Client update (desktop shell window only): snapshot + armed-check flag live at
+  // module level in use-desktop-update.ts; this always-mounted hook instance drives
+  // the polling, so a check armed in the menu still settles after the menu closes.
+  const clientUpdateOffered = offersClientUpdate({ desktopMode, sessionVia });
+  const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
+  /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
+  const [clientInstallOpen, setClientInstallOpen] = useState(false);
   // Version row + update reminder: nothing is fetched until the dropdown first opens.
   const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
@@ -1853,9 +1862,22 @@ export function Sidebar({
                 and the dialog's admin self-update re-runs the CLI entry, which does not
                 exist under the desktop shell. */}
             {!desktopMode && (
-              <button
-                type="button"
+              <UpdateMenuRow
+                menuItemClass={menuItemClass}
+                label={
+                  updateChecking
+                    ? S.update.checking
+                    : newVersion !== null
+                      ? S.update.newVersion(newVersion)
+                      : S.update.checkNow
+                }
+                chip={version !== null ? `v${version.version}` : null}
+                busy={updateChecking}
+                dot={newVersion !== null}
                 disabled={updateChecking}
+                {...(versionDate !== null
+                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
+                  : {})}
                 onClick={() => {
                   if (newVersion !== null) {
                     setUserOpen(false);
@@ -1864,46 +1886,23 @@ export function Sidebar({
                     void runUpdateCheck();
                   }
                 }}
-                {...(versionDate !== null
-                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
-                  : {})}
-                className={`${menuItemClass} flex items-center justify-between gap-2 disabled:cursor-default disabled:opacity-60`}
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  {updateChecking && (
-                    <span
-                      aria-hidden
-                      className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                    />
-                  )}
-                  {!updateChecking && newVersion !== null && (
-                    <span
-                      aria-hidden
-                      className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]"
-                    />
-                  )}
-                  <span className="min-w-0 truncate">
-                    {updateChecking
-                      ? S.update.checking
-                      : newVersion !== null
-                        ? S.update.newVersion(newVersion)
-                        : S.update.checkNow}
-                  </span>
-                </span>
-                {version !== null && (
-                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
-                    {`v${version.version}`}
-                  </span>
-                )}
-              </button>
+              />
             )}
             {/* Desktop stand-in for the row above, in the shell's own window only: the
                 same slot updates the CLIENT through the shell's updater (relayed via
                 /api/desktop/update). A browser signed into the same desktop-mode server
                 gets neither row — it can't run the CLI self-update there, nor restart
                 someone's GUI app (offersClientUpdate mirrors the server's own gate). */}
-            {offersClientUpdate({ desktopMode, sessionVia }) && (
-              <DesktopUpdateRow active={userOpen} menuItemClass={menuItemClass} />
+            {clientUpdateOffered && (
+              <DesktopUpdateRow
+                status={clientUpdate.status}
+                checkPending={clientUpdate.checkPending}
+                menuItemClass={menuItemClass}
+                onInstallRequest={() => {
+                  setUserOpen(false);
+                  setClientInstallOpen(true);
+                }}
+              />
             )}
             {/* User management is visible only to admins (the page route also has its own
                 guard as a fallback), and never in desktop mode: the desktop app is
@@ -1957,6 +1956,25 @@ export function Sidebar({
            feedback, and a toast would fire while the user is closing the dialog. */
         onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
       />
+
+      {/* Client-update install consent: restarting interrupts running tasks, the same
+          warning the shell's native prompt carries — the web row must not be the one
+          path that kills work without asking. */}
+      <ConfirmModal
+        open={clientInstallOpen}
+        title={S.update.clientInstallConfirmTitle}
+        onClose={() => setClientInstallOpen(false)}
+        onConfirm={() => {
+          setClientInstallOpen(false);
+          void requestClientInstall();
+        }}
+        confirmLabel={S.update.clientInstallConfirmAction}
+        tone="primary"
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.update.clientInstallConfirmBody}
+        </p>
+      </ConfirmModal>
 
       <CreateProjectDialog
         open={createProjectOpen}

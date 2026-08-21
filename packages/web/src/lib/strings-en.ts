@@ -151,6 +151,18 @@ export const en: Strings = {
       `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
     clientRestartToInstall: (v: string | null) =>
       v !== null ? `Restart to install v${v}` : "Restart to install the update",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null
+        ? `Version v${v} is ready — restart to install`
+        : "The update is ready — restart to install",
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
+    clientInstallConfirmTitle: "Restart and install the update",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody:
+      "PenguinHarness will restart to finish updating. Running tasks will be interrupted.",
+    clientInstallConfirmAction: "Restart now",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
     clientUnsupportedDev: "A dev run does not update itself",
     /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */

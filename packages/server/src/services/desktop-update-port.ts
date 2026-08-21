@@ -42,6 +42,7 @@ export function parseUpdaterStatusMessage(data: unknown): DesktopUpdateStatus | 
   if (typeof status !== "object" || status === null) return null;
   if (typeof status.appVersion !== "string") return null;
   if (typeof status.state !== "string" || !UPDATE_STATES.has(status.state)) return null;
+  if (status.seq !== undefined && typeof status.seq !== "number") return null;
   return status as DesktopUpdateStatus;
 }
 

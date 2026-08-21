@@ -8,7 +8,7 @@
  * must not restart this one's GUI app.
  */
 import { describe, expect, it } from "vitest";
-import { createTestApp, loginAdmin } from "./helpers.js";
+import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
 import type {
   DesktopUpdateStatus,
   DesktopUpdateStatusResponse,
@@ -22,26 +22,18 @@ import {
 } from "../src/services/desktop-update-port.js";
 import type { ShellPort } from "../src/services/desktop-update-port.js";
 
-const TOKEN = "test-desktop-token";
-
-function desktopApp() {
-  return createTestApp({ config: { desktopToken: TOKEN } });
-}
-
-/** Redeems the one-shot desktop-login for a `sessionVia: "desktop"` cookie. */
-async function desktopCookie(app: Awaited<ReturnType<typeof desktopApp>>["app"]): Promise<string> {
-  const res = await app.request(`/api/auth/desktop-login?token=${TOKEN}`);
-  expect(res.status).toBe(302);
-  return res.headers.get("set-cookie")!.split(";")[0]!;
-}
-
-const STATUS: DesktopUpdateStatus = { appVersion: "0.2.3", state: "downloaded", version: "0.3.0" };
+const STATUS: DesktopUpdateStatus = {
+  appVersion: "0.2.3",
+  seq: 7,
+  state: "downloaded",
+  version: "0.3.0",
+};
 
 describe("GET /api/desktop/update", () => {
   it("serves null before the shell's first push, then the stored snapshot", async () => {
-    const t = await desktopApp();
+    const t = await createDesktopApp();
     try {
-      const cookie = await desktopCookie(t.app);
+      const cookie = await desktopLoginCookie(t.app);
       const before = await t.app.request("/api/desktop/update", { headers: { cookie } });
       expect(before.status).toBe(200);
       expect((await before.json()) as DesktopUpdateStatusResponse).toEqual({ status: null });
@@ -55,7 +47,7 @@ describe("GET /api/desktop/update", () => {
   });
 
   it("answers 403 desktop_shell_only to a password-established session", async () => {
-    const t = await desktopApp();
+    const t = await createDesktopApp();
     try {
       const admin = await loginAdmin(t.app);
       const res = await t.app.request("/api/desktop/update", {
@@ -84,9 +76,9 @@ describe("GET /api/desktop/update", () => {
 
 describe("POST /api/desktop/update/{check,install}", () => {
   it("forwards to the registered shell sender and answers 202", async () => {
-    const t = await desktopApp();
+    const t = await createDesktopApp();
     try {
-      const cookie = await desktopCookie(t.app);
+      const cookie = await desktopLoginCookie(t.app);
       const actions: string[] = [];
       t.deps.desktop!.onUpdateCommand((action) => actions.push(action));
 
@@ -109,9 +101,9 @@ describe("POST /api/desktop/update/{check,install}", () => {
   });
 
   it("answers 503 shell_unreachable while no port is wired", async () => {
-    const t = await desktopApp();
+    const t = await createDesktopApp();
     try {
-      const cookie = await desktopCookie(t.app);
+      const cookie = await desktopLoginCookie(t.app);
       const res = await t.app.request("/api/desktop/update/check", {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
@@ -138,6 +130,7 @@ describe("desktop-update-port", () => {
       { type: "desktop-updater-status", status: null },
       { type: "desktop-updater-status", status: { state: "downloaded" } }, // no appVersion
       { type: "desktop-updater-status", status: { appVersion: "1", state: "resting" } },
+      { type: "desktop-updater-status", status: { appVersion: "1", state: "idle", seq: "7" } },
       { type: "desktop-updater-command", status: STATUS },
     ]) {
       expect(parseUpdaterStatusMessage(data)).toBeNull();

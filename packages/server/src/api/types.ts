@@ -2138,6 +2138,13 @@ export interface UpdateCheckResponse {
 export interface DesktopUpdateStatus {
   /** Installed shell version (Electron app.getVersion()). */
   appVersion: string;
+  /**
+   * Bumped by the shell on every updater event it folds, whether or not the visible
+   * state changed. A row-initiated check settles when the seq has moved past its
+   * at-click value and the state is no longer `checking` — snapshot equality can't
+   * carry that signal (a check that ends where it started is byte-identical).
+   */
+  seq?: number;
   state:
     "idle" | "checking" | "up-to-date" | "downloading" | "downloaded" | "error" | "unsupported";
   /** Newer release being fetched / ready to install (`downloading`, `downloaded`). */

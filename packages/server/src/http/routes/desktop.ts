@@ -64,8 +64,8 @@ export function desktopRoutes(deps: AppDeps): Hono {
  * only in desktop mode). Restricted to the shell's own window (`sessionVia === "desktop"`,
  * the same two-field rule as the change-password gate, inverted): a browser signed into
  * the same desktop-mode server must not read the machine's updater state or restart its
- * GUI app. Install consent is the click itself — the shell installs only what its
- * updater already downloaded and verified.
+ * GUI app. Install consent is collected by the page's confirm dialog before the POST —
+ * the shell then installs only what its updater already downloaded and verified.
  */
 export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();

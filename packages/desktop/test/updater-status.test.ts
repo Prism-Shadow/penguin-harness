@@ -2,10 +2,12 @@
  * updater-status.ts unit tests: the event → snapshot fold behind the account-menu
  * client-update row, and the port frame helpers.
  *
- * The one behavioral rule worth pinning hard is the `downloaded` precedence: once a
- * build is on disk, later checking/error/up-to-date events must not replace the
- * "restart to install" snapshot — a periodic re-check failing on a train's Wi-Fi would
- * otherwise hide the one actionable step.
+ * Two behavioral rules are worth pinning hard. `downloaded` suppresses transient noise
+ * (a re-check failing on a train's Wi-Fi must not hide the one actionable step) but
+ * yields to a *different* version being fetched — a replacement download invalidates
+ * the held package, so keeping the old headline would point the install at a deleted
+ * file. And `downloading` suppresses a concurrent check's `checking`, which would
+ * drop the download context and every later progress tick with it.
  */
 import { describe, expect, it } from "vitest";
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
@@ -68,25 +70,65 @@ describe("nextUpdateStatus", () => {
     });
   });
 
-  it("keeps a downloaded build over later checking / error / up-to-date / available events", () => {
+  it("keeps a downloaded build over transient noise: checking / error / up-to-date / same-version re-announces", () => {
     const downloaded = fold([{ kind: "downloaded", version: "1.1.0" }]);
     for (const ev of [
       { kind: "checking" },
       { kind: "error", message: "offline" },
       { kind: "not-available" },
-      { kind: "available", version: "1.2.0" },
+      { kind: "available", version: "1.1.0" },
+      { kind: "downloaded", version: "1.1.0" },
       { kind: "progress", percent: 10 },
     ] satisfies UpdaterEvent[]) {
       expect(nextUpdateStatus(downloaded, ev)).toBe(downloaded);
     }
   });
 
-  it("lets a newer downloaded build replace the held one", () => {
+  it("yields a downloaded build to a different version being fetched (the held package is being replaced)", () => {
     const downloaded = fold([{ kind: "downloaded", version: "1.1.0" }]);
+    expect(nextUpdateStatus(downloaded, { kind: "available", version: "1.2.0" })).toEqual({
+      appVersion: "1.0.0",
+      state: "downloading",
+      version: "1.2.0",
+      percent: 0,
+    });
     expect(nextUpdateStatus(downloaded, { kind: "downloaded", version: "1.2.0" })).toEqual({
       appVersion: "1.0.0",
       state: "downloaded",
       version: "1.2.0",
+    });
+  });
+
+  it("keeps a running download over a concurrent check's noise", () => {
+    const downloading = fold([{ kind: "available", version: "1.1.0" }]);
+    for (const ev of [
+      { kind: "checking" },
+      { kind: "not-available" },
+      { kind: "available", version: "1.1.0" },
+    ] satisfies UpdaterEvent[]) {
+      expect(nextUpdateStatus(downloading, ev)).toBe(downloading);
+    }
+    // Progress keeps flowing after the suppressed events — the regression this rule exists for.
+    expect(nextUpdateStatus(downloading, { kind: "progress", percent: 55 })).toEqual({
+      appVersion: "1.0.0",
+      state: "downloading",
+      version: "1.1.0",
+      percent: 55,
+    });
+  });
+
+  it("lets a running download switch to a different announced version, and still fail on its own error", () => {
+    const downloading = fold([{ kind: "available", version: "1.1.0" }]);
+    expect(nextUpdateStatus(downloading, { kind: "available", version: "1.2.0" })).toEqual({
+      appVersion: "1.0.0",
+      state: "downloading",
+      version: "1.2.0",
+      percent: 0,
+    });
+    expect(nextUpdateStatus(downloading, { kind: "error", message: "disk full" })).toEqual({
+      appVersion: "1.0.0",
+      state: "error",
+      message: "disk full",
     });
   });
 
