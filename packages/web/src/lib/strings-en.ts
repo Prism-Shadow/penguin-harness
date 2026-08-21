@@ -155,6 +155,41 @@ export const en: Strings = {
       "Downloads the latest release and installs it into the install directory on the server (the data directory is not touched). Restart the service afterwards for the update to take effect.",
     /** Shown in place of confirmBody to non-admins, who can read the release notes but cannot run the update. */
     adminOnly: "Only an administrator can run the update from here.",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "Check for updates",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null
+        ? `Version v${v} found — downloading in the background…`
+        : "New version found — downloading in the background…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `Downloading${v !== null ? ` v${v}` : ""}…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `Restart to install v${v}` : "Restart to install the update",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null
+        ? `Version v${v} is ready — restart to install`
+        : "The update is ready — restart to install",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `Client update failed: ${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `Could not start the install: ${detail}`,
+    clientInstallConfirmTitle: "Restart and install the update",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody:
+      "PenguinHarness will restart to finish updating. Running tasks will be interrupted.",
+    clientInstallConfirmAction: "Restart now",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "A dev run does not update itself",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage:
+      "This install is managed by the system package manager — update it there",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

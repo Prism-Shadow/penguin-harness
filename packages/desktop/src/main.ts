@@ -39,7 +39,8 @@ import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
-import { initUpdater } from "./updater.js";
+import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
+import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
   desktopLoginUrl,
   isAppUrl,
@@ -147,6 +148,22 @@ function createWindow(url: string): void {
   void win.loadURL(url);
 }
 
+/**
+ * Client-update relay over the utilityProcess port: forward the account-menu row's
+ * check/install frames to the updater, push every status fold back (plus the current
+ * snapshot now — the fresh child, restarts included, must not start blind). The
+ * subscription dies with the child; the next start wires the next one.
+ */
+function wireUpdaterRelay(child: EmbeddedServer["child"]): void {
+  child.on("message", (message: unknown) => {
+    const action = parseUpdaterCommand(message);
+    if (action !== null) handleUpdaterCommand(action);
+  });
+  const unsubscribe = onUpdaterStatus((status) => child.postMessage(updaterStatusMessage(status)));
+  child.on("exit", () => unsubscribe());
+  child.postMessage(updaterStatusMessage(getUpdaterStatus()));
+}
+
 /** Starts (or restarts) the embedded server and points the window at desktop-login. */
 async function startServerAndWindow(dataRoot: string): Promise<void> {
   const started = await startEmbeddedServer({
@@ -157,6 +174,7 @@ async function startServerAndWindow(dataRoot: string): Promise<void> {
   });
   server = started;
   appOrigin = started.origin;
+  wireUpdaterRelay(started.child);
   // A run that stays up for a minute is healthy: reset the restart budget so a crash
   // days later starts a fresh 1s/2s/4s ladder instead of hitting the cap immediately.
   const healthyTimer = setTimeout(() => {

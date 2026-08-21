@@ -154,6 +154,35 @@ export const zh = {
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
     /** Copy shown to non-admins in place of confirmBody (they can read the release notes but cannot run the update here). */
     adminOnly: "只有管理员可以在这里执行更新。",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "检查更新",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `重启并安装 v${v}` : "重启并安装更新",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
+    clientInstallConfirmTitle: "重启并安装更新",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    clientInstallConfirmAction: "立即重启",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "开发运行不支持自更新",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */

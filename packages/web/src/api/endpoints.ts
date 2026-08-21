@@ -94,6 +94,7 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateRunResponse,
+  DesktopUpdateStatusResponse,
   UsageErrorsPage,
   UsageGroupBy,
   UsageResponse,
@@ -876,3 +877,13 @@ export const checkUpdate = (force = false) =>
 /** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
 export const runUpdate = () =>
   apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+
+// Desktop client update (desktop-shell sessions only) ----------------------------------
+
+export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+export const desktopUpdateCheck = () =>
+  apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
+
+export const desktopUpdateInstall = () =>
+  apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });

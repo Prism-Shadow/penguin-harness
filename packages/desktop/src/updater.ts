@@ -1,16 +1,18 @@
 /**
- * Auto-update (design § "桌面端原型 · 自动更新").
+ * Auto-update.
  *
  * electron-updater against the GitHub Releases feed the build publishes
- * (`latest*.yml` + `.blockmap` ship as Release assets). The shell deliberately exposes
- * updates through **native UI only** — an app-menu item plus dialogs — because it injects
- * no IPC channel into the page; the Web App keeps hiding its own self-update entry in
- * desktop mode.
+ * (`latest*.yml` + `.blockmap` ship as Release assets). Updates surface in two places:
+ * the native app-menu item with its dialogs, and the account menu of the shell's own
+ * window — fed over the utilityProcess port to the embedded server (main.ts pushes each
+ * status fold, GET /api/desktop/update serves it). The window itself stays a plain
+ * browser: the relay adds server HTTP surface, never a renderer IPC bridge.
  *
  * Automatic checks are quiet: they run on a timer, download in the background, and speak
  * up only when a build is ready to install. A manual check reports every outcome (already
  * up to date / downloading / failed), the same rule the Web App's check-for-updates row
- * follows — a manual action that answers with silence reads as broken.
+ * follows — a manual action that answers with silence reads as broken. A web-initiated
+ * check is manual too, but its outcomes render in the row that asked, not in dialogs.
  *
  * Release builds use Developer ID signing on macOS and Authenticode signing on Windows;
  * unsigned dry-run artifacts can still find updates, but platform trust and release
@@ -20,7 +22,10 @@
 import { app, dialog, shell } from "electron";
 import type { BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
+import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
 import { feedUrlOverride, updateSupport } from "./update-support.js";
+import { initialUpdateStatus, nextUpdateStatus } from "./updater-status.js";
+import type { UpdaterEvent } from "./updater-status.js";
 
 const { autoUpdater } = electronUpdater;
 
@@ -37,6 +42,78 @@ function log(line: string): void {
 
 let manualCheckInFlight = false;
 let downloadedVersion: string | null = null;
+
+// --- status relay (the account-menu row's data source) -----------------------
+
+let status: DesktopUpdateStatus = initialUpdateStatus(app.getVersion());
+let statusSeq = 0;
+const statusListeners = new Set<(status: DesktopUpdateStatus) => void>();
+
+/** Folds one event into the snapshot, stamps the seq and pushes it to every subscriber. */
+function emitStatus(ev: UpdaterEvent): void {
+  status = { ...nextUpdateStatus(status, ev), seq: ++statusSeq };
+  for (const listener of statusListeners) listener(status);
+}
+
+/**
+ * Re-pushes the current snapshot with a fresh seq — the NACK for a relayed check that
+ * changes nothing (already downloading, or a build already waiting): the row's armed
+ * check settles on what is, instead of waiting out its timeout.
+ */
+function reannounceStatus(): void {
+  status = { ...status, seq: ++statusSeq };
+  for (const listener of statusListeners) listener(status);
+}
+
+/** Current snapshot, for the initial push after a server (re)start. */
+export function getUpdaterStatus(): DesktopUpdateStatus {
+  return status;
+}
+
+/** Subscribes to every status fold; returns the unsubscribe (main.ts drops it when the server child exits). */
+export function onUpdaterStatus(listener: (status: DesktopUpdateStatus) => void): () => void {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+}
+
+/**
+ * Server-relayed command from the account-menu row. `check` is a manual check whose
+ * outcomes render in the row (no dialogs); a check that cannot run answers with a
+ * status push instead of silence, so the row always settles. `install` restarts into a
+ * downloaded build — the page confirmed the interruption before sending it, and the
+ * row only offers it in the `downloaded` state, so a stale frame is dropped here.
+ */
+export function handleUpdaterCommand(action: "check" | "install"): void {
+  if (action === "check") {
+    const support = updateSupport({
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+      env: process.env,
+    });
+    if (!support.supported) {
+      emitStatus({ kind: "unsupported", reason: support.reason });
+      return;
+    }
+    if (
+      downloadedVersion !== null ||
+      status.state === "downloading" ||
+      status.state === "checking"
+    ) {
+      reannounceStatus();
+      return;
+    }
+    void check();
+    return;
+  }
+  if (downloadedVersion === null) {
+    log("install requested with nothing downloaded (stale row); ignoring");
+    return;
+  }
+  // Same path as the dialog's "Restart now": quitAndInstall goes through the normal
+  // quit sequence, so the shell's before-quit hook still stops the embedded server
+  // gracefully before the files are replaced.
+  autoUpdater.quitAndInstall();
+}
 
 /** Whether the "Check for Updates…" menu item should be enabled at all. */
 export function updatesAvailableInThisForm(): boolean {
@@ -56,6 +133,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   if (!support.supported) {
     log(`disabled (${support.reason})`);
+    emitStatus({ kind: "unsupported", reason: support.reason });
     return;
   }
 
@@ -74,9 +152,13 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
     log(`feed override: ${override}`);
   }
 
-  autoUpdater.on("checking-for-update", () => log("checking"));
+  autoUpdater.on("checking-for-update", () => {
+    log("checking");
+    emitStatus({ kind: "checking" });
+  });
   autoUpdater.on("update-not-available", (info: { version: string }) => {
     log(`up to date (${info.version})`);
+    emitStatus({ kind: "not-available" });
     if (manualCheckInFlight) {
       manualCheckInFlight = false;
       void dialog.showMessageBox({
@@ -89,6 +171,7 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   autoUpdater.on("update-available", (info: { version: string }) => {
     log(`update available: ${info.version} (downloading)`);
+    emitStatus({ kind: "available", version: info.version });
     if (manualCheckInFlight) {
       manualCheckInFlight = false;
       void dialog.showMessageBox({
@@ -102,14 +185,17 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
   });
   autoUpdater.on("download-progress", (p: { percent: number }) => {
     log(`downloading ${Math.round(p.percent)}%`);
+    emitStatus({ kind: "progress", percent: Math.round(p.percent) });
   });
   autoUpdater.on("update-downloaded", (info: { version: string }) => {
     downloadedVersion = info.version;
     log(`downloaded: ${info.version}`);
+    emitStatus({ kind: "downloaded", version: info.version });
     void promptRestart(info.version, getWindow());
   });
   autoUpdater.on("error", (err: Error) => {
     log(`error: ${err.message}`);
+    emitStatus({ kind: "error", message: err.message });
     if (manualCheckInFlight) {
       manualCheckInFlight = false;
       void dialog
@@ -132,6 +218,12 @@ export function initUpdater(getWindow: () => BrowserWindow | null): void {
 }
 
 async function check(): Promise<void> {
+  // A waiting build ends the checking: a re-check with autoDownload on would start
+  // fetching any newer release and invalidate the downloaded package on disk while
+  // the UI still points its install action at it. The user installs what they were
+  // offered; the next launch checks again. A running download likewise finishes
+  // undisturbed.
+  if (downloadedVersion !== null || status.state === "downloading") return;
   try {
     await autoUpdater.checkForUpdates();
   } catch (err) {
@@ -158,6 +250,15 @@ export async function checkForUpdatesManually(): Promise<void> {
   }
   if (downloadedVersion !== null) {
     await promptRestart(downloadedVersion, null);
+    return;
+  }
+  if (status.state === "downloading") {
+    // check() would decline anyway; a manual action still answers (the silence rule).
+    await dialog.showMessageBox({
+      type: "info",
+      message: "An update is downloading.",
+      detail: "You will be asked to restart when it is ready.",
+    });
     return;
   }
   manualCheckInFlight = true;
