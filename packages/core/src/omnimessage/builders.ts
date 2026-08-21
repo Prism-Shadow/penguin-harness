@@ -96,7 +96,7 @@ export function textMessage(
   });
 }
 
-/** User-role text. `sender` marks non-human origins (a parent agent's subagent prompt, a harness injection); omitted = the human user, and the field stays absent. */
+/** User-role text. `sender` marks non-human origins (the parent agent's subagent prompt, a harness or server injection); omitted = the human user, and the field stays absent. */
 export const userText = (text: string, sender?: TextSender): OmniMessage<TextPayload> => {
   const msg = textMessage("user", text);
   if (sender !== undefined && sender !== "user") msg.payload.sender = sender;

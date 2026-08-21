@@ -58,7 +58,7 @@ interface TextPayload {
   type: "text";
   role: "user" | "assistant";
   text: string;
-  sender?: "user" | "agent" | "harness"; // who produced a user-role text; absent = the human user
+  sender?: "user" | "parent_agent" | "harness" | "server"; // who produced a user-role text; absent = the human user
   fidelity?: Fidelity;        // e.g. { phase } segment marker (GPT-5), { signature }
   stop_reason?: StopReason;
 }

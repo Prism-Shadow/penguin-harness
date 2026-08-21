@@ -153,8 +153,9 @@ describe("[background_task_done] marker and the sender field", () => {
   it("userText marks non-human senders and leaves human input unmarked", () => {
     expect((userText("hi").payload as TextPayload).sender).toBeUndefined();
     expect((userText("hi", "user").payload as TextPayload).sender).toBeUndefined();
-    expect((userText("hi", "agent").payload as TextPayload).sender).toBe("agent");
+    expect((userText("hi", "parent_agent").payload as TextPayload).sender).toBe("parent_agent");
     expect((userText("hi", "harness").payload as TextPayload).sender).toBe("harness");
+    expect((userText("hi", "server").payload as TextPayload).sender).toBe("server");
   });
 });
 

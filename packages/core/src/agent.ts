@@ -720,9 +720,9 @@ export class Agent {
             // Trace, so replay never duplicates it. Later rounds (input_subagent
             // follow-up prompts) come through this same generator and are forwarded the
             // same way.
-            // sender "agent": in the child's Trace this user turn came from the parent
-            // agent (run_subagent's prompt / input_subagent's follow-up), not a human.
-            const input = userText(prompt, "agent");
+            // sender "parent_agent": in the child's Trace this user turn came from the
+            // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
+            const input = userText(prompt, "parent_agent");
             yield withOrigin(input, hop);
             for await (const msg of childSession.run([input], {
               ...(signal ? { signal } : {}),
