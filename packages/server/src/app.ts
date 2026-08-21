@@ -50,8 +50,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
-import { IDENTITY_RESOURCE_ID } from "./terminal/identity.js";
+import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
@@ -257,15 +256,6 @@ export async function bootAppDeps(
     ...(overrides.now ? { now: overrides.now } : {}),
   });
 
-  // The seam runs before the auth middleware, so a platform serving an API of its own has
-  // no `c.var.user`. Authenticating is the runtime's job, not something a bundle should
-  // re-implement against cookie names and session TTLs — so it is published as a
-  // capability the booting platform claims (see terminal/identity.ts).
-  hmr.resources.register(IDENTITY_RESOURCE_ID, async (request: Request) => {
-    const token = readSessionCookie(request.headers.get("cookie"));
-    const authed = token === null ? null : authService.authenticateWithMeta(token);
-    return authed === null ? null : { userId: authed.user.userId };
-  });
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
   // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
@@ -511,18 +501,6 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
       headers: { "Content-Type": type },
     });
   });
-}
-
-/** The session cookie out of a raw Cookie header (the seam hands over a plain Request). */
-function readSessionCookie(header: string | null): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------

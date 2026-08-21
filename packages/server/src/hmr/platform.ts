@@ -192,7 +192,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
-    const identity = identityFrom(ctx.resources);
+    // Ordinary code over the claimed capability (see terminal/identity.ts): the resolver
+    // wraps caps.authService, the same object the business routes authenticate with. A
+    // bare kernel has no auth — terminals stay fail-closed there.
+    const identity = identityFrom(caps?.authService ?? null);
 
     // The business deps, built per App over the runtime's published capabilities — see
     // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;

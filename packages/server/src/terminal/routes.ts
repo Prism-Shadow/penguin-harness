@@ -8,10 +8,10 @@
  * attached per-route, not as a prefix middleware, so a request nothing here serves
  * declines BEFORE authentication, same as a request outside the prefix.
  *
- * Identity is resolved through a runtime capability, not re-implemented here: the seam
- * runs BEFORE the auth middleware (app.ts mounts it there on purpose, so a push can
- * decide its own authentication), and "who is this request from" is exactly what the
- * runtime layer owns — it boots, transports and authenticates. Body limits and the
+ * Identity is built over the claimed auth capability (terminal/identity.ts), not
+ * re-implemented here: the seam runs BEFORE the auth middleware (app.ts mounts it there
+ * on purpose, so a push can decide its own authentication), and the resolver wraps the
+ * same AuthService the business routes authenticate with. Body limits and the
  * JSON-only rule for writes DO apply already: both middlewares sit above the seam.
  *
  * Split the way this server is built: JSON over HTTP for control, and a separate binary
