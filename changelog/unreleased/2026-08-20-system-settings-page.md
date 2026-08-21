@@ -1,4 +1,4 @@
-# System settings page
+# System settings dialog
 
 - **Date:** 2026-08-20
 - **Type:** feature
@@ -7,17 +7,24 @@
 
 [中文版](2026-08-20-system-settings-page.zh.md)
 
-Merged three settings that sat as separate entries in the sidebar user menu — Proxy options, Upload limits, and the Show CLI sessions switch — into one System settings page at `/settings/:section`, with a grouped left sub-nav. The user menu kept a single **System settings** row in their place, and the two dialog components it used to open were deleted.
+Merged the settings that sat as separate rows and dialogs in the sidebar user menu into one **System settings dialog**, opened from the menu's single remaining System settings row: a left rail of pages — grouped Personal / Server — with each page a list of title-and-description rows. The rail, pages and row layout follow the Project-settings-style paged dialog; the shell is a reusable `PagedDialog` component. The old `/settings/:section` and `/admin/users` routes were removed along with the standalone settings page.
 
-## Sub-pages
+## Pages
 
-- **Personal → General** — the per-user **Show CLI sessions** switch, applied and persisted the moment it is touched, as it was in the menu.
-- **Server → Proxy options** — admin only. The two switches and their shared address kept the single-PUT save, the inline `invalid_proxy_url` rejection and the "no changes to save" toast. A save now adopts the response as the new baseline, so the address settles into the normalized form the server stored instead of the form that was typed.
-- **Server → Upload limits** — admin only. Same save path, same inline `invalid_attachment_limit` rejection, and the same `/api/me` re-pull that keeps the composer's cap in step with a raised limit.
+- **Personal → General** — interface language, display currency, and the per-user **Show CLI sessions** switch; each applies the moment it is touched, as in the menu.
+- **Personal → Appearance** — app theme, terminal theme, font size and accent color, moved out of the user menu unchanged.
+- **Personal → Account** — the Change password action; the page exists only where a password exists to change (the desktop shell's own window never sees one).
+- **Server → Proxy options / Upload limits** — admin only; both kept their single-PUT save, inline rejections, and follow-up behavior from the previous settings page.
+- **Server → Updates** — the manual check-for-updates action with the running version and its release-date hint, and — once a newer release is known — the entry into the update dialog. Hidden in desktop mode, where updating is the shell's job. The user menu keeps the reminder: its dot and a "New version available" row that opens this page directly.
+- **Server → Users** — user management (list / create / reset password / delete), moved off its own route into the dialog; admin only and absent in desktop mode.
+
+## Terminal theme follows the app by default
+
+The terminal theme's default changed from pinned dark to **follow the app theme**: with nothing chosen, switching the app light/dark carries the terminal along. An explicitly saved light/dark choice is untouched — an absent stored value reads as "follow", and pinning either mode still decouples the two.
 
 ## Details
 
-- The Server group renders for admins alone, and a non-admin typing `/settings/proxy` is sent to their own first sub-page — the same answer an unknown segment gets, so the address bar reveals nothing about which sections exist. A viewer left with a single group gets no group headings.
-- The route was registered under the existing `RequireAuth` guard. `/settings` with no segment resolves to the first sub-page the viewer may open.
-- No server change: the surface moved, the admin-only `GET|PUT /api/admin/settings` endpoints behind it did not.
-- The Web App reference gained a **System Settings (/settings)** chapter, which absorbed the previous Upload Limits chapter and documents the proxy sub-page for the first time.
+- Page visibility is one registry consulted by both the rail and the landing-page request, so a non-admin asking for an admin page lands on their own first page — the same answer an unknown request gets — and is never told the page exists. The admin APIs answer 403 regardless.
+- The desktop shell's window drops the Account, Updates and Users pages (token session, shell-owned updates, single-user server); a password session against the same desktop-mode server keeps Account.
+- No server change: the surfaces moved, the endpoints behind them did not.
+- The Web App reference's System Settings chapter now describes the dialog and its pages, and the Version-and-Updates chapter points at the Updates page.

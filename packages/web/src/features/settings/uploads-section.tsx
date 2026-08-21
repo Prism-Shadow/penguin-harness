@@ -104,7 +104,6 @@ export function UploadsSection() {
   const hydrated = settings !== null;
   return (
     <SectionShell
-      title={S.settings.uploadLimitsTitle}
       actions={
         <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
           {S.common.save}

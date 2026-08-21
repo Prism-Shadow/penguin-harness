@@ -122,19 +122,27 @@ Drill down Agent → date → Session → Trace file. Per-turn cards show a cont
 
 Read-only scoreboards per Benchmark: switch the metric (score / cost / duration), drill into each Case's runs, and jump to the linked Session and Trace. Works together with the [Self-Improvement](/self-improvement) workflow.
 
-## User Administration (/admin/users)
+## System Settings
 
-Admin only: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
+One dialog for the settings that belong to neither a Project nor an Agent, opened from the sidebar user menu's **System settings** row: a left rail of pages, each page a list of rows — title and a one-line explanation on the left, the control on the right.
 
-## System Settings (/settings)
-
-One page for the settings that belong to neither a Project nor an Agent, with a left sub-nav switching between sub-pages. The sidebar user menu's **System settings** row opens it, and every sub-page is deep-linkable (`/settings/proxy`).
-
-The sub-nav is grouped. **Personal** holds preferences that belong to the signed-in account and apply the moment they are touched — no Save button, nothing to lose by navigating away. **Server** holds the server-global settings written through `GET|PUT /api/admin/settings`, and admins alone see it: a non-admin gets neither the group nor its entries, a path naming one of them lands on their own first sub-page instead of announcing that the section exists, and the API answers a non-admin with 403 on both verbs whatever the browser rendered.
+The rail is grouped. **Personal** holds preferences that belong to the signed-in account and apply the moment they are touched — no Save button, nothing to lose by closing the dialog. **Server** holds the server-global surfaces: the settings written through `GET|PUT /api/admin/settings` and user management are admin-only — a non-admin gets neither those entries nor any hint they exist, and the APIs answer a non-admin with 403 whatever the browser rendered — while the Updates page is visible to every account outside the desktop app. In the desktop app the update and user-management pages are absent entirely (updating is the desktop shell's job, and the server runs single-user), and the shell's own window also has no Account page — it signs in through the shell's token and holds no password to change, while a browser signed into the same server with a password keeps it.
 
 ### General
 
-Personal. **Show CLI sessions** (default off): off, the conversation list holds only Sessions created in the Web App and is served straight from the database; on, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Stored per user, and the Trace browser follows the same preference.
+Personal. **Language** (Chinese / English / follow the browser) and the **display currency** for prices (USD / CNY; storage is always USD — conversion happens only at the edge of the screen). **Show CLI sessions** (default off): off, the conversation list holds only Sessions created in the Web App and is served straight from the database; on, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Stored per user, and the Trace browser follows the same preference.
+
+### Appearance
+
+Personal. The app **theme** (light / dark / follow the system), the **terminal theme** — the terminal panel keeps its own light/dark and by default follows the app theme; pin it light or dark to decouple the two, for prompts and TUIs tuned to one screen — the interface **font size**, and the **accent color**.
+
+### Account
+
+The **Change password** action. The page exists only where a password exists to change: the desktop shell's own window signs in through the shell's one-shot token and never sees one.
+
+### Users
+
+Admin only, outside the desktop app: list and create users, reset passwords, and delete users (the built-in admin cannot be deleted).
 
 ### Proxy Options
 
@@ -150,7 +158,7 @@ Two numbers are deliberately not exposed. The per-message file **count** stays a
 
 ## Version and Updates
 
-The sidebar user menu carries a manual "Check for updates" action directly below "Change password"; the running version sits muted on the right of that row, and its release date — stamped into the build by the release workflow, displayed without any network access — appears as the row's localized "Last updated Jul 26"-style tooltip (dev builds and releases that predate the stamping, v0.1.2 and earlier, have no date). The new-chat page shows the same identity as a version line under the brand. The app checks GitHub for a newer release once the menu has first been opened, and immediately — bypassing the cached result — when the manual action is clicked; the latter reports "You're on the latest version" when nothing newer exists. When a newer release is found, a dot appears on the user button, the version displays gain a small superscript "New version available" badge (the draft-page badge links to the release), and the menu gains a release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
+System settings → **Updates** carries the manual "Check for updates" action; the running version sits muted beside it, and its release date — stamped into the build by the release workflow, displayed without any network access — appears as the row's localized "Last updated Jul 26"-style hint (dev builds and releases that predate the stamping, v0.1.2 and earlier, have no date). The new-chat page shows the same identity as a version line under the brand. The app checks GitHub for a newer release once the sidebar user menu has first been opened, and immediately — bypassing the cached result — when the manual action is clicked; the latter reports "You're on the latest version" when nothing newer exists. When a newer release is found, a dot appears on the user button, the draft page's version line gains a small superscript "New version available" badge linking to the release, and the menu gains a "New version available" row that opens the Updates page, whose dialog carries the release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
 
 ## Projects and Members
 

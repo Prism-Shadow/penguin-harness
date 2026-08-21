@@ -92,7 +92,6 @@ export function ProxySection() {
   const hydrated = settings !== null;
   return (
     <SectionShell
-      title={S.settings.proxyTitle}
       description={S.settings.proxyHint}
       actions={
         <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>

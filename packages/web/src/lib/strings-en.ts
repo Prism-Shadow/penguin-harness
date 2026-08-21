@@ -59,13 +59,17 @@ export const en: Strings = {
 
   settings: {
     language: "Language",
-    /** Sidebar user-menu row opening the System settings page. */
+    languageHint: "Interface language; can follow the browser",
+    /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "System settings",
-    /** Sub-nav headings: the viewer's own preferences vs. the whole server's. */
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
-    /** Personal sub-page (the per-user preferences). */
+    /** Personal pages of the settings dialog. */
     generalTitle: "General",
+    appearanceTitle: "Appearance",
+    accountTitle: "Account",
+    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
     showCliSessionsHint:
@@ -92,18 +96,24 @@ export const en: Strings = {
       `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
       `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
+    themeHint: "Light or dark look of the app",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
     terminalTheme: "Terminal theme",
+    terminalThemeHint: "Colors of the terminal panel; follows the app theme by default",
     followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
+    fontSizeHint: "Overall interface font size",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
+    accentHint: "Interface accent color",
+    currencyHint: "Display currency for prices; storage is always USD",
+    changePasswordHint: "Change this account's sign-in password",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",

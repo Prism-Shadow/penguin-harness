@@ -49,41 +49,50 @@ describe("offersChangePassword", () => {
   });
 });
 
+describe("the settings section registry", () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), "../src/lib/settings-sections.ts"),
+    "utf8",
+  );
+
+  it("gates the account page on the predicate rather than listing it always", () => {
+    // The change-password row moved from the sidebar menu into the settings dialog; the
+    // predicate now decides whether that page exists at all. Without this the predicate
+    // could pass every test above while the registry ignored it.
+    expect(source).toContain("offersChangePassword(v)");
+  });
+});
+
 describe("the sidebar user menu", () => {
   const source = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/sidebar.tsx"),
     "utf8",
   );
 
-  it("gates its change-password entry on the predicate rather than rendering it always", () => {
-    // Without this the predicate could pass every test above while the menu ignored it,
-    // which is the exact regression this change guards against.
-    expect(source).toContain("offersChangePassword({ desktopMode, sessionVia })");
-  });
-
-  it("leaves the sibling entries on their own desktopMode gate", () => {
-    // Sign out and Users are hidden for the whole desktop-mode server, not just the
-    // shell's window; the narrower rule above must not be copied onto them by accident.
+  it("keeps sign-out on its own desktopMode gate", () => {
+    // Sign out is hidden for the whole desktop-mode server, not just the shell's window.
     expect(source).toContain("{!desktopMode && (");
-    expect(source).toContain("{user?.isAdmin && !desktopMode && (");
   });
 
   it("reaches the settings it no longer holds through one ungated System settings entry", () => {
-    // Proxy options and Upload limits used to be two admin-gated rows here, and "Show CLI
-    // sessions" an inline switch. All three moved to /settings, whose own sub-nav decides
-    // which of them this viewer sees — so the row itself carries no isAdmin test, or a
-    // non-admin would lose the personal preference along with the admin ones.
-    expect(source).toContain('go("/settings")');
-    expect(source).not.toContain("S.settings.proxyMenu");
-    expect(source).not.toContain("S.settings.uploadLimitsMenu");
+    // The preference rows, change password, the update row and user management all moved
+    // into the settings dialog, whose own section registry decides which pages this viewer
+    // sees — so the row itself carries no isAdmin test, or a non-admin would lose the
+    // personal pages along with the admin ones.
+    expect(source).toContain("setSettingsOpen(true)");
+    expect(source).not.toContain("offersChangePassword");
     expect(source).not.toContain("S.settings.showCliSessions");
+    expect(source).not.toContain("S.settings.theme");
+    expect(source).not.toContain('go("/settings")');
+    expect(source).not.toContain('go("/admin/users")');
   });
 
-  it("no longer mounts the dialogs that surface moved into", () => {
-    // The components are deleted; a stale mount here would be a build failure rather than a
-    // silent one, but the menu keeping an opener for a surface reachable elsewhere is the
-    // regression worth naming.
+  it("no longer mounts the dialogs whose surfaces moved into the settings dialog", () => {
+    // A stale mount would be a build failure rather than a silent one, but the menu
+    // keeping an opener for a surface reachable elsewhere is the regression worth naming.
     expect(source).not.toContain("ProxySettingsDialog");
     expect(source).not.toContain("UploadLimitsDialog");
+    expect(source).not.toContain("ChangePasswordDialog");
+    expect(source).not.toContain("UpdateDialog");
   });
 });
