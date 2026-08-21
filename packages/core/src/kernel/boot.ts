@@ -23,9 +23,11 @@ export interface Resources {
    * itself knows nothing about kinds, so a platform can introduce a resource type the
    * runtime has never heard of and still have it cleaned up at process exit.
    *
-   * Returns the PAIRED unregister for this exact registration: it removes the entry only
-   * while the slot still holds it, so a later overwrite by a successor turns the handle
-   * into a no-op — a dead generation can never delete a slot it no longer owns. This is
+   * Returns the PAIRED unregister for this exact registration: it removes the entry AND
+   * runs its dispose — out of the registry means shut down, or the process-exit sweep
+   * could no longer reach it. Both are identity-checked: a later overwrite by a successor
+   * turns the handle into a no-op and moves shutdown responsibility to the new
+   * registration — a dead generation can never touch a slot it no longer owns. This is
    * the only way to remove a single entry; there is deliberately no release-by-id, which
    * would be an unpaired delete aimed at whatever happens to occupy the slot.
    */

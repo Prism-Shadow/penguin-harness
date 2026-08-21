@@ -175,8 +175,8 @@ export class TerminalManager {
     this.exitUnsubs.clear();
     for (const [id, timer] of this.reapTimers) {
       clearTimeout(timer);
-      this.sessions.get(id)?.dispose();
       this.sessions.delete(id);
+      // Unregister disposes as it removes — one call, paired and identity-safe.
       this.unregisters.get(id)?.();
       this.unregisters.delete(id);
     }
@@ -223,11 +223,10 @@ export class TerminalManager {
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
       this.reapTimers.delete(id);
-      this.sessions.get(id)?.dispose();
       this.sessions.delete(id);
-      // Out of the registry too — through the PAIRED unregister, so this can only ever
-      // remove our own registration: a disposed pty must not be claimable by the next
-      // boot, and a reap must never delete an entry a successor re-registered.
+      // The paired unregister both removes the entry and disposes the session ("out of
+      // the registry means shut down"), and only ever acts on our own registration — a
+      // reap can never touch an entry a successor re-registered.
       this.unregisters.get(id)?.();
       this.unregisters.delete(id);
     }, delayMs);

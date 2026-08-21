@@ -25,10 +25,16 @@ export class HotResources implements Resources {
     // order, which later entries depending on earlier ones rely on.
     this.map.delete(id);
     this.map.set(id, entry);
-    // The paired unregister: identity-checked, so it only ever removes THIS registration.
-    // An overwrite by a successor makes it a no-op — see the kernel interface's doc.
+    // The paired unregister: identity-checked, so it only ever acts on THIS registration.
+    // Out of the registry means SHUT DOWN — the map is the list of live resources, and an
+    // entry that left it silently would also leave the process-exit sweep's reach. The
+    // one way a resource outlives its registration is takeover: an overwrite by a
+    // successor retires this handle into a no-op, and shutdown responsibility moves to
+    // the new registration with it.
     return () => {
-      if (this.map.get(id) === entry) this.map.delete(id);
+      if (this.map.get(id) !== entry) return;
+      this.map.delete(id);
+      entry.dispose?.();
     };
   }
 

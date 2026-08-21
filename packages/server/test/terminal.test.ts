@@ -499,10 +499,13 @@ describePty("terminal manager lifecycle", () => {
     const registry = new Map<string, unknown>();
     return new TerminalManager(
       {
-        register: (id, resource) => {
+        register: (id, resource, dispose) => {
           registry.set(id, resource);
+          // Mirrors HotResources: unregister removes AND disposes (identity-checked).
           return () => {
-            if (registry.get(id) === resource) registry.delete(id);
+            if (registry.get(id) !== resource) return;
+            registry.delete(id);
+            dispose?.();
           };
         },
         claim: <T>(id: string) => registry.get(id) as T | undefined,
