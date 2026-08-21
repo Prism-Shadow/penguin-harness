@@ -203,7 +203,10 @@ describe("session service-url wiring", () => {
     const env = new Environment({ workspaceDir: dir, toolConfig: toolConfig() });
     cleanups.push(async () => {
       env.dispose();
-      await rm(dir, { recursive: true, force: true });
+      // Retries: the command launched below keeps this dir as its cwd, and on Windows a
+      // just-killed process releases that lock asynchronously — an immediate recursive rm
+      // hits EBUSY. fs.rm retries those with a linear backoff.
+      await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     });
     // Launch via the tool path with run_in_background: the model never polls, yet the URL
     // must still be picked up — core sees the output stream directly.

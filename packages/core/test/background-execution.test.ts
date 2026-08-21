@@ -105,7 +105,9 @@ async function makeEnv(): Promise<{ env: Environment; dir: string }> {
   const env = new Environment({ workspaceDir: dir, toolConfig: commandToolConfig() });
   cleanups.push(async () => {
     env.dispose();
-    await rm(dir, { recursive: true, force: true });
+    // Retries: background commands keep this dir as their cwd, and on Windows a just-killed
+    // process releases that lock asynchronously — an immediate recursive rm hits EBUSY.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
   return { env, dir };
 }
@@ -244,7 +246,7 @@ describe("exec_command run_in_background", () => {
 
   it("dispose suppresses pending completion reports", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
-    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    cleanups.push(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
     const env = new Environment({ workspaceDir: dir, toolConfig: commandToolConfig() });
     const events: BackgroundTaskDoneEvent[] = [];
     env.setBackgroundTaskListener((e) => events.push(e));
