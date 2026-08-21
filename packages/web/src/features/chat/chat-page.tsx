@@ -14,7 +14,7 @@
  * chosen before sending, and everything except approval mode is locked once the Session is
  * created. The Session list and the new-chat entry point live in the global sidebar.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import type {
@@ -32,6 +32,15 @@ import type {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
+import {
+  adoptDockScope,
+  chatSidePanelOpen,
+  dockStateVersion,
+  SIDE_SLOT_TRANSITION_MS,
+  setChatSidePanelOpen,
+  subscribeTerminalDock,
+  visiblePanes,
+} from "../terminal/terminal-dock-state";
 import { apiErrorText } from "../../lib/api-error";
 import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -101,6 +110,7 @@ import { FilesPanel } from "./files-panel";
 import { useFilesPanel } from "./use-files-panel";
 import type { FilesPanelState } from "./use-files-panel";
 import { SubagentsPanel } from "./subagents-panel";
+import { TerminalDockSlot } from "../terminal/terminal-dock-slot";
 import {
   advancePanelTaskScope,
   createPanelTaskScope,
@@ -109,21 +119,12 @@ import {
 import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
-
-const STAT_ICONS = {
-  // Tokens (database / stacked cylinders)
-  tokens:
-    "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
-  // Cost (circled dollar sign)
-  cost: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-15v12m2.6-9.3c-.5-.8-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.7 5.4 1.3 5.4 4 0 1.2-1.2 2-2.7 2-1.2 0-2.2-.5-2.7-1.4",
-  // Elapsed time (clock)
-  elapsed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
-  // Files (folder)
-  folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
-  // Running services (server rack: two stacked units with an indicator dot each)
-  services:
-    "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm0 11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3zM7 6.5h.01M7 17.5h.01",
-} as const;
+import { PanelsToolbar } from "./panels-toolbar";
+import { toneDot, toneInk } from "../../lib/tone";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { STAT_ICONS } from "../../lib/stat-icons";
+import { INFO_ICON } from "../../components/ui/icons";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -134,28 +135,15 @@ const PROCESS_POLL_MS = 15_000;
  * (files-panel.tsx / subagents-panel.tsx) — shorter would cut the retract off, longer
  * would leave a dead gap.
  */
-const PANEL_SWAP_MS = 200;
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
   return (
     <span
       title={label}
-      className="flex shrink-0 items-center gap-1 font-mono text-xs text-gray-500 dark:text-gray-400"
+      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
     >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d={icon} />
-      </svg>
+      <GlyphIcon d={icon} />
       {value}
     </span>
   );
@@ -350,37 +338,82 @@ export function ChatPage() {
     }
   };
   useEffect(() => cancelPanelSwap, []);
-  /** Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant otherwise. */
+  /**
+   * Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant
+   * otherwise. `retractingPane` extends the same courtesy to a side terminal pane the open
+   * is displacing: it collapses on the same 200ms a closing panel takes, and opening over
+   * it mid-collapse is the wipe the sequencing exists to avoid.
+   */
   const swapPanels = (
     closeFirst: { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
     open: (v: boolean) => void,
+    retractingPane = false,
   ) => {
     closeFirst.setOpen(false);
-    if (closeFirst.open && closeFirst.isDocked) {
+    if ((closeFirst.open && closeFirst.isDocked) || retractingPane) {
       panelSwapTimer.current = window.setTimeout(() => {
         panelSwapTimer.current = null;
         open(true);
-      }, PANEL_SWAP_MS);
+      }, SIDE_SLOT_TRANSITION_MS);
     } else {
       open(true);
     }
   };
+  // The exclusivity above extends to the terminal dock's LEFT and RIGHT panes, which want the
+  // same horizontal half of the content area: opening a panel displaces them, and opening a
+  // side pane retracts the panels. Whichever the user asked for last is what they get. The
+  // dock only learns that a panel is up (setChatSidePanelOpen); it keeps its arrangement, so
+  // closing the panel brings the pane back where it was. Top/bottom panes are unaffected —
+  // they cost height, not width.
+  /** A visible left/right terminal pane — read BEFORE the flag below starts hiding it. */
+  const sidePaneShowing = () => visiblePanes().some((p) => p === "left" || p === "right");
   const filesPanel: FilesPanelState = {
     ...filesPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
-      if (next) swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen);
-      else filesPanelRaw.setOpen(false);
+      if (next) {
+        const retracting = sidePaneShowing();
+        setChatSidePanelOpen(true);
+        swapPanels(subagentsPanelRaw, filesPanelRaw.setOpen, retracting);
+      } else {
+        filesPanelRaw.setOpen(false);
+        // The OTHER panel decides whether the side is still held: this one's `open` is the
+        // render-time value and still reads true here.
+        setChatSidePanelOpen(subagentsPanelRaw.open);
+      }
     },
   };
   const subagentsPanel: SubagentsPanelState = {
     ...subagentsPanelRaw,
     setOpen: (next: boolean) => {
       cancelPanelSwap();
-      if (next) swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen);
-      else subagentsPanelRaw.setOpen(false);
+      if (next) {
+        const retracting = sidePaneShowing();
+        setChatSidePanelOpen(true);
+        swapPanels(filesPanelRaw, subagentsPanelRaw.setOpen, retracting);
+      } else {
+        subagentsPanelRaw.setOpen(false);
+        setChatSidePanelOpen(filesPanelRaw.open);
+      }
     },
   };
+  // The other direction. The store flips this the moment anything puts a terminal on screen
+  // (see terminalTakesTheSide), which is the only signal the page needs: retract both panels
+  // and let the pane render. Edge-triggered, so a panel the user opens is not immediately
+  // closed again — it sets the flag back on its way up.
+  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
+  const terminalHasTheSide = !chatSidePanelOpen();
+  useEffect(() => {
+    if (!terminalHasTheSide) return;
+    // A sequenced open still waiting on its timer must die with the panels it belongs to:
+    // firing after the terminal reclaimed the side would open a panel over the pane with
+    // the exclusion flag already false — visibly both at once, and nothing to clear it.
+    cancelPanelSwap();
+    filesPanelRaw.setOpen(false);
+    subagentsPanelRaw.setOpen(false);
+    // Panel objects are recreated every render; the raw hooks' setters are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminalHasTheSide]);
   // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
   // just bound to their own stored entry — every "this is a draft, not a Session" branch
   // below treats the two alike.
@@ -496,6 +529,7 @@ export function ChatPage() {
     cancelPanelSwap();
     filesPanelRaw.setOpen(false);
     subagentsPanelRaw.setOpen(false);
+    setChatSidePanelOpen(false); // nothing holds the side any more: side panes come back
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft]);
 
@@ -528,6 +562,7 @@ export function ChatPage() {
       !subagentsPanelRaw.open &&
       !filesPanelRaw.open
     ) {
+      setChatSidePanelOpen(true);
       subagentsPanelRaw.setOpen(true);
     }
     // The panel objects are rebuilt every render; the tracker only acts on real transitions of
@@ -942,6 +977,9 @@ export function ChatPage() {
     async (currentId: string, respondedId: string) => {
       if (respondedId === currentId) return;
       await reloadSessions();
+      // Same conversation under a new id: its terminals follow, or they are stranded under
+      // an id nothing routes to again.
+      adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
     },
     [reloadSessions, navigate],
@@ -1579,73 +1617,18 @@ export function ChatPage() {
             )}
           </div>
 
-          {/* Subagents panel toggle: latest-Task call graph + child conversations dock on the right (use-subagents-panel.ts); opening closes the Files panel (wrapped setOpen). */}
-          <button
-            type="button"
-            aria-expanded={subagentsPanel.open}
-            onClick={() => subagentsPanel.setOpen(!subagentsPanel.open)}
-            title={S.chat.openAgents}
-            aria-label={S.chat.openAgents}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
-              subagentsPanel.open
-                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            {/* Nodes/network glyph (spawn tree). */}
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden
-            >
-              <circle cx="5" cy="12" r="2.5" />
-              <circle cx="19" cy="5.5" r="2.5" />
-              <circle cx="19" cy="18.5" r="2.5" />
-              <path d="M7.4 11 16.7 6.6M7.4 13l9.3 4.4" />
-            </svg>
-            {/* At md widths the pinned sidebar leaves less room than the viewport breakpoint
-                suggests. Keep both panel actions icon-only until lg so the running status and
-                live stats retain their own layout space. */}
-            <span className="hidden lg:inline">{S.chat.openAgents}</span>
-            {/* A pending approval inside a subagent: amber dot (the chip in the stream carries the accessible announcement). */}
-            {anySubagentPending && (
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            )}
-          </button>
-
-          {/* Files panel toggle: docks on the right of the chat instead of replacing it full-screen (use-files-panel.ts); opening closes the subagents panel (wrapped setOpen). */}
-          <button
-            type="button"
-            aria-expanded={filesPanel.open}
-            onClick={() => filesPanel.setOpen(!filesPanel.open)}
-            title={S.chat.openWorkspace}
-            aria-label={S.chat.openWorkspace}
-            className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors duration-150 ${
-              filesPanel.open
-                ? "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                : "text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-            }`}
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden
-            >
-              <path d={STAT_ICONS.folder} />
-            </svg>
-            {/* Below lg the button is icon-only (title/aria keep the name): between md and lg
-                the pinned sidebar makes the chat toolbar substantially narrower than the
-                viewport, so the action labels would squeeze the status into the Token stats. */}
-            <span className="hidden lg:inline">{S.chat.openWorkspace}</span>
-          </button>
+          {/* Panel switcher (icon-only): pinned panel triggers + the "all panels" dropdown
+              with per-panel pin toggles. Subagents panel docks the latest-Task call graph
+              (use-subagents-panel.ts), Workspace docks the files panel (use-files-panel.ts) —
+              opening either closes the other (wrapped setOpen) — and the terminal toggles the
+              app-wide dock (terminal-dock.tsx). */}
+          <PanelsToolbar
+            agentsOpen={subagentsPanel.open}
+            onToggleAgents={() => subagentsPanel.setOpen(!subagentsPanel.open)}
+            agentsPending={anySubagentPending}
+            workspaceOpen={filesPanel.open}
+            onToggleWorkspace={() => filesPanel.setOpen(!filesPanel.open)}
+          />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -1707,41 +1690,16 @@ export function ChatPage() {
                   {runningProcessCount > 0 && (
                     <span
                       title={S.chat.runningServices(runningProcessCount)}
-                      className="flex shrink-0 items-center gap-1 font-mono text-xs text-emerald-600 dark:text-emerald-400"
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
-                      >
-                        <path d={STAT_ICONS.services} />
-                      </svg>
+                      <GlyphIcon d={STAT_ICONS.services} />
                       {runningProcessCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 11v5m0-8h.01" />
-                  </svg>
+                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }
@@ -1815,7 +1773,7 @@ export function ChatPage() {
                           aria-hidden
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                             p.running
-                              ? "animate-pulse bg-emerald-500"
+                              ? `animate-pulse ${toneDot.busy}`
                               : "bg-gray-300 dark:bg-gray-600"
                           }`}
                         />
@@ -1912,13 +1870,18 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the docked panels on the right (message file cards jump to and locate a file in the tree via onOpenFile). */}
-      <div className="flex min-h-0 flex-1">
+      {/* Body: chat column + the docked panels on the right (message file cards jump to and
+          locate a file in the tree via onOpenFile), and the dock's side panes, which share
+          that slot and so belong on this row rather than around <main> — otherwise they
+          squeeze the header above. data-dock-side-row is what the drop preview measures for
+          a left/right landing. */}
+      <div data-dock-side-row className="flex min-h-0 flex-1">
+        <TerminalDockSlot position="left" />
         {/* The chat area, and the only region a dragged file may be dropped on (#311): it
             covers the conversation and the composer in both branches below, and nothing else
             — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
-            it are all outside, where a file drop is inert (see drop-zone.tsx). `relative`
-            bounds the drop overlay to this column. */}
+            it (terminal panes included) are all outside, where a file drop is inert (see
+            drop-zone.tsx). `relative` bounds the drop overlay to this column. */}
         <ChatDropRegion className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           {draft ? (
             // Draft state: DraftView's vertically centered input card + Agent / Workspace
@@ -2039,6 +2002,7 @@ export function ChatPage() {
           />
         )}
         {selected && <FilesPanel session={selected} panel={filesPanel} />}
+        <TerminalDockSlot position="right" />
       </div>
 
       <Modal

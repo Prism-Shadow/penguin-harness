@@ -8,7 +8,6 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { app, utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
 import { osProxyEnv } from "./os-proxy.js";
@@ -34,22 +33,13 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * The server package's entry file — forked by path. Packaged builds ship the staged
- * pnpm-deploy tree inside the app directory (asar is off, see electron-builder.yml),
- * so the path is a plain file; dev runs resolve through this package's node_modules.
+ * The server bundle — forked by path. tsup emits @prismshadow/penguin-server as one
+ * self-contained file in this package's dist/, so a source run and a packaged app fork the
+ * same artifact from the same app-path-relative location (asar is off, see
+ * electron-builder.yml, so it is a plain file either way).
  */
 function serverEntryPath(): string {
-  if (app.isPackaged) {
-    return path.join(
-      app.getAppPath(),
-      "node_modules",
-      "@prismshadow",
-      "penguin-server",
-      "dist",
-      "index.js",
-    );
-  }
-  return fileURLToPath(import.meta.resolve("@prismshadow/penguin-server"));
+  return path.join(app.getAppPath(), "dist", "server.js");
 }
 
 /**

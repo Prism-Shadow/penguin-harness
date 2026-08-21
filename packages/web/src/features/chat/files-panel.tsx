@@ -8,16 +8,9 @@
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Sheet } from "../../components/ui/sheet";
+import { CloseIcon } from "../../components/ui/icons";
 import { WorkspaceBrowser } from "./workspace-browser";
 import type { FilesPanelState } from "./use-files-panel";
-
-function CloseIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
-      <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export function FilesPanel({ session, panel }: { session: SessionInfo; panel: FilesPanelState }) {
   if (!panel.isDocked) {
@@ -48,6 +41,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
     <>
       {panel.open && (
         <div
+          data-testid="files-panel-resizer"
           onMouseDown={panel.startResize}
           onDoubleClick={panel.resetWidth}
           title={S.files.resizeHandle}
@@ -57,6 +51,7 @@ export function FilesPanel({ session, panel }: { session: SessionInfo; panel: Fi
         />
       )}
       <div
+        data-testid="files-panel"
         ref={panel.panelRef}
         style={{ width: panel.open ? panel.width : 0 }}
         // Use inert rather than unmounting when closed: the width transition needs the node to

@@ -11,6 +11,10 @@
  * latency — the models dialog idiom), and the section header offers a bulk test that
  * probes every configured server sequentially behind a confirm dialog, writing a
  * tone-colored badge onto each row as its result lands (the group speed-test idiom).
+ *
+ * The permission control mirrors the builtin tool table's, with a third `auto` state: it
+ * decides which of the server's tool calls stop for approval, and nothing about what the
+ * remote server is able to do.
  */
 import { useState } from "react";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
@@ -23,18 +27,23 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import {
   emptyMcpForm,
   formToServer,
+  permissionOf,
   serverToForm,
   transportOf,
   type McpFormError,
   type McpFormField,
+  type McpPermissionMode,
   type McpServerFormState,
   type McpTransportKind,
 } from "./mcp-servers-form";
+import { toneInk } from "../../lib/tone";
+import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Maps a validation error code to its localized message. */
 function errorText(err: McpFormError | undefined): string | undefined {
@@ -77,7 +86,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   }
   if (result.ok) {
     return (
-      <span className="text-[11px] font-medium whitespace-nowrap text-emerald-600 dark:text-emerald-400">
+      <span className={`text-[11px] font-medium whitespace-nowrap ${toneInk.success}`}>
         {S.agent.mcpTestBadge(result.tools?.length ?? 0, result.latencyMs)}
       </span>
     );
@@ -85,7 +94,7 @@ function TestBadge({ result }: { result: RowTestResult | undefined }) {
   return (
     <span
       title={result.error}
-      className="text-[11px] font-medium whitespace-nowrap text-red-600 dark:text-red-400"
+      className={`text-[11px] font-medium whitespace-nowrap ${toneInk.danger}`}
     >
       {S.agent.mcpTestBadgeFail}
     </span>
@@ -130,6 +139,27 @@ export function McpServersSection({
     stdio: S.agent.mcpTransportStdio,
     sse: S.agent.mcpTransportSse,
   };
+  // auto leads (the default); an explicit level below it overrides every tool's readOnlyHint.
+  const permissionOptions: ReadonlyArray<OptionMenuChoice<McpPermissionMode>> = [
+    {
+      value: "auto",
+      triggerLabel: S.agent.mcpPermissionAuto,
+      label: S.agent.mcpPermissionAutoLabel,
+      description: S.agent.mcpPermissionAutoDescription,
+    },
+    {
+      value: "r",
+      triggerLabel: "r",
+      label: S.agent.permissionReadLabel,
+      description: S.agent.mcpPermissionReadDescription,
+    },
+    {
+      value: "rw",
+      triggerLabel: "rw",
+      label: S.agent.permissionReadWriteLabel,
+      description: S.agent.mcpPermissionReadWriteDescription,
+    },
+  ];
 
   /** Persist the full list (immediate, vault-style); returns null on success or an error message. */
   const persist = async (next: MCPServerConfig[]): Promise<string | null> => {
@@ -264,10 +294,10 @@ export function McpServersSection({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="mb-1 text-xs font-medium text-gray-500">{S.agent.mcpServers}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.agent.mcpDesc}</p>
-      </div>
+      <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+        {S.agent.mcpServers}
+        <InfoPopover label={S.agent.mcpServers}>{S.agent.mcpDesc}</InfoPopover>
+      </p>
 
       {servers.length === 0 ? (
         <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpEmpty}</p>
@@ -278,6 +308,7 @@ export function McpServersSection({
               <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
                 <th className="px-3 py-2.5">{S.agent.mcpName}</th>
                 <th className="px-3 py-2.5">{S.agent.mcpTransport}</th>
+                <th className="px-3 py-2.5">{S.agent.mcpPermission}</th>
                 <th className="px-3 py-2.5">{S.agent.mcpTarget}</th>
                 {/* Bulk-test badge column appears only once results exist (no headline). */}
                 {showBadges && <th className="px-3 py-2.5" />}
@@ -303,6 +334,9 @@ export function McpServersSection({
                   <td className="px-3 py-2 font-mono text-xs">{entry.name}</td>
                   <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
                     {transportOf(entry)}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
+                    {permissionOf(entry)}
                   </td>
                   <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs text-gray-500 dark:text-gray-400">
                     {targetOf(entry)}
@@ -461,6 +495,20 @@ export function McpServersSection({
                 />
               </>
             )}
+            <div className="space-y-1">
+              <OptionMenu
+                mono
+                size="sm"
+                fullWidth
+                label={S.agent.mcpPermission}
+                options={permissionOptions}
+                value={form.permission}
+                onChange={(v) => patchForm({ permission: v })}
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {S.agent.mcpPermissionHint}
+              </p>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <Input
                 size="sm"

@@ -3,6 +3,8 @@
  * cards): a spinning ring while running, a static glyph otherwise — "still
  * running" vs. "done" can be told apart at a glance, no need to read the text.
  */
+import { toneInk } from "../../lib/tone";
+
 export type RunState = "running" | "waiting" | "done" | "failed";
 
 const GLYPH: Record<Exclude<RunState, "running">, string> = {
@@ -14,11 +16,12 @@ const GLYPH: Record<Exclude<RunState, "running">, string> = {
   failed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9 9l6 6m0-6-6 6",
 };
 
+/** Shared status tones (lib/tone.ts): a settled row recedes, an unfinished one asks for a look. */
 const TONE: Record<RunState, string> = {
-  running: "text-emerald-500 dark:text-emerald-400",
-  waiting: "text-amber-500 dark:text-amber-400",
-  done: "text-gray-400 dark:text-gray-500",
-  failed: "text-red-500 dark:text-red-400",
+  running: toneInk.busy,
+  waiting: toneInk.attention,
+  done: toneInk.muted,
+  failed: toneInk.danger,
 };
 
 export function StatusIcon({

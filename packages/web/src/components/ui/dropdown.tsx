@@ -58,6 +58,7 @@ export function Dropdown({
   anchorRect,
   returnFocus,
   onEscape,
+  focusOnOpen,
 }: {
   button: ReactNode;
   open: boolean;
@@ -89,6 +90,14 @@ export function Dropdown({
    * click means "commit" but Escape means "cancel"). Outside clicks still call setOpen(false).
    */
   onEscape?: () => void;
+  /**
+   * Whether opening moves focus into the panel (default true — a click/keyboard-opened
+   * menu must be operable from the keyboard). Pass false for a menu that opens on hover:
+   * the programmatic focus would otherwise draw the `:focus-visible` ring on its first row
+   * (browsers treat scripted focus as keyboard-ish until the page has seen a mouse click),
+   * so merely sweeping the pointer past the trigger leaves a stray outline behind.
+   */
+  focusOnOpen?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -121,8 +130,12 @@ export function Dropdown({
 
   // Opening moves focus into the panel (first item), so the menu is operable from the
   // keyboard at all. Runs after the panel has mounted, portal or in-flow alike.
+  // Read through a ref so the effect still depends on `open` alone: a caller that flips
+  // focusOnOpen while the menu is open must not make focus jump into the panel.
+  const focusOnOpenRef = useRef(focusOnOpen);
+  focusOnOpenRef.current = focusOnOpen;
   useEffect(() => {
-    if (!open) return;
+    if (!open || focusOnOpenRef.current === false) return;
     panelItems()[0]?.focus();
   }, [open, panelItems]);
 

@@ -1,9 +1,10 @@
 /**
  * Unit tests for scrypt password hashing: format, verification, salt randomness,
- * and fallback behavior for invalid stored strings.
+ * and fallback behavior for invalid stored strings. These call `hashPassword` without a
+ * cost argument, so they are the one place the production work factor is exercised.
  */
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPassword } from "../src/auth/password.js";
+import { SCRYPT_COST, hashPassword, verifyPassword } from "../src/auth/password.js";
 
 describe("password", () => {
   it("hash format is scrypt$N$r$p$salt$hash and verifies", async () => {
@@ -11,7 +12,10 @@ describe("password", () => {
     const parts = stored.split("$");
     expect(parts).toHaveLength(6);
     expect(parts[0]).toBe("scrypt");
-    expect(Number(parts[1])).toBeGreaterThan(0);
+    // The default work factor is what production hashes at; `hashPassword`'s cost argument
+    // exists for the test suite and must never lower what an unparameterized call writes.
+    expect(SCRYPT_COST).toBe(16384);
+    expect(Number(parts[1])).toBe(SCRYPT_COST);
     await expect(verifyPassword("hello-world-123", stored)).resolves.toBe(true);
   });
 

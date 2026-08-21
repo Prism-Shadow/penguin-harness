@@ -143,6 +143,8 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | POST | /agents/:agentId/memory/template-placeholder | 向提示词模板插入 `{{MEMORY}}` 占位符（幂等；创建于记忆功能之前的 Agent 的显式采用路径） |
 | GET | /agents/:agentId/memory/scopes/:key/files | 列出单个作用域的主题文件（frontmatter + 文件信息）；`:key` 为 workspace key 或 `user` |
 | GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | 读取单个主题文件 / 删除它（并同步清理其 `MEMORY.md` 索引行） |
+| GET | /agents/:agentId/memory/scopes/:key/export | 把整个作用域导出为一份 JSON 文档：全部主题文件加它的 `MEMORY.md`，以附件形式下载 |
+| POST | /agents/:agentId/memory/scopes/:key/import | 把这样一份文档写回（仅 owner）：`{payload, mode?, confirm?}`。`mode` 为 `skip`（缺省，只添加作用域尚未有的名字）、`overwrite`（覆盖同名文件）或 `replace`（并删除文档中没有的文件）；任何会覆盖或删除的操作都需要 `confirm`，否则返回 409 `memory_import_confirm_required` |
 | GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
 | POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
 | GET / POST | /agents/:agentId/skills | 已安装 Skill 列表 / 安装 |

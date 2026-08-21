@@ -101,6 +101,8 @@ import { syncRowsWithCatalog } from "./catalog-sync";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
+import { toneInk, toneStrip } from "../../lib/tone";
+import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -159,9 +161,9 @@ const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
 
 /** Metric tone -> text color classes for the card speed badges. */
 const TONE_CLASS: Record<SpeedTone, string> = {
-  green: "text-green-600 dark:text-green-400",
-  yellow: "text-amber-600 dark:text-amber-400",
-  red: "text-red-600 dark:text-red-400",
+  green: toneInk.success,
+  yellow: toneInk.attention,
+  red: toneInk.danger,
 };
 
 /** In-page key for one model's speed result. */
@@ -669,12 +671,10 @@ export function ModelsPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-semibold">{S.models.title}</h1>
-            {!isOwner && (
-              <p className="text-xs text-gray-500 dark:text-gray-400">{S.models.readOnlyHint}</p>
-            )}
-          </div>
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            {S.models.title}
+            {!isOwner && <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>}
+          </h1>
           {/* The header holds search plus the owner-only "sync presets" action (add-model
               entry points live in each group header); on narrow screens (flex-wrap wraps it
               to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
@@ -1236,10 +1236,12 @@ function AddGroupDialog({
       }
     >
       <div className="space-y-3">
-        <label className="block">
+        <div className="block">
           <Input
             size="sm"
             label={S.models.groupNameLabel}
+            info={S.models.addGroupDesc}
+            infoLabel={S.models.groupNameLabel}
             required
             value={name}
             invalid={Boolean(nameError)}
@@ -1255,7 +1257,7 @@ function AddGroupDialog({
             autoFocus
           />
           {nameError && <FieldError>{nameError}</FieldError>}
-        </label>
+        </div>
         <Segmented
           cols={2}
           options={[
@@ -1344,7 +1346,6 @@ function AddGroupDialog({
         )}
         {error && <FieldError>{error}</FieldError>}
       </div>
-      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{S.models.addGroupDesc}</p>
     </Modal>
   );
 }
@@ -2008,7 +2009,7 @@ function ModelDialog({
       {autoRouteMiss && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300"
+          className={`flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
         >
           <span>{S.models.autoRouteNone}</span>
           <Button
@@ -2172,20 +2173,7 @@ function ModelDialog({
               >
                 {S.models.homepage}
                 {/* External-link glyph (opens in a new tab) */}
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                  className="shrink-0"
-                >
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3" />
-                </svg>
+                <GlyphIcon d={EXTERNAL_LINK_ICON} />
               </a>
             )}
           </div>
@@ -2629,7 +2617,7 @@ function ModelDialog({
                     switch is kept visible precisely so it can be turned off, and says why it
                     should be. */}
                 {form.fastMode && fastProtocol === undefined && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+                  <p className={`mt-1 text-xs ${toneInk.attention}`}>
                     {S.models.fastModeUnsupported}
                   </p>
                 )}

@@ -10,7 +10,7 @@ describe("windowIconPathFor", () => {
     expect(windowIconPathFor("/app", "darwin")).toBeNull();
   });
 
-  it("resolves build/icon.png inside the app dir on Linux and Windows", () => {
+  it("resolves dist/icon.png inside the app dir on Linux and Windows", () => {
     expect(windowIconPathFor("/app", "linux")).toBe(path.join("/app", ...WINDOW_ICON_RELPATH));
     expect(windowIconPathFor("C:\\app", "win32")).toBe(
       path.join("C:\\app", ...WINDOW_ICON_RELPATH),
@@ -23,16 +23,17 @@ describe("resolveWindowIcon", () => {
   afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
   it("returns the path only when the file exists", () => {
+    const iconPath = path.join(tmp, ...WINDOW_ICON_RELPATH);
     expect(resolveWindowIcon(tmp, "linux")).toBeNull();
-    fs.mkdirSync(path.join(tmp, "build"), { recursive: true });
-    fs.writeFileSync(path.join(tmp, "build", "icon.png"), "png");
-    expect(resolveWindowIcon(tmp, "linux")).toBe(path.join(tmp, "build", "icon.png"));
+    fs.mkdirSync(path.dirname(iconPath), { recursive: true });
+    fs.writeFileSync(iconPath, "png");
+    expect(resolveWindowIcon(tmp, "linux")).toBe(iconPath);
     expect(resolveWindowIcon(tmp, "darwin")).toBeNull();
   });
 
-  it("the committed source icon resolves for a dev run of this package", () => {
+  it("has a committed master for scripts/build-assets.mjs to copy into the app dir", () => {
     const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-    expect(resolveWindowIcon(pkgDir, "linux")).toBe(path.join(pkgDir, "build", "icon.png"));
+    expect(fs.existsSync(path.join(pkgDir, "build", "icon.png"))).toBe(true);
   });
 });
 

@@ -45,6 +45,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label. */
 const UPLOAD_LABEL_CLASS =
@@ -287,8 +288,11 @@ export function SkillsTab({
 
   return (
     <div className="space-y-4">
+      {/* The import button is not a title, so the description cannot anchor a "?" to it either. */}
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.skills.agentTabDesc}</p>
+        <HelpFold label={S.agent.tabSkills} className="min-w-0 flex-1">
+          {S.skills.agentTabDesc}
+        </HelpFold>
         <Button
           size="sm"
           variant="primary"

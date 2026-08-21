@@ -154,6 +154,51 @@ async function readWebManifest() {
   return files;
 }
 
+/**
+ * Native modules the pushed platform needs as real files. A bundle cannot carry one: it is
+ * imported from the runtime's data root, where node-pty's own relative `build/Release/
+ * pty.node` does not resolve. So the package ships whole — its JS, its prebuilds and its
+ * darwin `spawn-helper` — and the runtime unpacks it next to the bundle (hmr/host.ts's
+ * UpgradeAssets), where node-pty's normal resolution works again.
+ *
+ * `exec` carries the files whose exec bit must survive the trip: base64 has no mode, and a
+ * spawn-helper without it makes every terminal fail to start on macOS.
+ */
+async function readNativeAssets() {
+  const ptyDir = path.dirname(
+    require.resolve("node-pty/package.json", {
+      paths: [path.join(ROOT, "packages", "server")],
+    }),
+  );
+  const files = {};
+  const exec = [];
+  // Only what the loader reads at runtime. `.pdb` files are Windows debug symbols that
+  // nothing ever loads and are 90% of the package's bytes (58 MB → 3 MB without them),
+  // which is the difference between a push that crosses an ssh tunnel and one that does
+  // not; `.lib` are link-time import libraries, equally never read at runtime.
+  const wanted = (rel) =>
+    !rel.endsWith(".pdb") &&
+    !rel.endsWith(".lib") &&
+    (rel === "package.json" ||
+      rel.startsWith("lib/") ||
+      rel.startsWith("build/Release/") ||
+      rel.startsWith("prebuilds/"));
+  for (const entry of await fsp.readdir(ptyDir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
+    if (!wanted(rel)) continue;
+    const target = `node_modules/node-pty/${rel}`;
+    files[target] = (await fsp.readFile(abs)).toString("base64");
+    // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
+    // this list, so push it regardless of how it looks on this machine.
+    if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
+      exec.push(target);
+    }
+  }
+  return { files, exec };
+}
+
 async function main() {
   if (skipWebBuild) {
     if (!fs.existsSync(path.join(WEB_DIST, "index.html"))) {
@@ -173,17 +218,19 @@ async function main() {
   await compileEntry(CLI_ENTRY, CLI_BUNDLE);
 
   const files = await readWebManifest();
+  const assets = await readNativeAssets();
   const gz = zlib.gzipSync(
     Buffer.from(
       JSON.stringify({
         platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
         cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
         web: { files },
+        assets,
       }),
     ),
   );
   log(
-    `pushing ${Object.keys(files).length} web files + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
+    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
   );
 
   const cookie = await login();

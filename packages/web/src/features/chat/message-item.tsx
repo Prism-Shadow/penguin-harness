@@ -35,6 +35,7 @@ import { parseGoalMessage } from "./goal-use";
 import { parseSkillsMessage } from "./skill-use";
 import { TaskStatsLine } from "./task-stats-line";
 import type { StreamRenderContext } from "./message-stream";
+import { toneInk } from "../../lib/tone";
 
 /** User glyph (24×24 line path) for the mid-run steering chip. */
 const USER_STEERING_ICON =
@@ -121,7 +122,9 @@ function ReconnectLine({ item, ctx }: { item: ReconnectItem; ctx: StreamRenderCo
   const showControls =
     live && ctx.origin.length === 0 && (ctx.onRetryNow !== undefined || ctx.onGiveUp !== undefined);
   return (
-    <p className="anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-amber-600 dark:text-amber-500">
+    <p
+      className={`anim-msg my-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs ${toneInk.attention}`}
+    >
       <span>{S.chat.reconnect(item.status, state, item.attempt, seconds)}</span>
       {showControls && (
         <span className="flex shrink-0 items-center gap-1.5">

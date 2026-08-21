@@ -47,6 +47,7 @@ import { ModelSelect, PickerList } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { usePromptInjection } from "./prompt-injection-controls";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** Display status → badge tone. */
 const STATUS_TONE: Record<ScheduleStatus, BadgeTone> = {
@@ -432,12 +433,11 @@ export function SchedulesTab({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{S.schedule.desc}</p>
-        {!isOwner && (
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.schedule.readOnlyHint}</p>
-        )}
-      </div>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabSchedules}>
+        {S.schedule.desc}
+        {!isOwner && <span className="mt-1.5 block">{S.schedule.readOnlyHint}</span>}
+      </HelpFold>
 
       {toggleCard}
       {alertStrip}

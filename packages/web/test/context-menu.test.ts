@@ -269,8 +269,13 @@ describe("sourceFiles", () => {
 
 describe("native-menu suppression scope", () => {
   it("registers no global contextmenu listener, so the browser's own menu survives off the row", () => {
+    // Matched on the TARGET, not on the call: suppressing the native menu page-wide is the
+    // thing to forbid, and only window/document/globalThis can do that. A listener bound to
+    // one element suppresses it over that element alone, which is the same scope the
+    // sidebar row gets from its onContextMenu prop — the terminal view does exactly this,
+    // because a terminal's right-click is its own (copy the selection, else paste).
     const global = sourceFiles().filter(([, src]) =>
-      /addEventListener\(\s*["']contextmenu["']/.test(src),
+      /\b(window|document|globalThis)\.addEventListener\(\s*["']contextmenu["']/.test(src),
     );
     expect(global.map(([path]) => path)).toEqual([]);
   });

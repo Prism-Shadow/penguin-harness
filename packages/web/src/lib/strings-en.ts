@@ -29,23 +29,64 @@ export const en: Strings = {
     unpinGroup: "Unpin group",
   },
 
+  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
+  terminal: {
+    title: "Terminal",
+    newShell: "New shell",
+    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
+    killShell: "Kill this terminal",
+    /** Boundary drag handle between the dock and the main content (double-click resets). */
+    resize: "Resize terminal panel",
+    /** Hover menu when the user has no live terminal yet. */
+    noTerminals: "No terminals",
+    /** Pane body when creating/attaching a shell failed (the server message follows). */
+    createFailed: "Could not start a terminal",
+    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
+    noTerminalApi:
+      "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
+    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
+    detach: "Open in new window",
+    close: "Close",
+    status: {
+      connecting: "connecting",
+      ready: "ready",
+      exited: "exited",
+      error: "error",
+    },
+    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
+    exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
   settings: {
     language: "Language",
+    languageHint: "Interface language; can follow the browser",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "System settings",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "Personal",
+    groupServer: "Server",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "General",
+    appearanceTitle: "Appearance",
+    accountTitle: "Account",
+    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "Proxy options…",
-    proxyDialogTitle: "Proxy options",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "Proxy options",
+    proxyHint:
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "Upload limits…",
-    uploadLimitsDialogTitle: "Upload limits",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "Upload limits",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
     attachmentTotalMb: "Max total per message (MB)",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
@@ -55,16 +96,24 @@ export const en: Strings = {
       `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
       `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
+    themeHint: "Light or dark look of the app",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
+    terminalTheme: "Terminal theme",
+    terminalThemeHint: "Colors of the terminal panel; follows the app theme by default",
+    followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
+    fontSizeHint: "Overall interface font size",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
+    accentHint: "Interface accent color",
+    currencyHint: "Display currency for prices; storage is always USD",
+    changePasswordHint: "Change this account's sign-in password",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -138,6 +187,10 @@ export const en: Strings = {
     unknownError: "Request failed, please try again later",
     requiredField: "This field is required",
     copied: "Copied",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "More info",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `More info: ${subject}`,
     name: "Name",
     username: "Username",
     role: "Role",
@@ -381,6 +434,17 @@ export const en: Strings = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "One Header-Name: value per line (auth headers such as Authorization)",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto (readOnlyHint)",
+    mcpPermissionAutoDescription:
+      "Each tool gets the level its own readOnlyHint annotation implies: read-only when it declares one, read & write otherwise.",
+    mcpPermissionReadDescription:
+      "Treat every tool of this server as read-only, whatever it declares. Auto-approved when the approval mode is read-only.",
+    mcpPermissionReadWriteDescription:
+      "Treat every tool of this server as read & write, whatever it declares. Needs manual confirmation when the approval mode is read-only.",
+    mcpPermissionHint:
+      "Only the read-only approval mode reads this level; allow-all, deny-all and always-ask ignore it. It never restricts what the server itself can do — marking a server read-only that is not one only drops the confirmation read-only mode would have asked for.",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "Leave empty for defaults: connectTimeoutMs is the connect + tool-discovery budget (default 10000); timeoutMs / maxOutputLength bound every tool of this Server.",
@@ -718,6 +782,36 @@ export const en: Strings = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
+    exportScope: "Export",
+    exportScopeHint: "Download every memory in this group as one JSON document",
+    exportScopeLabel: (scope: string): string => `Export ${scope}`,
+    importScope: "Import",
+    importScopeHint: "Restore memories into this group from an exported JSON document",
+    importScopeLabel: (scope: string): string => `Import into ${scope}`,
+    importTitle: "Import memories",
+    importWhy:
+      "Reads a memory group exported from this or another agent: a JSON file holding the memories and the group's MEMORY.md index.",
+    importFile: (name: string, count: number): string => `${name} — ${count} memories`,
+    importModeLabel: "When this group already has a memory of the same name",
+    importModeSkip: "Keep the one that is here",
+    importModeSkipHint: "Adds only what this group does not have. Nothing here is lost.",
+    importModeOverwrite: "Take the file's version",
+    importModeOverwriteHint: "Memories the file does not carry are left alone.",
+    importModeReplace: "Replace the whole group",
+    importModeReplaceHint: "Every memory the file does not carry is deleted.",
+    importAction: "Import",
+    importInvalidFile: "This file is not a memory export.",
+    importEmptyFile: "This file carries no memories.",
+    importConfirmTitle: "Confirm the import",
+    importWillOverwrite: (names: string[]): string =>
+      `${names.length} memories will be overwritten: ${names.join(", ")}`,
+    importWillRemove: (names: string[]): string =>
+      `${names.length} memories will be deleted: ${names.join(", ")}`,
+    importWillReplaceIndex: "The group's MEMORY.md index will be replaced.",
+    importIrreversible: "This cannot be undone.",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `Imported: ${added} added, ${overwritten} replaced, ${removed} deleted`,
+    importNothingNew: "Nothing to import — this group already has every memory in the file",
   },
 
   vault: {
@@ -1261,6 +1355,11 @@ Scenarios:
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
     openAgents: "Agents panel",
+    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
+    panelsCreate: "Create",
+    workspacePanel: "Workspace",
+    pinPanel: "Pin to toolbar",
+    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1577,6 +1676,8 @@ Scenarios:
       member_not_found: "This user is not a member of the Project.",
       already_member: "This user is already a member of the Project.",
       already_owner: "This user is already an owner of the Project.",
+      memory_import_confirm_required:
+        "This import would overwrite or delete memories. Confirm it to continue.",
       schedule_exists: "A scheduled task with this name already exists.",
       schedule_not_found: "This scheduled task no longer exists.",
       unknown_skill: "This skill is not in the library.",

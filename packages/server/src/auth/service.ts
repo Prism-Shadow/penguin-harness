@@ -17,7 +17,7 @@ import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { UserRow, UsersRepo } from "../db/repos/users.js";
-import { hashPassword, verifyPassword } from "./password.js";
+import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
 
 export const MIN_PASSWORD_LENGTH = 8;
 
@@ -89,14 +89,21 @@ export interface AuthServiceDeps {
   onPasswordChanged?: (userId: string) => void;
   sessionTtlMs: number;
   sessionRenewMs: number;
+  /**
+   * Test double: scrypt work factor for hashes this service writes. Omitted in
+   * production, where {@link SCRYPT_COST} applies.
+   */
+  passwordHashCost?: number;
   now?: () => Date;
 }
 
 export class AuthService {
   private readonly now: () => Date;
+  private readonly hashCost: number;
 
   constructor(private readonly deps: AuthServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
   }
 
   /**
@@ -121,7 +128,7 @@ export class AuthService {
     }
     const user: UserRow = {
       userId: ADMIN_USER_ID,
-      passwordHash: await hashPassword(password),
+      passwordHash: await hashPassword(password, this.hashCost),
       isAdmin: true,
       passwordIsInitial: true,
       createdAt: this.now().toISOString(),
@@ -205,7 +212,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
     this.deps.onPasswordChanged?.(userId);
   }
 
@@ -219,7 +226,7 @@ export class AuthService {
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
-    this.deps.users.updatePassword(userId, await hashPassword(newPassword), false);
+    this.deps.users.updatePassword(userId, await hashPassword(newPassword, this.hashCost), false);
     this.deps.onPasswordChanged?.(userId);
   }
 

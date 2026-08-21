@@ -17,7 +17,7 @@ import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { TracesPage } from "./features/traces/traces-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
-import { AdminUsersPage } from "./features/admin/admin-users-page";
+import { TerminalPage } from "./features/terminal/terminal-page";
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -33,6 +33,18 @@ function RequireAuth() {
   );
 }
 
+/**
+ * Login guard without the app shell: the terminal page is a standalone full-window surface
+ * (no sidebar, no Project context), it only needs the user to be signed in — the terminal
+ * WebSocket authenticates with the same session cookie.
+ */
+function RequireAuthBare({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (user === undefined) return null;
+  if (user === null) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 /** When already logged in, visiting /login redirects straight to the chat page. */
 function LoginRoute() {
   const { user } = useAuth();
@@ -45,6 +57,14 @@ export function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route
+          path="/terminal"
+          element={
+            <RequireAuthBare>
+              <TerminalPage />
+            </RequireAuthBare>
+          }
+        />
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
           <Route path="/chat/:sessionId?" element={<ChatPage />} />
@@ -55,7 +75,8 @@ export function AppRouter() {
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/traces" element={<TracesPage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
+          {/* System settings and user management live in the settings dialog now (see
+              SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
