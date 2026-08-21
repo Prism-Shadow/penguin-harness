@@ -242,6 +242,10 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   // Shared by SessionManager (run-state flips) and TitleGenerator (title updates): both are
   // list-row facts that must reach tabs not subscribed to the Session's own channel.
   //
+  // Audience = the Project's owner plus its members, i.e. exactly who
+  // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session they
+  // cannot open changed state or gained a title.
+  //
   // `peek`, deliberately not `get`: a user who has never opened an event stream has no
   // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
   // (their next connection fetches the list, which carries the same statuses anyway).
@@ -274,9 +278,7 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     log,
     goals: goalsRepo,
     // Run-state flips reach the whole login session, not just the tab watching that one
-    // conversation. Audience = the Project's owner plus its members, i.e. exactly who
-    // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session
-    // they cannot open changed state.
+    // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
