@@ -295,6 +295,16 @@ export function SkillsTab({
       {toggleCard}
       {alertStrip}
 
+      {/* Import entry point at the head of the installed list, right-aligned — the admin users
+          page puts its create action in the same slot above its table. It renders in every list
+          state (loading, empty, populated) so the action never shifts and the dashed empty block
+          keeps a header instead of standing alone; the modal carries both install paths. */}
+      <div className="flex justify-end">
+        <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
+          {S.skills.importSkill}
+        </Button>
+      </div>
+
       {skills === null ? (
         <SkeletonList rows={4} />
       ) : skills.length === 0 ? (
@@ -358,12 +368,6 @@ export function SkillsTab({
           ))}
         </div>
       )}
-
-      {/* Import entry point: an action under the installed list, where the Vault and Schedules
-          tabs put their add button — the modal carries both install paths. */}
-      <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
-        {S.skills.importSkill}
-      </Button>
 
       {promptSection}
 
