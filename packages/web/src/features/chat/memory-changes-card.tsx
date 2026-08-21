@@ -4,85 +4,38 @@
  * the structured file tools, derived by the stream model (TaskStatsItem.memoryChanges —
  * see lib/omni/memory-changes.ts for what qualifies and what is filtered).
  *
- * Rows are not clickable — memory lives outside the Workspace, so the Files panel can't
- * preview it; the header instead carries one flat icon button that jumps to the Agent's
- * memory tab (`/agents/<id>?tab=memory`), the existing full view of these files.
+ * Clicking a row opens the side panel's Memory view located at that row — expanded on its
+ * per-call diffs; the header's book button opens the same view unlocated. Memory lives
+ * outside the Workspace, so the Files panel's tree/preview can't show these files — the
+ * Memory view is their in-chat home.
  */
 import { useState } from "react";
 import { S } from "../../lib/strings";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { Chevron } from "../../components/ui/chevron";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
+import { scopeGlyph } from "./memory-view";
 
 const MAX_VISIBLE = 3;
 
-/** Scope marker: icon + tooltip (user vs. workspace memory), no text label in the row. */
-function ScopeIcon({ row }: { row: MemoryChangeRow }) {
-  const title =
-    row.scope === "user" ? S.chat.memoryScopeUser : S.chat.memoryScopeWorkspace(row.scopeKey ?? "");
-  return (
-    <span title={title} className="shrink-0 text-gray-400">
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {row.scope === "user" ? (
-          <>
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </>
-        ) : (
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        )}
-      </svg>
-      <span className="sr-only">{title}</span>
-    </span>
-  );
-}
-
-/** Change-type marker: write (full-content write, also covers creation) vs. in-place edit. */
-function OpIcon({ op }: { op: MemoryChangeRow["op"] }) {
-  const title = op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit;
-  return (
-    <span title={title} className="shrink-0 text-gray-400">
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        {op === "write" ? (
-          <>
-            <path d="M6 3h8l4 4v14H6z" />
-            <path d="M12 11v6M9 14h6" />
-          </>
-        ) : (
-          <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z" />
-        )}
-      </svg>
-      <span className="sr-only">{title}</span>
-    </span>
-  );
-}
+/** Open book (the card's mark, same as the panel's Memory toggle), page-with-plus (full write), pencil (in-place edit). */
+const MEMORY_ICON =
+  "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
+const WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
+const EDIT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 
 export function MemoryChangesCard({
   rows,
-  onOpenMemory,
+  onLocateChange,
+  onOpenPanel,
 }: {
   rows: MemoryChangeRow[];
-  /** Jumps to the Agent's memory tab; the header button doesn't render if this isn't wired up. */
-  onOpenMemory?: () => void;
+  /** Row click: open the side panel's Memory view located at this row's diffs; rows render as plain rows if this isn't wired up. */
+  onLocateChange?: (row: MemoryChangeRow) => void;
+  /** Header button: open the Memory view unlocated; the button doesn't render if this isn't wired up. */
+  onOpenPanel?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (rows.length === 0) return null;
@@ -90,65 +43,75 @@ export function MemoryChangesCard({
   const visible = expanded ? rows : rows.slice(0, MAX_VISIBLE);
   const hidden = rows.length - visible.length;
 
+  const rowInner = (row: MemoryChangeRow) => {
+    const glyph = scopeGlyph(row.scope, row.scopeKey);
+    return (
+      <>
+        <span title={glyph.title} className="shrink-0 text-gray-400">
+          <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
+          <span className="sr-only">{glyph.title}</span>
+        </span>
+        <PathLabel path={row.file} />
+        <span className="min-w-0 flex-1" />
+        <span
+          title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
+          className="shrink-0 text-gray-400"
+        >
+          <GlyphIcon d={row.op === "write" ? WRITE_ICON : EDIT_ICON} size={ICON_SIZE.inlineGlyph} />
+        </span>
+      </>
+    );
+  };
+
   return (
     <div className="anim-msg my-3 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       {/* Header bar, mirroring the file-summary card: "icon + N memory updates", plus the one
-          card-level action — rows have none, so this doesn't duplicate anything. */}
+          card-level action (rows navigate to their own diff, so this doesn't duplicate them). */}
       <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-800/40">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden
-          className="shrink-0 text-gray-400"
-        >
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
+        <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.rowLead} className="shrink-0 text-gray-400" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {S.chat.memoryChangesTitle(rows.length)}
         </span>
-        {onOpenMemory && (
+        {onOpenPanel && (
           <button
             type="button"
-            title={S.chat.openAgentMemory}
-            onClick={onOpenMemory}
+            title={S.chat.memoryViewTitle}
+            onClick={onOpenPanel}
             className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
           >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M7 17 17 7M8 7h9v9" />
-            </svg>
-            <span className="sr-only">{S.chat.openAgentMemory}</span>
+            <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.inlineGlyph} />
+            <span className="sr-only">{S.chat.memoryViewTitle}</span>
           </button>
         )}
       </div>
       <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-        {visible.map((row) => (
-          <div
-            key={`${row.scope} ${row.scopeKey ?? ""} ${row.file}`}
-            className="flex w-full items-center gap-2 px-3 py-2"
-          >
-            <ScopeIcon row={row} />
-            <PathLabel path={row.file} />
-            <span className="min-w-0 flex-1" />
-            <OpIcon op={row.op} />
-          </div>
-        ))}
+        {visible.map((row) =>
+          onLocateChange ? (
+            <button
+              key={`${row.scope} ${row.scopeKey ?? ""} ${row.file}`}
+              type="button"
+              title={S.chat.memoryRowOpen}
+              onClick={() => onLocateChange(row)}
+              className="group flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            >
+              {rowInner(row)}
+              {/* Right-aligned action hint, the file card's affordance (span, not a nested button: the row itself is the button). */}
+              <span
+                aria-hidden
+                className="shrink-0 text-xs text-gray-400 transition-colors duration-150 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-gray-300"
+              >
+                {S.chat.memoryRowOpen}
+              </span>
+            </button>
+          ) : (
+            <div
+              key={`${row.scope} ${row.scopeKey ?? ""} ${row.file}`}
+              className="flex w-full items-center gap-2 px-3 py-2"
+            >
+              {rowInner(row)}
+            </div>
+          ),
+        )}
         {(hidden > 0 || expanded) && rows.length > MAX_VISIBLE && (
           <button
             type="button"
@@ -156,20 +119,7 @@ export function MemoryChangesCard({
             className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800/50"
           >
             {expanded ? S.chat.showLess : S.chat.memoryShowMore(hidden)}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-              className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
+            <Chevron open={expanded} className="text-gray-400" size={12} />
           </button>
         )}
       </div>

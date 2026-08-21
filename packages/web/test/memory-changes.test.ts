@@ -4,7 +4,11 @@
  * into one row per file.
  */
 import { describe, expect, it } from "vitest";
-import { classifyMemoryPath, mergeMemoryChanges } from "../src/lib/omni/memory-changes";
+import {
+  aggregateMemoryChanges,
+  classifyMemoryPath,
+  mergeMemoryChanges,
+} from "../src/lib/omni/memory-changes";
 import type { MemoryChangeEntry } from "../src/lib/omni/memory-changes";
 
 const STATE = "/root/proj/agents/a1/agent_state";
@@ -74,32 +78,78 @@ describe("classifyMemoryPath", () => {
   });
 });
 
-describe("mergeMemoryChanges", () => {
-  const write = (file: string): MemoryChangeEntry => ({ scope: "user", file, op: "write" });
-  const edit = (file: string): MemoryChangeEntry => ({ scope: "user", file, op: "edit" });
+const write = (file: string, content?: string): MemoryChangeEntry => ({
+  scope: "user",
+  file,
+  event: { op: "write", ...(content !== undefined ? { content } : {}) },
+});
+const edit = (file: string, oldString?: string, newString?: string): MemoryChangeEntry => ({
+  scope: "user",
+  file,
+  event: {
+    op: "edit",
+    ...(oldString !== undefined ? { oldString } : {}),
+    ...(newString !== undefined ? { newString } : {}),
+  },
+});
 
-  it("keeps one row per file, preserving first-seen order", () => {
-    expect(mergeMemoryChanges([edit("a.md"), write("b.md"), edit("a.md")])).toEqual([
-      { scope: "user", file: "a.md", op: "edit" },
-      { scope: "user", file: "b.md", op: "write" },
+describe("mergeMemoryChanges", () => {
+  it("keeps one row per file, preserving first-seen order and accumulating events chronologically", () => {
+    const rows = mergeMemoryChanges([
+      edit("a.md", "x", "y"),
+      write("b.md", "B"),
+      edit("a.md", "y", "z"),
+    ]);
+    expect(rows).toEqual([
+      {
+        scope: "user",
+        file: "a.md",
+        op: "edit",
+        events: [
+          { op: "edit", oldString: "x", newString: "y" },
+          { op: "edit", oldString: "y", newString: "z" },
+        ],
+      },
+      { scope: "user", file: "b.md", op: "write", events: [{ op: "write", content: "B" }] },
     ]);
   });
 
-  it("write dominates regardless of order", () => {
-    expect(mergeMemoryChanges([edit("a.md"), write("a.md")])).toEqual([
-      { scope: "user", file: "a.md", op: "write" },
-    ]);
-    expect(mergeMemoryChanges([write("a.md"), edit("a.md")])).toEqual([
-      { scope: "user", file: "a.md", op: "write" },
-    ]);
+  it("write dominates the summary op regardless of order", () => {
+    expect(mergeMemoryChanges([edit("a.md"), write("a.md")])[0]!.op).toBe("write");
+    expect(mergeMemoryChanges([write("a.md"), edit("a.md")])[0]!.op).toBe("write");
   });
 
   it("does not merge the same file name across scopes", () => {
     const rows = mergeMemoryChanges([
-      { scope: "user", file: "notes.md", op: "edit" },
-      { scope: "workspace", scopeKey: "ws-1", file: "notes.md", op: "edit" },
-      { scope: "workspace", scopeKey: "ws-2", file: "notes.md", op: "edit" },
+      { scope: "user", file: "notes.md", event: { op: "edit" } },
+      { scope: "workspace", scopeKey: "ws-1", file: "notes.md", event: { op: "edit" } },
+      { scope: "workspace", scopeKey: "ws-2", file: "notes.md", event: { op: "edit" } },
     ]);
     expect(rows).toHaveLength(3);
+  });
+});
+
+describe("aggregateMemoryChanges", () => {
+  it("concatenates one file's events across Tasks and keeps first-appearance order", () => {
+    const task1 = mergeMemoryChanges([edit("a.md", "1", "2"), write("b.md", "B")]);
+    const task2 = mergeMemoryChanges([write("a.md", "A2")]);
+    expect(aggregateMemoryChanges([task1, task2])).toEqual([
+      {
+        scope: "user",
+        file: "a.md",
+        op: "write",
+        events: [
+          { op: "edit", oldString: "1", newString: "2" },
+          { op: "write", content: "A2" },
+        ],
+      },
+      { scope: "user", file: "b.md", op: "write", events: [{ op: "write", content: "B" }] },
+    ]);
+  });
+
+  it("returns [] for no lists and leaves single-task rows unchanged", () => {
+    expect(aggregateMemoryChanges([])).toEqual([]);
+    const task = mergeMemoryChanges([edit("a.md", "x", "y")]);
+    expect(aggregateMemoryChanges([task])).toEqual(task);
   });
 });

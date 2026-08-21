@@ -81,7 +81,7 @@ import {
 } from "./task-stats";
 import type { TaskStats, TaskStatsTracker } from "./task-stats";
 import { classifyMemoryPath, mergeMemoryChanges } from "./memory-changes";
-import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
+import type { MemoryChangeEntry, MemoryChangeEvent, MemoryChangeRow } from "./memory-changes";
 
 // ---------------------------------------------------------------------------
 // View model types
@@ -971,11 +971,29 @@ function collectTaskMemoryChanges(model: StreamModel): MemoryChangeRow[] {
     } catch {
       continue; // a malformed argument record can't name a file
     }
-    const filePath = (args as { file_path?: unknown }).file_path;
-    if (typeof filePath !== "string") continue;
-    const classed = classifyMemoryPath(filePath, model.agentState);
-    if (classed !== null)
-      entries.push({ ...classed, op: it.name === "write_file" ? "write" : "edit" });
+    const a = args as {
+      file_path?: unknown;
+      content?: unknown;
+      old_string?: unknown;
+      new_string?: unknown;
+      replace_all?: unknown;
+    };
+    if (typeof a.file_path !== "string") continue;
+    const classed = classifyMemoryPath(a.file_path, model.agentState);
+    if (classed === null) continue;
+    // Each call keeps its replayable material: the written content, or the edit's old/new
+    // strings — what the panel renders as this call's diff.
+    const event: MemoryChangeEvent =
+      it.name === "write_file"
+        ? { op: "write", ...(typeof a.content === "string" ? { content: a.content } : {}) }
+        : {
+            op: "edit",
+            ...(typeof a.old_string === "string" ? { oldString: a.old_string } : {}),
+            ...(typeof a.new_string === "string" ? { newString: a.new_string } : {}),
+            ...(a.replace_all === true ? { replaceAll: true } : {}),
+          };
+    if (it.callStartedAtMs !== undefined) event.atMs = it.callStartedAtMs;
+    entries.push({ ...classed, event });
   }
   return mergeMemoryChanges(entries.reverse()); // walked backward; merge in call order
 }

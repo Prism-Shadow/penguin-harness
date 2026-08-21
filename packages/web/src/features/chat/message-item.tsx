@@ -392,7 +392,8 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
           {ctx.origin.length === 0 && item.memoryChanges !== undefined && (
             <MemoryChangesCard
               rows={item.memoryChanges}
-              {...(ctx.onOpenMemory ? { onOpenMemory: ctx.onOpenMemory } : {})}
+              {...(ctx.onLocateMemoryChange ? { onLocateChange: ctx.onLocateMemoryChange } : {})}
+              {...(ctx.onOpenMemory ? { onOpenPanel: ctx.onOpenMemory } : {})}
             />
           )}
           <TaskStatsLine

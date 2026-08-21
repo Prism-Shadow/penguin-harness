@@ -61,6 +61,7 @@ import {
   pushMessage,
 } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
+import { aggregateMemoryChanges } from "../../lib/omni/memory-changes";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
@@ -485,6 +486,18 @@ export function ChatPage() {
             subagents: new Map([...stream.prefixSubagents, ...stream.model.subagents]),
           }
         : stream.model,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stream.version, routeSessionId],
+  );
+  // This conversation's memory changes, aggregated across every visible Task for the side
+  // panel's Memory view (backfilled windows included; version keys the memo like panelModel).
+  const sessionMemoryChanges = useMemo(
+    () =>
+      aggregateMemoryChanges(
+        allItems.flatMap((it) =>
+          it.kind === "task_stats" && it.memoryChanges !== undefined ? [it.memoryChanges] : [],
+        ),
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stream.version, routeSessionId],
   );
@@ -1453,9 +1466,17 @@ export function ChatPage() {
       subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
     },
     onOpenMemory: () => {
-      // Memory files live outside the Workspace, so the Files panel can't preview them; the
-      // Agent settings memory tab is the existing full view.
-      if (selected) navigate(`/agents/${selected.agentId}?tab=memory`);
+      // The side panel's Memory view (the wrapped setOpen closes the subagents panel).
+      filesPanel.setOpen(true);
+      filesPanel.openMemory(null);
+    },
+    onLocateMemoryChange: (row) => {
+      filesPanel.setOpen(true);
+      filesPanel.openMemory({
+        scope: row.scope,
+        ...(row.scopeKey !== undefined ? { scopeKey: row.scopeKey } : {}),
+        file: row.file,
+      });
     },
     workspace: selected?.workspace ?? null,
     statFiles,
@@ -2006,7 +2027,15 @@ export function ChatPage() {
             ctx={ctx}
           />
         )}
-        {selected && <FilesPanel session={selected} panel={filesPanel} />}
+        {selected && (
+          <FilesPanel
+            session={selected}
+            panel={filesPanel}
+            memoryChanges={sessionMemoryChanges}
+            // Management (add / edit / delete) lives on the agent-settings memory tab.
+            onOpenMemorySettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
+          />
+        )}
         <TerminalDockSlot position="right" />
       </div>
 
