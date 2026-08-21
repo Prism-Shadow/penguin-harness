@@ -573,6 +573,31 @@ export interface ModelProtocolDetectResponse {
 }
 
 /**
+ * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
+ * the protocol `/detect` reported, returns every model id the endpoint serves (AgentHub's
+ * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
+ * whole listing in one go; the ids come back in the endpoint's own order.
+ */
+export interface EndpointModelListRequest {
+  /** Endpoint base URL (as typed in the add-group dialog). */
+  baseUrl: string;
+  /** AgentHub client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
+  clientType: string;
+  /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
+  apiKey?: string;
+}
+
+/** Listing outcome: model ids on success, a truncated provider/SDK reason otherwise. */
+export interface EndpointModelListResponse {
+  ok: boolean;
+  /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
+  models?: string[];
+  /** The routed client has no models endpoint (AgentHub UnsupportedOperationError) — callers offer the manual path. */
+  unsupported?: boolean;
+  message?: string;
+}
+
+/**
  * PUT /api/projects/:p/models/default (owner): narrow default-model switch — flips the same
  * top-level `default_model` the models page's whole-table PUT writes, without resending the
  * table (and thus without touching credentials). The pair must name a configured model

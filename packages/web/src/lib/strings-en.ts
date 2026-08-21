@@ -549,13 +549,32 @@ export const en: Strings = {
     addGroup: "Add group",
     addGroupTitle: "Add group",
     addGroupDesc:
-      "User-defined groups share Custom semantics: the protocol is picked manually or detected from the base URL (base URL required; an empty API key reads the OPENAI_* / ANTHROPIC_* env vars per the chosen protocol). Groups live on model entries — the group appears once its first model is saved.",
+      'User-defined groups share Custom semantics. "Import models" detects (or lets you pick) the endpoint\'s protocol, then imports every model it serves in one go; "Create only" adds models one by one after the group. Groups live on model entries — the group appears once its first model is saved.',
+    groupModeCreate: "Create only",
+    groupModeImport: "Import models",
+    groupImportAll: "Import all models",
+    groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
+    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportListing: "Fetching model list…",
+    groupImportSaving: (n: number): string => `Importing ${n} models…`,
+    groupImportUnsupported: "This protocol cannot list models — add them manually",
+    groupImportFailed: "Fetching the model list failed",
+    groupImportEmpty: "No models to import from this endpoint",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0
+        ? `Imported ${added} models, skipped ${skipped} entries`
+        : `Imported ${added} models`,
     groupNameLabel: "Group name",
     groupNameHint: "Starts with a lowercase letter / digit; may contain - and _",
     groupNameInvalid:
       "Group names may only use lowercase letters, digits, - and _ (starting with a letter or digit), up to 32 characters",
     groupNameExists: "This name is taken by a built-in group or an existing entry",
     groupEmptyHint: "No models in this group yet; use “Add model” to create one",
+    deleteGroup: "Delete group",
+    deleteGroupTitle: "Delete group",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `Delete the group “${label}”? Its ${n} models and their API key configuration will be removed.`,
+    groupDeleted: (n: number): string => `Group deleted (${n} models)`,
     searchPlaceholder: "Search models: id / name / provider",
     noSearchResults: "No matching models",
     syncCatalog: "Sync presets",

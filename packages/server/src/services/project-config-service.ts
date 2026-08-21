@@ -31,6 +31,7 @@ import {
   DEFAULT_CHAT_THINKING_LEVELS,
   GenerativeModel,
   canonicalClientType,
+  listEndpointModels as coreListEndpointModels,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
@@ -43,6 +44,8 @@ import {
 import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   ModelInfo,
   ModelPricingDto,
   ModelProtocolDetectRequest,
@@ -131,6 +134,13 @@ function showRef(provider: string, modelId: string): string {
  */
 const PROBE_PROMPT =
   'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>';
+
+/**
+ * Endpoint model-listing bound: the SDK paginates `/models` under the hood, so one slow
+ * or endless gateway must not pin the add-group dialog — 20s matches the connectivity
+ * test's request timeout.
+ */
+const LIST_MODELS_TIMEOUT_MS = 20_000;
 
 /**
  * Speed probe prompt: a one-word answer can't be timed (a compliant model emits 1-3
@@ -393,15 +403,15 @@ export class ProjectConfigService {
    * Model connectivity test: the model reference `(provider, modelId)` is submitted
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
-   * system prompt, thinking disabled, a tiny output cap, 20s timeout — just to see
-   * whether the endpoint answers. The model id sent to AgentHub is `modelId`
-   * itself (the upstream id verbatim; client_type inference follows it).
+   * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout —
+   * just to see whether the endpoint answers. The model id sent to AgentHub is
+   * `modelId` itself (the upstream id verbatim; client_type inference follows it).
    *
-   * A reasoning-heavy model may ignore the disabled thinking level and burn the
-   * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
-   * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
-   * demonstrably streamed model output, which is everything a connectivity test
-   * proves, so that case counts as ok too (see probeVerdict).
+   * A reasoning-heavy model can spend the whole tiny output cap on thinking
+   * (finish_reason=length with no text — AgentHub raises EmptyResponseError,
+   * collapsed to a malformed outcome): the endpoint demonstrably streamed model
+   * output, which is everything a connectivity test proves, so that case counts as
+   * ok too (see probeVerdict).
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
@@ -440,7 +450,9 @@ export class ProjectConfigService {
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         maxTokens: VISION_PROBE_MAX_TOKENS,
         requestTimeoutMs: VISION_PROBE_TIMEOUT_MS,
       });
@@ -506,7 +518,9 @@ export class ProjectConfigService {
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         // Speed mode pairs a raised cap with a prompt that keeps generating (see
         // SPEED_PROBE_PROMPT), so the stream lasts long enough for TTFT/TPS to describe
         // decoding rather than one round trip; the plain connectivity test keeps the
@@ -582,6 +596,50 @@ export class ProjectConfigService {
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
     }
     return detectModelProtocol({ baseUrl: req.baseUrl, ...(apiKey ? { apiKey } : {}) });
+  }
+
+  /**
+   * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
+   * parameters come from the request — a group being created has no stored entry to fall
+   * back to; an omitted key follows the same environment chain as the connectivity test
+   * (the wrapped SDK reads the protocol's own variable). Never throws: SDK construction
+   * and request failures collapse into `{ ok:false, message }`, an AgentHub
+   * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
+   * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
+   * timed out. Nothing cancels the request behind it: the race only stops waiting, and a
+   * later rejection is already handled by the race itself. The listing is returned
+   * verbatim; dedup against the config is the caller's policy, exactly like the probe
+   * routes never write anything either.
+   */
+  async listEndpointModels(
+    req: EndpointModelListRequest,
+    listImpl: typeof coreListEndpointModels = coreListEndpointModels,
+    timeoutMs: number = LIST_MODELS_TIMEOUT_MS,
+  ): Promise<EndpointModelListResponse> {
+    const clientType = canonicalClientType(req.clientType) ?? req.clientType;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const listing = listImpl({
+        clientType,
+        baseUrl: req.baseUrl,
+        ...(req.apiKey ? { apiKey: req.apiKey } : {}),
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("model listing timed out")), timeoutMs);
+        timer.unref?.();
+      });
+      const models = await Promise.race([listing, timeout]);
+      return { ok: true, models };
+    } catch (err) {
+      const unsupported = err instanceof Error && err.name === "UnsupportedOperationError";
+      return {
+        ok: false,
+        ...(unsupported ? { unsupported: true } : {}),
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /**
@@ -856,11 +914,10 @@ export function isProbeContent(msg: OmniMessage): boolean {
 /**
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
- * model that ignores the disabled thinking level and burns the probe's tiny max_tokens
- * entirely on thinking (finish_reason=length -> AgentHub's EmptyResponseError) — the
- * endpoint, credential, and model id all demonstrably work, which is what a connectivity
- * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
- * received) fails with the outcome's message.
+ * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
+ * AgentHub's EmptyResponseError) — the endpoint, credential, and model id all demonstrably
+ * work, which is what a connectivity test measures. Everything else (auth/parameter failures,
+ * timeouts, malformed with nothing received) fails with the outcome's message.
  */
 export function probeVerdict(
   outcome: LLMOutcome,
