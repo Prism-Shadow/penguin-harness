@@ -42,8 +42,25 @@ const PROBE_OUTPUT_CAP = 4 * 1024 * 1024;
  * (`_`, `SHLVL`, `PWD`, `OLDPWD`), the probe's own terminal identity (`TERM`), and
  * `ELECTRON_RUN_AS_NODE` — importing that one would make every later relaunch of the
  * app run as plain Node instead of Electron.
+ *
+ * `PENGUIN_WEB_DIST` and `PENGUIN_CLI_ENTRY` join them because they select *code*: the
+ * embedded server reads the first for the Web App it serves and the second for the entry it
+ * self-updates through, and the fork does not override either. A profile line written for a
+ * repo checkout would silently retarget an installed app that the user only double-clicked.
+ * Data and settings variables are not excluded — `PENGUIN_HOME` chooses which data root the
+ * app opens, which is a configuration choice a user can mean to make once for both the CLI
+ * and the app.
  */
-const EXCLUDED_KEYS = new Set(["_", "SHLVL", "PWD", "OLDPWD", "TERM", "ELECTRON_RUN_AS_NODE"]);
+const EXCLUDED_KEYS = new Set([
+  "_",
+  "SHLVL",
+  "PWD",
+  "OLDPWD",
+  "TERM",
+  "ELECTRON_RUN_AS_NODE",
+  "PENGUIN_WEB_DIST",
+  "PENGUIN_CLI_ENTRY",
+]);
 
 /** Environment variable names as the POSIX shells define them; also drops `BASH_FUNC_f%%` exported functions. */
 const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
