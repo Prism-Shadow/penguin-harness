@@ -2168,22 +2168,11 @@ describe("fidelity-only messages render nothing (empty assistant bubble after th
 describe("task_stats memory changes", () => {
   const MEM = "/a/memory"; // meta() sets agent_state to "/a"
 
-  /** One completed file-tool call (write_file / edit_file) against `path`, with optional extra args (content / old_string / new_string). */
-  function fileTool(
-    m: StreamModel,
-    name: string,
-    path: string,
-    id: string,
-    stop = "completed",
-    extra: Record<string, string> = {},
-  ) {
+  /** One completed file-tool call (write_file / edit_file) against `path`. */
+  function fileTool(m: StreamModel, name: string, path: string, id: string, stop = "completed") {
     pushMessage(
       m,
-      toolCall({
-        name,
-        arguments: JSON.stringify({ file_path: path, ...extra }),
-        toolCallId: id,
-      }),
+      toolCall({ name, arguments: JSON.stringify({ file_path: path }), toolCallId: id }),
     );
     pushMessage(
       m,
@@ -2191,30 +2180,19 @@ describe("task_stats memory changes", () => {
     );
   }
 
-  it("collects completed write_file/edit_file under the memory root; write dominates the merged row and each call keeps its diff material", () => {
+  it("collects completed write_file/edit_file under the memory root; write dominates the merged row", () => {
     const m = createStreamModel();
     pushMessage(m, meta("s1"));
     pushMessage(m, userText("remember this"));
-    fileTool(m, "write_file", `${MEM}/user/prefs.md`, "t1", "completed", { content: "P1" });
-    fileTool(m, "edit_file", `${MEM}/user/prefs.md`, "t2", "completed", {
-      old_string: "P1",
-      new_string: "P2",
-    });
+    fileTool(m, "write_file", `${MEM}/user/prefs.md`, "t1");
+    fileTool(m, "edit_file", `${MEM}/user/prefs.md`, "t2");
     fileTool(m, "edit_file", `${MEM}/ws-1/conventions.md`, "t3");
     pushMessage(m, tokenUsage(counts(100), counts(100)));
     notifyTaskIdle(m);
     const stats = items(m).find((i) => i.kind === "task_stats") as TaskStatsItem;
-    // toMatchObject: events also carry the call's start timestamp, which the builders stamp.
+    // toMatchObject: rows also carry the latest call's start timestamp, which the builders stamp.
     expect(stats.memoryChanges).toMatchObject([
-      {
-        scope: "user",
-        file: "prefs.md",
-        op: "write",
-        events: [
-          { op: "write", content: "P1" },
-          { op: "edit", oldString: "P1", newString: "P2" },
-        ],
-      },
+      { scope: "user", file: "prefs.md", op: "write" },
       { scope: "workspace", scopeKey: "ws-1", file: "conventions.md", op: "edit" },
     ]);
     expect(stats.memoryChanges).toHaveLength(2);

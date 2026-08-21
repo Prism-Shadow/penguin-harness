@@ -1,7 +1,7 @@
 /**
- * memory-nav.ts unit tests: entry routing (locate target → detail, tab entry → list),
- * back behavior, and merging the server listing with this conversation's changes into
- * the list view's groups.
+ * memory-nav.ts unit tests: entry routing (locate target → detail, panel entry → list),
+ * back behavior, the list view-model (markers; deleted topics absent once the listing is
+ * loaded; change-derived rows while it is not), and the deleted-key filter set.
  */
 import { describe, expect, it } from "vitest";
 import type { MemoryFileInfo, MemoryScopeInfo } from "@prismshadow/penguin-server/api";
@@ -9,14 +9,13 @@ import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
 import {
   buildMemoryList,
   deletedChangeKeys,
-  findChangeRow,
   memoryNavBack,
   memoryNavForRequest,
 } from "../src/features/chat/memory-nav";
 import type { ScopeFiles } from "../src/features/chat/memory-nav";
 
 describe("memoryNavForRequest / memoryNavBack", () => {
-  it("no request, and a request without a target (tab or card-header entry), land on the list", () => {
+  it("no request, and a request without a target (panel or card-header entry), land on the list", () => {
     expect(memoryNavForRequest(null)).toEqual({ kind: "list" });
     expect(memoryNavForRequest({ target: null })).toEqual({ kind: "list" });
   });
@@ -34,7 +33,7 @@ describe("memoryNavForRequest / memoryNavBack", () => {
 function scopeInfo(
   overrides: Partial<MemoryScopeInfo> & Pick<MemoryScopeInfo, "scopeKey" | "kind">,
 ): MemoryScopeInfo {
-  return { fileCount: 0, ...overrides };
+  return { fileCount: 0, hasIndex: true, ...overrides };
 }
 
 function fileInfo(name: string, title = name): MemoryFileInfo {
@@ -59,7 +58,6 @@ const change = (
   ...(scopeKey !== undefined ? { scopeKey } : {}),
   file,
   op,
-  events: [{ op }],
 });
 
 describe("buildMemoryList", () => {
@@ -72,43 +70,28 @@ describe("buildMemoryList", () => {
         title: "Prefs",
         modifiedAt: "2026-08-20T00:00:00.000Z",
         changed: "edit",
-        listed: true,
       },
     ]);
     expect(groups[1]!.workspacePath).toBe("/w/app");
     expect(groups[1]!.rows[0]!.changed).toBeUndefined();
   });
 
-  it("appends a changed file the listing doesn't carry to its scope's group", () => {
-    const groups = buildMemoryList(LISTING, [change("user", "topics/new.md", "write")]);
-    const rows = groups[0]!.rows;
-    expect(rows).toHaveLength(2);
-    expect(rows[1]).toEqual({
-      target: { scope: "user", file: "topics/new.md" },
-      title: "topics/new.md",
-      changed: "write",
-      listed: false,
-    });
+  it("a changed file the loaded listing no longer carries was deleted: it does not appear", () => {
+    const groups = buildMemoryList(LISTING, [change("user", "gone.md", "write")]);
+    expect(groups[0]!.rows.map((r) => r.target.file)).toEqual(["prefs.md"]);
   });
 
-  it("creates a missing group — a new User group goes first, a new Workspace group last", () => {
-    const wsOnly: ScopeFiles[] = [LISTING[1]!];
-    const groups = buildMemoryList(wsOnly, [
+  it("a null listing (not loaded) shows change-derived rows — unknown must not read as deleted", () => {
+    const groups = buildMemoryList(null, [
       change("user", "a.md", "write"),
-      change("workspace", "b.md", "edit", "ws-2"),
+      change("workspace", "b.md", "edit", "ws-9"),
     ]);
-    expect(groups.map((g) => g.scopeKey)).toEqual(["user", "ws-1", "ws-2"]);
-    expect(groups[0]!.rows[0]!.listed).toBe(false);
-    expect(groups[2]!.rows[0]!.target).toEqual({
-      scope: "workspace",
-      scopeKey: "ws-2",
-      file: "b.md",
-    });
-  });
-
-  it("a null listing (loading or failed) yields groups from the changes alone", () => {
-    const groups = buildMemoryList(null, [change("workspace", "b.md", "edit", "ws-9")]);
     expect(groups).toEqual([
+      {
+        scope: "user",
+        scopeKey: "user",
+        rows: [{ target: { scope: "user", file: "a.md" }, title: "a.md", changed: "write" }],
+      },
       {
         scope: "workspace",
         scopeKey: "ws-9",
@@ -117,24 +100,10 @@ describe("buildMemoryList", () => {
             target: { scope: "workspace", scopeKey: "ws-9", file: "b.md" },
             title: "b.md",
             changed: "edit",
-            listed: false,
           },
         ],
       },
     ]);
-  });
-});
-
-describe("findChangeRow", () => {
-  it("resolves a target to its change row by scope + key + file, and misses cleanly", () => {
-    const rows = [change("workspace", "b.md", "edit", "ws-1")];
-    expect(findChangeRow(rows, { scope: "workspace", scopeKey: "ws-1", file: "b.md" })).toBe(
-      rows[0],
-    );
-    expect(
-      findChangeRow(rows, { scope: "workspace", scopeKey: "ws-2", file: "b.md" }),
-    ).toBeUndefined();
-    expect(findChangeRow(rows, { scope: "user", file: "b.md" })).toBeUndefined();
   });
 });
 

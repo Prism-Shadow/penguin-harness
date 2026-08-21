@@ -79,39 +79,24 @@ describe("classifyMemoryPath", () => {
   });
 });
 
-const write = (file: string, content?: string): MemoryChangeEntry => ({
+const write = (file: string, atMs?: number): MemoryChangeEntry => ({
   scope: "user",
   file,
-  event: { op: "write", ...(content !== undefined ? { content } : {}) },
+  op: "write",
+  ...(atMs !== undefined ? { atMs } : {}),
 });
-const edit = (file: string, oldString?: string, newString?: string): MemoryChangeEntry => ({
+const edit = (file: string, atMs?: number): MemoryChangeEntry => ({
   scope: "user",
   file,
-  event: {
-    op: "edit",
-    ...(oldString !== undefined ? { oldString } : {}),
-    ...(newString !== undefined ? { newString } : {}),
-  },
+  op: "edit",
+  ...(atMs !== undefined ? { atMs } : {}),
 });
 
 describe("mergeMemoryChanges", () => {
-  it("keeps one row per file, preserving first-seen order and accumulating events chronologically", () => {
-    const rows = mergeMemoryChanges([
-      edit("a.md", "x", "y"),
-      write("b.md", "B"),
-      edit("a.md", "y", "z"),
-    ]);
-    expect(rows).toEqual([
-      {
-        scope: "user",
-        file: "a.md",
-        op: "edit",
-        events: [
-          { op: "edit", oldString: "x", newString: "y" },
-          { op: "edit", oldString: "y", newString: "z" },
-        ],
-      },
-      { scope: "user", file: "b.md", op: "write", events: [{ op: "write", content: "B" }] },
+  it("keeps one row per file, preserving first-seen order; atMs follows the latest call", () => {
+    expect(mergeMemoryChanges([edit("a.md", 1), write("b.md", 2), edit("a.md", 3)])).toEqual([
+      { scope: "user", file: "a.md", op: "edit", atMs: 3 },
+      { scope: "user", file: "b.md", op: "write", atMs: 2 },
     ]);
   });
 
@@ -122,55 +107,44 @@ describe("mergeMemoryChanges", () => {
 
   it("does not merge the same file name across scopes", () => {
     const rows = mergeMemoryChanges([
-      { scope: "user", file: "notes.md", event: { op: "edit" } },
-      { scope: "workspace", scopeKey: "ws-1", file: "notes.md", event: { op: "edit" } },
-      { scope: "workspace", scopeKey: "ws-2", file: "notes.md", event: { op: "edit" } },
+      { scope: "user", file: "notes.md", op: "edit" },
+      { scope: "workspace", scopeKey: "ws-1", file: "notes.md", op: "edit" },
+      { scope: "workspace", scopeKey: "ws-2", file: "notes.md", op: "edit" },
     ]);
     expect(rows).toHaveLength(3);
   });
 });
 
 describe("aggregateMemoryChanges", () => {
-  it("concatenates one file's events across Tasks and keeps first-appearance order", () => {
-    const task1 = mergeMemoryChanges([edit("a.md", "1", "2"), write("b.md", "B")]);
-    const task2 = mergeMemoryChanges([write("a.md", "A2")]);
+  it("merges one file across Tasks (write-dominant, latest atMs) and keeps first-appearance order", () => {
+    const task1 = mergeMemoryChanges([edit("a.md", 1), write("b.md", 2)]);
+    const task2 = mergeMemoryChanges([write("a.md", 5)]);
     expect(aggregateMemoryChanges([task1, task2])).toEqual([
-      {
-        scope: "user",
-        file: "a.md",
-        op: "write",
-        events: [
-          { op: "edit", oldString: "1", newString: "2" },
-          { op: "write", content: "A2" },
-        ],
-      },
-      { scope: "user", file: "b.md", op: "write", events: [{ op: "write", content: "B" }] },
+      { scope: "user", file: "a.md", op: "write", atMs: 5 },
+      { scope: "user", file: "b.md", op: "write", atMs: 2 },
     ]);
   });
 
   it("returns [] for no lists and leaves single-task rows unchanged", () => {
     expect(aggregateMemoryChanges([])).toEqual([]);
-    const task = mergeMemoryChanges([edit("a.md", "x", "y")]);
+    const task = mergeMemoryChanges([edit("a.md", 1)]);
     expect(aggregateMemoryChanges([task])).toEqual(task);
   });
 });
 
 describe("sameMemoryChanges", () => {
   it("treats re-derived rows with identical content as the same — a streaming tick must not re-fire effects keyed on identity", () => {
-    const a = mergeMemoryChanges([edit("a.md", "x", "y"), write("b.md", "B")]);
-    const b = mergeMemoryChanges([edit("a.md", "x", "y"), write("b.md", "B")]);
+    const a = mergeMemoryChanges([edit("a.md", 1), write("b.md", 2)]);
+    const b = mergeMemoryChanges([edit("a.md", 1), write("b.md", 2)]);
     expect(a).not.toBe(b);
     expect(sameMemoryChanges(a, b)).toBe(true);
   });
 
-  it("detects every content move: rows, ops, events, and event material", () => {
-    const base = mergeMemoryChanges([edit("a.md", "x", "y")]);
-    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("a.md", "x", "z")]))).toBe(false);
-    expect(sameMemoryChanges(base, mergeMemoryChanges([write("a.md", "A")]))).toBe(false);
-    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("b.md", "x", "y")]))).toBe(false);
-    expect(
-      sameMemoryChanges(base, mergeMemoryChanges([edit("a.md", "x", "y"), edit("a.md", "y", "z")])),
-    ).toBe(false);
+  it("detects every content move: rows, ops, files, and times", () => {
+    const base = mergeMemoryChanges([edit("a.md", 1)]);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([write("a.md", 1)]))).toBe(false);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("b.md", 1)]))).toBe(false);
+    expect(sameMemoryChanges(base, mergeMemoryChanges([edit("a.md", 2)]))).toBe(false);
     expect(sameMemoryChanges(base, [])).toBe(false);
   });
 });
