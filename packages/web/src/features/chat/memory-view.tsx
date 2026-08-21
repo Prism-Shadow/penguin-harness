@@ -80,19 +80,11 @@ export function ChatMemoryView({
 
   // ---- navigation (memory-nav.ts): entry routing + back ----
   const [mode, setMode] = useState<MemoryNavMode>({ kind: "list" });
-  const [flashLocate, setFlashLocate] = useState(false);
+  // Landing on a located memory just shows its content — no highlight, no transient tint —
+  // the same arrival the file-summary card's rows give (they only preview the file).
   useEffect(() => {
     if (request === null) return;
-    const next = memoryNavForRequest(request);
-    setMode(next);
-    // A located detail flashes its content briefly — the click's landing spot. Driven only
-    // by explicit openMemory commands (object identity), never by data refreshes.
-    if (next.kind === "detail") {
-      setFlashLocate(true);
-      const timer = setTimeout(() => setFlashLocate(false), 1600);
-      return () => clearTimeout(timer);
-    }
-    return;
+    setMode(memoryNavForRequest(request));
   }, [request]);
 
   // ---- detail content (loaded per target; keyed so a stale response can't cross targets) ----
@@ -168,11 +160,7 @@ export function ChatMemoryView({
               </span>
             )}
         </div>
-        <div
-          className={`min-h-0 flex-1 space-y-3 overflow-y-auto rounded-lg px-3.5 py-3 transition-colors duration-700 ${
-            flashLocate ? "bg-brand-50 dark:bg-brand-900/20" : ""
-          }`}
-        >
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-3">
           {listedRow?.description !== undefined && (
             <p className="text-xs text-gray-500 dark:text-gray-400">{listedRow.description}</p>
           )}
@@ -198,14 +186,19 @@ export function ChatMemoryView({
       <div className="flex items-center gap-1 px-3.5 pb-1 pt-2">
         <span className="min-w-0 flex-1" />
         {onOpenSettings && (
+          // Labelled, not a bare glyph: the arrow says the click leaves this panel, the text
+          // says where it lands, and nobody has to hover to find that out. `title` repeats the
+          // label verbatim rather than expanding on it, so the accessible name matches the
+          // visible one. The label fits the shared width's 320px minimum; past that (a larger
+          // text size) it truncates instead of pushing the row wider.
           <button
             type="button"
             onClick={onOpenSettings}
             title={S.chat.openAgentMemory}
-            className="flex h-6 w-6 shrink-0 items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
+            className="flex min-w-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <GlyphIcon d={OPEN_SETTINGS_ICON} size={ICON_SIZE.inlineGlyph} />
-            <span className="sr-only">{S.chat.openAgentMemory}</span>
+            <span className="truncate">{S.chat.openAgentMemory}</span>
           </button>
         )}
       </div>

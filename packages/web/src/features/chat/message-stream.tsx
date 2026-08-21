@@ -49,9 +49,9 @@ export interface StreamRenderContext {
   onOpenSubagent?: (sessionId: string, origin: string[]) => void;
   /** Opens the Memory panel on its list (memory-changes card header); the button doesn't render if this isn't wired up. */
   onOpenMemory?: () => void;
-  /** Opens the Memory panel located at this row's diffs (memory-changes card row click); rows render inert if this isn't wired up. */
+  /** Opens the Memory panel on this row's memory content (memory-changes card row click); rows render inert if this isn't wired up. */
   onLocateMemoryChange?: (row: MemoryChangeRow) => void;
-  /** Keys of changed memory files that no longer exist (deleted after the change): the card renders those rows unopenable. Absent while the listing hasn't loaded. */
+  /** Keys of changed memory files that no longer exist (deleted after the change): the card drops those rows. Absent while the listing hasn't loaded. */
   deletedMemoryKeys?: ReadonlySet<string>;
   /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
   workspace?: string | null;

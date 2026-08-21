@@ -1,8 +1,8 @@
 /**
  * The Agent's memory listing (overview + every scope's files), owned by chat-page and
  * shared by two consumers: the Memory panel's list/detail views, and the memory-changes
- * card's deleted-row marking (a changed file the loaded listing doesn't carry no longer
- * exists, so its entries must render unopenable — see memory-nav.ts deletedChangeKeys).
+ * card's deleted-row filtering (a changed file the loaded listing doesn't carry no longer
+ * exists, so the card drops its rows — see memory-nav.ts deletedChangeKeys).
  *
  * Fetches only when wanted (the panel is open, or this conversation has memory changes to
  * mark), and refetches when `changes` moves — the caller passes an identity-stable array

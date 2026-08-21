@@ -61,7 +61,7 @@ export function useMemoryPanel(sessionId: string | null): MemoryPanelState {
   }, []);
 
   const openMemory = useCallback((target: MemoryLocateTarget | null) => {
-    if (target !== null) setSheetSnap("full"); // A located diff needs the space, like file preview
+    if (target !== null) setSheetSnap("full"); // A located memory's content needs the space, like file preview
     setMemoryRequest({ target });
   }, []);
 

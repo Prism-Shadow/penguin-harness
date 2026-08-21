@@ -1356,7 +1356,8 @@ Scenarios:
     memoryRowOpen: "View content",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
-    openAgentMemory: "Manage memory in agent settings",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "Manage in agent settings",
     memoryShowMore: (n: number) => `Show ${n} more`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `More groups (${n})`,

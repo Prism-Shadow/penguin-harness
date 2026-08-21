@@ -122,7 +122,7 @@ export function MemoryChangesCard({
             className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800/50"
           >
             {expanded ? S.chat.showLess : S.chat.memoryShowMore(hidden)}
-            <Chevron open={expanded} className="text-gray-400" size={12} />
+            <Chevron open={expanded} className="text-gray-400" size={ICON_SIZE.chevronDense} />
           </button>
         )}
       </div>

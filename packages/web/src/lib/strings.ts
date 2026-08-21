@@ -1313,7 +1313,8 @@ Benchmark：
     memoryRowOpen: "查看内容",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
-    openAgentMemory: "在 Agent 设置中管理记忆",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "在 Agent 设置中管理",
     memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,

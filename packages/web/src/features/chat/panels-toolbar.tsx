@@ -2,11 +2,11 @@
  * Top-right panel switcher of the chat toolbar (Codex-style): icon-only buttons for the
  * pinned panels, then an "all panels" dropdown listing every panel with icon + name.
  *
- * Three panels exist: the subagents panel ("智能体面板"), the terminal dock and the
- * Workspace files panel. Which of them get their own toolbar icon is user-configurable via
- * the pin toggles inside the dropdown (persisted per browser); the default pins the
- * subagents panel and the Workspace, leaving the terminal reachable through the dropdown
- * (or Ctrl+`) until pinned.
+ * Four panels exist: the subagents panel, the terminal dock, the Workspace files panel and
+ * the Memory panel. Which of them get their own toolbar icon is user-configurable via the
+ * pin toggles inside the dropdown (persisted per browser); the default pins the subagents
+ * panel and the Workspace, leaving the terminal and Memory reachable through the dropdown
+ * (the terminal also via Ctrl+`) until pinned.
  *
  * The open/close state itself lives with each panel's own hook/store — this component only
  * renders triggers, so pinning/unpinning never touches panel state.

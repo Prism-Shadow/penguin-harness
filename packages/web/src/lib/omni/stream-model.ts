@@ -653,15 +653,14 @@ export function pushMessage(
     advanceLastTs(model, msg.timestamp);
     return;
   }
-  // session_meta: never rendered as an item. For the main session it carries nothing the view
-  // model needs (identity/config are all surfaced through the Session DTO). For a NESTED child
-  // session no DTO is loaded here, so capture the identity the subagents panel needs (which
-  // agent runs this child, on which model) — a rewritten session_meta (file rotation) simply
-  // overwrites with the same values.
+  // session_meta: never rendered as an item, but read at BOTH levels. Both keep the
+  // agent_state path — the main session's Task summary classifies file-tool writes against
+  // `<agent_state>/memory/` for its memory-change rows, so a model built from a window that
+  // never carries a session_meta derives none. A NESTED child session additionally has no DTO
+  // loaded here, so it captures the identity the subagents panel needs (which agent runs this
+  // child, on which model); the main session takes the rest of its identity/config from the
+  // Session DTO. A rewritten session_meta (file rotation) overwrites with the same values.
   if (msg.type === "session_meta") {
-    // Both levels keep the agent_state path: the main session's Task summary classifies
-    // file-tool writes against `<agent_state>/memory/` (a rewritten meta overwrites with
-    // the same values, like the nested identity below).
     model.agentState = (msg.payload as SessionMetaPayload).agent_state;
   }
   if (msg.type === "session_meta" && model.nested) {

@@ -2,7 +2,8 @@
  * Files panel state machine: panel open/close, the responsive breakpoint for desktop docking
  * vs. falling back to a mobile drawer, and the "locate a file in the directory tree" navigation
  * command (driven by clicking a file chip inside a message). Drag-to-resize and the width live
- * in use-panel-width.ts, shared with the Agents panel so the two open at the same width.
+ * in use-panel-width.ts, shared with the Agents and Memory panels so they all open at the
+ * same width.
  *
  * The panel's content is just WorkspaceBrowser's single directory-tree view — the protocol has no
  * structured file-write signal at all (file writes can happen inside the opaque exec_command shell),
@@ -12,8 +13,8 @@
  * Only the navigation command resets when sessionId changes; the open/closed state persists
  * across Sessions (once opened, it stays open — a panel the user opened is part of their
  * browsing environment, and switching conversations shouldn't collapse it). Starting a NEW chat
- * is the one reset point, and it belongs to the chat page, which owns both panels: see the
- * draft effect in chat-page.tsx.
+ * is the one reset point, and it belongs to the chat page, which owns every docked panel: see
+ * the draft effect in chat-page.tsx.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { SheetSnap } from "../../components/ui/sheet";
