@@ -141,7 +141,7 @@ export const en: Strings = {
      * window only): check → download progress → restart-to-install, driven by the
      * shell's updater snapshot. Null version/percent = the shell didn't name one.
      */
-    clientCheckNow: "Check for client updates",
+    clientCheckNow: "Check for updates",
     /** Success toast when a row-initiated check finds a release (the download starts by itself). */
     clientFoundNew: (v: string | null) =>
       v !== null
@@ -152,7 +152,7 @@ export const en: Strings = {
     clientRestartToInstall: (v: string | null) =>
       v !== null ? `Restart to install v${v}` : "Restart to install the update",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
-    clientUnsupportedDev: "A dev run of the client does not update itself",
+    clientUnsupportedDev: "A dev run does not update itself",
     /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
     clientUnsupportedPackage:
       "This install is managed by the system package manager — update it there",

@@ -141,7 +141,7 @@ export const zh = {
      * window only): check → download progress → restart-to-install, driven by the
      * shell's updater snapshot. Null version/percent = the shell didn't name one.
      */
-    clientCheckNow: "检查客户端更新",
+    clientCheckNow: "检查更新",
     /** Success toast when a row-initiated check finds a release (the download starts by itself). */
     clientFoundNew: (v: string | null) =>
       v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
@@ -150,7 +150,7 @@ export const zh = {
     clientRestartToInstall: (v: string | null) =>
       v !== null ? `重启并安装 v${v}` : "重启并安装更新",
     /** Tooltip on the disabled row in a dev (unpackaged) run. */
-    clientUnsupportedDev: "开发运行的客户端不支持自更新",
+    clientUnsupportedDev: "开发运行不支持自更新",
     /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
     clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
   },
