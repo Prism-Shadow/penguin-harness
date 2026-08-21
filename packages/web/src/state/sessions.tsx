@@ -491,6 +491,14 @@ export function applyUserEvent(
     });
     return;
   }
+  // A title landed. Titles generate at Task start, before the brand-new Session's own
+  // channel has any subscriber (the tab is still navigating from the draft), so the user
+  // channel is the delivery that reliably updates the list row — and rows this tab never
+  // opens (another tab's session, a subagent) get their titles the same way.
+  if (ev.type === "session_title") {
+    store.getState().setTitle(ev.sessionId, ev.title);
+    return;
+  }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips
   // above were lost — away long enough and a row sits on an hourglass that will never stop.
   // Refetch once, on the event that says so, rather than polling for it.

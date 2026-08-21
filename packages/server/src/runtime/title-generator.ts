@@ -25,6 +25,7 @@ import {
   stripConversationMarkers,
   tokenUsage,
 } from "@prismshadow/penguin-core";
+import type { ServerEvent } from "../api/types.js";
 import type { SessionsRepo } from "../db/repos/sessions.js";
 import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
@@ -38,6 +39,14 @@ export interface TitleGeneratorDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
+  /**
+   * Publishes the `session_title` event on the user-level channel of everyone who can see
+   * the Project (same contract as SessionManager's dep of the same name). This is what
+   * reaches the session list: titles land at Task start, typically before any tab has
+   * subscribed to the brand-new Session's own channel — the per-Session publish alone
+   * would be dropped unheard. Optional: without it only the per-Session channel is served.
+   */
+  notifyProjectUsers?: (projectId: string, event: ServerEvent) => void;
 }
 
 /** Host-side parameters for one title-generation request. */
@@ -181,12 +190,18 @@ export class TitleGenerator implements TitleNotifier {
     this.persist(ctx, title, req.notifyOn);
   }
 
-  /** Writes sessions.title and pushes the `session_title` event to the given channel (the session's own unless overridden). */
+  /**
+   * Writes sessions.title and pushes the `session_title` event — to the given Session
+   * channel (the session's own unless overridden) for the tab watching the conversation,
+   * and to the Project's user-level channels for every session list. The latter is the
+   * delivery that survives the start-of-run timing: a first Task's title fires before the
+   * new Session's own channel has any subscriber.
+   */
   private persist(ctx: UsageContext, title: string, notifyOn: string | undefined): void {
     this.deps.sessions.updateTitle(ctx.sessionId, title);
-    this.deps.channels
-      .get(notifyOn ?? ctx.sessionId)
-      .publish({ type: "session_title", sessionId: ctx.sessionId, title }, "server_event");
+    const event: ServerEvent = { type: "session_title", sessionId: ctx.sessionId, title };
+    this.deps.channels.get(notifyOn ?? ctx.sessionId).publish(event, "server_event");
+    this.deps.notifyProjectUsers?.(ctx.projectId, event);
   }
 }
 
