@@ -1,28 +1,41 @@
 /**
  * Row primitives for the System settings dialog's pages: a labelled preference row —
- * title with an optional one-line hint on the left, the control on the right — meant to
- * be stacked inside a `divide-y` container so rows separate with rules rather than boxes.
- * AccentPicker lives here too: the accent swatches moved out of the sidebar user menu
- * together with the rows that used them.
+ * title on the left, the control on the right — meant to be stacked inside a `divide-y`
+ * container so rows separate with rules rather than boxes. AccentPicker lives here too:
+ * the accent swatches moved out of the sidebar user menu together with the rows that used
+ * them.
  */
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
+import { ICON_GAP } from "../../lib/icon-scale";
+import { InfoPopover } from "../../components/ui/info-popover";
 import { ACCENT_SWATCHES } from "../../state/theme";
 import type { Accent } from "../../state/theme";
 
 export function PrefRow({
   label,
   hint,
+  info,
   children,
 }: {
   label: string;
+  /**
+   * A line that stays on screen. For what the value must look like, and for a fact about the
+   * current state (the running build's date) — never for what the row means, which goes in
+   * `info` so a reader who already knows is not made to scroll past it again.
+   */
   hint?: string;
+  /** Semantic explanation, disclosed by a "?" beside the label. */
+  info?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
       <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
+        <p className={`flex items-center ${ICON_GAP.tight} text-sm font-medium`}>
+          {label}
+          {info !== undefined && <InfoPopover label={label}>{info}</InfoPopover>}
+        </p>
         {hint !== undefined && (
           <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
         )}

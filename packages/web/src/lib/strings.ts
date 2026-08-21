@@ -61,7 +61,7 @@ export const zh = {
 
   settings: {
     language: "语言",
-    languageHint: "界面语言，可跟随浏览器设置",
+    languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "系统设置",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
@@ -74,11 +74,11 @@ export const zh = {
     updatesTitle: "更新",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    showCliSessionsHint:
+    showCliSessionsInfo:
       "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
-    /** Admin-only sub-page (server-global). */
+    /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "代理选项",
-    proxyHint: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    proxyInfo: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
@@ -90,29 +90,33 @@ export const zh = {
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
-    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
-    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
-      `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
-      `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
+    /** Accepted range for each field: read while typing, so it stays under the field. */
+    attachmentMaxMbHint: (min: number, max: number): string => `取值 ${min}–${max} MB`,
+    attachmentTotalMbHint: (min: number, max: number): string =>
+      `取值 ${min}–${max} MB，且不得低于单个附件上限`,
+    /** What these two numbers do NOT govern — disclosed at the pane heading. */
+    uploadLimitsInfo: (count: number, imageMb: number): string =>
+      `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
+      `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
-    themeHint: "应用的明暗外观",
+    themeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
     terminalTheme: "终端主题",
-    terminalThemeHint: "终端面板的配色，默认跟随应用主题",
+    terminalThemeInfo: "终端面板的配色，默认跟随应用主题。",
     followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
-    fontSizeHint: "界面整体字号",
+    fontSizeInfo: "界面整体字号。",
     fontSmall: "小",
     fontMedium: "中",
     fontLarge: "大",
     accent: "主题色",
-    accentHint: "界面强调色",
-    currencyHint: "价格显示币种；存储始终为美元",
-    changePasswordHint: "更改当前账号的登录密码",
+    accentInfo: "界面强调色。",
+    currencyInfo: "价格显示币种；存储始终为美元。",
+    changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",

@@ -31,15 +31,15 @@ export function GeneralSection() {
 
   return (
     <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-      <PrefRow label={S.settings.language} hint={S.settings.languageHint}>
+      <PrefRow label={S.settings.language} info={S.settings.languageInfo}>
         <Segmented options={langOptions} value={lang} onChange={setLang} />
       </PrefRow>
-      <PrefRow label={S.models.currency} hint={S.settings.currencyHint}>
+      <PrefRow label={S.models.currency} info={S.settings.currencyInfo}>
         <Segmented options={currencyOptions} value={currency} onChange={setCurrency} cols={2} />
       </PrefRow>
       {/* Flipping this refetches the whole conversation list under the new filter, so the
           sidebar behind the dialog updates without a reload. */}
-      <PrefRow label={S.settings.showCliSessions} hint={S.settings.showCliSessionsHint}>
+      <PrefRow label={S.settings.showCliSessions} info={S.settings.showCliSessionsInfo}>
         <Switch checked={showCliSessions} onChange={setShowCliSessions} />
       </PrefRow>
     </div>

@@ -12,14 +12,23 @@
  * along with the second dimension (Tabs' convention).
  */
 import type { ReactNode } from "react";
+import { ICON_GAP } from "../../lib/icon-scale";
 import { Modal } from "./modal";
 import { CloseButton } from "./icons";
+import { InfoPopover } from "./info-popover";
 
 export interface PagedDialogItem<K extends string> {
   key: K;
   label: string;
   /** Small leading glyph in the rail; sized by the caller (16px reads well). */
   icon?: ReactNode;
+  /**
+   * The page's semantic explanation, disclosed by a "?" beside the pane heading. It belongs
+   * here rather than at the top of the page body because the heading is the only title a page
+   * has — a "?" inside the body would be a mark modifying nothing, and a paragraph there would
+   * be re-read on every visit.
+   */
+  info?: ReactNode;
 }
 
 export interface PagedDialogGroup<K extends string> {
@@ -57,8 +66,8 @@ export function PagedDialog<K extends string>({
   children: ReactNode;
 }) {
   const showGroupHeadings = groups.length > 1;
-  const activeLabel =
-    groups.flatMap((g) => g.items).find((item) => item.key === active)?.label ?? title;
+  const activeItem = groups.flatMap((g) => g.items).find((item) => item.key === active);
+  const activeLabel = activeItem?.label ?? title;
 
   return (
     <Modal open={open} onClose={onClose} title={title} headerless bare widthClass="sm:max-w-3xl">
@@ -97,7 +106,12 @@ export function PagedDialog<K extends string>({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">
-            <h2 className="text-lg font-semibold">{activeLabel}</h2>
+            <h2 className={`flex min-w-0 items-center ${ICON_GAP.tight} text-lg font-semibold`}>
+              {activeLabel}
+              {activeItem?.info !== undefined && (
+                <InfoPopover label={activeLabel}>{activeItem.info}</InfoPopover>
+              )}
+            </h2>
             <CloseButton onClose={onClose} />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pb-6">

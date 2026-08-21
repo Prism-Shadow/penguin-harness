@@ -59,7 +59,7 @@ export const en: Strings = {
 
   settings: {
     language: "Language",
-    languageHint: "Interface language; can follow the browser",
+    languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "System settings",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
@@ -72,11 +72,11 @@ export const en: Strings = {
     updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    showCliSessionsHint:
+    showCliSessionsInfo:
       "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
-    /** Admin-only sub-page (server-global). */
+    /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",
-    proxyHint:
+    proxyInfo:
       "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
@@ -89,31 +89,35 @@ export const en: Strings = {
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
     attachmentTotalMb: "Max total per message (MB)",
-    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
-    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
-      `${min}–${max} MB; the total may not be below the per-file limit. A message may carry at ` +
-      `most ${count} attachments. Images placed inline in the conversation keep a separate ` +
-      `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
-      `conversation and the Trace, where its size is paid again on every history page and resume.`,
+    /** Accepted range for each field: read while typing, so it stays under the field. */
+    attachmentMaxMbHint: (min: number, max: number): string => `${min}–${max} MB`,
+    attachmentTotalMbHint: (min: number, max: number): string =>
+      `${min}–${max} MB, and not below the per-file limit`,
+    /** What these two numbers do NOT govern — disclosed at the pane heading. */
+    uploadLimitsInfo: (count: number, imageMb: number): string =>
+      `A message may carry at most ${count} attachments. Images placed inline in the ` +
+      `conversation keep a separate ${imageMb}MB limit that this setting does not raise — an ` +
+      `inline image enters the conversation and the Trace, where its size is paid again on ` +
+      `every history page and resume.`,
     theme: "Theme",
-    themeHint: "Light or dark look of the app",
+    themeInfo: "Light or dark look of the app.",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
     terminalTheme: "Terminal theme",
-    terminalThemeHint: "Colors of the terminal panel; follows the app theme by default",
+    terminalThemeInfo: "Colors of the terminal panel; follows the app theme by default.",
     followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
-    fontSizeHint: "Overall interface font size",
+    fontSizeInfo: "Overall interface font size.",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
-    accentHint: "Interface accent color",
-    currencyHint: "Display currency for prices; storage is always USD",
-    changePasswordHint: "Change this account's sign-in password",
+    accentInfo: "Interface accent color.",
+    currencyInfo: "Display currency for prices; storage is always USD.",
+    changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",

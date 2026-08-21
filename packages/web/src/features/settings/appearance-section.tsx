@@ -42,16 +42,16 @@ export function AppearanceSection() {
 
   return (
     <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-      <PrefRow label={S.settings.theme} hint={S.settings.themeHint}>
+      <PrefRow label={S.settings.theme} info={S.settings.themeInfo}>
         <Segmented options={themeOptions} value={mode} onChange={setMode} />
       </PrefRow>
-      <PrefRow label={S.settings.terminalTheme} hint={S.settings.terminalThemeHint}>
+      <PrefRow label={S.settings.terminalTheme} info={S.settings.terminalThemeInfo}>
         <Segmented options={terminalThemeOptions} value={terminalMode} onChange={setTerminalMode} />
       </PrefRow>
-      <PrefRow label={S.settings.fontSize} hint={S.settings.fontSizeHint}>
+      <PrefRow label={S.settings.fontSize} info={S.settings.fontSizeInfo}>
         <Segmented options={fontOptions} value={fontScale} onChange={setFontScale} />
       </PrefRow>
-      <PrefRow label={S.settings.accent} hint={S.settings.accentHint}>
+      <PrefRow label={S.settings.accent} info={S.settings.accentInfo}>
         <AccentPicker value={accent} onChange={setAccent} />
       </PrefRow>
     </div>
