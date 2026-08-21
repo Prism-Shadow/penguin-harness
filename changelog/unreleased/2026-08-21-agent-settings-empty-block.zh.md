@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** refactor
 - **Scope:** `web`
+- **PR:** [#390](https://github.com/Prism-Shadow/penguin-harness/pull/390)
 
 [English](2026-08-21-agent-settings-empty-block.md)
 
