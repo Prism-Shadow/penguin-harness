@@ -1,9 +1,12 @@
 /**
  * The side panel's Memory tab (see files-panel.tsx for the tab bar): two levels, modeled by
  * memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
- * agent-settings memory tab reads — with a marker on topics this conversation changed; a
- * topic's detail shows its per-call diffs from this conversation pinned on top (replaying
- * the structured tool record, see lib/omni/memory-changes.ts), then the memory's content.
+ * agent-settings memory tab reads — with a marker on topics this conversation changed. A
+ * changed topic's detail shows the body itself as one GitHub-style whole-file line diff:
+ * this conversation's calls replayed backwards over the current content reconstruct the
+ * pre-conversation text (memory-replay.ts), frontmatter stays out of the comparison, and
+ * DetailContent picks the display for each replay outcome. An unchanged topic renders as
+ * plain Markdown.
  *
  * Entry routes by origin: a memory-changes card row lands directly on that memory's detail
  * (diff in view, back returns to the list); entering through the panel tab lands on the
@@ -19,6 +22,7 @@ import { formatRelativeDate } from "../../lib/format";
 import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 import { diffLines } from "../../lib/line-diff";
 import type { DiffLine } from "../../lib/line-diff";
+import { replayBackwards } from "../../lib/memory-replay";
 import type {
   MemoryChangeEvent,
   MemoryChangeRow,
@@ -28,6 +32,7 @@ import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { useLocale } from "../../state/locale";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { Chevron } from "../../components/ui/chevron";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Md } from "./md";
 import { buildMemoryList, findChangeRow, memoryNavBack, memoryNavForRequest } from "./memory-nav";
@@ -101,33 +106,129 @@ function groupTitle(group: MemoryListGroup): string {
     : (group.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? group.scopeKey);
 }
 
-/** The change section of a detail view: every call's diff, chronological, always expanded. */
-function ChangeSection({ row, flash }: { row: MemoryChangeRow; flash: boolean }) {
+/**
+ * Per-call diffs, chronological — the fallback when no whole-file diff exists: expanded
+ * where it is the only change display (content unavailable), behind a flat toggle where it
+ * backs up an unaligned whole-file view.
+ */
+function ChangeSection({
+  row,
+  collapsible = false,
+}: {
+  row: MemoryChangeRow;
+  collapsible?: boolean;
+}) {
+  const [open, setOpen] = useState(!collapsible);
+  const events = row.events.map((event, i) => {
+    const lines = eventDiff(event);
+    return (
+      <div key={i}>
+        <p className="mb-1 text-[11px] text-gray-400 dark:text-gray-500">
+          {eventLabel(event, i, row.events.length)}
+        </p>
+        {lines === null ? (
+          <p className="text-xs text-gray-400 dark:text-gray-500">{S.chat.memoryNoDiff}</p>
+        ) : (
+          <DiffBlock lines={lines} />
+        )}
+      </div>
+    );
+  });
+  if (!collapsible) {
+    return (
+      <div className="space-y-3">
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          {S.chat.memoryChangesSection}
+        </p>
+        {events}
+      </div>
+    );
+  }
   return (
-    <div
-      className={`space-y-3 rounded-lg p-2 transition-colors duration-700 ${
-        flash ? "bg-brand-50 dark:bg-brand-900/20" : ""
-      }`}
-    >
-      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-        {S.chat.memoryChangesSection}
-      </p>
-      {row.events.map((event, i) => {
-        const lines = eventDiff(event);
-        return (
-          <div key={i}>
-            <p className="mb-1 text-[11px] text-gray-400 dark:text-gray-500">
-              {eventLabel(event, i, row.events.length)}
-            </p>
-            {lines === null ? (
-              <p className="text-xs text-gray-400 dark:text-gray-500">{S.chat.memoryNoDiff}</p>
-            ) : (
-              <DiffBlock lines={lines} />
-            )}
-          </div>
-        );
-      })}
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-500 transition-colors duration-150 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+      >
+        {S.chat.memoryPerCallToggle}
+        <Chevron open={open} size={12} />
+      </button>
+      {open && <div className="mt-2 space-y-3">{events}</div>}
     </div>
+  );
+}
+
+/** A quiet one-line annotation above a diff or body (rewrite / unaligned / meta-only notes). */
+function SubtleNote({ text }: { text: string }) {
+  return <p className="text-xs text-gray-400 dark:text-gray-500">{text}</p>;
+}
+
+/**
+ * The detail's body once the content has loaded: with no change row it is the memory
+ * rendered as Markdown; with one, the conversation's calls are replayed backwards over the
+ * raw content (memory-replay.ts) and the result decides the display — a clean reversal
+ * renders one GitHub-style whole-body line diff (frontmatter stripped from both sides,
+ * removed lines in place, no context folding — memory topics are small by construction), a
+ * write cutoff renders the whole body as added lines, and a failed alignment falls back to
+ * the rendered body with the per-call diffs behind a toggle.
+ */
+function DetailContent({
+  raw,
+  changeRow,
+  flash,
+}: {
+  raw: string;
+  changeRow: MemoryChangeRow | undefined;
+  flash: boolean;
+}) {
+  const afterBody = bodyWithoutFrontmatter(raw);
+  if (changeRow === undefined) {
+    return (
+      <div className="md-body text-sm">
+        <Md text={afterBody} />
+      </div>
+    );
+  }
+  const flashClass = `rounded-lg p-1 transition-colors duration-700 ${
+    flash ? "bg-brand-50 dark:bg-brand-900/20" : ""
+  }`;
+  const replay = replayBackwards(raw, changeRow.events);
+  if (replay.kind === "diff") {
+    const lines = diffLines(bodyWithoutFrontmatter(replay.before), afterBody);
+    if (lines.some((l) => l.type !== "same")) {
+      return (
+        <div className={flashClass}>
+          <DiffBlock lines={lines} />
+        </div>
+      );
+    }
+    // Only frontmatter moved (e.g. an updated_at bump): nothing in the body to mark up.
+    return (
+      <>
+        <SubtleNote text={S.chat.memoryBodyUnchanged} />
+        <div className="md-body text-sm">
+          <Md text={afterBody} />
+        </div>
+      </>
+    );
+  }
+  if (replay.kind === "rewritten") {
+    return (
+      <div className={`space-y-2 ${flashClass}`}>
+        <SubtleNote text={S.chat.memoryRewrittenNote} />
+        <DiffBlock lines={diffLines("", afterBody)} />
+      </div>
+    );
+  }
+  return (
+    <>
+      <SubtleNote text={S.chat.memoryUnalignedNote} />
+      <div className="md-body text-sm">
+        <Md text={afterBody} />
+      </div>
+      <ChangeSection row={changeRow} collapsible />
+    </>
   );
 }
 
@@ -272,20 +373,19 @@ export function ChatMemoryView({
             )}
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3">
-          {changeRow !== undefined && <ChangeSection row={changeRow} flash={flashDiff} />}
           {listedRow?.description !== undefined && (
             <p className="text-xs text-gray-500 dark:text-gray-400">{listedRow.description}</p>
           )}
           {!loaded || (!detail.failed && detail.content === null) ? (
             <SkeletonList rows={3} />
           ) : detail.failed ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              {S.chat.memoryContentUnavailable}
-            </p>
+            <>
+              <SubtleNote text={S.chat.memoryContentUnavailable} />
+              {/* No content to diff against — the per-call record is the only change display, so it stays expanded. */}
+              {changeRow !== undefined && <ChangeSection row={changeRow} />}
+            </>
           ) : (
-            <div className="md-body text-sm">
-              <Md text={bodyWithoutFrontmatter(detail.content ?? "")} />
-            </div>
+            <DetailContent raw={detail.content ?? ""} changeRow={changeRow} flash={flashDiff} />
           )}
         </div>
       </div>
