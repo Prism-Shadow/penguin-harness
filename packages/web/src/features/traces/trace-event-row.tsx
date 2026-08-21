@@ -257,7 +257,7 @@ function ParamsTable({ schema }: { schema: Record<string, unknown> }) {
           <tr key={name} className="align-top">
             <td className="whitespace-nowrap pr-3 font-mono text-gray-700 dark:text-gray-300">
               {name}
-              {required.has(name) && <RequiredMark />}
+              {required.has(name) && <RequiredMark label={S.traces.requiredParam} />}
             </td>
             <td className="whitespace-nowrap pr-3 font-mono text-gray-400 dark:text-gray-500">
               {typeOf(s)}

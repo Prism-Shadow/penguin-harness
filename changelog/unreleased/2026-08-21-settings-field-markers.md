@@ -32,11 +32,13 @@ the field's hint.
   Create agent dialog has always spelled it.
 - **Schedules** (Agent settings): "End at (optional)" and "Workspace (optional; a temporary
   workspace is created when empty)" lost the wording; the workspace fallback became a visible
-  hint, matching the identical field in Project settings → Defaults.
+  hint, sharing one string with the identical field in Project settings → Defaults.
 
 ## One asterisk
 
-The mark had been re-typed by hand in three places, one of which had dropped its dark-mode ink and
-rendered a brighter red than every other copy. It is now a single `RequiredMark`, which the models
-add-group and model dialogs use through `FieldLabel` for their custom label rows, and which the
-trace viewer's tool-schema table uses for required properties.
+The mark had been re-typed by hand in four places, one of which had dropped its dark-mode ink and
+so rendered duller than every other copy in dark mode. It is now a single `RequiredMark`, which the
+models add-group and model dialogs use through `FieldLabel` for their custom label rows, and which
+the trace viewer's tool-schema table uses for required properties. The mark is `aria-hidden` beside
+a control, which announces `aria-required` instead; the schema table has no control, so it passes a
+label and the mark speaks for itself.

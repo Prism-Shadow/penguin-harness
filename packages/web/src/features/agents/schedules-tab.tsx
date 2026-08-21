@@ -682,7 +682,7 @@ export function SchedulesTab({
                       onChange={(workspace) => set({ workspace })}
                       variant="form"
                     />
-                    <FieldHint>{S.schedule.workspaceHint}</FieldHint>
+                    <FieldHint>{S.chat.workspaceHintShort}</FieldHint>
                   </div>
                 </>
               )}

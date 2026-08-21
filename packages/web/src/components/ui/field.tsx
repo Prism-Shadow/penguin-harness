@@ -30,13 +30,23 @@ export const menuRowClass = "w-full px-3 py-1.5 text-left transition-colors dura
  * and an optional field carries no counterpart mark: the absence of the asterisk is what says
  * "optional", so no surface writes that word into a label or a placeholder.
  *
- * `aria-hidden` because the mark is decorative to assistive tech: the controls set
- * `aria-required` from the same flag, which is what a screen reader announces.
+ * `aria-hidden` by default because beside a control the mark is decorative: Field, Input,
+ * Textarea, Select and OptionMenu set `aria-required` from the same flag, which is what a screen
+ * reader announces. Where nothing carries that flag — a read-only table of schema properties,
+ * say — pass `label`, and the mark states itself instead of leaving the row unmarked.
  */
-export function RequiredMark() {
+export function RequiredMark({ label }: { label?: string }) {
+  if (label === undefined) {
+    return (
+      <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+        *
+      </span>
+    );
+  }
   return (
-    <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
-      *
+    <span className="ml-0.5 text-red-500 dark:text-red-400">
+      <span aria-hidden>*</span>
+      <span className="sr-only">{label}</span>
     </span>
   );
 }
@@ -122,7 +132,12 @@ export function Field({
   error?: ReactNode;
   /** id for the error text — the control passes the same id in aria-describedby. */
   errorId?: string;
-  /** Renders a red "*" after the label. An optional field passes nothing — no counterpart mark, and no "optional" in the label. */
+  /**
+   * Renders a red "*" after the label. An optional field passes nothing — no counterpart mark,
+   * and no "optional" in the label. With no `label` there is nothing to hang the mark on, so the
+   * flag only reaches the control as `aria-required`; a custom label row must then draw the mark
+   * itself with `<FieldLabel required>`, and the two halves have to be kept in step by hand.
+   */
   required?: boolean;
   /** Semantic explanation, disclosed by a "?" beside the label. Formatting rules belong in `hint`, which stays visible. */
   info?: ReactNode;

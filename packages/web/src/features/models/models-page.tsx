@@ -2298,6 +2298,7 @@ function ModelDialog({
           </span>
           <PasswordInput
             size="sm"
+            aria-label={S.models.apiKey}
             value={form.apiKeyInput}
             disabled={!canEdit}
             onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}

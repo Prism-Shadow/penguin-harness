@@ -309,7 +309,6 @@ export const en: Strings = {
     chatDefaultsNotSet: "Not set",
     chatDefaultsApprovalNotSet: "Not set (defaults to allow all)",
     chatDefaultsThinkingNotSet: "Not set (follow the agent's config)",
-    chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
     /** Settings dialog tab rail. */
@@ -832,7 +831,7 @@ export const en: Strings = {
     editWhy:
       "Content edits are made by the agent in a chat: confirm the prompt to open a new conversation, and the agent updates the memory file and its MEMORY.md index together.",
     editRequirementLabel: "What to change",
-    editRequirementPlaceholder: "Describe the change (optional — you can finish it in the chat)",
+    editRequirementPlaceholder: "Describe the change — you can finish it in the chat",
     editPromptLabel: "Prompt preview",
     editCopyPrompt: "Copy prompt",
     editOpenChat: "Open a new chat",
@@ -959,7 +958,6 @@ export const en: Strings = {
     sessionNoMatch: "No matching Session",
     sessionEmpty: "This agent has no Sessions yet",
     workspace: "Workspace",
-    workspaceHint: "Empty = a temporary workspace is created",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
@@ -1269,6 +1267,8 @@ Scenarios:
     workspace: "Workspace",
     workspaceHint:
       "Leave empty for an auto-created temporary workspace; if set, it must be an existing directory on the server",
+    /** The same rule as `workspaceHint`, short enough to sit under a form field. */
+    workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
     approvalModeNames: {
       "allow-all": "Approve everything",
@@ -1695,6 +1695,8 @@ Scenarios:
     legendToolExec: "tool exec",
     legendOther: "Other",
     toolParams: "Parameter schema",
+    /** Spoken form of the red "*" in the schema table, where no control carries `aria-required`. */
+    requiredParam: "required",
     legendApprovalWait: "approval wait",
     task: (n: number) => `Turn ${n}`,
     globalSummary: "Overall",
