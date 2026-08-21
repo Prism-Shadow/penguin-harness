@@ -1453,7 +1453,6 @@ Benchmark：
     bucketTotal: "合计",
     legendHitRate: "缓存命中率",
     empty: "暂无用量记录",
-    successAborted: "已中断（不计入）",
     errors: "异常",
     errorsTotal: "总数",
     errorsUnexpected: "未预期",

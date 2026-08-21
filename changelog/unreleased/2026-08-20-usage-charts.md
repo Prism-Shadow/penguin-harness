@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
 - **PR:** [#371](https://github.com/Prism-Shadow/penguin-harness/pull/371)
+- **Breaking:** yes — `GET /usage` no longer returns `trend`, `byAgent` or `success`, and the per-status failure breakdown `success` carried is gone.
 
 [中文版](2026-08-20-usage-charts.zh.md)
 
@@ -17,5 +18,15 @@ The hit-rate curve's smoothing is monotone cubic (Fritsch–Carlson tangents), s
 
 ## Details
 
-- `GET /usage` gained optional query parameters `granularity` (`minute` / `hour` / `day` / `week` / `month`, defaulting to `day`) and `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`, and refining every range-scoped aggregate down to instants). The response gained `granularity`, `series` (zero-filled time buckets carrying Token sums, cost, request count, and per-bucket success counts), `byAgentSeries`, and `byModelSeries` (per-entity request and success counts aligned index-for-index with `series`; each ignores its own dimension's filter, so a chart always draws that dimension's whole breakdown). Existing fields were left unchanged. A range × precision combination that would materialize an oversized series is rejected with 400.
+- `GET /usage` gained optional query parameters `granularity` (`minute` / `hour` / `day` / `week` / `month`, defaulting to `day`) and `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`, and refining every range-scoped aggregate down to instants). The response gained `granularity`, `series` (zero-filled time buckets carrying Token sums, cost, request count, and per-bucket success counts), `byAgentSeries`, and `byModelSeries` (per-entity request and success counts aligned index-for-index with `series`; each ignores its own dimension's filter, so a chart always draws that dimension's whole breakdown). `trend`, `byAgent` and `success` were removed along with the three queries behind them, so the route no longer aggregates a fixed 30-day window, a per-Agent call count and a per-Model status breakdown that nothing displayed. Every other field was left unchanged. A range × precision combination that would materialize an oversized series is rejected with 400.
 - Minute and hour buckets follow the server's local clock (the same timezone the daily aggregation key was already recorded in); week buckets key on the ISO week's Monday, month buckets on `yyyy-mm`.
+
+## Compatibility
+
+`GET /usage` dropped three response fields. Where each number lives now:
+
+- `trend` — the last 30 days of Token buckets and cost, one point per day. `series` carries the same points and defaults to exactly that window when no `from`/`to` is given; it also adds `requests`, `completed` and `denominator` per point.
+- `byAgent` — request counts per Agent are the sum of `byAgentSeries[].requests`. Token totals per Agent come from `?groupBy=agent`, whose `groups` rows carry `total`, `requests` and `cost`.
+- `success` — a Model's successful requests and its non-aborted denominator are the sums of `byModelSeries[].completed` and `byModelSeries[].denominator`. The per-status counts (`aborted`, `failed`, `timeout`, `malformed`) have no replacement: nothing displayed them, and error diagnosis is served by the `errors` panel, which records source and code per failure.
+
+The Web App reads none of the three, so no client change ships with this. A third-party consumer reading them from the HTTP API has to move to the fields above.

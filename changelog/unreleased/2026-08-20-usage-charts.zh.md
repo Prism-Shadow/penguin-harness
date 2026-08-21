@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
 - **PR:** [#371](https://github.com/Prism-Shadow/penguin-harness/pull/371)
+- **Breaking:** yes — `GET /usage` 不再返回 `trend`、`byAgent` 与 `success`，`success` 携带的分状态失败明细一并移除。
 
 [English](2026-08-20-usage-charts.md)
 
@@ -17,5 +18,15 @@
 
 ## 细节
 
-- `GET /usage` 新增可选查询参数 `granularity`（`minute` / `hour` / `day` / `week` / `month`，默认 `day`）与 `fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需，并把所有按范围统计的聚合细化到时刻级）。响应新增 `granularity`、`series`（零值补齐的时间桶，携带 Token 分项、成本、请求数与每桶成功数）、`byAgentSeries` 与 `byModelSeries`（与 `series` 按下标对齐的各对象请求与成功计数；各自忽略本维度的过滤条件，因此图表始终呈现该维度的完整拆分）。既有字段保持不变。范围 × 精度过大、会产生超长序列的组合返回 400。
+- `GET /usage` 新增可选查询参数 `granularity`（`minute` / `hour` / `day` / `week` / `month`，默认 `day`）与 `fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需，并把所有按范围统计的聚合细化到时刻级）。响应新增 `granularity`、`series`（零值补齐的时间桶，携带 Token 分项、成本、请求数与每桶成功数）、`byAgentSeries` 与 `byModelSeries`（与 `series` 按下标对齐的各对象请求与成功计数；各自忽略本维度的过滤条件，因此图表始终呈现该维度的完整拆分）。`trend`、`byAgent` 与 `success` 连同其背后的三条查询一并移除，该路由不再聚合固定 30 天窗口、各 Agent 调用次数与各模型分状态明细——这些都已无处展示。其余字段保持不变。范围 × 精度过大、会产生超长序列的组合返回 400。
 - 分钟与小时桶按服务器本地时钟划分（与既有按日聚合键使用同一时区）；周桶以 ISO 周的周一为键，月桶以 `yyyy-mm` 为键。
+
+## 兼容性
+
+`GET /usage` 移除了三个响应字段。对应的数据现在在这里取：
+
+- `trend`——最近 30 天、每天一个点的 Token 分项与成本。`series` 给出同样的点，未指定 `from`/`to` 时默认就是这个窗口，并额外带上每点的 `requests`、`completed` 与 `denominator`。
+- `byAgent`——各 Agent 的请求数即 `byAgentSeries[].requests` 之和；各 Agent 的 Token 总量改用 `?groupBy=agent`，其 `groups` 行带有 `total`、`requests` 与 `cost`。
+- `success`——某模型的成功请求数与其排除 aborted 的分母，分别是 `byModelSeries[].completed` 与 `byModelSeries[].denominator` 之和。分状态计数（`aborted`、`failed`、`timeout`、`malformed`）没有替代品：此前无处展示，失败诊断由 `errors` 面板承担，它按 source 与 code 记录每一次失败。
+
+Web App 不读取这三个字段，因此本次不含客户端改动。直接消费该 HTTP 接口的第三方需要改用上述字段。

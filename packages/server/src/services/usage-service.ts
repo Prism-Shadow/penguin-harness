@@ -9,7 +9,7 @@
  * pricing, its consumption is excluded from cost and hasUncosted is flagged).
  * Summary cards (today / last 7 days / cumulative), grouped aggregation (date /
  * agent / model / session, with the session dimension supporting agentId drill-down
- * filtering), and a 30-day trend.
+ * filtering), and the zero-filled time series the cost center's charts draw.
  * Server-side error statistics (error_records) ride along on the same response:
  * the statistics center fetches everything in one request, and filters are
  * naturally shared; unattributed errors (login failures, process crashes, and other
@@ -151,13 +151,10 @@ export class UsageService {
       ...win(q.from, q.to),
       ...ts,
     });
-    // Fixed 30-day window; affected by the agent/model filter.
-    const trendFrom = localDateMinusDays(this.now(), 29);
-    const trendRows = this.usage.groupsByModel(projectId, "date", win(trendFrom));
     // Time series at the requested precision, zero-filled over the requested
-    // range (defaulting to the trend's last-30-days window when absent).
+    // range, defaulting to the last 30 days when no range is given.
     const granularity = q.granularity ?? "day";
-    const seriesFrom = q.from ?? trendFrom;
+    const seriesFrom = q.from ?? localDateMinusDays(this.now(), 29);
     const seriesTo = q.to ?? today;
     // The series is zero-filled over the whole effective range: cap the bucket
     // count so an arbitrary range × precision combination cannot materialize an
@@ -185,9 +182,9 @@ export class UsageService {
       ...win(seriesFrom, seriesTo),
       ...ts,
     });
-    // Per-Agent / per-Model series and the agent call-count chart: each drops its
-    // own dimension's filter (the requests chart always offers every entity) but
-    // honors the other dimension plus the selected range.
+    // Per-Agent and per-Model series: each drops its own dimension's filter (its
+    // chart draws that dimension's whole breakdown) but honors the other
+    // dimension plus the selected range.
     const agentFree: UsageFilter = {
       ...(q.provider !== undefined ? { provider: q.provider } : {}),
       ...(q.modelId !== undefined ? { modelId: q.modelId } : {}),
@@ -195,7 +192,6 @@ export class UsageService {
       ...(q.to !== undefined ? { to: q.to } : {}),
       ...ts,
     };
-    const agentRows = this.usage.groupsByModel(projectId, "agent", agentFree);
     const agentBucketRows = this.usage.agentSeries(projectId, granularity, {
       ...agentFree,
       from: seriesFrom,
@@ -213,13 +209,6 @@ export class UsageService {
           ...ts,
         })
       : seriesRows;
-    // Model success-rate chart: not affected by the model filter (shows all models), but still affected by the date + agent filter.
-    const statusRows = this.usage.statusByModel(projectId, {
-      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
-      ...(q.from !== undefined ? { from: q.from } : {}),
-      ...(q.to !== undefined ? { to: q.to } : {}),
-      ...ts,
-    });
     // Error statistics: likewise not affected by the model filter (HTTP / process errors have no Model dimension), but still affected by the date + agent filter.
     const errorFilter: ErrorFilter = {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
@@ -232,26 +221,11 @@ export class UsageService {
     // Each paired reference that occurs is looked up for its current price only once.
     const rates = new Map<string, PricingRates | undefined>();
     const allRefs = new Map<string, { provider: string; modelId: string }>();
-    for (const r of [
-      ...todayRows,
-      ...last7dRows,
-      ...totalRows,
-      ...groupRows,
-      ...trendRows,
-      ...seriesRows,
-    ]) {
+    for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...seriesRows]) {
       allRefs.set(refKey(r.provider, r.modelId), { provider: r.provider, modelId: r.modelId });
     }
     for (const [key, ref] of allRefs) {
       rates.set(key, await this.lookupPricing(projectId, ref.provider, ref.modelId));
-    }
-
-    const byAgentMap = new Map<string, { requests: number; total: number }>();
-    for (const r of agentRows) {
-      const acc = byAgentMap.get(r.key) ?? { requests: 0, total: 0 };
-      acc.requests += r.requests;
-      acc.total += r.total;
-      byAgentMap.set(r.key, acc);
     }
 
     return {
@@ -262,15 +236,10 @@ export class UsageService {
       },
       groupBy: q.groupBy,
       groups: this.foldGroups(groupRows, rates, q.groupBy),
-      trend: this.foldTrend(trendRows, rates),
       granularity,
       series: this.foldSeries(bucketKeys, seriesRows, rates),
       byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),
       byModelSeries: foldModelSeries(bucketKeys, modelBucketRows),
-      byAgent: [...byAgentMap.entries()]
-        .map(([agentId, v]) => ({ agentId, requests: v.requests, total: v.total }))
-        .sort((a, b) => b.requests - a.requests),
-      success: statusRows.sort((a, b) => b.total - a.total),
       errors: this.foldErrors(projectId, errorFilter),
       agentIds: this.usage.distinctAgentIds(projectId),
       models: this.usage.distinctModels(projectId),
@@ -370,42 +339,6 @@ export class UsageService {
     if (groupBy === "date") out.sort((a, b) => b.key.localeCompare(a.key));
     else out.sort((a, b) => b.total - a.total);
     return out;
-  }
-
-  private foldTrend(
-    rows: UsageGroupModelSums[],
-    rates: Map<string, PricingRates | undefined>,
-  ): UsageResponse["trend"] {
-    const byDate = new Map<
-      string,
-      { total: number; cacheRead: number; cacheWrite: number; output: number; cost: number | null }
-    >();
-    for (const r of rows) {
-      const acc = byDate.get(r.key) ?? {
-        total: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        output: 0,
-        cost: null,
-      };
-      acc.total += r.total;
-      acc.cacheRead += r.cacheRead;
-      acc.cacheWrite += r.cacheWrite;
-      acc.output += r.output;
-      const rate = rates.get(refKey(r.provider, r.modelId));
-      if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
-      byDate.set(r.key, acc);
-    }
-    return [...byDate.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({
-        date,
-        total: v.total,
-        cacheRead: v.cacheRead,
-        cacheWrite: v.cacheWrite,
-        output: v.output,
-        cost: v.cost,
-      }));
   }
 
   /**

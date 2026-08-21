@@ -1498,7 +1498,6 @@ Scenarios:
     bucketTotal: "Total",
     legendHitRate: "Cache hit rate",
     empty: "No usage records",
-    successAborted: "Aborted (excluded)",
     errors: "Errors",
     errorsTotal: "Total",
     errorsUnexpected: "Unexpected",

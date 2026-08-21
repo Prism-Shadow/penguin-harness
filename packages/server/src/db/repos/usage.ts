@@ -40,23 +40,6 @@ export interface UsageFilter {
   modelId?: string;
 }
 
-/**
- * Raw request success-rate counts for a single Model (paired reference).
- * `total` is **the success-rate denominator**: all requests minus aborted — the user
- * clicking "stop" is not a model failure, and counting it would make the success rate
- * drop every time stop is pressed. `aborted` is counted separately for display.
- */
-export interface UsageStatusCount {
-  provider: string;
-  modelId: string;
-  completed: number;
-  total: number;
-  aborted: number;
-  failed: number;
-  timeout: number;
-  malformed: number;
-}
-
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
 export interface UsageModelSums {
   provider: string;
@@ -77,7 +60,12 @@ export interface UsageGroupModelSums extends UsageModelSums {
 export interface UsageSeriesModelSums extends UsageGroupModelSums {
   /** Successful requests in the bucket. */
   completed: number;
-  /** Success-rate denominator: all requests minus aborted (same convention as statusByModel). */
+  /**
+   * Success-rate denominator: all requests in the bucket minus aborted. The user
+   * clicking "stop" is not a model failure, and counting it would drop the success
+   * rate every time stop is pressed. Every success-rate denominator in this repo
+   * follows this rule.
+   */
   denominator: number;
 }
 
@@ -88,7 +76,7 @@ export interface UsageAgentBucketCount {
   requests: number;
   /** Successful requests in the bucket. */
   completed: number;
-  /** Success-rate denominator: all requests minus aborted. */
+  /** Success-rate denominator: all requests minus aborted, same rule as UsageSeriesModelSums. */
   denominator: number;
 }
 
@@ -237,8 +225,8 @@ export class UsageRepo {
   /**
    * Time-series sums (bucket key x paired reference breakdown) with per-bucket
    * success-rate counts riding along: powers the cost center's time-series charts
-   * (calls / success rate / Token / cost) at the requested precision. The
-   * denominator excludes aborted, same as statusByModel.
+   * (requests / success rate / Token / cost) at the requested precision. The
+   * denominator excludes aborted.
    */
   seriesByModel(
     projectId: string,
@@ -264,7 +252,7 @@ export class UsageRepo {
     }));
   }
 
-  /** Per-Agent counts per time bucket (the requests chart's per-Agent series; success counts follow statusByModel's aborted convention). */
+  /** Per-Agent counts per time bucket (the by-Agent requests chart's series; the denominator excludes aborted). */
   agentSeries(
     projectId: string,
     granularity: UsageSeriesGranularity,
@@ -287,41 +275,6 @@ export class UsageRepo {
       requests: r.requests as number,
       completed: r.completed as number,
       denominator: r.denominator as number,
-    }));
-  }
-
-  /**
-   * Raw success-rate counts per Model (paired reference) (completed / non-aborted requests):
-   * powers the cost center's "Model Success Rate" chart. The denominator excludes aborted
-   * (user-initiated interruption); failure breakdowns (failed / timeout / malformed) are
-   * also returned for hover display. Unknown statuses aren't broken out but still count
-   * toward the denominator (conservative: anything non-completed counts as a failure).
-   */
-  statusByModel(projectId: string, f: UsageFilter = {}): UsageStatusCount[] {
-    const { where, params } = this.conds(projectId, f);
-    const count = (status: string) =>
-      `COALESCE(SUM(CASE WHEN status = '${status}' THEN 1 ELSE 0 END), 0) AS ${status}`;
-    const rows = this.db
-      .prepare(
-        `SELECT provider, model_id,
-                ${count("completed")},
-                ${count("aborted")},
-                ${count("failed")},
-                ${count("timeout")},
-                ${count("malformed")},
-                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS total
-         FROM usage_records WHERE ${where} GROUP BY provider, model_id`,
-      )
-      .all(params);
-    return rows.map((r) => ({
-      provider: r.provider as string,
-      modelId: r.model_id as string,
-      completed: r.completed as number,
-      total: r.total as number,
-      aborted: r.aborted as number,
-      failed: r.failed as number,
-      timeout: r.timeout as number,
-      malformed: r.malformed as number,
     }));
   }
 

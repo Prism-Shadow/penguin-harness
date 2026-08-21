@@ -1,10 +1,10 @@
 /**
  * Unit tests for usage persistence and statistics: origin→model attribution,
- * summary buckets / group aggregation / trend queries, cost computed **on the
- * fly** (only Tokens are persisted; cost is priced against current pricing at
- * query time, no pricing → NULL + hasUncosted; a later price update is
- * reflected immediately), and the status → success-rate pipeline (aborted
- * doesn't count as a model failure).
+ * summary buckets and group aggregation, cost computed **on the fly** (only
+ * Tokens are persisted; cost is priced against current pricing at query time,
+ * no pricing → NULL + hasUncosted; a later price update is reflected
+ * immediately), and the status → success-rate pipeline that rides on the time
+ * series (aborted doesn't count as a model failure).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sessionMeta, tokenUsage, withOrigin } from "@prismshadow/penguin-core";
@@ -204,11 +204,36 @@ describe("usage-service (cost computed on the fly)", () => {
     expect(other.groups).toEqual([]);
   });
 
-  it("from/to filter the groups; the trend is a fixed 30-day window", async () => {
+  it("pricing is looked up for every reference the response prices, and only those", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    pricing["m-old"] = { cacheRead: 1, cacheWrite: 1, output: 1 };
+    insert("2026-07-06", { modelId: "m1" });
+    // Inside the last 30 days but outside the requested range: no surviving aggregate
+    // covers it, so it must not be priced — and must not perturb the ones that are.
+    insert("2026-06-20", { modelId: "m-old" });
+    const asked: string[] = [];
+    const svc = new UsageService(
+      repo,
+      new ErrorsRepo(db),
+      async (p, provider, modelId) => {
+        asked.push(modelId);
+        return lookup(p, provider, modelId);
+      },
+      () => now,
+    );
+    const res = await svc.query("p1", { groupBy: "date", from: "2026-07-06", to: "2026-07-06" });
+    expect(asked).toEqual(["m1"]);
+    expect(res.summary.total.cost).toBeCloseTo(ROW_COST, 12);
+    expect(res.summary.today.cost).toBeCloseTo(ROW_COST, 12);
+    expect(res.groups[0]!.cost).toBeCloseTo(ROW_COST, 12);
+    expect(res.series[0]!.cost).toBeCloseTo(ROW_COST, 12);
+  });
+
+  it("from/to filter the groups", async () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-06");
     insert("2026-06-20");
-    insert("2026-05-01"); // outside the 30-day window
+    insert("2026-05-01");
     const svc = service(now);
     const res = await svc.query("p1", {
       groupBy: "date",
@@ -216,29 +241,29 @@ describe("usage-service (cost computed on the fly)", () => {
       to: "2026-07-31",
     });
     expect(res.groups.map((g) => g.key)).toEqual(["2026-07-06"]);
-    expect(res.trend.map((p) => p.date)).toEqual(["2026-06-20", "2026-07-06"]);
-    expect(res.trend[1]!.cost).toBeCloseTo(ROW_COST, 12);
+    expect(res.groups[0]!.cost).toBeCloseTo(ROW_COST, 12);
   });
 
-  // —— status → success-rate pipeline ——
+  // —— status → success-rate pipeline (carried per bucket on the time series) ——
 
-  it("success rate: completed / non-aborted requests, with the failure breakdown carried along", async () => {
+  it("success counts: completed against a denominator of all non-aborted requests, whatever the failure was", async () => {
     const now = new Date("2026-07-06T10:00:00");
     for (let i = 0; i < 7; i++) insert("2026-07-06");
     insert("2026-07-06", { status: "failed", total: 0 });
     insert("2026-07-06", { status: "timeout", total: 0 });
     insert("2026-07-06", { status: "malformed", total: 0 });
-    const res = await service(now).query("p1", { groupBy: "date" });
-
-    const m1 = res.success.find((s) => s.modelId === "m1")!;
-    expect(m1).toMatchObject({
-      completed: 7,
-      total: 10,
-      aborted: 0,
-      failed: 1,
-      timeout: 1,
-      malformed: 1,
+    const res = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-07-06",
+      to: "2026-07-06",
     });
+
+    // Three different failure statuses, none of them broken out: anything that is
+    // not `completed` and not `aborted` counts against the rate, conservatively.
+    expect(res.series[0]).toMatchObject({ requests: 10, completed: 7, denominator: 10 });
+    const m1 = res.byModelSeries.find((s) => s.modelId === "m1")!;
+    expect(m1.completed).toEqual([7]);
+    expect(m1.denominator).toEqual([10]);
   });
 
   it('regression: aborted (the user clicked "Stop") is not a model failure — excluded from the denominator, so interrupts never drag the success rate down', async () => {
@@ -247,33 +272,40 @@ describe("usage-service (cost computed on the fly)", () => {
     // The user clicked "Stop" twice: under the old accounting, the success rate would drop to 8/10 = 80%.
     insert("2026-07-06", { status: "aborted", total: 0 });
     insert("2026-07-06", { status: "aborted", total: 0 });
-    const res = await service(now).query("p1", { groupBy: "date" });
+    const range = { groupBy: "date", from: "2026-07-06", to: "2026-07-06" } as const;
+    const res = await service(now).query("p1", range);
 
-    const m1 = res.success.find((s) => s.modelId === "m1")!;
-    expect(m1.completed).toBe(8);
-    expect(m1.total).toBe(8); // denominator excludes aborted
-    expect(m1.aborted).toBe(2); // but the info isn't lost
-    expect(m1.completed / m1.total).toBe(1); // 100%, no longer dragged down by aborts
+    const bucket = res.series[0]!;
+    expect(bucket.completed).toBe(8);
+    expect(bucket.denominator).toBe(8); // denominator excludes aborted
+    expect(bucket.requests).toBe(10); // but the two interrupts are still requests
+    expect(bucket.completed / bucket.denominator).toBe(1); // 100%, no longer dragged down by aborts
+    // Per-entity counts follow the same rule — they are what the charts' rate lines read.
+    expect(res.byAgentSeries[0]!).toMatchObject({ completed: [8], denominator: [8] });
 
     // A real failure still counts: add one more failed → 8/9.
     insert("2026-07-06", { status: "failed", total: 0 });
-    const after = await service(now).query("p1", { groupBy: "date" });
-    expect(after.success.find((s) => s.modelId === "m1")!.total).toBe(9);
+    const after = await service(now).query("p1", range);
+    expect(after.series[0]!.denominator).toBe(9);
   });
 
-  it("the success rate ignores the model filter but still honors agent and date filters (the chart shows all Models)", async () => {
+  it("the model filter narrows series but not byModelSeries; the agent filter narrows both", async () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-06", { modelId: "m1", agentId: "a1" });
     insert("2026-07-06", { modelId: "m2", agentId: "a2", status: "failed", total: 0 });
     const svc = service(now);
+    const range = { groupBy: "date", from: "2026-07-06", to: "2026-07-06" } as const;
 
-    // Filtering by m1: the success-rate chart still lists m2 (for comparison), unaffected by the filter.
-    const filtered = await svc.query("p1", { groupBy: "date", modelId: "m1" });
-    expect(filtered.success.map((s) => s.modelId).sort()).toEqual(["m1", "m2"]);
+    // Filtering by m1: the by-Model chart still draws m2 (for comparison), while
+    // every filter-scoped aggregate — the main series included — narrows to m1.
+    const filtered = await svc.query("p1", { ...range, modelId: "m1", provider: "custom" });
+    expect(filtered.byModelSeries.map((s) => s.modelId).sort()).toEqual(["m1", "m2"]);
+    expect(filtered.series[0]!.requests).toBe(1);
 
-    // Filtering by a1: m2's requests belong to a2 and are excluded.
-    const byAgent = await svc.query("p1", { groupBy: "date", agentId: "a1" });
-    expect(byAgent.success.map((s) => s.modelId)).toEqual(["m1"]);
+    // Filtering by a1: m2's requests belong to a2, so they leave both.
+    const byAgent = await svc.query("p1", { ...range, agentId: "a1" });
+    expect(byAgent.byModelSeries.map((s) => s.modelId)).toEqual(["m1"]);
+    expect(byAgent.series[0]!.requests).toBe(1);
   });
 });
 
