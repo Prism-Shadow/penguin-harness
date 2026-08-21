@@ -288,21 +288,8 @@ export function SkillsTab({
 
   return (
     <div className="space-y-4">
-      {/* The import button is not a title, so the description cannot anchor a "?" to it either. */}
-      <div className="flex items-start justify-between gap-3">
-        <HelpFold label={S.agent.tabSkills} className="min-w-0 flex-1">
-          {S.skills.agentTabDesc}
-        </HelpFold>
-        <Button
-          size="sm"
-          variant="primary"
-          className="shrink-0"
-          disabled={skills === null}
-          onClick={openImport}
-        >
-          {S.skills.importSkill}
-        </Button>
-      </div>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabSkills}>{S.skills.agentTabDesc}</HelpFold>
 
       {toggleCard}
       {alertStrip}
@@ -371,6 +358,12 @@ export function SkillsTab({
           ))}
         </div>
       )}
+
+      {/* Import entry point: an action under the installed list, where the Vault and Schedules
+          tabs put their add button — the modal carries both install paths. */}
+      <Button size="sm" variant="primary" disabled={skills === null} onClick={openImport}>
+        {S.skills.importSkill}
+      </Button>
 
       {promptSection}
 
