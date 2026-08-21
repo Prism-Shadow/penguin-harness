@@ -316,9 +316,9 @@ export const en: Strings = {
     settingsTabSecurity: "Security policy",
     projectIdLabel: "Project ID",
     deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
-    /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
-    commandPolicyIntro:
-      'Both ways the model reaches a shell pass through the policy before approval — the command exec_command launches, and what input_command types into an already-running one. A hit on any enabled rule is rejected outright, even when the approval mode is allow-all; the model receives the fixed denial "Tool call denied by policy." and moves to another approach. Matching runs each rule\'s regular expression against the command text, normalized for whitespace and quoting. This is an accident guardrail, not a defense against deliberate evasion: a command assembled at run time (from a variable, eval, or a decoded string) is not something patterns can read, and is not covered.',
+    /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
+    commandPolicyInfo:
+      "The command text is normalized for whitespace and quoting, then matched against each enabled rule's regular expression; a hit is refused outright whatever the approval mode allows. It is an accident guardrail: a command assembled at run time is not covered.",
     commandPolicyEnable: "Enable policy",
     commandPolicyEnableDesc: "When off, no rule blocks anything.",
     commandPolicyRules: "Rules",

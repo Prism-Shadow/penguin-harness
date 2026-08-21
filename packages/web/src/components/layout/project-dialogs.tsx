@@ -251,11 +251,17 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   const isOwner = currentProject?.role === "owner";
   if (!currentProject || !projectId) return null;
 
-  const tabs: { key: SettingsTab; label: string }[] = [
+  // `info` is the page's semantic explanation, disclosed by a "?" beside the pane heading —
+  // the only title these pages have, since each section renders its rows without repeating it.
+  const tabs: { key: SettingsTab; label: string; info?: string }[] = [
     { key: "general", label: S.project.settingsTabGeneral },
     ...(!desktopMode ? [{ key: "members" as const, label: S.project.settingsTabMembers }] : []),
     { key: "defaults", label: S.project.settingsTabDefaults },
-    { key: "security", label: S.project.settingsTabSecurity },
+    {
+      key: "security",
+      label: S.project.settingsTabSecurity,
+      info: S.project.commandPolicyInfo,
+    },
   ];
   const active = tabs.find((t) => t.key === tab) ?? tabs[0]!;
 
@@ -284,7 +290,12 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           ))}
         </nav>
         <section className="min-w-0 flex-1 sm:pl-5">
-          <h3 className="text-base font-semibold">{active.label}</h3>
+          <h3 className="flex items-center gap-1.5 text-base font-semibold">
+            {active.label}
+            {active.info !== undefined && (
+              <InfoPopover label={active.label}>{active.info}</InfoPopover>
+            )}
+          </h3>
           <div className="mt-2">
             {active.key === "general" && (
               <GeneralSection projectId={projectId} isOwner={isOwner} onClose={onClose} />
@@ -976,14 +987,13 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
 
   return (
     <div>
-      <p className="text-xs leading-relaxed text-gray-400">{S.project.commandPolicyIntro}</p>
       {loadError !== null ? (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>
+        <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null ? (
-        <p className="mt-3 text-xs text-gray-400">{S.common.loading}</p>
+        <p className="text-xs text-gray-400">{S.common.loading}</p>
       ) : (
         <>
-          <div className="mt-1 divide-y divide-gray-100 dark:divide-gray-800/60">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
             <SettingRow
               title={S.project.commandPolicyEnable}
               description={S.project.commandPolicyEnableDesc}
