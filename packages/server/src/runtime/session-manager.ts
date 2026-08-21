@@ -49,6 +49,7 @@ import type {
   SessionTitleResult,
   TextPayload,
   ThinkingLevelName,
+  ToolPermission,
 } from "@prismshadow/penguin-core";
 import type {
   PendingFollowUpInfo,
@@ -129,7 +130,7 @@ export interface RuntimeSession {
   unsteer?(input: OmniMessage[]): boolean;
   /** Skips the in-progress reconnect backoff, firing the next retry immediately (core `Session.skipReconnectWait`); false when no wait is in progress. */
   skipReconnectWait(): boolean;
-  toolPermission(name: string): "r" | "rw" | undefined;
+  toolPermission(name: string): ToolPermission | undefined;
   /**
    * Out-of-band one-shot request for title generation (core `Session.generateTitle`,
    * writes no history/Trace). Material defaults to what the Session collects itself

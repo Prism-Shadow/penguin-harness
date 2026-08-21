@@ -142,6 +142,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
   visionDescriber?: VisionDescriberService; // needed by describe_image on text-only models
+  webSearch?: WebSearchService;             // optional SearXNG endpoint/fetch override
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
 }

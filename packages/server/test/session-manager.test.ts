@@ -56,7 +56,7 @@ const ROW: SessionRow = {
 function approvalFakeSession(sessionId: string, toolName = "write_file"): RuntimeSession {
   return {
     sessionId,
-    toolPermission: (name) => (name === "read_tool" ? "r" : "rw"),
+    toolPermission: (name) => (name === "read_tool" || name === "web_search" ? "r" : "rw"),
     generateTitle: async () => ({ title: null, usage: null }),
     compactability: () => "ok" as const,
     steer: () => false,
@@ -630,6 +630,16 @@ describe("session-manager", () => {
     const manager2 = makeManager(loaderOf(approvalFakeSession("session-1", "read_tool")));
     await manager2.startTask("session-1", [userText("go")]);
     await waitFor(() => manager2.statusOf("session-1") === "idle");
+    expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=allow")).toBe(
+      true,
+    );
+
+    // Native web search is read-only and is auto-approved without a human handoff.
+    recorded = [];
+    const manager3 = makeManager(loaderOf(approvalFakeSession("session-1", "web_search")));
+    await manager3.startTask("session-1", [userText("search")]);
+    await waitFor(() => manager3.statusOf("session-1") === "idle");
+    expect(manager3.pendingApprovalCount("session-1")).toBe(0);
     expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=allow")).toBe(
       true,
     );

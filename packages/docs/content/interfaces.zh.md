@@ -142,6 +142,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // run_subagent 所需
   visionDescriber?: VisionDescriberService; // text-only 模型的 describe_image 所需
+  webSearch?: WebSearchService;             // 可选 SearXNG 端点/fetch 覆盖
   commandSessions?: CommandSessionManager;  // 长驻命令会话登记表(Environment 内部构造)
   subagentSessions?: SubagentSessionManager;// 后台 Subagent 会话登记表(同上)
 }

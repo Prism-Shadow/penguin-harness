@@ -20,6 +20,7 @@ import type {
   ApproveFn,
   OmniMessage,
   ToolCallPayload,
+  ToolPermission,
 } from "@prismshadow/penguin-core";
 
 export interface PendingApproval {
@@ -85,7 +86,7 @@ export class ApprovalRegistry {
  */
 export function makeApprove(args: {
   getMode: () => ApprovalMode;
-  toolPermission: (name: string) => "r" | "rw" | undefined;
+  toolPermission: (name: string) => ToolPermission | undefined;
   registry: ApprovalRegistry;
   publishRequest: (pending: PendingApproval) => void;
 }): ApproveFn {

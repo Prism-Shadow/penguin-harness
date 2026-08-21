@@ -22,6 +22,7 @@ import { SUBAGENT_NAME, createSubagentTool } from "./run-subagent.js";
 import { INPUT_SUBAGENT_NAME, createInputSubagentTool } from "./input-subagent.js";
 import { READ_IMAGE_NAME, createReadImageTool } from "./read-image.js";
 import { DESCRIBE_IMAGE_NAME, createDescribeImageTool } from "./describe-image.js";
+import { WEB_SEARCH_NAME, createWebSearchTool } from "./web-search.js";
 
 /**
  * A factory that constructs a BuiltinTool instance from a tool config entry; optionally
@@ -43,6 +44,7 @@ export const BUILTIN_TOOL_FACTORIES: Record<string, BuiltinToolFactory> = {
   [SUBAGENT_NAME]: createSubagentTool,
   [INPUT_SUBAGENT_NAME]: createInputSubagentTool,
   [READ_IMAGE_NAME]: createReadImageTool,
+  [WEB_SEARCH_NAME]: (definition, services) => createWebSearchTool(definition, services?.webSearch),
   // describe_image: the text-only-model variant of read_image (hands the image to the
   // configured vision model for description, returns text).
   // Which tool is used for which model class is declared by the config entry's forModel

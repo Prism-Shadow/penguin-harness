@@ -99,7 +99,7 @@ curl -c cookies.txt -H "Content-Type: application/json" \
 | GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
 | POST | /api/version/update | **仅管理员。**在服务器上执行 CLI 在线更新（`penguin update --yes`）：`{status, output, needsRestart}` |
 
-`update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
+`update-check` 是服务端唯一会自主发起的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。由 Agent 请求的 `web_search` 等网络工具是另一条路径，遵循所在 Session 的审批模式。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
 
 ### Project 与成员
 

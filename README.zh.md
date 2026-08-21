@@ -250,6 +250,11 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 
 ## 路线图
 
+- [x] 原生 `web_search`，默认由 SearXNG 提供搜索结果
+- [ ] 可选的本地 SearXNG 安装与健康检查
+- [ ] 原生静态页面抓取工具 `web_fetch`
+- [ ] 面向动态页面的可选 Playwright 回退
+- [ ] 有边界的多页面爬取工具 `web_crawl`
 - [ ] Benchmark 套件正式发布
 - [x] 桌面端应用
 - [x] Windows 系统支持
@@ -257,6 +262,8 @@ for await (const output of session.run([userText("Create hello.txt containing hi
 - [ ] 公司级自进化能力
 - [ ] 集成 OpenShell（带权限管控的 shell）
 - 更多规划，敬请期待……
+
+Web 访问架构、安全边界与交付阶段详见 [ROADMAP.md](ROADMAP.md)。
 
 ## 参与开发
 

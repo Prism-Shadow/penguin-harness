@@ -19,7 +19,8 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的独立源，如 `https://preview.example.com` | 未设置，按请求推导回环对应名 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定内置管理员的种子初始密码（自动化测试 / e2e 使用） | 未设置，种子时随机生成 `penguin-<四位数字>` 并打印一次 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
-| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
+| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用自主发起的新版本检查 | 开启 |
+| `SEARXNG_ENDPOINT` | 原生 `web_search` 使用的 SearXNG 实例基础 URL；同名 Agent Vault 值优先 | `http://127.0.0.1:8080` |
 
 这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
 
@@ -254,6 +255,7 @@ frontmatter 只有这三个字段——记忆属于哪一层由所在目录表�
 
 - 键名须匹配 `^[A-Za-z_][A-Za-z0-9_]*$`（shell 环境变量命名规则）；
 - 值只注入工具子进程的环境变量，永远不进入模型上下文与 Trace；
+- `SEARXNG_ENDPOINT` 还会被原生 `web_search` 读取；其优先级高于进程环境与本地默认值，实际值仍不进入模型上下文与 Trace；
 - 系统提示词中只披露键名：模板的 `{{VAULT}}` 占位符展开为 `vault.prompt`（内含 `{{VAULT_KEYS}}` 键名列表），提示词可在 Vault 标签页编辑；`vault.enabled` 关闭则整段为空——值照旧注入子进程，只是模型看不到键名清单。旧模板的内联 `{{VAULT_KEYS}}` 仍被替换并受同一开关控制，标签页提供一键迁移（见「系统提示词占位符」一节）；
 - 经 Web/API 保存会使该 Agent 已缓存的 Session 运行时失效：其任意 Session 的下一个任务会重新恢复（resume）并使用新值；进行中的任务保持其启动时的值（CLI 直接改文件对运行中的 server 则要等 Session 下次创建或恢复时生效）；
 - 通过 CLI `penguin config vault set/list/remove` 或 Web 的 Vault 标签页管理。

@@ -122,8 +122,17 @@ export class Environment implements EnvironmentInterface {
       ...(config.proxyEnv !== undefined ? { proxyEnv: config.proxyEnv } : {}),
     });
     this.subagentSessions = new SubagentSessionManager();
+    const configuredWebSearch = config.services?.webSearch;
+    const webSearchEndpoint =
+      configuredWebSearch?.endpoint ??
+      config.vault?.["SEARXNG_ENDPOINT"] ??
+      process.env["SEARXNG_ENDPOINT"];
     const services = {
       ...config.services,
+      webSearch: {
+        ...(webSearchEndpoint !== undefined ? { endpoint: webSearchEndpoint } : {}),
+        ...(configuredWebSearch?.fetch !== undefined ? { fetch: configuredWebSearch.fetch } : {}),
+      },
       commandSessions: this.commandSessions,
       subagentSessions: this.subagentSessions,
     };
