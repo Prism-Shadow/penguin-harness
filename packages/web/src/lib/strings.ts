@@ -668,7 +668,12 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
-    readFromEnv: (name: string): string => `读取自环境变量 ${name}`,
+    /**
+     * Model dialog credential slot: sits where a stored key shows its created-at line. It
+     * names no variable — the slot next to it already shows that variable's value masked,
+     * which is what identifies the key to the reader.
+     */
+    readFromEnv: "读取自环境变量",
     /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",

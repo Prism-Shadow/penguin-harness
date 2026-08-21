@@ -153,6 +153,7 @@ const EXTERNAL_LINK_ICON =
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
 const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
 const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
+
 /** Metric tone -> text color classes for the card speed badges. */
 const TONE_CLASS: Record<SpeedTone, string> = {
   green: toneInk.success,
@@ -346,6 +347,22 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
   return row;
+}
+
+/**
+ * The env-fallback variables the server proved are set (exported for unit tests): it reports
+ * `envKeyMasked` only for a variable that currently holds a value, and an environment is
+ * process-wide, so one row carrying it settles the question for every entry reading the same
+ * variable. A hint may promise "leave this empty and the environment covers it" only for a
+ * variable in here — elsewhere the page cannot tell a set variable from an absent one, and an
+ * empty field would leave the model with no key at all.
+ */
+export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    if (row.envKeyMasked !== undefined && row.envKey !== undefined) keys.add(row.envKey);
+  }
+  return keys;
 }
 
 /**
@@ -561,6 +578,8 @@ export function ModelsPage() {
   };
 
   const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
+  /** Env-fallback variables the server reported a value for: the only ones a key hint may promise. */
+  const envKeysDetected = useMemo(() => detectedEnvKeys(rows ?? []), [rows]);
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
 
@@ -887,6 +906,7 @@ export function ModelsPage() {
             MODEL_PROVIDERS.find((p) => p.id === groupKeyFor) ?? userProviderInfo(groupKeyFor)
           }
           count={rows.filter((r) => r.provider === groupKeyFor).length}
+          detectedEnvKeys={envKeysDetected}
           onClose={() => setGroupKeyFor(null)}
           onSubmit={(key) => {
             const target = groupKeyFor;
@@ -975,6 +995,7 @@ export function ModelsPage() {
           row={addingTo !== null ? null : (editingRow ?? null)}
           addProvider={addingTo ?? "custom"}
           existingRefs={rows.map(rowRef)}
+          detectedEnvKeys={envKeysDetected}
           currency={currency}
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
@@ -1051,15 +1072,14 @@ function ModelCard({
       ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
       : null,
     // Key status: the mask when configured; with no stored key, a detected first-party env
-    // fallback shows the variable's name (the server only reports envKeyMasked for official
-    // vendor entries), otherwise "not configured".
+    // fallback shows that variable's value under the same mask (the server only reports
+    // envKeyMasked for official vendor entries), so the row reads like a configured one;
+    // otherwise "not configured".
     row.credential?.apiKeyMasked && !row.clearApiKey
       ? row.credential.apiKeyMasked
       : hasKey(row)
         ? S.models.keyConfigured
-        : row.envKeyMasked !== undefined && row.envKey !== undefined
-          ? row.envKey
-          : S.models.noKey,
+        : (row.envKeyMasked ?? S.models.noKey),
   ].filter((v): v is string => v !== null);
 
   const speedBadges =
@@ -1161,6 +1181,7 @@ function ModelDialog({
   row,
   addProvider,
   existingRefs,
+  detectedEnvKeys,
   currency,
   canEdit,
   isDefault,
@@ -1173,6 +1194,8 @@ function ModelDialog({
   /** Target group for add mode (row is null): the group of the header entry point / falls back to custom when empty. */
   addProvider: string;
   existingRefs: ModelRefDto[];
+  /** Env-fallback variables the server reported a value for (see detectedEnvKeys): the only ones the key hint may promise. */
+  detectedEnvKeys: ReadonlySet<string>;
   currency: Currency;
   canEdit: boolean;
   isDefault: boolean;
@@ -1740,21 +1763,30 @@ function ModelDialog({
     </>
   );
 
-  // Hint for a blank API key: an existing key means keep the original value;
-  // no existing key but an env var fallback exists means use the env var
-  // (the fallback name resolves live, so it updates as the id / protocol is edited).
+  // The variable a blank API key would actually be covered by: no stored key, the entry
+  // routes to a variable (resolved live, so it follows the id / protocol as they are
+  // edited), and that variable is one the server reported a value for. Knowing a variable's
+  // *name* is not knowing it is set — promising an unset one would tell the user to leave
+  // the field empty and leave the model with no key at all.
+  const envHintKey =
+    !form.credential?.apiKeyMasked && liveEnvKey !== undefined && detectedEnvKeys.has(liveEnvKey)
+      ? liveEnvKey
+      : undefined;
+  // Hint for a blank API key: an existing key means keep the original value; a covered
+  // variable means the environment answers for it; neither means there is nothing truthful
+  // to say, so the field carries no placeholder.
   const apiKeyHint = form.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
-    : liveEnvKey
-      ? S.models.apiKeyEnvHint(liveEnvKey)
-      : S.models.apiKeyKeepHint;
+    : envHintKey !== undefined
+      ? S.models.apiKeyEnvHint(envHintKey)
+      : undefined;
   // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (no existing key)
-  // and this entry actually goes through the provider's own client (the
+  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
+  // envHintKey) and this entry actually goes through the provider's own client (the
   // resolved envKey matches the provider) — entries going through the OpenAI
   // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
   const envNote =
-    !form.credential?.apiKeyMasked && liveEnvKey && liveEnvKey === dialogProvider?.envKey
+    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
       ? S.models.providerEnvNotes[form.provider]
       : undefined;
 
@@ -1961,19 +1993,16 @@ function ModelDialog({
           </div>
         )}
         {/* Detected first-party env fallback, shown like a stored key (same slot, same mask
-            rule): the created-at position names the variable instead, and there is no clear
-            control — an environment variable cannot be cleared from here. Typing a new key
-            hides this like the stored block; once saved, the stored key takes priority and
+            rule): the created-at position says where the key comes from instead, and there is
+            no clear control — an environment variable cannot be cleared from here. Typing a new
+            key hides this like the stored block; once saved, the stored key takes priority and
             the display switches to the stored form. */}
-        {!form.credential?.apiKeyMasked &&
-          form.envKeyMasked !== undefined &&
-          form.envKey !== undefined &&
-          !form.apiKeyInput && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-              <span className="font-mono">{form.envKeyMasked}</span>
-              <span className="text-gray-400">{S.models.readFromEnv(form.envKey)}</span>
-            </div>
-          )}
+        {!form.credential?.apiKeyMasked && form.envKeyMasked !== undefined && !form.apiKeyInput && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-mono">{form.envKeyMasked}</span>
+            <span className="text-gray-400">{S.models.readFromEnv}</span>
+          </div>
+        )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
             baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
@@ -2369,11 +2398,14 @@ function ModelDialog({
 function GroupKeyDialog({
   provider,
   count,
+  detectedEnvKeys,
   onClose,
   onSubmit,
 }: {
   provider: ModelProviderInfo;
   count: number;
+  /** Env-fallback variables the server reported a value for (see detectedEnvKeys). */
+  detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
   onSubmit: (apiKey: string) => void;
 }) {
@@ -2403,7 +2435,13 @@ function GroupKeyDialog({
           className="font-mono"
           autoComplete="off"
           autoFocus
-          placeholder={S.models.apiKeyEnvHint(provider.envKey)}
+          // Only promise the variable when the server reported a value for it: the group's
+          // variable name is always known, which says nothing about whether it is set.
+          placeholder={
+            detectedEnvKeys.has(provider.envKey)
+              ? S.models.apiKeyEnvHint(provider.envKey)
+              : undefined
+          }
         />
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {S.models.groupApiKeyHint(count)}

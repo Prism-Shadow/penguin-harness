@@ -9,12 +9,15 @@
  * - Ownership of the default/vision-agent model pointers after save
  *   (nextPointers): always compared as pairs; renaming (either provider or
  *   model_id changes) moves the pointer along.
+ * - Which env fallback variables a key hint may promise (detectedEnvKeys):
+ *   only those the server reported a value for.
  */
 import { describe, expect, it } from "vitest";
 import {
   capabilityRow,
   clientTypeAfterProviderChange,
   decimalOnly,
+  detectedEnvKeys,
   digitsOnly,
   fastModeState,
   nextPointers,
@@ -41,6 +44,31 @@ describe("decimalOnly (price)", () => {
     expect(decimalOnly(".5")).toBe(".5");
     expect(decimalOnly("-1e3")).toBe("13");
     expect(decimalOnly("abc")).toBe("");
+  });
+});
+
+describe("detectedEnvKeys (variables a key hint may promise)", () => {
+  it("collects the variables the server reported a value for, and only those", () => {
+    const rows = [
+      toRow({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        envKey: "ANTHROPIC_API_KEY",
+        envKeyMasked: "sk-a…3456",
+        isDefault: false,
+      }),
+      // Variable name known, no value reported: nothing here proves it is set, so a hint
+      // must not tell the user that leaving the key empty is covered.
+      toRow({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        envKey: "DEEPSEEK_API_KEY",
+        isDefault: false,
+      }),
+      toRow({ provider: "custom", modelId: "my-model", isDefault: false }),
+    ];
+    expect(detectedEnvKeys(rows)).toEqual(new Set(["ANTHROPIC_API_KEY"]));
+    expect(detectedEnvKeys([])).toEqual(new Set());
   });
 });
 
