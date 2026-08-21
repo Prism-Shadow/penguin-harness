@@ -125,17 +125,24 @@ describe("command policy config semantics", () => {
 });
 
 describe("vetoForToolCall", () => {
+  const json = (args: unknown) => JSON.stringify(args);
+
   it("evaluates exec_command cmd only", () => {
-    expect(vetoForToolCall("exec_command", { cmd: "rm -rf /" })?.rule).toBe("rm-recursive-force");
-    expect(vetoForToolCall("exec_command", { cmd: "ls" })).toBeNull();
+    expect(vetoForToolCall("exec_command", json({ cmd: "rm -rf /" }))?.rule).toBe(
+      "rm-recursive-force",
+    );
+    expect(vetoForToolCall("exec_command", json({ cmd: "ls" }))).toBeNull();
     // Other tools carry no launch command; even a same-shaped argument is not evaluated.
-    expect(vetoForToolCall("write_file", { cmd: "rm -rf /" })).toBeNull();
-    expect(vetoForToolCall("input_command", { chars: "rm -rf /\n" })).toBeNull();
+    expect(vetoForToolCall("write_file", json({ cmd: "rm -rf /" }))).toBeNull();
+    expect(vetoForToolCall("input_command", json({ chars: "rm -rf /\n" }))).toBeNull();
   });
 
-  it("treats a malformed cmd as the tool's own validation problem, not a hit", () => {
-    expect(vetoForToolCall("exec_command", {})).toBeNull();
-    expect(vetoForToolCall("exec_command", { cmd: 42 })).toBeNull();
+  it("treats malformed arguments as the tool's own validation problem, not a hit", () => {
+    expect(vetoForToolCall("exec_command", json({}))).toBeNull();
+    expect(vetoForToolCall("exec_command", json({ cmd: 42 }))).toBeNull();
+    expect(vetoForToolCall("exec_command", "not json at all")).toBeNull();
+    expect(vetoForToolCall("exec_command", json([1, 2, 3]))).toBeNull();
+    expect(vetoForToolCall("exec_command", json(null))).toBeNull();
   });
 });
 

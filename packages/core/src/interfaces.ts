@@ -366,12 +366,6 @@ export interface CommandPolicyConfig {
   rules?: CommandPolicyRule[];
 }
 
-/** A command-policy hit: the matched rule's name plus the denial text fed back to the model. */
-export interface CommandPolicyVeto {
-  rule: string;
-  message: string;
-}
-
 /** Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig". */
 export interface EnvironmentConfig {
   workspaceDir: string;
@@ -468,12 +462,13 @@ export interface EnvironmentInterface {
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
   /**
-   * Sandbox-policy gate for one tool_call, consulted by context_engine **before** the
-   * approval callback: a non-null veto is denied outright (the policy outranks every
-   * approval mode) and the veto's `message` is fed back as the tool output. Optional —
-   * environments without a policy never veto.
+   * Sandbox command policy snapshot — pure data, no behavior: context_engine runs the
+   * shared matcher over it (command-policy.ts) for every exec-class tool_call **before**
+   * the approval callback, so a hit is denied under every approval mode. Absent = the
+   * factory rule set applies (the policy defaults on, uniformly for every implementation);
+   * an embedder opts out with `{ enabled: false }`.
    */
-  vetoToolCall?(toolCall: OmniMessage<ToolCallPayload>): CommandPolicyVeto | null;
+  readonly commandPolicy?: CommandPolicyConfig;
   /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */

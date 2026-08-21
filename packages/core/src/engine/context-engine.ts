@@ -79,6 +79,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces.js";
+import { vetoForToolCall } from "../environment/command-policy.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -1123,24 +1124,30 @@ export class ContextEngine {
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
             // returns its outcome (the LLM will close out quickly and return aborted).
             if (signal?.aborted) continue;
-            // Project sandbox policy: consulted before the approval callback, so a vetoed
-            // command never reaches the Human boundary — the policy outranks every approval
-            // mode, allow-all included. The denial is a "failed" output (not "aborted"):
-            // nothing was manually canceled, and the model should read the message and
-            // change course rather than treat it as a user interruption.
-            const veto = this.deps.environment.vetoToolCall?.(tc) ?? null;
+            // Either denial (policy or human) feeds a terminal output back immediately, so
+            // the already-committed tool_use never dangles.
+            const denyOutput = async (output: string, stopReason: StopReason) => {
+              const denied = toolCallOutput({ output, toolCallId, stopReason });
+              queue.push(denied);
+              await this.write(denied);
+              toolOutputs.push(denied);
+            };
+            // Project sandbox policy: the environment's pure-data rule snapshot, run through
+            // the shared matcher before the approval callback — a vetoed command never
+            // reaches the Human boundary, so the policy outranks every approval mode,
+            // allow-all included. The denial is a "failed" output (not "aborted"): nothing
+            // was manually canceled, and the model should read the message and change
+            // course rather than treat it as a user interruption.
+            const veto = vetoForToolCall(
+              tc.payload.name,
+              tc.payload.arguments,
+              this.deps.environment.commandPolicy,
+            );
             if (veto) {
               const decisionMsg = approvalDecision("deny", toolCallId, veto.rule);
               queue.push(decisionMsg);
               await this.write(decisionMsg);
-              const denied = toolCallOutput({
-                output: veto.message,
-                toolCallId,
-                stopReason: "failed",
-              });
-              queue.push(denied);
-              await this.write(denied);
-              toolOutputs.push(denied);
+              await denyOutput(veto.message, "failed");
               continue;
             }
             // The approval callback is injected externally (RunOptions.approve): any throw
@@ -1162,16 +1169,8 @@ export class ContextEngine {
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {
-              // User denied: feed back an aborted output, indicating the tool call was
-              // manually canceled.
-              const denied = toolCallOutput({
-                output: "Tool call denied by user.",
-                toolCallId,
-                stopReason: "aborted",
-              });
-              queue.push(denied);
-              await this.write(denied);
-              toolOutputs.push(denied);
+              // User denied: an "aborted" output, indicating the tool call was manually canceled.
+              await denyOutput("Tool call denied by user.", "aborted");
               continue;
             }
             // Approved: run concurrently, without blocking further consumption of the LLM

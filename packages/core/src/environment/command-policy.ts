@@ -21,9 +21,15 @@
  * obfuscation (base64, variable indirection, typing into an interactive shell via
  * `input_command`). Docs: /docs/configuration § "Command policy".
  */
-import type { CommandPolicyConfig, CommandPolicyRule, CommandPolicyVeto } from "../interfaces.js";
+import type { CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
 import { effectiveCommandPolicyRules } from "./command-policy-defaults.js";
 import { EXEC_COMMAND_NAME } from "./tools/exec-command.js";
+
+/** A command-policy hit: the matched rule's name plus the denial text fed back to the model. */
+export interface CommandPolicyVeto {
+  rule: string;
+  message: string;
+}
 
 /** Collapses whitespace runs to single spaces (the only normalization rule patterns may assume). */
 function normalizeCommand(cmd: string): string {
@@ -78,16 +84,23 @@ export function evaluateCommandPolicy(
  * Policy gate for one tool call, keyed by tool name: only `exec_command` launches carry a
  * command to evaluate (`cmd`). `input_command` keystrokes are deliberately out of scope —
  * the guardrail covers the spawn path, not interactive typing (see module header).
- * `args` is the tool_call's decoded argument object; a malformed `cmd` is the tool's own
- * validation error, not a policy hit.
+ * `argsJson` is the tool_call's raw argument JSON; malformed JSON or a malformed `cmd` is
+ * the tool's own validation error, not a policy hit.
  */
 export function vetoForToolCall(
   toolName: string,
-  args: Record<string, unknown>,
+  argsJson: string,
   policy?: CommandPolicyConfig,
 ): CommandPolicyVeto | null {
   if (toolName !== EXEC_COMMAND_NAME) return null;
-  const cmd = args["cmd"];
+  let args: unknown;
+  try {
+    args = JSON.parse(argsJson) as unknown;
+  } catch {
+    return null;
+  }
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
+  const cmd = (args as Record<string, unknown>)["cmd"];
   if (typeof cmd !== "string") return null;
   return evaluateCommandPolicy(cmd, policy);
 }
