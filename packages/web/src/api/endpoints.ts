@@ -34,6 +34,8 @@ import type {
   DefaultModelResponse,
   DefaultModelUpdateRequest,
   DirListResponse,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   FilesStatRequest,
   FilesStatResponse,
   GoalResponse,
@@ -94,7 +96,9 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateRunResponse,
+  DesktopUpdateStatusResponse,
   UsageErrorsPage,
+  UsageGranularity,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
@@ -231,6 +235,13 @@ export const testModel = (projectId: string, body: ModelTestRequest) =>
 export const detectProtocol = (projectId: string, body: ModelProtocolDetectRequest) =>
   apiFetch<ModelProtocolDetectResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/models/detect`,
+    { method: "POST", body },
+  );
+
+/** Endpoint model listing: given a base URL plus the protocol /detect reported, returns every model id the endpoint serves (the add-group import). */
+export const listEndpointModels = (projectId: string, body: EndpointModelListRequest) =>
+  apiFetch<EndpointModelListResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/list`,
     { method: "POST", body },
   );
 
@@ -663,7 +674,12 @@ export const getUsage = (
   params: {
     from?: string;
     to?: string;
+    /** Trailing-window bounds (ISO timestamps, together or not at all): refine the range down to instants; required for minute granularity. */
+    fromTs?: string;
+    toTs?: string;
     groupBy: UsageGroupBy;
+    /** Time-series precision for the response's `series`; the server defaults to day. */
+    granularity?: UsageGranularity;
     agentId?: string;
     /** Model filter is always a whole pair — both fields or neither; a model is never referenced by id alone. */
     provider?: string;
@@ -674,7 +690,10 @@ export const getUsage = (
     query: {
       from: params.from,
       to: params.to,
+      fromTs: params.fromTs,
+      toTs: params.toTs,
       groupBy: params.groupBy,
+      granularity: params.granularity,
       agentId: params.agentId,
       provider: params.provider,
       modelId: params.modelId,
@@ -883,3 +902,13 @@ export const checkUpdate = (force = false) =>
 /** Admin only: runs `penguin update` on the server host (long request — up to 10 minutes). */
 export const runUpdate = () =>
   apiFetch<UpdateRunResponse>("/api/version/update", { method: "POST", body: {} });
+
+// Desktop client update (desktop-shell sessions only) ----------------------------------
+
+export const getDesktopUpdate = () => apiFetch<DesktopUpdateStatusResponse>("/api/desktop/update");
+
+export const desktopUpdateCheck = () =>
+  apiFetch<void>("/api/desktop/update/check", { method: "POST", body: {} });
+
+export const desktopUpdateInstall = () =>
+  apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });

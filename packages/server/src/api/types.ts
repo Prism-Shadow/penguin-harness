@@ -376,6 +376,14 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
+  /**
+   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
+   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
+   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
+   * entry is not first-party.
+   */
+  envKeyMasked?: string;
   credential?: CredentialInfo;
   isDefault: boolean;
 }
@@ -570,6 +578,31 @@ export interface ModelProtocolDetectResponse {
   /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
   detected?: string;
   probes: ModelProtocolProbeDto[];
+}
+
+/**
+ * Endpoint model listing (POST /api/projects/:p/models/list, owner): given a base URL and
+ * the protocol `/detect` reported, returns every model id the endpoint serves (AgentHub's
+ * `listModels()` on the routed client). Used by the add-group dialog to import a provider's
+ * whole listing in one go; the ids come back in the endpoint's own order.
+ */
+export interface EndpointModelListRequest {
+  /** Endpoint base URL (as typed in the add-group dialog). */
+  baseUrl: string;
+  /** AgentHub client type to speak (normally a detected generic protocol; whole-endpoint listings need one). */
+  clientType: string;
+  /** Newly entered API key (plaintext); omitted = the SDK's environment fallback for the protocol. */
+  apiKey?: string;
+}
+
+/** Listing outcome: model ids on success, a truncated provider/SDK reason otherwise. */
+export interface EndpointModelListResponse {
+  ok: boolean;
+  /** The model ids the endpoint serves, in the order the endpoint returned them (ok only). */
+  models?: string[];
+  /** The routed client has no models endpoint (AgentHub UnsupportedOperationError) — callers offer the manual path. */
+  unsupported?: boolean;
+  message?: string;
 }
 
 /**
@@ -1412,6 +1445,8 @@ export interface SessionProcessInfo {
   cwd: string;
   startedAt: string;
   running: boolean;
+  /** The service the process serves, when detected: the last local URL its output printed, else an origin probed from its listening ports. */
+  serviceUrl?: string;
 }
 
 export interface SessionProcessesResponse {
@@ -1872,37 +1907,51 @@ export interface UsageGroupRow {
   hasUncosted: boolean;
 }
 
-export interface UsageTrendPoint {
-  date: string;
-  total: number;
-  cost: number | null;
-  /** Daily Token buckets (for the cost center's "Token Changes" stacked chart: cacheRead/cacheWrite/output). */
+/** Time-series precision for the usage series (`granularity` query parameter). `minute` requires the `fromTs`/`toTs` window bounds. */
+export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
+
+/**
+ * One bucket of the usage time series (for the cost center's time-series charts).
+ * Buckets are zero-filled across the whole requested range, so consecutive points
+ * are always adjacent in time. Bucket keys by granularity: minute
+ * `yyyy-mm-ddThh:mm` and hour `yyyy-mm-ddThh:00` (server-local clock), day
+ * `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`, month `yyyy-mm`.
+ */
+export interface UsageSeriesPoint {
+  bucket: string;
   cacheRead: number;
   cacheWrite: number;
   output: number;
-}
-
-/** Invocation count per Agent (for the cost center's "Agent Invocation Count" chart). */
-export interface UsageAgentCount {
-  agentId: string;
-  requests: number;
   total: number;
+  /** Cost converted at query time (USD); null when no priced Model contributed. */
+  cost: number | null;
+  requests: number;
+  /** Successful requests in the bucket. */
+  completed: number;
+  /** Success-rate denominator: all requests minus aborted (a user interruption is not a model failure). */
+  denominator: number;
 }
 
-/** Request success rate per Model (for the cost center's "Model Success Rate" chart; rows broken down by (provider, modelId)). */
-export interface UsageSuccessRate {
+/**
+ * One entity's per-bucket request and success counts, aligned index-for-index
+ * with `series` (the requests-and-success-rate chart draws one such entity —
+ * or stacks them all). `denominator` excludes aborted, same as elsewhere.
+ */
+export interface UsageEntitySeriesCounts {
+  requests: number[];
+  completed: number[];
+  denominator: number[];
+}
+
+/** Per-Agent counts per bucket. */
+export interface UsageAgentSeries extends UsageEntitySeriesCounts {
+  agentId: string;
+}
+
+/** Per-Model counts per bucket (entity identity is the (provider, modelId) pair). */
+export interface UsageModelSeries extends UsageEntitySeriesCounts {
   provider: string;
   modelId: string;
-  /** Number of successful requests. */
-  completed: number;
-  /** Success rate denominator = all requests − aborted (user-initiated interruption isn't a model failure and shouldn't lower the success rate). */
-  total: number;
-  /** Count of user interruptions (excluded from success rate, shown separately). */
-  aborted: number;
-  /** Failure breakdown (shown on hover; unknown statuses count toward total but not these three). */
-  failed: number;
-  timeout: number;
-  malformed: number;
 }
 
 /** Occurrence count of an error for a given source · code (the "most common" metric in the stats center's error panel). */
@@ -1960,12 +2009,27 @@ export interface UsageResponse {
   };
   groupBy: UsageGroupBy;
   groups: UsageGroupRow[];
-  /** Daily trend for the last 30 days (includes Token buckets and cost; affected by agent/model filters). */
-  trend: UsageTrendPoint[];
-  /** Invocation count per Agent (affected by date/model filters). */
-  byAgent: UsageAgentCount[];
-  /** Raw success rate counts per Model (affected by date/agent filters). */
-  success: UsageSuccessRate[];
+  /** Effective precision of `series` (the validated `granularity` query parameter; defaults to day). */
+  granularity: UsageGranularity;
+  /**
+   * Usage time series over the requested from/to range (defaulting to the last 30
+   * days), zero-filled at `granularity`; affected by agent/model filters. Carries
+   * everything the time-series charts draw: Token buckets, cost, request count,
+   * and per-bucket success counts.
+   */
+  series: UsageSeriesPoint[];
+  /**
+   * Per-Agent counts per bucket, aligned index-for-index with `series`, sorted
+   * by total requests descending. Unaffected by the agent filter — the by-Agent
+   * chart draws the whole breakdown — but affected by date/model filters.
+   */
+  byAgentSeries: UsageAgentSeries[];
+  /**
+   * Per-Model counts per bucket, aligned index-for-index with `series`, sorted
+   * by total requests descending. Unaffected by the model filter — the by-Model
+   * chart draws the whole breakdown — but affected by date/agent filters.
+   */
+  byModelSeries: UsageModelSeries[];
   /** Server-side error capture stats (affected by date/agent filters; unaffected by model filter). */
   errors: UsageErrors;
   /** List of Agent ids that have appeared in this Project (for the filter dropdown; unaffected by current filters). */
@@ -2222,6 +2286,60 @@ export interface UpdateCheckResponse {
   disabled?: true;
   /** Why the lookup failed: unreachable network / GitHub rate limit / unusable response. */
   error?: "network" | "rate_limited" | "bad_response";
+}
+
+// ---------------------------------------------------------------------------
+// Desktop client update (desktop mode only)
+// ---------------------------------------------------------------------------
+
+/**
+ * The desktop shell's updater snapshot, pushed to the embedded server over the
+ * utilityProcess message channel and served at GET /api/desktop/update. `state` is the
+ * discriminator; the optional fields belong to the states named on them.
+ *
+ * A `downloaded` build stays the reported state until it is installed: a later periodic
+ * check (or its failure) must not hide the actionable "restart to install" step.
+ */
+export interface DesktopUpdateStatus {
+  /** Installed shell version (Electron app.getVersion()). */
+  appVersion: string;
+  /**
+   * Bumped by the shell on every updater event it folds, whether or not the visible
+   * state changed. A row-initiated check settles when the seq has moved past its
+   * at-click value and the state is no longer `checking` — snapshot equality can't
+   * carry that signal (a check that ends where it started is byte-identical).
+   */
+  seq?: number;
+  state:
+    "idle" | "checking" | "up-to-date" | "downloading" | "downloaded" | "error" | "unsupported";
+  /** Newer release being fetched / ready to install (`downloading`, `downloaded`). */
+  version?: string;
+  /** Download progress 0–100 (`downloading`). */
+  percent?: number;
+  /** Updater failure text (`error`). */
+  message?: string;
+  /** Why this install form cannot update itself (`unsupported`): dev run, or a Linux install that is not an AppImage (e.g. .deb — the system package manager owns it). */
+  reason?: "dev" | "linux-not-appimage";
+}
+
+/**
+ * GET /api/desktop/update (desktop-shell sessions only): the latest shell snapshot.
+ * `status` is null until the shell's first push lands (a beat after server start).
+ */
+export interface DesktopUpdateStatusResponse {
+  status: DesktopUpdateStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopUpdaterStatusMessage {
+  type: "desktop-updater-status";
+  status: DesktopUpdateStatus;
+}
+
+/** Server → shell command over the utilityProcess message channel (relayed from POST /api/desktop/update/check|install). */
+export interface DesktopUpdaterCommandMessage {
+  type: "desktop-updater-command";
+  action: "check" | "install";
 }
 
 /**

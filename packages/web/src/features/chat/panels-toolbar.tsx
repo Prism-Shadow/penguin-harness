@@ -2,11 +2,11 @@
  * Top-right panel switcher of the chat toolbar (Codex-style): icon-only buttons for the
  * pinned panels, then an "all panels" dropdown listing every panel with icon + name.
  *
- * Three panels exist: the subagents panel ("智能体面板"), the terminal dock and the
- * Workspace files panel. Which of them get their own toolbar icon is user-configurable via
- * the pin toggles inside the dropdown (persisted per browser); the default pins the
- * subagents panel and the Workspace, leaving the terminal reachable through the dropdown
- * (or Ctrl+`) until pinned.
+ * Four panels exist: the subagents panel, the terminal dock, the Workspace files panel and
+ * the Memory panel. Which of them get their own toolbar icon is user-configurable via the
+ * pin toggles inside the dropdown (persisted per browser); the default pins the subagents
+ * panel and the Workspace, leaving the terminal and Memory reachable through the dropdown
+ * (the terminal also via Ctrl+`) until pinned.
  *
  * The open/close state itself lives with each panel's own hook/store — this component only
  * renders triggers, so pinning/unpinning never touches panel state.
@@ -30,12 +30,16 @@ import { displayTitle, useTerminalDockOpen } from "../terminal/terminal-dock";
 import { liveTerminals, subscribeTerminals, terminalApiSupported } from "../terminal/terminal-list";
 import { toneDot } from "../../lib/tone";
 
-export type PanelKey = "agents" | "terminal" | "workspace";
+export type PanelKey = "agents" | "terminal" | "workspace" | "memory";
 
 const PIN_STORAGE_KEY = "penguin.chat.pinnedPanels";
 const DEFAULT_PINS: readonly PanelKey[] = ["agents", "workspace"];
 /** Display order of pinned icons and dropdown rows (the product-specified order). */
-const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace"];
+const PANEL_ORDER: readonly PanelKey[] = ["agents", "terminal", "workspace", "memory"];
+
+/** Open book: the Memory panel's mark (same glyph as the memory-changes card header). */
+const MEMORY_ICON =
+  "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
 
 /** Plus: the "create" trigger opening the panels menu. */
 const CREATE_ICON = "M12 5v14M5 12h14";
@@ -83,6 +87,8 @@ export interface PanelsToolbarProps {
   agentsPending: boolean;
   workspaceOpen: boolean;
   onToggleWorkspace: () => void;
+  memoryOpen: boolean;
+  onToggleMemory: () => void;
 }
 
 interface PanelEntry {
@@ -274,6 +280,14 @@ export function PanelsToolbar(props: PanelsToolbarProps) {
       glyph: () => <GlyphIcon d={FOLDER_ICON} size={ICON_SIZE.iconButton} />,
       open: props.workspaceOpen,
       toggle: props.onToggleWorkspace,
+    },
+    {
+      key: "memory",
+      label: S.chat.memoryViewTitle,
+      buttonLabel: S.chat.openMemoryPanel,
+      glyph: () => <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.iconButton} />,
+      open: props.memoryOpen,
+      toggle: props.onToggleMemory,
     },
   ];
 

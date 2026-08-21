@@ -16,6 +16,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CopyButton } from "../../components/ui/copy-button";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { MessageFilesCard } from "./message-files-card";
+import { MemoryChangesCard } from "./memory-changes-card";
 import { ThinkingBlock } from "./thinking-block";
 import { ToolCallCard } from "./tool-call-card";
 import { SubagentChip } from "./subagent-chip";
@@ -26,7 +27,9 @@ import { HandoffBanner, ModelSwitchBanner } from "./handoff-banner";
 import { ScheduledBanner } from "./scheduled-banner";
 import { SkillsBanner } from "./skills-banner";
 import { AttachedFilesBanner } from "./attached-files-banner";
+import { BackgroundDoneBanner } from "./background-done-banner";
 import {
+  parseBackgroundTaskDoneMessage,
   parseHandoffMessage,
   parseModelSwitchMessage,
   parseScheduledMessage,
@@ -169,6 +172,12 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       // Source block for a chat opened by the /model switch: collapsed into a single-line switch notice, clickable to jump back to the source conversation.
       const modelSwitch = parseModelSwitchMessage(item.text);
       if (modelSwitch) return <ModelSwitchBanner origin={modelSwitch} />;
+      // Harness-injected completion notice of a run_in_background task: collapsed into a
+      // one-line banner with the report body below it (the raw block shows on the Trace page).
+      const backgroundDone = parseBackgroundTaskDoneMessage(item.text);
+      if (backgroundDone) {
+        return <BackgroundDoneBanner done={backgroundDone.done} body={backgroundDone.rest} />;
+      }
       // A goal round's [goal] protocol prefix: collapsed into a round notice; the body after
       // it (round 1: the user's original input, skill blocks and all; later rounds: the
       // objective) continues down the normal parsing chain (the Trace shows the raw block).
@@ -385,6 +394,17 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
                 onOpenFile={ctx.onOpenFile}
               />
             )}
+          {/* Memory changes sit below the file list: same Task-level summary, but sourced from
+              the structured tool record (stream model) rather than the reply text, so it also
+              renders when the reply never named the files. */}
+          {ctx.origin.length === 0 && item.memoryChanges !== undefined && (
+            <MemoryChangesCard
+              rows={item.memoryChanges}
+              {...(ctx.deletedMemoryKeys ? { deletedKeys: ctx.deletedMemoryKeys } : {})}
+              {...(ctx.onLocateMemoryChange ? { onLocateChange: ctx.onLocateMemoryChange } : {})}
+              {...(ctx.onOpenMemory ? { onOpenPanel: ctx.onOpenMemory } : {})}
+            />
+          )}
           <TaskStatsLine
             stats={item.stats}
             assistantText={item.assistantText}

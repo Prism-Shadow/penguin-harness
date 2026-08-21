@@ -37,6 +37,16 @@ export class SubagentSessionManager {
   }
 
   /**
+   * Whether any managed subagent session is mid-round. Hosts use it the same way they use a
+   * running background command: a child that outlives the call which launched it must keep
+   * its Session's runtime entry alive, or its completion report and live messages land on an
+   * object nobody holds any more.
+   */
+  hasRunning(): boolean {
+    return this.registry.list().some(({ task }) => task.running);
+  }
+
+  /**
    * Registers a still-running session as a background session, allocating and returning a
    * unique `subagent_id`: `subagent-<last 8 hex of child Session id>` (falls back to random on
    * collision), whose suffix aligns with the message origin/frontend nesting label
@@ -54,6 +64,13 @@ export class SubagentSessionManager {
   /** Looks up a session by subagent_id and refreshes its access time; returns undefined if not found. */
   get(subagentId: string): ManagedSubagentSession | undefined {
     return this.registry.get(subagentId);
+  }
+
+  /** Kills a background subagent by id (aborts its run, denies pending approvals, releases the child Session) and drops it from the registry; false when the id is unknown. */
+  kill(subagentId: string): boolean {
+    if (this.registry.get(subagentId) === undefined) return false;
+    this.registry.remove(subagentId);
+    return true;
   }
 
   /** Disposes: removes the fallback registration and finalizes all sessions (the process 'exit' fallback is hooked by the registry itself). Idempotent. */

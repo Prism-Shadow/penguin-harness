@@ -29,6 +29,8 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 import { sessionShell } from "./shell.js";
+import { ServiceUrlScanner } from "./service-url.js";
+import { probeGroupListenPorts } from "./port-probe.js";
 
 /** Process-group semantics are available on POSIX; Windows falls back to signaling the child process directly. */
 const SUPPORTS_PROCESS_GROUP = process.platform !== "win32";
@@ -167,6 +169,7 @@ export class ManagedSession {
   }
 
   private handleData(chunk: string): void {
+    this.urlScanner.push(chunk);
     this.buffer.append(chunk);
     this.wakeSignal.notify();
   }
@@ -175,13 +178,85 @@ export class ManagedSession {
     this.exited = true;
     this.exitInfo = exit;
     this.wakeSignal.notify();
+    this.fireExitWatchers();
   }
   private handleError(err: Error): void {
     if (this.exited) return;
     this.spawnError = err;
     this.exited = true; // A spawn failure is also treated as a terminal state
     this.wakeSignal.notify();
+    this.fireExitWatchers();
   }
+
+  // One-shot exit watchers (run_in_background completion reports). Consumed on fire; a
+  // watcher armed after exit fires on a microtask, so the caller never misses a fast command.
+  private exitWatchers: Array<() => void> = [];
+  private fireExitWatchers(): void {
+    const watchers = this.exitWatchers;
+    this.exitWatchers = [];
+    for (const cb of watchers) cb();
+  }
+
+  /** Registers a one-shot callback for the foreground process's terminal state (exit or spawn failure); fires immediately (microtask) when already terminal. */
+  onceExited(cb: () => void): void {
+    if (this.exited) {
+      queueMicrotask(cb);
+      return;
+    }
+    this.exitWatchers.push(cb);
+  }
+
+  /** Clears armed exit watchers (a deliberate kill already reports its outcome synchronously, so the completion report is disarmed first). */
+  clearExitWatchers(): void {
+    this.exitWatchers = [];
+  }
+
+  /** Synchronously drains the yet-undelivered output (the same buffer `collect` serves) — used to build completion reports without an async window. */
+  drainPending(): string {
+    return this.buffer.drain();
+  }
+
+  // Service-URL detection, two sources with a fixed priority: the URL the process itself
+  // printed (incremental output scan — carries a path, always fresher in meaning) wins over
+  // the listen-port probe's synthesized origin (see port-probe.ts).
+  private readonly urlScanner = new ServiceUrlScanner();
+  private probedUrl: string | null = null;
+  private probedAt = 0;
+  private probeInFlight: Promise<void> | null = null;
+
+  /** The session's detected service URL: the last one its output printed, else the probed listen-port origin; null when neither source has one. */
+  get serviceUrl(): string | null {
+    return this.urlScanner.url ?? this.probedUrl;
+  }
+
+  /**
+   * Refreshes the listen-port probe when it could matter: only while running, only when the
+   * output scan has no hit, at most once per TTL, one probe in flight. Multiple listening
+   * ports collapse to the smallest — dev servers own one meaningful low port, while helper
+   * processes open ephemeral high ones, and the choice stays stable across probes. A failed
+   * probe ("don't know") keeps the previous result; a successful empty one clears it.
+   */
+  refreshServiceProbe(): Promise<void> {
+    if (!this.running || this.urlScanner.url !== null || this.pid === null) {
+      return Promise.resolve();
+    }
+    if (this.probeInFlight) return this.probeInFlight;
+    if (Date.now() - this.probedAt < ManagedSession.PROBE_TTL_MS) return Promise.resolve();
+    this.probeInFlight = probeGroupListenPorts(this.pid)
+      .then((ports) => {
+        this.probedAt = Date.now();
+        if (ports === null) return;
+        this.probedUrl = ports.length > 0 ? `http://localhost:${ports[0]}` : null;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.probeInFlight = null;
+      });
+    return this.probeInFlight;
+  }
+
+  /** Probe cache TTL (ms): a fraction of the process panel's poll interval, so each poll refreshes at most one probe per session. */
+  private static readonly PROBE_TTL_MS = 5_000;
 
   /** Whether the command is still running (hasn't exited, spawn hasn't failed). */
   get running(): boolean {

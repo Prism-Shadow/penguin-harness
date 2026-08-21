@@ -58,6 +58,7 @@ import type {
 } from "./omnimessage/index.js";
 import { SUBAGENT_NAME } from "./environment/tools/run-subagent.js";
 import { INPUT_SUBAGENT_NAME } from "./environment/tools/input-subagent.js";
+import { KILL_SUBAGENT_NAME } from "./environment/tools/kill-subagent.js";
 import type { CompactionSettings } from "./engine/context-engine.js";
 import type {
   GenerativeModelConfig,
@@ -709,6 +710,14 @@ export class Agent {
         let metaSent = false;
         return {
           sessionId: hop,
+          // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
+          // shares metaSent with run, so the meta reaches the parent stream exactly once
+          // whichever side sends it first.
+          takeMeta() {
+            if (metaSent) return null;
+            metaSent = true;
+            return withOrigin(childSession.metaMessage, hop);
+          },
           async *run({ prompt, signal, approve }) {
             if (!metaSent) {
               metaSent = true;
@@ -731,7 +740,9 @@ export class Agent {
             // Trace, so replay never duplicates it. Later rounds (input_subagent
             // follow-up prompts) come through this same generator and are forwarded the
             // same way.
-            const input = userText(prompt);
+            // sender "parent_agent": in the child's Trace this user turn came from the
+            // parent agent (run_subagent's prompt / input_subagent's follow-up), not a human.
+            const input = userText(prompt, "parent_agent");
             yield withOrigin(input, hop);
             for await (const msg of childSession.run([input], {
               ...(signal ? { signal } : {}),
@@ -748,9 +759,9 @@ export class Agent {
     };
 
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the
-    // max spawn depth no longer gets run_subagent or input_subagent (the latter
-    // depends on the subagent_id produced by the former, so exposing it alone is
-    // meaningless).
+    // max spawn depth no longer gets run_subagent, input_subagent or kill_subagent
+    // (the latter two depend on the subagent_id produced by the former, so exposing
+    // them alone is meaningless).
     const canSpawn = subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(this.state);
     // Select tool entries by the session model's type (marked via forModel: vision
@@ -760,7 +771,10 @@ export class Agent {
     let customTools = selectBuiltinToolsForModel(baseToolConfig.customTools, modelVision);
     if (!canSpawn) {
       customTools = customTools.filter(
-        (d) => d.name !== SUBAGENT_NAME && d.name !== INPUT_SUBAGENT_NAME,
+        (d) =>
+          d.name !== SUBAGENT_NAME &&
+          d.name !== INPUT_SUBAGENT_NAME &&
+          d.name !== KILL_SUBAGENT_NAME,
       );
     }
     const toolConfig = { ...baseToolConfig, customTools };

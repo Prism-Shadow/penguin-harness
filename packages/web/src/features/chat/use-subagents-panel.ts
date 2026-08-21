@@ -3,11 +3,12 @@
  * mechanics): panel open/close, the desktop-dock vs. mobile-Sheet breakpoint, the "focus this
  * child conversation" command driven by clicking a subagent chip inside a message, and the
  * displayed Task scope (latest vs. the historical Task a chip was clicked on — see taskScope).
- * Width and drag-to-resize live in use-panel-width.ts, shared with the Files panel so the two
- * mutually exclusive panels always open at the same width.
+ * Width and drag-to-resize live in use-panel-width.ts, shared with the Files and Memory panels
+ * so the mutually exclusive panels always open at the same width.
  *
  * Visibility now follows the Files panel: an open panel survives a Session switch, and only a
- * NEW chat resets both to closed (the chat page owns that reset — it owns both panels). What
+ * NEW chat resets them all to closed (the chat page owns that reset — it owns every docked
+ * panel). What
  * stays specific to this panel is the AUTO-OPEN: the current Task's first live spawn opens it
  * once, re-armed at each task boundary, so a manual close mid-task is respected. The pure
  * tracker below (createPanelTaskScope/advancePanelTaskScope) owns that decision; the chat page

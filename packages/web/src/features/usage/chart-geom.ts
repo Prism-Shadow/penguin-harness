@@ -1,14 +1,17 @@
 /**
  * Geometry math for the cost center charts: pure functions, no React / no
- * JSX, easy to unit test (see test/usage-charts.test.ts). The two "last 30
- * days" charts (the daily Token bar's three-segment stack, the daily cost
- * line + area) share one coordinate system — canvas width, padding, the
- * x()/y() mapping, SVG paths, x-axis label indices. The stacked bar's
- * horizontal layout (fixed 25px bar width, spacing ≥ bar width) is computed
- * by tokenBarLayout, and per-segment geometry (including per-segment hit
- * bands) is produced by barSegments; there's also pie-slice geometry (each
- * Agent's call count), success-rate normalization, and hover-bubble
- * placement (pointer lower-right, flipping at the edges). See chart-svg.tsx for the render skeleton.
+ * JSX, easy to unit test (see test/usage-charts.test.ts). The time-series
+ * charts (the requests + success-rate combo, the Token bar's three-segment
+ * stack, the cost line) share one coordinate system — canvas width, padding,
+ * the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
+ * container (fitBarWidth — no horizontal scrolling), per-segment geometry
+ * (including per-segment hit bands) is produced by barSegments, a series with
+ * holes in it is split by lineSegments so no stroke bridges an interval that
+ * has no value, and every line on the page — cost, cache hit rate,
+ * success rate — is drawn by linePath as straight segments between its points,
+ * with no smoothing anywhere; there's also hover-bubble placement (pointer
+ * lower-right, flipping at the edges). See chart-svg.tsx for the render
+ * skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -28,6 +31,9 @@ export const PAD_B = 22;
 /** The daily Token chart's three buckets (bottom-to-top stacking order is output → cacheWrite → cacheRead). */
 export type TokenBucketKey = "cacheRead" | "cacheWrite" | "output";
 
+/** Right padding for charts that carry a right-hand percentage axis (the Token chart's cache-hit-rate overlay): room for a "100%" tick label. */
+export const PAD_R_AXIS = 34;
+
 /** A chart's coordinate system: canvas width w, data point count n, y-axis bounds, and x()/y() mapping "index / value" to canvas coordinates. */
 export interface ChartGeom {
   n: number;
@@ -35,6 +41,8 @@ export interface ChartGeom {
   max: number;
   /** Total canvas width (= viewBox width = CSS pixel width). */
   w: number;
+  /** Right padding (PAD_R by default; PAD_R_AXIS when a right-hand axis needs label room). */
+  padR: number;
   innerW: number;
   innerH: number;
   step: number;
@@ -48,17 +56,25 @@ export interface ChartGeom {
  * in pixels. Invalid or zero-height ranges map values to the baseline rather
  * than producing NaN / Infinity.
  */
-export function makeGeom(n: number, max: number, w: number): ChartGeom {
-  return makeRangeGeom(n, 0, max, w);
+export function makeGeom(n: number, max: number, w: number, padR = PAD_R): ChartGeom {
+  return makeRangeGeom(n, 0, max, w, padR);
 }
 
 /**
  * Build a coordinate system with an explicit y-axis range. Score charts use
  * this to zoom into the observed values; zero-baseline usage charts keep
- * calling makeGeom above.
+ * calling makeGeom above. Geoms sharing n / w / padR share x() exactly — that
+ * is how a right-axis overlay (its own y range) stays aligned with the marks
+ * under it.
  */
-export function makeRangeGeom(n: number, min: number, max: number, w: number): ChartGeom {
-  const innerW = Math.max(0, w - PAD_L - PAD_R);
+export function makeRangeGeom(
+  n: number,
+  min: number,
+  max: number,
+  w: number,
+  padR = PAD_R,
+): ChartGeom {
+  const innerW = Math.max(0, w - PAD_L - padR);
   const innerH = CHART_H - PAD_T - PAD_B;
   const step = n > 0 ? innerW / n : innerW;
   const range = max - min;
@@ -67,6 +83,7 @@ export function makeRangeGeom(n: number, min: number, max: number, w: number): C
     min,
     max,
     w,
+    padR,
     innerW,
     innerH,
     step,
@@ -94,6 +111,43 @@ export function areaPath(geom: ChartGeom, values: number[]): string {
   return parts.join(" ");
 }
 
+/** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
+const rnd = (v: number): number => Math.round(v * 100) / 100;
+
+/** A value-bearing point of a gapped series: its index on the shared x axis, and its value. */
+export interface LinePoint {
+  index: number;
+  value: number;
+}
+
+/**
+ * Split a value sequence with gaps into **contiguous value-bearing** segments
+ * (each holding at least one point): points inside a segment are connected,
+ * segments are drawn apart, and a segment of one point draws only a point —
+ * a line must never bridge an interval where the series has no value.
+ */
+export function lineSegments(values: readonly (number | null)[]): LinePoint[][] {
+  const segments: LinePoint[][] = [];
+  let current: LinePoint[] = [];
+  values.forEach((value, index) => {
+    if (value === null) {
+      if (current.length > 0) segments.push(current);
+      current = [];
+      return;
+    }
+    current.push({ index, value });
+  });
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+/** Straight-line path through one gap-free segment (`M` + `L`s); a one-point segment yields a bare `M` that strokes nothing, so callers draw its dot instead. */
+export function segmentPath(geom: ChartGeom, segment: readonly LinePoint[]): string {
+  return segment
+    .map((p, i) => `${i === 0 ? "M" : "L"}${rnd(geom.x(p.index))},${rnd(geom.y(p.value))}`)
+    .join(" ");
+}
+
 /** Sparse x-axis label indices: first, middle, last (labeling every point would blur together when cells are narrow and there are many points). */
 export function sparseLabelIdx(n: number): number[] {
   if (n <= 0) return [];
@@ -119,12 +173,7 @@ export function autoLabelIdx(n: number, step: number): number[] {
   return idx;
 }
 
-/** Request success rate: no requests (total=0) is treated as 1 (matches the old bar's convention, avoiding 0/0). */
-export function successRate(completed: number, total: number): number {
-  return total > 0 ? completed / total : 1;
-}
-
-// —— Hover bubble placement (shared by both daily charts) ——
+// —— Hover bubble placement (shared by every chart) ——
 
 /** Gap between the pointer and the bubble's near corner: close enough to read as attached, far enough that the bubble never sits under the pointer. */
 export const BUBBLE_OFFSET = 12;
@@ -167,11 +216,9 @@ export function bubblePosition(
 // —— Daily Token: bar + three-segment stack ——
 
 /**
- * Bar width (**real CSS pixels**, since 1 canvas unit = 1 pixel): **a fixed
- * value, not a minimum** — it used to be implemented as "no less than 25px",
- * which made bars stretch to fill the container when there were few points
- * (3 daily points could balloon to ~180px), defeating the intent of "25px
- * bar width". Now it's always 25px: scroll when it doesn't fit, and give the extra space to bar spacing when it does.
+ * Ceiling on bar width (**real CSS pixels**, since 1 canvas unit = 1 pixel):
+ * with few points the bars never balloon past this — the extra space goes to
+ * bar spacing.
  */
 export const BAR_W = 25;
 
@@ -187,44 +234,33 @@ export const BAR_W = 25;
  */
 export const MIN_HIT_H = 8;
 
-/** The Token bar chart's horizontal layout: bar width (always BAR_W), total canvas width, and whether the content overflows the container (needing horizontal scroll). */
-export interface TokenBarLayout {
-  /** Bar width (CSS pixels): always BAR_W. */
-  barW: number;
-  /** Total canvas width (CSS pixels): fills the container, or overflows it per "bar + equal spacing". */
-  chartW: number;
-  /** Canvas is wider than the container: the caller needs horizontal scrolling to see it all. */
-  scroll: boolean;
-}
-
 /**
- * Token bar chart horizontal layout: **bar width is always BAR_W (25 real
- * pixels), bar spacing ≥ bar width**.
- * - Many points (n×2×25px doesn't fit): each cell is exactly 2× the bar
- *   width, and the canvas overflows the container in real pixels →
- *   the container scrolls horizontally (no scaling, no squeezing);
- * - Few points (fits): the canvas fills the container, and **all the extra
- *   space goes to bar spacing** — bars no longer stretch (the old
- *   implementation treated 25px as a floor, letting 3 daily points' bars
- *   balloon to ~180px), they just stand farther apart.
+ * Bar width that always fits the container (**no horizontal scrolling**): 60%
+ * of the cell width — leaving ≥ 40% as spacing so adjacent bars never touch —
+ * capped at BAR_W (few points must not balloon into slabs) and floored at 1px:
+ * a dense range at fine granularity degrades to hairlines, not to overlap
+ * (only a degenerate sub-1.7px cell can make the 1px floor fill its cell).
  */
-export function tokenBarLayout(containerW: number, n: number): TokenBarLayout {
-  const innerW = Math.max(0, containerW - PAD_L - PAD_R);
-  const needed = 2 * BAR_W * n; // inner width needed to lay out n bars (bar + equal spacing)
-  if (needed <= innerW) return { barW: BAR_W, chartW: containerW, scroll: false };
-  return { barW: BAR_W, chartW: PAD_L + needed + PAD_R, scroll: true };
+export function fitBarWidth(step: number): number {
+  return Math.max(1, Math.min(BAR_W, Math.floor(step * 0.6)));
 }
 
-/** One segment within a bar: the visual rectangle is drawn strictly to value, the hit band is computed separately (small segments are raised to be hoverable). */
-export interface BarSegment {
-  key: TokenBucketKey;
+/** One segment within a stacked bar: the visual rectangle is drawn strictly to value, the hit band is computed separately (small segments are raised to be hoverable). */
+export interface StackSegment {
+  /** Position in the values array the segment came from (zero values produce no segment, so this is not the segment's own index). */
+  index: number;
   value: number;
-  /** Visual rectangle: segments sit flush against each other, total height = the day's total (no visual floor, no inflating the bar's height). */
+  /** Visual rectangle: segments sit flush against each other, total height = the bucket's total (no visual floor, no inflating the bar's height). */
   y: number;
   h: number;
   /** Hit band: fills the whole bar bottom-to-top with no overlap, small segments raised to minHit. */
   hitY: number;
   hitH: number;
+}
+
+/** A Token bar's segment, carrying the bucket key its color and label come from. */
+export interface BarSegment extends StackSegment {
+  key: TokenBucketKey;
 }
 
 /**
@@ -251,18 +287,17 @@ function hitHeights(heights: number[], total: number, minHit: number): number[] 
   }
 }
 
-/** Stacking order: bottom-to-top output → cacheWrite → cacheRead (matches TOKEN_COLORS' shading, darkest at the bottom). */
-const STACK_ORDER: readonly TokenBucketKey[] = ["output", "cacheWrite", "cacheRead"];
-
 /**
- * A bar's three-segment stack: bottom-to-top output → cacheWrite →
- * cacheRead, a zero-value bucket produces no segment (not drawn, and shouldn't be hoverable). The visual rectangle is drawn strictly to value; see hitHeights for the hit band.
+ * A stacked bar's segments, bottom-to-top in array order: a zero value
+ * produces no segment (nothing is drawn, and nothing should be hoverable).
+ * The visual rectangle is drawn strictly to value; the hit band is widened
+ * separately so a sub-pixel segment stays reachable — see hitHeights.
+ *
+ * Shared by every stacked bar on the page: the Token chart stacks its three
+ * buckets, the requests charts stack one segment per entity.
  */
-export function barSegments(
-  geom: ChartGeom,
-  p: { cacheRead: number; cacheWrite: number; output: number },
-): BarSegment[] {
-  const stack = STACK_ORDER.map((key) => ({ key, value: p[key] })).filter((b) => b.value > 0);
+export function stackSegments(geom: ChartGeom, values: readonly number[]): StackSegment[] {
+  const stack = values.map((value, index) => ({ index, value })).filter((b) => b.value > 0);
   if (stack.length === 0) return [];
 
   // Visual rectangles: the top edge is taken from the cumulative value, so segments sit flush against each other.
@@ -284,8 +319,8 @@ export function barSegments(
   let hitBottom = base;
   return stack.map((b, i) => {
     const hitH = hits[i]!;
-    const seg: BarSegment = {
-      key: b.key,
+    const seg: StackSegment = {
+      index: b.index,
       value: b.value,
       y: rects[i]!.y,
       h: rects[i]!.h,
@@ -297,67 +332,16 @@ export function barSegments(
   });
 }
 
-// —— Each Agent's call count: pie chart ——
+/** Stacking order: bottom-to-top output → cacheWrite → cacheRead (matches TOKEN_COLORS' shading, darkest at the bottom). */
+const STACK_ORDER: readonly TokenBucketKey[] = ["output", "cacheWrite", "cacheRead"];
 
-const TAU = Math.PI * 2;
-/** Path coordinates keep 2 decimal places: the path string stays short and readable, and is easy to assert on in unit tests. */
-const rnd = (v: number): number => Math.round(v * 100) / 100;
-
-/** Take a point in polar coordinates: angle is measured from 12 o'clock, clockwise-positive (SVG's y-axis points down). */
-function polar(cx: number, cy: number, r: number, angle: number): [number, number] {
-  const a = angle - Math.PI / 2;
-  return [rnd(cx + r * Math.cos(a)), rnd(cy + r * Math.sin(a))];
-}
-
-/** A single pie slice. */
-export interface PieSlice {
-  /** Index within the passed-in values (the caller uses this to look up name and color). */
-  index: number;
-  value: number;
-  /** Fraction of the total [0,1]. */
-  frac: number;
-  /** Start/end angle (radians, clockwise from 12 o'clock). */
-  start: number;
-  end: number;
-  /** The slice's path. */
-  path: string;
-}
-
-/**
- * Slice path: `M center L start A radius … end Z`; sweep=1 means clockwise,
- * large-arc=1 when spanning more than a semicircle.
- * At 100% the start and end points coincide and the A command degrades into
- * "draws nothing" — split into two semicircular arcs to get a full circle.
- */
-function slicePath(cx: number, cy: number, r: number, start: number, end: number): string {
-  if (end - start >= TAU - 1e-9) {
-    const [tx, ty] = polar(cx, cy, r, 0);
-    const [bx, by] = polar(cx, cy, r, Math.PI);
-    return `M${tx},${ty} A${r},${r} 0 1 1 ${bx},${by} A${r},${r} 0 1 1 ${tx},${ty} Z`;
-  }
-  const [x0, y0] = polar(cx, cy, r, start);
-  const [x1, y1] = polar(cx, cy, r, end);
-  const large = end - start > Math.PI ? 1 : 0;
-  return `M${rnd(cx)},${rnd(cy)} L${x0},${y0} A${r},${r} 0 ${large} 1 ${x1},${y1} Z`;
-}
-
-/**
- * Pie slices: laid out clockwise from 12 o'clock in the order passed in,
- * each slice's angle = that value's share of the total.
- * Non-positive values produce no slice (a 0-degree arc is a degenerate
- * path); when the total ≤ 0, returns empty (the caller falls back to an empty state).
- */
-export function pieSlices(values: number[], cx: number, cy: number, r: number): PieSlice[] {
-  const total = values.reduce((s, v) => s + Math.max(0, v), 0);
-  if (total <= 0) return [];
-  const slices: PieSlice[] = [];
-  let start = 0;
-  values.forEach((value, index) => {
-    if (value <= 0) return;
-    const frac = value / total;
-    const end = start + frac * TAU;
-    slices.push({ index, value, frac, start, end, path: slicePath(cx, cy, r, start, end) });
-    start = end;
-  });
-  return slices;
+/** A Token bar's three-segment stack (see stackSegments), keyed by bucket so the caller can look up color and label. */
+export function barSegments(
+  geom: ChartGeom,
+  p: { cacheRead: number; cacheWrite: number; output: number },
+): BarSegment[] {
+  return stackSegments(
+    geom,
+    STACK_ORDER.map((key) => p[key]),
+  ).map((seg) => ({ ...seg, key: STACK_ORDER[seg.index]! }));
 }

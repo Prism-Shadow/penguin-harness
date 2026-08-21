@@ -8,23 +8,37 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  Environment,
+  Session,
   abortEvent,
   approvalDecision,
   assistantText,
   compactionBegin,
   compactionEnd,
+  emptyTokenCounts,
   requestBegin,
   requestEnd,
   sessionMeta,
   thinkingMessage,
+  tokenUsage,
   toolCall,
   toolCallOutput,
   userSteeringText,
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  GenerativeModelParameters,
+  LLMInterface,
+  LLMOutcome,
+  OmniMessage,
+  TextPayload,
+} from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -285,6 +299,207 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("b")]);
     await waitFor(() => manager.statusOf("session-1") === "idle" && seen.length === 2);
     expect(seen).toEqual(["high", undefined]);
+  });
+
+  it("a background notice arriving while idle auto-starts a task carrying the taken notices", async () => {
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    // First task loads the entry (which registers the notice listener) and finishes.
+    await manager.startTask("session-1", [userText("hi")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(noticeCb).not.toBeNull();
+
+    // A completion notice lands while idle: the manager takes the queue and starts a task with it.
+    const events = capture("session-1");
+    const notice = userText("[background_task_done]\nkind: command\n[/background_task_done]");
+    queue.push(notice);
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 2);
+    expect(runInputs[1]).toEqual([notice]);
+    expect(queue).toHaveLength(0);
+    // The notice input was published to subscribers like any task input.
+    expect(events.some((e) => e.data.includes("background_task_done"))).toBe(true);
+
+    // An empty queue signal is a no-op (no phantom task).
+    noticeCb!();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(runInputs).toHaveLength(2);
+  });
+
+  it("live-forwarded background-subagent messages publish to the channel and record usage", async () => {
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    manager.adopt(sessions.findById("session-1")!, fake);
+    expect(forward).not.toBeNull();
+    const events = capture("session-1");
+    const child = withOrigin(assistantText("child progress"), "session-child-1");
+    forward!(child);
+    expect(events.some((e) => e.data.includes("child progress"))).toBe(true);
+    // Usage recording rode along (same recorder drive uses).
+    expect(recorded).toContain(child);
+  });
+
+  it("adopt registers the notice listener too (a freshly created session, no loader involved)", async () => {
+    // Regression guard: POST /sessions enters the active table through adopt, not
+    // ensureEntry — a listener registered only on the loader path left brand-new sessions
+    // unable to deliver idle-arrival completion reports (the real-app no-notification bug).
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    const row = sessions.findById("session-1")!;
+    manager.adopt(row, fake);
+    expect(noticeCb).not.toBeNull();
+    queue.push(userText("[background_task_done]\nkind: command\n[/background_task_done]"));
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(queue).toHaveLength(0);
+  });
+
+  it("end-to-end: a run_in_background command finishing after idle reaches the event channel as a harness user message", async () => {
+    // Full production chain with the REAL core pieces — Session, engine, Environment and an
+    // actual OS process — under the real SessionManager (loaded via the loader, which is
+    // what registers the notice listener). Only the LLM is scripted. This is the frontend's
+    // exact feed: the channel events asserted on are what SSE relays byte-for-byte.
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bge2e-"));
+    const environment = new Environment({
+      workspaceDir: dir,
+      toolConfig: {
+        customTools: [
+          {
+            name: "exec_command",
+            description: "run",
+            permission: "rw",
+            timeoutMs: 120000,
+            maxOutputLength: 16000,
+          },
+        ],
+        mcpServers: [],
+      },
+    });
+    // Turn 1: launch a command that outlives the task; turn 2: final reply (task ends,
+    // session idle, process still running); turn 3 is the auto-started notice task.
+    const llm = new (class implements LLMInterface {
+      calls = 0;
+      inputs: OmniMessage[][] = [];
+      async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        this.inputs.push(params.newMessages);
+        if (this.calls === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({
+              cmd: "printf 'serving'; sleep 1",
+              run_in_background: true,
+            }),
+            toolCallId: "tc_bg",
+            stopReason: "completed",
+          });
+        } else {
+          yield assistantText(`reply ${this.calls}`);
+        }
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 2,
+        });
+        return { status: "completed" };
+      }
+    })();
+    const session = new Session({
+      meta: {
+        session_id: "session-1",
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 100000,
+        system_prompt: "sp",
+        agent_state: dir,
+        workspace: dir,
+      },
+      bootstrap: async () => ({ tools: await environment.listTools(), llm, mcp: [] }),
+      mcpServers: [],
+      environment,
+      imagesDir: path.join(dir, "images"),
+      modelHasVision: true,
+    });
+    try {
+      const manager = makeManager(loaderOf(session as unknown as RuntimeSession));
+      const events = capture("session-1");
+      await manager.startTask("session-1", [userText("start a dev server")]);
+      await waitFor(() => manager.statusOf("session-1") === "idle" && llm.calls === 2, 5000);
+      // The task is over, the background process is still alive, and no notice exists yet —
+      // what follows is genuinely the idle-arrival path.
+      expect(events.some((e) => e.data.includes("background_task_done"))).toBe(false);
+
+      // The process exits ~1s in: the completion report must land on the channel as a
+      // harness user message and auto-start a task the model answers.
+      await waitFor(() => events.some((e) => e.data.includes("background_task_done")), 8000);
+      const notice = events.find((e) => e.data.includes("background_task_done"))!;
+      expect(notice.data).toContain('"sender":"harness"');
+      expect(notice.data).toContain('"role":"user"');
+      expect(notice.data).toContain("serving");
+      await waitFor(() => llm.calls === 3 && manager.statusOf("session-1") === "idle", 5000);
+      const turn3 = llm.inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
+      expect(turn3.join("\n")).toContain("[background_task_done]");
+      // The auto task's state flips were broadcast too (the frontend's input gating):
+      // one running per task, so the notice task makes it at least two.
+      const running = events.filter(
+        (e) => e.data.includes('"type":"task_state"') && e.data.includes('"state":"running"'),
+      );
+      expect(running.length).toBeGreaterThan(1);
+    } finally {
+      session.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {
@@ -635,7 +850,7 @@ describe("session-manager", () => {
     );
   });
 
-  it("sub-session (origin) registration: session_meta persists; the title is left to the model using the sub-session's own conversation", async () => {
+  it("sub-session (origin) registration: session_meta persists; the title is generated from the spawning prompt", async () => {
     const fake: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
@@ -692,16 +907,17 @@ describe("session-manager", () => {
     // predates the source field (this fake omits it): the registration path is the fallback.
     expect(sources.get("child-1")).toBe("subagent");
     expect(child && "source" in child).toBe(false);
-    // Title left blank: produced by the title generator from the sub-session's own conversation (falls back to the prompt's first line on failure).
+    // The row itself is inserted with a blank title: the title generator (faked here) is
+    // notified at registration and owns the write.
     expect(child?.title).toBeNull();
 
     await waitFor(() => notified.length === 2);
     const childTitle = notified.find((n) => n.ctx.sessionId === "child-1");
     expect(childTitle).toBeTruthy();
-    // Explicit material override for the sub-session: user material = the prompt that spawned it; assistant material = the sub-session's **own** model output.
+    // Explicit material override for the sub-session: the prompt that spawned it, alone — its own output is never waited for.
     expect(childTitle!.req.material).toEqual({
       userText: "Research the background of this question",
-      assistantText: "child done",
+      assistantText: "",
     });
     expect(childTitle!.req.fallbackText).toBe("Research the background of this question");
     // Session/Agent record the sub-session, but modelId records the parent — the request runs on the parent's bare LLM.
@@ -971,6 +1187,57 @@ describe("session-manager", () => {
     await waitFor(() => manager.statusOf("session-1") === "idle");
   });
 
+  it("sweepIdle: a working background subagent pins the entry, and its live messages count as activity", async () => {
+    // A run_in_background child outlives the task that launched it. Evicting the entry
+    // while it works drops the very Session its completion report is queued on.
+    let running = true;
+    let loads = 0;
+    let forward: ((msg: OmniMessage) => void) | null = null;
+    const fake = (): RuntimeSession => ({
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      hasRunningBackgroundSubagents: () => running,
+      onBackgroundMessage: (cb) => (forward = cb),
+      async *run() {},
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    });
+    const manager = makeManager({
+      load: async () => {
+        loads++;
+        return fake();
+      },
+    });
+    manager.adopt(ROW, fake());
+    const long = 31 * 60 * 1000;
+
+    // Far past the idle timeout, but the child is still working: the entry stays.
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    sessions.updateApprovalMode("session-1", "allow-all");
+    await manager.startTask("session-1", [userText("a")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // The child streaming is activity in its own right, so the idle clock restarts with it.
+    expect(forward).not.toBeNull();
+    const before = Date.now();
+    forward!(withOrigin(assistantText("child progress"), "session-child-1"));
+    manager.sweepIdle(before + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("b")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(0);
+
+    // Once it settles, the entry is an ordinary idle one again and evicts on schedule.
+    running = false;
+    manager.sweepIdle(Date.now() + long, 30 * 60 * 1000);
+    await manager.startTask("session-1", [userText("c")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(loads).toBe(1);
+  });
+
   it("compact: sets compacting, output goes to the channel, returns to idle at the end", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     const events = capture("session-1");
@@ -984,7 +1251,7 @@ describe("session-manager", () => {
     ]);
   });
 
-  it("notifies title generation after a Task completes: fallback material is the user text, generation material is self-collected by the Session; compaction doesn't notify", async () => {
+  it("notifies title generation at Task start: fallback and generation material are the user input alone; compaction doesn't notify", async () => {
     const notified: { ctx: UsageContext; session: unknown; req: TitleRequest }[] = [];
     const plainSession: RuntimeSession = {
       sessionId: "session-1",
@@ -1019,8 +1286,11 @@ describe("session-manager", () => {
     await manager.startTask("session-1", [userText("question 1"), userText("question 2")]);
     await waitFor(() => notified.length === 1);
     expect(notified[0]!.req.fallbackText).toBe("question 1\nquestion 2");
-    // No material override for the main session: material is gathered by the core Session during run.
-    expect(notified[0]!.req.material).toBeUndefined();
+    // The generation material is the user input alone — no assistant text, nothing waits on it.
+    expect(notified[0]!.req.material).toEqual({
+      userText: "question 1\nquestion 2",
+      assistantText: "",
+    });
     expect(notified[0]!.session).toBe(plainSession);
     expect(notified[0]!.ctx).toMatchObject({
       projectId: "p1",
@@ -1030,18 +1300,23 @@ describe("session-manager", () => {
       provider: "custom",
     });
 
+    // The notification fires at start, so the Task is still running here — let it finish
+    // (completion adds no second trigger), then compact.
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(notified.length).toBe(1);
     await manager.startCompact("session-1");
     await waitFor(() => manager.statusOf("session-1") === "idle");
     await new Promise((r) => setTimeout(r, 10));
     expect(notified.length).toBe(1);
   });
 
-  it("fires title generation early once 1000 chars of body text have streamed (mid-run, before the Task finishes)", async () => {
+  it("fires title generation at Task start, before any model output has streamed", async () => {
     const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
-    // Gate the run after the big body text so the early trigger provably happens mid-run.
+    // Gate the run before its first yield: a notification while the gate is closed proves
+    // generation starts without waiting on any model output.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    const longSession: RuntimeSession = {
+    const gatedRun: RuntimeSession = {
       sessionId: "session-1",
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
@@ -1049,13 +1324,8 @@ describe("session-manager", () => {
       steer: () => false,
       skipReconnectWait: () => false,
       async *run() {
-        yield assistantText("x".repeat(600));
-        // Sub-session text doesn't count toward the main-session body threshold
-        // (asserted on its own in the next test).
-        yield withOrigin(assistantText("z".repeat(2000)), "session-sub");
-        yield assistantText("y".repeat(600)); // crosses the 1000-char threshold
         await gate;
-        yield assistantText("tail");
+        yield assistantText("answer");
       },
       async *compact() {},
     };
@@ -1063,7 +1333,7 @@ describe("session-manager", () => {
       sessions,
       channels,
       sources,
-      loader: loaderOf(longSession),
+      loader: loaderOf(gatedRun),
       recorder: { record: async () => {} },
       titles: {
         maybeGenerate: (ctx, _session, req) => notified.push({ ctx, req }),
@@ -1072,25 +1342,24 @@ describe("session-manager", () => {
     });
 
     await manager.startTask("session-1", [userText("long question")]);
-    // The early trigger fires while the run is still in flight (gated before completion).
+    // The trigger fires while the run is still parked before its first message.
     await waitFor(() => notified.length === 1);
     expect(manager.statusOf("session-1")).toBe("running");
     expect(notified[0]!.req.fallbackText).toBe("long question");
-    expect(notified[0]!.req.material).toBeUndefined();
+    expect(notified[0]!.req.material).toEqual({ userText: "long question", assistantText: "" });
 
-    // Completion still notifies as the short-answer fallback path (the generator itself dedups).
+    // Completion adds no second trigger — the start is the only one.
     release();
     await waitFor(() => manager.statusOf("session-1") === "idle");
-    await waitFor(() => notified.length === 2);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(notified.length).toBe(1);
   });
 
-  it("a subagent's output never fires the early title: only main-session body text counts toward the 1000 chars", async () => {
+  it("a subagent's title fires at registration (mid-run), from its spawning prompt alone", async () => {
     const notified: { ctx: UsageContext; req: TitleRequest }[] = [];
     const driven: OmniMessage[] = [];
-    // Gate the run right after the sub-session's long output: while the parent is parked
-    // here the completion trigger hasn't run yet, so an empty `notified` proves the child's
-    // text alone never crossed the threshold (without the gate an early fire would be
-    // indistinguishable from the completion one).
+    // Gate the run right after the sub-session's output: both notifications must already
+    // be in by then, proving neither waited for the run to complete.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const delegating: RuntimeSession = {
@@ -1119,10 +1388,9 @@ describe("session-manager", () => {
           }),
           hop,
         );
-        // Far past the threshold, but it belongs to the sub-session's own conversation.
         yield withOrigin(assistantText("z".repeat(3000)), hop);
         await gate;
-        yield assistantText("short answer"); // the parent's whole body, well under 1000 chars
+        yield assistantText("short answer");
       },
       async *compact() {},
     };
@@ -1143,17 +1411,23 @@ describe("session-manager", () => {
     });
 
     await manager.startTask("session-1", [userText("delegate this")]);
-    // Recording happens after the early-title check, so once the sub-session's 3000 chars
-    // have been driven through the parent's counter has already seen everything it will
-    // ever see from the child — and it must still be at zero.
+    // By the time the sub-session's output has been driven through, both titles have
+    // already fired: the parent's at Task start, the child's at registration.
     await waitFor(() => driven.length === 3);
     expect(manager.statusOf("session-1")).toBe("running");
-    expect(notified.length).toBe(0);
+    expect(notified.map((n) => n.ctx.sessionId)).toEqual(["session-1", "child-1"]);
+    const child = notified[1]!;
+    // The child's material is its spawning prompt alone — its own output is never waited for.
+    expect(child.req.material).toEqual({
+      userText: "Research the background of this question",
+      assistantText: "",
+    });
+    expect(child.req.notifyOn).toBe("session-1");
 
-    // Only the completion path notifies: once for the parent, once for the sub-session's own title.
+    // Completion adds nothing further.
     release();
     await waitFor(() => manager.statusOf("session-1") === "idle");
-    await waitFor(() => notified.length === 2);
-    expect(notified.map((n) => n.ctx.sessionId)).toEqual(["session-1", "child-1"]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(notified.length).toBe(2);
   });
 });

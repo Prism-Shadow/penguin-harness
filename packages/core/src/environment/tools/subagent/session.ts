@@ -70,6 +70,21 @@ export class ManagedSubagentSession {
   private sink: { approve: ApproveFn; detached: Promise<void> } | null = null;
   private sinkEpoch = 0;
   private pumpingApprovals = false;
+  /**
+   * Standing approval sink for background-launched sessions (`run_in_background`): the
+   * launching call's own `ctx.approve`, consulted whenever no window sink is attached. A
+   * background child has no parent tool call waiting on it, so without this its first
+   * read-write tool parks at the approval queue forever — the "background subagent's
+   * commands never run" failure. Window sinks (an active run_subagent/input_subagent
+   * call) still take precedence while attached.
+   */
+  private persistentApprove: ApproveFn | null = null;
+  /**
+   * Live forwarding tap for background-launched sessions: child messages go here the moment
+   * the pump produces them instead of waiting in the message buffer for the next poll. Set
+   * once at launch; anything already buffered flushes through it first (order preserved).
+   */
+  private forwardTap: ((msg: OmniMessage) => void) | null = null;
 
   // Single wake point: new message / run finished / new approval request all wake a waiting waitWake through it.
   private readonly wakeSignal = new WakeSignal();
@@ -81,6 +96,11 @@ export class ManagedSubagentSession {
   /** Child Session id (one hop of a message's origin); `subagent_id` is derived from its tail so the frontend can correlate it. */
   get sessionId(): string {
     return this.handle.sessionId;
+  }
+
+  /** One-shot take of the child's origin-tagged session_meta (see SubagentHandle.takeMeta); null when the handle predates the seam or the meta already went out. */
+  takeMeta(): OmniMessage | null {
+    return this.handle.takeMeta?.() ?? null;
   }
 
   /** Whether a round of the task is currently running. */
@@ -132,6 +152,41 @@ export class ManagedSubagentSession {
   /** External wakeup (e.g. the parent tool call was aborted): makes a waiting `waitWake` return immediately. */
   wakeup(): void {
     this.wakeSignal.notify();
+  }
+
+  // Settle watcher (run_in_background completion reports): fires at the end of EVERY round of a
+  // background-launched session (later input_subagent rounds included), until disarmed. A kill
+  // through the kill_subagent tool disarms first — the killer already reports the outcome.
+  private settleWatcher: (() => void) | null = null;
+
+  /** Arms the completion-report watcher (replacing any previous one); fires immediately (microtask) when the session is already idle with a terminal state. */
+  onSettled(cb: () => void): void {
+    this.settleWatcher = cb;
+    if (!this.isRunning && this.exitInfo !== null) queueMicrotask(() => this.fireSettleWatcher());
+  }
+
+  /** Disarms the completion-report watcher (deliberate kill / dispose). */
+  clearSettleWatcher(): void {
+    this.settleWatcher = null;
+  }
+
+  /** Attaches the standing approval sink of a background launch (see persistentApprove) and drains anything already queued. */
+  setPersistentApprovalSink(approve: ApproveFn): void {
+    this.persistentApprove = approve;
+    void this.pumpApprovals();
+  }
+
+  /** Attaches the live forwarding tap of a background launch (see forwardTap), flushing the buffered backlog through it in order. */
+  setMessageTap(tap: (msg: OmniMessage) => void): void {
+    const backlog = this.messages;
+    this.messages = [];
+    this.forwardTap = tap;
+    for (const msg of backlog) tap(msg);
+  }
+
+  private fireSettleWatcher(): void {
+    const cb = this.settleWatcher;
+    if (cb && !this.killed) cb();
   }
 
   /** Waits for "woken up" or `ms` to expire, whichever comes first. */
@@ -232,10 +287,17 @@ export class ManagedSubagentSession {
       this.isRunning = false;
       if (this.killed) this.handle.dispose();
       this.wakeSignal.notify();
+      this.fireSettleWatcher();
     }
   }
 
   private bufferMessage(msg: OmniMessage): void {
+    // A live tap (background launch) replaces buffering outright: the frontend receives the
+    // message immediately, and a later poll must not deliver a second copy.
+    if (this.forwardTap) {
+      this.forwardTap(msg);
+      return;
+    }
     this.messages.push(msg);
     // Overflow drops the oldest: only affects frontend replay — the child Session's Trace and text buffer are unaffected.
     if (this.messages.length > MESSAGE_BUFFER_CAP) this.messages.shift();
@@ -270,25 +332,36 @@ export class ManagedSubagentSession {
   }
 
   /**
-   * Hands the request at the head of the queue to the currently attached approval sink, one at a
-   * time. Stops when the window ends (the sink is detached); unresolved requests stay queued for
-   * the next sink; if a consultation already in flight resolves late, the decision still takes
+   * Hands the request at the head of the queue to an approval sink, one at a time: the
+   * window sink of an active run_subagent/input_subagent call when attached, else the
+   * standing sink of a background launch (persistentApprove). A window consultation stops
+   * when the window ends (the sink is detached) — unresolved requests stay queued for the
+   * next sink; a standing consultation simply awaits the decision (there is no window to
+   * end). If a consultation already in flight resolves late, the decision still takes
    * effect via settle.
    */
   private async pumpApprovals(): Promise<void> {
     if (this.pumpingApprovals) return;
     this.pumpingApprovals = true;
     try {
-      while (this.sink && this.approvals.length > 0) {
-        const sink = this.sink;
+      while ((this.sink !== null || this.persistentApprove !== null) && this.approvals.length > 0) {
         const req = this.approvals[0]!;
+        const sink = this.sink;
+        if (sink === null) {
+          await this.persistentApprove!(req.toolCall).then(
+            (d) => this.settle(req, d),
+            () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
+          );
+          continue;
+        }
         const answer = sink.approve(req.toolCall).then(
           (d) => this.settle(req, d),
-          () => this.settle(req, "deny"), // An approval sink error is treated as a denial (avoids leaving the child session stuck forever)
+          () => this.settle(req, "deny"),
         );
         await Promise.race([answer, sink.detached]);
         if (req.settled) continue;
         if (this.sink && this.sink !== sink) continue; // The sink was replaced by a new call: retry with the new sink
+        if (this.persistentApprove !== null) continue; // Window gone but a standing sink exists: fall through to it next round
         break; // The sink was detached and still unresolved: stay queued for the next sink
       }
     } finally {

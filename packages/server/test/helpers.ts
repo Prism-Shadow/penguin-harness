@@ -108,6 +108,25 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   };
 }
 
+/** The desktop-mode fixture token (see createDesktopApp). */
+export const TEST_DESKTOP_TOKEN = "test-desktop-token";
+
+/** A test app running in desktop mode (desktop.test.ts, desktop-update.test.ts). */
+export function createDesktopApp(): Promise<TestApp> {
+  return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
+}
+
+/** Redeems the one-shot desktop-login for a `sessionVia: "desktop"` cookie. */
+export async function desktopLoginCookie(app: Hono<AppEnv>): Promise<string> {
+  const res = await app.request(`/api/auth/desktop-login?token=${TEST_DESKTOP_TOKEN}`);
+  if (res.status !== 302) {
+    throw new Error(`Desktop login failed: ${res.status} ${await res.text()}`);
+  }
+  const setCookie = res.headers.get("set-cookie");
+  if (!setCookie) throw new Error("Desktop login response is missing set-cookie");
+  return setCookie.split(";")[0]!;
+}
+
 /** Logs in and returns the session cookie (`penguin_session=...`). */
 export async function loginUser(
   app: Hono<AppEnv>,

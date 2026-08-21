@@ -9,12 +9,15 @@
  * - Ownership of the default/vision-agent model pointers after save
  *   (nextPointers): always compared as pairs; renaming (either provider or
  *   model_id changes) moves the pointer along.
+ * - Which env fallback variables a key hint may promise (detectedEnvKeys):
+ *   only those the server reported a value for.
  */
 import { describe, expect, it } from "vitest";
 import {
   capabilityRow,
   clientTypeAfterProviderChange,
   decimalOnly,
+  detectedEnvKeys,
   digitsOnly,
   fastModeState,
   nextPointers,
@@ -44,6 +47,31 @@ describe("decimalOnly (price)", () => {
   });
 });
 
+describe("detectedEnvKeys (variables a key hint may promise)", () => {
+  it("collects the variables the server reported a value for, and only those", () => {
+    const rows = [
+      toRow({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        envKey: "ANTHROPIC_API_KEY",
+        envKeyMasked: "sk-a…3456",
+        isDefault: false,
+      }),
+      // Variable name known, no value reported: nothing here proves it is set, so a hint
+      // must not tell the user that leaving the key empty is covered.
+      toRow({
+        provider: "deepseek",
+        modelId: "deepseek-v4-pro",
+        envKey: "DEEPSEEK_API_KEY",
+        isDefault: false,
+      }),
+      toRow({ provider: "custom", modelId: "my-model", isDefault: false }),
+    ];
+    expect(detectedEnvKeys(rows)).toEqual(new Set(["ANTHROPIC_API_KEY"]));
+    expect(detectedEnvKeys([])).toEqual(new Set());
+  });
+});
+
 describe("clientTypeAfterProviderChange", () => {
   it("uses openai-chat when moving to Custom and otherwise preserves the current client", () => {
     expect(clientTypeAfterProviderChange("custom", "")).toBe("openai-chat");
@@ -64,6 +92,21 @@ describe("toRow (DTO → row edit state)", () => {
     expect(row.modelId).toBe("claude-sonnet-4-6");
     expect(row.original).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
     expect(rowRef(row)).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-6" });
+  });
+
+  it("carries the env-fallback name and its masked preview through to the row", () => {
+    const row = toRow({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      envKey: "ANTHROPIC_API_KEY",
+      envKeyMasked: "sk-a…3456",
+      isDefault: false,
+    });
+    expect(row.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(row.envKeyMasked).toBe("sk-a…3456");
+    expect(toRow({ provider: "custom", modelId: "m", isDefault: false }).envKeyMasked).toBe(
+      undefined,
+    );
   });
 
   it("providers outside the catalog list are kept as-is (only the display layer buckets them under custom)", () => {

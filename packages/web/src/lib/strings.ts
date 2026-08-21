@@ -154,6 +154,35 @@ export const zh = {
       "将下载最新版本并安装到服务器上的安装目录（数据目录不受影响）。安装完成后需要重启服务才会生效。",
     /** Copy shown to non-admins in place of confirmBody (they can read the release notes but cannot run the update here). */
     adminOnly: "只有管理员可以在这里执行更新。",
+    /**
+     * Desktop client-update row in the sidebar user menu (shell window only): check →
+     * download progress → restart-to-install, driven by the shell's updater snapshot.
+     * It stands in for the server update surface, which desktop mode hides entirely.
+     * Null version/percent = the shell didn't name one.
+     */
+    clientCheckNow: "检查更新",
+    /** Success toast when a row-initiated check finds a release (the download starts by itself). */
+    clientFoundNew: (v: string | null) =>
+      v !== null ? `发现新版本 v${v}，正在后台下载…` : "发现新版本，正在后台下载…",
+    clientDownloading: (v: string | null, percent: number | null) =>
+      `${v !== null ? `v${v} ` : ""}下载中…${percent !== null ? ` ${percent}%` : ""}`,
+    clientRestartToInstall: (v: string | null) =>
+      v !== null ? `重启并安装 v${v}` : "重启并安装更新",
+    /** Success toast when a row-initiated check lands on a build already downloaded and waiting. */
+    clientDownloadReady: (v: string | null) =>
+      v !== null ? `新版本 v${v} 已就绪，可重启安装` : "更新已就绪，可重启安装",
+    /** Error toast carrying the shell's own updater failure text — a failed download or signature check, not only a failed lookup. */
+    clientUpdateFailed: (detail: string) => `客户端更新失败：${detail}`,
+    /** Install POST failed before the shell could act; `detail` is apiErrorText output. */
+    clientInstallFailed: (detail: string) => `无法开始安装：${detail}`,
+    clientInstallConfirmTitle: "重启并安装更新",
+    /** Mirrors the shell's native restart prompt: the interruption warning must not disappear on the web path. */
+    clientInstallConfirmBody: "PenguinHarness 将重启以完成更新，正在运行的任务会被打断。",
+    clientInstallConfirmAction: "立即重启",
+    /** Tooltip on the disabled row in a dev (unpackaged) run. */
+    clientUnsupportedDev: "开发运行不支持自更新",
+    /** Tooltip on the disabled row for installs owned by the system package manager (e.g. .deb). */
+    clientUnsupportedPackage: "此安装由系统包管理器管理，请通过包管理器更新",
   },
 
   /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
@@ -539,12 +568,29 @@ export const zh = {
     addGroup: "新增分组",
     addGroupTitle: "新增分组",
     addGroupDesc:
-      "自建分组与 Custom 同语义：接口协议可手动选择，也可按 base URL 检测（base URL 必填，API key 留空按所选协议读取 OPENAI_* / ANTHROPIC_* 环境变量）。分组由模型条目承载，保存首个模型后即出现。",
+      "自建分组与 Custom 同语义。「导入模型」按端点检测或手选协议后，一键导入其全部模型；「仅新增分组」建组后逐个添加。分组由模型条目承载，保存首个模型后即出现。",
+    groupModeCreate: "仅新增分组",
+    groupModeImport: "导入模型",
+    groupImportAll: "批量导入模型",
+    groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
+    groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
+    groupImportListing: "正在获取模型列表…",
+    groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
+    groupImportUnsupported: "该协议不支持列出模型，请手动添加",
+    groupImportFailed: "获取模型列表失败",
+    groupImportEmpty: "该端点没有可导入的模型",
+    groupImported: (added: number, skipped: number): string =>
+      skipped > 0 ? `已导入 ${added} 个模型，跳过 ${skipped} 个条目` : `已导入 ${added} 个模型`,
     groupNameLabel: "分组名",
     groupNameHint: "小写字母 / 数字开头，可含 - 与 _",
     groupNameInvalid: "分组名只能用小写字母、数字、- 与 _（首字符为字母或数字），长度不超过 32",
     groupNameExists: "该分组名已被内置分组或既有条目占用",
     groupEmptyHint: "该分组暂无模型，点「新增模型」添加",
+    deleteGroup: "删除分组",
+    deleteGroupTitle: "删除分组",
+    deleteGroupConfirm: (label: string, n: number): string =>
+      `确定删除分组「${label}」？组内 ${n} 个模型及其 API key 配置将一并移除。`,
+    groupDeleted: (n: number): string => `已删除分组（${n} 个模型）`,
     searchPlaceholder: "搜索模型：id / 名称 / 厂商",
     noSearchResults: "没有匹配的模型",
     syncCatalog: "同步预置",
@@ -692,6 +738,12 @@ export const zh = {
     readOnlyHint: "member 只读；模型与 credential 修改仅 owner 可执行",
     empty: "尚未配置任何模型",
     noKey: "未配置 key",
+    /**
+     * Model dialog credential slot: sits where a stored key shows its created-at line. It
+     * names no variable — the slot next to it already shows that variable's value masked,
+     * which is what identifies the key to the reader.
+     */
+    readFromEnv: "读取自环境变量",
     /** Chat model dropdown's bottom expander row: reveals the models hidden by the configured-key filter. */
     showModelsWithoutKey: (n: number): string => `显示未配置 key 的模型（${n} 个）`,
     modelIdExists: "该模型 id 已存在",
@@ -1326,6 +1378,21 @@ Benchmark：
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Memory-change card below the file summary and the Memory side panel: titles, scope/op tooltips, collapsed row. */
+    memoryChangesTitle: (n: number) => `${n} 条记忆更新`,
+    memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
+    memoryOpWrite: "写入",
+    memoryOpEdit: "编辑",
+    memoryViewTitle: "记忆",
+    memoryChangedMark: "本次对话已更改",
+    memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
+    openMemoryPanel: "打开记忆",
+    memoryRowOpen: "查看内容",
+    memoryBack: "返回列表",
+    memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "在 Agent 设置中管理",
+    memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",
@@ -1362,6 +1429,15 @@ Benchmark：
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "输入 /model 切换模型",
     scheduledFrom: (name: string) => `由定时任务「${name}」触发`,
+    /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
+    backgroundDone: (kind: "command" | "subagent", ok: boolean): string =>
+      kind === "command"
+        ? ok
+          ? "后台命令完成"
+          : "后台命令失败"
+        : ok
+          ? "后台任务完成"
+          : "后台任务失败",
     emptyGreeting: "开始一段新对话",
     /** Unified step-row titles (same header idiom as workRunning/workDone). */
     mcpConnectTitle: "MCP 连接",
@@ -1515,12 +1591,22 @@ Benchmark：
     uncostedNote: "* 只计入配置了价格的模型成本",
     filterAllAgents: "全部 Agent",
     filterAllModels: "全部模型",
-    chartAgentCalls: "各 Agent 调用次数",
-    chartSuccessRate: "各模型成功率",
-    chartTokenTrend: "Token 逐日变化",
-    chartCostTrend: "成本逐日变化",
+    rangeLabel: "日期范围",
+    rangeHour: "最近一小时",
+    rangeDay: "最近一天",
+    range7d: "近 7 天",
+    range30d: "近 30 天",
+    range90d: "近 90 天",
+    rangeCustom: "自定义",
+    chartRequestsByAgent: "各 Agent 请求与成功率",
+    chartRequestsByModel: "各模型请求与成功率",
+    legendSuccessRate: "成功率",
+    chartTokenTrend: "Token 变化",
+    chartCostTrend: "成本变化",
+    legendOther: (n: number): string => `其他 ${n} 项`,
+    bucketTotal: "合计",
+    legendHitRate: "缓存命中率",
     empty: "暂无用量记录",
-    successAborted: "已中断（不计入）",
     errors: "异常",
     errorsTotal: "总数",
     errorsUnexpected: "未预期",

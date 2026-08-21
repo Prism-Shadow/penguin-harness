@@ -34,6 +34,7 @@ import {
   parseCommandPolicy,
   GenerativeModel,
   canonicalClientType,
+  listEndpointModels as coreListEndpointModels,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
@@ -43,6 +44,7 @@ import {
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type {
   CommandPolicyRule,
   LLMOutcome,
@@ -54,6 +56,8 @@ import type {
   ChatDefaultsDto,
   CommandPolicyDto,
   CommandPolicyRuleDto,
+  EndpointModelListRequest,
+  EndpointModelListResponse,
   ModelInfo,
   ModelPricingDto,
   ModelProtocolDetectRequest,
@@ -90,6 +94,42 @@ type RawTable = Record<string, unknown>;
 export function maskApiKey(key: string): string {
   if (key.length <= 12) return "***";
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
+/**
+ * Whether a model's env fallback is *first-party*: the entry points at the provider's own
+ * official endpoint, so consulting the vendor variable (ANTHROPIC_API_KEY, …) is the intended
+ * configuration and its value may be previewed masked. Excluded — no detection, no preview:
+ *
+ * - gateway groups (they resell through generic OpenAI-protocol clients whose fallback is
+ *   OPENAI_API_KEY, the *official OpenAI* variable; steering it to a reseller endpoint is
+ *   exactly the misconfiguration the preview must not encourage) and the custom group;
+ * - user-defined groups (not in MODEL_PROVIDERS at all);
+ * - any entry re-pointed away from the official shape: a catalog preset whose client_type or
+ *   base_url differs from the catalog's own values, or an off-catalog vendor-group entry that
+ *   pins either (a bare auto-routed id targets the vendor's first-party client and stays in).
+ *
+ * `envKey` itself is still reported for every routable entry — this gate governs only the
+ * presence preview.
+ */
+export function envFallbackFirstParty(entry: {
+  provider: string;
+  modelId: string;
+  clientType: string | undefined;
+  baseUrl: string | undefined;
+}): boolean {
+  const group = providerInfo(entry.provider);
+  if (group === undefined || group.id === "custom" || group.gatewayBaseUrl !== undefined) {
+    return false;
+  }
+  const cat = catalogEntryFor(entry.provider, entry.modelId);
+  if (cat !== undefined) {
+    return (
+      canonicalClientType(entry.clientType) === canonicalClientType(cat.clientType) &&
+      entry.baseUrl === cat.baseUrl
+    );
+  }
+  return entry.clientType === undefined && entry.baseUrl === undefined;
 }
 
 function asTable(v: unknown): RawTable {
@@ -152,6 +192,13 @@ function showRef(provider: string, modelId: string): string {
  */
 const PROBE_PROMPT =
   'ping - reply with the single word "pong" and nothing else. Do not think or explain.\n<think></think>';
+
+/**
+ * Endpoint model-listing bound: the SDK paginates `/models` under the hood, so one slow
+ * or endless gateway must not pin the add-group dialog — 20s matches the connectivity
+ * test's request timeout.
+ */
+const LIST_MODELS_TIMEOUT_MS = 20_000;
 
 /**
  * Speed probe prompt: a one-word answer can't be timed (a compliant model emits 1-3
@@ -467,15 +514,15 @@ export class ProjectConfigService {
    * Model connectivity test: the model reference `(provider, modelId)` is submitted
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
-   * system prompt, thinking disabled, a tiny output cap, 20s timeout — just to see
-   * whether the endpoint answers. The model id sent to AgentHub is `modelId`
-   * itself (the upstream id verbatim; client_type inference follows it).
+   * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout —
+   * just to see whether the endpoint answers. The model id sent to AgentHub is
+   * `modelId` itself (the upstream id verbatim; client_type inference follows it).
    *
-   * A reasoning-heavy model may ignore the disabled thinking level and burn the
-   * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
-   * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
-   * demonstrably streamed model output, which is everything a connectivity test
-   * proves, so that case counts as ok too (see probeVerdict).
+   * A reasoning-heavy model can spend the whole tiny output cap on thinking
+   * (finish_reason=length with no text — AgentHub raises EmptyResponseError,
+   * collapsed to a malformed outcome): the endpoint demonstrably streamed model
+   * output, which is everything a connectivity test proves, so that case counts as
+   * ok too (see probeVerdict).
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
@@ -514,7 +561,9 @@ export class ProjectConfigService {
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         maxTokens: VISION_PROBE_MAX_TOKENS,
         requestTimeoutMs: VISION_PROBE_TIMEOUT_MS,
       });
@@ -580,7 +629,9 @@ export class ProjectConfigService {
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
         tools: [],
-        thinkingLevel: "none",
+        // The lowest real level, not "none": several reasoning endpoints reject a request
+        // that disables thinking outright, and a probe must not fail on the knob it sends.
+        thinkingLevel: "low",
         // Speed mode pairs a raised cap with a prompt that keeps generating (see
         // SPEED_PROBE_PROMPT), so the stream lasts long enough for TTFT/TPS to describe
         // decoding rather than one round trip; the plain connectivity test keeps the
@@ -659,6 +710,50 @@ export class ProjectConfigService {
   }
 
   /**
+   * Endpoint model listing for the add-group import (see EndpointModelListRequest). All
+   * parameters come from the request — a group being created has no stored entry to fall
+   * back to; an omitted key follows the same environment chain as the connectivity test
+   * (the wrapped SDK reads the protocol's own variable). Never throws: SDK construction
+   * and request failures collapse into `{ ok:false, message }`, an AgentHub
+   * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
+   * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
+   * timed out. Nothing cancels the request behind it: the race only stops waiting, and a
+   * later rejection is already handled by the race itself. The listing is returned
+   * verbatim; dedup against the config is the caller's policy, exactly like the probe
+   * routes never write anything either.
+   */
+  async listEndpointModels(
+    req: EndpointModelListRequest,
+    listImpl: typeof coreListEndpointModels = coreListEndpointModels,
+    timeoutMs: number = LIST_MODELS_TIMEOUT_MS,
+  ): Promise<EndpointModelListResponse> {
+    const clientType = canonicalClientType(req.clientType) ?? req.clientType;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const listing = listImpl({
+        clientType,
+        baseUrl: req.baseUrl,
+        ...(req.apiKey ? { apiKey: req.apiKey } : {}),
+      });
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("model listing timed out")), timeoutMs);
+        timer.unref?.();
+      });
+      const models = await Promise.race([listing, timeout]);
+      return { ok: true, models };
+    } catch (err) {
+      const unsupported = err instanceof Error && err.name === "UnsupportedOperationError";
+      return {
+        ok: false,
+        ...(unsupported ? { unsupported: true } : {}),
+        message: (err instanceof Error ? err.message : String(err)).slice(0, 300),
+      };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  /**
    * GET models view: masks credential (inline fields), flags the default Model;
    * the group is the entry's `provider` field, looked up in the built-in catalog by
    * the `(provider, model_id)` pair to fill in displayName / envKey (entries outside
@@ -710,6 +805,17 @@ export class ProjectConfigService {
         const apiKey = optStr(m.api_key);
         const credBaseUrl = optStr(m.base_url);
         const createdAt = optStr(m.created_at);
+        // Masked env-fallback preview, first-party entries only (see envFallbackFirstParty):
+        // presence is implied by the field, the plaintext never leaves the server, and an
+        // empty variable counts as absent — it would not authenticate either. Read from this
+        // process's env, which on the desktop already includes the imported login-shell
+        // variables.
+        const envValue =
+          envKey !== undefined &&
+          envFallbackFirstParty({ provider, modelId, clientType, baseUrl: credBaseUrl })
+            ? (process.env[envKey] ?? "")
+            : "";
+        const envKeyMasked = envValue !== "" ? maskApiKey(envValue) : undefined;
         const info: ModelInfo = {
           provider,
           modelId,
@@ -726,6 +832,7 @@ export class ProjectConfigService {
           ...(maxTokens !== undefined ? { maxTokens } : {}),
           ...(fastMode !== undefined ? { fastMode } : {}),
           ...(envKey ? { envKey } : {}),
+          ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
@@ -930,11 +1037,10 @@ export function isProbeContent(msg: OmniMessage): boolean {
 /**
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
- * model that ignores the disabled thinking level and burns the probe's tiny max_tokens
- * entirely on thinking (finish_reason=length -> AgentHub's EmptyResponseError) — the
- * endpoint, credential, and model id all demonstrably work, which is what a connectivity
- * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
- * received) fails with the outcome's message.
+ * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
+ * AgentHub's EmptyResponseError) — the endpoint, credential, and model id all demonstrably
+ * work, which is what a connectivity test measures. Everything else (auth/parameter failures,
+ * timeouts, malformed with nothing received) fails with the outcome's message.
  */
 export function probeVerdict(
   outcome: LLMOutcome,

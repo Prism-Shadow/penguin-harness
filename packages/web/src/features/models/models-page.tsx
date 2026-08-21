@@ -54,6 +54,7 @@ import { FieldError, FieldLabel } from "../../components/ui/field";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
@@ -97,6 +98,7 @@ import {
 } from "./model-group-expansion";
 import { clearDraftModelRef } from "../chat/draft-cache";
 import { syncRowsWithCatalog } from "./catalog-sync";
+import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk, toneStrip } from "../../lib/tone";
@@ -144,6 +146,9 @@ function inputToUsd(inputStr: string, currency: Currency): string {
 
 /** Group-header action glyphs (24x24 line paths): add, bulk key, external link, gauge for speed test. */
 const PLUS_ICON = "M12 5v14M5 12h14";
+/** Trash can (same drawing as the agent cards' delete action). */
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 const EXTERNAL_LINK_ICON =
@@ -224,6 +229,8 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
+  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
@@ -342,8 +349,25 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   };
   if (m.displayName !== undefined) row.displayName = m.displayName;
   if (m.envKey !== undefined) row.envKey = m.envKey;
+  if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
   return row;
+}
+
+/**
+ * The env-fallback variables the server proved are set (exported for unit tests): it reports
+ * `envKeyMasked` only for a variable that currently holds a value, and an environment is
+ * process-wide, so one row carrying it settles the question for every entry reading the same
+ * variable. A hint may promise "leave this empty and the environment covers it" only for a
+ * variable in here — elsewhere the page cannot tell a set variable from an absent one, and an
+ * empty field would leave the model with no key at all.
+ */
+export function detectedEnvKeys(rows: readonly RowState[]): Set<string> {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    if (row.envKeyMasked !== undefined && row.envKey !== undefined) keys.add(row.envKey);
+  }
+  return keys;
 }
 
 /**
@@ -481,10 +505,10 @@ export function ModelsPage() {
   }, [projectId]);
   /** Vendor group (provider id) currently having its API key configured in bulk. */
   const [groupKeyFor, setGroupKeyFor] = useState<string | null>(null);
-  /** "Add group" popup (user-defined group): a valid name proceeds to that group's add-model dialog. */
+  /** User-defined group (provider id) whose delete confirmation is open (built-in groups never offer this). */
+  const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
+  /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
   const [addGroupOpen, setAddGroupOpen] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [groupNameError, setGroupNameError] = useState<string | null>(null);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -559,6 +583,8 @@ export function ModelsPage() {
   };
 
   const groups = useMemo(() => (rows ? groupModelRows(rows, query) : []), [rows, query]);
+  /** Env-fallback variables the server reported a value for: the only ones a key hint may promise. */
+  const envKeysDetected = useMemo(() => detectedEnvKeys(rows ?? []), [rows]);
   /** Non-empty search query: groups are filtered to matches and force-opened while it lasts. */
   const searching = query.trim() !== "";
 
@@ -617,24 +643,41 @@ export function ModelsPage() {
   };
 
   /**
-   * "Add group" confirm: a valid name that doesn't conflict with a built-in group or an
-   * existing provider proceeds directly to that group's add-model dialog — groups are
-   * carried by the model entry's provider field and aren't persisted separately, so the
-   * group appears once the first model saves successfully (canceling leaves nothing behind).
+   * Import-mode landing from the add-group dialog: one table PUT with the appended rows,
+   * then the new group is opened so the result is visible immediately. Returns persist's
+   * verdict so the dialog stays up (fields intact) when saving failed.
+   *
+   * A failed save is rolled back to the table as it stood: persist otherwise keeps the
+   * attempted rows on screen (right for a field edit the user is still holding), which
+   * here would show the whole group as if it existed and make the dialog's own name check
+   * report the name as taken on the retry.
    */
-  const confirmAddGroup = () => {
-    const name = groupName.trim();
-    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(name)) {
-      setGroupNameError(S.models.groupNameInvalid);
-      return;
+  const importGroup = async (
+    nextRows: RowState[],
+    name: string,
+    added: number,
+    skipped: number,
+  ): Promise<boolean> => {
+    if (!projectId) return false;
+    const before = rows;
+    const ok = await persist(
+      nextRows,
+      defaultModel,
+      visionModel,
+      S.models.groupImported(added, skipped),
+    );
+    if (!ok) {
+      setRows(before);
+      return false;
     }
-    if (MODEL_PROVIDERS.some((p) => p.id === name) || rows?.some((r) => r.provider === name)) {
-      setGroupNameError(S.models.groupNameExists);
-      return;
+    if (!expanded.has(name)) {
+      const next = new Set(expanded);
+      next.add(name);
+      setExpanded(next);
+      saveExpandedProviders(projectId, next);
     }
     setAddGroupOpen(false);
-    setGroupName("");
-    setAddingTo(name);
+    return true;
   };
   const editingRow =
     editing !== null ? rows?.find((r) => sameModelRef(rowRef(r), editing)) : undefined;
@@ -794,6 +837,23 @@ export function ModelsPage() {
                         </span>
                       </Button>
                     )}
+                    {isOwner && !MODEL_PROVIDERS.some((p) => p.id === group.provider.id) && (
+                      // Whole-group delete, user-defined groups only: a built-in group is
+                      // catalog identity (its rows delete one by one), a user-defined group
+                      // exists solely through its rows and can go as a unit.
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={busy}
+                        aria-label={`${S.models.deleteGroup} ${group.provider.label}`}
+                        title={S.models.deleteGroup}
+                        onClick={() => setDeleteGroupFor(group.provider.id)}
+                      >
+                        <GlyphIcon d={TRASH_ICON} size={13} />
+                        <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
+                      </Button>
+                    )}
                     {group.provider.apiKeyUrl && (
                       // External link: its label is the last one admitted as space grows
                       // (@4xl); below that it collapses to the external-link glyph with a
@@ -862,11 +922,7 @@ export function ModelsPage() {
               // "Add group" (user-defined group): hidden while searching (the group list itself is being filtered).
               <button
                 type="button"
-                onClick={() => {
-                  setGroupName("");
-                  setGroupNameError(null);
-                  setAddGroupOpen(true);
-                }}
+                onClick={() => setAddGroupOpen(true)}
                 className="w-full rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
               >
                 ＋ {S.models.addGroup}
@@ -885,6 +941,7 @@ export function ModelsPage() {
             MODEL_PROVIDERS.find((p) => p.id === groupKeyFor) ?? userProviderInfo(groupKeyFor)
           }
           count={rows.filter((r) => r.provider === groupKeyFor).length}
+          detectedEnvKeys={envKeysDetected}
           onClose={() => setGroupKeyFor(null)}
           onSubmit={(key) => {
             const target = groupKeyFor;
@@ -907,6 +964,37 @@ export function ModelsPage() {
         />
       )}
 
+      {rows && deleteGroupFor !== null && (
+        <ConfirmModal
+          open
+          title={S.models.deleteGroupTitle}
+          tone="danger"
+          onClose={() => setDeleteGroupFor(null)}
+          onConfirm={() => {
+            const target = deleteGroupFor;
+            setDeleteGroupFor(null);
+            const removed = rows.filter((r) => r.provider === target);
+            if (removed.length === 0) return;
+            // Same pointer rule as single-model delete: a default/vision reference into the
+            // deleted group is dropped, otherwise the server rejects the dangling pair.
+            void persist(
+              rows.filter((r) => r.provider !== target),
+              defaultModel?.provider === target ? undefined : defaultModel,
+              visionModel?.provider === target ? undefined : visionModel,
+              S.models.groupDeleted(removed.length),
+            );
+          }}
+        >
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {/* Offered on user-defined groups only, whose display info is always synthesized. */}
+            {S.models.deleteGroupConfirm(
+              userProviderInfo(deleteGroupFor).label,
+              rows.filter((r) => r.provider === deleteGroupFor).length,
+            )}
+          </p>
+        </ConfirmModal>
+      )}
+
       {speedFor !== null && (
         <Modal open title={S.models.speedTestTitle} onClose={() => setSpeedFor(null)}>
           <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -927,44 +1015,17 @@ export function ModelsPage() {
           </div>
         </Modal>
       )}
-      {addGroupOpen && (
-        <Modal
-          open
-          title={S.models.addGroupTitle}
+      {rows && addGroupOpen && (
+        <AddGroupDialog
+          projectId={projectId}
+          rows={rows}
           onClose={() => setAddGroupOpen(false)}
-          widthClass="sm:max-w-sm"
-          footer={
-            <>
-              <Button onClick={() => setAddGroupOpen(false)}>{S.common.cancel}</Button>
-              <Button variant="primary" onClick={confirmAddGroup}>
-                {S.common.confirm}
-              </Button>
-            </>
-          }
-        >
-          <div className="block">
-            <Input
-              size="sm"
-              label={S.models.groupNameLabel}
-              info={S.models.addGroupDesc}
-              infoLabel={S.models.groupNameLabel}
-              required
-              value={groupName}
-              invalid={Boolean(groupNameError)}
-              onChange={(e) => {
-                setGroupName(e.target.value);
-                setGroupNameError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") confirmAddGroup();
-              }}
-              placeholder={S.models.groupNameHint}
-              className="font-mono"
-              autoFocus
-            />
-            {groupNameError && <FieldError>{groupNameError}</FieldError>}
-          </div>
-        </Modal>
+          onManual={(name) => {
+            setAddGroupOpen(false);
+            setAddingTo(name);
+          }}
+          onImport={importGroup}
+        />
       )}
 
       {rows && (addingTo !== null || editingRow) && (
@@ -973,6 +1034,7 @@ export function ModelsPage() {
           row={addingTo !== null ? null : (editingRow ?? null)}
           addProvider={addingTo ?? "custom"}
           existingRefs={rows.map(rowRef)}
+          detectedEnvKeys={envKeysDetected}
           currency={currency}
           canEdit={isOwner}
           isDefault={editingRow !== undefined && sameModelRef(rowRef(editingRow), defaultModel)}
@@ -1017,6 +1079,312 @@ export function ModelsPage() {
 }
 
 // ---------------------------------------------------------------------------
+// Add-group dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * "Add group" in two modes, chosen under the name field:
+ *
+ * - **Create only** — the light path: a valid name hands off to that group's add-model
+ *   dialog (groups are carried by model entries, so the group appears once the first
+ *   model saves; canceling leaves nothing behind).
+ * - **Import models** — fills the brand-new group from its endpoint, in the add-model
+ *   dialog's field rhythm: API key first, then the base URL with the detect action at its
+ *   top-right and the in-field protocol picker as manual override (ProtocolSuffixMenu —
+ *   the same one-to-one path menu). Only once a protocol is determined (detected or
+ *   picked) does the "import all models" action appear; it lists the endpoint
+ *   (POST models/list) and hands the appended rows to the page for one table PUT.
+ *
+ * Detection failure turns the suffix amber and keeps both ways out usable — pick the
+ * protocol by hand, or switch back to create-only. Errors render inside the dialog;
+ * nothing persists until a listing succeeded.
+ */
+function AddGroupDialog({
+  projectId,
+  rows,
+  onClose,
+  onManual,
+  onImport,
+}: {
+  projectId: string;
+  rows: RowState[];
+  onClose: () => void;
+  /** Create-only confirm: open the add-model dialog for the named group. */
+  onManual: (name: string) => void;
+  /** Import landing: persist the appended rows; resolves false when saving failed (the dialog stays open). */
+  onImport: (
+    nextRows: RowState[],
+    name: string,
+    added: number,
+    skipped: number,
+  ) => Promise<boolean>;
+}) {
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"create" | "import">("create");
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  /** The protocol the import will speak: null until a detection lands or the user picks one. */
+  const [clientType, setClientType] = useState<ProtocolClientType | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectFailed, setDetectFailed] = useState(false);
+  /** Progress line while list/save runs (null = idle); also gates every action against re-entry. */
+  const [importing, setImporting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** Detection run counter: a manual pick or an edited URL supersedes an in-flight run (same convention as the model dialog). */
+  const detectSeq = useRef(0);
+
+  const validName = (): string | null => {
+    const trimmed = name.trim();
+    if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(trimmed)) {
+      setNameError(S.models.groupNameInvalid);
+      return null;
+    }
+    if (MODEL_PROVIDERS.some((p) => p.id === trimmed) || rows.some((r) => r.provider === trimmed)) {
+      setNameError(S.models.groupNameExists);
+      return null;
+    }
+    return trimmed;
+  };
+
+  const confirmCreate = () => {
+    const n = validName();
+    if (n) onManual(n);
+  };
+
+  const detect = async () => {
+    const url = baseUrl.trim();
+    setError(null);
+    if (!detectableBaseUrl(url)) {
+      setError(S.models.groupImportNeedUrl);
+      return;
+    }
+    const seq = ++detectSeq.current;
+    setDetecting(true);
+    setDetectFailed(false);
+    try {
+      const key = apiKey.trim();
+      const res = await api.detectProtocol(projectId, {
+        baseUrl: url,
+        ...(key ? { apiKey: key } : {}),
+      });
+      if (seq !== detectSeq.current) return;
+      const detected = res.detected !== undefined ? protocolSelectorValue(res.detected) : null;
+      if (detected !== null) {
+        setClientType(detected);
+        toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+      } else {
+        setDetectFailed(true);
+        // Same condition the model dialog reports, so it gets the same sentence.
+        setError(S.models.detectFailedBody);
+      }
+    } catch (e) {
+      if (seq !== detectSeq.current) return;
+      setDetectFailed(true);
+      setError(apiErrorText(e));
+    } finally {
+      if (seq === detectSeq.current) setDetecting(false);
+    }
+  };
+
+  const pickProtocol = (t: ProtocolClientType) => {
+    detectSeq.current++;
+    setDetecting(false);
+    setDetectFailed(false);
+    setError(null);
+    setClientType(t);
+  };
+
+  const runImport = async () => {
+    const n = validName();
+    if (!n || clientType === null) return;
+    const url = baseUrl.trim();
+    if (!detectableBaseUrl(url)) {
+      setError(S.models.groupImportNeedUrl);
+      return;
+    }
+    setError(null);
+    setImporting(S.models.groupImportListing);
+    try {
+      const key = apiKey.trim();
+      const listed = await api.listEndpointModels(projectId, {
+        baseUrl: url,
+        clientType,
+        ...(key ? { apiKey: key } : {}),
+      });
+      if (!listed.ok || !listed.models) {
+        setError(
+          listed.unsupported
+            ? S.models.groupImportUnsupported
+            : (listed.message ?? S.models.groupImportFailed),
+        );
+        return;
+      }
+      const built = buildImportedRows(rows, n, listed.models, {
+        baseUrl: url,
+        clientType,
+        apiKey: key,
+      });
+      if (built.added === 0) {
+        setError(S.models.groupImportEmpty);
+        return;
+      }
+      setImporting(S.models.groupImportSaving(built.added));
+      await onImport([...rows, ...built.rows], n, built.added, built.skipped);
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const busy = importing !== null;
+  const suffixLabel =
+    clientType === null ? S.models.protocolUnset : protocolPathForModel(name.trim(), clientType);
+
+  return (
+    <Modal
+      open
+      title={S.models.addGroupTitle}
+      onClose={() => !busy && onClose()}
+      widthClass="sm:max-w-sm"
+      footer={
+        <>
+          <Button disabled={busy} onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          {mode === "create" ? (
+            <Button variant="primary" onClick={confirmCreate}>
+              {S.common.confirm}
+            </Button>
+          ) : (
+            // The import action exists only once the protocol is determined (detected or
+            // hand-picked): before that there is nothing meaningful to run.
+            clientType !== null && (
+              <Button variant="primary" disabled={busy} onClick={() => void runImport()}>
+                {S.models.groupImportAll}
+              </Button>
+            )
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="block">
+          <Input
+            size="sm"
+            label={S.models.groupNameLabel}
+            info={S.models.addGroupDesc}
+            infoLabel={S.models.groupNameLabel}
+            required
+            value={name}
+            invalid={Boolean(nameError)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && mode === "create") confirmCreate();
+            }}
+            placeholder={S.models.groupNameHint}
+            className="font-mono"
+            autoFocus
+          />
+          {nameError && <FieldError>{nameError}</FieldError>}
+        </div>
+        <Segmented
+          cols={2}
+          options={[
+            { value: "create", label: S.models.groupModeCreate },
+            { value: "import", label: S.models.groupModeImport },
+          ]}
+          value={mode}
+          onChange={setMode}
+        />
+        {mode === "import" && (
+          <>
+            <PasswordInput
+              size="sm"
+              label={S.models.apiKey}
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setError(null);
+              }}
+              className="font-mono"
+              autoComplete="off"
+              placeholder={S.models.groupImportKeyHint}
+            />
+            {/* Base URL with the detect action at its top-right and the in-field protocol
+                picker — the add-model dialog's idiom, so the two flows read as one. */}
+            <div className="block">
+              <span className="mb-1 flex items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                  {S.models.baseUrl}
+                  <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+                    *
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={detecting || busy}
+                  onClick={() => void detect()}
+                  title={S.models.detectProtocolHint}
+                  className="flex shrink-0 items-center gap-1 text-xs text-brand-600 underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline dark:text-brand-300 dark:disabled:text-gray-500"
+                >
+                  {detecting && (
+                    <span
+                      aria-hidden
+                      className="inline-block h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-current border-t-transparent"
+                    />
+                  )}
+                  {detecting ? S.models.detecting : S.models.detectProtocol}
+                </button>
+              </span>
+              <div className="relative">
+                <Input
+                  size="sm"
+                  aria-label={S.models.baseUrl}
+                  required
+                  value={baseUrl}
+                  disabled={busy}
+                  onChange={(e) => {
+                    // An edited URL retires the previous verdict: protocol and failure tone
+                    // both described the old endpoint.
+                    detectSeq.current++;
+                    setDetecting(false);
+                    setDetectFailed(false);
+                    setError(null);
+                    setBaseUrl(e.target.value);
+                  }}
+                  className="font-mono"
+                  style={{ paddingRight: `calc(${displayWidthCh(suffixLabel)}ch + 2.25rem)` }}
+                  title={S.models.baseUrlSuffixTitle}
+                  placeholder="https://…"
+                />
+                <div className="absolute inset-y-0 right-1 flex items-center">
+                  <ProtocolSuffixMenu
+                    value={clientType}
+                    path={suffixLabel}
+                    detecting={detecting}
+                    tone={detectFailed ? "warn" : null}
+                    onPick={pickProtocol}
+                  />
+                </div>
+              </div>
+            </div>
+            {importing !== null && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">{importing}</p>
+            )}
+          </>
+        )}
+        {error && <FieldError>{error}</FieldError>}
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Model card
 // ---------------------------------------------------------------------------
 
@@ -1048,12 +1416,15 @@ function ModelCard({
     priced
       ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
       : null,
-    // Key status: shows the mask when configured, otherwise "not configured" (doesn't mention environment variables).
+    // Key status: the mask when configured; with no stored key, a detected first-party env
+    // fallback shows that variable's value under the same mask (the server only reports
+    // envKeyMasked for official vendor entries), so the row reads like a configured one;
+    // otherwise "not configured".
     row.credential?.apiKeyMasked && !row.clearApiKey
       ? row.credential.apiKeyMasked
       : hasKey(row)
         ? S.models.keyConfigured
-        : S.models.noKey,
+        : (row.envKeyMasked ?? S.models.noKey),
   ].filter((v): v is string => v !== null);
 
   const speedBadges =
@@ -1155,6 +1526,7 @@ function ModelDialog({
   row,
   addProvider,
   existingRefs,
+  detectedEnvKeys,
   currency,
   canEdit,
   isDefault,
@@ -1167,6 +1539,8 @@ function ModelDialog({
   /** Target group for add mode (row is null): the group of the header entry point / falls back to custom when empty. */
   addProvider: string;
   existingRefs: ModelRefDto[];
+  /** Env-fallback variables the server reported a value for (see detectedEnvKeys): the only ones the key hint may promise. */
+  detectedEnvKeys: ReadonlySet<string>;
   currency: Currency;
   canEdit: boolean;
   isDefault: boolean;
@@ -1734,21 +2108,30 @@ function ModelDialog({
     </>
   );
 
-  // Hint for a blank API key: an existing key means keep the original value;
-  // no existing key but an env var fallback exists means use the env var
-  // (the fallback name resolves live, so it updates as the id / protocol is edited).
+  // The variable a blank API key would actually be covered by: no stored key, the entry
+  // routes to a variable (resolved live, so it follows the id / protocol as they are
+  // edited), and that variable is one the server reported a value for. Knowing a variable's
+  // *name* is not knowing it is set — promising an unset one would tell the user to leave
+  // the field empty and leave the model with no key at all.
+  const envHintKey =
+    !form.credential?.apiKeyMasked && liveEnvKey !== undefined && detectedEnvKeys.has(liveEnvKey)
+      ? liveEnvKey
+      : undefined;
+  // Hint for a blank API key: an existing key means keep the original value; a covered
+  // variable means the environment answers for it; neither means there is nothing truthful
+  // to say, so the field carries no placeholder.
   const apiKeyHint = form.credential?.apiKeyMasked
     ? S.models.apiKeyKeepHint
-    : liveEnvKey
-      ? S.models.apiKeyEnvHint(liveEnvKey)
-      : S.models.apiKeyKeepHint;
+    : envHintKey !== undefined
+      ? S.models.apiKeyEnvHint(envHintKey)
+      : undefined;
   // Default endpoint note (zhipu / moonshot each have domestic / international
-  // endpoints): shown only when the env fallback hint appears (no existing key)
-  // and this entry actually goes through the provider's own client (the
+  // endpoints): shown only when the env fallback hint appears (hence keyed off the same
+  // envHintKey) and this entry actually goes through the provider's own client (the
   // resolved envKey matches the provider) — entries going through the OpenAI
   // client (OPENAI_API_KEY) have no provider default endpoint to speak of.
   const envNote =
-    !form.credential?.apiKeyMasked && liveEnvKey && liveEnvKey === dialogProvider?.envKey
+    envHintKey !== undefined && envHintKey === dialogProvider?.envKey
       ? S.models.providerEnvNotes[form.provider]
       : undefined;
 
@@ -1952,6 +2335,17 @@ function ModelDialog({
                 {S.models.clearApiKey}
               </label>
             )}
+          </div>
+        )}
+        {/* Detected first-party env fallback, shown like a stored key (same slot, same mask
+            rule): the created-at position says where the key comes from instead, and there is
+            no clear control — an environment variable cannot be cleared from here. Typing a new
+            key hides this like the stored block; once saved, the stored key takes priority and
+            the display switches to the stored form. */}
+        {!form.credential?.apiKeyMasked && form.envKeyMasked !== undefined && !form.apiKeyInput && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <span className="font-mono">{form.envKeyMasked}</span>
+            <span className="text-gray-400">{S.models.readFromEnv}</span>
           </div>
         )}
 
@@ -2349,11 +2743,14 @@ function ModelDialog({
 function GroupKeyDialog({
   provider,
   count,
+  detectedEnvKeys,
   onClose,
   onSubmit,
 }: {
   provider: ModelProviderInfo;
   count: number;
+  /** Env-fallback variables the server reported a value for (see detectedEnvKeys). */
+  detectedEnvKeys: ReadonlySet<string>;
   onClose: () => void;
   onSubmit: (apiKey: string) => void;
 }) {
@@ -2383,7 +2780,13 @@ function GroupKeyDialog({
           className="font-mono"
           autoComplete="off"
           autoFocus
-          placeholder={S.models.apiKeyEnvHint(provider.envKey)}
+          // Only promise the variable when the server reported a value for it: the group's
+          // variable name is always known, which says nothing about whether it is set.
+          placeholder={
+            detectedEnvKeys.has(provider.envKey)
+              ? S.models.apiKeyEnvHint(provider.envKey)
+              : undefined
+          }
         />
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {S.models.groupApiKeyHint(count)}

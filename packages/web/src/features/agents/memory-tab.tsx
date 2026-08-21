@@ -66,10 +66,7 @@ import {
 } from "./memory-transfer";
 import type { MemoryImportPlan } from "./memory-transfer";
 
-/** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
-function bodyWithoutFrontmatter(content: string): string {
-  return content.replace(/^\ufeff?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-}
+import { bodyWithoutFrontmatter } from "../../lib/frontmatter";
 
 /** Same breakpoint as the chat page's panels: \u22651024px the view opens as a side Drawer, below it as a bottom Sheet. */
 const DESKTOP_QUERY = "(min-width: 1024px)";

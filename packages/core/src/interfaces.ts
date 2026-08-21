@@ -277,6 +277,14 @@ export interface SubagentHandle {
   /** The child Session's id: the origin hop of messages produced by run; `subagent_id` is derived from its tail for the frontend to correlate. */
   sessionId: string;
   /**
+   * One-shot take of the child's origin-tagged `session_meta`: a background launch
+   * (run_subagent with `run_in_background`) forwards it synchronously so hosts learn of the
+   * child before any collect window runs; `run` then skips its own meta forwarding. Null
+   * once taken (or once `run` already sent it). Optional — older embedders' handles simply
+   * leave background launches without an upfront meta.
+   */
+  takeMeta?(): OmniMessage | null;
+  /**
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
    * child Session's `session_meta`, and tool_calls received by the forwarded approval callback
@@ -369,6 +377,41 @@ export interface EnvironmentServices {
   commandSessions?: CommandSessionManager;
   /** Registry of background subagent sessions (shared by `run_subagent` / `input_subagent`); constructed and injected internally by Environment. */
   subagentSessions?: SubagentSessionManager;
+  /**
+   * Sink for background-task completion reports (`run_in_background` launches): tools arm a
+   * completion watcher that calls this when the task settles; Environment forwards it to the
+   * listener the Session attached (see EnvironmentInterface.setBackgroundTaskListener).
+   * Injected internally by Environment.
+   */
+  backgroundDone?: (event: BackgroundTaskDoneEvent) => void;
+  /**
+   * Live forwarding sink for background-launched subagents: the child's origin-tagged
+   * messages flow here the moment its pump produces them, so hosts can stream them to the
+   * frontend past the launching turn's end (display copies only — the child's own Trace is
+   * the durable record). Injected internally by Environment; forwarded to the listener the
+   * Session attached (see EnvironmentInterface.setBackgroundMessageListener).
+   */
+  backgroundForward?: (msg: OmniMessage) => void;
+}
+
+/**
+ * Completion report of one background-launched task (`exec_command` / `run_subagent` with
+ * `run_in_background`), emitted when the task settles and delivered to the Session as a
+ * harness user message (see Session's background-notice queue).
+ */
+export interface BackgroundTaskDoneEvent {
+  /** Which background family settled. */
+  kind: "command" | "subagent";
+  /** The registry handle the model holds: `process_id` or `subagent_id`. */
+  id: string;
+  /** What was launched: the command string, or the subagent prompt's first line (display only, truncated by the producer). */
+  label: string;
+  /** Terminal status of the run. */
+  status: "completed" | "failed";
+  /** One-line terminal detail (exit code / signal / subagent note); empty when there is none. */
+  detail: string;
+  /** Tail of the yet-undelivered output at settle time (capped by the producer); empty when nothing was pending. */
+  output: string;
 }
 
 /** Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig". */
@@ -443,6 +486,13 @@ export interface BackgroundCommandInfo {
   cwd: string;
   startedAt: number;
   running: boolean;
+  /**
+   * The service the process serves, when one was detected: the last local URL its output
+   * printed (may carry a path), else `http://localhost:<port>` synthesized from a listen-port
+   * probe of its process group (refresh via `probeBackgroundCommandServices`). Absent when
+   * neither source has one.
+   */
+  serviceUrl?: string;
 }
 
 /**
@@ -464,6 +514,32 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
+   * on it: a `run_in_background` child outlives the call that launched it, and evicting the
+   * Session while it works strands its completion report and live messages. Optional, like
+   * listBackgroundCommands.
+   */
+  hasRunningBackgroundSubagents?(): boolean;
+  /**
+   * Refreshes the listen-port probe behind `BackgroundCommandInfo.serviceUrl` for running
+   * sessions whose output printed no URL (TTL-cached and time-bounded per session; see
+   * command/port-probe.ts). Hosts call it before reading the list when they want probed
+   * URLs; the list itself stays synchronous. Optional, like listBackgroundCommands.
+   */
+  probeBackgroundCommandServices?(): Promise<void>;
+  /**
+   * Attaches the single listener for background-task completion reports (`run_in_background`
+   * launches). Events fired before a listener exists are buffered and flushed on attach; after
+   * `dispose()` no further events fire. Optional — environments without background tools omit it.
+   */
+  setBackgroundTaskListener?(listener: (event: BackgroundTaskDoneEvent) => void): void;
+  /**
+   * Attaches the single listener for live-forwarded background-subagent messages (see
+   * EnvironmentServices.backgroundForward). Same buffering and dispose semantics as
+   * setBackgroundTaskListener. Optional.
+   */
+  setBackgroundMessageListener?(listener: (msg: OmniMessage) => void): void;
   /** Releases runtime resources held by the environment (e.g. managed long-running command sessions); called by the host when the Session ends. Optional, idempotent. */
   dispose?(): void;
 }

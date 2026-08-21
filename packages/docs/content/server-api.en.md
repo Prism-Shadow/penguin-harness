@@ -122,6 +122,7 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 | PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order and reports the first served protocol: `{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/list | Endpoint model listing for the add-group import: the ids the endpoint serves on a detected protocol: `{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | Vision capability probe: sends one 1x1 image on this model's credential (a real, billed completion): `{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
@@ -173,7 +174,7 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /usage | Usage statistics; query parameters `from`, `to`, `groupBy`, `agentId`, `provider`, `modelId` |
+| GET | /usage | Usage statistics; query parameters `from`, `to`, `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`), `groupBy`, `granularity` (`minute` / `hour` / `day` / `week` / `month` time-series precision, default `day`; oversized range × precision combinations are rejected), `agentId`, `provider`, `modelId` |
 | GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `agentId` filter → `{items, total}` |
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
@@ -203,7 +204,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
 | POST | /compact | Trigger context compaction: 202; 409 when there is nothing to compact, the reason carried by the code — `compaction_not_configured` (this Agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet), `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart reports availability from its Trace, so an existing conversation stays compactable without running a Task first |
-| GET | /processes | Background processes the conversation started (`exec_command`s promoted past their yield window). Served from the active runtime only — an evicted or never-loaded session truthfully reports an empty list |
+| GET | /processes | Background processes the conversation started (`exec_command`s promoted past their yield window). Served from the active runtime only — an evicted or never-loaded session truthfully reports an empty list. Rows carry `serviceUrl` when a served address was detected (the last local URL the output printed, else a listen-port probe of the process group, refreshed on each fetch) |
 | POST | /processes/:processId/kill | Stop one background process (SIGTERM to the whole process group, SIGKILL after a grace period); the entry drops from the list. 404 `process_not_found` when it is gone |
 | DELETE | /processes/:processId | Remove one **exited** process entry from the list: 409 `process_running` while it still runs (stop it instead), 404 `process_not_found` when it is already gone. The entry leaves the runtime registry with the output captured from it, so `input_command` on that `process_id` fails afterwards |
 | GET | /files?path= | Browse the Workspace directory |
