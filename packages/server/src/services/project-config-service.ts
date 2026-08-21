@@ -403,15 +403,15 @@ export class ProjectConfigService {
    * Model connectivity test: the model reference `(provider, modelId)` is submitted
    * as a pair in the request body; sends one minimal request using that model's
    * config (optionally overridden with an unsaved apiKey / baseUrl) — no tools, no
-   * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout — just to see
-   * whether the endpoint answers. The model id sent to AgentHub is `modelId`
-   * itself (the upstream id verbatim; client_type inference follows it).
+   * system prompt, thinking at the lowest level, a tiny output cap, 20s timeout —
+   * just to see whether the endpoint answers. The model id sent to AgentHub is
+   * `modelId` itself (the upstream id verbatim; client_type inference follows it).
    *
-   * A reasoning-heavy model may still burn the
-   * whole tiny output cap on thinking (finish_reason=length with no text — AgentHub
-   * raises EmptyResponseError, collapsed to a malformed outcome): the endpoint
-   * demonstrably streamed model output, which is everything a connectivity test
-   * proves, so that case counts as ok too (see probeVerdict).
+   * A reasoning-heavy model can spend the whole tiny output cap on thinking
+   * (finish_reason=length with no text — AgentHub raises EmptyResponseError,
+   * collapsed to a malformed outcome): the endpoint demonstrably streamed model
+   * output, which is everything a connectivity test proves, so that case counts as
+   * ok too (see probeVerdict).
    *
    * Never throws: the LLM layer collapses auth/parameter/network errors into an
    * `LLMOutcome`, which is translated here into ok / message. Consumes very few
@@ -913,11 +913,10 @@ export function isProbeContent(msg: OmniMessage): boolean {
 /**
  * Probe verdict from the terminal LLM outcome. `completed` always passes. A `malformed`
  * ending after genuine streamed content also passes: the typical case is a reasoning-heavy
- * model that burns the probe's tiny max_tokens entirely on thinking
- * (finish_reason=length -> AgentHub's EmptyResponseError) — the
- * endpoint, credential, and model id all demonstrably work, which is what a connectivity
- * test measures. Everything else (auth/parameter failures, timeouts, malformed with nothing
- * received) fails with the outcome's message.
+ * model that spends the probe's tiny max_tokens entirely on thinking (finish_reason=length ->
+ * AgentHub's EmptyResponseError) — the endpoint, credential, and model id all demonstrably
+ * work, which is what a connectivity test measures. Everything else (auth/parameter failures,
+ * timeouts, malformed with nothing received) fails with the outcome's message.
  */
 export function probeVerdict(
   outcome: LLMOutcome,
