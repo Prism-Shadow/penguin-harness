@@ -46,6 +46,7 @@ import { resolveRoot } from "@prismshadow/penguin-core";
 import { machinesHttp } from "../machines/http.js";
 import { machinesProxy } from "../machines/proxy.js";
 import { MachinesService } from "../machines/service.js";
+import type { ParkedConnect } from "../machines/service.js";
 import { WorkflowRegistry } from "../workflows/registry.js";
 import { WorkflowLifecycle } from "../workflows/service.js";
 import { WorkflowStore } from "../workflows/store.js";
@@ -104,6 +105,15 @@ export type PlatformCtx = {
    * (and a default deployment, which never writes it) restores as confinement off.
    */
   sandbox?: SandboxSettings;
+  /**
+   * A machine connect that was in flight when this App parked. Delivered rather than
+   * suspended: a connect can spend minutes installing a Node runtime on the far side, and
+   * a push must not throw that away. The successor re-runs it (every step is idempotent —
+   * see MachinesService.park) with the parked log as its prefix. Omitted when no connect
+   * is running, which is the normal case, so an ordinary push keeps parking exactly the
+   * document it always did.
+   */
+  connect?: ParkedConnect;
 };
 
 export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
@@ -118,6 +128,11 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
         mode: "'read-only' | 'workspace-write' | 'danger-full-access'",
         "network?": "'none'",
         "maskPaths?": "string[]",
+      },
+      "connect?": {
+        machineId: "string",
+        "allowRestart?": "boolean",
+        log: "string[]",
       },
     }),
   ),
@@ -234,6 +249,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     });
     // `/server/<id>/api/…` — the same-origin proxy onto a connected machine's tunnel.
     const serverProxy = machinesProxy((id) => machines.tunnelPortFor(id));
+    // A connect the previous App was running rides the document across and continues here
+    // (see MachinesService.park/resume): the steps are idempotent, so the successor picks
+    // it up where it stands rather than making the user start over after a push.
+    if (context.connect !== undefined) machines.resume(context.connect);
     // The plugin seam (see ./plugin.ts). Every App creation — the packaged boot and each
     // hot-swap boot alike — offers plugins the definition view first, then the assembled
     // instance context. Workflows are built here, after registration closes, so a plugin
@@ -307,7 +326,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     if (caps === null) {
       console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
-      deps = buildAppDeps(caps, caps.overrides, () => sandbox.confiner(), workflowLifecycle ?? undefined);
+      deps = buildAppDeps(
+        caps,
+        caps.overrides,
+        () => sandbox.confiner(),
+        workflowLifecycle ?? undefined,
+      );
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
@@ -348,7 +372,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     //
     // DELIVERED (survives the swap; the successor adopts it at load):
     //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
-    //   - runtime singletons  db / auth / channels / config / proxy / desktop —
+    //   - ssh tunnels         OS processes + state file (pid, port)     → adoptedOrigin
+    //   - sandbox settings    parked doc `sandbox`                      → sandbox.configure
+    //   - workflow refs       parked doc `workflows`                    → lifecycle.reseed
+    //   - in-flight connect   parked doc `connect` (machine, opts, log) → machines.resume
+    //   - runtime singletons  db / auth / channels / config / proxy / desktop / plugins —
     //                         runtime-owned, re-claimed by every App; not this App's to park
     // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
     //   - scheduler           stop() now; successor start() reconciles missed fires
@@ -361,12 +389,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // DETACHED (the object survives, this App's grip on it does not):
     //   - pty exit listeners  unsubscribed, so a dead generation never releases a
     //                         registry id the successor owns
+    //   - tunnel exit handlers silenced (detach), so they stop mutating the state file
+    //                         the successor now adopts from
     // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
     // bounded by its own 10-minute cap, and a successful update restarts the process
     // anyway) and SSE subscriber closures (they serve the old generation's stream until
     // the client reloads on web_updated — the channel hub itself is runtime-owned).
-    // A build that adds a service with state of its own (sandbox settings, workflow
-    // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
+    // A build that adds a service with state of its own picks its list here — the list is
     // the contract, not a description of today's services.
     //
     // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
@@ -376,6 +405,8 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
       terminals.quiesce();
+      // Detaches the tunnels (the connect it also parks was read by park() above).
+      machines.park();
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
@@ -402,11 +433,16 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         // bundle blocks rather than silently un-confining.
         const parkedSandbox = sandbox.parkedSettings();
         const parkedWorkflows = workflowLifecycle?.refs() ?? [];
+        // Omitted unless a connect is actually running: an ordinary push keeps parking
+        // exactly the document it always did, which is what a connect-ignorant bundle can
+        // still accept (the same rule the sandbox field follows).
+        const parkedConnect = machines.park();
         return {
           motd: context.motd,
           terminals: terminals.handleIds(),
           ...(parkedWorkflows.length > 0 ? { workflows: parkedWorkflows } : {}),
           ...(parkedSandbox !== undefined ? { sandbox: parkedSandbox } : {}),
+          ...(parkedConnect !== undefined ? { connect: parkedConnect } : {}),
         };
       },
       info: () => ({

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
+import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import {
   PLUGINS_RESOURCE_ID,
   PluginHost,
@@ -111,13 +112,25 @@ describe("pluginHostFrom", () => {
   });
 });
 
+/**
+ * A registry that declares there is no business runtime behind it — the platform serves
+ * terminals only over one, and refuses to boot over a registry that says nothing (see
+ * hmr-resources.test.ts): these tests are that declared bare kernel.
+ */
+function bareKernel(): HotResources {
+  const r = new HotResources();
+  // Family-only descriptor = the host's declaration that no business runtime backs it.
+  r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+  return r;
+}
+
 describe("plugin seam on the real platform", () => {
   it("boots an App when the runtime published no host at all", async () => {
     const inst = await boot(
       packagedPlatform.impl,
       packagedPlatform.iface,
       initialDoc(packagedPlatform.iface, packagedPlatform.context),
-      new HotResources(),
+      bareKernel(),
     );
     try {
       expect(inst.api.info()).toMatchObject({ impl: "packaged" });
@@ -139,7 +152,7 @@ describe("plugin seam on the real platform", () => {
     });
     // The registry sits outside the reloadable tree and outlives a swap: publishing the
     // host once is what lets both Apps below drive the same loaded plugins.
-    const resources = new HotResources();
+    const resources = bareKernel();
     resources.register(PLUGINS_RESOURCE_ID, host);
 
     const instA = await boot(

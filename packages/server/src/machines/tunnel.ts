@@ -22,6 +22,12 @@ export interface Tunnel {
   pid: number | null;
   /** Stops the tunnel; onExit does NOT fire for a close() we asked for. */
   close: () => void;
+  /**
+   * Hot-swap handover: forget the child WITHOUT killing it. The tunnel is delivered to
+   * the next App through the state file (pid + port), so the ssh process must survive —
+   * but this bundle's onExit handler must stop firing on a process it no longer owns.
+   */
+  detach: () => void;
   /** ssh's stderr so far — shown when the tunnel fails, since its words beat ours. */
   stderr: () => string;
 }
@@ -77,6 +83,9 @@ export function openTunnel(opts: {
     close: () => {
       closing = true;
       if (!exited) child.kill();
+    },
+    detach: () => {
+      closing = true;
     },
   };
 }

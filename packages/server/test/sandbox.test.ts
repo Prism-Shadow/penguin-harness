@@ -8,6 +8,7 @@ import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
 import type { Json } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
+import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import type { PenguinContext } from "../src/hmr/plugin.js";
 import { PluginHost, PLUGINS_RESOURCE_ID } from "../src/hmr/plugin.js";
 import { SandboxService } from "../src/sandbox/index.js";
@@ -158,10 +159,12 @@ describe("sandbox settings ride the parked context across a swap", () => {
    * Boots the packaged platform over a fresh registry carrying one observer plugin, and
    * returns what a plugin sees at "create" — the surface an actual consumer has. The
    * confiner itself is same-generation wiring into buildAppDeps (no caps published here,
-   * so no business surface boots); enforcement is covered by the service tests above.
+   * so no business surface boots — hence the bare-kernel marker, without which the platform
+   * refuses to boot at all); enforcement is covered by the service tests above.
    */
   async function bootObserved(doc: Json) {
     const resources = new HotResources();
+    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const host = new PluginHost();
     let seen: PenguinContext | null = null;
     host.use({

@@ -6,6 +6,9 @@
  * builds anything. Driven over a bare-kernel registry (the packaged platform boots
  * terminals-only there), with fake ptys standing in for delivered resources.
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
@@ -13,6 +16,7 @@ import { packagedPlatform } from "../src/hmr/platform.js";
 import type { PlatformApi } from "../src/hmr/platform.js";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import { MachinesService } from "../src/machines/service.js";
 import { TerminalManager } from "../src/terminal/manager.js";
 import type { TerminalSession } from "../src/terminal/session.js";
 import { waitFor } from "./helpers.js";
@@ -195,5 +199,43 @@ describe("TerminalManager quiesce", () => {
     manager.adopt(["t1"]);
     await waitFor(() => r.claim("terminal:t1") === undefined);
     expect(pty.disposed).toBeGreaterThan(0);
+  });
+});
+
+describe("MachinesService park/resume", () => {
+  /** A service over a scratch data root; an unknown alias never spawns ssh. */
+  function withService(run: (svc: MachinesService, root: string) => void): void {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-park-"));
+    try {
+      run(new MachinesService(root), root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("parks nothing when no connect is running — an ordinary push keeps its usual document", () => {
+    withService((svc) => {
+      expect(svc.park()).toBeUndefined();
+    });
+  });
+
+  it("hands an in-flight connect to the successor instead of dropping it", () => {
+    withService((svc, root) => {
+      // startConnect marks the job running synchronously (its body suspends at the first
+      // await), so parking right after is deterministic — the swap-during-connect case.
+      expect(svc.startConnect("ssh:nowhere", { allowRestart: true }).ok).toBe(true);
+      const parked = svc.park();
+      expect(parked?.machineId).toBe("ssh:nowhere");
+      expect(parked?.allowRestart).toBe(true);
+      expect(parked?.log.at(-1)).toMatch(/replaced mid-connect/);
+
+      // The successor picks it up as ONE continuous job: same machine, log carried over,
+      // so the window polling state() never sees its history restart.
+      const next = new MachinesService(root);
+      next.resume(parked!);
+      const resumed = next.state().job;
+      expect(resumed?.machineId).toBe("ssh:nowhere");
+      expect(resumed?.log.at(-1)).toMatch(/replaced mid-connect/);
+    });
   });
 });

@@ -113,10 +113,24 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * A connect caught mid-flight by a swap, as the parked document carries it. A type alias
+ * rather than an interface on purpose: only an alias carries the implicit index signature
+ * that makes it assignable to the kernel's `Json`, which every parked field must be.
+ */
+export type ParkedConnect = {
+  machineId: string;
+  allowRestart?: boolean;
+  /** The progress lines so far, so the window's log survives the swap instead of restarting blank. */
+  log: string[];
+};
+
 export class MachinesService {
   private job: ConnectJobState | null = null;
   private tunnels = new Map<string, Tunnel>();
   private readonly stateFile: string;
+  /** Options of the running job, kept so park() can hand the connect to the next App. */
+  private jobOpts: { allowRestart?: boolean } = {};
 
   constructor(private readonly dataRoot: string) {
     this.stateFile = path.join(dataRoot, "machines-state.json");
@@ -169,6 +183,50 @@ export class MachinesService {
     return state.port;
   }
 
+  /**
+   * Park-side handover. BOTH kinds of state this service holds are DELIVERED, not
+   * suspended:
+   *
+   * - Tunnels are OS processes the next App re-adopts through the state file (pid, port),
+   *   so the in-memory objects are detached — exit handlers silenced — rather than closed.
+   *   Killing them would drop every window looking at that machine over a push.
+   * - An in-flight connect is handed over as parked state ({@link ParkedConnect}) for the
+   *   successor to run again. Every step is idempotent by construction — "connect means
+   *   make it so": a matching version skips the install, a live server is used as-is, a
+   *   live tunnel is adopted — so re-running one is cheap and lands in the same place. The
+   *   log rides along, so the window that was watching keeps its history instead of
+   *   restarting blank. This is the whole point of a hot update: a push must not cost the
+   *   user a connect that may have been installing a Node runtime for minutes.
+   *
+   * The old job object itself stops mattering the moment this App is disposed; its
+   * async body is left to unwind against a service nobody reads any more.
+   */
+  park(): ParkedConnect | undefined {
+    for (const tunnel of this.tunnels.values()) tunnel.detach();
+    this.tunnels.clear();
+    if (this.job === null || !this.job.running) return undefined;
+    return {
+      machineId: this.job.machineId,
+      ...(this.jobOpts.allowRestart === true ? { allowRestart: true } : {}),
+      log: [...this.job.log, "The platform was replaced mid-connect; continuing."],
+    };
+  }
+
+  /**
+   * Load-side counterpart: pick up a connect the previous App was running. Re-runs it from
+   * the top (idempotent steps, see park()) with the parked log as its prefix, so the UI
+   * polling `state()` sees one continuous job across the swap.
+   */
+  resume(parked: ParkedConnect): void {
+    const job: ConnectJobState = {
+      machineId: parked.machineId,
+      running: true,
+      log: [...parked.log],
+      result: null,
+    };
+    this.startJob(job, { ...(parked.allowRestart === true ? { allowRestart: true } : {}) });
+  }
+
   /** Starts a connect job; refuses while one runs. */
   startConnect(
     id: string,
@@ -178,8 +236,15 @@ export class MachinesService {
       return { ok: false, message: `already connecting to ${this.job.machineId}` };
     }
     const job: ConnectJobState = { machineId: id, running: true, log: [], result: null };
+    this.startJob(job, opts);
+    return { ok: true };
+  }
+
+  /** The one place a connect job is driven — shared by startConnect() and resume(). */
+  private startJob(job: ConnectJobState, opts: { allowRestart?: boolean }): void {
     this.job = job;
-    void this.runConnect(id, opts, job)
+    this.jobOpts = opts;
+    void this.runConnect(job.machineId, opts, job)
       .then((result) => {
         job.result = result;
       })
@@ -189,7 +254,6 @@ export class MachinesService {
       .finally(() => {
         job.running = false;
       });
-    return { ok: true };
   }
 
   /** The full path to a machine. Every step logs; every failure carries the far side's words. */
