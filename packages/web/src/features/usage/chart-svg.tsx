@@ -24,9 +24,10 @@
  * already indicates the x position — an extra vertical line would just be
  * noise, so the bar chart passes hoverLine={false} to turn it off.
  *
- * A chart whose caller dropped the empty buckets passes axisBreaks: the x
- * axis then covers unequal spans of time, and the "//" mark between two
- * points is what keeps it from being read as a continuous one.
+ * The usage charts drop the buckets that recorded nothing before they get
+ * here, so their x axis covers unequal spans of time; axisBreaks draws the
+ * "//" between two points that are not neighbours, which is what keeps the
+ * axis from being read as a continuous one.
  */
 import {
   useEffect,
@@ -161,7 +162,7 @@ export function ChartFrame({
   rightAxis?: { y: (v: number) => number; ticks: number[]; fmt: (v: number) => string };
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
-  /** Indices after which the x axis skips at least one interval (the cost and Token charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
+  /** Indices after which the x axis skips at least one interval (the usage charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
   axisBreaks?: number[];
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;

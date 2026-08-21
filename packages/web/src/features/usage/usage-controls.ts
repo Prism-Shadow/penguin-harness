@@ -195,14 +195,18 @@ export function plotRates(values: readonly (number | null)[]): number[] {
   return values.map((v) => v ?? NO_RATE_PLOT);
 }
 
-/** A time series with its empty buckets dropped, and what dropping them did to the x axis. */
+/** A time series with its empty buckets dropped: the buckets that survived, where they sat, and where the axis now jumps. */
 export interface CompactSeries {
   /** The buckets that recorded something, in order. */
   points: UsageSeriesPoint[];
+  /**
+   * Where each surviving bucket sat in the original series. The per-entity
+   * counts arrive aligned index-for-index with that array, so they have to be
+   * re-indexed through this to stay aligned with `points` — see compactCounts.
+   */
+  kept: number[];
   /** Indices in `points` after which at least one bucket was dropped — where the axis jumps in time. */
   breaks: number[];
-  /** How many buckets were dropped. */
-  skipped: number;
 }
 
 /**
@@ -210,29 +214,55 @@ export interface CompactSeries {
  * makeGeom as the entire series, so the coordinate system spreads them evenly
  * over the plot area on its own: one point sits in the middle of the card,
  * two at a quarter and three quarters, and the divisions subdivide as points
- * are added. Left to right, only what happened — the shape the cost and Token
- * charts had before the range control existed.
+ * are added. Left to right, only what happened — the shape the charts had
+ * before the range control existed.
  *
- * What it costs is an x axis that is no longer the selected range's: it skips
- * intervals, and it no longer matches the requests charts, which keep every
- * bucket in the range. `breaks` and `skipped` are how the charts say so.
+ * Emptiness is a property of the **bucket**, never of one entity in it: an
+ * interval where anything at all ran stays, and the entities that did not run
+ * in it show their zeros and dashes there. That is what lets every chart on
+ * the page compact through this one call and keep one shared axis.
+ *
+ * `breaks` is what the axis is drawn with, since an axis that skips intervals
+ * must not read as a continuous one.
  */
 export function compactSeries(series: readonly UsageSeriesPoint[]): CompactSeries {
   const points: UsageSeriesPoint[] = [];
+  const kept: number[] = [];
   const breaks: number[] = [];
   let dropping = false;
-  for (const p of series) {
+  series.forEach((p, i) => {
     // Nothing was recorded in this bucket: no request, and no tokens either
     // (a request that spent nothing is still a request, and keeps its bucket).
     if (p.requests === 0 && p.total === 0) {
       dropping = true;
-      continue;
+      return;
     }
     // A break belongs *between* two drawn points; buckets dropped before the
     // first one (or after the last) shorten the axis without breaking it.
     if (dropping && points.length > 0) breaks.push(points.length - 1);
     dropping = false;
+    kept.push(i);
     points.push(p);
-  }
-  return { points, breaks, skipped: series.length - points.length };
+  });
+  return { points, kept, breaks };
+}
+
+/**
+ * Re-index one entity's per-bucket counts onto the compacted bucket list.
+ * The server aligns these arrays index-for-index with `series`; dropping
+ * buckets from the series without dropping the same positions here would
+ * shift every entity's history sideways and silently attribute its counts to
+ * the wrong intervals. One `kept` list for the series and for every entity is
+ * what makes that impossible.
+ */
+export function compactCounts(
+  counts: Omit<EntityCounts, "label">,
+  kept: readonly number[],
+): Omit<EntityCounts, "label"> {
+  const pick = (values: readonly number[]) => kept.map((i) => values[i] ?? 0);
+  return {
+    requests: pick(counts.requests),
+    completed: pick(counts.completed),
+    denominator: pick(counts.denominator),
+  };
 }

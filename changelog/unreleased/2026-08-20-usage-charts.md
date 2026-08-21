@@ -18,13 +18,13 @@ Every line on the page is straight segments between its points, with no smoothin
 
 ## Buckets with nothing in them
 
-A rate line and a bar chart disagree about what an empty interval is, so the page answers it twice.
+"Empty" means two different things here, and they get two different answers.
 
 **A bucket with no rate is drawn, not read.** An entity that made no request in a bucket has no success rate there, and a bucket with no cache traffic has no hit rate; the line is carried across at the top of the axis so the stroke stays continuous. That is a drawing choice about a shape, and nothing more — the hover table prints a dash for the same bucket, never a percentage. A real 0% still prints 0%: requests were made and every one of them failed, which is a fact about the data rather than a hole in it.
 
-**A bucket that recorded nothing at all is not drawn.** The Token and cost charts plot only the intervals that have values, packed left to right, whatever range is selected — the shape those two had before the range control existed, and the one that survives a long quiet stretch without turning into a flat line at zero. The requests charts keep every bucket in the range, because a bucket one entity skipped is a bucket another one worked in.
+**A bucket that recorded nothing at all is not drawn.** Every chart plots only the intervals that have values, packed left to right, whatever range is selected — the shape the charts had before the range control existed, and the one that survives a long quiet stretch without turning into a flat line at zero. The axis carries a break mark wherever it skipped, so a compressed axis never reads as a continuous one.
 
-That leaves two x axes in one grid, which is stated rather than left to be discovered: each compressed axis carries a break mark at every skip, and a caption under the chart says how many intervals are missing and that this axis is not the one above it. Both compressed charts share a single compaction, so they always agree with each other.
+Emptiness is judged per bucket and never per entity: an interval anything at all ran in is kept, and the entities that were idle in it sit at zero there with a dash for their rate. That single rule is what lets all four charts compact through one call and keep one shared x axis — the per-entity counts are re-indexed onto the surviving buckets by the same list the series is, so an entity's history cannot slide onto the wrong intervals.
 
 ## Details
 

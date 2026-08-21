@@ -6,13 +6,16 @@
  * folding for the requests chart's stacked bars (top entities + a neutral
  * counted tail), the per-bucket success / cache-hit rates (a bucket with
  * nothing to rate has no rate, and is only given a height when a line has to
- * cross it), and the empty-bucket compaction the cost and Token charts draw over.
+ * cross it), and the empty-bucket compaction every chart on the page draws
+ * over — including that the per-entity counts stay aligned with the buckets
+ * after it.
  */
 import { describe, expect, it } from "vitest";
 import type { UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import {
   bucketAxisLabel,
   bucketFullLabel,
+  compactCounts,
   compactSeries,
   defaultGranularity,
   foldEntitySeries,
@@ -279,10 +282,10 @@ describe("compactSeries", () => {
   const at = (bucket: string, over: Partial<UsageSeriesPoint> = {}) =>
     point({ bucket, requests: 1, total: 10, ...over });
 
-  it("drops the buckets that recorded nothing and keeps the rest in order", () => {
+  it("drops the buckets that recorded nothing and keeps the rest in order, with where each one sat", () => {
     const c = compactSeries([at("d1"), point({ bucket: "d2" }), at("d3")]);
     expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d3"]);
-    expect(c.skipped).toBe(1);
+    expect(c.kept).toEqual([0, 2]);
   });
 
   it("a request that spent no tokens keeps its bucket; only a bucket with neither is empty", () => {
@@ -292,7 +295,17 @@ describe("compactSeries", () => {
       point({ bucket: "d3" }),
     ]);
     expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d2"]);
-    expect(c.skipped).toBe(1);
+    expect(c.kept).toEqual([0, 1]);
+  });
+
+  it("a bucket only one entity ran in is not empty: the bucket is what counts, never one entity's share of it", () => {
+    // d2 holds a single request from one entity; the others were idle in it.
+    const c = compactSeries([
+      at("d1"),
+      at("d2", { requests: 1, total: 4 }),
+      point({ bucket: "d3" }),
+    ]);
+    expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d2"]);
   });
 
   it("breaks mark the drawn point each skip follows, however many buckets it swallowed", () => {
@@ -307,19 +320,19 @@ describe("compactSeries", () => {
     ]);
     expect(c.points.map((p) => p.bucket)).toEqual(["d1", "d4", "d5", "d7"]);
     expect(c.breaks).toEqual([0, 2]);
-    expect(c.skipped).toBe(3);
+    expect(c.kept).toEqual([0, 3, 4, 6]);
   });
 
   it("empty buckets before the first point or after the last shorten the axis without breaking it", () => {
     const c = compactSeries([point({ bucket: "d1" }), at("d2"), point({ bucket: "d3" })]);
     expect(c.points.map((p) => p.bucket)).toEqual(["d2"]);
     expect(c.breaks).toEqual([]);
-    expect(c.skipped).toBe(2);
+    expect(c.kept).toEqual([1]);
   });
 
   it("a range that recorded nothing compacts to nothing (the charts show their empty state, not a flat zero line)", () => {
-    expect(compactSeries([point({}), point({})])).toEqual({ points: [], breaks: [], skipped: 2 });
-    expect(compactSeries([])).toEqual({ points: [], breaks: [], skipped: 0 });
+    expect(compactSeries([point({}), point({})])).toEqual({ points: [], kept: [], breaks: [] });
+    expect(compactSeries([])).toEqual({ points: [], kept: [], breaks: [] });
   });
 
   it("nothing to drop leaves the series and its axis exactly as they came", () => {
@@ -327,6 +340,61 @@ describe("compactSeries", () => {
     const c = compactSeries(full);
     expect(c.points).toEqual(full);
     expect(c.breaks).toEqual([]);
-    expect(c.skipped).toBe(0);
+    expect(c.kept).toEqual([0, 1]);
+  });
+});
+
+describe("compactCounts (per-entity alignment across the compaction)", () => {
+  // Five buckets; the server sends every entity one value per bucket, aligned
+  // with the series. d2 and d4 recorded nothing at all.
+  const series = [
+    point({ bucket: "d1", requests: 2, total: 20 }),
+    point({ bucket: "d2" }),
+    point({ bucket: "d3", requests: 3, total: 30 }),
+    point({ bucket: "d4" }),
+    point({ bucket: "d5", requests: 1, total: 10 }),
+  ];
+  const entity = {
+    requests: [2, 0, 1, 0, 0],
+    completed: [1, 0, 1, 0, 0],
+    denominator: [2, 0, 1, 0, 0],
+  };
+
+  it("takes exactly the kept positions, so a value stays with the bucket it was recorded in", () => {
+    const { points, kept } = compactSeries(series);
+    const compacted = compactCounts(entity, kept);
+    expect(points.map((p) => p.bucket)).toEqual(["d1", "d3", "d5"]);
+    expect(compacted).toEqual({
+      requests: [2, 1, 0],
+      completed: [1, 1, 0],
+      denominator: [2, 1, 0],
+    });
+    // The invariant the per-entity series are built on, asserted by bucket key
+    // rather than by position: value[i] after the compaction is still the value
+    // the server sent for points[i].bucket.
+    points.forEach((p, i) => {
+      const origin = series.findIndex((q) => q.bucket === p.bucket);
+      expect(compacted.requests[i]).toBe(entity.requests[origin]);
+      expect(compacted.completed[i]).toBe(entity.completed[origin]);
+      expect(compacted.denominator[i]).toBe(entity.denominator[origin]);
+    });
+  });
+
+  it("an entity idle in a kept bucket keeps its zero there, which is what makes it a dash and not a missing column", () => {
+    const { kept } = compactSeries(series);
+    const idle = compactCounts(
+      { requests: [0, 0, 0, 0, 1], completed: [0, 0, 0, 0, 1], denominator: [0, 0, 0, 0, 1] },
+      kept,
+    );
+    expect(idle.requests).toEqual([0, 0, 1]);
+    expect(rateSeries(idle)).toEqual([null, null, 100]);
+  });
+
+  it("a short or missing array reads as zero rather than undefined (a chart never plots a hole it cannot explain)", () => {
+    expect(compactCounts({ requests: [5], completed: [], denominator: [] }, [0, 2])).toEqual({
+      requests: [5, 0],
+      completed: [0, 0],
+      denominator: [0, 0],
+    });
   });
 });

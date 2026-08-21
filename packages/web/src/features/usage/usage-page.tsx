@@ -15,15 +15,15 @@
  * "errors" panel (stats + a paged errors table). Currency follows the user's
  * settings.
  *
- * The two rows do not share an x axis, and the page is where that is owned.
- * The requests charts draw every bucket in the range — an interval one entity
- * skipped is an interval another one worked in, so dropping it would erase
- * real data. The Token and cost charts draw only the buckets that recorded
- * something, packed left to right: that is what those two showed before the
- * range control existed, and an unbroken run of empty days is noise in a
- * total, not a shape. Both are handed **one** compacted series (compactSeries
- * runs once, here) so they at least agree with each other; each chart marks
- * the skips on its own axis and captions how many intervals are missing.
+ * Every chart draws the same buckets: compactSeries runs **once**, here, and
+ * all four are fed its result, so the grid keeps one shared x axis. It drops
+ * only the buckets where nothing at all was recorded — emptiness is a
+ * property of the interval, not of one entity in it, so a bucket any entity
+ * ran in stays and the idle entities show their zeros and dashes there. The
+ * per-entity counts arrive index-aligned with `series`, so they are
+ * re-indexed through the same `kept` list (compactCounts); one list for all
+ * of them is what keeps an entity's history from sliding onto the wrong
+ * intervals. Each chart marks the skipped intervals on its own axis.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -42,6 +42,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
+  compactCounts,
   compactSeries,
   presetDefaultGranularity,
   presetRange,
@@ -222,26 +223,22 @@ export function UsagePage() {
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
 
+  // One compaction for the whole page (see the file header): every chart draws
+  // these buckets, and every per-entity series is re-indexed through the same
+  // kept list, so nothing can drift out of alignment with the axis.
+  const plotted = compactSeries(data?.series ?? []);
   // The two requests charts each get one dimension's entity list, already
-  // sorted by total requests descending and index-aligned with `series` (the
-  // server's contract); the charts fold their own tails.
+  // sorted by total requests descending and arriving index-aligned with the
+  // full `series` (the server's contract) — compactCounts moves it onto the
+  // drawn buckets; the charts fold their own tails.
   const agentEntities: EntityCounts[] = (data?.byAgentSeries ?? []).map((s) => ({
     label: s.agentId,
-    requests: s.requests,
-    completed: s.completed,
-    denominator: s.denominator,
+    ...compactCounts(s, plotted.kept),
   }));
   const modelEntities: EntityCounts[] = (data?.byModelSeries ?? []).map((s) => ({
     label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
-    requests: s.requests,
-    completed: s.completed,
-    denominator: s.denominator,
+    ...compactCounts(s, plotted.kept),
   }));
-
-  // One compaction for the Token and cost charts (see the file header): both
-  // draw the same buckets and the same axis, or they would be as misleading
-  // against each other as against the requests charts.
-  const plotted = compactSeries(data?.series ?? []);
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -356,16 +353,18 @@ export function UsagePage() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <ChartCard title={S.usage.chartRequestsByAgent}>
               <RequestsChart
-                series={data.series}
+                series={plotted.points}
                 entities={agentEntities}
                 granularity={data.granularity}
+                breaks={plotted.breaks}
               />
             </ChartCard>
             <ChartCard title={S.usage.chartRequestsByModel}>
               <RequestsChart
-                series={data.series}
+                series={plotted.points}
                 entities={modelEntities}
                 granularity={data.granularity}
+                breaks={plotted.breaks}
               />
             </ChartCard>
             {/* The Token legend lives in its card header while its marks live inside the card, so that state is lifted to this level */}
@@ -378,7 +377,6 @@ export function UsagePage() {
                 granularity={data.granularity}
                 legend={tokenBucket}
                 breaks={plotted.breaks}
-                skipped={plotted.skipped}
               />
             </ChartCard>
             <ChartCard title={S.usage.chartCostTrend}>
@@ -387,7 +385,6 @@ export function UsagePage() {
                 granularity={data.granularity}
                 currency={currency}
                 breaks={plotted.breaks}
-                skipped={plotted.skipped}
               />
             </ChartCard>
           </div>

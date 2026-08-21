@@ -1443,7 +1443,6 @@ Benchmark：
     legendSuccessRate: "成功率",
     chartTokenTrend: "Token 变化",
     chartCostTrend: "成本变化",
-    skippedBuckets: (n: number): string => `已跳过 ${n} 个空区间，横轴与上方图表不一致`,
     legendOther: (n: number): string => `其他 ${n} 项`,
     bucketTotal: "合计",
     legendHitRate: "缓存命中率",
