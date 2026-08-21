@@ -61,21 +61,33 @@ export const zh = {
 
   settings: {
     language: "语言",
+    languageHint: "界面语言，可跟随浏览器设置",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "系统设置",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "个人",
+    groupServer: "服务器",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "通用",
+    appearanceTitle: "外观",
+    accountTitle: "账户",
+    updatesTitle: "更新",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "代理选项",
-    proxyDialogTitle: "代理选项",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "代理选项",
+    proxyHint: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "上传限制",
-    uploadLimitsDialogTitle: "上传限制",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "上传限制",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
@@ -83,18 +95,24 @@ export const zh = {
       `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
       `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
+    themeHint: "应用的明暗外观",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
     terminalTheme: "终端主题",
+    terminalThemeHint: "终端面板的配色，默认跟随应用主题",
     followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
+    fontSizeHint: "界面整体字号",
     fontSmall: "小",
     fontMedium: "中",
     fontLarge: "大",
     accent: "主题色",
+    accentHint: "界面强调色",
+    currencyHint: "价格显示币种；存储始终为美元",
+    changePasswordHint: "更改当前账号的登录密码",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",
@@ -379,6 +397,17 @@ export const zh = {
     mcpUrl: "url",
     mcpHeaders: "headers",
     mcpHeadersHint: "每行一条 Header-Name: value（如 Authorization 等认证头）",
+    mcpPermission: "permission",
+    mcpPermissionAuto: "auto",
+    mcpPermissionAutoLabel: "Auto（readOnlyHint）",
+    mcpPermissionAutoDescription:
+      "每个工具按自己的 readOnlyHint 注解取值：声明了就是只读，否则为读写。",
+    mcpPermissionReadDescription:
+      "该 Server 的全部工具一律视为只读，无论其自身声明。审批模式为 read-only 时自动放行。",
+    mcpPermissionReadWriteDescription:
+      "该 Server 的全部工具一律视为读写，无论其自身声明。审批模式为 read-only 时需人工确认。",
+    mcpPermissionHint:
+      "只有 read-only 审批模式会读这个等级，allow-all / deny-all / always-ask 一律不看。它不限制 Server 本身能做什么——把并非只读的 Server 标为只读，只是撤掉了 read-only 模式本会索要的那次确认。",
     mcpConnectTimeout: "connectTimeoutMs",
     mcpBudgetsHint:
       "留空使用默认值：connectTimeoutMs 是连接与工具发现预算（默认 10000）；timeoutMs / maxOutputLength 作用于该 Server 的全部工具。",
@@ -707,6 +736,36 @@ export const zh = {
     /** Prefilled draft for the edit-via-chat flow; the user completes the trailing requirement line before sending. */
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
+    exportScope: "导出",
+    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
+    exportScopeLabel: (scope: string): string => `导出${scope}`,
+    importScope: "导入",
+    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
+    importScopeLabel: (scope: string): string => `导入到${scope}`,
+    importTitle: "导入记忆",
+    importWhy:
+      "读取从本 agent 或其他 agent 导出的一组记忆：一个 JSON 文件，含这组记忆与它的 MEMORY.md 索引。",
+    importFile: (name: string, count: number): string => `${name} —— ${count} 条记忆`,
+    importModeLabel: "当这一组里已有同名记忆时",
+    importModeSkip: "保留现有的这条",
+    importModeSkipHint: "只添加这一组还没有的记忆，不会丢失任何现有内容。",
+    importModeOverwrite: "改用文件里的版本",
+    importModeOverwriteHint: "文件中没有的记忆保持不变。",
+    importModeReplace: "整组替换",
+    importModeReplaceHint: "文件中没有的记忆将被删除。",
+    importAction: "导入",
+    importInvalidFile: "这个文件不是记忆导出文件。",
+    importEmptyFile: "这个文件里没有记忆。",
+    importConfirmTitle: "确认导入",
+    importWillOverwrite: (names: string[]): string =>
+      `将覆盖 ${names.length} 条记忆：${names.join("、")}`,
+    importWillRemove: (names: string[]): string =>
+      `将删除 ${names.length} 条记忆：${names.join("、")}`,
+    importWillReplaceIndex: "这一组的 MEMORY.md 索引将被替换。",
+    importIrreversible: "此操作不可恢复。",
+    importDone: (added: number, overwritten: number, removed: number): string =>
+      `已导入：新增 ${added} 条，覆盖 ${overwritten} 条，删除 ${removed} 条`,
+    importNothingNew: "没有可导入的内容——文件里的记忆这一组都已经有了",
   },
 
   vault: {
@@ -1556,6 +1615,7 @@ Benchmark：
       member_not_found: "该用户不是本 Project 的成员。",
       already_member: "该用户已是本 Project 的成员。",
       already_owner: "该用户已是本 Project 的所有者。",
+      memory_import_confirm_required: "本次导入会覆盖或删除已有记忆，请确认后继续。",
       schedule_exists: "已存在同名定时任务。",
       schedule_not_found: "该定时任务已不存在。",
       unknown_skill: "该技能不在技能库中。",

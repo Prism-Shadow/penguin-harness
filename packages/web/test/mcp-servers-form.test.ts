@@ -3,6 +3,7 @@ import {
   emptyMcpForm,
   formToServer,
   parseKeyValueLines,
+  permissionOf,
   serverToForm,
 } from "../src/features/agents/mcp-servers-form";
 
@@ -25,6 +26,17 @@ describe("serverToForm", () => {
     expect(form.cwd).toBe("/srv");
     expect(form.timeoutMs).toBe("500");
     expect(form.extras).toEqual({});
+  });
+
+  it("loads the permission override, defaulting an absent or unrecognized value to auto", () => {
+    expect(serverToForm({ name: "a", config: { command: "x", permission: "r" } }).permission).toBe(
+      "r",
+    );
+    expect(serverToForm({ name: "a", config: { command: "x" } }).permission).toBe("auto");
+    const bad = serverToForm({ name: "a", config: { command: "x", permission: "readonly" } });
+    expect(bad.permission).toBe("auto");
+    // permission is a known key, so even a bad value stays out of extras.
+    expect(bad.extras).toEqual({});
   });
 
   it("loads an http entry and keeps unknown config keys as extras", () => {
@@ -71,6 +83,18 @@ describe("formToServer", () => {
       url: "https://x/mcp",
     });
     expect(built).toEqual({
+      ok: true,
+      server: { name: "a", config: { transport: "http", url: "https://x/mcp" } },
+    });
+  });
+
+  it("writes an explicit permission and normalizes auto away", () => {
+    const base = { ...emptyMcpForm(), name: "a", url: "https://x/mcp" };
+    expect(formToServer({ ...base, permission: "r" as const })).toEqual({
+      ok: true,
+      server: { name: "a", config: { transport: "http", url: "https://x/mcp", permission: "r" } },
+    });
+    expect(formToServer({ ...base, permission: "auto" as const })).toEqual({
       ok: true,
       server: { name: "a", config: { transport: "http", url: "https://x/mcp" } },
     });
@@ -142,5 +166,13 @@ describe("parseKeyValueLines", () => {
   it("rejects lines without a separator or key", () => {
     expect(parseKeyValueLines("A=1\nnope", "=")).toEqual({ ok: false, line: 2 });
     expect(parseKeyValueLines("=v", "=")).toEqual({ ok: false, line: 1 });
+  });
+});
+
+describe("permissionOf", () => {
+  it("reports the effective mode of a stored entry", () => {
+    expect(permissionOf({ name: "a", config: { command: "x", permission: "rw" } })).toBe("rw");
+    expect(permissionOf({ name: "a", config: { command: "x", permission: "auto" } })).toBe("auto");
+    expect(permissionOf({ name: "a", config: { command: "x" } })).toBe("auto");
   });
 });

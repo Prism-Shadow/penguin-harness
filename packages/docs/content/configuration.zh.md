@@ -105,7 +105,7 @@ output = 0.857143
 | `model.max_tokens` | `32000` | 单次输出 Token 天花板（-1 不设上限，用服务商默认）；每次请求会把实际值收敛到模型 `context_window` 减估算输入以内，小窗口模型不会被索要放不下的输出 |
 | `model.thinking_level` | `medium` | `none` / `low` / `medium` / `high` / `xhigh` / `max`；作为会话默认档位，可被逐轮 Task 参数覆盖 |
 | `model.timeoutMs` | `120000` | 单次 Request 超时（毫秒） |
-| `compaction.max_context_length` | `128000` | 触发压缩的上下文 Token 阈值；生效阈值不超过模型 `context_window` − 2048，压缩在小窗口溢出之前触发 |
+| `compaction.max_context_length` | `256000` | 触发压缩的上下文 Token 阈值；生效阈值取它与模型 `context_window` − 2048 中的较小者，故小窗口模型在自己的窗口内压缩，窗口大于 258048 时则在该数值处触发（条目未配置 `context_window` 时按 128000 的假定窗口计） |
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
@@ -119,7 +119,7 @@ output = 0.857143
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
-| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集，详见[工具与审批](/tools)的 MCP Server 一节 |
+| `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
 
 工具权限与审批语义见[工具与审批](/tools)。
 
@@ -143,7 +143,7 @@ model:
   timeoutMs: 120000
 
 compaction:
-  max_context_length: 128000
+  max_context_length: 256000
   max_session_turns: -1
   mode: summarize
 
