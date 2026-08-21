@@ -1,61 +1,49 @@
 /**
- * Files panel: on desktop (≥1024px, see isDocked in use-files-panel.ts) it docks to the right
- * of the chat with a drag-to-resize edge; on narrower viewports it becomes a bottom Sheet
- * (snaps to half for browsing / full for preview, gesture-draggable) so the vertical layout
- * keeps the chat transcript above it visible. Content is one of two sibling views, switched
- * by the flat toggle in the title row: the WorkspaceBrowser directory tree (clicking a file
- * chip in a message navigates it via openRequest), or the Agent's Memory view (this
- * conversation's memory diffs + the memory itself; a memory-changes card row navigates it
- * via memoryRequest) — see use-files-panel.ts for both commands.
+ * The chat's side panel: on desktop (≥1024px, see isDocked in use-files-panel.ts) it docks to
+ * the right of the chat with a drag-to-resize edge; on narrower viewports it becomes a bottom
+ * Sheet (snaps to half for browsing / full for preview, gesture-draggable) so the vertical
+ * layout keeps the chat transcript above it visible. Content is two proper tabs (the shared
+ * underline Tabs): the WorkspaceBrowser directory tree (a file chip in a message navigates it
+ * via openRequest) and the Agent's Memory view (a memory-changes card row navigates it via
+ * memoryRequest — see use-files-panel.ts for both commands). Entering the Memory tab through
+ * its tab button always lands on the list level (openMemory(null)); only a card row's locate
+ * target lands on a detail.
  */
 import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { Sheet } from "../../components/ui/sheet";
 import { CloseIcon } from "../../components/ui/icons";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { Tabs } from "../../components/ui/tabs";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { WorkspaceBrowser } from "./workspace-browser";
 import { ChatMemoryView } from "./memory-view";
 import type { FilesPanelState } from "./use-files-panel";
 
-/** View-toggle glyphs: the file-summary card's page for the tree, an open book for Memory. */
-const FILES_VIEW_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
-const MEMORY_VIEW_ICON =
-  "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
-
 interface FilesPanelProps {
   session: SessionInfo;
   panel: FilesPanelState;
-  /** This conversation's aggregated memory changes, for the Memory view's diff section. */
+  /** This conversation's aggregated memory changes, for the Memory tab's markers and diffs. */
   memoryChanges: MemoryChangeRow[];
   /** Opens the agent-settings memory tab (the Memory view's management link). */
   onOpenMemorySettings?: (() => void) | undefined;
 }
 
-/** The two-view toggle: flat icon buttons, the active view's glyph emphasized. */
-function ViewToggle({ panel }: { panel: FilesPanelState }) {
-  const button = (view: "files" | "memory", d: string, title: string) => (
-    <button
-      type="button"
-      onClick={() => panel.setView(view)}
-      title={title}
-      aria-pressed={panel.view === view}
-      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-150 ${
-        panel.view === view
-          ? "text-gray-700 dark:text-gray-200"
-          : "text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-      }`}
-    >
-      <GlyphIcon d={d} size={ICON_SIZE.iconButton} />
-      <span className="sr-only">{title}</span>
-    </button>
-  );
+/** The panel's tab bar. The memory tab routes through openMemory(null) so entering it always resets to the list level. */
+function PanelTabs({ panel }: { panel: FilesPanelState }) {
+  // Inside the component, not module-level: `S` is a live binding the locale switch swaps.
+  const items = [
+    { key: "files" as const, label: S.files.title },
+    { key: "memory" as const, label: S.chat.memoryViewTitle },
+  ];
   return (
-    <div className="flex shrink-0 items-center">
-      {button("files", FILES_VIEW_ICON, S.files.title)}
-      {button("memory", MEMORY_VIEW_ICON, S.chat.memoryViewTitle)}
-    </div>
+    <Tabs
+      items={items}
+      active={panel.view}
+      onChange={(key) => {
+        if (key === "memory") panel.openMemory(null);
+        else panel.setView("files");
+      }}
+    />
   );
 }
 
@@ -65,8 +53,9 @@ export function FilesPanel({
   memoryChanges,
   onOpenMemorySettings,
 }: FilesPanelProps) {
-  // The tree stays mounted and merely hidden while Memory is up — collapsing it would drop
-  // the user's expanded-directory state on every toggle; the Memory view is cheap to remount.
+  // Both tabs stay mounted, the inactive one hidden — collapsing the tree would drop the
+  // user's expanded-directory state on every switch, and the memory view keeps its listing
+  // and navigation level the same way (its entry routing is command-driven, see openMemory).
   const body = (previewToFull: boolean) => (
     <>
       <div className={panel.view === "files" ? "h-full min-h-0" : "hidden"}>
@@ -77,14 +66,17 @@ export function FilesPanel({
           {...(previewToFull ? { onPreviewOpen: () => panel.setSheetSnap("full") } : {})}
         />
       </div>
-      {panel.view === "memory" && (
+      <div className={panel.view === "memory" ? "h-full min-h-0" : "hidden"}>
+        {/* Keyed by session: a new conversation starts back at the list level with a fresh listing. */}
         <ChatMemoryView
+          key={session.sessionId}
           session={session}
           changes={memoryChanges}
           request={panel.memoryRequest}
+          active={panel.open && panel.view === "memory"}
           {...(onOpenMemorySettings ? { onOpenSettings: onOpenMemorySettings } : {})}
         />
-      )}
+      </div>
     </>
   );
 
@@ -98,8 +90,8 @@ export function FilesPanel({
         title={panel.view === "memory" ? S.chat.memoryViewTitle : S.files.title}
       >
         <div className="flex h-full min-h-0 flex-col">
-          <div className="flex shrink-0 items-center justify-end px-2 pt-1">
-            <ViewToggle panel={panel} />
+          <div className="shrink-0 px-3">
+            <PanelTabs panel={panel} />
           </div>
           {/* Preview from the tree's list view bumps the snap to full (preview needs the space) */}
           <div className="min-h-0 flex-1">{body(true)}</div>
@@ -157,17 +149,17 @@ export function FilesPanel({
             behaves as a rigid body that slides in and out past the clipping edge with zero
             reflow. While dragging to resize, both values stay in sync, so this isn't affected. */}
         <div style={{ width: panel.width }} className="flex h-full min-h-0 flex-col">
-          {/* Title row for docked state (the Sheet state has its own title bar via Sheet, no duplication needed) */}
-          <div className="flex shrink-0 items-center gap-1 px-3 pt-2">
-            <h4 className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {panel.view === "memory" ? S.chat.memoryViewTitle : S.files.title}
-            </h4>
-            <ViewToggle panel={panel} />
+          {/* Tab row for docked state: the tab bar is the panel's title (the Sheet state keeps
+              its own title bar via Sheet and carries the tab bar as its first content row). */}
+          <div className="flex shrink-0 items-end gap-1 px-3 pt-1">
+            <div className="min-w-0 flex-1">
+              <PanelTabs panel={panel} />
+            </div>
             <button
               type="button"
               onClick={() => panel.setOpen(false)}
               title={S.common.close}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
             >
               <CloseIcon />
             </button>

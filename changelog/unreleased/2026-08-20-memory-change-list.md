@@ -7,7 +7,7 @@
 
 [中文版](2026-08-20-memory-change-list.zh.md)
 
-When a Task changed the Agent's Memory, the conversation now shows it in two places. A memory-changes card renders directly below the file-summary card at the end of the Task — one row per topic file, with the scope (User or Workspace memory) and the change kind (wrote / edited) as icon-and-tooltip markers. And the side panel gained a Memory view, a sibling of the Workspace file tree behind a flat two-glyph toggle in the panel's title row: this conversation's changes with a per-call diff for each file, followed by the Agent's memory itself — both scopes' topic lists and read-only content, the same data the agent-settings memory tab shows. Clicking a card row opens that view located at the row: expanded on its diffs, scrolled to and briefly highlighted. Tasks that touched no memory show no card.
+When a Task changed the Agent's Memory, the conversation now shows it in two places. A memory-changes card renders directly below the file-summary card at the end of the Task — one row per topic file, with the scope (User or Workspace memory) and the change kind (wrote / edited) as icon-and-tooltip markers. And the chat's side panel became a two-tab panel — Files and Memory, the shared underline tabs — the Memory tab holding two levels: a list of both scopes' topics (the same data the agent-settings memory tab shows, topics changed by this conversation carrying a marker), and one memory's detail — its per-call diffs from this conversation pinned on top, then the content, with a back button to the list. Clicking a card row opens the Memory tab directly on that memory's detail, diff in view; entering through the tab itself always starts at the list. Tasks that touched no memory show no card.
 
 ## Details
 
@@ -16,4 +16,5 @@ When a Task changed the Agent's Memory, the conversation now shows it in two pla
 - Each scope's `MEMORY.md` index and the `.workspace` marker are filtered out: the index is rewritten alongside nearly every topic change and would double every row.
 - Changes made through an opaque `exec_command` shell (including deletions — no builtin delete tool exists) carry no structured signal and are not listed, matching the file-summary card's existing limitation.
 - Root-session Tasks only; a subagent's memory writes belong to that child's own Agent.
-- Memory management (add / edit / delete) stays on the agent-settings memory tab; the view's header links there. On narrow viewports the view rides the panel's existing bottom Sheet.
+- A changed file the server listing doesn't carry stays reachable: it is appended to its scope's group and its detail shows the diffs with a note when the content can't load.
+- Memory management (add / edit / delete) stays on the agent-settings memory tab; the Memory tab's list header links there. On narrow viewports the panel rides its existing bottom Sheet, tab bar and two-level navigation included; switching conversations resets the tab to Files and the Memory tab to its list.

@@ -1355,6 +1355,8 @@ Scenarios:
     memoryNoDiff: "No replayable material recorded for this call",
     memoryViewTitle: "Memory",
     memoryChangesSection: "Changes this conversation",
+    memoryChangedMark: "Changed in this conversation",
+    memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
     memoryRowOpen: "View diff",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",

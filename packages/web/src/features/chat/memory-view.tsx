@@ -1,18 +1,17 @@
 /**
- * Chat side panel's Memory view — the Files panel's sibling view (see files-panel.tsx):
- * this conversation's memory changes with a per-call diff for each file, then the Agent's
- * memory itself (both scopes' topic lists, read-only), the same data the agent-settings
- * memory tab shows and the same server routes. Management (add / edit / delete) stays on
- * that tab — the header links there — so this view never duplicates the bridge-modal flows.
+ * The side panel's Memory tab (see files-panel.tsx for the tab bar): two levels, modeled by
+ * memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
+ * agent-settings memory tab reads — with a marker on topics this conversation changed; a
+ * topic's detail shows its per-call diffs from this conversation pinned on top (replaying
+ * the structured tool record, see lib/omni/memory-changes.ts), then the memory's content.
  *
- * A locate request (clicking a row in the message's memory-changes card) expands that row's
- * diffs, scrolls to it and flashes a highlight. Diffs replay the structured tool record kept
- * on the row (see lib/omni/memory-changes.ts): an edit renders old/new as removed/added
- * lines, a full write renders the written content as added lines — there is no "before"
- * in the transcript for a write, so a rewrite is shown as the new content, labeled a rewrite.
+ * Entry routes by origin: a memory-changes card row lands directly on that memory's detail
+ * (diff in view, back returns to the list); entering through the panel tab lands on the
+ * list. Management (add / edit / delete) stays on the agent-settings tab — the list header
+ * links there — so this view never duplicates the bridge-modal flows.
  */
-import { useEffect, useRef, useState } from "react";
-import type { MemoryFileInfo, MemoryScopeInfo, SessionInfo } from "@prismshadow/penguin-server/api";
+import { useEffect, useState } from "react";
+import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -29,21 +28,19 @@ import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { useLocale } from "../../state/locale";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { Chevron } from "../../components/ui/chevron";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Md } from "./md";
-import { PathLabel } from "./message-files-card";
+import { buildMemoryList, findChangeRow, memoryNavBack, memoryNavForRequest } from "./memory-nav";
+import type { MemoryListGroup, MemoryNavMode, ScopeFiles } from "./memory-nav";
 
-/** Person (User scope), folder (Workspace scope), page-with-plus (full write), pencil (edit), boxed arrow (open the settings tab), left arrow (back to the lists). */
+/** Person (User scope), folder (Workspace scope), boxed arrow (open the settings tab), left arrow (back to the list). */
 const USER_ICON = "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z";
 const FOLDER_ICON = "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z";
-const WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
-const EDIT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
 const OPEN_SETTINGS_ICON =
   "M14 4h6v6M20 4 10 14M9 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3";
 const BACK_ICON = "M19 12H5m6-6-6 6 6 6";
 
-/** The scope glyph + tooltip pair, shared by change rows and browse groups. */
+/** The scope glyph + tooltip pair, shared with the memory-changes card's rows. */
 export function scopeGlyph(scope: "user" | "workspace", scopeKey?: string) {
   return {
     d: scope === "user" ? USER_ICON : FOLDER_ICON,
@@ -79,7 +76,7 @@ function DiffBlock({ lines }: { lines: DiffLine[] }) {
           <span aria-hidden className="w-4 shrink-0 select-none">
             {line.type === "add" ? "+" : line.type === "del" ? "−" : ""}
           </span>
-          <span className="min-w-0 flex-1">{line.text || " "}</span>
+          <span className="min-w-0 flex-1">{line.text || " "}</span>
         </div>
       ))}
     </div>
@@ -97,48 +94,72 @@ function eventLabel(event: MemoryChangeEvent, index: number, total: number): str
   return total > 1 ? `${S.chat.memoryEventNth(index + 1)} · ${op}` : op;
 }
 
-interface ScopeFiles {
-  info: MemoryScopeInfo;
-  files: MemoryFileInfo[];
+/** List-group title: the User scope's fixed label, or the Workspace directory's basename. */
+function groupTitle(group: MemoryListGroup): string {
+  return group.scope === "user"
+    ? S.memory.userScope
+    : (group.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? group.scopeKey);
 }
 
-/** Browse-group title: the User scope's fixed label, or the Workspace directory's basename. */
-function scopeTitle(info: MemoryScopeInfo): string {
-  return info.kind === "user"
-    ? S.memory.userScope
-    : (info.workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? info.scopeKey);
+/** The change section of a detail view: every call's diff, chronological, always expanded. */
+function ChangeSection({ row, flash }: { row: MemoryChangeRow; flash: boolean }) {
+  return (
+    <div
+      className={`space-y-3 rounded-lg p-2 transition-colors duration-700 ${
+        flash ? "bg-brand-50 dark:bg-brand-900/20" : ""
+      }`}
+    >
+      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {S.chat.memoryChangesSection}
+      </p>
+      {row.events.map((event, i) => {
+        const lines = eventDiff(event);
+        return (
+          <div key={i}>
+            <p className="mb-1 text-[11px] text-gray-400 dark:text-gray-500">
+              {eventLabel(event, i, row.events.length)}
+            </p>
+            {lines === null ? (
+              <p className="text-xs text-gray-400 dark:text-gray-500">{S.chat.memoryNoDiff}</p>
+            ) : (
+              <DiffBlock lines={lines} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function ChatMemoryView({
   session,
   changes,
   request,
+  active,
   onOpenSettings,
 }: {
   session: SessionInfo;
   /** This conversation's aggregated memory changes (chat-page derives them from the stream's task_stats items). */
   changes: MemoryChangeRow[];
-  /** Locate command from openMemory (object identity re-triggers); target null = just show the view. */
+  /** Navigation command from openMemory (object identity re-triggers): with a target it lands on that memory's detail, without one on the list. */
   request: { target: MemoryLocateTarget | null } | null;
+  /** Whether the Memory tab is showing (the view stays mounted behind the other tab; loading waits for the first activation). */
+  active: boolean;
   /** Opens the agent-settings memory tab, where management (add / edit / delete) lives. */
   onOpenSettings?: () => void;
 }) {
   const { locale } = useLocale();
 
-  // ---- browse state (the Agent's memory as it is now) ----
+  // ---- server listing ----
   const [scopes, setScopes] = useState<ScopeFiles[] | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
-  const [viewing, setViewing] = useState<{
-    scope: MemoryScopeInfo;
-    file: MemoryFileInfo;
-    content: string;
-  } | null>(null);
-  const [busyFile, setBusyFile] = useState<string | null>(null);
 
-  // Load the listing on mount, and reload whenever this conversation lands new changes —
+  // Load on first activation, and reload whenever this conversation lands new changes —
   // `changes` identity moves once per settled Task, so this stays cheap and the listing
-  // never shows a file the transcript just rewrote at its old mtime.
+  // never shows a file the transcript just rewrote at its old mtime. While the tab is
+  // hidden the effect just returns; the activation itself re-fires it.
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
     setBrowseError(null);
     void (async () => {
@@ -159,166 +180,123 @@ export function ChatMemoryView({
     return () => {
       cancelled = true;
     };
-  }, [session.projectId, session.agentId, changes]);
+  }, [active, session.projectId, session.agentId, changes]);
 
-  const openFile = async (scope: MemoryScopeInfo, file: MemoryFileInfo) => {
-    setBusyFile(`${scope.scopeKey}/${file.name}`);
-    try {
-      const res = await api.getMemoryFile(
-        session.projectId,
-        session.agentId,
-        scope.scopeKey,
-        file.name,
-      );
-      setViewing({ scope, file, content: res.content });
-    } catch (err) {
-      setBrowseError(apiErrorText(err));
-    } finally {
-      setBusyFile(null);
-    }
-  };
-
-  // ---- change rows: expansion, locate highlight ----
-  const [expandedRows, setExpandedRows] = useState<ReadonlySet<string>>(new Set());
-  const [highlightKey, setHighlightKey] = useState<string | null>(null);
-  const rowRefs = useRef(new Map<string, HTMLDivElement>());
-  const toggleRow = (key: string) =>
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-
+  // ---- navigation (memory-nav.ts): entry routing + back ----
+  const [mode, setMode] = useState<MemoryNavMode>({ kind: "list" });
+  const [flashDiff, setFlashDiff] = useState(false);
   useEffect(() => {
-    const target = request?.target;
-    if (target === undefined || target === null) return;
-    const key = memoryRowKey(target);
-    setViewing(null); // The changes section lives on the list level
-    setExpandedRows((prev) => new Set(prev).add(key));
-    setHighlightKey(key);
-    // Scroll after the expansion has painted; the ref is registered by then.
-    const raf = requestAnimationFrame(() => {
-      rowRefs.current.get(key)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-    const timer = setTimeout(() => setHighlightKey(null), 1600);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-    };
+    if (request === null) return;
+    const next = memoryNavForRequest(request);
+    setMode(next);
+    // A located detail flashes its diff section briefly — the click's landing spot.
+    if (next.kind === "detail") {
+      setFlashDiff(true);
+      const timer = setTimeout(() => setFlashDiff(false), 1600);
+      return () => clearTimeout(timer);
+    }
+    return;
   }, [request]);
 
-  // ---- content view (one memory, read-only) ----
-  if (viewing) {
+  // ---- detail content (loaded per target; keyed so a stale response can't cross targets) ----
+  const detailKey = mode.kind === "detail" ? memoryRowKey(mode.target) : null;
+  const [detail, setDetail] = useState<{
+    key: string;
+    content: string | null;
+    failed: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!active || mode.kind !== "detail") return;
+    const target = mode.target;
+    const key = memoryRowKey(target);
+    let cancelled = false;
+    setDetail({ key, content: null, failed: false });
+    void api
+      .getMemoryFile(
+        session.projectId,
+        session.agentId,
+        target.scope === "user" ? "user" : (target.scopeKey ?? ""),
+        target.file,
+      )
+      .then((res) => {
+        if (!cancelled) setDetail({ key, content: res.content, failed: false });
+      })
+      .catch(() => {
+        if (!cancelled) setDetail({ key, content: null, failed: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // detailKey stands in for mode.target's identity; changes refresh a just-rewritten file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, detailKey, session.projectId, session.agentId, changes]);
+
+  const groups = buildMemoryList(scopes, changes);
+
+  // ---- detail level ----
+  if (mode.kind === "detail") {
+    const target = mode.target;
+    const listedRow = groups
+      .flatMap((g) => g.rows)
+      .find((r) => memoryRowKey(r.target) === detailKey);
+    const changeRow = findChangeRow(changes, target);
+    const loaded = detail !== null && detail.key === detailKey;
+    const glyph = scopeGlyph(target.scope, target.scopeKey);
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 px-3 py-2 dark:border-gray-800/60">
           <button
             type="button"
-            onClick={() => setViewing(null)}
+            onClick={() => setMode(memoryNavBack())}
             title={S.chat.memoryBack}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
             <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
             <span className="sr-only">{S.chat.memoryBack}</span>
           </button>
-          <p className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold">
-            {viewing.file.title}
-          </p>
-          <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-            {viewing.file.updatedAt ?? formatRelativeDate(viewing.file.modifiedAt, locale)}
+          <span title={glyph.title} className="shrink-0 text-gray-400">
+            <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
+            <span className="sr-only">{glyph.title}</span>
           </span>
+          <p className="min-w-0 flex-1 truncate font-mono text-[13px] font-semibold">
+            {listedRow?.title ?? target.file}
+          </p>
+          {listedRow &&
+            (listedRow.updatedAt !== undefined || listedRow.modifiedAt !== undefined) && (
+              <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                {listedRow.updatedAt ??
+                  (listedRow.modifiedAt !== undefined
+                    ? formatRelativeDate(listedRow.modifiedAt, locale)
+                    : "")}
+              </span>
+            )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">
-          {viewing.file.description && (
-            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-              {viewing.file.description}
-            </p>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3">
+          {changeRow !== undefined && <ChangeSection row={changeRow} flash={flashDiff} />}
+          {listedRow?.description !== undefined && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">{listedRow.description}</p>
           )}
-          <div className="md-body text-sm">
-            <Md text={bodyWithoutFrontmatter(viewing.content)} />
-          </div>
+          {!loaded || (!detail.failed && detail.content === null) ? (
+            <SkeletonList rows={3} />
+          ) : detail.failed ? (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              {S.chat.memoryContentUnavailable}
+            </p>
+          ) : (
+            <div className="md-body text-sm">
+              <Md text={bodyWithoutFrontmatter(detail.content ?? "")} />
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // ---- list level: changes this conversation, then the memory itself ----
+  // ---- list level ----
   return (
     <div className="h-full min-h-0 overflow-y-auto">
-      {changes.length > 0 && (
-        <div className="border-b border-gray-100 dark:border-gray-800/60">
-          <p className="px-3.5 pb-1 pt-3 text-xs font-medium text-gray-500 dark:text-gray-400">
-            {S.chat.memoryChangesSection}
-          </p>
-          {changes.map((row) => {
-            const key = memoryRowKey(row);
-            const glyph = scopeGlyph(row.scope, row.scopeKey);
-            const open = expandedRows.has(key);
-            return (
-              <div
-                key={key}
-                ref={(el) => {
-                  if (el) rowRefs.current.set(key, el);
-                  else rowRefs.current.delete(key);
-                }}
-                className={`transition-colors duration-500 ${
-                  highlightKey === key ? "bg-brand-50 dark:bg-brand-900/20" : ""
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleRow(key)}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                >
-                  <span title={glyph.title} className="shrink-0 text-gray-400">
-                    <GlyphIcon d={glyph.d} size={ICON_SIZE.rowLead} />
-                    <span className="sr-only">{glyph.title}</span>
-                  </span>
-                  <PathLabel path={row.file} />
-                  <span className="min-w-0 flex-1" />
-                  <span
-                    title={row.op === "write" ? S.chat.memoryOpWrite : S.chat.memoryOpEdit}
-                    className="shrink-0 text-gray-400"
-                  >
-                    <GlyphIcon
-                      d={row.op === "write" ? WRITE_ICON : EDIT_ICON}
-                      size={ICON_SIZE.inlineGlyph}
-                    />
-                  </span>
-                  <Chevron open={open} className="shrink-0 text-gray-400" />
-                </button>
-                {open && (
-                  <div className="space-y-3 px-3.5 pb-3">
-                    {row.events.map((event, i) => {
-                      const lines = eventDiff(event);
-                      return (
-                        <div key={i}>
-                          <p className="mb-1 text-[11px] text-gray-400 dark:text-gray-500">
-                            {eventLabel(event, i, row.events.length)}
-                          </p>
-                          {lines === null ? (
-                            <p className="text-xs text-gray-400 dark:text-gray-500">
-                              {S.chat.memoryNoDiff}
-                            </p>
-                          ) : (
-                            <DiffBlock lines={lines} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="flex items-center gap-1 px-3.5 pb-1 pt-3">
-        <p className="min-w-0 flex-1 truncate text-xs font-medium text-gray-500 dark:text-gray-400">
-          {S.chat.memoryViewTitle}
-        </p>
+      <div className="flex items-center gap-1 px-3.5 pb-1 pt-2">
+        <span className="min-w-0 flex-1" />
         {onOpenSettings && (
           <button
             type="button"
@@ -331,63 +309,71 @@ export function ChatMemoryView({
           </button>
         )}
       </div>
-      {browseError !== null ? (
-        <div className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">
-          <p>{browseError}</p>
-        </div>
-      ) : scopes === null ? (
+      {browseError !== null && groups.length === 0 ? (
+        <p className="px-3.5 py-2 text-xs text-gray-500 dark:text-gray-400">{browseError}</p>
+      ) : scopes === null && groups.length === 0 ? (
         <div className="px-3.5 py-2">
           <SkeletonList rows={3} />
         </div>
-      ) : scopes.every((s) => s.files.length === 0) ? (
+      ) : groups.every((g) => g.rows.length === 0) ? (
         <p className="px-3.5 py-2 text-xs text-gray-400 dark:text-gray-500">
           {S.chat.memoryEmptyAll}
         </p>
       ) : (
-        scopes.map(({ info, files }) =>
-          files.length === 0 ? null : (
-            <div key={info.scopeKey} className="pb-2">
+        groups.map((group) =>
+          group.rows.length === 0 ? null : (
+            <div key={`${group.scope} ${group.scopeKey}`} className="pb-2">
               <div className="flex items-center gap-2 px-3.5 py-1.5">
                 <span className="shrink-0 text-gray-400">
                   <GlyphIcon
-                    d={info.kind === "user" ? USER_ICON : FOLDER_ICON}
+                    d={group.scope === "user" ? USER_ICON : FOLDER_ICON}
                     size={ICON_SIZE.inlineGlyph}
                   />
                 </span>
                 <p
                   className="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={info.workspacePath}
+                  title={group.workspacePath}
                 >
-                  {scopeTitle(info)}
+                  {groupTitle(group)}
                 </p>
                 <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-                  {S.memory.itemCount(files.length)}
+                  {S.memory.itemCount(group.rows.length)}
                 </span>
               </div>
               <ul>
-                {files.map((file) => (
-                  <li key={file.name}>
+                {group.rows.map((row) => (
+                  <li key={memoryRowKey(row.target)}>
                     <button
                       type="button"
-                      onClick={() => void openFile(info, file)}
-                      disabled={busyFile !== null}
-                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 disabled:cursor-default dark:hover:bg-gray-800/50"
+                      onClick={() => setMode({ kind: "detail", target: row.target })}
+                      className="flex w-full cursor-pointer items-center gap-3 px-3.5 py-2 text-left transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/50"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
-                          {file.title}
+                        <p className="flex items-center gap-1.5 truncate font-mono text-[13px] font-medium text-gray-800 dark:text-gray-200">
+                          {row.changed !== undefined && (
+                            <span
+                              title={S.chat.memoryChangedMark}
+                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500"
+                            >
+                              <span className="sr-only">{S.chat.memoryChangedMark}</span>
+                            </span>
+                          )}
+                          <span className="min-w-0 truncate">{row.title}</span>
                         </p>
-                        {file.description && (
+                        {row.description !== undefined && (
                           <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            {file.description}
+                            {row.description}
                           </p>
                         )}
                       </div>
-                      <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
-                        {busyFile === `${info.scopeKey}/${file.name}`
-                          ? S.common.loading
-                          : (file.updatedAt ?? formatRelativeDate(file.modifiedAt, locale))}
-                      </span>
+                      {(row.updatedAt !== undefined || row.modifiedAt !== undefined) && (
+                        <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-gray-500">
+                          {row.updatedAt ??
+                            (row.modifiedAt !== undefined
+                              ? formatRelativeDate(row.modifiedAt, locale)
+                              : "")}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}

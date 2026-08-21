@@ -1312,6 +1312,8 @@ Benchmark：
     memoryNoDiff: "该调用未记录可回放的内容",
     memoryViewTitle: "记忆",
     memoryChangesSection: "本次对话的更改",
+    memoryChangedMark: "本次对话已更改",
+    memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
     memoryRowOpen: "查看差异",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
