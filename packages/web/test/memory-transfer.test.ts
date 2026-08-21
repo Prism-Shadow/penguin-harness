@@ -117,8 +117,20 @@ describe("planMemoryImport", () => {
 });
 
 describe("memoryDocumentFileName", () => {
-  it("matches the name the export route puts in Content-Disposition", () => {
-    expect(memoryDocumentFileName("default_agent", "my-app-a81f32c4")).toBe(
+  it("stamps the document's exportedAt in the viewer's local time", () => {
+    const iso = "2026-08-21T03:07:00.000Z";
+    // The expected stamp is computed with the same local-time getters the formatter uses,
+    // so the assertion holds in any timezone the suite runs in.
+    const d = new Date(iso);
+    const p = (n: number): string => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+    expect(memoryDocumentFileName("default_agent", "my-app-a81f32c4", iso)).toBe(
+      `default_agent-my-app-a81f32c4-memory-${stamp}.json`,
+    );
+  });
+
+  it("falls back to the unstamped name when exportedAt is unreadable", () => {
+    expect(memoryDocumentFileName("default_agent", "my-app-a81f32c4", "not-a-date")).toBe(
       "default_agent-my-app-a81f32c4-memory.json",
     );
   });

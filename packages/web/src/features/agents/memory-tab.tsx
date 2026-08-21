@@ -84,13 +84,13 @@ const TRASH_ICON =
 const PLUS_ICON = "M12 5v14M5 12h14";
 
 /**
- * The ghost icon button's look on a `<label>`: the Button component only renders a `<button>`,
+ * The small ghost button's look on a `<label>`: the Button component only renders a `<button>`,
  * and the import control has to wrap a file input (the Agent State section's transfer label does
- * the same for its own size).
+ * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
  */
 const GHOST_LABEL_CLASS =
-  "inline-flex cursor-pointer items-center justify-center rounded-md border border-transparent " +
-  "p-1.5 text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 " +
+  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-transparent " +
+  "px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 " +
   "focus-within:ring-2 focus-within:ring-gray-400/30 " +
   "dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
 
@@ -413,7 +413,7 @@ export function MemoryTab({
       );
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = memoryDocumentFileName(agentId, scope.scopeKey);
+      anchor.download = memoryDocumentFileName(agentId, scope.scopeKey, doc.exportedAt);
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -632,30 +632,33 @@ export function MemoryTab({
                       {S.memory.itemCount(files.length)}
                     </span>
                   </button>
-                  {/* Whole-group transfer, icon-only (the rows' affordance) so three actions
-                      still fit a narrow header: export for any member, import for the owner. */}
+                  {/* Whole-group transfer, icon + label (the labels are what say which way a
+                      transfer goes): export for any member, import for the owner. The tooltip
+                      carries what the label cannot — that the whole group travels. */}
                   <span className="shrink-0">
                     <Button
-                      size="icon"
+                      size="sm"
                       variant="ghost"
-                      title={S.memory.exportScope}
+                      title={S.memory.exportScopeHint}
                       aria-label={S.memory.exportScopeLabel(scopeTitle(scope))}
                       onClick={() => void exportScope(scope)}
                     >
-                      <DownloadIcon size={14} />
+                      <DownloadIcon size={13} />
+                      {S.memory.exportScope}
                     </Button>
                   </span>
                   {isOwner && (
                     <label
                       className={`${GHOST_LABEL_CLASS} shrink-0`}
-                      title={S.memory.importScope}
+                      title={S.memory.importScopeHint}
                       aria-label={S.memory.importScopeLabel(scopeTitle(scope))}
                     >
                       <HiddenFileInput
                         accept=".json,application/json"
                         onChange={(e) => void pickImport(scope, e)}
                       />
-                      <UploadIcon size={14} />
+                      <UploadIcon size={13} />
+                      {S.memory.importScope}
                     </label>
                   )}
                   <span className="shrink-0">

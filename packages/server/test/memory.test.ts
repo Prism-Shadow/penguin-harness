@@ -387,8 +387,8 @@ describe("memory scope export/import", () => {
 
     const res = await owner.get(exportPath());
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-disposition")).toContain(
-      `filename="default_agent-${WORKSPACE_KEY}-memory.json"`,
+    expect(res.headers.get("content-disposition")).toMatch(
+      new RegExp(`filename="default_agent-${WORKSPACE_KEY}-memory-\\d{8}-\\d{4}\\.json"`),
     );
     const doc = (await res.json()) as MemoryScopeExport;
     expect(doc.format).toBe("penguin-memory-scope");

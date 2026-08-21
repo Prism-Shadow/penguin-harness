@@ -21,6 +21,10 @@ carried to a second machine.
 Memory scope is UTF-8 Markdown, so the document is plain text end to end: readable in an
 editor, diffable in git, and reviewable before it is imported.
 
+The saved file is named `<agent>-<scope>-memory-<YYYYMMDD-HHmm>.json`, stamped from the
+document's own `exportedAt` (the viewer's clock in the Web App, the server's in the
+attachment header), so repeated exports of one scope stay apart in a downloads folder.
+
 ## Import, and what it costs
 
 `POST …/memory/scopes/:key/import` takes `{payload, mode?, confirm?}`:
@@ -58,7 +62,7 @@ a member gets 403 `owner_required`, a non-member 404 on both routes.
 
 ## Web App
 
-Each group header carries an export and (for owners) an import control beside its existing
-Add entry. Import opens a modal naming the picked file and its memory count, with the
-collision choice spelled out, then reports what the import did — added, replaced, deleted —
-as a toast.
+Each group header carries labeled **Export** and (for owners) **Import** buttons beside its
+existing Add entry — icon plus text, with a tooltip saying that the whole group travels.
+Import opens a modal naming the picked file and its memory count, with the collision choice
+spelled out, then reports what the import did — added, replaced, deleted — as a toast.

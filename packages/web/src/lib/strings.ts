@@ -708,8 +708,10 @@ export const zh = {
     editPromptLead: (title: string): string => `请帮我更新一条记忆：${title}`,
     editPromptTail: "修改要求：",
     exportScope: "导出",
+    exportScopeHint: "将该组全部记忆下载为一份 JSON 文档",
     exportScopeLabel: (scope: string): string => `导出${scope}`,
     importScope: "导入",
+    importScopeHint: "从导出的 JSON 文档恢复记忆到该组",
     importScopeLabel: (scope: string): string => `导入到${scope}`,
     importTitle: "导入记忆",
     importWhy:

@@ -733,8 +733,10 @@ export const en: Strings = {
     editPromptLead: (title: string): string => `Please update a memory: ${title}`,
     editPromptTail: "What to change: ",
     exportScope: "Export",
+    exportScopeHint: "Download every memory in this group as one JSON document",
     exportScopeLabel: (scope: string): string => `Export ${scope}`,
     importScope: "Import",
+    importScopeHint: "Restore memories into this group from an exported JSON document",
     importScopeLabel: (scope: string): string => `Import into ${scope}`,
     importTitle: "Import memories",
     importWhy:

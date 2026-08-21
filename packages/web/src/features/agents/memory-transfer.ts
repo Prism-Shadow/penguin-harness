@@ -110,7 +110,27 @@ export function planMemoryImport(
   };
 }
 
-/** File name of a downloaded scope document, matching the Content-Disposition the export route sets. */
-export function memoryDocumentFileName(agentId: string, scopeKey: string): string {
-  return `${agentId}-${scopeKey}-memory.json`;
+/** `YYYYMMDD-HHmm` in the viewer's local time, or null when the ISO string is unreadable. */
+function fileNameStamp(exportedAt: string): string | null {
+  const d = new Date(exportedAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+/**
+ * File name of a downloaded scope document: Agent, scope, and the document's own `exportedAt`
+ * rendered in the viewer's local time, so repeated exports of one scope stay apart in a
+ * downloads folder. Same `<agent>-<scope>-memory-<stamp>.json` pattern as the export route's
+ * Content-Disposition, whose stamp renders on the server's clock instead.
+ */
+export function memoryDocumentFileName(
+  agentId: string,
+  scopeKey: string,
+  exportedAt: string,
+): string {
+  const stamp = fileNameStamp(exportedAt);
+  return stamp === null
+    ? `${agentId}-${scopeKey}-memory.json`
+    : `${agentId}-${scopeKey}-memory-${stamp}.json`;
 }

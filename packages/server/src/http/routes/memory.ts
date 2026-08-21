@@ -30,6 +30,13 @@ import { optionalBoolean, optionalEnum, pathParam, readJson, requireValidId } fr
 
 const IMPORT_MODES: readonly MemoryImportMode[] = ["skip", "overwrite", "replace"];
 
+/** The export attachment's `YYYYMMDD-HHmm` stamp, from the document's `exportedAt` (local clock). */
+function exportStamp(exportedAt: string): string {
+  const d = new Date(exportedAt);
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
 export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -69,13 +76,16 @@ export function memoryRoutes(deps: AppDeps): Hono<AppEnv> {
     const { projectId, agentId } = scope(c);
     const key = pathParam(c, "scopeKey");
     const doc = await deps.memoryService.exportScope(projectId, agentId, key);
-    // Named for the Agent and the scope it came from, so several downloads stay apart in a
-    // downloads folder. The Agent id is validated and the scope key has just passed the
-    // service's key rule, so neither can carry a quote or a newline into the header.
+    // Named for the Agent, the scope, and the document's own `exportedAt` (`YYYYMMDD-HHmm`,
+    // this process's local clock), so repeated exports of one scope stay apart in a downloads
+    // folder. The Agent id is validated and the scope key has just passed the service's key
+    // rule, so neither can carry a quote or a newline into the header; the stamp is digits
+    // and a dash by construction. The Web App saves through an object URL with the same
+    // pattern rendered on the viewer's clock (see memoryDocumentFileName).
     return new Response(JSON.stringify(doc, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${agentId}-${key}-memory.json"`,
+        "Content-Disposition": `attachment; filename="${agentId}-${key}-memory-${exportStamp(doc.exportedAt)}.json"`,
       },
     });
   });
