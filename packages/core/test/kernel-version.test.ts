@@ -238,7 +238,7 @@ describe("applyKernelUpdate", () => {
     expect(result.advanced).toContain("compaction.max_context_length");
     const written = await readConfig();
     expect(written.compaction?.prompt).toBe("Ancient compaction wording.");
-    expect(written.compaction?.max_context_length).toBe(512000);
+    expect(written.compaction?.max_context_length).toBe(256000);
   });
 
   it("never touches name, description, version or mcpServers", async () => {

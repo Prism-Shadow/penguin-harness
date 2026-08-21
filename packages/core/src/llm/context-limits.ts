@@ -76,7 +76,7 @@ export const MIN_OUTPUT_TOKENS = Math.floor(OUTPUT_SAFETY_MARGIN / 2);
  * `COMPACTION_HEADROOM − OUTPUT_SAFETY_MARGIN` minus the compaction prompt; reserving less
  * would clamp the summary to the floor and truncate it. On a 32768 window this makes
  * compaction fire at ≈ 30720 instead of never — the seeded default threshold
- * (`DEFAULT_MAX_CONTEXT_LENGTH`, 512000) sits far outside such a window, so without this cap
+ * (`DEFAULT_MAX_CONTEXT_LENGTH`, 256000) sits far outside such a window, so without this cap
  * the window's hard limit would always be hit first.
  */
 export const COMPACTION_HEADROOM = OUTPUT_SAFETY_MARGIN * 2;

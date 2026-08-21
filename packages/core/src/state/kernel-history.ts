@@ -145,8 +145,8 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   (issue #306): only the `tools.builtin.run_subagent` leaf changed.
  * - `"2026-08-19"` — the `max` thinking level joined the ladder, widening `run_subagent`'s
  *   `thinking_level` enum: again only the `tools.builtin.run_subagent` leaf changed.
- * - `"2026-08-20"` (current) — the seeded `compaction.max_context_length` rose to 512000,
- *   leaning on the per-model `context_window` cap instead of the threshold itself: only the
+ * - `"2026-08-20"` (current) — the seeded `compaction.max_context_length` rose to 256000,
+ *   with the per-model `context_window` cap as its backstop: only the
  *   `compaction.max_context_length` leaf changed.
  *
  * Generations older than the seeded ones cannot be fully reconstructed; their values match
@@ -299,7 +299,7 @@ export const KERNEL_HASH_HISTORY: Readonly<Record<string, Readonly<Record<string
     "model.thinking_level": "60d4c90eee5e731df8d3ef2891de541d2e755ff8ee9db358e26bdec49f6e0db9",
     "model.timeoutMs": "4f9f73b34c5b89879aad65a48025f3187dd9ce6dc3d4e88eecb2fc79227350f1",
     "compaction.max_context_length":
-      "aa4e55a97c93d61fbad2fb4733b5421c94c5f280785cc52ad406a6e9c59069a4",
+      "b412afcc00967650c9e51efd8cdc35ae59d3d6c30234331b7bf75b382d982ee9",
     "compaction.max_session_turns":
       "1bad6b8cf97131fceab8543e81f7757195fbb1d36b376ee994ad1cf17699c464",
     "compaction.mode": "e58fac0b4b9c0f29b3d224da119dff5f6517a40d139faf92e309705b98bd410a",

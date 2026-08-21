@@ -102,14 +102,14 @@ export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
  * the effective threshold is the smaller of this value and the window minus
  * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
  * this value plus that headroom therefore decides the trigger point, so a small-window model
- * still compacts inside its window rather than never; on a roomier window — most built-in
- * catalog entries — this value is what fires. A model entry with no usable `context_window`
- * falls back to the assumed window (128000), which is a different number from this one and
- * must not be conflated with it.
+ * still compacts inside its window rather than never; on a roomier window — nearly every
+ * built-in catalog entry — this value is what fires. A model entry with no usable
+ * `context_window` falls back to the assumed window (128000), which is a different number
+ * from this one and must not be conflated with it.
  *
  * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
  */
-export const DEFAULT_MAX_CONTEXT_LENGTH = 512000;
+export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -368,7 +368,7 @@ export interface SystemConfig {
     thinking_level?: ThinkingLevelName;
     timeoutMs?: number;
   };
-  /** Context compaction (enabled by default, max_context_length 512k, mode summarize). */
+  /** Context compaction (enabled by default, max_context_length 256k, mode summarize). */
   compaction?: CompactionConfig;
   /** Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
   memory?: MemoryConfig;
