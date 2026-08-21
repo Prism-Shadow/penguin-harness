@@ -3,27 +3,33 @@
  * the server as an Electron utilityProcess, so node-pty's native binding — and, on macOS,
  * its `spawn-helper` side binary — must work under Electron's Node, not the Node that
  * compiled the tree. ELECTRON_RUN_AS_NODE is that same runtime, so this loads node-pty
- * the way the server resolves it, spawns a real shell and waits for one byte of output.
+ * exactly as the server bundle does — a bare `require("node-pty")` anchored at
+ * dist/server.js, which reaches the copy scripts/build-assets.mjs stages into
+ * dist/node_modules — then spawns a real shell and waits for one byte of output.
  *
- * A platform where the pty cannot load or spawn fails here with the real error, instead
- * of shipping a desktop app whose terminal panel silently stays empty (the macOS bug
- * this guards against). Run standalone (CI's ci-macos job) after `pnpm install`; it needs
- * no build outputs and does not touch the staging tree.
+ * A platform where the pty cannot be resolved, loaded or spawned fails here with the real
+ * error, instead of shipping a desktop app whose terminal panel silently stays empty (the
+ * macOS bug this guards against). Run after `pnpm build` (CI's ci-macos job); the staged
+ * copy is a build output, so an unbuilt tree fails with that, not with a pty error.
  */
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = path.resolve(pkgDir, "..", "..");
+const serverBundle = path.join(pkgDir, "dist", "server.js");
 
-// Resolve node-pty exactly the way the server package does.
-const serverRequire = createRequire(path.join(repoRoot, "packages", "server", "package.json"));
-const ptyPath = path.dirname(serverRequire.resolve("node-pty/package.json"));
+if (!fs.existsSync(serverBundle)) {
+  console.error(`[terminal-smoke] ${serverBundle} is missing — run \`pnpm -r build\` first.`);
+  process.exit(1);
+}
 
 const smoke = `
-  const pty = require(${JSON.stringify(ptyPath)});
+  const { createRequire } = require("node:module");
+  const { pathToFileURL } = require("node:url");
+  // The server bundle's own line: packages/server/src/platform/terminal/pty-module.ts.
+  const pty = createRequire(pathToFileURL(${JSON.stringify(serverBundle)}).href)("node-pty");
   const shell = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
   const term = pty.spawn(shell, [], { name: "xterm-256color", cols: 40, rows: 10, cwd: process.cwd(), env: process.env });
   const timer = setTimeout(() => { console.error("no pty output within 15s"); process.exit(1); }, 15000);

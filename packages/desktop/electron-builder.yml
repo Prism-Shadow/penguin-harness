@@ -1,9 +1,9 @@
 # electron-builder config for the desktop shell installers.
 #
 # The app directory is this package itself: `pnpm build` emits self-contained bundles of
-# the shell, the server and the CLI into dist/ (see tsup.config.ts), so the app has no
-# runtime dependencies and electron-builder ships no node_modules — `files` below is the
-# complete description of what goes inside an installer.
+# the shell, the server and the CLI into dist/ (see tsup.config.ts), so the app carries no
+# dependency tree for electron-builder to collect — `files` below is the complete
+# description of what goes inside an installer.
 #
 # asar is off on purpose: the shell forks the server as a child process, the skill
 # library reads its .md files from disk, and agent commands spawn real shells — plain
@@ -34,6 +34,12 @@ directories:
 files:
   - dist/**/*
   - "!dist/**/*.map"
+  # The staged node-pty package (scripts/build-assets.mjs, src/pty-payload.ts). electron-builder
+  # adds a `!**/node_modules/**` of its own: at the head of this list when no non-negated
+  # pattern names node_modules, or immediately BEFORE the first one that does. Naming it here
+  # is what moves that exclusion behind `dist/**/*` — last match wins, so this one node_modules
+  # ships and any other that appears under dist/ does not.
+  - dist/node_modules/**/*
   - bin/**/*
   - skills/**/*
   - package.json
@@ -47,7 +53,10 @@ extraMetadata:
   name: penguin-harness-desktop
   homepage: https://github.com/Prism-Shadow/penguin-harness
 asar: false
-# Nothing to rebuild: the app ships no node_modules and no native modules.
+# Nothing to rebuild: the only native module is node-pty, staged into dist/node_modules as
+# the binaries its npm tarball prebuilds (darwin, win32) or as the binding pnpm's install
+# already compiled on this host (Linux). Both are N-API, so Electron's Node loads them as
+# published — scripts/terminal-smoke.mjs is what proves it.
 npmRebuild: false
 nodeGypRebuild: false
 
