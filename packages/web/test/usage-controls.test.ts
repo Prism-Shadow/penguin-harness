@@ -1,7 +1,8 @@
 /**
  * Cost center control + series-shaping helper tests (usage-controls.ts): range
- * presets (calendar and trailing timestamp windows), the preset↔precision
- * matrix (offered options, defaults, snapping), bucket-key labels, entity
+ * presets (calendar and trailing timestamp windows), the precision each range
+ * derives (there is no precision control) and the bucket counts that keeps
+ * inside the server's cap, bucket-key labels, entity
  * folding for the requests chart's stacked bars (top entities + a neutral
  * counted tail), and the per-bucket success / cache-hit rate values the lines
  * draw.
@@ -11,15 +12,13 @@ import type { UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import {
   bucketAxisLabel,
   bucketFullLabel,
-  coerceGranularity,
   defaultGranularity,
   foldEntitySeries,
-  granularityOptions,
   hitRateValues,
+  idleBuckets,
   isoDate,
   MAX_NAMED_SERIES,
   presetDefaultGranularity,
-  presetGranularities,
   presetRange,
   presetTsWindow,
   rangeDays,
@@ -70,39 +69,65 @@ describe("presetRange / presetTsWindow / rangeDays", () => {
   });
 });
 
-describe("preset × precision matrix", () => {
-  it("each preset offers its own precisions; custom follows the range", () => {
-    expect(presetGranularities("1h", 1)).toEqual(["minute"]);
-    expect(presetGranularities("1d", 1)).toEqual(["hour"]);
-    expect(presetGranularities("7d", 7)).toEqual(["hour", "day"]);
-    expect(presetGranularities("30d", 30)).toEqual(["day", "week"]);
-    expect(presetGranularities("90d", 90)).toEqual(["day", "week"]);
-    expect(presetGranularities("custom", 7)).toEqual(["hour", "day"]);
-    expect(presetGranularities("custom", 90)).toEqual(["day", "week", "month"]);
-    expect(presetGranularities("custom", 400)).toEqual(["week", "month"]);
-  });
+describe("the range picks the precision (there is no precision control)", () => {
+  /**
+   * How many buckets a preset's own window produces at its derived precision.
+   * The server rejects anything over 500 (usage-service caps the zero-fill
+   * skeleton), and with the precision control gone the page has to be
+   * incapable of asking for a rejected combination in the first place.
+   */
+  const MAX_BUCKETS = 500;
+  const buckets: Record<string, number> = {
+    "1h": 61, // 60 minutes, both ends inclusive
+    "1d": 25, // 24 hours, both ends inclusive
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+  };
 
-  it("custom-range options gate hourly by readability and weekly/monthly by fill", () => {
-    expect(granularityOptions(7)).toEqual(["hour", "day"]);
-    expect(granularityOptions(30)).toEqual(["day", "week"]);
-    expect(granularityOptions(90)).toEqual(["day", "week", "month"]);
-  });
-
-  it("defaults: trailing presets take their only sensible unit, calendar presets take day, custom scales with the range", () => {
+  it("each preset derives exactly one precision", () => {
     expect(presetDefaultGranularity("1h", 1)).toBe("minute");
     expect(presetDefaultGranularity("1d", 1)).toBe("hour");
     expect(presetDefaultGranularity("7d", 7)).toBe("day");
+    expect(presetDefaultGranularity("30d", 30)).toBe("day");
     expect(presetDefaultGranularity("90d", 90)).toBe("day");
-    expect(presetDefaultGranularity("custom", 180)).toBe("week");
+  });
+
+  it("a custom range scales with its length: day, then week, then month", () => {
+    expect(presetDefaultGranularity("custom", 1)).toBe("day");
+    expect(presetDefaultGranularity("custom", 92)).toBe("day");
+    expect(presetDefaultGranularity("custom", 93)).toBe("week");
+    expect(presetDefaultGranularity("custom", 190)).toBe("week");
+    expect(presetDefaultGranularity("custom", 191)).toBe("month");
     expect(defaultGranularity(365)).toBe("month");
   });
 
-  it("a preset change keeps a still-valid precision and snaps an invalid one", () => {
-    expect(coerceGranularity("day", "30d", 30)).toBe("day");
-    expect(coerceGranularity("minute", "30d", 30)).toBe("day");
-    expect(coerceGranularity("day", "1h", 1)).toBe("minute");
-    expect(coerceGranularity("hour", "7d", 7)).toBe("hour");
-    expect(coerceGranularity("month", "custom", 90)).toBe("month");
+  it("no preset can ask the server for more buckets than it will return", () => {
+    for (const [preset, count] of Object.entries(buckets)) {
+      expect(count).toBeLessThanOrEqual(MAX_BUCKETS);
+    }
+    // Custom ranges are bounded by their own derivation: day only up to a
+    // quarter (92 buckets), then week (a year is 53), then month.
+    expect(Math.ceil(92 / 1)).toBeLessThanOrEqual(MAX_BUCKETS);
+    expect(Math.ceil(190 / 7) + 1).toBeLessThanOrEqual(MAX_BUCKETS);
+    expect(Math.ceil((365 * 5) / 30)).toBeLessThanOrEqual(MAX_BUCKETS);
+  });
+
+  it("only the trailing presets reach the precisions that need timestamp bounds", () => {
+    // minute always, and hour when a window is given, are enumerated between
+    // instants server-side — so exactly the two presets that send fromTs/toTs.
+    const needsWindow = (g: string) => g === "minute" || g === "hour";
+    expect(needsWindow(presetDefaultGranularity("1h", 1))).toBe(true);
+    expect(needsWindow(presetDefaultGranularity("1d", 1))).toBe(true);
+    for (const [preset, days] of [
+      ["7d", 7],
+      ["30d", 30],
+      ["90d", 90],
+      ["custom", 45],
+      ["custom", 400],
+    ] as const) {
+      expect(needsWindow(presetDefaultGranularity(preset, days))).toBe(false);
+    }
   });
 });
 
@@ -220,8 +245,11 @@ describe("rate values", () => {
     expect(rateSeries({ completed: [3, 1, 0], denominator: [4, 1, 2] })).toEqual([75, 100, 0]);
   });
 
-  it("a bucket with nothing rated is a hole, not a 100%: the line breaks instead of claiming a perfect record", () => {
-    expect(rateSeries({ completed: [0, 2, 0], denominator: [0, 2, 0] })).toEqual([null, 100, null]);
+  it("a bucket with nothing rated plots 0 — not a gap, and emphatically not 100%", () => {
+    expect(rateSeries({ completed: [0, 2, 0], denominator: [0, 2, 0] })).toEqual([0, 100, 0]);
+    // 0 therefore means two things; idleBuckets is what lets the hover text say which.
+    expect(idleBuckets({ denominator: [0, 2, 0] })).toEqual([true, false, true]);
+    expect(idleBuckets({ denominator: [1, 0] })).toEqual([false, true]);
   });
 
   it("cache hit rate is percent of read/(read+write); no cache traffic counts as 0 so the curve runs continuously", () => {

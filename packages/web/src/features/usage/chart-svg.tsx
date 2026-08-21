@@ -41,6 +41,46 @@ import {
   type ChartGeom,
 } from "./chart-geom";
 
+/** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 1.5–2px stroke is too thin to aim at. */
+export const LINE_HIT_H = 10;
+
+/**
+ * Hover bands for a line series, one per bucket: a transparent rect the width
+ * of the cell, centred on that bucket's point. Put these in ChartFrame's
+ * `hitLayer` **after** the bar hits, so a line stays reachable where it runs
+ * across a tall segment — the lines draw above the bars, and they answer the
+ * pointer above them too.
+ *
+ * Per bucket rather than one band along the whole path, so entering anywhere
+ * on the line reports which bucket the pointer is over as well as which
+ * series it belongs to.
+ */
+export function LineHits({
+  geom,
+  values,
+  onEnter,
+  onLeave,
+}: {
+  geom: ChartGeom;
+  values: readonly number[];
+  onEnter: (i: number) => void;
+  onLeave?: () => void;
+}) {
+  return values.map((v, i) => (
+    <rect
+      key={i}
+      x={geom.x(i) - geom.step / 2}
+      y={geom.y(v) - LINE_HIT_H / 2}
+      width={geom.step}
+      height={LINE_HIT_H}
+      fill="transparent"
+      className="cursor-pointer"
+      onMouseEnter={() => onEnter(i)}
+      onMouseLeave={onLeave}
+    />
+  ));
+}
+
 /**
  * Measure the available width inside the chart card (CSS pixels, rounded
  * down — a few stray tenths of a pixel would otherwise spawn a scrollbar out of nowhere).

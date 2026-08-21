@@ -1,10 +1,10 @@
 /**
  * Cost and usage center:
  * top filters for Agent / Model + a date-range preset (trailing last hour /
- * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs) + a
- * time-series precision (minute / hour / day / week / month, constrained by
- * the preset — controls have no external title, the explanation is written
- * into the dropdown options themselves);
+ * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs);
+ * the range alone decides the time-series precision, so there is no second
+ * control for it (controls have no external title — the explanation is
+ * written into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
  * a 2x2 grid of time-series charts over the shared range and precision —
  * requests + success rate broken down by Agent and, beside it, the same by
@@ -17,12 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import type {
-  ModelRefDto,
-  UsageBucket,
-  UsageGranularity,
-  UsageResponse,
-} from "@prismshadow/penguin-server/api";
+import type { ModelRefDto, UsageBucket, UsageResponse } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -37,8 +32,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import { RequestsChart, TokenBarChart, TokenLegend, type TokenLegendKey } from "./usage-charts";
 import {
-  coerceGranularity,
-  presetGranularities,
+  presetDefaultGranularity,
   presetRange,
   presetTsWindow,
   rangeDays,
@@ -151,12 +145,10 @@ export function UsagePage() {
   const [preset, setPreset] = useState<RangePreset>("7d");
   const [from, setFrom] = useState(() => presetRange("7d", new Date()).from);
   const [to, setTo] = useState(() => presetRange("7d", new Date()).to);
-  const [granularity, setGranularity] = useState<UsageGranularity>("day");
   const applyRange = (nextPreset: RangePreset, nextFrom: string, nextTo: string) => {
     setPreset(nextPreset);
     setFrom(nextFrom);
     setTo(nextTo);
-    setGranularity((g) => coerceGranularity(g, nextPreset, rangeDays(nextFrom, nextTo)));
   };
   const [data, setData] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +168,9 @@ export function UsagePage() {
         ...range,
         // The detail table has been removed, superseded by the charts above; groupBy is still a required query parameter, fixed to group by date.
         groupBy: "date",
-        granularity,
+        // The range picks the precision — there is no separate control, and this
+        // is the only place the choice is made (see presetDefaultGranularity).
+        granularity: presetDefaultGranularity(preset, rangeDays(from, to)),
         ...(agentFilter ? { agentId: agentFilter } : {}),
         ...(modelFilter ? { provider: modelFilter.provider, modelId: modelFilter.modelId } : {}),
       });
@@ -184,16 +178,7 @@ export function UsagePage() {
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [
-    projectId,
-    preset,
-    from,
-    to,
-    granularity,
-    agentFilter,
-    modelFilter?.provider,
-    modelFilter?.modelId,
-  ]);
+  }, [projectId, preset, from, to, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
 
   useEffect(() => {
     setData(null);
@@ -226,11 +211,9 @@ export function UsagePage() {
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
 
-  // Precision choices follow the selected preset/range. The two requests
-  // charts each get one dimension's entity list, already sorted by total
-  // requests descending and index-aligned with `series` (the server's
-  // contract); the charts fold their own tails.
-  const gOptions = presetGranularities(preset, rangeDays(from, to));
+  // The two requests charts each get one dimension's entity list, already
+  // sorted by total requests descending and index-aligned with `series` (the
+  // server's contract); the charts fold their own tails.
   const agentEntities: EntityCounts[] = (data?.byAgentSeries ?? []).map((s) => ({
     label: s.agentId,
     requests: s.requests,
@@ -243,14 +226,6 @@ export function UsagePage() {
     completed: s.completed,
     denominator: s.denominator,
   }));
-  const granularityLabel = (g: UsageGranularity): string => {
-    if (g === "minute") return S.usage.granularityMinute;
-    if (g === "hour") return S.usage.granularityHour;
-    if (g === "day") return S.usage.granularityDay;
-    if (g === "week") return S.usage.granularityWeek;
-    return S.usage.granularityMonth;
-  };
-
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl space-y-4">
@@ -340,21 +315,6 @@ export function UsagePage() {
                 />
               </div>
             )}
-            {/* Time-series precision, constrained by the range (see granularityOptions) */}
-            <div className="w-20">
-              <Select
-                size="sm"
-                value={granularity}
-                aria-label={S.usage.granularityLabel}
-                onChange={(e) => setGranularity(e.target.value as UsageGranularity)}
-              >
-                {gOptions.map((g) => (
-                  <option key={g} value={g}>
-                    {granularityLabel(g)}
-                  </option>
-                ))}
-              </Select>
-            </div>
           </div>
         </div>
 

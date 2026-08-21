@@ -1,9 +1,8 @@
 /**
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
- * assembly (straight, gap-split and monotone-cubic smooth paths — the smooth curve must
- * never overshoot its endpoints, so a 0–100% rate stays bounded), container-fitting bar
- * width (charts never scroll), stacked-bar segment geometry and per-segment hit bands, and
- * hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
+ * assembly (straight and gap-split paths — every line on the page is straight segments,
+ * nothing is smoothed), container-fitting bar width (charts never scroll), stacked-bar
+ * segment geometry and per-segment hit bands, and hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
  * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
  * format.test.ts). Component interaction isn't covered here (vitest runs in a node
  * environment, no DOM).
@@ -19,7 +18,6 @@ import {
   makeRangeGeom,
   linePath,
   areaPath,
-  monotonePath,
   lineSegments,
   segmentPath,
   sparseLabelIdx,
@@ -163,45 +161,6 @@ describe("padR (right-axis room)", () => {
     const bars = makeGeom(5, 12345, 640, PAD_R_AXIS);
     const rate = makeRangeGeom(5, 0, 100, 640, PAD_R_AXIS);
     for (let i = 0; i < 5; i++) expect(rate.x(i)).toBe(bars.x(i));
-  });
-});
-
-describe("monotonePath", () => {
-  const g = makeGeom(2, 100, 640);
-
-  it("two points: one cubic segment, endpoints exact, control points at 1/3 with the secant tangent", () => {
-    expect(monotonePath(g, [100, 0])).toBe("M192.5,10 C290.17,66 387.83,122 485.5,178");
-  });
-
-  /** Every y in the path, parsed back out of the command string. */
-  const ys = (path: string): number[] =>
-    [...path.matchAll(/[\d.]+,([\d.]+)/g)].map((m) => Number(m[1]));
-
-  it("never overshoots: a peak's curve stays at or below the data's top (y >= y(max) on canvas)", () => {
-    const g3 = makeGeom(3, 100, 640);
-    const path = monotonePath(g3, [0, 100, 0]);
-    // Canvas y grows downward: overshooting 100 would render y < y(100) = 10.
-    for (const y of ys(path)) expect(y).toBeGreaterThanOrEqual(10);
-    for (const y of ys(path)) expect(y).toBeLessThanOrEqual(178);
-  });
-
-  it("control points stay inside each segment's endpoint range (the no-overshoot invariant, via the Bezier convex hull)", () => {
-    const g4 = makeGeom(4, 100, 640);
-    const nums = ys(monotonePath(g4, [0, 10, 60, 100]));
-    // nums groups as: y0, then per segment [cp1, cp2, end].
-    for (let s = 0; s + 3 < nums.length; s += 3) {
-      const lo = Math.min(nums[s]!, nums[s + 3]!) - 1e-6;
-      const hi = Math.max(nums[s]!, nums[s + 3]!) + 1e-6;
-      expect(nums[s + 1]!).toBeGreaterThanOrEqual(lo);
-      expect(nums[s + 1]!).toBeLessThanOrEqual(hi);
-      expect(nums[s + 2]!).toBeGreaterThanOrEqual(lo);
-      expect(nums[s + 2]!).toBeLessThanOrEqual(hi);
-    }
-  });
-
-  it("degenerate inputs: empty is an empty string, a single point a bare M that strokes nothing", () => {
-    expect(monotonePath(g, [])).toBe("");
-    expect(monotonePath(g, [50])).toBe("M192.5,94");
   });
 });
 

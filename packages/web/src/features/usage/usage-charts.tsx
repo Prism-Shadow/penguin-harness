@@ -3,25 +3,26 @@
  * chart is a time series over the page's shared date range and precision —
  * - RequestsChart: one dimension's requests and success rate on one pair of
  *   axes — per-bucket requests stacked by entity on the left count axis, one
- *   success-rate line per entity on the right-hand 0–100% axis, a legend
- *   underneath. The page mounts it twice, by Agent and by Model, so both
- *   breakdowns are on screen without a toggle. Top entities keep their own
- *   CVD-checked hue and the tail folds into a neutral series labelled with
- *   how many it swallowed.
+ *   dashed success-rate line per entity on the right-hand 0–100% axis (drawn
+ *   above the bars), a legend underneath. The page mounts it twice, by Agent
+ *   and by Model, so both breakdowns are on screen without a toggle. Top
+ *   entities keep their own CVD-checked hue and the tail folds into a neutral
+ *   series labelled with how many it swallowed.
  * - TokenBarChart: per-bucket Token buckets as a three-segment stacked bar
  *   (bottom-to-top output → cacheWrite → cacheRead, same blue family, darkest
- *   at the bottom), with the cache hit rate as a dashed smooth curve **in
- *   front of the bars** on its own right-hand 0–100% axis — continuous: a
- *   bucket with no cache traffic counts as 0, never a gap. Bars always fit
- *   the card (fitBarWidth) — the charts never scroll.
+ *   at the bottom), with the cache hit rate as a dashed line **in front of the
+ *   bars** on its own right-hand 0–100% axis — continuous: a bucket with no
+ *   cache traffic counts as 0, never a gap. Bars always fit the card
+ *   (fitBarWidth) — the charts never scroll.
  * Cost reuses TrendChart (straight line + area fill, with a dot per point
  * wherever the cells are wide enough to keep the dots apart).
  *
  * Unified highlight interaction (a site-wide convention): highlight = fade
- * out the rest. Hovering anywhere in a Token column reports the whole bucket
- * (all three Token buckets plus the hit rate); hovering a segment additionally
- * highlights just that segment; hovering a requests legend item leaves only
- * that entity's bars and line at full strength.
+ * out the rest, and every chart offers the same three ways in: hover a column
+ * for its bubble, hover one bar segment to single that segment out, hover a
+ * line's own band to single the line out. A legend item does what hovering
+ * its mark does. Line hit bands sit above the bars' in every chart, so a line
+ * answers the pointer wherever it runs.
  */
 import { useState } from "react";
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
@@ -35,18 +36,18 @@ import {
   autoLabelIdx,
   barSegments,
   fitBarWidth,
-  lineSegments,
-  monotonePath,
-  segmentPath,
+  linePath,
+  stackSegments,
   PAD_R_AXIS,
   type TokenBucketKey,
 } from "./chart-geom";
-import { ChartFrame, useChartWidth } from "./chart-svg";
+import { ChartFrame, LineHits, useChartWidth } from "./chart-svg";
 import {
   bucketAxisLabel,
   bucketFullLabel,
   foldEntitySeries,
   hitRateValues,
+  idleBuckets,
   rateSeries,
   sumCounts,
   type EntityCounts,
@@ -76,6 +77,18 @@ function entityColor(s: EntitySeries, i: number): SeriesColor {
 }
 
 // —— Requests + success rate, broken down by entity ——
+
+/**
+ * What is currently singled out in a requests chart. `entity` is the series;
+ * `bucket` narrows it to one column when the pointer is on a specific bar
+ * segment, and is null when the whole series is meant (a legend item or the
+ * rate line). One shape for all three affordances, so they cannot disagree
+ * about what is lit.
+ */
+interface RequestsMark {
+  entity: number;
+  bucket: number | null;
+}
 
 /**
  * Legend row under a requests chart: one square swatch per drawn entity —
@@ -131,10 +144,15 @@ function RequestsLegend({
  * into a neutral tail labelled with how many it swallowed, so the chart never
  * implies the head is everything.
  *
- * A rate line stops wherever its entity has no rated request in the bucket
- * (see rateSeries): a gap says "this entity did not run here", where a filled
- * 100% would claim a perfect record it never earned. A run of one bucket
- * strokes nothing, so it is drawn as a dot instead.
+ * A bucket an entity did nothing in plots 0, not a gap and not 100% — see
+ * rateSeries. 0 therefore carries two meanings, so the bubble marks the ones
+ * that mean "made no request" rather than "failed everything".
+ *
+ * Three ways to single out a series, all resolving to one RequestsMark: hover
+ * a bar segment (that entity in that bucket), hover a rate line, or hover a
+ * legend item (that entity everywhere). The lines are drawn above the bars
+ * and their hit bands sit above the bars' too, so a line is never lost behind
+ * a tall segment.
  */
 export function RequestsChart({
   series,
@@ -146,7 +164,7 @@ export function RequestsChart({
   granularity: UsageGranularity;
 }) {
   const [hover, setHover] = useState<number | null>(null);
-  const [focus, setFocus] = useState<number | null>(null);
+  const [mark, setMark] = useState<RequestsMark | null>(null);
   const [ref, width] = useChartWidth();
   const drawn = foldEntitySeries(entities, S.usage.legendOther);
   if (series.length === 0 || drawn.length === 0) return <Empty />;
@@ -154,35 +172,27 @@ export function RequestsChart({
   const totals = sumCounts(drawn);
   const totalRate = rateSeries(totals);
   const rates = drawn.map((e) => rateSeries(e));
-  // Requests are whole numbers and ChartFrame quarters the axis, so the top is
-  // rounded up to a multiple of 4: a max of 5 would otherwise label its
-  // gridlines 0 / 1 / 3 / 4 / 5, skipping 2 and pretending the spacing is even.
+  const idle = drawn.map((e) => idleBuckets(e));
   const geom = makeGeom(series.length, niceCountMax(...totals.requests), width, PAD_R_AXIS);
   const rateGeom = makeRangeGeom(series.length, 0, 100, width, PAD_R_AXIS);
   const barW = fitBarWidth(geom.step);
   const buckets = series.map((p) => p.bucket);
-  const faded = (i: number) => focus !== null && focus !== i;
-  const pct = (v: number | null | undefined) => formatPercent(v == null ? null : v / 100);
-
-  /** One bubble row: swatch + label + the bucket's request count + that entity's rate. */
-  const bubbleRow = (
-    key: string,
-    swatch: React.ReactNode,
-    label: string,
-    requests: number,
-    rate: number | null | undefined,
-    muted = false,
-  ) => (
-    <p
-      key={key}
-      className={`flex items-center gap-1.5 font-mono ${muted ? "text-gray-500 dark:text-gray-400" : ""}`}
-    >
-      {swatch}
-      <span className="max-w-32 truncate">{label}</span>
-      <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">{requests}</span>
-      <span className="min-w-10 pl-1.5 text-right tabular-nums">{pct(rate)}</span>
-    </p>
+  const segs = series.map((_, i) =>
+    stackSegments(
+      geom,
+      drawn.map((e) => e.requests[i] ?? 0),
+    ),
   );
+  // Highlight = fade out the rest. A mark on a whole series lights all of it; a
+  // mark on one segment lights that rect and keeps its own line lit with it, so
+  // the bar and the rate it produced are read together.
+  const barLit = (entity: number, i: number) =>
+    mark === null || (mark.entity === entity && (mark.bucket === null || mark.bucket === i));
+  const lineLit = (entity: number) => mark === null || mark.entity === entity;
+  const barOpacity = (entity: number, i: number) => {
+    if (!barLit(entity, i)) return 0.15;
+    return mark === null && hover !== null && hover !== i ? 0.35 : 1;
+  };
 
   return (
     <div ref={ref}>
@@ -194,96 +204,147 @@ export function RequestsChart({
             dates={buckets}
             fmtX={(b) => bucketAxisLabel(granularity, b)}
             hover={hover}
-            onHover={setHover}
+            onHover={(i) => {
+              if (i === null) {
+                setHover(null);
+                setMark(null);
+              } else setHover(i);
+            }}
             labels={autoLabelIdx(series.length, geom.step)}
             hoverLine={false}
             rightAxis={{ y: rateGeom.y, ticks: [0, 50, 100], fmt: (v) => `${v}%` }}
             bubble={(i) => (
               <>
                 <p className="text-gray-400">{bucketFullLabel(granularity, buckets[i]!)}</p>
-                {drawn.map((e, si) =>
-                  bubbleRow(
-                    `${e.label}:${si}`,
+                {drawn.map((e, si) => (
+                  <p
+                    key={`${e.label}:${si}`}
+                    className={`flex items-center gap-1.5 font-mono ${
+                      mark?.entity === si ? "font-semibold" : ""
+                    }`}
+                  >
                     <span
                       className={`inline-block h-2 w-2 shrink-0 rounded-[2px] ${entityColor(e, si).swatch}`}
-                    />,
-                    e.label,
-                    e.requests[i] ?? 0,
-                    rates[si]![i],
-                  ),
+                    />
+                    <span className="max-w-32 truncate">{e.label}</span>
+                    <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">
+                      {e.requests[i] ?? 0}
+                    </span>
+                    <span
+                      className={`min-w-10 pl-1.5 text-right tabular-nums ${
+                        idle[si]![i] ? "text-gray-400 dark:text-gray-500" : ""
+                      }`}
+                    >
+                      {formatPercent((rates[si]![i] ?? 0) / 100)}
+                    </span>
+                  </p>
+                ))}
+                {drawn.length > 1 && (
+                  <p className="flex items-center gap-1.5 font-mono text-gray-500 dark:text-gray-400">
+                    <span className="inline-block h-2 w-2 shrink-0" />
+                    <span className="max-w-32 truncate">{S.usage.bucketTotal}</span>
+                    <span className="ml-auto min-w-8 pl-2 text-right tabular-nums">
+                      {totals.requests[i] ?? 0}
+                    </span>
+                    <span className="min-w-10 pl-1.5 text-right tabular-nums">
+                      {formatPercent((totalRate[i] ?? 0) / 100)}
+                    </span>
+                  </p>
                 )}
-                {drawn.length > 1 &&
-                  bubbleRow(
-                    "total",
-                    <span className="inline-block h-2 w-2 shrink-0" />,
-                    S.usage.bucketTotal,
-                    totals.requests[i] ?? 0,
-                    totalRate[i],
-                    true,
-                  )}
+                {/* 0% reads two ways; say which one this bucket means rather than leaving the reader to infer it from the count beside it. */}
+                {idle.some((flags) => flags[i]) && (
+                  <p className="pt-0.5 text-[10px] text-gray-400">{S.usage.rateIdleNote}</p>
+                )}
               </>
             )}
+            hitLayer={[
+              // Column hits first (underneath): anywhere in the column reports the bucket.
+              ...series.map((_, i) => (
+                <rect
+                  key={`col-${buckets[i]}`}
+                  x={geom.x(i) - geom.step / 2}
+                  y={0}
+                  width={geom.step}
+                  height={geom.y(0)}
+                  fill="transparent"
+                  className="cursor-crosshair"
+                  onMouseEnter={() => {
+                    setHover(i);
+                    setMark(null);
+                  }}
+                />
+              )),
+              // Per-segment hits next: as wide as the bar, split vertically with no
+              // overlap and a minimum height, so a one-request segment is still reachable.
+              ...series.map((_, i) =>
+                segs[i]!.map((seg) => (
+                  <rect
+                    key={`seg-${buckets[i]}-${seg.index}`}
+                    x={geom.x(i) - barW / 2}
+                    y={seg.hitY}
+                    width={barW}
+                    height={seg.hitH}
+                    fill="transparent"
+                    className="cursor-pointer"
+                    onMouseEnter={() => {
+                      setHover(i);
+                      setMark({ entity: seg.index, bucket: i });
+                    }}
+                  />
+                )),
+              ),
+              // Line hits last, so they win wherever a line crosses a bar.
+              ...drawn.map((e, si) => (
+                <LineHits
+                  key={`line-${e.label}:${si}`}
+                  geom={rateGeom}
+                  values={rates[si]!}
+                  onEnter={(i) => {
+                    setHover(i);
+                    setMark({ entity: si, bucket: null });
+                  }}
+                />
+              )),
+            ]}
           >
             {/* Stacked request bars, bottom-up in list order (1px seams would over-fragment thin bars, so segments sit flush). */}
-            {series.map((_, i) => {
-              let cum = 0;
-              return drawn.map((e, si) => {
-                const v = e.requests[i] ?? 0;
-                if (v <= 0) return null;
-                const y0 = geom.y(cum);
-                cum += v;
-                const y1 = geom.y(cum);
-                return (
-                  <rect
-                    key={`${buckets[i]}-${e.label}-${si}`}
-                    x={geom.x(i) - barW / 2}
-                    y={y1}
-                    width={barW}
-                    height={y0 - y1}
-                    className={`${entityColor(e, si).text} transition-opacity duration-150`}
-                    fill="currentColor"
-                    opacity={faded(si) ? 0.15 : hover !== null && hover !== i ? 0.35 : 1}
-                  />
-                );
-              });
-            })}
-            {/* One success-rate line per entity on the right-hand scale, in that entity's hue.
-                Dashed, like the Token chart's hit-rate curve: a dash is what tells the reader a
-                stroke belongs to the right-hand percentage axis rather than to the bars — and
-                here the lines share their entity's bar color, so shape is the only thing left
-                to separate the two marks with. */}
+            {series.map((_, i) =>
+              segs[i]!.map((seg) => (
+                <rect
+                  key={`${buckets[i]}-${seg.index}`}
+                  x={geom.x(i) - barW / 2}
+                  y={seg.y}
+                  width={barW}
+                  height={seg.h}
+                  className={`${entityColor(drawn[seg.index]!, seg.index).text} transition-opacity duration-150`}
+                  fill="currentColor"
+                  opacity={barOpacity(seg.index, i)}
+                />
+              )),
+            )}
+            {/* One success-rate line per entity on the right-hand scale, in that entity's hue,
+                drawn after the bars so a line is never hidden behind a tall segment. Dashed,
+                like the Token chart's hit-rate curve: a dash is what tells the reader a stroke
+                belongs to the right-hand percentage axis rather than to the bars — and here the
+                lines share their entity's bar color, so shape is the only separator left. */}
             {drawn.map((e, si) => (
-              <g
-                key={`rate-${e.label}-${si}`}
+              <path
+                key={`rate-${e.label}:${si}`}
+                d={linePath(rateGeom, rates[si]!)}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
                 className={`${entityColor(e, si).text} pointer-events-none transition-opacity duration-150`}
-                opacity={faded(si) ? 0.15 : 1}
-              >
-                {lineSegments(rates[si]!).map((seg) => (
-                  <g key={seg[0]!.index}>
-                    {seg.length > 1 && (
-                      <path
-                        d={segmentPath(rateGeom, seg)}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={1.5}
-                        strokeDasharray="4 3"
-                      />
-                    )}
-                    {/* A lone bucket strokes nothing: draw its point so a one-off run is still visible. */}
-                    {seg.length === 1 && (
-                      <circle
-                        cx={rateGeom.x(seg[0]!.index)}
-                        cy={rateGeom.y(seg[0]!.value)}
-                        r={2}
-                        className="fill-current"
-                      />
-                    )}
-                  </g>
-                ))}
-              </g>
+                opacity={lineLit(si) ? 1 : 0.15}
+              />
             ))}
           </ChartFrame>
-          <RequestsLegend entities={drawn} active={focus} onHover={setFocus} />
+          <RequestsLegend
+            entities={drawn}
+            active={mark?.bucket == null ? (mark?.entity ?? null) : null}
+            onHover={(i) => setMark(i === null ? null : { entity: i, bucket: null })}
+          />
         </>
       )}
     </div>
@@ -292,14 +353,14 @@ export function RequestsChart({
 
 // —— Token buckets: three-segment stacked bars + a cache-hit-rate curve in front ——
 
-/** The hovered Token column, and within it the hovered segment (null = the column's empty space — the bubble still reports the whole bucket). */
-interface SegHover {
-  i: number;
-  key: TokenBucketKey | null;
-}
-
 /** Legend keys of the Token chart: the three Token buckets plus the hit-rate curve. */
 export type TokenLegendKey = TokenBucketKey | "hitRate";
+
+/** The hovered Token column, and within it the hovered mark (null = the column's empty space — the bubble still reports the whole bucket). */
+interface SegHover {
+  i: number;
+  key: TokenLegendKey | null;
+}
 
 /** The hit-rate curve's color classes (amber — distinct from the bars' blue family, CVD-checked against sky in the series palette). */
 const HIT_RATE_TEXT = "text-amber-500 dark:text-amber-600";
@@ -308,18 +369,18 @@ const HIT_RATE_SWATCH = "bg-amber-500 dark:bg-amber-600";
 /**
  * Per-bucket Token buckets → a three-segment stacked bar (SVG, reusing the
  * shared coordinate system and grid), bottom-to-top output → cacheWrite →
- * cacheRead, with the cache hit rate drawn as a dashed smooth curve **in front
- * of the bars** on its own right-hand 0–100% axis (same x positions — the two
- * geoms share n / w / padR). The curve is continuous: a bucket with no cache
- * traffic counts as 0.
+ * cacheRead, with the cache hit rate drawn as a dashed line **in front of the
+ * bars** on its own right-hand 0–100% axis (same x positions — the two geoms
+ * share n / w / padR). The line is continuous: a bucket with no cache traffic
+ * counts as 0.
  *
  * Bars always fit the card: fitBarWidth caps them at 25px and shrinks them
  * with the cell so the chart never scrolls horizontally.
  *
  * Hovering anywhere in a column shows the whole bucket's bubble — all three
- * Token counts plus the hit rate (hovering the curve therefore reads its
- * value); hovering a segment's own rect additionally highlights just that
- * segment (per-segment hit bands, see chart-geom's barSegments — small
+ * Token counts plus the hit rate; hovering a segment's own rect additionally
+ * highlights just that segment, and hovering the curve's own band highlights
+ * the curve alone (per-segment hit bands, see chart-geom's barSegments — small
  * segments have a height floor, otherwise a sub-pixel output segment would be
  * un-hoverable). When legend is passed in (legend hover), it highlights all
  * segments of the matching bucket — or the curve alone for `hitRate`.
@@ -352,7 +413,8 @@ export function TokenBarChart({
   const dimmed = (i: number, key: TokenBucketKey) =>
     (hover?.key != null && !(hover.i === i && hover.key === key)) ||
     (legend != null && legend !== key);
-  const curveDim = (legend != null && legend !== "hitRate") || hover?.key != null;
+  const curveDim =
+    (legend != null && legend !== "hitRate") || (hover?.key != null && hover.key !== "hitRate");
 
   /** One bubble row: swatch + label + value, shared by the three Token buckets and the hit-rate line. */
   const bubbleRow = (swatch: React.ReactNode, label: string, value: string, strong: boolean) => (
@@ -404,7 +466,7 @@ export function TokenBarChart({
                   />,
                   S.usage.legendHitRate,
                   formatPercent((rates[i] ?? 0) / 100),
-                  false,
+                  key === "hitRate",
                 )}
               </>
             );
@@ -445,6 +507,13 @@ export function TokenBarChart({
                 />
               )),
             ),
+            // The hit-rate curve last, so it answers the pointer where it crosses a bar.
+            <LineHits
+              key="hit-rate-line"
+              geom={rateGeom}
+              values={rates}
+              onEnter={(i) => setHover({ i, key: "hitRate" })}
+            />,
           ]}
         >
           {series.map((p, i) =>
@@ -468,7 +537,7 @@ export function TokenBarChart({
             opacity={curveDim ? 0.3 : 1}
           >
             <path
-              d={monotonePath(rateGeom, rates)}
+              d={linePath(rateGeom, rates)}
               fill="none"
               stroke="currentColor"
               strokeWidth={2}

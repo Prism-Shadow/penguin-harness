@@ -31,7 +31,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Modal } from "../../components/ui/modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
-import { lineSegments, makeRangeGeom } from "../usage/chart-geom";
+import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
@@ -192,14 +192,11 @@ function ScoreTrendChart({
                 className={(s.modelId ? seriesColor(si) : NEUTRAL_SERIES).text}
               >
                 {segments.map((seg, k) => {
-                  const line = seg
-                    .map((p, j) => `${j === 0 ? "M" : "L"}${geom.x(p.index)},${geom.y(p.value)}`)
-                    .join(" ");
                   return (
                     <g key={k}>
                       {seg.length > 1 && (
                         <path
-                          d={line}
+                          d={segmentPath(geom, seg)}
                           fill="none"
                           stroke="currentColor"
                           strokeWidth={2}

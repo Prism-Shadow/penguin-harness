@@ -3,13 +3,11 @@
  * time-series precision) and the per-entity series shaping the requests charts
  * draw — no React, unit-tested in test/usage-controls.test.ts.
  *
- * The range and the precision constrain each other, per preset: the trailing
- * "last hour" window is the only way to reach minute buckets (a calendar range
- * cannot — a single day by minute is already 1440 points), "last 24 hours"
- * serves hours, and the calendar presets offer the precisions that keep their
- * point counts readable. When a range change invalidates the current
- * precision, the page snaps to the preset's default rather than sending an
- * invalid combination.
+ * The range picks the precision; there is no separate control for it. The
+ * trailing "last hour" window is the only thing that reaches minute buckets (a
+ * calendar range cannot — a single day by minute is already 1440 points),
+ * "last 24 hours" serves hours, and every calendar range is drawn per day,
+ * week or month by its length.
  */
 import type { UsageGranularity, UsageSeriesPoint } from "@prismshadow/penguin-server/api";
 import { cacheHitRate } from "../../lib/format";
@@ -67,52 +65,29 @@ export function rangeDays(from: string, to: string): number {
   return Math.round(ms / 86_400_000) + 1;
 }
 
-/**
- * Precisions worth offering for a custom calendar range: hourly only while the
- * range stays readable (≤ 14 days ⇒ ≤ 336 points), daily up to a year, weekly
- * once at least two weeks are in view, monthly once at least two months are.
- * Minute never appears here — only the trailing "last hour" preset reaches it.
- */
-export function granularityOptions(days: number): UsageGranularity[] {
-  const out: UsageGranularity[] = [];
-  if (days <= 14) out.push("hour");
-  if (days <= 366) out.push("day");
-  if (days >= 14) out.push("week");
-  if (days >= 60) out.push("month");
-  return out;
-}
-
-/** The precision a custom range starts on: daily up to a month, weekly up to half a year, monthly beyond. */
+/** The precision a custom range is drawn at: daily up to a quarter, weekly up to half a year, monthly beyond. */
 export function defaultGranularity(days: number): UsageGranularity {
   if (days <= 92) return "day";
   if (days <= 190) return "week";
   return "month";
 }
 
-/** Precisions offered per preset (`days` only matters for `custom`). */
-export function presetGranularities(preset: RangePreset, days: number): UsageGranularity[] {
-  if (preset === "1h") return ["minute"];
-  if (preset === "1d") return ["hour"];
-  if (preset === "7d") return ["hour", "day"];
-  if (preset === "30d" || preset === "90d") return ["day", "week"];
-  return granularityOptions(days);
-}
-
-/** The precision a preset starts on. */
+/**
+ * The precision a range is drawn at. There is no precision control — the range
+ * picks it, because only one precision reads well per range and every other
+ * choice either fuses into a wall of hairlines or hides the shape.
+ *
+ * Each result must also be a combination the server accepts: it caps a
+ * response at 500 buckets, so the trailing hour goes to minute (61 buckets)
+ * and the trailing day to hour (25), while every calendar preset stays on day
+ * (90 at the widest). `minute` and window-bounded `hour` additionally require
+ * the `fromTs`/`toTs` pair, which is exactly what the two trailing presets send.
+ */
 export function presetDefaultGranularity(preset: RangePreset, days: number): UsageGranularity {
   if (preset === "1h") return "minute";
   if (preset === "1d") return "hour";
   if (preset === "custom") return defaultGranularity(days);
   return "day";
-}
-
-/** Keep the user's precision when the new preset/range still offers it; otherwise snap to its default. */
-export function coerceGranularity(
-  g: UsageGranularity,
-  preset: RangePreset,
-  days: number,
-): UsageGranularity {
-  return presetGranularities(preset, days).includes(g) ? g : presetDefaultGranularity(preset, days);
 }
 
 /** Short x-axis form of a bucket key: minute/hour `hh:mm`, day/week `mm-dd`, month `yyyy-mm`. */
@@ -181,16 +156,20 @@ export function sumCounts(series: readonly EntityCounts[]): Omit<EntityCounts, "
 }
 
 /**
- * Per-bucket success rate in percent, or null where the bucket holds no rated
- * request (denominator 0 — the entity was idle, or every request was
- * aborted). Null is a hole in the line, not a value: with one line per
- * entity, scoring an idle bucket 100% would draw a confident full-height line
- * across every interval an entity never ran in.
+ * Per-bucket success rate in percent. A bucket with nothing to rate
+ * (denominator 0 — the entity was idle, or every request was aborted) reads
+ * **0**, so the line stays continuous and never leaves a hole a reader has to
+ * interpret. It is deliberately not 100: an interval an entity never ran in
+ * has not earned a perfect record. Because 0 therefore means two different
+ * things, the hover text names which one — see idleBuckets.
  */
-export function rateSeries(
-  counts: Pick<EntityCounts, "completed" | "denominator">,
-): (number | null)[] {
-  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : null));
+export function rateSeries(counts: Pick<EntityCounts, "completed" | "denominator">): number[] {
+  return counts.denominator.map((d, i) => (d > 0 ? ((counts.completed[i] ?? 0) / d) * 100 : 0));
+}
+
+/** Buckets where a rate of 0 means "nothing was rated here" rather than "everything failed" (denominator 0). */
+export function idleBuckets(counts: Pick<EntityCounts, "denominator">): boolean[] {
+  return counts.denominator.map((d) => d === 0);
 }
 
 /** Per-bucket cache hit rate in percent; a bucket with no cache traffic counts as 0 — the curve runs continuously instead of leaving gaps. */
