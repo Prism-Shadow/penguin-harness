@@ -17,7 +17,7 @@
 - 常规写法在套规则之前先做归一化，免得平常的敲法平白漏过去：带路径（`/bin/rm`）、带前缀命令（`sudo`、`env`、`command`、`nice`、`xargs`）、给命令词加引号或反斜杠转义（`"rm"`、`r''m`、`\rm`）、以及字面量形式的 `sh -c '<payload>'` 都会命中。归一化只去掉引号标记，别的什么都不做——不展开、不替换、不解码。
 - `ApproveFn` 的拒绝现在可以不返回裸的 `"deny"`，而返回 `ApprovalRefusal`——决定加上要回报的消息与 stop_reason。策略拒绝以点名规则的 `failed` 工具输出回馈模型，与人工取消仍然产出的 `aborted` 输出区分开；返回 `"allow"` / `"deny"` 的既有回调行为完全不变。
 - 新增路由 `GET|PUT /api/projects/:p/command-policy`（成员可读 / owner 可写）：GET 返回生效列表并附出厂集供恢复；PUT 携带完整列表并物化落盘，无法编译的 pattern 直接拒绝。
-- 防事故护栏，不是安全边界——这句话讲的是模式匹配本身，而不是这份实现。运行期才拼出来的命令（`$IFS`、`X=rm; $X`、命令替换、`eval`、base64 喂给 shell、`python -c`、经管道进入的解释器）刻意不覆盖，将来也不打算覆盖：shell 是一门编程语言，每加一个这样的模式都要从此长期维护，换来的只是覆盖的表象。MCP 工具同样不在范围内——MCP Server 暴露的 shell 由该 Server 自己的 `permission` 等级约束（[#364](https://github.com/Prism-Shadow/penguin-harness/pull/364) 引入）。要真正的边界而不是减速带，机制是进程隔离（bubblewrap / dsh），正在 [#354](https://github.com/Prism-Shadow/penguin-harness/pull/354) 推进；本策略与之互补，不是替代。见配置文档「沙箱安全策略」一节。
+- 防事故护栏，不是安全边界——这句话讲的是模式匹配本身，而不是这份实现。运行期才拼出来的命令（`$IFS`、`X=rm; $X`、命令替换、`eval`、base64 喂给 shell、`python -c`、经管道进入的解释器）刻意不覆盖，将来也不打算覆盖：shell 是一门编程语言，每加一个这样的模式都要从此长期维护，换来的只是覆盖的表象。MCP 工具同样不在范围内：那边现有的旋钮是 [#364](https://github.com/Prism-Shadow/penguin-harness/pull/364) 的 per-server `permission` 等级，它只决定该 Server 的工具向审批模式报告哪个等级，刻意不做更多。要真正的边界而不是减速带，机制是进程隔离（bubblewrap / dsh），正在 [#354](https://github.com/Prism-Shadow/penguin-harness/pull/354) 推进；本策略与之互补，不是替代。见配置文档「沙箱安全策略」一节。
 - Project 设置改为分页对话框——通用（显示名、Project ID、删除）、成员（权限表；单用户桌面版隐藏该页）、默认值（新对话默认值与默认模型）、安全策略（上述规则列表）——左侧页签导航，右侧行式设置页。
 
 ## 兼容性

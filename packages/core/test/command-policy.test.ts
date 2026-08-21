@@ -262,8 +262,8 @@ describe("vetoForToolCall", () => {
       vetoForToolCall("input_command", json({ process_id: "p1", chars: "rm -rf /\n" }))?.rule,
     ).toBe("rm-recursive-force");
     expect(vetoForToolCall("input_command", json({ process_id: "p1", chars: "yes\n" }))).toBeNull();
-    // Other tools carry no shell text; even a same-shaped argument is not evaluated. MCP tools
-    // are covered by their server's own permission level, not by this policy.
+    // Other tools carry no shell text; even a same-shaped argument is not evaluated. An MCP
+    // server's shell is a different surface this policy deliberately does not reach into.
     expect(vetoForToolCall("write_file", json({ cmd: "rm -rf /" }))).toBeNull();
     expect(vetoForToolCall("mcp__server__shell", json({ cmd: "rm -rf /" }))).toBeNull();
   });

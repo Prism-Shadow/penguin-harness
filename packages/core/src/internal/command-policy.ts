@@ -35,8 +35,9 @@
  * base64 into a shell, `python -c`, an interpreter reached through a pipe. Each of those
  * would take a pattern that costs maintenance and buys only the appearance of coverage.
  *
- * MCP tools are out of scope by design — a per-server `permission` level is the control for
- * that surface (see the MCP config). For an actual boundary rather than a speed bump, the
+ * MCP tools are out of scope by design. The per-server `permission` level is what exists for
+ * that surface, and it only fixes the level a Server's tools report to the approval mode — it
+ * confines nothing. For an actual boundary rather than a speed bump, the
  * confinement interface (bubblewrap / dsh) is the mechanism; this policy is complementary to
  * it and no substitute.
  * Docs: /docs/configuration § "Command policy".

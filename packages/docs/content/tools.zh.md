@@ -218,7 +218,8 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 每个完整的 `tool_call` 触发且只触发一次审批决策：
 
 ```ts
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "deny">;
+type ApprovalOutcome = "allow" | "deny" | ApprovalRefusal; // 拒绝可带上自己的理由
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 ```
 
 | 使用面 | 行为 |
@@ -227,7 +228,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "
 | CLI | `--approve` 四种模式：allow-all(默认)/ deny-all / read-only / always-ask;read-only 自动放行 `permission: "r"` 的工具，其余转人工 |
 | Web / Server | 同样四种模式，按 Session 设置；每次决策前从数据库重读，改模式立即生效；人工决策经 API 送达 |
 
-deny 会合成一条 aborted 的 `tool_call_output`(内容为 `Tool call denied by user.`)，模型据此调整策略。每次决策都以 `approval_decision` 事件写入 Trace，构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
+deny 会合成一条 `tool_call_output` 供模型据此调整策略：裸 `deny` 是 `aborted`(内容为 `Tool call denied by user.`)，审批边界给出理由时则用它自己的消息与 stop_reason——[命令策略](/configuration#沙箱安全策略)的拒绝因此读作 `failed` 而不是「有人取消了」。见 [ApproveFn](/interfaces#approvefn)。每次决策都以 `approval_decision` 事件写入 Trace，构成完整的审计记录。审批发生在 [Agent 运行循环](/agent-loop) 的工具执行阶段。
 
 ## 自定义与 MCP
 
