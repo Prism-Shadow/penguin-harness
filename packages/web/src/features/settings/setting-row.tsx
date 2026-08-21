@@ -32,7 +32,7 @@ export function PrefRow({
   return (
     <div className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
       <div className="min-w-0">
-        <p className={`flex items-center ${ICON_GAP.tight} text-sm font-medium`}>
+        <p className={`flex items-center ${ICON_GAP.row} text-sm font-medium`}>
           {label}
           {info !== undefined && <InfoPopover label={label}>{info}</InfoPopover>}
         </p>

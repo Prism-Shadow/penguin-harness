@@ -106,7 +106,7 @@ export function PagedDialog<K extends string>({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 px-4 pt-4 sm:px-6 sm:pt-5">
-            <h2 className={`flex min-w-0 items-center ${ICON_GAP.tight} text-lg font-semibold`}>
+            <h2 className={`flex min-w-0 items-center ${ICON_GAP.row} text-lg font-semibold`}>
               {activeLabel}
               {activeItem?.info !== undefined && (
                 <InfoPopover label={activeLabel}>{activeItem.info}</InfoPopover>

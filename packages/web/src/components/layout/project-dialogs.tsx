@@ -841,8 +841,9 @@ function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
 /**
  * Buffered rule editor, shared by add and edit: local field state, the pattern validated
  * as a compilable regex on apply (the server re-checks — "saved" must equal "enforced").
+ * Exported for test/command-policy-add-rule.test.ts, which renders it on its own.
  */
-function RuleEditor({
+export function RuleEditor({
   initial,
   onApply,
   onCancel,
@@ -883,6 +884,10 @@ function RuleEditor({
           placeholder={S.project.commandPolicyRuleName}
           value={name}
           maxLength={64}
+          // The editor mounts only on an explicit Add / Edit click, so taking focus is what
+          // that click asked for: it puts the caret in the first field for a keyboard user,
+          // and the browser's scroll-on-focus keeps the form in view on a short viewport.
+          autoFocus
           onChange={(e) => setName(e.target.value)}
         />
         <Input
@@ -1037,6 +1042,23 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
               )}
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+              {/* The add form opens at the TOP of the list, right under the Add button that
+                  asked for it: the factory rules alone make the list taller than the dialog's
+                  scroll box, so a form appended after them would open below the fold and the
+                  click would look like it did nothing. The rule it applies stays where it was
+                  typed for the same reason. Deny rules are order-independent — every enabled
+                  match refuses, and list order only picks which rule name the refusal
+                  reports — so the head of the list is as good a home as the tail. */}
+              {editing === "new" && (
+                <RuleEditor
+                  initial={null}
+                  onApply={(nr) => {
+                    setRules([nr, ...rules]);
+                    setEditing(null);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
               {rules.map((r, i) =>
                 editing === i ? (
                   <RuleEditor
@@ -1098,16 +1120,6 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                     )}
                   </div>
                 ),
-              )}
-              {editing === "new" && (
-                <RuleEditor
-                  initial={null}
-                  onApply={(nr) => {
-                    setRules([...rules, nr]);
-                    setEditing(null);
-                  }}
-                  onCancel={() => setEditing(null)}
-                />
               )}
               {rules.length === 0 && editing !== "new" && (
                 <p className="py-3 text-xs text-gray-400">{S.project.commandPolicyEmpty}</p>

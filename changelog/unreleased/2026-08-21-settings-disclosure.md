@@ -20,6 +20,11 @@ and only what shapes a value stays on screen.
   keeps its visible "Regular expression" placeholder.
 - The dialog's pane heading gained an optional explanation slot, so any of its pages can
   carry one.
+- On the same page, adding a rule opened its form below every existing rule. The factory
+  set alone makes the list taller than the dialog's scroll box, so the form landed
+  off-screen and the click read as inert. It now opens directly under the Add button that
+  asked for it, with the caret in the first field; the rule it applies stays at the head of
+  the list, where it was typed.
 
 ## System settings
 
