@@ -1,18 +1,18 @@
 /**
  * Width shared by everything that docks beside the chat: the Workspace files panel, the
- * Agents panel, and a left or right terminal pane — plus the drag-to-resize machinery the
- * two panels mount.
+ * Agents panel, the Memory panel, and a left or right terminal pane — plus the drag-to-resize
+ * machinery the three panels mount.
  *
- * All three are MUTUALLY EXCLUSIVE — opening one displaces the others — so to the user they
+ * All of them are MUTUALLY EXCLUSIVE — opening one displaces the others — so to the user they
  * read as a single side panel that swaps its content. Independent widths made that swap
  * jump, which is why the width is one value here rather than a per-surface preference: a
  * width dragged on any of them is the width the next one opens at, immediately and after a
  * reload. The terminal pane brings its own resize gesture (it can dock on either side) and
  * writes through setPanelWidth.
  *
- * "Immediately" is what rules out two `useState`s over one storage key: only the panel that was
- * mounted and dragged would update, and the other would keep a stale copy until its next
- * remount. So the value lives in a module-level store both hooks subscribe to, and the
+ * "Immediately" is what rules out a `useState` per panel over one storage key: only the panel
+ * that was mounted and dragged would update, and the others would keep a stale copy until their
+ * next remount. So the value lives in a module-level store every hook subscribes to, and the
  * persisted preference is written once per drag (mouseup), not per frame.
  *
  * Width is a layout preference, not session data: it is never reset on a Session switch.
@@ -171,7 +171,7 @@ export function usePanelWidth(): PanelWidthState {
   // When the window shrinks, clamp the width back within the cap so the docked panel can't
   // crowd out the chat column. Shrinks only, never grows back, and never overwrites the stored
   // preference: enlarging the window again relies on a refresh or a double-click on the handle.
-  // Both panels register this; the clamp is idempotent, so the duplicate is harmless.
+  // All three panels register this; the clamp is idempotent, so the duplicates are harmless.
   useEffect(() => {
     const onResize = () => writeWidth(Math.min(readWidth(), maxWidthFor(window.innerWidth)));
     window.addEventListener("resize", onResize);

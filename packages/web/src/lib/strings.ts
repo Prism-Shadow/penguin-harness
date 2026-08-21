@@ -1353,6 +1353,21 @@ Benchmark：
     openPreview: "点击预览",
     showMoreFiles: (n: number) => `显示其余 ${n} 个文件`,
     showLess: "收起",
+    /** Memory-change card below the file summary and the Memory side panel: titles, scope/op tooltips, collapsed row. */
+    memoryChangesTitle: (n: number) => `${n} 条记忆更新`,
+    memoryScopeWorkspace: (key: string) => `工作区记忆（${key}）`,
+    memoryOpWrite: "写入",
+    memoryOpEdit: "编辑",
+    memoryViewTitle: "记忆",
+    memoryChangedMark: "本次对话已更改",
+    memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
+    openMemoryPanel: "打开记忆",
+    memoryRowOpen: "查看内容",
+    memoryBack: "返回列表",
+    memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
+    /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
+    openAgentMemory: "在 Agent 设置中管理",
+    memoryShowMore: (n: number) => `显示其余 ${n} 条`,
     /** Reveal the next page of sidebar groups (#139); n = groups still hidden. */
     moreGroups: (n: number) => `更多分组（${n}）`,
     contextUsage: "上下文占用",

@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { S } from "../../lib/strings";
 import type { ChatItem } from "../../lib/omni/stream-model";
+import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -46,6 +47,12 @@ export interface StreamRenderContext {
   onOpenFile?: (path: string) => void;
   /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
   onOpenSubagent?: (sessionId: string, origin: string[]) => void;
+  /** Opens the Memory panel on its list (memory-changes card header); the button doesn't render if this isn't wired up. */
+  onOpenMemory?: () => void;
+  /** Opens the Memory panel on this row's memory content (memory-changes card row click); rows render inert if this isn't wired up. */
+  onLocateMemoryChange?: (row: MemoryChangeRow) => void;
+  /** Keys of changed memory files that no longer exist (deleted after the change): the card drops those rows. Absent while the listing hasn't loaded. */
+  deletedMemoryKeys?: ReadonlySet<string>;
   /** Absolute Workspace path of the current Session (used by the file-summary card to normalize body paths). */
   workspace?: string | null;
   /** Batch file-existence check (with session-level caching); the card doesn't render if this isn't wired up. */
