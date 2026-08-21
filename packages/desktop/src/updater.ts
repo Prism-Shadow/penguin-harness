@@ -1,5 +1,5 @@
 /**
- * Auto-update (design § "桌面端原型 · 自动更新").
+ * Auto-update.
  *
  * electron-updater against the GitHub Releases feed the build publishes
  * (`latest*.yml` + `.blockmap` ship as Release assets). Updates surface in two places:
