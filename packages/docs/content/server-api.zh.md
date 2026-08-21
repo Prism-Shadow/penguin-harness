@@ -174,7 +174,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /usage | 用量统计，查询参数 `from`、`to`、`groupBy`、`agentId`、`provider`、`modelId` |
+| GET | /usage | 用量统计，查询参数 `from`、`to`、`fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需）、`groupBy`、`granularity`（时间序列精度 `minute` / `hour` / `day` / `week` / `month`，默认 `day`；范围 × 精度过大的组合会被拒绝）、`agentId`、`provider`、`modelId` |
 | GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `agentId` 过滤 → `{items, total}` |
 | GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
 | GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |

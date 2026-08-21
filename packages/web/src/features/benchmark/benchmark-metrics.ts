@@ -52,32 +52,6 @@ export function scoreScale(values: readonly (number | null)[]): ScoreScale {
   return { min, max, ticks };
 }
 
-/** A single data point on the chart: original index (x-axis position) + value. */
-export interface MetricPoint {
-  index: number;
-  value: number;
-}
-
-/**
- * Splits a value sequence with gaps into **contiguous value-bearing** segments (each segment has
- * at least 1 point): points within a segment are connected, segments are broken apart; a
- * single-point segment draws only a point, no line.
- */
-export function lineSegments(values: readonly (number | null)[]): MetricPoint[][] {
-  const segments: MetricPoint[][] = [];
-  let current: MetricPoint[] = [];
-  values.forEach((value, index) => {
-    if (value === null) {
-      if (current.length > 0) segments.push(current);
-      current = [];
-      return;
-    }
-    current.push({ index, value });
-  });
-  if (current.length > 0) segments.push(current);
-  return segments;
-}
-
 /** Minimal evaluation shape needed for series grouping (BenchmarkEvaluation is a superset). */
 export interface ModelRefLike {
   modelId?: string;

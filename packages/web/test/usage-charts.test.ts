@@ -1,11 +1,11 @@
 /**
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
- * assembly, Token bar chart horizontal layout (fixed 25px bar width / spacing ≥ bar width /
- * whether it scrolls horizontally), stacked-bar segment geometry and per-segment hit bands,
- * pie slice arcs, success rate, hover-bubble placement (pointer lower-right, flipping at
- * the edges; the cache hit rate shown in the cacheRead bubble is lib/format's shared
- * cacheHitRate, tested in format.test.ts). Component interaction isn't covered here
- * (vitest runs in a node environment, no DOM).
+ * assembly (straight and gap-split paths — every line on the page is straight segments,
+ * nothing is smoothed), container-fitting bar width (charts never scroll), stacked-bar
+ * segment geometry and per-segment hit bands, and hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
+ * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
+ * format.test.ts). Component interaction isn't covered here (vitest runs in a node
+ * environment, no DOM).
  *
  * Canvas width is "measured container pixels" (1 canvas unit = 1 CSS pixel), so each case
  * passes an explicit width; 640 was the original fixed canvas width, and reusing it as the
@@ -18,19 +18,20 @@ import {
   makeRangeGeom,
   linePath,
   areaPath,
+  lineSegments,
+  segmentPath,
   sparseLabelIdx,
   autoLabelIdx,
-  successRate,
   bubblePosition,
-  tokenBarLayout,
+  fitBarWidth,
   barSegments,
-  pieSlices,
   BAR_W,
   BUBBLE_OFFSET,
   CHART_H,
   MIN_HIT_H,
   PAD_L,
   PAD_R,
+  PAD_R_AXIS,
 } from "../src/features/usage/chart-geom";
 
 describe("makeGeom", () => {
@@ -84,58 +85,82 @@ describe("linePath / areaPath", () => {
   });
 });
 
-describe("tokenBarLayout", () => {
-  /** Bar width is real pixels, so inner width = container width - left/right padding: a 990 container has inner width 936. */
-  const inner = (containerW: number) => containerW - PAD_L - PAD_R;
-
-  it("fixed 25px bar width: 30 days do not fit a half row (495px) → an extra-wide canvas with horizontal scrolling", () => {
-    const l = tokenBarLayout(495, 30);
-    expect(l.barW).toBe(25);
-    expect(l.barW).toBe(BAR_W);
-    // 30 slots x (25 bar + 25 gap) = 1500 > inner width 441 -> canvas = 46 + 1500 + 8
-    expect(l.chartW).toBe(1554);
-    expect(l.chartW).toBeGreaterThan(495);
-    expect(l.scroll).toBe(true);
+describe("lineSegments / segmentPath (gap segmentation)", () => {
+  it("no gaps: one segment with everything (consecutive indexes)", () => {
+    expect(lineSegments([60, 75.25, 85.5])).toEqual([
+      [
+        { index: 0, value: 60 },
+        { index: 1, value: 75.25 },
+        { index: 2, value: 85.5 },
+      ],
+    ]);
   });
 
-  it("when they do not fit, bar gap = bar width: each slot = 2× bar width with the bar centered → exactly one bar width of space between bars", () => {
-    const l = tokenBarLayout(495, 30);
-    const g = makeGeom(30, 1, l.chartW);
-    expect(g.step).toBe(2 * l.barW);
-    // Two adjacent bars: left bar's right edge = x(0)+barW/2, right bar's left edge = x(1)-barW/2
-    const gap = g.x(1) - l.barW / 2 - (g.x(0) + l.barW / 2);
-    expect(gap).toBeCloseTo(l.barW);
-    // Half a gap is left on the first bar's left / last bar's right, so bars don't touch the axis or overflow the canvas
-    expect(g.x(0) - l.barW / 2).toBeCloseTo(PAD_L + l.barW / 2);
-    expect(g.x(29) + l.barW / 2).toBeCloseTo(l.chartW - PAD_R - l.barW / 2);
+  it("a middle gap breaks into two segments (a lone point still forms a segment: point drawn, no line)", () => {
+    expect(lineSegments([0.12, null, 0.2])).toEqual([
+      [{ index: 0, value: 0.12 }],
+      [{ index: 2, value: 0.2 }],
+    ]);
+    expect(lineSegments([null, 1, 2, null, 3])).toEqual([
+      [
+        { index: 1, value: 1 },
+        { index: 2, value: 2 },
+      ],
+      [{ index: 4, value: 3 }],
+    ]);
   });
 
-  it("few points: bars do **not** widen (25px is fixed, not a floor); all slack goes into the gaps", () => {
-    const l = tokenBarLayout(990, 7);
-    expect(l.barW).toBe(BAR_W); // the old implementation would stretch it to 936/14 = 66.86px
-    expect(l.chartW).toBe(990); // the canvas still fills the container: the slack goes into the bar gaps, not the right edge
-    expect(l.scroll).toBe(false);
-    // Each slot = inner width / 7 = 133.7px: a 25px bar centered, with 108.7px of gap (>= bar width)
-    const g = makeGeom(7, 1, l.chartW);
-    expect(g.step).toBeCloseTo(inner(990) / 7);
-    const gap = g.x(1) - l.barW / 2 - (g.x(0) + l.barW / 2);
-    expect(gap).toBeCloseTo(inner(990) / 7 - BAR_W);
-    expect(gap).toBeGreaterThan(BAR_W);
+  it("all missing / empty list: no segments", () => {
+    expect(lineSegments([null, null])).toEqual([]);
+    expect(lineSegments([])).toEqual([]);
   });
 
-  it("boundary: exactly 50px per slot fills without scrolling; one more day means extra width + scrolling (bar width stays 25px)", () => {
-    const exact = inner(990) / 50; // 18.72 days
-    const fits = Math.floor(exact); // 18 days: inner width 936 >= 18x50 = 900
-    expect(tokenBarLayout(990, fits)).toMatchObject({ barW: BAR_W, chartW: 990, scroll: false });
-    expect(tokenBarLayout(990, fits + 1)).toMatchObject({ barW: BAR_W, scroll: true });
-    expect(tokenBarLayout(990, fits + 1).chartW).toBe(PAD_L + 2 * BAR_W * 19 + PAD_R);
+  it("a segment strokes only its own indexes, so nothing bridges the hole between two segments", () => {
+    const g = makeRangeGeom(3, 0, 100, 640);
+    /** Path coordinates are rounded to 2 decimals (see chart-geom's rnd). */
+    const at = (i: number, v: number) => `${Math.round(g.x(i) * 100) / 100},${g.y(v)}`;
+    const [first, second] = lineSegments([100, null, 0]);
+    expect(segmentPath(g, first!)).toBe(`M${at(0, 100)}`);
+    expect(segmentPath(g, second!)).toBe(`M${at(2, 0)}`);
+    expect(segmentPath(g, [])).toBe("");
+    // A two-point run is one straight stroke between exactly those two indexes.
+    expect(segmentPath(g, lineSegments([100, 0, null])[0]!)).toBe(`M${at(0, 100)} L${at(1, 0)}`);
+  });
+});
+
+describe("fitBarWidth", () => {
+  it("60% of the cell, capped at BAR_W: wide cells keep the 25px ceiling, narrow ones shrink with the cell", () => {
+    expect(fitBarWidth(100)).toBe(BAR_W);
+    expect(fitBarWidth(50)).toBe(BAR_W);
+    expect(fitBarWidth(41)).toBe(24);
+    expect(fitBarWidth(20)).toBe(12);
   });
 
-  it("full-row container + few day points: bar width stays 25px (the old implementation fattened to ~180px here)", () => {
-    const l = tokenBarLayout(990, 3);
-    expect(l.barW).toBe(25);
-    expect(l.chartW).toBe(990);
-    expect(l.scroll).toBe(false);
+  it("floors at 1px hairlines instead of overlapping: a bar never exceeds a >=1.7px cell", () => {
+    expect(fitBarWidth(3)).toBe(1);
+    expect(fitBarWidth(1.8)).toBe(1);
+    expect(fitBarWidth(0)).toBe(1);
+  });
+
+  it("bars centered in their cells never touch: gap = step - barW >= 40% of the cell", () => {
+    for (const step of [2, 5, 10, 25, 50, 133]) {
+      expect(step - fitBarWidth(step)).toBeGreaterThanOrEqual(step * 0.4 - 1);
+    }
+  });
+});
+
+describe("padR (right-axis room)", () => {
+  it("defaults to PAD_R; PAD_R_AXIS widens the right padding and shrinks the inner width", () => {
+    expect(makeGeom(2, 100, 640).padR).toBe(PAD_R);
+    const g = makeGeom(2, 100, 640, PAD_R_AXIS);
+    expect(g.padR).toBe(PAD_R_AXIS);
+    expect(g.innerW).toBe(640 - PAD_L - PAD_R_AXIS);
+  });
+
+  it("geoms sharing n / w / padR share x() exactly — an overlay on its own y scale stays aligned with the marks under it", () => {
+    const bars = makeGeom(5, 12345, 640, PAD_R_AXIS);
+    const rate = makeRangeGeom(5, 0, 100, 640, PAD_R_AXIS);
+    for (let i = 0; i < 5; i++) expect(rate.x(i)).toBe(bars.x(i));
   });
 });
 
@@ -214,40 +239,6 @@ describe("barSegments", () => {
   });
 });
 
-describe("pieSlices", () => {
-  it("laid out clockwise from 12 o'clock by value share: a half-circle arc starts at the top and ends at the bottom", () => {
-    const [a, b] = pieSlices([1, 1], 50, 50, 40);
-    expect(a!.frac).toBe(0.5);
-    expect(a!.start).toBe(0);
-    expect(a!.end).toBeCloseTo(Math.PI);
-    // First slice: center -> 12 o'clock -> clockwise (sweep=1) to 6 o'clock; exactly a
-    // half-circle, so large-arc=0
-    expect(a!.path).toBe("M50,50 L50,10 A40,40 0 0 1 50,90 Z");
-    // The second slice continues to finish the bottom half
-    expect(b!.path).toBe("M50,50 L50,90 A40,40 0 0 1 50,10 Z");
-  });
-
-  it("slices spanning more than a half circle set large-arc=1", () => {
-    const [big] = pieSlices([3, 1], 50, 50, 40);
-    expect(big!.frac).toBe(0.75);
-    expect(big!.path).toBe("M50,50 L50,10 A40,40 0 1 1 10,50 Z");
-  });
-
-  it("a single category at 100% degenerates to a full circle (two half-circle arcs; an A command with coincident endpoints draws nothing)", () => {
-    const [only] = pieSlices([7], 50, 50, 40);
-    expect(only!.frac).toBe(1);
-    expect(only!.path).toBe("M50,10 A40,40 0 1 1 50,90 A40,40 0 1 1 50,10 Z");
-  });
-
-  it("non-positive values produce no slice (original indexes kept so callers can look up names/colors); empty when the total ≤ 0", () => {
-    const slices = pieSlices([5, 0, 5], 50, 50, 40);
-    expect(slices.map((s) => s.index)).toEqual([0, 2]);
-    expect(slices.map((s) => s.frac)).toEqual([0.5, 0.5]);
-    expect(pieSlices([], 50, 50, 40)).toEqual([]);
-    expect(pieSlices([0, 0], 50, 50, 40)).toEqual([]);
-  });
-});
-
 describe("sparseLabelIdx", () => {
   it("sparse first/middle/last labeling", () => {
     expect(sparseLabelIdx(0)).toEqual([]);
@@ -255,14 +246,6 @@ describe("sparseLabelIdx", () => {
     expect(sparseLabelIdx(2)).toEqual([0, 1]);
     expect(sparseLabelIdx(5)).toEqual([0, 2, 4]);
     expect(sparseLabelIdx(30)).toEqual([0, 14, 29]);
-  });
-});
-
-describe("successRate", () => {
-  it("completed/total; no requests counts as 1", () => {
-    expect(successRate(99, 100)).toBeCloseTo(0.99);
-    expect(successRate(5, 10)).toBe(0.5);
-    expect(successRate(0, 0)).toBe(1);
   });
 });
 

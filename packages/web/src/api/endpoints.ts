@@ -96,6 +96,7 @@ import type {
   UpdateRunResponse,
   DesktopUpdateStatusResponse,
   UsageErrorsPage,
+  UsageGranularity,
   UsageGroupBy,
   UsageResponse,
   VaultResponse,
@@ -657,7 +658,12 @@ export const getUsage = (
   params: {
     from?: string;
     to?: string;
+    /** Trailing-window bounds (ISO timestamps, together or not at all): refine the range down to instants; required for minute granularity. */
+    fromTs?: string;
+    toTs?: string;
     groupBy: UsageGroupBy;
+    /** Time-series precision for the response's `series`; the server defaults to day. */
+    granularity?: UsageGranularity;
     agentId?: string;
     /** Model filter is always a whole pair — both fields or neither; a model is never referenced by id alone. */
     provider?: string;
@@ -668,7 +674,10 @@ export const getUsage = (
     query: {
       from: params.from,
       to: params.to,
+      fromTs: params.fromTs,
+      toTs: params.toTs,
       groupBy: params.groupBy,
+      granularity: params.granularity,
       agentId: params.agentId,
       provider: params.provider,
       modelId: params.modelId,
