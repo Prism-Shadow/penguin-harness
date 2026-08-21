@@ -126,12 +126,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # pnpm version comes from package.json's packageManager field. standalone: one
-      # self-contained executable instead of a package-tree install, which Windows
-      # Defender otherwise scans file by file (tens of seconds on this runner).
+      # pnpm version comes from package.json's packageManager field.
       - uses: pnpm/action-setup@v6
-        with:
-          standalone: true
 
       - uses: actions/setup-node@v5
         with:
