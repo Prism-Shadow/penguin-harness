@@ -814,6 +814,12 @@ export class Agent {
       services: { subagentRunner, ...(visionDescriber ? { visionDescriber } : {}) },
       ...(Object.keys(vault).length > 0 ? { vault } : {}),
       ...(this.proxyEnv ? { proxyEnv: this.proxyEnv } : {}),
+      // Sandbox command policy snapshot: Project-owned (never Agent State), read once per
+      // Session so the running Session's copy cannot be edited from inside it. Absent
+      // config keeps the Environment default — builtin rules, enabled.
+      ...(this.projectConfig.command_policy !== undefined
+        ? { commandPolicy: this.projectConfig.command_policy }
+        : {}),
     });
 
     // Configured output cap: the entry's per-model annotation wins over the Agent's

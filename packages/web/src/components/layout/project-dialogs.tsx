@@ -3,9 +3,12 @@
  * (member management and deletion, owner only). Invoked from the sidebar's Project switcher.
  */
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   ApprovalMode,
   ChatDefaultsDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
   MemberInfo,
   ModelRefDto,
   ModelsResponse,
@@ -32,6 +35,9 @@ import { sameModelRef } from "../../features/models/model-grouping";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select } from "../ui/select";
+import { Switch } from "../ui/switch";
+import { GEAR_ICON } from "../ui/icons";
+import { AGENT_GROUP_ICON } from "../ui/group-list";
 import { FieldError, FieldHint, FieldLabel } from "../ui/field";
 import { toastError, toastSuccess } from "../ui/toast";
 import { Modal } from "../ui/modal";
@@ -168,56 +174,160 @@ export function CreateProjectDialog({
   );
 }
 
+/** Path data for the settings tabs' small icons (24px viewBox, stroked like NAV_ICONS). */
+const TAB_ICON_PATHS = {
+  general: GEAR_ICON,
+  members: AGENT_GROUP_ICON,
+  /** Sliders (lucide sliders-vertical). */
+  defaults: "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
+  /** Shield (lucide shield). */
+  security: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+} as const;
+
+type SettingsTab = keyof typeof TAB_ICON_PATHS;
+
+function TabIcon({ d }: { d: string }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="shrink-0"
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
 /**
- * Project settings dialog: display name (owner-editable), member management (owner) and
- * deletion (owner); members see the name and member list read-only.
+ * One row of a settings page: title plus a one-line gray description on the left, the
+ * control on the right. Rows are separated by the parent container's divide-y hairlines
+ * (ruled sections, not card boxes).
+ */
+function SettingRow({
+  title,
+  description,
+  children,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm">{title}</p>
+        {description !== undefined && <p className="mt-0.5 text-xs text-gray-400">{description}</p>}
+      </div>
+      {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * Project settings dialog: a left tab rail (General / Members / Defaults / Security
+ * policy) with a row-styled content pane per tab; on narrow screens the rail degrades to a
+ * horizontally scrollable strip above the content. Members does not exist in the
+ * single-user desktop app (the server answers desktop_single_user on those routes), so the
+ * tab is hidden there outright. Each page component owns its data and save flow; the
+ * dialog only routes tabs, resetting to General per open.
  */
 export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, desktopMode } = useAuth();
-  const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
-  const [members, setMembers] = useState<MemberInfo[] | null>(null);
-  const [newMemberId, setNewMemberId] = useState("");
-  // Only the initial member-list load shows inline (in place of the table); action failures pop a toast.
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save or reopen. */
-  const [name, setName] = useState("");
-  const [nameBusy, setNameBusy] = useState(false);
-  const [nameError, setNameError] = useState<string | undefined>(undefined);
+  const { desktopMode } = useAuth();
+  const { currentProject } = useProject();
+  const [tab, setTab] = useState<SettingsTab>("general");
+
+  useEffect(() => {
+    if (open) setTab("general");
+  }, [open]);
 
   const projectId = currentProject?.projectId;
   const isOwner = currentProject?.role === "owner";
-  /** The saved display name, with the same id fallback the switcher shows. */
-  const savedName = currentProject ? projectDisplayName(currentProject) : "";
-
-  useEffect(() => {
-    if (!open || !projectId) return;
-    setMembers(null);
-    setLoadError(null);
-    setConfirmDelete(false);
-    setName(savedName);
-    setNameError(undefined);
-    // Desktop mode is single-user: the member section is hidden below and the server
-    // rejects the member routes (desktop_single_user), so nothing is fetched.
-    if (!desktopMode) {
-      api
-        .listMembers(projectId)
-        .then((res) => setMembers(res.members))
-        .catch((e: unknown) => setLoadError(apiErrorText(e)));
-    }
-    // savedName is read at open time only: retyping in the field must not be clobbered by a
-    // list refresh, and reopening the dialog re-seeds it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId, desktopMode]);
-
   if (!currentProject || !projectId) return null;
 
-  /**
-   * Save the display name (owner). The id is immutable, so this is the only editable field of
-   * the Project itself. Success needs no toast: the switcher, this dialog's field and every
-   * Project list re-render with the new name once reloadProjects settles (#54, one notification
-   * per action) — only failures pop one, and the field keeps what was typed so it can be retried.
-   */
+  const tabs: { key: SettingsTab; label: string }[] = [
+    { key: "general", label: S.project.settingsTabGeneral },
+    ...(!desktopMode ? [{ key: "members" as const, label: S.project.settingsTabMembers }] : []),
+    { key: "defaults", label: S.project.settingsTabDefaults },
+    { key: "security", label: S.project.settingsTabSecurity },
+  ];
+  const active = tabs.find((t) => t.key === tab) ?? tabs[0]!;
+
+  return (
+    <Modal open={open} title={S.project.settingsTitle} onClose={onClose} widthClass="sm:max-w-3xl">
+      <div className="flex flex-col gap-3 sm:min-h-[26rem] sm:flex-row sm:gap-0">
+        <nav
+          aria-label={S.project.settingsTitle}
+          className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-x-visible sm:border-r sm:border-gray-100 sm:pr-3 dark:sm:border-gray-800"
+        >
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              aria-current={active.key === t.key ? "page" : undefined}
+              onClick={() => setTab(t.key)}
+              className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
+                active.key === t.key
+                  ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
+                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/60"
+              }`}
+            >
+              <TabIcon d={TAB_ICON_PATHS[t.key]} />
+              <span className="truncate">{t.label}</span>
+            </button>
+          ))}
+        </nav>
+        <section className="min-w-0 flex-1 sm:pl-5">
+          <h3 className="text-base font-semibold">{active.label}</h3>
+          <div className="mt-2">
+            {active.key === "general" && (
+              <GeneralSection projectId={projectId} isOwner={isOwner} onClose={onClose} />
+            )}
+            {active.key === "members" && <MembersSection projectId={projectId} isOwner={isOwner} />}
+            {active.key === "defaults" && (
+              <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
+            )}
+            {active.key === "security" && (
+              <SecurityPolicySection projectId={projectId} isOwner={isOwner} />
+            )}
+          </div>
+        </section>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * General page: the display name (the Project's only editable field — the id names the
+ * directory and every stored reference, so it stays immutable and gets a read-only row),
+ * plus the delete zone. Saving the name is explicit; success needs no toast (the switcher,
+ * this field and every Project list re-render once reloadProjects settles, #54), only
+ * failures pop one, and the field keeps what was typed so it can be retried.
+ */
+function GeneralSection({
+  projectId,
+  isOwner,
+  onClose,
+}: {
+  projectId: string;
+  isOwner: boolean;
+  onClose: () => void;
+}) {
+  const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
+  /** The saved display name, with the same id fallback the switcher shows. */
+  const savedName = currentProject ? projectDisplayName(currentProject) : "";
+  /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save or remount. */
+  const [name, setName] = useState(savedName);
+  const [nameBusy, setNameBusy] = useState(false);
+  const [nameError, setNameError] = useState<string | undefined>(undefined);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   const saveName = async () => {
     const next = name.trim();
     if (!next || next === savedName || nameBusy) return;
@@ -232,6 +342,115 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
       setNameBusy(false);
     }
   };
+
+  const doDelete = async () => {
+    try {
+      await api.deleteProject(projectId);
+      onClose();
+      const next = projects.find((p) => p.projectId !== projectId);
+      await reloadProjects();
+      if (next) setCurrentProjectId(next.projectId);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    }
+  };
+
+  return (
+    <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+      <SettingRow title={S.project.displayName}>
+        {isOwner ? (
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-stretch gap-2">
+              <Input
+                size="sm"
+                className="w-44"
+                value={name}
+                invalid={Boolean(nameError)}
+                maxLength={100}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (nameError) setNameError(undefined);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveName();
+                }}
+              />
+              <Button
+                size="sm"
+                disabled={nameBusy || !name.trim() || name.trim() === savedName}
+                onClick={() => void saveName()}
+              >
+                {S.common.save}
+              </Button>
+            </div>
+            {nameError !== undefined && <FieldError>{nameError}</FieldError>}
+          </div>
+        ) : (
+          <span className="text-sm">{savedName}</span>
+        )}
+      </SettingRow>
+      <SettingRow title={S.project.projectIdLabel}>
+        <span className="font-mono text-xs text-gray-400">{projectId}</span>
+      </SettingRow>
+      {isOwner &&
+        (projectId === "default_project" ? (
+          <SettingRow
+            title={S.project.deleteProject}
+            description={S.project.deleteDefaultForbidden}
+          />
+        ) : projects.length <= 1 ? (
+          // Last accessible Project: deleting it would leave the account with no Project to
+          // select (the page would get stuck on the skeleton screen), so the entry point is
+          // hidden outright, matching the server's 409 rejection.
+          <SettingRow title={S.project.deleteProject} description={S.project.deleteLastForbidden} />
+        ) : (
+          <SettingRow title={S.project.deleteProject} description={S.project.deleteProjectDesc}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
+              {S.common.delete}
+            </Button>
+          </SettingRow>
+        ))}
+
+      {/* Delete confirmation (shared ConfirmModal, stacked above the settings dialog). */}
+      <ConfirmModal
+        open={confirmDelete}
+        title={S.project.deleteProject}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void doDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
+      </ConfirmModal>
+    </div>
+  );
+}
+
+/**
+ * Members page: the permission table (username / role / actions; owner adds and removes,
+ * members read). Only the initial load shows inline (in place of the table); action
+ * failures pop a toast. Mounted per tab visit, so revisiting refetches.
+ */
+function MembersSection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
+  const { user } = useAuth();
+  const [members, setMembers] = useState<MemberInfo[] | null>(null);
+  const [newMemberId, setNewMemberId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMembers(null);
+    setLoadError(null);
+    api
+      .listMembers(projectId)
+      .then((res) => {
+        if (!cancelled) setMembers(res.members);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   const addMember = async () => {
     if (!newMemberId.trim()) return;
@@ -255,171 +474,65 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
     }
   };
 
-  const doDelete = async () => {
-    try {
-      await api.deleteProject(projectId);
-      onClose();
-      const next = projects.find((p) => p.projectId !== projectId);
-      await reloadProjects();
-      if (next) setCurrentProjectId(next.projectId);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    }
-  };
-
+  if (loadError) return <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>;
+  if (members === null) return <p className="text-xs text-gray-400">{S.common.loading}</p>;
   return (
-    <Modal open={open} title={S.project.settingsTitle} onClose={onClose}>
-      <div className="space-y-4">
-        {/* Display name: the Project's only editable field (the id names the directory and every
-            stored reference, so it stays immutable and sits below as a muted mono caption).
-            Members see the resolved name as plain text. */}
-        <div>
-          {isOwner ? (
-            <>
-              <FieldLabel>{S.project.displayName}</FieldLabel>
-              <div className="flex items-stretch gap-2">
+    // Member permission table: username / role / actions; cells never wrap. Last row
+    // (owner only) = add member: small username input + add button (new members are
+    // always the member role).
+    <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
+            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.username}</th>
+            <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">{S.common.role}</th>
+            <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
+              {S.common.actions}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
+          {members.map((m) => (
+            <tr key={m.userId}>
+              <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
+              <td className="whitespace-nowrap px-2.5 py-1.5">
+                <Badge tone="gray">{m.role}</Badge>
+              </td>
+              <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
+                  <Button size="sm" variant="ghost" onClick={() => void doRemove(m.userId)}>
+                    {S.project.removeMember}
+                  </Button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {isOwner && (
+            <tr>
+              <td className="px-2.5 py-1.5">
                 <Input
+                  placeholder={S.common.username}
                   size="sm"
-                  className="min-w-0 flex-1"
-                  value={name}
-                  invalid={Boolean(nameError)}
-                  maxLength={100}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (nameError) setNameError(undefined);
-                  }}
+                  value={newMemberId}
+                  onChange={(e) => setNewMemberId(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") void saveName();
+                    if (e.key === "Enter") void addMember();
                   }}
                 />
-                <Button
-                  size="sm"
-                  disabled={nameBusy || !name.trim() || name.trim() === savedName}
-                  onClick={() => void saveName()}
-                >
-                  {S.common.save}
+              </td>
+              <td className="whitespace-nowrap px-2.5 py-1.5">
+                <Badge tone="gray">member</Badge>
+              </td>
+              <td className="whitespace-nowrap px-2.5 py-1 text-right">
+                <Button size="sm" disabled={!newMemberId.trim()} onClick={() => void addMember()}>
+                  {S.project.addMember}
                 </Button>
-              </div>
-              {nameError !== undefined && <FieldError>{nameError}</FieldError>}
-            </>
-          ) : (
-            <>
-              <p className="mb-1 text-xs font-medium text-gray-500">{S.project.switcher}</p>
-              <p className="text-sm">{savedName}</p>
-            </>
+              </td>
+            </tr>
           )}
-          <p className="mt-1 font-mono text-xs text-gray-400">{projectId}</p>
-        </div>
-
-        {/* Member management does not exist in the single-user desktop app. */}
-        {!desktopMode && (
-          <div>
-            <p className="mb-2 text-xs font-medium text-gray-500">{S.project.members}</p>
-            {loadError ? (
-              <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
-            ) : members === null ? (
-              <p className="text-xs text-gray-400">{S.common.loading}</p>
-            ) : (
-              // Member permission table: username / role / actions; cells never wrap.
-              // Last row (owner only) = add member: small username input + add button (new members are always the member role).
-              <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-800">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50 text-left text-gray-500 dark:border-gray-800 dark:bg-gray-900/60 dark:text-gray-400">
-                      <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
-                        {S.common.username}
-                      </th>
-                      <th className="whitespace-nowrap px-2.5 py-1.5 font-medium">
-                        {S.common.role}
-                      </th>
-                      <th className="w-20 whitespace-nowrap px-2.5 py-1.5 text-right font-medium">
-                        {S.common.actions}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                    {members.map((m) => (
-                      <tr key={m.userId}>
-                        <td className="whitespace-nowrap px-2.5 py-1.5">{m.userId}</td>
-                        <td className="whitespace-nowrap px-2.5 py-1.5">
-                          <Badge tone="gray">{m.role}</Badge>
-                        </td>
-                        <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                          {isOwner && m.role !== "owner" && m.userId !== user?.userId && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => void doRemove(m.userId)}
-                            >
-                              {S.project.removeMember}
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {isOwner && (
-                      <tr>
-                        <td className="px-2.5 py-1.5">
-                          <Input
-                            placeholder={S.common.username}
-                            size="sm"
-                            value={newMemberId}
-                            onChange={(e) => setNewMemberId(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void addMember();
-                            }}
-                          />
-                        </td>
-                        <td className="whitespace-nowrap px-2.5 py-1.5">
-                          <Badge tone="gray">member</Badge>
-                        </td>
-                        <td className="whitespace-nowrap px-2.5 py-1 text-right">
-                          <Button
-                            size="sm"
-                            disabled={!newMemberId.trim()}
-                            onClick={() => void addMember()}
-                          >
-                            {S.project.addMember}
-                          </Button>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        <ChatDefaultsSection projectId={projectId} isOwner={isOwner} />
-
-        {isOwner && (
-          <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
-            {projectId === "default_project" ? (
-              <p className="text-xs text-gray-400">{S.project.deleteDefaultForbidden}</p>
-            ) : projects.length <= 1 ? (
-              // Last accessible Project: deleting it would leave the account with no Project to select
-              // (the page would get stuck on the skeleton screen), so the frontend hides the entry point outright, matching the server's 409 rejection.
-              <p className="text-xs text-gray-400">{S.project.deleteLastForbidden}</p>
-            ) : (
-              <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
-                {S.project.deleteProject}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Delete confirmation (shared ConfirmModal, stacked above the settings dialog). */}
-      <ConfirmModal
-        open={confirmDelete}
-        title={S.project.deleteProject}
-        onClose={() => setConfirmDelete(false)}
-        onConfirm={() => void doDelete()}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">{S.project.deleteConfirm}</p>
-      </ConfirmModal>
-    </Modal>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -562,7 +675,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
   const defaultModelInfo = models?.models.find((m) => sameModelRef(m, models.defaultModel));
 
   return (
-    <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+    <div>
       <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gray-500">
         {S.project.chatDefaultsTitle}
         <InfoPopover label={S.project.chatDefaultsTitle}>{S.project.chatDefaultsHint}</InfoPopover>
@@ -699,6 +812,298 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Field-level equality for the security page's dirty check (description "" ≡ absent). */
+function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
+  return (
+    a.name === b.name &&
+    a.pattern === b.pattern &&
+    (a.description ?? "") === (b.description ?? "") &&
+    a.enabled === b.enabled
+  );
+}
+
+/**
+ * Buffered rule editor, shared by add and edit: local field state, the pattern validated
+ * as a compilable regex on apply (the server re-checks — "saved" must equal "enforced").
+ */
+function RuleEditor({
+  initial,
+  onApply,
+  onCancel,
+}: {
+  initial: CommandPolicyRuleDto | null;
+  onApply: (rule: CommandPolicyRuleDto) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [pattern, setPattern] = useState(initial?.pattern ?? "");
+  const [desc, setDesc] = useState(initial?.description ?? "");
+  const [err, setErr] = useState<string | undefined>(undefined);
+
+  const apply = () => {
+    const n = name.trim();
+    if (!n || !pattern) return;
+    try {
+      new RegExp(pattern);
+    } catch {
+      setErr(S.project.commandPolicyInvalidPattern);
+      return;
+    }
+    const d = desc.trim();
+    onApply({
+      name: n,
+      pattern,
+      ...(d !== "" ? { description: d } : {}),
+      enabled: initial?.enabled ?? true,
+    });
+  };
+
+  return (
+    <div className="space-y-2 py-3">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          size="sm"
+          className="sm:w-40"
+          placeholder={S.project.commandPolicyRuleName}
+          value={name}
+          maxLength={64}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <Input
+          size="sm"
+          className="min-w-0 flex-1 font-mono"
+          placeholder={S.project.commandPolicyRulePattern}
+          value={pattern}
+          maxLength={512}
+          invalid={Boolean(err)}
+          onChange={(e) => {
+            setPattern(e.target.value);
+            if (err) setErr(undefined);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") apply();
+          }}
+        />
+      </div>
+      <Input
+        size="sm"
+        className="w-full"
+        placeholder={S.project.commandPolicyRuleDesc}
+        value={desc}
+        maxLength={300}
+        onChange={(e) => setDesc(e.target.value)}
+      />
+      {err !== undefined && <FieldError>{err}</FieldError>}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={onCancel}>
+          {S.common.cancel}
+        </Button>
+        <Button size="sm" disabled={!name.trim() || !pattern} onClick={apply}>
+          {S.project.commandPolicyApplyRule}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Security-policy page: the `[command_policy]` block. One unified, fully editable rule
+ * list — the factory rules are seeded data with no special status (edit / disable /
+ * delete / add all apply), and "restore defaults" re-buffers the factory set served by the
+ * API. Owner edits buffer locally with ONE explicit Save (dialog convention: failures
+ * toast, success toasts saved); members see the effective state read-only. The list dims
+ * while the master switch is off, but Save stays live so the toggle itself can be saved.
+ */
+function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
+  const [saved, setSaved] = useState<CommandPolicyDto | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [rules, setRules] = useState<CommandPolicyRuleDto[]>([]);
+  /** Index being edited inline, "new" for the add form, null when idle. */
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getCommandPolicy(projectId)
+      .then((res) => {
+        if (cancelled) return;
+        setSaved(res);
+        setEnabled(res.enabled);
+        setRules(res.rules);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(apiErrorText(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const dirty =
+    saved !== null &&
+    (enabled !== saved.enabled ||
+      rules.length !== saved.rules.length ||
+      rules.some((r, i) => !sameRule(r, saved.rules[i]!)));
+
+  const save = async () => {
+    if (busy || !dirty) return;
+    setBusy(true);
+    try {
+      const stored = await api.putCommandPolicy(projectId, { enabled, rules });
+      setSaved(stored);
+      setEnabled(stored.enabled);
+      setRules(stored.rules);
+      toastSuccess(S.common.saved);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-xs leading-relaxed text-gray-400">{S.project.commandPolicyIntro}</p>
+      {loadError !== null ? (
+        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>
+      ) : saved === null ? (
+        <p className="mt-3 text-xs text-gray-400">{S.common.loading}</p>
+      ) : (
+        <>
+          <div className="mt-1 divide-y divide-gray-100 dark:divide-gray-800/60">
+            <SettingRow
+              title={S.project.commandPolicyEnable}
+              description={S.project.commandPolicyEnableDesc}
+            >
+              {isOwner ? (
+                <Switch checked={enabled} onChange={setEnabled} disabled={busy} />
+              ) : (
+                <span className="text-xs text-gray-400">
+                  {enabled ? S.project.commandPolicyOn : S.project.commandPolicyOff}
+                </span>
+              )}
+            </SettingRow>
+          </div>
+          <div className={enabled ? "" : "pointer-events-none opacity-50"}>
+            <div className="flex items-center justify-between gap-2 border-t border-gray-100 py-1.5 dark:border-gray-800/60">
+              <p className="text-xs font-medium text-gray-500">
+                {S.project.commandPolicyRules} ·{" "}
+                <span className="font-semibold">{rules.length}</span>
+              </p>
+              {isOwner && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || editing !== null}
+                    onClick={() => setRules(saved.defaultRules.map((r) => ({ ...r })))}
+                  >
+                    {S.project.commandPolicyRestore}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy || editing !== null}
+                    onClick={() => setEditing("new")}
+                  >
+                    {S.project.commandPolicyAddRule}
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+              {rules.map((r, i) =>
+                editing === i ? (
+                  <RuleEditor
+                    key={`edit-${i}`}
+                    initial={r}
+                    onApply={(nr) => {
+                      setRules(rules.map((x, j) => (j === i ? nr : x)));
+                      setEditing(null);
+                    }}
+                    onCancel={() => setEditing(null)}
+                  />
+                ) : (
+                  <div
+                    key={`${r.name}-${i}`}
+                    className={`flex items-center gap-3 py-2.5 ${r.enabled ? "" : "opacity-60"}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{r.name}</p>
+                      {r.description !== undefined && (
+                        <p className="mt-0.5 text-xs text-gray-400">{r.description}</p>
+                      )}
+                      <p
+                        className="mt-0.5 truncate font-mono text-[11px] text-gray-400"
+                        title={r.pattern}
+                      >
+                        {r.pattern}
+                      </p>
+                    </div>
+                    {isOwner ? (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Switch
+                          checked={r.enabled}
+                          disabled={busy}
+                          onChange={(v) =>
+                            setRules(rules.map((x, j) => (j === i ? { ...x, enabled: v } : x)))
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || editing !== null}
+                          onClick={() => setEditing(i)}
+                        >
+                          {S.project.commandPolicyEditRule}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || editing !== null}
+                          onClick={() => setRules(rules.filter((_, j) => j !== i))}
+                        >
+                          {S.common.delete}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="shrink-0 text-xs text-gray-400">
+                        {r.enabled ? S.project.commandPolicyOn : S.project.commandPolicyOff}
+                      </span>
+                    )}
+                  </div>
+                ),
+              )}
+              {editing === "new" && (
+                <RuleEditor
+                  initial={null}
+                  onApply={(nr) => {
+                    setRules([...rules, nr]);
+                    setEditing(null);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
+              {rules.length === 0 && editing !== "new" && (
+                <p className="py-3 text-xs text-gray-400">{S.project.commandPolicyEmpty}</p>
+              )}
+            </div>
+          </div>
+          {isOwner && (
+            <div className="mt-2 flex justify-end border-t border-gray-100 pt-3 dark:border-gray-800/60">
+              <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>
+                {S.common.save}
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

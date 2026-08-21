@@ -616,6 +616,42 @@ export interface ChatDefaultsDto {
 }
 
 // ---------------------------------------------------------------------------
+// Sandbox command policy (Project-level: the [command_policy] block)
+// ---------------------------------------------------------------------------
+
+/**
+ * One deny rule of the sandbox command policy — plain project-editable data. The factory
+ * rules are seeded into new projects and carry no special status thereafter: every rule
+ * can be edited, disabled, or deleted.
+ */
+export interface CommandPolicyRuleDto {
+  name: string;
+  /** JavaScript regex source, matched against the whitespace-normalized command. */
+  pattern: string;
+  /** What the rule catches (free text). */
+  description?: string;
+  /** Per-rule switch, effective value (defaults on). */
+  enabled: boolean;
+}
+
+/**
+ * Per-Project sandbox command policy: deny rules for shell commands, evaluated ahead of
+ * the approval mode (a hit is denied even under allow-all). Serves as the GET response and
+ * the PUT response. The PUT request body carries `enabled?` plus the full `rules` list
+ * (required — a PUT always materializes the list into the config, model-presets style);
+ * per-rule `enabled` may be omitted there and defaults to on. Owner-only to write; any
+ * member may read.
+ */
+export interface CommandPolicyDto {
+  /** Effective master switch; an absent stored value reads as true (the policy defaults on). */
+  enabled: boolean;
+  /** The effective rule list — the factory set when the project predates seeding and has none stored. */
+  rules: CommandPolicyRuleDto[];
+  /** The factory set, served for the settings UI's "restore defaults". */
+  defaultRules: CommandPolicyRuleDto[];
+}
+
+// ---------------------------------------------------------------------------
 // Vault environment variables (Agent-level: agent_state/.vault.toml)
 // ---------------------------------------------------------------------------
 

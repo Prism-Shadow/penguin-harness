@@ -274,6 +274,30 @@ export const en: Strings = {
     chatDefaultsWorkspaceHint: "Empty = temporary workspace",
     /** The model default is single-sourced with the Models page (the same default_model); this is just another entry point. */
     chatDefaultsModelHint: "Same default model as the Models page",
+    /** Settings dialog tab rail. */
+    settingsTabGeneral: "General",
+    settingsTabMembers: "Members",
+    settingsTabDefaults: "Defaults",
+    settingsTabSecurity: "Security policy",
+    projectIdLabel: "Project ID",
+    deleteProjectDesc: "The project directory is removed recursively and cannot be recovered.",
+    /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
+    commandPolicyIntro:
+      "Every shell command passes through the policy before approval: a hit on any enabled rule is rejected outright, even when the approval mode is allow-all; the model receives the matched rule's name and is steered to another approach. Matching runs each rule's regular expression against the whitespace-normalized command text. This is an accident guardrail, not a defense against deliberate evasion.",
+    commandPolicyEnable: "Enable policy",
+    commandPolicyEnableDesc: "When off, no rule blocks anything.",
+    commandPolicyRules: "Rules",
+    commandPolicyRestore: "Restore defaults",
+    commandPolicyAddRule: "Add rule",
+    commandPolicyEditRule: "Edit",
+    commandPolicyApplyRule: "Apply",
+    commandPolicyEmpty: "No rules.",
+    commandPolicyOn: "Enabled",
+    commandPolicyOff: "Disabled",
+    commandPolicyRuleName: "Name",
+    commandPolicyRulePattern: "Regular expression",
+    commandPolicyRuleDesc: "Description (optional)",
+    commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
       "Delete this Project? Its directory will be removed recursively and cannot be recovered.",

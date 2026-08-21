@@ -27,9 +27,16 @@
  */
 import path from "node:path";
 import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
-import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
+import type {
+  McpServerConnectResult,
+  OmniMessage,
+  StopReason,
+  ToolCallPayload,
+} from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
+  CommandPolicyConfig,
+  CommandPolicyVeto,
   EnvironmentConfig,
   EnvironmentInterface,
   ToolConfig,
@@ -37,6 +44,7 @@ import type {
   ToolExecutionRequest,
   ToolPermission,
 } from "../interfaces.js";
+import { vetoForToolCall } from "./command-policy.js";
 import type { BuiltinTool, ToolResult } from "./tools/types.js";
 import { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 import { McpToolProvider } from "./mcp/provider.js";
@@ -103,10 +111,13 @@ export class Environment implements EnvironmentInterface {
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;
+  /** Project sandbox command policy snapshot (absent = builtin rules apply; see command-policy.ts). */
+  private readonly commandPolicy: CommandPolicyConfig | undefined;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
     this.toolConfig = config.toolConfig;
+    this.commandPolicy = config.commandPolicy;
     this.truncatedToolOutputArchive = config.sessionScratchpadDir
       ? new TruncatedToolOutputArchive({
           rootDir: path.join(config.sessionScratchpadDir, "truncated-tool-output"),
@@ -214,6 +225,26 @@ export class Environment implements EnvironmentInterface {
     return (
       this.toolConfig.customTools.find((t) => t.name === name)?.permission ??
       this.mcp?.toolPermission(name)
+    );
+  }
+
+  /**
+   * Sandbox-policy gate (EnvironmentInterface.vetoToolCall): consulted by context_engine
+   * before the approval callback. Malformed argument JSON is not a policy hit — argument
+   * validation errors belong to the tool's own execution path (see executeTool).
+   */
+  vetoToolCall(toolCall: OmniMessage<ToolCallPayload>): CommandPolicyVeto | null {
+    let args: unknown;
+    try {
+      args = JSON.parse(toolCall.payload.arguments) as unknown;
+    } catch {
+      return null;
+    }
+    if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
+    return vetoForToolCall(
+      toolCall.payload.name,
+      args as Record<string, unknown>,
+      this.commandPolicy,
     );
   }
 

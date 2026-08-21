@@ -29,6 +29,8 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
   DirListResponse,
@@ -182,6 +184,20 @@ export const getChatDefaults = (projectId: string) =>
 /** Whole-block replace (owner): an omitted key clears it; returns the stored block. */
 export const putChatDefaults = (projectId: string, body: ChatDefaultsDto) =>
   apiFetch<ChatDefaultsDto>(`/api/projects/${encodeURIComponent(projectId)}/chat-defaults`, {
+    method: "PUT",
+    body,
+  });
+
+/** Sandbox command policy ([command_policy]): member-readable; carries the factory set for "restore defaults". */
+export const getCommandPolicy = (projectId: string) =>
+  apiFetch<CommandPolicyDto>(`/api/projects/${encodeURIComponent(projectId)}/command-policy`);
+
+/** Whole-block replace (owner): the full rule list is required and gets materialized into the config. */
+export const putCommandPolicy = (
+  projectId: string,
+  body: { enabled: boolean; rules: CommandPolicyRuleDto[] },
+) =>
+  apiFetch<CommandPolicyDto>(`/api/projects/${encodeURIComponent(projectId)}/command-policy`, {
     method: "PUT",
     body,
   });

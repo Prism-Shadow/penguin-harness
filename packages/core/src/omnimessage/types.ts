@@ -256,6 +256,12 @@ export interface ApprovalDecisionPayload {
   type: "approval_decision";
   decision: ApprovalDecision;
   tool_call_id: string;
+  /**
+   * Set when the decision came from the project sandbox command policy rather than the
+   * approval callback: the matched rule's name. Absent on every human/mode decision
+   * (and on all messages recorded before the field existed).
+   */
+  policy_rule?: string;
 }
 
 export interface AbortPayload {

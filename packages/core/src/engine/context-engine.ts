@@ -1123,6 +1123,26 @@ export class ContextEngine {
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
             // returns its outcome (the LLM will close out quickly and return aborted).
             if (signal?.aborted) continue;
+            // Project sandbox policy: consulted before the approval callback, so a vetoed
+            // command never reaches the Human boundary — the policy outranks every approval
+            // mode, allow-all included. The denial is a "failed" output (not "aborted"):
+            // nothing was manually canceled, and the model should read the message and
+            // change course rather than treat it as a user interruption.
+            const veto = this.deps.environment.vetoToolCall?.(tc) ?? null;
+            if (veto) {
+              const decisionMsg = approvalDecision("deny", toolCallId, veto.rule);
+              queue.push(decisionMsg);
+              await this.write(decisionMsg);
+              const denied = toolCallOutput({
+                output: veto.message,
+                toolCallId,
+                stopReason: "failed",
+              });
+              queue.push(denied);
+              await this.write(denied);
+              toolOutputs.push(denied);
+              continue;
+            }
             // The approval callback is injected externally (RunOptions.approve): any throw
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,

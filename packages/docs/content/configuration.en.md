@@ -50,6 +50,7 @@ The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and
 | `name` | Project display name (the id is shown when unset) |
 | `default_model` | Paired reference `{ provider, model_id }` to the default model; must point to an entry in `models` |
 | `vision_model` | The vision model that reads images on behalf of text-only models (used by `describe_image`); a paired reference |
+| `[command_policy]` | Sandbox command policy: deny rules for shell commands, enforced ahead of the approval mode — see [Command policy](#command-policy) |
 | `[[models]]` | The list of available model entries |
 
 Model entry (`[[models]]`) fields:
@@ -89,6 +90,36 @@ output = 0.857143
 `pricing.unit` is currently always `usd_per_mtok` (USD per million tokens); the three buckets map onto `token_usage`'s three counters.
 
 Edit this file via the CLI (`penguin config model …`) or the Web Models page — never by hand while the service is running, and never by the model itself, which has no right to read or write it.
+
+### Command policy
+
+The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list evaluated against every `exec_command` launch **before** the approval callback, so a hit is rejected under every approval mode — allow-all included — and the model is told which rule fired so it can change course. The policy lives in the Project config on purpose: security policy is Project-owned, outside anything the Agent's own tools can rewrite, and each Session snapshots it at creation.
+
+The rules are **plain data with no special tiers**: the factory set is seeded into each new project exactly like the model presets — copied in at creation, never rewritten afterward — and every rule can then be edited, disabled, deleted, or joined by new ones. A project from before the seeding (no `rules` list stored) behaves as the factory set until its first saved edit materializes the list; the settings page's "Restore defaults" writes the factory set back.
+
+| Field | Description |
+| --- | --- |
+| `enabled` | Master switch; absent = **on** (stored only as `enabled = false`) |
+| `[[command_policy.rules]]` | The deny-rule list, matched in order: `name` (echoed in the denial) + `pattern` (a JavaScript regex source, matched against the whitespace-normalized command) + optional `description` + per-rule `enabled` (absent = on). A stored empty list means no rules; an absent list means the factory set |
+
+The factory set is deliberately small — commands whose verbatim execution is destructive with no undo: `rm` with recursive + force flags in any spelling, `mkfs`, `dd` writing straight to a block device, the classic fork bomb, and shell redirection onto a block device (`/dev/null` and friends stay legal).
+
+```toml
+[command_policy]
+enabled = true
+
+[[command_policy.rules]]
+name = "rm-recursive-force"
+pattern = "…" # seeded from the factory set
+description = "rm with recursive + force flags, in any spelling (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "no-force-push"
+pattern = "git push [^;|&]*--force"
+enabled = false
+```
+
+This is an **accident guardrail, not a security boundary**: matching is normalized-text regex over the launch command. It stops the classic destructive one-liners from running verbatim; it does not try to defeat deliberate obfuscation, and keystrokes typed into an already-running interactive shell via `input_command` are out of its scope. Manage it from the Security policy tab of Project Settings in the Web App (owner-only to edit; members see the effective policy).
 
 ## Agent config
 

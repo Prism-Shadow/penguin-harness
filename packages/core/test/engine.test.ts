@@ -479,6 +479,58 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect(deniedMsg).toBeDefined();
   });
 
+  it("sandbox policy vetoes a matching command before approval, even under allow-all", async () => {
+    let approveCalls = 0;
+    let secondInput: OmniMessage[] | null = null;
+    let calls = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(params: GenerativeModelParameters) {
+        calls += 1;
+        if (calls === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
+            toolCallId: "call_veto",
+            stopReason: "completed",
+          });
+          return { status: "completed" as const };
+        }
+        secondInput = params.newMessages;
+        yield assistantText("Understood, choosing another approach.");
+        return { status: "completed" as const };
+      },
+    };
+    // Default policy (no commandPolicy in config): builtin rules, enabled.
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const countingAllow: ApproveFn = async () => {
+      approveCalls += 1;
+      return "allow";
+    };
+
+    const all = await collectRun(engine, [userText("clean up")], countingAllow);
+
+    // The approval callback was never consulted: the policy outranks allow-all by
+    // construction, not by winning a race.
+    expect(approveCalls).toBe(0);
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    expect((decision.payload as { policy_rule?: string }).policy_rule).toBe("rm-recursive-force");
+    // The denial is a "failed" output naming the policy, fed back to the model.
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("failed");
+    expect((output.payload as { output: string }).output).toContain("sandbox policy");
+    const fedBack = (secondInput as OmniMessage[] | null)?.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect(fedBack).toBeDefined();
+  });
+
   it("engine maxTurns fallback is -1 (unlimited) when the option is omitted (direct SDK construction)", () => {
     const engine = new ContextEngine({
       llm: new FakeLLM(),
