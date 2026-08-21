@@ -292,5 +292,38 @@ describe("title-generator", () => {
         "Please fix the database",
       );
     });
+
+    it("never cuts between the halves of a surrogate pair", () => {
+      // The emoji straddles the 30-char boundary: a plain slice would leave its high half
+      // alone, which SQLite and the SSE frame both render as U+FFFD.
+      const title = fallbackTitle(`${"a".repeat(29)}🎉 and more text`)!;
+      expect(title).toBe("a".repeat(29));
+      expect(/[\uD800-\uDFFF]/.test(title)).toBe(false);
+    });
+  });
+
+  describe("fallbackTitle attachment material", () => {
+    const filePath = "/home/someone/.penguin/agents/default_agent/scratchpad/s-1/report.pdf";
+
+    it("gives an attachment-only message no fallback rather than a truncated path", () => {
+      // The composer sends a file with no typed text as a message whose whole body is the
+      // marker line; "[attached file" is not a title, and the path is the sender's home dir.
+      expect(fallbackTitle(`[attached file: ${filePath}]`)).toBeNull();
+      expect(fallbackTitle(`[attached image: ${filePath}]`)).toBeNull();
+    });
+
+    it("still titles a message that has text alongside its attachment", () => {
+      expect(fallbackTitle(`Summarise this report\n\n[attached file: ${filePath}]`)).toBe(
+        "Summarise this report",
+      );
+    });
+
+    it("leaves the row NULL when the whole input is an attachment line", () => {
+      const calls = { count: 0, args: [] as unknown[] };
+      makeGenerator().maybeGenerate(CTX, fakeSession({ title: null, usage: null }, calls), {
+        fallbackText: `[attached file: ${filePath}]`,
+      });
+      expect(sessions.findById(ROW.sessionId)?.title).toBeNull();
+    });
   });
 });

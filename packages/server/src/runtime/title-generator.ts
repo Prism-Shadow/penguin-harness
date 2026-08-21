@@ -21,6 +21,8 @@
  */
 import {
   emptyTokenCounts,
+  matchAttachedFileLine,
+  matchAttachedImageLine,
   sanitizeTitle,
   stripConversationMarkers,
   tokenUsage,
@@ -220,7 +222,7 @@ export function fallbackTitle(text: string): string | null {
   // raw first non-empty line would otherwise be that marker rather than the user's request.
   const firstLine = stripConversationMarkers(text)
     .split("\n")
-    .find((l) => l.trim().length > 0);
+    .find((l) => l.trim().length > 0 && !isAttachmentLine(l.trim()));
   if (!firstLine) return null;
   const collapsed = firstLine.replace(/\s+/g, " ").trim();
   // Drop leading punctuation/quotes before truncating, so a decorated line spends the
@@ -235,17 +237,43 @@ export function fallbackTitle(text: string): string | null {
 }
 
 /**
+ * A line that is nothing but an `[attached image: …]` / `[attached file: …]` marker. A message
+ * that carries attachments and no typed text is exactly this line, so a title taken from it
+ * would be a truncated absolute path out of the sender's home directory. Such a message gets
+ * no fallback at all — the LLM material still carries the path, so the model can name the
+ * conversation after the file, and until it answers the UI shows its untitled placeholder.
+ */
+function isAttachmentLine(line: string): boolean {
+  return matchAttachedImageLine(line) !== null || matchAttachedFileLine(line) !== null;
+}
+
+/**
  * Truncates to `FALLBACK_MAX_CHARS`, avoiding a mid-word cut: when the boundary splits an
  * ASCII word the cut backs up to the last space instead. CJK text has no spaces and every
  * character stands alone, so a plain character cut is already a word cut there.
+ *
+ * A character outside the BMP (an emoji, a rare CJK ideograph) is two UTF-16 units, and a cut
+ * between them leaves a lone surrogate, which has no UTF-8 encoding: SQLite stores U+FFFD in
+ * its place and the SSE frame carries the same replacement. The boundary therefore steps back
+ * one unit rather than splitting the pair.
  */
 function truncateAtWord(text: string): string {
   if (text.length <= FALLBACK_MAX_CHARS) return text;
-  const cut = text.slice(0, FALLBACK_MAX_CHARS);
+  const end = splitsSurrogatePair(text, FALLBACK_MAX_CHARS)
+    ? FALLBACK_MAX_CHARS - 1
+    : FALLBACK_MAX_CHARS;
+  const cut = text.slice(0, end);
   const wordChar = /[A-Za-z0-9'’_-]/;
-  if (wordChar.test(text[FALLBACK_MAX_CHARS]!) && wordChar.test(cut[cut.length - 1]!)) {
+  if (wordChar.test(text[end]!) && wordChar.test(cut[cut.length - 1]!)) {
     const lastSpace = cut.lastIndexOf(" ");
     if (lastSpace > 0) return cut.slice(0, lastSpace).trimEnd();
   }
   return cut.trimEnd();
+}
+
+/** True when index `i` falls between the high and low halves of one surrogate pair. */
+function splitsSurrogatePair(text: string, i: number): boolean {
+  const high = text.charCodeAt(i - 1);
+  const low = text.charCodeAt(i);
+  return high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff;
 }
