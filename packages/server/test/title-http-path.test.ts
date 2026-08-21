@@ -51,6 +51,14 @@ describe("title generation over the web's HTTP path", () => {
     t = await createTestApp();
     const { cookie } = await provisionUser(t.app, "titler");
     api = apiClient(t.app, cookie);
+    // The draft flow creates the Session with no model reference, so the Project must carry
+    // a default one. Seed it explicitly rather than relying on what the first-run seed
+    // detects: that comes from ambient provider credentials, which a dev box has and CI
+    // does not, and without a default createSession answers 400.
+    await api.put("/api/projects/titler-default_project/models", {
+      defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+      models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6" }],
+    });
   });
 
   afterEach(async () => {
