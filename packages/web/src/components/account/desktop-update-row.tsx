@@ -1,7 +1,8 @@
 /**
- * Client-update row in the sidebar user menu — the desktop-mode counterpart of the
- * server update reminder (which stays hidden there: the CLI self-update has nothing to
- * run under the shell). Rendered only in the shell's own window (see offersClientUpdate).
+ * Client-update row in the sidebar user menu — the desktop-mode counterpart of
+ * ServerUpdateRow, taking the same slot under the System settings entry (the server row
+ * stays hidden there: the CLI self-update has nothing to run under the shell). Rendered
+ * only in the shell's own window (see offersClientUpdate).
  *
  * Deliberately thin: the snapshot, the polling and the armed-check watch live in
  * use-desktop-update.ts at module level, because this row unmounts whenever the menu

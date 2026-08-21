@@ -27,6 +27,7 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { OptionMenu, type OptionMenuChoice } from "../../components/ui/option-menu";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
@@ -300,7 +301,7 @@ export function McpServersSection({
       </p>
 
       {servers.length === 0 ? (
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.agent.mcpEmpty}</p>
+        <SettingsEmpty>{S.agent.mcpEmpty}</SettingsEmpty>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full min-w-[520px] text-left text-sm">

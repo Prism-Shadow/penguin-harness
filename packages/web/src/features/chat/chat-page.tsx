@@ -59,7 +59,7 @@ import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
-import { useProject } from "../../state/project";
+import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -1532,6 +1532,12 @@ export function ChatPage() {
     usageBuckets && recordedInput > 0
       ? `${Math.round((100 * usageBuckets.cacheRead) / recordedInput)}%`
       : null;
+  // Display name of the Session's own Agent for the details card — null when the Agent has
+  // no name of its own (agentDisplayName then returns the id, which the row already shows)
+  // or when the Agent list hasn't arrived yet.
+  const sessionAgent = agents.find((a) => a.agentId === selected?.agentId);
+  const sessionAgentName =
+    sessionAgent && sessionAgent.name !== undefined ? agentDisplayName(sessionAgent) : null;
   const modelInfo = models?.models.find((m) => sameModelRef(m, activeModelRef));
   const contextWindow = modelInfo?.contextWindow;
   // Assumed supported by default: only models explicitly marked vision=false show a blocking hint when adding images.
@@ -1729,6 +1735,23 @@ export function ChatPage() {
             }
           >
             <div className="space-y-3 px-3.5 py-2.5 text-sm">
+              {/* Agent, above the Model: a conversation belongs to an Agent first, and the
+                  Model it runs on is one of that Agent's settings. Paired the same way as the
+                  Model row — the id the API speaks, then the display name, which is dropped
+                  when the Agent has none of its own and the two would simply repeat. */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {S.chat.agent}
+                </p>
+                <p className="truncate text-xs">
+                  <span className="font-mono">{selected.agentId}</span>
+                  {sessionAgentName !== null && (
+                    <span className="ml-1.5 text-gray-400 dark:text-gray-500">
+                      {sessionAgentName}
+                    </span>
+                  )}
+                </p>
+              </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.model}

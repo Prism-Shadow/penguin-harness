@@ -4,8 +4,8 @@
  * rows on the right). The rail is grouped — Personal for the viewer's own preferences,
  * Server for the server-global settings an admin writes — and both the rail and the pane
  * go through visibleSettingsSections, so a viewer neither sees a page they may not open
- * nor reaches it by request: an unknown or forbidden `initialSection` is replaced with the
- * first page they can actually open.
+ * nor lands on one: the active page is re-resolved against that list on every render, and
+ * anything not on it falls back to the first page they can actually open.
  */
 import { useEffect, useState } from "react";
 import { S } from "../../lib/strings";
@@ -25,7 +25,6 @@ import { AppearanceSection } from "./appearance-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
-import { UpdatesSection } from "./updates-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -41,23 +40,12 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
-  /** Down arrow into a tray: updates arriving. */
-  updates: "M12 3v10m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function SettingsDialog({
-  open,
-  onClose,
-  initialSection,
-}: {
-  open: boolean;
-  onClose: () => void;
-  /** Page to land on when opening (e.g. the update reminder jumps to "updates"); resolved against what this viewer may open. */
-  initialSection?: SettingsSectionKey;
-}) {
+export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, desktopMode, sessionVia } = useAuth();
   const sections = visibleSettingsSections({
     isAdmin: user?.isAdmin === true,
@@ -66,13 +54,11 @@ export function SettingsDialog({
   });
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
 
-  // Re-resolve the landing page each time the dialog opens (and whenever the viewer's
-  // section list would invalidate the current choice).
-  // Deliberately keyed on `open` alone: the landing page matters at the moment of opening,
-  // and re-running on every sections identity change would yank the user off a page they
-  // navigated to. `current` below re-resolves against the live list on every render anyway.
+  // Each opening starts on the viewer's first page: clearing the choice lets `current`
+  // below resolve it against the live list. Deliberately keyed on `open` alone — re-running
+  // on every sections identity change would yank the user off a page they navigated to.
   useEffect(() => {
-    if (open) setActive(resolveSettingsSection(initialSection, sections));
+    if (open) setActive(null);
   }, [open]);
 
   const current = resolveSettingsSection(active, sections);
@@ -85,7 +71,6 @@ export function SettingsDialog({
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
-    updates: S.settings.updatesTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -121,7 +106,6 @@ export function SettingsDialog({
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
-      {current === "updates" && <UpdatesSection active={open} />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );
