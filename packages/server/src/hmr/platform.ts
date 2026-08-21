@@ -89,8 +89,30 @@ interface ParkedInterfaces extends Interfaces {
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
-  // A parked pty, as its adopter uses it (see TerminalManager.adopt).
-  terminal: ["id", "info", "capture", "write", "alive", "dispose"],
+  // A parked pty, as its adopters use it — EVERY member reached after adoption, not a
+  // representative sample: the manager (id, seq, ownerUserId, alive, info, onExit, kill,
+  // dispose), the routes (capture, write, rename, exit) and the stream binding
+  // (onOutput, resize, releaseSize, restoreStream). A short list would let a predecessor
+  // satisfy the descriptor and still TypeError on the first keystroke after a swap,
+  // which is exactly what this check exists to prevent.
+  terminal: [
+    "id",
+    "seq",
+    "ownerUserId",
+    "alive",
+    "exit",
+    "info",
+    "rename",
+    "capture",
+    "write",
+    "resize",
+    "releaseSize",
+    "restoreStream",
+    "onOutput",
+    "onExit",
+    "kill",
+    "dispose",
+  ],
   // The current-App pointer (see PlatformCurrent).
   platform: ["deps", "app"],
 };

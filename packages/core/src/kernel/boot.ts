@@ -29,9 +29,13 @@ export interface Resources {
   /**
    * Disposes and removes every entry whose id belongs to the group (`terminal` covers
    * `terminal:*`), in reverse registration order — later entries may depend on earlier
-   * ones, same convention as effects. Optional: upgrade() calls it only when the two
-   * sides of a swap declare incompatible resource interfaces (see Iface.resources), and
-   * a registry without it simply carries the group across unchecked.
+   * ones, same convention as effects.
+   *
+   * A hook for IMPLEMENTATIONS, not a kernel mechanism: the kernel never calls it, and
+   * upgrade() has no opinion about resource compatibility. An impl's create() uses it to
+   * hard-stop the groups it cannot adopt from its predecessor (penguin does this over a
+   * declaration it leaves in the registry itself — see server hmr/platform.ts). Optional,
+   * so a registry that does not offer it simply carries every group across unchecked.
    */
   disposeGroup?(group: string): void;
 }

@@ -8,6 +8,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
+import { TerminalManager } from "../src/terminal/manager.js";
+import type { TerminalSession } from "../src/terminal/session.js";
 import { DECLARED_RESOURCES as PARKED, packagedPlatform } from "../src/hmr/platform.js";
 import {
   RESOURCE_IFACES_RESOURCE_ID,
@@ -66,6 +68,30 @@ describe("HotResources ordering", () => {
     r.register("b", 2, () => order.push("b"));
     r.disposeAll();
     expect(order).toEqual(["b", "a"]);
+  });
+
+  it("a re-registered id counts as the NEWEST, not as its first registration", () => {
+    // Map.set on an existing key keeps its original insertion position, so without a
+    // delete-before-set the sweeps would dispose a re-registered entry (a successor
+    // adopting a pty, say) in its previous owner's slot — while both sweeps promise
+    // reverse REGISTRATION order, which later-depends-on-earlier relies on.
+    const r = new HotResources();
+    const order: string[] = [];
+    r.register("a", 1, () => order.push("a-old"));
+    r.register("b", 2, () => order.push("b"));
+    r.register("a", 3, () => order.push("a-new"));
+    r.disposeAll();
+    expect(order).toEqual(["a-new", "b"]);
+  });
+
+  it("the same holds inside a group", () => {
+    const r = new HotResources();
+    const order: string[] = [];
+    r.register("terminal:1", 1, () => order.push("1-old"));
+    r.register("terminal:2", 2, () => order.push("2"));
+    r.register("terminal:1", 3, () => order.push("1-new"));
+    r.disposeGroup("terminal");
+    expect(order).toEqual(["1-new", "2"]);
   });
 });
 
@@ -177,6 +203,53 @@ describe("resource-interface reconciliation at create()", () => {
     expect(dispose).not.toHaveBeenCalled();
     expect(r.claim("terminal:pty1")).toBe("live");
     if (result.status === "ok") result.instance.dispose();
+  });
+});
+
+describe("the parked-pty declaration", () => {
+  it("covers every member adoption reaches — a shorter list would TypeError after a swap", () => {
+    // The descriptor is the PROOF that adopting a predecessor's pty is safe, so it has to
+    // name everything the adopters touch. This drives the real adoption path against a
+    // session that answers ONLY the declared members and throws on anything else: shorten
+    // DECLARED_RESOURCES.terminal and this test names the member that would have blown up
+    // on the first keystroke after a push.
+    const declared = new Set<string>(PARKED.terminal);
+    const stub: Record<string, unknown> = {
+      id: "t1",
+      seq: 1,
+      ownerUserId: "u1",
+      alive: true,
+      exit: null,
+      info: () => ({ id: "t1", name: "sh" }),
+      rename: () => undefined,
+      capture: () => ({ lines: [] }),
+      write: () => undefined,
+      resize: () => undefined,
+      releaseSize: () => undefined,
+      restoreStream: () => "",
+      onOutput: () => () => undefined,
+      onExit: () => () => undefined,
+      kill: () => undefined,
+      dispose: () => undefined,
+    };
+    const strict = new Proxy(stub, {
+      get(target, prop, receiver) {
+        // Symbols and promise-probing are the runtime's own business, not the contract's.
+        if (typeof prop === "string" && prop !== "then" && !declared.has(prop)) {
+          throw new Error(`adoption reached an undeclared member: ${prop}`);
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    }) as unknown as TerminalSession;
+
+    const r = new HotResources();
+    r.register("terminal:t1", strict);
+    const manager = new TerminalManager(r);
+    manager.adopt(["t1"]);
+    // What a fresh App does with an adopted pty right away.
+    expect(manager.handleIds()).toEqual(["t1"]);
+    expect(manager.list("u1").map((s) => s.id)).toEqual(["t1"]);
+    expect(manager.require("t1", "u1")).toBe(strict);
   });
 });
 
