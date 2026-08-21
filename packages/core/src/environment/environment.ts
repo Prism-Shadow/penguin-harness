@@ -209,7 +209,7 @@ export class Environment implements EnvironmentInterface {
     this.mcp?.cancelConnect();
   }
 
-  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their server's `readOnlyHint` annotation after discovery. */
+  /** Looks up a tool's permission level (for the frontend's permission-mode decisions); returns undefined for an unknown tool. MCP tools answer from their entry's `permission` after discovery, or from their own `readOnlyHint` annotation when the entry sets none. */
   toolPermission(name: string): ToolPermission | undefined {
     return (
       this.toolConfig.customTools.find((t) => t.name === name)?.permission ??
