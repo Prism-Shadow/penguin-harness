@@ -1,16 +1,18 @@
 /**
  * Cost and usage center:
- * top filters for Agent / Model + a date-range preset (7/30/90 days or a
- * custom pair of date inputs) + a time-series precision (hour / day / week /
- * month, constrained by the range — controls have no external title, the
- * explanation is written into the dropdown options themselves);
+ * top filters for Agent / Model + a date-range preset (trailing last hour /
+ * last 24 hours, calendar 7/30/90 days, or a custom pair of date inputs) + a
+ * time-series precision (minute / hour / day / week / month, constrained by
+ * the preset — controls have no external title, the explanation is written
+ * into the dropdown options themselves);
  * three summary cards (today / last 7 days / cumulative, each stat on its own row);
- * four time-series charts arranged two-by-two, each taking half the width —
- * requests per Agent (smooth lines), success rate (smooth line, 0–100%),
- * Token buckets (stacked bars + a cache-hit-rate curve in front), and cost
- * (smooth line + area). Charts always fit their card — nothing scrolls;
- * below them is a full-width "errors" panel (stats + a paged errors table).
- * Currency follows the user's settings; a row with unconfigured pricing shows its cost as "—".
+ * time-series charts over the shared range and precision — the full-width
+ * requests + success-rate combo (bars on the left axis, the rate line on a
+ * right 0–100% axis, dimension/entity controls in the card header), then
+ * Token buckets (stacked bars + a dashed cache-hit-rate curve in front) and
+ * cost (line + points + area) side by side. Charts always fit their card —
+ * nothing scrolls; below them is a full-width "errors" panel (stats + a paged
+ * errors table). Currency follows the user's settings.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -33,19 +35,19 @@ import { Select } from "../../components/ui/select";
 import { Skeleton } from "../../components/ui/skeleton";
 import { TrendChart } from "./trend-chart";
 import {
-  CallsChart,
-  CallsLegend,
-  SuccessRateChart,
+  RequestsChart,
+  RequestsControls,
   TokenBarChart,
   TokenLegend,
+  type RequestsDimension,
+  type RequestsEntity,
   type TokenLegendKey,
 } from "./usage-charts";
 import {
-  callsSeries,
   coerceGranularity,
-  granularityOptions,
-  isoDate,
+  presetGranularities,
   presetRange,
+  presetTsWindow,
   rangeDays,
   type RangePreset,
 } from "./usage-controls";
@@ -148,33 +150,38 @@ export function UsagePage() {
   useEffect(() => {
     setAgentFilter(paramAgentId ?? "");
   }, [paramAgentId]);
-  // Date range: a preset (7/30/90 days) or a custom from/to pair, plus the
-  // time-series precision. A range change keeps the precision when the new
-  // range still offers it, otherwise snaps to that range's default.
-  const [preset, setPreset] = useState<RangePreset>("30d");
-  const [from, setFrom] = useState(() => presetRange("30d", new Date()).from);
-  const [to, setTo] = useState(() => isoDate(new Date()));
+  // Date range: a trailing window (last hour / last 24 hours), a calendar
+  // preset (7/30/90 days), or a custom from/to pair — plus the time-series
+  // precision. A range change keeps the precision when the new preset still
+  // offers it, otherwise snaps to the preset's default.
+  const [preset, setPreset] = useState<RangePreset>("7d");
+  const [from, setFrom] = useState(() => presetRange("7d", new Date()).from);
+  const [to, setTo] = useState(() => presetRange("7d", new Date()).to);
   const [granularity, setGranularity] = useState<UsageGranularity>("day");
   const applyRange = (nextPreset: RangePreset, nextFrom: string, nextTo: string) => {
     setPreset(nextPreset);
     setFrom(nextFrom);
     setTo(nextTo);
-    setGranularity((g) => coerceGranularity(g, rangeDays(nextFrom, nextTo)));
+    setGranularity((g) => coerceGranularity(g, nextPreset, rangeDays(nextFrom, nextTo)));
   };
   const [data, setData] = useState<UsageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The legend items currently hovered: the legends live in the card headers
-  // (ChartCard's extra) while the marks live inside the cards, so this state is lifted to this level.
+  // The legend / control state that lives in the card headers (ChartCard's
+  // extra) while the marks live inside the cards, lifted to this level.
   const [tokenBucket, setTokenBucket] = useState<TokenLegendKey | null>(null);
-  const [callsHover, setCallsHover] = useState<number | null>(null);
+  const [reqDim, setReqDim] = useState<RequestsDimension>("agent");
+  const [reqEntity, setReqEntity] = useState("");
 
   const load = useCallback(async () => {
     if (!projectId) return;
     setError(null);
     try {
+      // The trailing presets recompute their window at load time, so a reload
+      // keeps trailing "now"; the calendar presets use the stored date pair.
+      const range =
+        preset === "1h" || preset === "1d" ? presetTsWindow(preset, new Date()) : { from, to };
       const res = await api.getUsage(projectId, {
-        from,
-        to,
+        ...range,
         // The detail table has been removed, superseded by the charts above; groupBy is still a required query parameter, fixed to group by date.
         groupBy: "date",
         granularity,
@@ -185,7 +192,16 @@ export function UsagePage() {
     } catch (e) {
       setError(apiErrorText(e));
     }
-  }, [projectId, from, to, granularity, agentFilter, modelFilter?.provider, modelFilter?.modelId]);
+  }, [
+    projectId,
+    preset,
+    from,
+    to,
+    granularity,
+    agentFilter,
+    modelFilter?.provider,
+    modelFilter?.modelId,
+  ]);
 
   useEffect(() => {
     setData(null);
@@ -218,12 +234,31 @@ export function UsagePage() {
     (summary?.last7d.hasUncosted ?? false) ||
     (summary?.total.hasUncosted ?? false);
 
-  // Precision choices follow the selected range; the calls chart's series are
-  // folded once here (top Agents + an "other" tail) and shared by the chart and
-  // its legend in the card header.
-  const gOptions = granularityOptions(rangeDays(from, to));
-  const calls = data ? callsSeries(data.byAgentSeries, S.usage.callsOther) : [];
+  // Precision choices follow the selected preset/range; the requests chart's
+  // entity list follows its dimension toggle (its controls live in the card
+  // header, so both are built here).
+  const gOptions = presetGranularities(preset, rangeDays(from, to));
+  const entityOptions: RequestsEntity[] = !data
+    ? []
+    : reqDim === "agent"
+      ? data.byAgentSeries.map((s) => ({
+          label: s.agentId,
+          requests: s.requests,
+          completed: s.completed,
+          denominator: s.denominator,
+        }))
+      : data.byModelSeries.map((s) => ({
+          label: catalogEntryFor(s.provider, s.modelId)?.displayName ?? s.modelId,
+          requests: s.requests,
+          completed: s.completed,
+          denominator: s.denominator,
+        }));
+  // Self-healing selection: a stale index (the entity list shrank under a new
+  // filter or dimension) falls back to "all" instead of a blank dropdown.
+  const reqSelected =
+    reqEntity !== "" && Number(reqEntity) < entityOptions.length ? Number(reqEntity) : null;
   const granularityLabel = (g: UsageGranularity): string => {
+    if (g === "minute") return S.usage.granularityMinute;
     if (g === "hour") return S.usage.granularityHour;
     if (g === "day") return S.usage.granularityDay;
     if (g === "week") return S.usage.granularityWeek;
@@ -272,7 +307,7 @@ export function UsagePage() {
                 ))}
               </Select>
             </div>
-            {/* Date range: quick presets, with "custom" revealing the two date inputs */}
+            {/* Date range: trailing windows and quick presets, with "custom" revealing the two date inputs */}
             <div className="w-28">
               <Select
                 size="sm"
@@ -280,13 +315,17 @@ export function UsagePage() {
                 aria-label={S.usage.rangeLabel}
                 onChange={(e) => {
                   const next = e.target.value as RangePreset;
-                  if (next === "custom") applyRange(next, from, to);
-                  else {
+                  if (next === "7d" || next === "30d" || next === "90d") {
                     const r = presetRange(next, new Date());
                     applyRange(next, r.from, r.to);
+                  } else {
+                    // Trailing windows compute their bounds at load time; custom keeps the dates already picked.
+                    applyRange(next, from, to);
                   }
                 }}
               >
+                <option value="1h">{S.usage.rangeHour}</option>
+                <option value="1d">{S.usage.rangeDay}</option>
                 <option value="7d">{S.usage.range7d}</option>
                 <option value="30d">{S.usage.range30d}</option>
                 <option value="90d">{S.usage.range90d}</option>
@@ -348,26 +387,36 @@ export function UsagePage() {
           </div>
         )}
 
-        {/* Four time-series charts two-by-two, each taking half width, all over
-            the shared range + precision: requests per Agent / success rate /
-            Token buckets + cache hit rate / cost. Charts always fit their card — nothing scrolls. */}
+        {/* Time-series charts, all over the shared range + precision: the
+            full-width requests + success-rate combo, then Token buckets +
+            cache hit rate and cost side by side. Charts always fit their card — nothing scrolls. */}
         {data ? (
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {/* The legends live in the card headers, the marks inside the cards: the hover-linked state is lifted to this level to be shared */}
-            <ChartCard
-              title={S.usage.chartAgentCalls}
-              extra={<CallsLegend calls={calls} active={callsHover} onHover={setCallsHover} />}
-            >
-              <CallsChart
-                series={data.series}
-                calls={calls}
-                granularity={data.granularity}
-                legend={callsHover}
-              />
-            </ChartCard>
-            <ChartCard title={S.usage.chartSuccessRate}>
-              <SuccessRateChart series={data.series} granularity={data.granularity} />
-            </ChartCard>
+            {/* The controls/legends live in the card headers, the marks inside the cards: that state is lifted to this level to be shared */}
+            <div className="lg:col-span-2">
+              <ChartCard
+                title={S.usage.chartRequests}
+                extra={
+                  <RequestsControls
+                    dim={reqDim}
+                    onDim={(d) => {
+                      setReqDim(d);
+                      setReqEntity("");
+                    }}
+                    entities={entityOptions}
+                    entity={reqSelected === null ? "" : reqEntity}
+                    onEntity={setReqEntity}
+                  />
+                }
+              >
+                <RequestsChart
+                  series={data.series}
+                  entities={entityOptions}
+                  selected={reqSelected}
+                  granularity={data.granularity}
+                />
+              </ChartCard>
+            </div>
             <ChartCard
               title={S.usage.chartTokenTrend}
               extra={<TokenLegend active={tokenBucket} onHover={setTokenBucket} />}

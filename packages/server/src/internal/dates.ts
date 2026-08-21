@@ -24,13 +24,14 @@ export function localDateMinusDays(date: Date, days: number): string {
 // Bucket keys must agree byte-for-byte between the SQL aggregation (see UsageRepo's
 // bucketExpr) and the zero-fill enumeration here, or filled gaps and aggregated rows
 // land in different buckets:
-//   hour  → `yyyy-mm-ddThh:00` (local clock, from the row's ts)
-//   day   → `yyyy-mm-dd`       (the row's date column)
-//   week  → `yyyy-mm-dd` of the ISO week's Monday
-//   month → `yyyy-mm`
+//   minute → `yyyy-mm-ddThh:mm` (local clock, from the row's ts)
+//   hour   → `yyyy-mm-ddThh:00` (local clock, from the row's ts)
+//   day    → `yyyy-mm-dd`       (the row's date column)
+//   week   → `yyyy-mm-dd` of the ISO week's Monday
+//   month  → `yyyy-mm`
 
 /** Time-series precision for the usage series (mirrors the API's UsageGranularity). */
-export type BucketGranularity = "hour" | "day" | "week" | "month";
+export type BucketGranularity = "minute" | "hour" | "day" | "week" | "month";
 
 /** Parse a local `yyyy-mm-dd` into a local-midnight Date. */
 function parseLocalDate(date: string): Date {
@@ -42,6 +43,41 @@ function parseLocalDate(date: string): Date {
 export function formatLocalHourKey(date: Date): string {
   const hour = date.getHours().toString().padStart(2, "0");
   return `${formatLocalDate(date)}T${hour}:00`;
+}
+
+/** Format a local minute bucket key: `yyyy-mm-ddThh:mm`. */
+export function formatLocalMinuteKey(date: Date): string {
+  const hour = date.getHours().toString().padStart(2, "0");
+  const minute = date.getMinutes().toString().padStart(2, "0");
+  return `${formatLocalDate(date)}T${hour}:${minute}`;
+}
+
+/**
+ * All minute/hour bucket keys covering an inclusive timestamp window, ascending —
+ * the zero-fill skeleton behind the "last hour" / "last 24 hours" trailing
+ * windows, whose bounds are instants rather than calendar dates. The first key
+ * is the window start floored to its unit; enumeration steps real timestamps
+ * (DST-duplicated local times collapse to one key) and stops one key past
+ * `cap`, mirroring enumerateBuckets.
+ */
+export function enumerateTsBuckets(
+  fromTs: Date,
+  toTs: Date,
+  granularity: "minute" | "hour",
+  cap = Infinity,
+): string[] {
+  const keys: string[] = [];
+  if (fromTs.getTime() > toTs.getTime()) return keys;
+  const start = new Date(fromTs);
+  start.setSeconds(0, 0);
+  if (granularity === "hour") start.setMinutes(0);
+  const stepMs = granularity === "hour" ? 3_600_000 : 60_000;
+  const fmt = granularity === "hour" ? formatLocalHourKey : formatLocalMinuteKey;
+  for (let t = start.getTime(); t <= toTs.getTime() && keys.length <= cap; t += stepMs) {
+    const key = fmt(new Date(t));
+    if (keys[keys.length - 1] !== key) keys.push(key);
+  }
+  return keys;
 }
 
 /** Monday of the ISO week containing the given local date (`yyyy-mm-dd` in, `yyyy-mm-dd` out). */
@@ -70,7 +106,7 @@ export function localMonthKey(date: string): string {
 export function enumerateBuckets(
   from: string,
   to: string,
-  granularity: BucketGranularity,
+  granularity: Exclude<BucketGranularity, "minute">,
   cap = Infinity,
 ): string[] {
   const keys: string[] = [];

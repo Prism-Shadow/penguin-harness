@@ -395,7 +395,7 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
     const now = new Date("2026-07-06T10:00:00");
     insert("2026-07-01", { agentId: "small" });
     insert("2026-07-02", { agentId: "big" });
-    insert("2026-07-02", { agentId: "big" });
+    insert("2026-07-02", { agentId: "big", status: "failed", total: 0 });
     const res = await service(now).query("p1", {
       groupBy: "date",
       from: "2026-07-01",
@@ -404,9 +404,70 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
     });
     expect(res.byAgentSeries.map((s) => s.agentId)).toEqual(["big", "small"]);
     expect(res.byAgentSeries[0]!.requests).toEqual([0, 2, 0]);
+    // Per-bucket success counts ride along, per entity (the failed request counts toward the denominator only).
+    expect(res.byAgentSeries[0]!.completed).toEqual([0, 1, 0]);
+    expect(res.byAgentSeries[0]!.denominator).toEqual([0, 2, 0]);
     expect(res.byAgentSeries[1]!.requests).toEqual([1, 0, 0]);
     // The main series does honor the agent filter, like every other aggregate.
     expect(res.series.map((p) => p.requests)).toEqual([1, 0, 0]);
+  });
+
+  it("byModelSeries mirrors byAgentSeries for the model dimension: aligned, sorted, model-filter-free but agent-filtered", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    insert("2026-07-01", { modelId: "m1", agentId: "a1" });
+    insert("2026-07-02", { modelId: "m2", agentId: "a1" });
+    insert("2026-07-02", { modelId: "m2", agentId: "a1", status: "aborted", total: 0 });
+    insert("2026-07-02", { modelId: "m2", agentId: "other" });
+    const res = await service(now).query("p1", {
+      groupBy: "date",
+      from: "2026-07-01",
+      to: "2026-07-03",
+      agentId: "a1",
+      modelId: "m1",
+      provider: "custom",
+    });
+    // The model filter does not narrow the list; the agent filter does.
+    expect(res.byModelSeries.map((s) => s.modelId)).toEqual(["m2", "m1"]);
+    const m2 = res.byModelSeries[0]!;
+    expect(m2.provider).toBe("custom");
+    expect(m2.requests).toEqual([0, 2, 0]);
+    expect(m2.completed).toEqual([0, 1, 0]);
+    // Aborted is excluded from the denominator, same as everywhere else.
+    expect(m2.denominator).toEqual([0, 1, 0]);
+  });
+
+  it("minute buckets: a trailing timestamp window zero-fills by minute and bounds every range-scoped aggregate", async () => {
+    // Build everything from local wall-clock times so expectations hold in any test timezone.
+    const at = (h: number, m: number, s = 0) => new Date(2026, 6, 6, h, m, s);
+    const dateStr = formatLocalDate(at(10, 0));
+    insert(dateStr, { ts: at(9, 58, 30).toISOString() }); // inside the window
+    insert(dateStr, { ts: at(10, 20, 0).toISOString() }); // inside
+    insert(dateStr, { ts: at(8, 30, 0).toISOString() }); // before the window: excluded
+    const res = await service(at(10, 30)).query("p1", {
+      groupBy: "date",
+      from: dateStr,
+      to: dateStr,
+      granularity: "minute",
+      fromTs: at(9, 30).toISOString(),
+      toTs: at(10, 30).toISOString(),
+    });
+    expect(res.granularity).toBe("minute");
+    expect(res.series).toHaveLength(61);
+    expect(res.series[0]!.bucket).toBe(`${dateStr}T09:30`);
+    expect(res.series.at(-1)!.bucket).toBe(`${dateStr}T10:30`);
+    const byBucket = new Map(res.series.map((p) => [p.bucket, p.requests]));
+    expect(byBucket.get(`${dateStr}T09:58`)).toBe(1);
+    expect(byBucket.get(`${dateStr}T10:20`)).toBe(1);
+    // The pre-window row is outside the ts bounds everywhere the range applies.
+    expect(res.summary.total.requests).toBe(2);
+    expect(res.series.reduce((s, p) => s + p.requests, 0)).toBe(2);
+  });
+
+  it("minute granularity without a timestamp window is rejected", async () => {
+    const now = new Date("2026-07-06T10:00:00");
+    await expect(
+      service(now).query("p1", { groupBy: "date", granularity: "minute" }),
+    ).rejects.toThrow(/fromTs/);
   });
 
   it("defaults: no from/to serves the last 30 days; no granularity means day", async () => {

@@ -1,15 +1,15 @@
 /**
  * Geometry math for the cost center charts: pure functions, no React / no
  * JSX, easy to unit test (see test/usage-charts.test.ts). The time-series
- * charts (the Token bar's three-segment stack, the smooth line charts for
- * calls / success rate / cost) share one coordinate system — canvas width,
- * padding, the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
+ * charts (the requests + success-rate combo, the Token bar's three-segment
+ * stack, the cost line) share one coordinate system — canvas width, padding,
+ * the x()/y() mapping, SVG paths, x-axis label indices. Bars fit the
  * container (fitBarWidth — no horizontal scrolling), per-segment geometry
- * (including per-segment hit bands) is produced by barSegments, smooth curves
- * come from monotonePath (Fritsch–Carlson monotone cubic: no overshoot, so a
- * 0–100% rate stays bounded); there's also success-rate normalization and
- * hover-bubble placement (pointer lower-right, flipping at the edges). See
- * chart-svg.tsx for the render skeleton.
+ * (including per-segment hit bands) is produced by barSegments, and the cache
+ * hit rate's smooth curve comes from monotonePath (Fritsch–Carlson monotone
+ * cubic: no overshoot, so a 0–100% rate stays bounded); there's also
+ * success-rate normalization and hover-bubble placement (pointer lower-right,
+ * flipping at the edges). See chart-svg.tsx for the render skeleton.
  *
  * **Canvas width = the container's measured pixel width (1 canvas unit = 1
  * CSS pixel)**: the SVG no longer stretches/scales via a fixed viewBox —
@@ -150,13 +150,21 @@ function monotoneTangents(values: number[]): number[] {
   return m;
 }
 
-/** One contiguous run's smooth path: `M` + cubic `C` segments (Hermite tangents converted to Bezier control points at 1/3 of each segment). A single point yields a bare `M` (the caller draws lone points as circles). */
-function monotoneRunPath(geom: ChartGeom, start: number, values: number[]): string {
+/**
+ * Smooth line path (monotone cubic interpolation, Fritsch–Carlson tangents):
+ * `M` + cubic `C` segments, with the Hermite tangents converted to Bezier
+ * control points at 1/3 of each segment. Never overshoots the data — every
+ * cubic segment stays inside its two endpoints' value range, so a rate curve
+ * bounded by 0–100 stays bounded after smoothing. Empty input returns an empty
+ * string; a single point yields a bare `M` that strokes nothing.
+ */
+export function monotonePath(geom: ChartGeom, values: number[]): string {
+  if (values.length === 0) return "";
   const m = monotoneTangents(values);
-  const parts = [`M${rnd(geom.x(start))},${rnd(geom.y(values[0]!))}`];
+  const parts = [`M${rnd(geom.x(0))},${rnd(geom.y(values[0]!))}`];
   for (let i = 0; i < values.length - 1; i++) {
-    const x0 = geom.x(start + i);
-    const x1 = geom.x(start + i + 1);
+    const x0 = geom.x(i);
+    const x1 = geom.x(i + 1);
     const dx = (x1 - x0) / 3;
     const c1v = values[i]! + m[i]! / 3;
     const c2v = values[i + 1]! - m[i + 1]! / 3;
@@ -167,44 +175,6 @@ function monotoneRunPath(geom: ChartGeom, start: number, values: number[]): stri
     );
   }
   return parts.join(" ");
-}
-
-/**
- * Smooth line path (monotone cubic interpolation, Fritsch–Carlson tangents):
- * never overshoots the data — every cubic segment stays inside its two
- * endpoints' value range, so a rate curve bounded by 0–100 stays bounded after
- * smoothing. `null` values split the path into separate runs (a gap, not a
- * bridged line); a run of one point contributes a bare `M` that strokes
- * nothing — callers mark lone points with a circle if they must stay visible.
- */
-export function monotonePath(geom: ChartGeom, values: Array<number | null>): string {
-  const paths: string[] = [];
-  let run: number[] = [];
-  let start = 0;
-  const flush = () => {
-    if (run.length > 0) paths.push(monotoneRunPath(geom, start, run));
-    run = [];
-  };
-  values.forEach((v, i) => {
-    if (v === null) {
-      flush();
-      return;
-    }
-    if (run.length === 0) start = i;
-    run.push(v);
-  });
-  flush();
-  return paths.join(" ");
-}
-
-/** Smooth area path: the monotone curve closed down to the baseline (y=0), for the cost chart's fill layer. Empty input returns an empty string. */
-export function monotoneAreaPath(geom: ChartGeom, values: number[]): string {
-  const n = values.length;
-  if (n === 0) return "";
-  const baseY = rnd(geom.y(0));
-  return `${monotoneRunPath(geom, 0, values)} L${rnd(geom.x(n - 1))},${baseY} L${rnd(
-    geom.x(0),
-  )},${baseY} Z`;
 }
 
 /** Sparse x-axis label indices: first, middle, last (labeling every point would blur together when cells are narrow and there are many points). */

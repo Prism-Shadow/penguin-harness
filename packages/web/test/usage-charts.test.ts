@@ -20,7 +20,6 @@ import {
   linePath,
   areaPath,
   monotonePath,
-  monotoneAreaPath,
   sparseLabelIdx,
   autoLabelIdx,
   successRate,
@@ -123,7 +122,7 @@ describe("padR (right-axis room)", () => {
   });
 });
 
-describe("monotonePath / monotoneAreaPath", () => {
+describe("monotonePath", () => {
   const g = makeGeom(2, 100, 640);
 
   it("two points: one cubic segment, endpoints exact, control points at 1/3 with the secant tangent", () => {
@@ -156,19 +155,9 @@ describe("monotonePath / monotoneAreaPath", () => {
     }
   });
 
-  it("null splits the curve into runs: a gap is a gap, not a bridged line; a lone point is a bare M for the caller to dot", () => {
-    const g4 = makeGeom(4, 10, 640);
-    const path = monotonePath(g4, [1, null, 2, 3]);
-    expect(path.match(/M/g)).toHaveLength(2);
-    expect(path.match(/C/g)).toHaveLength(1);
-    expect(monotonePath(g4, [null, null, null, null])).toBe("");
-  });
-
-  it("area closes the curve down to the baseline and back; empty input is empty", () => {
-    const area = monotoneAreaPath(g, [100, 0]);
-    expect(area.startsWith("M192.5,10 C")).toBe(true);
-    expect(area.endsWith("L485.5,178 L192.5,178 Z")).toBe(true);
-    expect(monotoneAreaPath(g, [])).toBe("");
+  it("degenerate inputs: empty is an empty string, a single point a bare M that strokes nothing", () => {
+    expect(monotonePath(g, [])).toBe("");
+    expect(monotonePath(g, [50])).toBe("M192.5,94");
   });
 });
 

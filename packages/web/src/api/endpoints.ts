@@ -621,6 +621,9 @@ export const getUsage = (
   params: {
     from?: string;
     to?: string;
+    /** Trailing-window bounds (ISO timestamps, together or not at all): refine the range down to instants; required for minute granularity. */
+    fromTs?: string;
+    toTs?: string;
     groupBy: UsageGroupBy;
     /** Time-series precision for the response's `series`; the server defaults to day. */
     granularity?: UsageGranularity;
@@ -634,6 +637,8 @@ export const getUsage = (
     query: {
       from: params.from,
       to: params.to,
+      fromTs: params.fromTs,
+      toTs: params.toTs,
       groupBy: params.groupBy,
       granularity: params.granularity,
       agentId: params.agentId,

@@ -1781,15 +1781,15 @@ export interface UsageTrendPoint {
   output: number;
 }
 
-/** Time-series precision for the usage series (`granularity` query parameter). */
-export type UsageGranularity = "hour" | "day" | "week" | "month";
+/** Time-series precision for the usage series (`granularity` query parameter). `minute` requires the `fromTs`/`toTs` window bounds. */
+export type UsageGranularity = "minute" | "hour" | "day" | "week" | "month";
 
 /**
  * One bucket of the usage time series (for the cost center's time-series charts).
  * Buckets are zero-filled across the whole requested range, so consecutive points
- * are always adjacent in time. Bucket keys by granularity: hour `yyyy-mm-ddThh:00`
- * (server-local clock), day `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`,
- * month `yyyy-mm`.
+ * are always adjacent in time. Bucket keys by granularity: minute
+ * `yyyy-mm-ddThh:mm` and hour `yyyy-mm-ddThh:00` (server-local clock), day
+ * `yyyy-mm-dd`, week the ISO week's Monday `yyyy-mm-dd`, month `yyyy-mm`.
  */
 export interface UsageSeriesPoint {
   bucket: string;
@@ -1806,10 +1806,26 @@ export interface UsageSeriesPoint {
   denominator: number;
 }
 
-/** Requests per bucket for one Agent; `requests` aligns index-for-index with `series`. */
-export interface UsageAgentSeries {
-  agentId: string;
+/**
+ * One entity's per-bucket request and success counts, aligned index-for-index
+ * with `series` (the requests-and-success-rate chart draws one such entity —
+ * or stacks them all). `denominator` excludes aborted, same as elsewhere.
+ */
+export interface UsageEntitySeriesCounts {
   requests: number[];
+  completed: number[];
+  denominator: number[];
+}
+
+/** Per-Agent counts per bucket. */
+export interface UsageAgentSeries extends UsageEntitySeriesCounts {
+  agentId: string;
+}
+
+/** Per-Model counts per bucket (entity identity is the (provider, modelId) pair). */
+export interface UsageModelSeries extends UsageEntitySeriesCounts {
+  provider: string;
+  modelId: string;
 }
 
 /** Invocation count per Agent (for the cost center's "Agent Invocation Count" chart). */
@@ -1902,11 +1918,17 @@ export interface UsageResponse {
    */
   series: UsageSeriesPoint[];
   /**
-   * Requests per bucket per Agent, aligned index-for-index with `series`, sorted
+   * Per-Agent counts per bucket, aligned index-for-index with `series`, sorted
    * by total requests descending. Like `byAgent`, unaffected by the agent filter
-   * (the calls chart always shows all agents) but affected by date/model filters.
+   * (the requests chart always offers all agents) but affected by date/model filters.
    */
   byAgentSeries: UsageAgentSeries[];
+  /**
+   * Per-Model counts per bucket, aligned index-for-index with `series`, sorted
+   * by total requests descending. Like `success`, unaffected by the model filter
+   * (the requests chart always offers all models) but affected by date/agent filters.
+   */
+  byModelSeries: UsageModelSeries[];
   /** Invocation count per Agent (affected by date/model filters). */
   byAgent: UsageAgentCount[];
   /** Raw success rate counts per Model (affected by date/agent filters). */

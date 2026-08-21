@@ -31,6 +31,9 @@ export interface UsageRecordInsert {
 export interface UsageFilter {
   from?: string;
   to?: string;
+  /** Timestamp window bounds (ISO UTC, compared as strings against the row's `ts`): refine the date range down to instants for the trailing minute/hour windows. */
+  fromTs?: string;
+  toTs?: string;
   agentId?: string;
   /** Provider filter paired with modelId (the frontend dropdown always sends them together). */
   provider?: string;
@@ -78,24 +81,30 @@ export interface UsageSeriesModelSums extends UsageGroupModelSums {
   denominator: number;
 }
 
-/** Requests per time bucket per Agent (the calls chart's series data). */
+/** Per-Agent counts per time bucket (the requests chart's series data). */
 export interface UsageAgentBucketCount {
   key: string;
   agentId: string;
   requests: number;
+  /** Successful requests in the bucket. */
+  completed: number;
+  /** Success-rate denominator: all requests minus aborted. */
+  denominator: number;
 }
 
 /** Time-series precision (mirrors the API's UsageGranularity). */
-export type UsageSeriesGranularity = "hour" | "day" | "week" | "month";
+export type UsageSeriesGranularity = "minute" | "hour" | "day" | "week" | "month";
 
 /**
  * Bucket-key SQL per granularity. Keys must agree byte-for-byte with
- * internal/dates.ts's enumerateBuckets, which zero-fills the same series:
- * hour buckets come from `ts` converted to the server's local clock (the same
- * timezone `date` was recorded in), the rest derive from the `date` column —
- * `date(date, '-6 days', 'weekday 1')` is the ISO week's Monday.
+ * internal/dates.ts's enumerateBuckets / enumerateTsBuckets, which zero-fill
+ * the same series: minute/hour buckets come from `ts` converted to the
+ * server's local clock (the same timezone `date` was recorded in), the rest
+ * derive from the `date` column — `date(date, '-6 days', 'weekday 1')` is the
+ * ISO week's Monday.
  */
 const BUCKET_EXPRS: Record<UsageSeriesGranularity, string> = {
+  minute: `strftime('%Y-%m-%dT%H:%M', ts, 'localtime')`,
   hour: `strftime('%Y-%m-%dT%H:00', ts, 'localtime')`,
   day: "date",
   week: `date(date, '-6 days', 'weekday 1')`,
@@ -170,6 +179,14 @@ export class UsageRepo {
     if (f.to !== undefined) {
       conds.push("date <= :to");
       params.to = f.to;
+    }
+    if (f.fromTs !== undefined) {
+      conds.push("ts >= :fromTs");
+      params.fromTs = f.fromTs;
+    }
+    if (f.toTs !== undefined) {
+      conds.push("ts <= :toTs");
+      params.toTs = f.toTs;
     }
     if (f.agentId !== undefined) {
       conds.push("agent_id = :agentId");
@@ -247,7 +264,7 @@ export class UsageRepo {
     }));
   }
 
-  /** Requests per time bucket per Agent (the calls chart's per-Agent series). */
+  /** Per-Agent counts per time bucket (the requests chart's per-Agent series; success counts follow statusByModel's aborted convention). */
   agentSeries(
     projectId: string,
     granularity: UsageSeriesGranularity,
@@ -257,7 +274,9 @@ export class UsageRepo {
     const { where, params } = this.conds(projectId, f);
     const rows = this.db
       .prepare(
-        `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests
+        `SELECT ${expr} AS key, agent_id, COUNT(*) AS requests,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+                COALESCE(SUM(CASE WHEN status <> 'aborted' THEN 1 ELSE 0 END), 0) AS denominator
          FROM usage_records WHERE ${where}
          GROUP BY key, agent_id`,
       )
@@ -266,6 +285,8 @@ export class UsageRepo {
       key: r.key as string,
       agentId: r.agent_id as string,
       requests: r.requests as number,
+      completed: r.completed as number,
+      denominator: r.denominator as number,
     }));
   }
 

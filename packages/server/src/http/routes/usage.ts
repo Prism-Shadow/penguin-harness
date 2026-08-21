@@ -1,8 +1,10 @@
 /**
  * Usage statistics routes:
- * GET /api/projects/:p/usage?from&to&groupBy&granularity&agentId&provider&modelId
+ * GET /api/projects/:p/usage?from&to&fromTs&toTs&groupBy&granularity&agentId&provider&modelId
  * (model filter is paired: provider and modelId are given together; granularity
- * sets the time-series precision, defaulting to day);
+ * sets the time-series precision, defaulting to day; fromTs/toTs bound a
+ * trailing window down to instants — required for minute — and must be given
+ * together);
  * GET /api/projects/:p/usage/errors?offset&limit&from&to&agentId — one page of the error
  * detail table, for paging back past the first page the dashboard already returns.
  */
@@ -14,7 +16,19 @@ import type { AppDeps } from "../../app.js";
 
 const GROUP_BYS: readonly UsageGroupBy[] = ["date", "agent", "model", "session"];
 
-const GRANULARITIES: readonly UsageGranularity[] = ["hour", "day", "week", "month"];
+const GRANULARITIES: readonly UsageGranularity[] = ["minute", "hour", "day", "week", "month"];
+
+/**
+ * Parse an optional ISO-8601 timestamp parameter, normalized to the UTC ISO
+ * form the usage rows record — string comparison against `usage_records.ts`
+ * only works with both sides in that one spelling.
+ */
+function optionalTsParam(value: string | undefined, label: string): string | undefined {
+  if (value === undefined || value === "") return undefined;
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) throw badRequest(`${label} must be an ISO-8601 timestamp.`);
+  return new Date(ms).toISOString();
+}
 
 export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -34,6 +48,14 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
     const granularity = granularityRaw as UsageGranularity;
     const from = optionalDateParam(c.req.query("from"), "from");
     const to = optionalDateParam(c.req.query("to"), "to");
+    const fromTs = optionalTsParam(c.req.query("fromTs"), "fromTs");
+    const toTs = optionalTsParam(c.req.query("toTs"), "toTs");
+    if ((fromTs === undefined) !== (toTs === undefined)) {
+      throw badRequest("fromTs and toTs must be given together.");
+    }
+    if (fromTs !== undefined && toTs !== undefined && fromTs > toTs) {
+      throw badRequest("fromTs must not be after toTs.");
+    }
     const agentId = c.req.query("agentId");
     const provider = c.req.query("provider");
     const modelId = c.req.query("modelId");
@@ -41,6 +63,8 @@ export function usageRoutes(deps: AppDeps): Hono<AppEnv> {
       await deps.usageService.query(projectId, {
         groupBy: groupByRaw as UsageGroupBy,
         granularity,
+        ...(fromTs !== undefined ? { fromTs } : {}),
+        ...(toTs !== undefined ? { toTs } : {}),
         // Unattributed errors (login failures, process crashes, etc. with no Project
         // context) are visible only to admins: requireProjectAccess only guarantees
         // "is a member of this Project" — a regular member seeing another tenant's errors

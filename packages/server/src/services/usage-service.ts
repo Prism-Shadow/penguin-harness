@@ -24,6 +24,7 @@ import type {
   UsageGranularity,
   UsageGroupBy,
   UsageGroupRow,
+  UsageModelSeries,
   UsageResponse,
   UsageSeriesPoint,
 } from "../api/types.js";
@@ -36,7 +37,12 @@ import type {
   UsageAgentBucketCount,
   UsageFilter,
 } from "../db/repos/usage.js";
-import { enumerateBuckets, formatLocalDate, localDateMinusDays } from "../internal/dates.js";
+import {
+  enumerateBuckets,
+  enumerateTsBuckets,
+  formatLocalDate,
+  localDateMinusDays,
+} from "../internal/dates.js";
 import { badRequest } from "../http/validate.js";
 
 /**
@@ -71,8 +77,16 @@ export interface UsageQuery {
   modelId?: string;
   /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
   includeGlobalErrors?: boolean;
-  /** Time-series precision for `series` / `byAgentSeries`; defaults to day. The route validates the value and caps the bucket count. */
+  /** Time-series precision for `series` / `byAgentSeries` / `byModelSeries`; defaults to day. The route validates the value; the bucket count is capped here. */
   granularity?: UsageGranularity;
+  /**
+   * Timestamp window bounds (ISO UTC), for the trailing "last hour" / "last 24
+   * hours" ranges whose edges are instants rather than calendar dates: they
+   * refine every range-scoped aggregate down to the window, and minute/hour
+   * series buckets are enumerated between them. `minute` requires them.
+   */
+  fromTs?: string;
+  toTs?: string;
 }
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
@@ -123,10 +137,20 @@ export class UsageService {
       ...(to !== undefined ? { to } : {}),
     });
 
+    // Timestamp window bounds ride alongside the date range wherever the
+    // selected range applies; the calendar-fixed today / last-7-days cards
+    // deliberately stay date-only.
+    const ts: UsageFilter = {
+      ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
+      ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
+    };
     const todayRows = this.usage.bucketByModel(projectId, win(today, today));
     const last7dRows = this.usage.bucketByModel(projectId, win(localDateMinusDays(this.now(), 6)));
-    const totalRows = this.usage.bucketByModel(projectId, win(q.from, q.to));
-    const groupRows = this.usage.groupsByModel(projectId, q.groupBy, win(q.from, q.to));
+    const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts });
+    const groupRows = this.usage.groupsByModel(projectId, q.groupBy, {
+      ...win(q.from, q.to),
+      ...ts,
+    });
     // Fixed 30-day window; affected by the agent/model filter.
     const trendFrom = localDateMinusDays(this.now(), 29);
     const trendRows = this.usage.groupsByModel(projectId, "date", win(trendFrom));
@@ -136,22 +160,40 @@ export class UsageService {
     const seriesFrom = q.from ?? trendFrom;
     const seriesTo = q.to ?? today;
     // The series is zero-filled over the whole effective range: cap the bucket
-    // count so an arbitrary range × hourly precision cannot materialize an
+    // count so an arbitrary range × precision combination cannot materialize an
     // unbounded response. 500 comfortably covers every range the Web App offers
-    // (90 days daily = 90, 14 days hourly = 336).
-    const bucketKeys = enumerateBuckets(seriesFrom, seriesTo, granularity, 500);
+    // (90 days daily = 90, 14 days hourly = 336, a trailing hour by minute = 61).
+    // Minute buckets only make sense inside a timestamp window — the trailing
+    // ranges — and hour buckets switch to the window when one is given.
+    let bucketKeys: string[];
+    if (granularity === "minute" || (granularity === "hour" && ts.fromTs !== undefined)) {
+      if (ts.fromTs === undefined || ts.toTs === undefined) {
+        throw badRequest(
+          "fromTs and toTs must be given together, and minute granularity requires them.",
+        );
+      }
+      bucketKeys = enumerateTsBuckets(new Date(ts.fromTs), new Date(ts.toTs), granularity, 500);
+    } else {
+      bucketKeys = enumerateBuckets(seriesFrom, seriesTo, granularity, 500);
+    }
     if (bucketKeys.length > 500) {
       throw badRequest(
         "Date range too wide for this granularity; narrow the range or coarsen the granularity.",
       );
     }
-    const seriesRows = this.usage.seriesByModel(projectId, granularity, win(seriesFrom, seriesTo));
-    // Per-Agent series and the agent call-count chart: not affected by the agent filter (they show all agents), but still affected by the date + model filter.
+    const seriesRows = this.usage.seriesByModel(projectId, granularity, {
+      ...win(seriesFrom, seriesTo),
+      ...ts,
+    });
+    // Per-Agent / per-Model series and the agent call-count chart: each drops its
+    // own dimension's filter (the requests chart always offers every entity) but
+    // honors the other dimension plus the selected range.
     const agentFree: UsageFilter = {
       ...(q.provider !== undefined ? { provider: q.provider } : {}),
       ...(q.modelId !== undefined ? { modelId: q.modelId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...ts,
     };
     const agentRows = this.usage.groupsByModel(projectId, "agent", agentFree);
     const agentBucketRows = this.usage.agentSeries(projectId, granularity, {
@@ -159,11 +201,18 @@ export class UsageService {
       from: seriesFrom,
       to: seriesTo,
     });
+    const modelBucketRows = this.usage.seriesByModel(projectId, granularity, {
+      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+      from: seriesFrom,
+      to: seriesTo,
+      ...ts,
+    });
     // Model success-rate chart: not affected by the model filter (shows all models), but still affected by the date + agent filter.
     const statusRows = this.usage.statusByModel(projectId, {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...ts,
     });
     // Error statistics: likewise not affected by the model filter (HTTP / process errors have no Model dimension), but still affected by the date + agent filter.
     const errorFilter: ErrorFilter = {
@@ -211,6 +260,7 @@ export class UsageService {
       granularity,
       series: this.foldSeries(bucketKeys, seriesRows, rates),
       byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),
+      byModelSeries: foldModelSeries(bucketKeys, modelBucketRows),
       byAgent: [...byAgentMap.entries()]
         .map(([agentId, v]) => ({ agentId, requests: v.requests, total: v.total }))
         .sort((a, b) => b.requests - a.requests),
@@ -398,26 +448,60 @@ export class UsageService {
   }
 }
 
+const sumOf = (a: number[]) => a.reduce((s, v) => s + v, 0);
+
+const zeros = (n: number) => new Array<number>(n).fill(0);
+
 /**
- * Per-Agent request series aligned index-for-index with the bucket skeleton,
- * sorted by total requests descending (the calls chart takes the head and folds
- * the tail into an "other" series client-side).
+ * Per-Agent counts aligned index-for-index with the bucket skeleton, sorted by
+ * total requests descending (the requests chart takes the head and folds the
+ * tail into an "other" series client-side).
  */
 function foldAgentSeries(keys: string[], rows: UsageAgentBucketCount[]): UsageAgentSeries[] {
   const idx = new Map(keys.map((k, i) => [k, i]));
-  const byAgent = new Map<string, number[]>();
+  const byAgent = new Map<string, UsageAgentSeries>();
   for (const r of rows) {
     const i = idx.get(r.key);
     if (i === undefined) continue;
-    let arr = byAgent.get(r.agentId);
-    if (!arr) {
-      arr = new Array<number>(keys.length).fill(0);
-      byAgent.set(r.agentId, arr);
+    let s = byAgent.get(r.agentId);
+    if (!s) {
+      s = {
+        agentId: r.agentId,
+        requests: zeros(keys.length),
+        completed: zeros(keys.length),
+        denominator: zeros(keys.length),
+      };
+      byAgent.set(r.agentId, s);
     }
-    arr[i] = (arr[i] ?? 0) + r.requests;
+    s.requests[i]! += r.requests;
+    s.completed[i]! += r.completed;
+    s.denominator[i]! += r.denominator;
   }
-  const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
-  return [...byAgent.entries()]
-    .map(([agentId, requests]) => ({ agentId, requests }))
-    .sort((a, b) => sum(b.requests) - sum(a.requests));
+  return [...byAgent.values()].sort((a, b) => sumOf(b.requests) - sumOf(a.requests));
+}
+
+/** Per-Model counts aligned with the bucket skeleton (entity identity is the (provider, modelId) pair), sorted by total requests descending. */
+function foldModelSeries(keys: string[], rows: UsageSeriesModelSums[]): UsageModelSeries[] {
+  const idx = new Map(keys.map((k, i) => [k, i]));
+  const byModel = new Map<string, UsageModelSeries>();
+  for (const r of rows) {
+    const i = idx.get(r.key);
+    if (i === undefined) continue;
+    const key = refKey(r.provider, r.modelId);
+    let s = byModel.get(key);
+    if (!s) {
+      s = {
+        provider: r.provider,
+        modelId: r.modelId,
+        requests: zeros(keys.length),
+        completed: zeros(keys.length),
+        denominator: zeros(keys.length),
+      };
+      byModel.set(key, s);
+    }
+    s.requests[i]! += r.requests;
+    s.completed[i]! += r.completed;
+    s.denominator[i]! += r.denominator;
+  }
+  return [...byModel.values()].sort((a, b) => sumOf(b.requests) - sumOf(a.requests));
 }
