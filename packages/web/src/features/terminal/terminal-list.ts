@@ -32,11 +32,9 @@ export function displayTitle(title: string | null | undefined): string {
 
 const POLL_MS = 30_000;
 
-const ORDER_KEY = "penguin.terminal.tabOrder";
-
 /** Raw live list as the server reports it (creation order). */
 let raw: TerminalInfo[] = [];
-/** Stable sorted snapshot (same reference until contents change) for useSyncExternalStore. */
+/** Stable snapshot (same reference until contents change) for useSyncExternalStore. */
 let terminals: TerminalInfo[] = [];
 let fingerprint = "";
 let inflight: Promise<void> | null = null;
@@ -44,27 +42,6 @@ const listeners = new Set<() => void>();
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 /** True once the server answered 404 for the terminal API (an older runtime). */
 let unsupported = false;
-
-/**
- * User-chosen tab order (ids), persisted. Presentation-only: ids the order does not know
- * (new terminals, other devices) keep their creation order after the ranked ones.
- */
-let order: string[] = (() => {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-})();
-
-function applyOrder(list: TerminalInfo[]): TerminalInfo[] {
-  const rank = new Map(order.map((id, index) => [id, index]));
-  return list
-    .map((t, index) => ({ t, key: rank.get(t.id) ?? order.length + index }))
-    .sort((a, b) => a.key - b.key)
-    .map((entry) => entry.t);
-}
 
 /**
  * Terminals the user just asked to kill, excluded from refresh results while the shell is
@@ -86,33 +63,11 @@ function isPendingKill(id: string): boolean {
 
 function commit(next: TerminalInfo[]): void {
   raw = next;
-  const sorted = applyOrder(next);
-  const nextFingerprint = JSON.stringify(sorted);
+  const nextFingerprint = JSON.stringify(next);
   if (nextFingerprint === fingerprint) return;
-  terminals = sorted;
+  terminals = next;
   fingerprint = nextFingerprint;
   for (const listener of [...listeners]) listener();
-}
-
-/**
- * Persists a user-dragged tab order and re-sorts the snapshot. `ids` is one pane's tabs in
- * their new relative order — but `order` is the single global ranking, so the reordered ids
- * are spliced into the slots they already occupy globally, leaving every other pane's
- * terminals ranked exactly where they were.
- */
-export function setTerminalTabOrder(ids: string[]): void {
-  const moved = new Set(ids);
-  const queue = [...ids];
-  const merged = applyOrder(raw)
-    .map((t) => t.id)
-    .map((id) => (moved.has(id) ? queue.shift()! : id));
-  order = [...merged, ...queue]; // ids the raw list does not know yet keep their given order
-  try {
-    localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
-  } catch {
-    // Private-mode storage failures only cost persistence.
-  }
-  commit(raw);
 }
 
 /** Live title update from the attached client's own xterm (OSC parsed locally). */

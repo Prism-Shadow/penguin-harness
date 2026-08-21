@@ -71,6 +71,8 @@ export const zh = {
     openInBottom: "在下方打开",
     /** Boundary drag handle between a dock and the chat content (double-click resets). */
     resize: "调整面板大小",
+    /** A session-bound panel's body on the draft page, where no Session exists yet. */
+    draftEmpty: "发送第一条消息后可用",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */

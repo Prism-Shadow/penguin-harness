@@ -1,9 +1,10 @@
 /**
- * Narrow viewport (<1024px, below use-files-panel's isDocked breakpoint): the Files panel
- * uses a bottom Sheet: open → drill into a directory → Markdown renders by default → Esc
- * closes and unmounts.
- * Upload uses a nested path (notes/demo.md): also covers the server's sandbox auto-creating
- * a missing parent directory.
+ * Narrow viewport (<1024px, the dock store's merge breakpoint): the right and bottom
+ * docks render as ONE merged bottom surface — a 320px-minimum right panel does not fit a
+ * phone. Opening the Workspace lands its tab there; drilling into a directory and opening
+ * a Markdown file renders the preview; the dock's × puts the whole surface away.
+ * Upload uses a nested path (notes/demo.md): also covers the server's sandbox
+ * auto-creating a missing parent directory.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -13,7 +14,7 @@ const MOCK = process.env.MOCK_URL;
 
 test.use({ viewport: { width: 412, height: 915 } });
 
-test("mobile Files sheet: open → nested dir → md rendered preview → esc close", async ({
+test("mobile merged dock: workspace opens at the bottom → nested dir → md rendered preview → × hides", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, "sheetuser", "password123");
@@ -52,15 +53,23 @@ test("mobile Files sheet: open → nested dir → md rendered preview → esc cl
 
   await page.goto(`${BASE}/chat/${sessionId}`);
   await page.getByRole("button", { name: "打开工作区" }).click();
-  const sheet = page.getByRole("dialog");
-  await expect(sheet).toBeVisible();
+
+  // One merged bottom surface, never a right dock at this width.
+  const dock = page.locator('[data-testid="dock"][data-position="bottom"]');
+  await expect(dock).toBeVisible();
+  await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
+  await expect(dock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();
 
   // Drill into the directory → open the md → default rendered view (h1 shown, not source).
-  await sheet.getByText("notes").first().click();
-  await sheet.getByText("demo.md").first().click();
-  await expect(sheet.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
+  await dock.getByText("notes").first().click();
+  await dock.getByText("demo.md").first().click();
+  await expect(dock.getByRole("heading", { name: "Sheet Heading" })).toBeVisible();
 
-  // Esc closes: unmounts entirely once the exit animation finishes.
-  await page.keyboard.press("Escape");
-  await expect(sheet).toBeHidden();
+  // The dock's × puts the surface away; the toolbar trigger reads closed again.
+  await dock.getByTestId("dock-close").click();
+  await expect(dock).toBeHidden();
+  await expect(page.getByRole("button", { name: "打开工作区" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
 });

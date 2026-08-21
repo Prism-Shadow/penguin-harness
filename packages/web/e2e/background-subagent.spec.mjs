@@ -58,11 +58,13 @@ test("a run_in_background subagent runs to completion and reports back unprompte
   });
 
   // The subagents panel knows the child exists (auto-open on spawn, or via the toggle).
-  const agentsToggle = page.getByRole("button", { name: "智能体面板" });
+  const agentsToggle = page.getByTestId("panel-btn-agents");
   if ((await agentsToggle.getAttribute("aria-expanded")) !== "true") {
     await agentsToggle.click();
   }
-  await expect(page.getByRole("heading", { name: "智能体面板" })).toBeVisible();
+  await expect(
+    page.locator('[data-testid="dock-tab"][data-tab-id="agents"][data-active="true"]'),
+  ).toBeVisible();
 
   // No interaction from here: the child's live activity streams in (its exec_command call
   // is visible without any poll), then the completion notice and the model's follow-up.

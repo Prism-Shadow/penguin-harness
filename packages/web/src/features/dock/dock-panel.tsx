@@ -34,7 +34,11 @@ import {
   liveTerminals,
   subscribeTerminals,
 } from "../terminal/terminal-list";
-import { terminalViewContainer } from "../terminal/terminal-view-pool";
+import {
+  subscribeTerminalViewStates,
+  terminalViewContainer,
+  terminalViewState,
+} from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
 import { createShellInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -166,6 +170,11 @@ function DockTabButton(props: {
  */
 function TerminalBody({ id, active }: { id: string; active: boolean }) {
   const chrome = useTerminalChrome();
+  // Machine-readable connection state on the body root, for tests and tooling — the
+  // screen itself is the visible status.
+  const viewState = useSyncExternalStore(subscribeTerminalViewStates, () =>
+    terminalViewState(active ? id : null),
+  );
   const bodyRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const body = bodyRef.current;
@@ -179,6 +188,8 @@ function TerminalBody({ id, active }: { id: string; active: boolean }) {
   return (
     <div
       ref={bodyRef}
+      data-testid="dock-terminal-body"
+      data-status={viewState.status}
       className={`flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-1 ${chrome.surface}`}
     />
   );

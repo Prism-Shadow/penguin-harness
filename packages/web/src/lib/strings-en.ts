@@ -64,6 +64,7 @@ export const en: Strings = {
     openInRight: "Open on the right",
     openInBottom: "Open at the bottom",
     resize: "Resize panel",
+    draftEmpty: "Available once the conversation starts",
   },
 
   tracePanel: {

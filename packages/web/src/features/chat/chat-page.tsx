@@ -107,6 +107,7 @@ import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { DockPanel } from "../dock/dock-panel";
+import { panelLabel } from "../dock/panel-meta";
 import {
   dockViews,
   dockVersion,
@@ -342,6 +343,25 @@ export function ChatPage() {
     setSubagentFocus(null);
     setSubagentTaskScope(null);
   }, [routeSessionId]);
+  // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
+  // so a re-added tab is a fresh mount that would otherwise replay the stale command —
+  // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
+  // tab would come back pinned to an old Task instead of the latest.
+  const workspaceTabExists = panelDock("workspace") !== null;
+  const memoryTabExists = panelDock("memory") !== null;
+  const agentsTabExists = panelDock("agents") !== null;
+  useEffect(() => {
+    if (!workspaceTabExists) setFileOpenRequest(null);
+  }, [workspaceTabExists]);
+  useEffect(() => {
+    if (!memoryTabExists) setMemoryRequest(null);
+  }, [memoryTabExists]);
+  useEffect(() => {
+    if (!agentsTabExists) {
+      setSubagentFocus(null);
+      setSubagentTaskScope(null);
+    }
+  }, [agentsTabExists]);
   // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
   // just bound to their own stored entry — every "this is a draft, not a Session" branch
   // below treats the two alike.
@@ -1413,10 +1433,10 @@ export function ChatPage() {
   const anySubagentPending = [...stream.pendingApprovals.keys()].some((k) => !k.startsWith(" "));
 
   // The docks to render: right beside the chat row, bottom below it (the narrow merged
-  // view arrives as a bottom view). Only on a real conversation — the draft page has no
-  // session for the panels to bind to, and the arrangement is waiting untouched for the
-  // Session its first send creates.
-  const views = selected !== null ? dockViews() : [];
+  // view arrives as a bottom view). They render on the draft page too — the arrangement is
+  // the user's workbench, and a terminal opened while drafting must be visible — with the
+  // session-bound panels showing a placeholder until the first send creates the Session.
+  const views = dockViews();
   const rightDockView = views.find((view) => view.position === "right") ?? null;
   const bottomDockView = views.find((view) => view.position === "bottom") ?? null;
   const terminalSupported = terminalApiSupported();
@@ -1427,7 +1447,7 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    if (!selected) return null;
+    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
     switch (kind) {
       case "agents":
         return (
