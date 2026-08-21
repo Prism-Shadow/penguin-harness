@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** refactor
 - **Scope:** `web`
+- **PR:** [#396](https://github.com/Prism-Shadow/penguin-harness/pull/396)
 
 [中文版](2026-08-21-settings-field-markers.zh.md)
 
