@@ -118,6 +118,7 @@ import {
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
+import type { ExampleFill } from "./example-fill";
 import {
   caretOnFirstLine,
   caretOnLastLine,
@@ -1448,16 +1449,20 @@ export function ChatInput({
    * Send builds exactly the `[use_skills]` message the card used to submit on its own. Where
    * the prompt goes when text is already typed, and which skills survive, is buildExampleFill.
    */
+  /** The last fill, so a second example can swap an untouched one instead of stacking onto it. */
+  const lastFillRef = useRef<ExampleFill | null>(null);
   const fillExample = useCallback(
     (prompt: string, exampleSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
         // The live textarea value, not this closure's render-time `text` — same reason as applyRecalled.
         currentText: textareaRef.current?.value ?? textRef.current,
+        lastFill: lastFillRef.current,
         exampleSkills,
         installedSkills: skills.map((s) => s.name),
         selectedSkills,
       });
+      lastFillRef.current = fill;
       setText(fill.text);
       onTextChange?.(fill.text);
       setCaret(fill.insertAt);
