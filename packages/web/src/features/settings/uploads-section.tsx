@@ -3,11 +3,11 @@
  * whole-MB numbers — the per-file attachment cap and the per-message total — written together
  * by a single PUT to /api/admin/settings, so a rejected value writes nothing.
  *
- * The bounds and the fixed limits quoted in the hint come from the server (`/api/me`
- * uploadLimits) rather than from constants here: the range is a statement about what the
- * server can survive, and a second copy of it in the browser would be a copy that goes stale.
- * A value outside it is refused by the server with `invalid_attachment_limit` and rendered
- * inline under the field, the same way the proxy section handles a bad address.
+ * The bounds quoted under each field, and the fixed limits the page's "?" names, come from the
+ * server (`/api/me` uploadLimits) rather than from constants here: the range is a statement
+ * about what the server can survive, and a second copy of it in the browser would be a copy
+ * that goes stale. A value outside it is refused by the server with `invalid_attachment_limit`
+ * and rendered inline under the field, the same way the proxy section handles a bad address.
  *
  * Saving takes effect immediately — the attachment validators and the request body cap both
  * read the setting per request — so there is nothing to restart and nothing to warn about.
@@ -117,6 +117,10 @@ export function UploadsSection() {
         inputMode="numeric"
         min={uploadLimits.attachmentLimitMinMb}
         max={uploadLimits.attachmentLimitMaxMb}
+        hint={S.settings.attachmentMaxMbHint(
+          uploadLimits.attachmentLimitMinMb,
+          uploadLimits.attachmentLimitMaxMb,
+        )}
         value={maxMb}
         disabled={!hydrated}
         onChange={(e) => {
@@ -131,6 +135,10 @@ export function UploadsSection() {
         inputMode="numeric"
         min={uploadLimits.attachmentLimitMinMb}
         max={uploadLimits.attachmentLimitMaxMb}
+        hint={S.settings.attachmentTotalMbHint(
+          uploadLimits.attachmentLimitMinMb,
+          uploadLimits.attachmentLimitMaxMb,
+        )}
         value={totalMb}
         disabled={!hydrated}
         {...(limitError !== null ? { error: limitError } : {})}
@@ -139,14 +147,6 @@ export function UploadsSection() {
           if (limitError !== null) setLimitError(null);
         }}
       />
-      <p className="text-xs text-gray-500 dark:text-gray-400">
-        {S.settings.uploadLimitsHint(
-          uploadLimits.attachmentLimitMinMb,
-          uploadLimits.attachmentLimitMaxMb,
-          uploadLimits.attachmentMaxCount,
-          uploadLimits.imageMaxMb,
-        )}
-      </p>
     </SectionShell>
   );
 }

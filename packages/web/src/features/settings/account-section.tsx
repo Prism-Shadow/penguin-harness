@@ -14,7 +14,7 @@ export function AccountSection() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   return (
     <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-      <PrefRow label={S.account.changePassword} hint={S.settings.changePasswordHint}>
+      <PrefRow label={S.account.changePassword} info={S.settings.changePasswordInfo}>
         <Button variant="secondary" onClick={() => setChangePasswordOpen(true)}>
           {S.account.changePassword}
         </Button>

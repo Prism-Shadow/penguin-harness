@@ -251,11 +251,17 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   const isOwner = currentProject?.role === "owner";
   if (!currentProject || !projectId) return null;
 
-  const tabs: { key: SettingsTab; label: string }[] = [
+  // `info` is the page's semantic explanation, disclosed by a "?" beside the pane heading —
+  // the only title these pages have, since each section renders its rows without repeating it.
+  const tabs: { key: SettingsTab; label: string; info?: string }[] = [
     { key: "general", label: S.project.settingsTabGeneral },
     ...(!desktopMode ? [{ key: "members" as const, label: S.project.settingsTabMembers }] : []),
     { key: "defaults", label: S.project.settingsTabDefaults },
-    { key: "security", label: S.project.settingsTabSecurity },
+    {
+      key: "security",
+      label: S.project.settingsTabSecurity,
+      info: S.project.commandPolicyInfo,
+    },
   ];
   const active = tabs.find((t) => t.key === tab) ?? tabs[0]!;
 
@@ -284,7 +290,12 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
           ))}
         </nav>
         <section className="min-w-0 flex-1 sm:pl-5">
-          <h3 className="text-base font-semibold">{active.label}</h3>
+          <h3 className="flex items-center gap-1.5 text-base font-semibold">
+            {active.label}
+            {active.info !== undefined && (
+              <InfoPopover label={active.label}>{active.info}</InfoPopover>
+            )}
+          </h3>
           <div className="mt-2">
             {active.key === "general" && (
               <GeneralSection projectId={projectId} isOwner={isOwner} onClose={onClose} />
@@ -830,8 +841,9 @@ function sameRule(a: CommandPolicyRuleDto, b: CommandPolicyRuleDto): boolean {
 /**
  * Buffered rule editor, shared by add and edit: local field state, the pattern validated
  * as a compilable regex on apply (the server re-checks — "saved" must equal "enforced").
+ * Exported for test/command-policy-add-rule.test.ts, which renders it on its own.
  */
-function RuleEditor({
+export function RuleEditor({
   initial,
   onApply,
   onCancel,
@@ -872,6 +884,10 @@ function RuleEditor({
           placeholder={S.project.commandPolicyRuleName}
           value={name}
           maxLength={64}
+          // The editor mounts only on an explicit Add / Edit click, so taking focus is what
+          // that click asked for: it puts the caret in the first field for a keyboard user,
+          // and the browser's scroll-on-focus keeps the form in view on a short viewport.
+          autoFocus
           onChange={(e) => setName(e.target.value)}
         />
         <Input
@@ -976,14 +992,13 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
 
   return (
     <div>
-      <p className="text-xs leading-relaxed text-gray-400">{S.project.commandPolicyIntro}</p>
       {loadError !== null ? (
-        <p className="mt-3 text-xs text-red-600 dark:text-red-400">{loadError}</p>
+        <p className="text-xs text-red-600 dark:text-red-400">{loadError}</p>
       ) : saved === null ? (
-        <p className="mt-3 text-xs text-gray-400">{S.common.loading}</p>
+        <p className="text-xs text-gray-400">{S.common.loading}</p>
       ) : (
         <>
-          <div className="mt-1 divide-y divide-gray-100 dark:divide-gray-800/60">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
             <SettingRow
               title={S.project.commandPolicyEnable}
               description={S.project.commandPolicyEnableDesc}
@@ -1027,6 +1042,23 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
               )}
             </div>
             <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
+              {/* The add form opens at the TOP of the list, right under the Add button that
+                  asked for it: the factory rules alone make the list taller than the dialog's
+                  scroll box, so a form appended after them would open below the fold and the
+                  click would look like it did nothing. The rule it applies stays where it was
+                  typed for the same reason. Deny rules are order-independent — every enabled
+                  match refuses, and list order only picks which rule name the refusal
+                  reports — so the head of the list is as good a home as the tail. */}
+              {editing === "new" && (
+                <RuleEditor
+                  initial={null}
+                  onApply={(nr) => {
+                    setRules([nr, ...rules]);
+                    setEditing(null);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              )}
               {rules.map((r, i) =>
                 editing === i ? (
                   <RuleEditor
@@ -1088,16 +1120,6 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                     )}
                   </div>
                 ),
-              )}
-              {editing === "new" && (
-                <RuleEditor
-                  initial={null}
-                  onApply={(nr) => {
-                    setRules([...rules, nr]);
-                    setEditing(null);
-                  }}
-                  onCancel={() => setEditing(null)}
-                />
               )}
               {rules.length === 0 && editing !== "new" && (
                 <p className="py-3 text-xs text-gray-400">{S.project.commandPolicyEmpty}</p>

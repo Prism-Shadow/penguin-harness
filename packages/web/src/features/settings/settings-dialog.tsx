@@ -46,7 +46,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
 };
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, desktopMode, sessionVia } = useAuth();
+  // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
+  const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
   const sections = visibleSettingsSections({
     isAdmin: user?.isAdmin === true,
     desktopMode,
@@ -77,6 +78,12 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     personal: S.settings.groupPersonal,
     server: S.settings.groupServer,
   };
+  // Page-level explanations, disclosed by the "?" the shell draws beside the pane heading.
+  // Pages whose rows explain themselves one by one carry none.
+  const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
+    proxy: S.settings.proxyInfo,
+    uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+  };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
     (group) => ({
@@ -88,6 +95,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
           key: s.key,
           label: sectionLabel[s.key],
           icon: <Icon d={SECTION_ICONS[s.key]} size={16} />,
+          ...(sectionInfo[s.key] !== undefined ? { info: sectionInfo[s.key] } : {}),
         })),
     }),
   );

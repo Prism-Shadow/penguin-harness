@@ -12,6 +12,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { InfoPopover } from "../src/components/ui/info-popover";
 import { Field } from "../src/components/ui/field";
 import { Input } from "../src/components/ui/input";
+import { Switch } from "../src/components/ui/switch";
+import { PrefRow } from "../src/features/settings/setting-row";
 import { S } from "../src/lib/strings";
 
 describe("InfoPopover", () => {
@@ -81,5 +83,29 @@ describe("Field with an info popover", () => {
     );
     expect(plain.startsWith("<label")).toBe(true);
     expect(plain).not.toContain("<label for=");
+  });
+});
+
+describe("PrefRow with an info popover", () => {
+  // A System settings row titles a control it does not own, so its title is a <p> and the "?"
+  // is safe beside it. An edit that made that title a <label> for the sake of click-to-toggle
+  // would hand the row to the trigger instead — the same trap Field carries two layouts to
+  // avoid, on the one row primitive that has no Field between it and the control.
+  const row = renderToStaticMarkup(
+    createElement(PrefRow, {
+      label: "Theme",
+      info: "Light or dark look of the app.",
+      children: createElement(Switch, { checked: true, onChange: () => {} }),
+    }),
+  );
+
+  it('keeps the row out of a label, so the "?" cannot toggle its control', () => {
+    expect(row).not.toContain("<label");
+    expect(row).toContain('role="switch"');
+  });
+
+  it("anchors the trigger to the row title", () => {
+    expect(row).toContain(`aria-label="${S.common.moreInfoAbout("Theme")}"`);
+    expect(row).not.toContain("Light or dark look of the app.");
   });
 });

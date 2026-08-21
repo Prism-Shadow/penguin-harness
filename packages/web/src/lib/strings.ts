@@ -61,7 +61,7 @@ export const zh = {
 
   settings: {
     language: "语言",
-    languageHint: "界面语言，可跟随浏览器设置",
+    languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "系统设置",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
@@ -73,11 +73,11 @@ export const zh = {
     accountTitle: "账户",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
-    showCliSessionsHint:
+    showCliSessionsInfo:
       "关闭时会话列表只列出在 Web 端创建的会话，直接由数据库返回；开启后会额外扫描轨迹目录，把 CLI 创建的会话一并列出。仅影响当前账号。",
-    /** Admin-only sub-page (server-global). */
+    /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "代理选项",
-    proxyHint: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
+    proxyInfo: "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
@@ -89,29 +89,33 @@ export const zh = {
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
     attachmentTotalMb: "单条消息附件合计上限（MB）",
-    /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
-    uploadLimitsHint: (min: number, max: number, count: number, imageMb: number): string =>
-      `取值 ${min}–${max} MB，合计不得低于单个上限。一条消息最多 ${count} 个附件；` +
-      `对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
+    /** Accepted range for each field: read while typing, so it stays under the field. */
+    attachmentMaxMbHint: (min: number, max: number): string => `取值 ${min}–${max} MB`,
+    attachmentTotalMbHint: (min: number, max: number): string =>
+      `取值 ${min}–${max} MB，且不得低于单个附件上限`,
+    /** What these two numbers do NOT govern — disclosed at the pane heading. */
+    uploadLimitsInfo: (count: number, imageMb: number): string =>
+      `一条消息最多 ${count} 个附件；对话内嵌图片另有 ${imageMb}MB 上限，不随此设置变化——` +
+      `图片会进入对话与轨迹，每次翻阅历史与恢复会话都要重新付出它的体积。`,
     theme: "主题",
-    themeHint: "应用的明暗外观",
+    themeInfo: "应用的明暗外观。",
     themeLight: "浅色",
     themeDark: "深色",
     followSystem: "跟随系统",
     terminalTheme: "终端主题",
-    terminalThemeHint: "终端面板的配色，默认跟随应用主题",
+    terminalThemeInfo: "终端面板的配色，默认跟随应用主题。",
     followAppTheme: "跟随主题",
     langZh: "中文",
     langEn: "English",
     fontSize: "字号",
-    fontSizeHint: "界面整体字号",
+    fontSizeInfo: "界面整体字号。",
     fontSmall: "小",
     fontMedium: "中",
     fontLarge: "大",
     accent: "主题色",
-    accentHint: "界面强调色",
-    currencyHint: "价格显示币种；存储始终为美元",
-    changePasswordHint: "更改当前账号的登录密码",
+    accentInfo: "界面强调色。",
+    currencyInfo: "价格显示币种；存储始终为美元。",
+    changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",
@@ -301,9 +305,9 @@ export const zh = {
     settingsTabSecurity: "安全策略",
     projectIdLabel: "Project ID",
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
-    /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
-    commandPolicyIntro:
-      '模型碰到 shell 的两条路都会先经过安全策略——exec_command 启动的命令，以及 input_command 敲进已运行命令的内容。命中任一启用的规则即被直接拒绝，即使审批模式为全部放行；模型会收到固定的拒绝文案 "Tool call denied by policy." 并改用其他方式。匹配方式为对命令文本做空白与引号归一化后执行各规则的正则表达式。这是防事故的护栏，不能对抗刻意绕过：运行期才拼出来的命令（来自变量、eval 或解码出的字符串）不是模式能读懂的东西，也不在覆盖范围内。',
+    /** Security-policy page (Project settings): disclosed by the "?" beside the tab heading. */
+    commandPolicyInfo:
+      "命令文本经空白与引号归一化后逐条匹配已启用规则的正则表达式，命中即拒绝执行，不受审批模式影响。这是防事故的护栏：运行期才拼出的命令不在覆盖范围内。",
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",
