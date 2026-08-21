@@ -100,6 +100,52 @@ describe("POST /api/desktop/update/{check,install}", () => {
     }
   });
 
+  it("refuses a password session, an unauthenticated caller, and a plain server", async () => {
+    // install is the route that replaces the running application, so its gate is pinned
+    // in every direction rather than inferred from the GET above.
+    const t = await createDesktopApp();
+    try {
+      const admin = await loginAdmin(t.app);
+      let commanded = 0;
+      t.deps.desktop!.onUpdateCommand(() => {
+        commanded += 1;
+      });
+      for (const path of ["/api/desktop/update/check", "/api/desktop/update/install"]) {
+        const viaPassword = await t.app.request(path, {
+          method: "POST",
+          headers: { cookie: admin.cookie, "content-type": "application/json" },
+          body: "{}",
+        });
+        expect(viaPassword.status).toBe(403);
+        expect(((await viaPassword.json()) as ErrorBody).error.code).toBe("desktop_shell_only");
+
+        const anonymous = await t.app.request(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        expect(anonymous.status).toBe(401);
+      }
+      // Nothing reached the shell on any of those four attempts.
+      expect(commanded).toBe(0);
+    } finally {
+      await t.cleanup();
+    }
+
+    const plain = await createTestApp();
+    try {
+      const admin = await loginAdmin(plain.app);
+      const res = await plain.app.request("/api/desktop/update/install", {
+        method: "POST",
+        headers: { cookie: admin.cookie, "content-type": "application/json" },
+        body: "{}",
+      });
+      expect(res.status).toBe(404);
+    } finally {
+      await plain.cleanup();
+    }
+  });
+
   it("answers 503 shell_unreachable while no port is wired", async () => {
     const t = await createDesktopApp();
     try {
