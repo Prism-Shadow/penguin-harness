@@ -3,14 +3,19 @@
  * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
  * one collapsible group behind a nav-row-wide chevron button under its last entry: arrow
  * up = click to collapse, arrow down while collapsed = the way back; state persists in
- * localStorage, the pinned new-chat block never collapses) -> Session area with two grouping modes (a small toggle in the section header; the
+ * localStorage, the pinned new-chat block never collapses) -> Session area with three grouping
+ * modes (chosen in the section header's list options; the
  * choice and each Project's group collapse and pin state persist in localStorage): by Workspace
  * (the default; groups loaded Sessions by their
  * Workspace path, temporary workspaces merged into one trailing group, header "+" starts a
- * draft in that Workspace) or by Agent (group header = Agent name + new chat + Agent settings;
- * shows all Agents, including empty groups). Groups can be pinned via the header's hover pin
- * toggle: pinned groups sort before unpinned within their mode, keeping each partition's own
- * order. Conversations can be pinned too (row context menu; persisted per Project in
+ * draft in that Workspace), by Agent (group header = Agent name + new chat + Agent settings;
+ * shows all Agents, including empty groups), or by time (last day / last month / earlier,
+ * bucketed on last activity; the buckets span every Agent, so the Subagents / Scheduled /
+ * Archived folders and the paging row sit below them as one Project-wide set). Groups can
+ * be pinned via the header's hover pin toggle: pinned groups sort before unpinned within
+ * their mode, keeping each partition's own order — the time buckets excepted, whose order
+ * IS the timeline and which therefore carry no pin. Conversations can be pinned too (row
+ * context menu; persisted per Project in
  * localStorage): pinned rows bubble to the top of their group's active list. Each row's
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
@@ -45,12 +50,15 @@ import {
   FOLDER_CATEGORIES,
   SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
+  TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  groupSessionsByTime,
   groupSessionsByWorkspace,
   matchesSessionQuery,
   partitionSessions,
   pinnedFirst,
   sessionCategory,
+  totalCategoryCounts,
   workspaceGroupKey,
   workspaceLabel,
 } from "../../lib/session-grouping";
@@ -117,7 +125,7 @@ import {
   storeGroupMode,
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
-import { toastError } from "../ui/toast";
+import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { SessionActivityIcon } from "../ui/session-activity-icon";
@@ -138,11 +146,12 @@ import {
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { DesktopUpdateRow } from "../account/desktop-update-row";
+import { ServerUpdateRow } from "../account/server-update-row";
+import { UpdateDialog } from "../account/update-dialog";
 import { offersClientUpdate } from "../../lib/desktop-update";
 import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
-import { useVersionInfo } from "../../lib/use-version-info";
+import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
-import type { SettingsSectionKey } from "../../lib/settings-sections";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
@@ -313,8 +322,6 @@ export function Sidebar({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** Page the settings dialog lands on: the update reminder row jumps straight to Updates. */
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("general");
   // Client update (desktop shell window only): the snapshot and the armed-check flag live
   // at module level in use-desktop-update.ts; this always-mounted hook instance drives the
   // polling, so a check armed in the menu still settles after the menu closes.
@@ -322,8 +329,8 @@ export function Sidebar({
   const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
   /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
   const [clientInstallOpen, setClientInstallOpen] = useState(false);
-  // Update reminder: nothing is fetched until the dropdown first opens.
-  const { update } = useVersionInfo(userOpen);
+  // Server update: nothing is fetched until the dropdown first opens.
+  const { version, update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
   /**
    * The newer release's version string, or null while none is known — the single update row's
@@ -332,6 +339,14 @@ export function Sidebar({
    * than rendering a versionless reminder.
    */
   const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
+  /** Release announcement + admin self-update, opened from the update row once a release is known. */
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  /**
+   * A manual server-update check is in flight. Held here rather than in the row, which
+   * unmounts with the menu: a check clicked and then dismissed must still settle, and the
+   * spinner must still be there when the menu is reopened mid-flight.
+   */
+  const [updateChecking, setUpdateChecking] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -427,7 +442,7 @@ export function Sidebar({
   const setGroupMode = (mode: GroupMode) => {
     storeGroupMode(mode);
     setGroupModeState(mode);
-    // The two modes have unrelated group lists: restart the reveal window, and swap in
+    // The modes have unrelated group lists: restart the reveal window, and swap in
     // this mode's own manual order (the stored sequence is read within partitions, whose
     // boundaries are exactly what the mode decides — one shared array would scramble).
     setSessionOrder(loadSessionOrder(currentProjectId, mode));
@@ -464,9 +479,13 @@ export function Sidebar({
     [workspaceGroups, pinnedGroups],
   );
 
-  /** Group key of a Session under the current mode (collapse / archived-open state). */
+  /** Group key a Session's FOLDERS hang off under the current mode (the archived-open state); time mode keeps one shared set for the whole Project. */
   const sessionGroupKey = (s: SessionInfo) =>
-    groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    groupMode === "agent"
+      ? s.agentId
+      : groupMode === "time"
+        ? TIME_FOLDERS_GROUP_KEY
+        : workspaceGroupKey(s.workspace);
 
   const toggleGroup = (key: string) => {
     // Inert while searching: groups render force-opened then, so a click would change
@@ -514,6 +533,34 @@ export function Sidebar({
   const filterRows = (rows: SessionInfo[]) =>
     searching ? rows.filter((s) => matchesSessionQuery(s, searchQuery)) : rows;
 
+  /**
+   * Time mode's split of the loaded rows: the buckets take the active conversations, the
+   * shared folders below take the rest. Deliberately NOT memoized — the bucket boundary is
+   * `Date.now()`, and a memo would freeze it at its last dependency change; the compact
+   * relative timestamps rendered beside these rows are recomputed every render for exactly
+   * the same reason. Null outside time mode, so no other mode pays for the two passes.
+   */
+  const timeParts = groupMode === "time" ? partitionSessions(filterRows(sessions)) : null;
+  const timeGroups = timeParts === null ? [] : groupSessionsByTime(timeParts.active, Date.now());
+
+  /** Time mode's exact server share, Project-wide: its buckets span every Agent, so the shared folders and the whole-list "More" read the summed counts. */
+  const projectCounts = totalCategoryCounts(countsByAgent);
+
+  /** Agents holding rows of a category anywhere in this Project — time mode's fetch fan-out (the counts are kept in step locally, so they cover freshly added rows too). */
+  const projectAgentsFor = (category: SessionCategory) =>
+    [...countsByAgent].filter(([, counts]) => counts[category] > 0).map(([agentId]) => agentId);
+
+  /** Agents with an unfetched active page left; the whole-list "More" of time mode pages all of them at once. */
+  const timeMoreAgents = projectAgentsFor("active").filter((id) => hasMoreFor(id, "active"));
+
+  /** A time bucket's rows as a group partition: the buckets carry active conversations only. */
+  const bucketPartition = (rows: SessionInfo[]): SessionPartition => ({
+    active: rows,
+    subagent: [],
+    schedule: [],
+    archived: [],
+  });
+
   /** Close the search row and drop the filter (the toggle button, the clear ×, and Escape all land here). */
   const closeSearch = () => {
     setSearchOpen(false);
@@ -548,7 +595,9 @@ export function Sidebar({
     shownDrafts.length > 0 ||
     (groupMode === "agent"
       ? orderedAgents.some((a) => filterRows(byAgent.get(a.agentId) ?? []).length > 0)
-      : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
+      : groupMode === "time"
+        ? timeParts !== null && Object.values(timeParts).some((rows) => rows.length > 0)
+        : orderedWorkspaceGroups.some((g) => filterRows(g.sessions).length > 0));
 
   /** In-flight key of one group's category "More" (folderKey shares the same composite for folder categories). */
   const loadKey = (groupKey: string, category: SessionCategory) => `${category}\0${groupKey}`;
@@ -608,13 +657,41 @@ export function Sidebar({
     const guard = `${groupMode}\0${activeSessionId}`;
     if (lastAutoExpandedRef.current === guard) return;
     lastAutoExpandedRef.current = guard;
-    const groupKey = groupMode === "agent" ? s.agentId : workspaceGroupKey(s.workspace);
+    const groupKey =
+      groupMode === "agent"
+        ? s.agentId
+        : groupMode === "time"
+          ? TIME_FOLDERS_GROUP_KEY
+          : workspaceGroupKey(s.workspace);
     const key = folderKey(groupKey, category);
     setOpenFolders((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     // Same on-demand load a click-expand does, for this Session's own Agent (siblings of
     // other contributing Agents stay behind the folder's "More").
     if (!isLoadedFor(s.agentId, category)) void loadMoreFor([s.agentId], category);
   }, [activeSessionId, sessions, groupMode, isLoadedFor, loadMoreFor]);
+
+  /**
+   * Manual server-update check, from the menu's update row: forces a lookup past the
+   * server's TTL cache and pushes the result into the shared version-info store, so the
+   * row turns into the update entry and the avatar's reminder dot appears at once. Every
+   * outcome toasts — the check is fail-soft (a failed lookup arrives as the `error` field,
+   * not an exception; the catch handles our own server being unreachable).
+   */
+  const runUpdateCheck = async () => {
+    if (updateChecking) return;
+    setUpdateChecking(true);
+    try {
+      const outcome = updateCheckOutcome(await forceUpdateCheck());
+      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
+      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
+      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
+      else toastSuccess(S.update.upToDate);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
   const toggleArchive = async (s: SessionInfo) => {
@@ -740,9 +817,14 @@ export function Sidebar({
   /** A Session always needs an Agent, so the workspace-mode "+" uses the current Agent, falling back to default_agent. */
   const workspaceNewChatAgentId = currentAgent?.agentId ?? defaultAgentId;
 
-  /** Header create-button tooltip (the created object follows the grouping mode). */
+  /** What the header's create button makes, and its tooltip (the created object follows the grouping mode). */
+  const newEntity = newEntityForGroupMode(groupMode);
   const newEntityLabel =
-    newEntityForGroupMode(groupMode) === "agent" ? S.agent.create : S.chat.newWorkspaceEntity;
+    newEntity === "agent"
+      ? S.agent.create
+      : newEntity === "chat"
+        ? S.chat.newSessionMenu
+        : S.chat.newWorkspaceEntity;
 
   /** Persist-if-changed for every registry mutation (register / alias / unregister share the same-reference fast exit). */
   const applyRegistryChange = (next: readonly WorkspaceEntry[]) => {
@@ -1072,6 +1154,27 @@ export function Sidebar({
     />
   );
 
+  /**
+   * Time mode's one shared, Project-wide set of folders (rendered once below the buckets):
+   * their rows load only on first expand, so an unloaded Session has no known bucket and no
+   * bucket could honestly claim a share of them. Counts and fetch fan-out are summed over
+   * every Agent. A null entry means the Project holds no rows of that category at all —
+   * which is also what tells the empty-list line whether it is telling the truth.
+   */
+  const timeFolders =
+    timeParts === null
+      ? []
+      : FOLDER_CATEGORIES.map((category) =>
+          renderFolder(
+            TIME_FOLDERS_GROUP_KEY,
+            category,
+            timeParts,
+            true,
+            projectAgentsFor(category),
+            projectCounts,
+          ),
+        );
+
   /** Page entries of the collapsible nav group (智能体 → 评估中心, driven by the NAV_GROUP_KEYS manifest). Always mounted — the collapse animates their height to zero and turns them inert. */
   const navItems: Array<{ to: string; label: string; icon: string }> = NAV_GROUP_KEYS.map(
     (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
@@ -1365,6 +1468,15 @@ export function Sidebar({
                   setListSettingsOpen(false);
                 }}
               />
+              <MenuRadioRow
+                icon={GROUP_MODE_ICONS.time}
+                label={S.chat.groupByTime}
+                checked={groupMode === "time"}
+                onSelect={() => {
+                  setGroupMode("time");
+                  setListSettingsOpen(false);
+                }}
+              />
               <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
               <p className={menuSectionClass}>{S.chat.sortModeSection}</p>
               {/* Manual order is offered only where a drag can actually happen (see canDrag). */}
@@ -1394,8 +1506,10 @@ export function Sidebar({
                 agent grouping opens the Agents page's existing create dialog (route
                 state); workspace grouping opens the SAME directory-browse menu the
                 draft's workspace picker uses — the picked directory registers as a
-                workspace group immediately, Sessions or not. */}
-            {newEntityForGroupMode(groupMode) === "agent" ? (
+                workspace group immediately, Sessions or not. Time buckets are not
+                something to create into, so that mode starts a plain new conversation
+                and wears the compose glyph without a plus badge. */}
+            {newEntity === "agent" ? (
               <button
                 type="button"
                 title={newEntityLabel}
@@ -1407,6 +1521,16 @@ export function Sidebar({
                 className={headerControlClass(false)}
               >
                 <AddBadgeIcon base={NAV_ICONS.agents} />
+              </button>
+            ) : newEntity === "chat" ? (
+              <button
+                type="button"
+                title={newEntityLabel}
+                aria-label={newEntityLabel}
+                onClick={() => newChat()}
+                className={headerControlClass(false)}
+              >
+                <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.iconButton} />
               </button>
             ) : (
               <WorkspaceSelect
@@ -1539,7 +1663,7 @@ export function Sidebar({
         {groupMode === "agent" && !searching && orderedAgents.length > groupCap
           ? moreGroupsRow(orderedAgents.length)
           : null}
-        {groupMode === "agent" ? null : loading && sessions.length === 0 ? (
+        {groupMode !== "workspace" ? null : loading && sessions.length === 0 ? (
           <SkeletonList rows={5} />
         ) : orderedWorkspaceGroups.length === 0 && !searching ? (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
@@ -1629,6 +1753,74 @@ export function Sidebar({
           ? moreGroupsRow(orderedWorkspaceGroups.length)
           : null}
 
+        {/* Time mode: last day / last month / earlier, bucketed on each conversation's last
+            activity — the same stamp the rows' compact timestamps and the recency sort read,
+            so a row can never sit under a bucket its own timestamp contradicts. Empty buckets
+            are dropped, and there are at most three, so this mode has no "more groups" row.
+            The buckets span every Agent and every Workspace: a bucket's "More" only reveals
+            further loaded rows, while fetching the next page and reaching the Subagents /
+            Scheduled / Archived rows happen once for the whole Project, below. */}
+        {groupMode !== "time" || timeParts === null ? null : loading && sessions.length === 0 ? (
+          <SkeletonList rows={5} />
+        ) : (
+          <>
+            {timeGroups.map((group) => {
+              const collapsed = !searching && collapsedGroups.has(group.key);
+              return (
+                <div key={group.key} className="pt-2.5">
+                  <GroupHeader
+                    open={!collapsed}
+                    onToggle={() => toggleGroup(group.key)}
+                    icon={
+                      <span className="shrink-0 text-gray-400 dark:text-gray-500">
+                        <Icon d={GROUP_MODE_ICONS.time} size={ICON_SIZE.groupHeaderGlyph} />
+                      </span>
+                    }
+                    label={S.chat.timeGroups[group.bucket]}
+                    uppercase
+                    count={group.sessions.length}
+                  />
+                  {collapsed
+                    ? null
+                    : renderGroupBody(
+                        group.key,
+                        bucketPartition(group.sessions),
+                        true,
+                        undefined,
+                        () => [],
+                      )}
+                </div>
+              );
+            })}
+
+            {/* Empty only when the shared folders below are empty too (renderGroupBody's own
+                rule): "no Sessions yet" over an "Archived (3)" row would contradict it. */}
+            {timeGroups.length === 0 && !searching && timeFolders.every((f) => f === null) && (
+              <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
+                {S.chat.noSessions}
+              </p>
+            )}
+
+            {/* Whole-list paging: a fetched page lands in whichever bucket its rows' activity
+                puts them, so the row that pulls one belongs to the list, not to a bucket —
+                and its label says "conversations" where a bucket's says "more". */}
+            {!searching &&
+              timeParts.active.length < projectCounts.active &&
+              timeMoreAgents.length > 0 && (
+                <MoreRow
+                  label={S.chat.loadMoreSessions}
+                  ariaLabel={S.chat.loadMoreSessions}
+                  pending={pendingLoads.has(loadKey(TIME_FOLDERS_GROUP_KEY, "active"))}
+                  onClick={() => trackedLoadMore(TIME_FOLDERS_GROUP_KEY, "active", timeMoreAgents)}
+                  className="mt-1"
+                />
+              )}
+
+            {/* The shared, Project-wide folders (see timeFolders). */}
+            <div className="pt-2.5">{timeFolders}</div>
+          </>
+        )}
+
         {/* Quiet no-match line: the search is live and nothing — drafts included — hit. */}
         {searching && !hasSearchMatches && (
           <p className="px-2.5 pt-3 text-xs text-gray-400 dark:text-gray-600">
@@ -1687,30 +1879,29 @@ export function Sidebar({
               className={menuItemClass}
               onClick={() => {
                 setUserOpen(false);
-                setSettingsSection("general");
                 setSettingsOpen(true);
               }}
             >
               {S.settings.systemSettings}
             </button>
-            {/* Update reminder row: only once the lazy check (menu open) has found a newer
-                release. Opens the dialog straight on its Updates page; the manual check
-                lives there too. Desktop mode never checks — updating is the shell's job. */}
-            {!desktopMode && newVersion !== null && (
-              <button
-                type="button"
-                className={`${menuItemClass} flex items-center gap-2`}
-                onClick={() => {
+            {/* Update row, directly under the settings entry rather than on a page inside
+                it: the check is one click from the menu, and the same row turns into the
+                update entry once the lazy check (menu open) names a newer release. Desktop
+                mode never checks here — updating is the shell's job. */}
+            {!desktopMode && (
+              <ServerUpdateRow
+                version={version?.version ?? null}
+                newVersion={newVersion}
+                checking={updateChecking}
+                menuItemClass={menuItemClass}
+                onCheck={() => void runUpdateCheck()}
+                onOpenDialog={() => {
                   setUserOpen(false);
-                  setSettingsSection("updates");
-                  setSettingsOpen(true);
+                  setUpdateDialogOpen(true);
                 }}
-              >
-                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]" />
-                <span className="min-w-0 truncate">{S.update.newVersion(newVersion)}</span>
-              </button>
+              />
             )}
-            {/* Desktop stand-in for the reminder row above, in the shell's own window only:
+            {/* Desktop stand-in for the row above, in the shell's own window only:
                 the same slot updates the CLIENT through the shell's own updater (relayed
                 via /api/desktop/update) — which is what "updating is the shell's job"
                 means for someone sitting in front of the app. A browser signed into the
@@ -1746,10 +1937,20 @@ export function Sidebar({
         </Dropdown>
       </div>
 
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        initialSection={settingsSection}
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* Release announcement, release-notes link and the admin-only self-update. Mounted
+          here rather than in the row, which unmounts as the menu closes on the click that
+          opens this. */}
+      <UpdateDialog
+        open={updateDialogOpen}
+        onClose={() => setUpdateDialogOpen(false)}
+        latestVersion={newVersion}
+        releaseUrl={update?.releaseUrl ?? null}
+        canUpdate={user?.isAdmin === true}
+        /* A finished self-update makes the known release stale — re-check silently so the
+           row stops offering the version that is now running. */
+        onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
       />
 
       {/* Client-update install consent: restarting interrupts running tasks, the same

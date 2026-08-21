@@ -69,7 +69,6 @@ export const en: Strings = {
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
-    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
     showCliSessionsInfo:
@@ -143,8 +142,8 @@ export const en: Strings = {
      */
     checkNow: "Check for updates",
     checking: "Checking…",
-    /** Success toast when the manual check finds a newer release; the row below turns into the update entry. */
-    foundNew: (v: string) => `New version v${v} found — use the update entry below to install`,
+    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
+    foundNew: (v: string) => `New version v${v} found — use the update entry to install`,
     upToDate: "You're on the latest version",
     checkFailed: "Update check failed — try again later",
     checkDisabled: "Update checks are disabled (PENGUIN_UPDATE_CHECK=off)",
@@ -1114,6 +1113,13 @@ export const en: Strings = {
     /** Sidebar conversation-list grouping toggle (workspace is the default) + workspace groups. */
     groupByWorkspace: "Group by workspace",
     groupByAgent: "Group by agent",
+    groupByTime: "Group by time",
+    /** Time-mode bucket names (last day / last month / older), by last activity. */
+    timeGroups: {
+      day: "Past day",
+      month: "Past month",
+      earlier: "Earlier",
+    },
     /** Session-list section header controls: search / list settings / mode-dependent create (the created object follows the grouping mode). */
     searchSessions: "Search chats",
     searchSessionsPlaceholder: "Search chats…",
@@ -1257,6 +1263,7 @@ Scenarios:
     },
     sessionList: "Sessions",
     defaultSessionTitle: "New chat",
+    agent: "Agent",
     model: "Model",
     workspace: "Workspace",
     workspaceHint:
@@ -1543,6 +1550,8 @@ Scenarios:
     pinnedSession: "Pinned",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "More",
+    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
+    loadMoreSessions: "Load more chats",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
       subagent: (n: number) => `Subagents (${n})`,

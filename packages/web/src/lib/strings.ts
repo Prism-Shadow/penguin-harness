@@ -71,7 +71,6 @@ export const zh = {
     generalTitle: "通用",
     appearanceTitle: "外观",
     accountTitle: "账户",
-    updatesTitle: "更新",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "显示 CLI 会话",
     showCliSessionsInfo:
@@ -142,8 +141,8 @@ export const zh = {
      */
     checkNow: "检查更新",
     checking: "检查中…",
-    /** Success toast when the manual check finds a newer release; the row below turns into the update entry. */
-    foundNew: (v: string) => `发现新版本 v${v}，点击下方更新入口即可安装`,
+    /** Success toast when the manual check finds a newer release; the row itself turns into the update entry. */
+    foundNew: (v: string) => `发现新版本 v${v}，点击该更新入口即可安装`,
     upToDate: "已是最新版本",
     checkFailed: "检查更新失败，请稍后重试",
     checkDisabled: "更新检查已关闭（PENGUIN_UPDATE_CHECK=off）",
@@ -1070,6 +1069,13 @@ export const zh = {
     /** Grouping toggle of the sidebar conversation list (workspace grouping is the default) and the workspace groups. */
     groupByWorkspace: "按工作区分组",
     groupByAgent: "按 Agent 分组",
+    groupByTime: "按时间分组",
+    /** Time-mode bucket names (last day / last month / older), by last activity. */
+    timeGroups: {
+      day: "近一天",
+      month: "近一月",
+      earlier: "更早",
+    },
     /** Session-list section header controls: search / list settings / mode-dependent create (具体新建的对象按分组方式决定). */
     searchSessions: "搜索会话",
     searchSessionsPlaceholder: "搜索会话…",
@@ -1214,6 +1220,7 @@ Benchmark：
     },
     sessionList: "Session",
     defaultSessionTitle: "新对话",
+    agent: "Agent",
     model: "Model",
     workspace: "Workspace",
     workspaceHint: "留空自动创建临时工作区；指定时必须是服务器上已存在的目录",
@@ -1495,6 +1502,8 @@ Benchmark：
     pinnedSession: "已置顶",
     /** Sidebar group "reveal/load next page" row (display cap + server paging). */
     loadMore: "更多",
+    /** Time mode's whole-list paging row: its buckets span every Agent, so one row below them fetches the next page rather than each bucket claiming to. */
+    loadMoreSessions: "加载更多会话",
     /** Collapsed sidebar folders inside a group (lazy-loaded); the count is the group's exact server share. */
     folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,

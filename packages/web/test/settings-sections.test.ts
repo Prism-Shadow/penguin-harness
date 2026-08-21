@@ -3,8 +3,8 @@
  *
  * The rule is pinned by value rather than by shape because both halves of it can fail
  * silently and separately: a rail that shows a forbidden entry leaks that the setting
- * exists, and an initialSection that is honoured without the same filter hands a
- * non-admin the form itself. Both go through these functions, so both are covered here.
+ * exists, and an active page rendered without the same filter hands a non-admin the form
+ * itself. Both go through these functions, so both are covered here.
  *
  * The client filter is convenience, not the boundary — the admin APIs answer a non-admin
  * with 403 either way (server/test/admin-settings.test.ts, "non-admin access is always
@@ -57,28 +57,27 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
-      "updates",
       "users",
     ]);
   });
 
-  it("gives a non-admin their own pages and the update check, nothing server-global", () => {
+  it("gives a non-admin their own pages and nothing server-global", () => {
     // Not "fewer pages" — the exact list. Proxy, upload limits and user management are
     // admin surfaces, and the whole point of dropping them is that a non-admin is never
-    // told they exist. The updates page stays: any account may run the check; the
-    // self-update inside stays admin-only.
-    expect(plain.map((s) => s.key)).toEqual(["general", "appearance", "account", "updates"]);
+    // told they exist. Updating is not among them either way: it lives in the sidebar user
+    // menu, outside this dialog, for every account.
+    expect(plain.map((s) => s.key)).toEqual(["general", "appearance", "account"]);
   });
 
   it("strips the desktop shell's window down to what a token session can use", () => {
-    // No account page (no password to change — see offersChangePassword), no updates
-    // (electron-updater owns updating there), no user management (single-user server).
+    // No account page (no password to change — see offersChangePassword), no user
+    // management (single-user server).
     expect(shell.map((s) => s.key)).toEqual(["general", "appearance", "proxy", "uploads"]);
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
     // Mirrors the old menu row's two-field rule: that session typed a real password and
-    // can still change it, while updates and user management stay desktop-hidden.
+    // can still change it, while user management stays desktop-hidden.
     expect(desktopBrowser.map((s) => s.key)).toEqual([
       "general",
       "appearance",
@@ -94,13 +93,10 @@ describe("settingsGroups", () => {
     expect(settingsGroups(admin)).toEqual(["personal", "server"]);
   });
 
-  it("keeps both headings for a non-admin, whose updates page sits under Server", () => {
-    expect(settingsGroups(plain)).toEqual(["personal", "server"]);
-  });
-
   it("collapses to a single group when only one remains, the rail's cue to draw no heading", () => {
-    // A lone "Personal" heading announces that some other group exists.
-    expect(settingsGroups(plain.filter((s) => s.group === "personal"))).toEqual(["personal"]);
+    // A lone "Personal" heading announces that some other group exists — which is exactly a
+    // non-admin's case, whose every page is personal.
+    expect(settingsGroups(plain)).toEqual(["personal"]);
   });
 });
 
@@ -111,7 +107,7 @@ describe("resolveSettingsSection", () => {
   });
 
   it("sends a non-admin asking for an admin page to their own first page", () => {
-    // Answering identically to an unknown request is the point: initialSection cannot be
+    // Answering identically to an unknown request is the point: a requested key cannot be
     // used to find out that "users" is a real page.
     expect(resolveSettingsSection("users", plain)).toBe("general");
     expect(resolveSettingsSection("proxy", plain)).toBe("general");
@@ -144,10 +140,9 @@ describe("the System settings dialog", () => {
     expect(source).not.toContain("SECTION_RULES");
   });
 
-  it("resolves both the landing page and the rendered page through the same gate", () => {
-    // initialSection is a request, not a right: an unknown or forbidden value must land on
-    // the viewer's own first page, and the pane renders only what re-resolves.
-    expect(source).toContain("resolveSettingsSection(initialSection, sections)");
+  it("resolves the page it renders through the same gate on every render", () => {
+    // The active page is a state value, not a right: a viewer who loses admin mid-dialog
+    // must fall back to their own first page rather than keep rendering the admin form.
     expect(source).toContain("resolveSettingsSection(active, sections)");
   });
 });

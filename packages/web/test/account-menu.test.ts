@@ -71,14 +71,22 @@ describe("the sidebar user menu", () => {
 
   it("keeps sign-out on its own desktopMode gate", () => {
     // Sign out is hidden for the whole desktop-mode server, not just the shell's window.
-    expect(source).toContain("{!desktopMode && (");
+    // Anchored to sign-out's own block: the server update row above it carries the same
+    // gate, so a bare `toContain("{!desktopMode && (")` would keep passing once this one
+    // was deleted.
+    const signOut = source.indexOf("S.auth.logout");
+    expect(signOut).toBeGreaterThan(-1);
+    const gate = source.lastIndexOf("{!desktopMode && (", signOut);
+    expect(gate).toBeGreaterThan(-1);
+    // Only sign-out's own <button> stands between that gate and the label it renders.
+    expect(source.slice(gate, signOut).match(/<\w/g)).toEqual(["<b"]);
   });
 
   it("reaches the settings it no longer holds through one ungated System settings entry", () => {
-    // The preference rows, change password, the update row and user management all moved
-    // into the settings dialog, whose own section registry decides which pages this viewer
-    // sees — so the row itself carries no isAdmin test, or a non-admin would lose the
-    // personal pages along with the admin ones.
+    // The preference rows, change password and user management all moved into the settings
+    // dialog, whose own section registry decides which pages this viewer sees — so the row
+    // itself carries no isAdmin test, or a non-admin would lose the personal pages along
+    // with the admin ones.
     expect(source).toContain("setSettingsOpen(true)");
     expect(source).not.toContain("offersChangePassword");
     expect(source).not.toContain("S.settings.showCliSessions");
@@ -87,12 +95,24 @@ describe("the sidebar user menu", () => {
     expect(source).not.toContain('go("/admin/users")');
   });
 
-  it("no longer mounts the dialogs whose surfaces moved into the settings dialog", () => {
+  it("mounts no dialog for a surface the settings dialog owns", () => {
     // A stale mount would be a build failure rather than a silent one, but the menu
     // keeping an opener for a surface reachable elsewhere is the regression worth naming.
     expect(source).not.toContain("ProxySettingsDialog");
     expect(source).not.toContain("UploadLimitsDialog");
     expect(source).not.toContain("ChangePasswordDialog");
-    expect(source).not.toContain("UpdateDialog");
+  });
+
+  it("keeps both update rows outside the settings dialog, in one slot under its entry", () => {
+    // Updating is deliberately not a settings page: the menu carries the check itself, and
+    // the two rows are mutually exclusive by their own gates (a desktop-mode server never
+    // offers the server check; a browser session against one gets neither).
+    expect(source).toContain("<ServerUpdateRow");
+    expect(source).toContain("<DesktopUpdateRow");
+    expect(source).toContain("<UpdateDialog");
+    // The row's install/announce dialogs hang off the Sidebar, which outlives the menu the
+    // click closes — mounting them in the rows would unmount them on that same click.
+    expect(source).toContain("setUpdateDialogOpen(true)");
+    expect(source).toContain("setClientInstallOpen(true)");
   });
 });

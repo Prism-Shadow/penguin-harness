@@ -1,5 +1,7 @@
 /**
- * Workspace grouping for the chat sidebar (pure logic):
+ * Workspace grouping and the time buckets for the chat sidebar (pure logic).
+ *
+ * Workspace grouping:
  * - named Workspaces group by exact path, labeled by basename (full path kept for
  *   tooltips), newest group first;
  * - temporary Workspaces (`<agentDir>/workspaces/tmp-<8hex>`, the shape produced by
@@ -13,8 +15,11 @@ import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-se
 import {
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
+  TIME_BUCKETS,
+  TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
   matchesSessionQuery,
+  groupSessionsByTime,
   groupSessionsByWorkspace,
   isTempWorkspace,
   latestConversation,
@@ -22,6 +27,9 @@ import {
   pinnedFirst,
   sessionCategory,
   splitPage,
+  timeBucketOf,
+  timeGroupKey,
+  totalCategoryCounts,
   workspaceGroupKey,
   workspaceLabel,
 } from "../src/lib/session-grouping";
@@ -35,6 +43,7 @@ function session(
     agentId?: string;
     archived?: boolean;
     source?: "schedule" | "subagent";
+    lastActiveAt?: string;
   } = {},
 ): SessionInfo {
   seq += 1;
@@ -47,7 +56,7 @@ function session(
     workspace,
     approvalMode: "allow-all",
     createdAt,
-    lastActiveAt: createdAt,
+    lastActiveAt: over.lastActiveAt ?? createdAt,
     status: "idle",
     pendingApprovalCount: 0,
     pendingFollowUpCount: 0,
@@ -373,5 +382,104 @@ describe("matchesSessionQuery (sidebar live title search)", () => {
 
   it("untitled Sessions never match a non-empty query (no stored title to search)", () => {
     expect(matchesSessionQuery(session("/w", "2026-08-13T00:00:00Z"), "new")).toBe(false);
+  });
+});
+
+/**
+ * Time buckets (the sidebar's "by time" grouping): last day / last month / earlier, cut on
+ * `lastActiveAt` against a caller-supplied "now" so the boundaries are testable without a
+ * clock. The bucket a row lands in must agree with the compact relative timestamp rendered
+ * beside it, which reads the same field.
+ */
+const NOW = Date.parse("2026-08-21T12:00:00.000Z");
+const ago = (ms: number) => new Date(NOW - ms).toISOString();
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+
+describe("timeBucketOf", () => {
+  it("cuts at 24 hours and at 30 days, the older side of each boundary losing", () => {
+    expect(timeBucketOf(ago(0), NOW)).toBe("day");
+    expect(timeBucketOf(ago(DAY - 1), NOW)).toBe("day");
+    expect(timeBucketOf(ago(DAY), NOW)).toBe("month");
+    expect(timeBucketOf(ago(30 * DAY - 1), NOW)).toBe("month");
+    expect(timeBucketOf(ago(30 * DAY), NOW)).toBe("earlier");
+  });
+
+  it("puts a clock-skewed future stamp in the newest bucket, and an unreadable one in the oldest", () => {
+    expect(timeBucketOf(new Date(NOW + HOUR).toISOString(), NOW)).toBe("day");
+    // Never the top of the list on a value nothing can be concluded from.
+    expect(timeBucketOf("", NOW)).toBe("earlier");
+    expect(timeBucketOf("not-a-date", NOW)).toBe("earlier");
+  });
+});
+
+describe("groupSessionsByTime", () => {
+  it("renders newest bucket first and drops the empty ones", () => {
+    const groups = groupSessionsByTime(
+      [session("/w", ago(40 * DAY)), session("/w", ago(2 * HOUR))],
+      NOW,
+    );
+    expect(groups.map((g) => g.bucket)).toEqual(["day", "earlier"]);
+    expect(groups.map((g) => g.key)).toEqual([timeGroupKey("day"), timeGroupKey("earlier")]);
+    expect(groupSessionsByTime([], NOW)).toEqual([]);
+  });
+
+  it("buckets and sorts on last activity, not on creation", () => {
+    // An old conversation used today belongs where its own timestamp says it does: the row
+    // reads "2h ago", so a bucket claiming it is older would contradict the row beside it.
+    const revived = session("/w", ago(90 * DAY), {
+      sessionId: "session-revived",
+      lastActiveAt: ago(2 * HOUR),
+    });
+    const fresh = session("/w", ago(3 * DAY), {
+      sessionId: "session-fresh",
+      lastActiveAt: ago(3 * HOUR),
+    });
+    const groups = groupSessionsByTime([fresh, revived], NOW);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.bucket).toBe("day");
+    expect(groups[0]?.sessions.map((s) => s.sessionId)).toEqual([
+      "session-revived",
+      "session-fresh",
+    ]);
+  });
+
+  it("keys buckets so they can never collide with a Workspace path or an Agent id", () => {
+    const keys = TIME_BUCKETS.map(timeGroupKey);
+    expect(new Set([...keys, TIME_FOLDERS_GROUP_KEY, TEMP_WORKSPACE_GROUP_KEY]).size).toBe(
+      keys.length + 2,
+    );
+    // "\0" is the one byte a filesystem path and an Agent id cannot contain.
+    for (const key of [...keys, TIME_FOLDERS_GROUP_KEY]) expect(key.startsWith("\0")).toBe(true);
+  });
+});
+
+describe("totalCategoryCounts", () => {
+  const counts = (over: Partial<SessionCategoryCounts>): SessionCategoryCounts => ({
+    active: 0,
+    subagent: 0,
+    schedule: 0,
+    archived: 0,
+    ...over,
+  });
+
+  it("sums every Agent's share, since a time bucket spans all of them", () => {
+    expect(
+      totalCategoryCounts(
+        new Map([
+          ["a", counts({ active: 3, archived: 2 })],
+          ["b", counts({ active: 4, subagent: 1 })],
+        ]),
+      ),
+    ).toEqual({ active: 7, subagent: 1, schedule: 0, archived: 2 });
+  });
+
+  it("reports zeros for an empty map rather than leaving fields undefined", () => {
+    expect(totalCategoryCounts(new Map())).toEqual({
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      archived: 0,
+    });
   });
 });

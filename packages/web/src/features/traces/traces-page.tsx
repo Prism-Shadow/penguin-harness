@@ -40,8 +40,9 @@ import {
   MoreRow,
   initialGroupMode,
   storeGroupMode,
+  treeGroupMode,
 } from "../../components/ui/group-list";
-import type { GroupMode } from "../../components/ui/group-list";
+import type { TreeGroupMode } from "../../components/ui/group-list";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
@@ -107,9 +108,12 @@ export function TracesPage() {
   // runs): auto-selects once the target Agent's Session list is ready.
   const focusSessionId = searchParams.get("sessionId");
   // Grouping mode: the same persisted preference as the chat sidebar
-  // (penguin.sidebarGroupMode) so the two surfaces always group alike.
-  const [modePref, setModePref] = useState<GroupMode>(initialGroupMode);
-  const groupMode: GroupMode = focusAgentId !== null ? "agent" : modePref;
+  // (penguin.sidebarGroupMode) so the two surfaces always group alike, narrowed to the
+  // two this tree can offer — its rows are Trace files keyed by Session id and carry no
+  // activity timestamp, so the sidebar's time buckets have nothing here to cut on and
+  // read as the Workspace grouping they fall back to (treeGroupMode).
+  const [modePref, setModePref] = useState<TreeGroupMode>(() => treeGroupMode(initialGroupMode()));
+  const groupMode: TreeGroupMode = focusAgentId !== null ? "agent" : modePref;
   const [selection, setSelection] = useState<Selection | null>(null);
   const [fileIndex, setFileIndex] = useState<number | null>(null);
   /** Rendered groups cap (the sidebar's group paging pattern: raised a page per "more groups" click; reset per Project and on a mode switch). */
@@ -140,7 +144,7 @@ export function TracesPage() {
   /** Session to auto-select once the refreshed list arrives (the import response's sessionId). */
   const importedSession = useRef<{ agentId: string; sessionId: string } | null>(null);
 
-  const setGroupMode = (mode: GroupMode) => {
+  const setGroupMode = (mode: TreeGroupMode) => {
     storeGroupMode(mode);
     setModePref(mode);
     // The two modes have unrelated group lists: restart the reveal window.

@@ -4,12 +4,13 @@
  * Server-global pages write through /api/admin/settings (or the admin user routes) and
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
  * owns. Two pages additionally depend on how this session runs: the account page only
- * exists where a password can be changed (see offersChangePassword), and updates / user
- * management disappear in desktop mode, where the app is single-user and updating is the
- * desktop shell's job. The rules live here rather than inside the dialog because this
- * package's vitest runs in Node with no DOM — a pure function is the only thing a test can
- * pin directly — and because rail and content have to apply the same rule to avoid a
- * visible-but-forbidden entry.
+ * exists where a password can be changed (see offersChangePassword), and user management
+ * disappears in desktop mode, where the app is single-user. Updating is not a page here at
+ * all — both the server check and the desktop client's live in the sidebar user menu, under
+ * the entry that opens this dialog. The rules live here rather than inside the dialog
+ * because this package's vitest runs in Node with no DOM — a pure function is the only
+ * thing a test can pin directly — and because rail and content have to apply the same rule
+ * to avoid a visible-but-forbidden entry.
  *
  * A page the viewer may not open is dropped from the list entirely rather than rendered
  * disabled: a greyed-out "Proxy" row still tells a non-admin the setting exists and that
@@ -23,7 +24,7 @@ import type { AccountMenuSession } from "./account-menu";
 
 /** A page of the System settings dialog. */
 export type SettingsSectionKey =
-  "general" | "appearance" | "account" | "proxy" | "uploads" | "updates" | "users";
+  "general" | "appearance" | "account" | "proxy" | "uploads" | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
 export type SettingsGroupKey = "personal" | "server";
@@ -51,9 +52,6 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "account", group: "personal", visible: (v) => offersChangePassword(v) },
     { key: "proxy", group: "server", visible: (v) => v.isAdmin },
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
-    // Server updates: every non-desktop account may check; the dialog's self-update stays
-    // admin-only inside. Desktop updates are the shell's job (electron-updater).
-    { key: "updates", group: "server", visible: (v) => !v.desktopMode },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
     { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },
   ];
