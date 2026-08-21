@@ -63,9 +63,9 @@ import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
-import { buildSkillsMessage } from "./skill-use";
+import type { ComposerControl } from "./chat-input";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
-import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
+import type { ExampleFolderId, ExampleTask } from "./example-tasks";
 import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache } from "./draft-cache";
 import {
@@ -594,27 +594,19 @@ export function DraftView({
     setApprovalMode(mode);
   }, []);
 
-  // One in-flight guard shared by both send entry points (composer send / example task): a
-  // second submission while one is running would create a second Session with
-  // its own first task and a racing navigation. The ref is the synchronous guard; the state
-  // drives disabled styling on the example button (the composer has its own busy state).
+  // Synchronous in-flight guard for the one send entry point (the composer): a second
+  // submission while one is running would create a second Session with its own first task and
+  // a racing navigation. A ref rather than state — the composer disables its own send button
+  // off its `busy` state, and nothing else on this page renders differently mid-send.
   const sendingRef = useRef(false);
-  const [sending, setSending] = useState(false);
 
   // First message sent: only now is the Session created (Agent / Workspace / Model / approval
   // mode are all locked in together), then the route jumps once sent; returns false on any
-  // failure, so the input area keeps the draft and can resend. `keepDraft` is set by sends
-  // that did not consume the composer text (the example task), so a typed-but-unsent draft
-  // survives the navigation instead of being silently discarded.
+  // failure, so the input area keeps the draft and can resend.
   const onSend = useCallback(
-    async (
-      input: TaskInputPart[],
-      keepDraft = false,
-      goal: { budget: number } | null = null,
-    ): Promise<boolean> => {
+    async (input: TaskInputPart[], goal: { budget: number } | null = null): Promise<boolean> => {
       if (!agentId || sendingRef.current) return false;
       sendingRef.current = true;
-      setSending(true);
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
@@ -633,7 +625,7 @@ export function DraftView({
         // also carries the post-self-heal id, matching where we navigate.
         const fresh = await api.getSession(res.sessionId).catch(() => null);
         add(fresh?.session ?? created.session);
-        if (!keepDraft) discardDraft();
+        discardDraft();
         // The draft now has an id of its own, so its terminals move with it: every draft
         // shares one dock scope, and anything left behind under that key would surface in
         // the NEXT new conversation instead (terminal-dock-state.ts).
@@ -649,33 +641,25 @@ export function DraftView({
         return false;
       } finally {
         sendingRef.current = false;
-        setSending(false);
       }
     },
     [projectId, agentId, approvalMode, modelRef, workspace, add, discardDraft, navigate],
   );
 
-  // Example tasks: one click submits the canned prompt exactly like a hand-typed send (the
-  // busy id drives the clicked card's spinner; the shared in-flight guard and all failure
-  // handling live in onSend). keepDraft: an example never consumes the composer text, so a
-  // typed-but-unsent draft must survive. The selected model / Workspace / approval mode apply as-is.
-  const [exampleBusy, setExampleBusy] = useState<ExampleTaskId | null>(null);
-  const runExample = useCallback(
-    async (task: ExampleTask) => {
-      if (exampleBusy !== null) return;
-      setExampleBusy(task.id);
-      try {
-        const names = task.skills.filter((n) => agentSkills.some((s) => s.name === n));
-        await onSend(
-          [{ type: "text", text: buildSkillsMessage(names, S.chat.exampleTasks[task.id].prompt) }],
-          true,
-        );
-      } finally {
-        setExampleBusy(null);
-      }
-    },
-    [exampleBusy, agentSkills, onSend],
-  );
+  /**
+   * Example tasks: a click FILLS the composer — the prompt into the text body, the example's
+   * skills into the skills dropdown — and sends nothing. The user reads what landed, edits it
+   * if they want, and presses Send, which then builds the very message this card used to
+   * submit by itself (the `[use_skills]` block is the send path's job, so the textarea never
+   * shows a marker block). Filling is instant and local: there is no busy state and no
+   * in-flight guard to keep here, and everything else — where the prompt goes when text is
+   * already typed, focus, the caret — is the composer's, reached through this handle.
+   */
+  const composerRef = useRef<ComposerControl | null>(null);
+  const fillExample = useCallback((task: ExampleTask) => {
+    // S is a live binding swapped on locale change: read the prompt at click time, not at render.
+    composerRef.current?.fillExample(S.chat.exampleTasks[task.id].prompt, task.skills);
+  }, []);
 
   /**
    * The open example folder — bookmark-style, and ALWAYS exactly one: selecting another closes
@@ -723,7 +707,8 @@ export function DraftView({
 
         <ChatInput
           status="idle"
-          onSend={(input, goal) => onSend(input, false, goal)}
+          controlRef={composerRef}
+          onSend={onSend}
           onStop={async () => undefined}
           onCompact={async () => undefined}
           modelRef={modelRef}
@@ -754,15 +739,17 @@ export function DraftView({
           <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
         </div>
 
-        {/* Example tasks: one-click canned builds showing off the one-sentence → app flow.
+        {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
+            the composer with the prompt and the user sends it (see fillExample).
             Bookmark-style folders with ALWAYS exactly one open — selecting another closes the
             previous, and the open one cannot be collapsed. The block is therefore a FIXED
             height: two folder rows plus one folder's rows, whichever folder that is (they are
             kept the same length). Nothing below shifts when folders are switched, and no
             scroll container is needed — a scrollbar inside a six-line showcase reads as a
             defect. Each example is a single-line title; its one-sentence description rides in
-            the row tooltip rather than a second line. Rows are disabled until
-            agents/models/skills are resolved (onSend would silently no-op without an Agent). */}
+            the row tooltip rather than a second line. Rows stay disabled until the Agent's
+            installed skills are known — that is all a fill still waits for, and without it the
+            preselect would silently drop the example's skills. */}
         <div className="mt-6 space-y-1">
           {EXAMPLE_FOLDERS.map((folder) => {
             const open = folder.id === openFolder;
@@ -813,23 +800,12 @@ export function DraftView({
                         <li key={task.id}>
                           <button
                             type="button"
-                            title={copy.desc}
-                            disabled={
-                              exampleBusy !== null ||
-                              sending ||
-                              !skillsLoaded ||
-                              !agentId ||
-                              !models
-                            }
-                            onClick={() => void runExample(task)}
+                            title={`${copy.desc}\n${S.chat.exampleFillHint}`}
+                            disabled={!skillsLoaded}
+                            onClick={() => fillExample(task)}
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800/70 dark:hover:text-gray-200"
                           >
                             <span className="min-w-0 flex-1 truncate">{copy.label}</span>
-                            {exampleBusy === task.id && (
-                              <span className="shrink-0 text-xs text-gray-400">
-                                {S.common.loading}
-                              </span>
-                            )}
                           </button>
                         </li>
                       );

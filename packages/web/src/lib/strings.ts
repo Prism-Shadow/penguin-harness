@@ -1104,10 +1104,12 @@ export const zh = {
       webapps: "搭建网页应用",
       agents: "搭建和优化智能体",
     },
+    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
+    exampleFillHint: "点击填入输入框，可修改后自行发送",
     /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
-     * are the FULL working prompts — descriptions stay short, but the submitted instructions
-     * remain detailed because execution quality depends on them.
+     * Example task cards on the draft screen: one click fills the composer with the canned
+     * prompt, which the user then sends. These are the FULL working prompts — descriptions stay
+     * short, but the prompts remain detailed because execution quality depends on them.
      */
     exampleTasks: {
       game: {

@@ -10,8 +10,8 @@
  * a folder much longer than its siblings is what would make the height jump between them.
  *
  * Copy and full prompts live in the active locale dictionary at `S.chat.exampleFolders[id]`
- * and `S.chat.exampleTasks[id]`. Skills listed here are pinned only when the selected Agent has
- * them installed; an empty list sends the prompt unchanged.
+ * and `S.chat.exampleTasks[id]`. Skills listed here are preselected in the composer only when
+ * the selected Agent has them installed; an empty list fills the prompt alone.
  */
 export const EXAMPLE_FOLDERS = [
   {

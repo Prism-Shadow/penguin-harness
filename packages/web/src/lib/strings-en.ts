@@ -1148,6 +1148,8 @@ export const en: Strings = {
       webapps: "Build web apps",
       agents: "Build and optimize agents",
     },
+    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
+    exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     exampleTasks: {
       game: {
         label: "2D penguin sled game",
