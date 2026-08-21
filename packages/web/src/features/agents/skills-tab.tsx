@@ -36,6 +36,7 @@ import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { DownloadIcon } from "../../components/ui/icons";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillIcon, skillTileColor } from "../skills/skill-icon-view";
@@ -297,8 +298,7 @@ export function SkillsTab({
       {skills === null ? (
         <SkeletonList rows={4} />
       ) : skills.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.skills.agentTabEmpty}</p>
+        <SettingsEmpty>{S.skills.agentTabEmpty}</SettingsEmpty>
       ) : (
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           {skills.map((skill) => (
