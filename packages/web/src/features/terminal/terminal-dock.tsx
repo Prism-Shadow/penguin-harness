@@ -56,6 +56,7 @@ import {
   terminalViewContainer,
   terminalViewState,
 } from "./terminal-view-pool";
+import { CloseIcon } from "../../components/ui/icons";
 
 /** The dock always opens new shells in the home directory (project cwd can come later). */
 const DOCK_CWD = "~";
@@ -176,16 +177,7 @@ function TerminalTab(props: {
         onClick={props.onKill}
         className={`absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 ${chrome.tabKill}`}
       >
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 14 14"
-          fill="none"
-          stroke="currentColor"
-          aria-hidden
-        >
-          <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
+        <CloseIcon size={10} />
       </button>
     </div>
   );

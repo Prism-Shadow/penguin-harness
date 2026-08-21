@@ -60,6 +60,8 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { parkActiveDraft } from "../chat/draft-sessions";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { SkillIcon, skillTileColor } from "./skill-icon-view";
+import { InfoPopover } from "../../components/ui/info-popover";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** agentId → (installed skill name → installed copy's version); in-page install-state snapshot, rewritten in place by optimistic updates. */
 export type InstalledMap = ReadonlyMap<string, ReadonlyMap<string, number>>;
@@ -256,8 +258,10 @@ export function SkillsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        <h1 className="text-xl font-semibold">{S.skills.pageTitle}</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{S.skills.pageDesc}</p>
+        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+          {S.skills.pageTitle}
+          <InfoPopover label={S.skills.pageTitle}>{S.skills.pageDesc}</InfoPopover>
+        </h1>
 
         {error ? (
           <div className="mt-6 flex items-center gap-3">
@@ -453,7 +457,7 @@ function SkillCard({
             title={S.skills.updateOutdated(outdated.length)}
             onClick={() => setPendingUpdate(outdated)}
           >
-            <GlyphIcon d={UPDATE_ICON} size={13} />
+            <GlyphIcon d={UPDATE_ICON} size={ICON_SIZE.iconButton} />
           </Button>
         )}
         <Button
@@ -464,7 +468,7 @@ function SkillCard({
           disabled={!canQuickInvoke}
           onClick={() => onQuickInvoke(skill.name)}
         >
-          <GlyphIcon d={SEND_ICON} size={15} />
+          <GlyphIcon d={SEND_ICON} size={ICON_SIZE.iconButton} />
         </Button>
         <Button
           size="sm"
@@ -473,7 +477,7 @@ function SkillCard({
           title={S.skills.manageInstall}
           onClick={() => setInstallOpen(true)}
         >
-          <GlyphIcon d={INSTALL_ICON} size={15} />
+          <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
         </Button>
       </div>
       {installOpen && (

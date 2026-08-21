@@ -880,6 +880,46 @@ describe("translateEvents", () => {
     const tu = messages.at(-1)!.payload as TokenUsagePayload;
     expect(tu.request.total).toBe(524);
   });
+
+  it("drops an unused event without splitting the segment it interrupts", () => {
+    // AgentHub marks any stream event a client does not recognize `unused` and attaches no
+    // content items to it, so a frame a gateway injects mid-generation (heartbeat, cost
+    // ticker) must pass through the translator without opening, closing or splitting the
+    // text segment around it, and without disturbing the usage snapshot.
+    const { messages, requestTokens } = translateEvents([
+      ev({ event_type: "start", content_items: [] }),
+      ev({ content_items: [{ type: "text", text: "Hel" }] }),
+      ev({ event_type: "unused", content_items: [] }),
+      ev({ content_items: [{ type: "text", text: "lo" }] }),
+      ev({
+        event_type: "stop",
+        content_items: [],
+        finish_reason: "stop",
+        usage_metadata: {
+          cached_tokens: 0,
+          prompt_tokens: 12,
+          thoughts_tokens: 0,
+          response_tokens: 4,
+        },
+      }),
+    ]);
+
+    const types = messages.map((m) => (m.payload as { type: string }).type);
+    // One start, one delta per text item, one stop — the unused event adds nothing.
+    expect(types).toEqual([
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "partial_text",
+      "text",
+      "token_usage",
+    ]);
+    const complete = messages.find((m) => (m.payload as { type: string }).type === "text")!
+      .payload as TextPayload;
+    expect(complete.text).toBe("Hello");
+    expect(complete.stop_reason).toBe("completed");
+    expect(requestTokens.total).toBe(16);
+  });
 });
 
 describe("EventTranslator.finishInterrupted (PRN-012 structural closure)", () => {

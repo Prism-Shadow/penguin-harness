@@ -61,6 +61,7 @@ import {
 } from "./trace-sessions";
 import type { TraceFileRef, TraceSessionRow } from "./trace-sessions";
 import { useTraceTree } from "./use-trace-tree";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /**
  * Import file size cap, mirroring the server's route-side limit (agent-traces.ts).
@@ -743,7 +744,7 @@ export function TracesPage() {
                 download
                 className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60"
               >
-                <DownloadIcon size={12} />
+                <DownloadIcon size={ICON_SIZE.rowLead} />
                 {S.traces.exportFile}
               </a>
             </div>

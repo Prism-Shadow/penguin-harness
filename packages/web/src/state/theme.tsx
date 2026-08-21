@@ -6,10 +6,10 @@
  * - Font size: scales the root font-size (rem-based text-* utilities scale along with it).
  * - Theme color: html[data-accent] overrides --accent-bg/--accent-fg; defaults to neutral
  *   (gray/white, follows light/dark).
- * - Terminal theme: its own light/dark/follow-the-app setting, defaulting to dark — see
- *   TerminalThemeMode. It drives no class or variable here; the terminal reads
- *   `terminalDark` and paints itself, because Tailwind's dark: variant is anchored on
- *   html.dark and cannot express a light subtree inside a dark app.
+ * - Terminal theme: its own light/dark/follow-the-app setting, following the app unless
+ *   explicitly pinned — see TerminalThemeMode. It drives no class or variable here; the
+ *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
+ *   anchored on html.dark and cannot express a light subtree inside a dark app.
  * All preferences persist to localStorage.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
@@ -19,10 +19,11 @@ export type ThemeMode = "light" | "dark" | "system";
 export type FontScale = "sm" | "md" | "lg";
 export type Accent = "neutral" | "blue" | "green" | "violet" | "rose" | "amber";
 /**
- * The terminal's appearance, which is its own preference rather than a slice of the app's.
- * A terminal is where people keep prompts, colour schemes and TUIs tuned for a dark
- * screen, and plenty of them want exactly that inside an otherwise light app — so the
- * default is "dark" regardless of the app, and "app" is the opt-in that couples the two.
+ * The terminal's appearance. By default it follows the app ("app"): switching the app
+ * between light and dark carries the terminal along. Pinning "light" or "dark" decouples
+ * the two — for people whose prompts, colour schemes and TUIs are tuned for one screen
+ * regardless of the app around it. An absent stored value reads as "app", so only an
+ * explicit pin ever overrides the coupling.
  */
 export type TerminalThemeMode = "light" | "dark" | "app";
 /** Display currency (prices are always stored as USD/million Tokens; conversion happens only for display and input). */
@@ -89,7 +90,7 @@ function initialAccent(): Accent {
 function initialTerminalMode(): TerminalThemeMode {
   const stored = localStorage.getItem(TERMINAL_KEY);
   if (stored === "light" || stored === "dark" || stored === "app") return stored;
-  return "dark";
+  return "app";
 }
 
 function initialCurrency(): Currency {

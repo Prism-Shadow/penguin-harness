@@ -1,10 +1,10 @@
 ---
 name: penguin-sdk
-description: Build AI apps on the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop with thinking and image messages, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
-short_description: Build AI and RAG apps on the Penguin Harness SDK.
-short_description_zh: 基于 Penguin SDK 构建 AI 与 RAG 应用。
-version: 19
-updated: 2026-08-06T00:00:00Z
+description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
+short_description: Build agent, AI and RAG applications on the Penguin Harness SDK.
+short_description_zh: 基于 Penguin SDK 构建智能体应用、AI 与 RAG 应用。
+version: 21
+updated: 2026-08-21T00:00:00Z
 ---
 
 # Penguin Harness SDK
@@ -119,6 +119,12 @@ session.run([userText(question), ...images.map(imageUrlMessage)], { ... });
 Browser flow: `<input type="file" accept="image/*">` plus paste/drag-drop → `FileReader.readAsDataURL` → POST `{ question, images: [dataUrl] }` → the server maps each entry to `imageUrlMessage`. Reject non-image MIME types and cap size (a data URL rides the context window; a few MB is plenty). Whether the session model actually sees pixels is the model config's `vision` flag (`penguin config model list` prints `vision=Y/-`; set via `--vision/--no-vision` on `model add`, default supported): with `vision=false` the core folds the image into an `[attached image: <path>]` line and the built-in image tools read it through the project's configured `vision_model` (`penguin config model vision --provider <group> --model-id <id> --root <data_dir>`) — the app still works, through a description instead of direct sight.
 
 **Other payloads worth handling** (always narrow with the guards first): `partial_tool_call` / `partial_tool_call_output` — surface as an activity line ("running `search`…") in apps that grant tools; `request_end` (event) — a non-`completed` `status` is the error signal (`auth` → ask for a key; `message` carries the failure detail; `retry_in_ms` announces a planned in-run retry, renderable as a countdown); `token_usage` (event) — session-cumulative and last-request counts, if the app shows cost; `compaction_begin` / `compaction_end` (events) — long-lived chats only, show a brief "context being compacted" notice. Everything else is safe to ignore.
+
+## Wiring in the user's tools
+
+When the app's agent must call the user's existing tools (scripts, internal CLIs, anything with an entry point), integrate them as **CLI commands** first: wrap each one as a small executable inside the project (a script under `tools/`, or the user's own binary), and describe it in the embedded agent's persona / `AGENTS.md` — name, what it does, one usage line. The agent invokes it through the built-in `exec_command` tool, so there is nothing to register: no schema to declare, arguments are flags, stdout is the result, the `approve` callback still gates every invocation, and the same command stays testable by hand.
+
+Add an MCP server (`tools.mcpServers` in `system_config.yaml`) only when a CLI wrapper cannot express the integration — a long-lived authenticated connection, or tool schemas the model must see typed. Otherwise the CLI form is the cheaper default and keeps the project self-contained.
 
 ## RAG knowledge app
 

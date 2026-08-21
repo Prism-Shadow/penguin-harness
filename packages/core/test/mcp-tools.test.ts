@@ -276,6 +276,74 @@ describe("MCP over stdio — per-server budgets and interruption", () => {
   });
 });
 
+describe("MCP over stdio — per-server permission override", () => {
+  let tmp: string;
+
+  beforeAll(async () => {
+    tmp = await realpath(await mkdtemp(path.join(tmpdir(), "penguin-mcp-p-")));
+  });
+
+  afterAll(async () => {
+    await rmEventually(tmp);
+  }, 30_000);
+
+  function makeEnv(extra: Record<string, unknown>): Environment {
+    return new Environment({
+      workspaceDir: tmp,
+      toolConfig: { customTools: [], mcpServers: [fixtureEntry(extra)] },
+    });
+  }
+
+  // The fixture's "echo" advertises readOnlyHint: true and "fail" advertises no hint, so one
+  // server exercises both directions of an explicit level contradicting the annotation.
+  it('forces "rw" onto every tool, including one advertising readOnlyHint: true', async () => {
+    const env = makeEnv({ permission: "rw" });
+    try {
+      await env.listTools();
+      expect(env.toolPermission("mcp__fx__echo")).toBe("rw");
+      expect(env.toolPermission("mcp__fx__fail")).toBe("rw");
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it('forces "r" onto every tool, including one advertising no hint', async () => {
+    const env = makeEnv({ permission: "r" });
+    try {
+      await env.listTools();
+      expect(env.toolPermission("mcp__fx__fail")).toBe("r");
+      expect(env.toolPermission("mcp__fx__echo")).toBe("r");
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it('leaves the annotation in charge on an explicit "auto"', async () => {
+    const env = makeEnv({ permission: "auto" });
+    try {
+      await env.listTools();
+      expect(env.toolPermission("mcp__fx__echo")).toBe("r");
+      expect(env.toolPermission("mcp__fx__fail")).toBe("rw");
+    } finally {
+      env.dispose();
+    }
+  });
+
+  it("skips a server whose permission value is not a level, keeping the Agent up", async () => {
+    const warn = vi.fn();
+    const provider = new McpToolProvider([fixtureEntry({ permission: "readonly" })], { warn });
+    try {
+      expect(await provider.listTools()).toEqual([]);
+      expect(provider.serverNames()).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/MCP server "fx" skipped: "permission" must be "auto", "r" or "rw"/),
+      );
+    } finally {
+      await provider.close();
+    }
+  });
+});
+
 describe("Session first-run bootstrap events", () => {
   let tmp: string;
 

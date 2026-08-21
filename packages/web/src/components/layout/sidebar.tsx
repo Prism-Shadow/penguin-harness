@@ -15,7 +15,7 @@
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / logout).
+ * -> bottom user config (theme / language / System settings / logout).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -32,17 +32,13 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
-import { formatMonthDay, formatRelativeShort } from "../../lib/format";
+import { formatRelativeShort } from "../../lib/format";
 import { sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
-import { offersChangePassword } from "../../lib/account-menu";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
-import type { LangPref } from "../../state/locale";
-import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
-import type { Accent, Currency, FontScale, TerminalThemeMode, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -90,7 +86,6 @@ import {
   storeSessionSortMode,
 } from "../../lib/session-order";
 import type { SessionSortMode } from "../../lib/session-order";
-import { Switch } from "../ui/switch";
 import { Dropdown } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
@@ -122,7 +117,7 @@ import {
   storeGroupMode,
 } from "../ui/group-list";
 import type { GroupMode } from "../ui/group-list";
-import { toastError, toastInfo, toastSuccess } from "../ui/toast";
+import { toastError } from "../ui/toast";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
 import { SessionActivityIcon } from "../ui/session-activity-icon";
@@ -130,7 +125,6 @@ import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
 import { Input, noAutofill } from "../ui/input";
-import { Segmented } from "../ui/segmented";
 import { SkeletonList } from "../ui/skeleton";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
@@ -143,15 +137,13 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { ChangePasswordDialog } from "../account/change-password-dialog";
-import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
-import { UploadLimitsDialog } from "../account/upload-limits-dialog";
-import { UpdateDialog } from "../account/update-dialog";
 import { DesktopUpdateRow } from "../account/desktop-update-row";
-import { UpdateMenuRow } from "../account/update-menu-row";
 import { offersClientUpdate } from "../../lib/desktop-update";
 import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
-import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { useVersionInfo } from "../../lib/use-version-info";
+import { SettingsDialog } from "../../features/settings/settings-dialog";
+import type { SettingsSectionKey } from "../../lib/settings-sections";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -291,19 +283,7 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const { user, logout, desktopMode, sessionVia } = useAuth();
-  const {
-    mode,
-    setMode,
-    fontScale,
-    setFontScale,
-    accent,
-    setAccent,
-    currency,
-    setCurrency,
-    terminalMode,
-    setTerminalMode,
-  } = useTheme();
-  const { lang, locale, setLang } = useLocale();
+  const { locale } = useLocale();
   const {
     projects,
     currentProject,
@@ -324,8 +304,6 @@ export function Sidebar({
     loading,
     remove,
     replace,
-    showCliSessions,
-    setShowCliSessions,
   } = useSessions();
   const chatMatch = useMatch("/chat/:sessionId");
   const activeSessionId = chatMatch?.params.sessionId ?? null;
@@ -334,17 +312,18 @@ export function Sidebar({
   const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  // Client update (desktop shell window only): snapshot + armed-check flag live at
-  // module level in use-desktop-update.ts; this always-mounted hook instance drives
-  // the polling, so a check armed in the menu still settles after the menu closes.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Page the settings dialog lands on: the update reminder row jumps straight to Updates. */
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("general");
+  // Client update (desktop shell window only): the snapshot and the armed-check flag live
+  // at module level in use-desktop-update.ts; this always-mounted hook instance drives the
+  // polling, so a check armed in the menu still settles after the menu closes.
   const clientUpdateOffered = offersClientUpdate({ desktopMode, sessionVia });
   const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
   /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
   const [clientInstallOpen, setClientInstallOpen] = useState(false);
-  // Version row + update reminder: nothing is fetched until the dropdown first opens.
-  const { version, update } = useVersionInfo(userOpen);
+  // Update reminder: nothing is fetched until the dropdown first opens.
+  const { update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
   /**
    * The newer release's version string, or null while none is known — the single update row's
@@ -353,47 +332,6 @@ export function Sidebar({
    * than rendering a versionless reminder.
    */
   const newVersion = updateAvailable ? (update?.latestVersion ?? null) : null;
-  // The running version's release date, stamped into core's BUILD_DATE at build time by
-  // the release workflow — displayed as-is, no network involved. Dev builds and releases
-  // that predate the stamping (v0.1.2 and earlier) carry null. Shown as the localized
-  // "last updated" tooltip on the check-for-updates row (the row itself stays uncluttered).
-  const versionDate = version?.buildDate ?? null;
-  /** Manual "check for updates" in flight (row disabled, busy label). */
-  const [updateChecking, setUpdateChecking] = useState(false);
-  /**
-   * Manual update check (owner request): forces a lookup past the server's TTL cache and
-   * pushes the result into the shared version-info store, so the reminder rows, badge,
-   * and dot appear immediately when a newer release is found. Every outcome also toasts —
-   * up to date, found (naming the release; the row below turns into the update entry),
-   * checks disabled, and a failed lookup (the check is fail-soft — failure arrives as the
-   * `error` field, not an exception; the catch handles our own server being unreachable).
-   */
-  const runUpdateCheck = async () => {
-    if (updateChecking) return;
-    setUpdateChecking(true);
-    try {
-      const outcome = updateCheckOutcome(await forceUpdateCheck());
-      if (outcome.kind === "disabled") toastInfo(S.update.checkDisabled);
-      else if (outcome.kind === "failed") toastError(S.update.checkFailed);
-      else if (outcome.kind === "found") toastSuccess(S.update.foundNew(outcome.latestVersion));
-      else toastSuccess(S.update.upToDate);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setUpdateChecking(false);
-    }
-  };
-  /**
-   * Admin-only server-global proxy settings dialog: the menu carries only the opener
-   * row; the controls, their form semantics, and the open-time hydration all live in
-   * ProxySettingsDialog.
-   */
-  const [proxySettingsOpen, setProxySettingsOpen] = useState(false);
-  /**
-   * Admin-only server-global upload limits, alongside the proxy row and built the same way:
-   * the menu carries the opener, the form and its hydration live in UploadLimitsDialog.
-   */
-  const [uploadLimitsOpen, setUploadLimitsOpen] = useState(false);
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
@@ -1139,33 +1077,6 @@ export function Sidebar({
     (key) => ({ to: `/${key}`, label: S.nav[key], icon: NAV_ICONS[key] }),
   );
 
-  const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [
-    { value: "light", label: S.settings.themeLight },
-    { value: "dark", label: S.settings.themeDark },
-    { value: "system", label: S.settings.followSystem },
-  ];
-  const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
-    { value: "en", label: S.settings.langEn },
-    { value: "zh", label: S.settings.langZh },
-    { value: "system", label: S.settings.followSystem },
-  ];
-  // The terminal keeps its own light/dark rather than inheriting the app's — see
-  // TerminalThemeMode. "跟随主题" is the opt-in that couples them.
-  const terminalThemeOptions: ReadonlyArray<{ value: TerminalThemeMode; label: string }> = [
-    { value: "light", label: S.settings.themeLight },
-    { value: "dark", label: S.settings.themeDark },
-    { value: "app", label: S.settings.followAppTheme },
-  ];
-  const fontOptions: ReadonlyArray<{ value: FontScale; label: string }> = [
-    { value: "sm", label: S.settings.fontSmall },
-    { value: "md", label: S.settings.fontMedium },
-    { value: "lg", label: S.settings.fontLarge },
-  ];
-  const currencyOptions: ReadonlyArray<{ value: Currency; label: string }> = [
-    { value: "USD", label: S.models.currencyUsd },
-    { value: "CNY", label: S.models.currencyCny },
-  ];
-
   return (
     <div className="flex h-full w-full flex-col">
       {/* Project switcher (+ collapse sidebar) */}
@@ -1534,7 +1445,7 @@ export function Sidebar({
               onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
               icon={
                 <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={NEW_CHAT_ICON} size={14} />
+                  <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                 </span>
               }
               label={S.chat.draftGroup}
@@ -1597,7 +1508,7 @@ export function Sidebar({
                           onClick={() => newChat(agent.agentId)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         <button
                           type="button"
@@ -1605,7 +1516,7 @@ export function Sidebar({
                           onClick={() => go(`/agents/${agent.agentId}`)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d={GEAR_ICON} size={16} />
+                          <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
                         </button>
                       </>
                     }
@@ -1662,7 +1573,10 @@ export function Sidebar({
                     icon={
                       /* Folder opens and closes with the group */
                       <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
+                        <Icon
+                          d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                          size={ICON_SIZE.groupHeaderGlyph}
+                        />
                       </span>
                     }
                     label={group.temp ? S.chat.tempWorkspaces : group.label}
@@ -1683,7 +1597,7 @@ export function Sidebar({
                           onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
@@ -1763,136 +1677,46 @@ export function Sidebar({
             </button>
           }
         >
-          <div className="space-y-2.5 px-3 py-2">
-            <SettingRow label={S.settings.theme}>
-              <Segmented options={themeOptions} value={mode} onChange={setMode} />
-            </SettingRow>
-            <SettingRow label={S.settings.terminalTheme}>
-              <Segmented
-                options={terminalThemeOptions}
-                value={terminalMode}
-                onChange={setTerminalMode}
-              />
-            </SettingRow>
-            <SettingRow label={S.settings.fontSize}>
-              <Segmented options={fontOptions} value={fontScale} onChange={setFontScale} />
-            </SettingRow>
-            <SettingRow label={S.settings.accent}>
-              <AccentPicker value={accent} onChange={setAccent} />
-            </SettingRow>
-            <SettingRow label={S.models.currency}>
-              <Segmented
-                options={currencyOptions}
-                value={currency}
-                onChange={setCurrency}
-                cols={2}
-              />
-            </SettingRow>
-            <SettingRow label={S.settings.language}>
-              <Segmented options={langOptions} value={lang} onChange={setLang} />
-            </SettingRow>
-            {/* Off (default) = the sidebar lists only web-created Sessions, served straight
-                from the DB; on = CLI Sessions are discovered from the Trace directory too. */}
-            <SettingRow label={S.settings.showCliSessions}>
-              <Switch checked={showCliSessions} onChange={setShowCliSessions} />
-            </SettingRow>
-          </div>
-          <div className="mt-1 border-t border-gray-100 pt-1 dark:border-gray-800">
-            {/* Hidden in the desktop shell's own window: it signs in through the shell's
-                one-shot token rather than a login form, and the seed password of a
-                desktop-created root is fully random and never printed — there is no
-                password its holder has seen, or needs. Deliberately NOT keyed on
-                desktopMode alone: a browser signed into the same desktop-mode server over
-                loopback holds a password session that can, and still does, change it.
-                See offersChangePassword for the full rule. */}
-            {offersChangePassword({ desktopMode, sessionVia }) && (
+          <div className="py-1">
+            {/* System settings dialog: everyone gets the row — the dialog always has the
+                personal pages, and the server-global ones inside it stay gated by the
+                section registry rather than by this row. The preference rows that used to
+                stack here live on its pages now. */}
+            <button
+              type="button"
+              className={menuItemClass}
+              onClick={() => {
+                setUserOpen(false);
+                setSettingsSection("general");
+                setSettingsOpen(true);
+              }}
+            >
+              {S.settings.systemSettings}
+            </button>
+            {/* Update reminder row: only once the lazy check (menu open) has found a newer
+                release. Opens the dialog straight on its Updates page; the manual check
+                lives there too. Desktop mode never checks — updating is the shell's job. */}
+            {!desktopMode && newVersion !== null && (
               <button
                 type="button"
-                className={menuItemClass}
+                className={`${menuItemClass} flex items-center gap-2`}
                 onClick={() => {
                   setUserOpen(false);
-                  setChangePasswordOpen(true);
+                  setSettingsSection("updates");
+                  setSettingsOpen(true);
                 }}
               >
-                {S.account.changePassword}
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent-bg)]" />
+                <span className="min-w-0 truncate">{S.update.newVersion(newVersion)}</span>
               </button>
             )}
-            {/* Admin-only, server-global proxy settings: one menu row opening the
-                dialog (same idiom as Change password above) — the switch, address
-                input and their live-save semantics live in ProxySettingsDialog. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setProxySettingsOpen(true);
-                }}
-              >
-                {S.settings.proxyMenu}
-              </button>
-            )}
-            {/* Admin-only, server-global upload limits: same one-row idiom as the proxy
-                opener above. */}
-            {user?.isAdmin && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  setUploadLimitsOpen(true);
-                }}
-              >
-                {S.settings.uploadLimitsMenu}
-              </button>
-            )}
-            {/* THE update row — one button, two jobs, directly below Change password (owner
-                layout: the menu used to stack a release-notes link, an admin "Update now" row
-                and this check row on top of each other). It reads "Check for updates" and runs
-                the manual check until a newer release is known; from then on it reads "New
-                version vX available" with a leading accent dot and opens the update dialog
-                instead, which carries the release-notes link and the admin-only self-update.
-                The running version sits muted on the right — no product-name prefix, and no
-                superscript badge any more: the label itself already names the new version.
-                The "last updated" date lives in the row tooltip, keeping the row uncluttered.
-                While checking, the label swaps to the busy text and the version stays put.
-                Nothing is fetched until the menu first opens; the version span appears once
-                /api/version resolves. */}
-            {/* Hidden in desktop mode: updates are the desktop app's job (electron-updater),
-                and the dialog's admin self-update re-runs the CLI entry, which does not
-                exist under the desktop shell. */}
-            {!desktopMode && (
-              <UpdateMenuRow
-                menuItemClass={menuItemClass}
-                label={
-                  updateChecking
-                    ? S.update.checking
-                    : newVersion !== null
-                      ? S.update.newVersion(newVersion)
-                      : S.update.checkNow
-                }
-                chip={version !== null ? `v${version.version}` : null}
-                busy={updateChecking}
-                dot={newVersion !== null}
-                disabled={updateChecking}
-                {...(versionDate !== null
-                  ? { title: S.update.lastUpdated(formatMonthDay(versionDate, locale)) }
-                  : {})}
-                onClick={() => {
-                  if (newVersion !== null) {
-                    setUserOpen(false);
-                    setUpdateDialogOpen(true);
-                  } else {
-                    void runUpdateCheck();
-                  }
-                }}
-              />
-            )}
-            {/* Desktop stand-in for the row above, in the shell's own window only: the
-                same slot updates the CLIENT through the shell's updater (relayed via
-                /api/desktop/update). A browser signed into the same desktop-mode server
-                gets neither row — it can't run the CLI self-update there, nor restart
-                someone's GUI app (offersClientUpdate mirrors the server's own gate). */}
+            {/* Desktop stand-in for the reminder row above, in the shell's own window only:
+                the same slot updates the CLIENT through the shell's own updater (relayed
+                via /api/desktop/update) — which is what "updating is the shell's job"
+                means for someone sitting in front of the app. A browser signed into the
+                same desktop-mode server gets neither row: it can't run the CLI self-update
+                there, nor restart someone else's GUI app (offersClientUpdate mirrors the
+                gate the routes enforce). */}
             {clientUpdateOffered && (
               <DesktopUpdateRow
                 status={clientUpdate.status}
@@ -1903,21 +1727,6 @@ export function Sidebar({
                   setClientInstallOpen(true);
                 }}
               />
-            )}
-            {/* User management is visible only to admins (the page route also has its own
-                guard as a fallback), and never in desktop mode: the desktop app is
-                single-user and the server rejects the routes (desktop_single_user). */}
-            {user?.isAdmin && !desktopMode && (
-              <button
-                type="button"
-                className={menuItemClass}
-                onClick={() => {
-                  setUserOpen(false);
-                  go("/admin/users");
-                }}
-              >
-                {S.admin.users}
-              </button>
             )}
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown. */}
@@ -1937,24 +1746,10 @@ export function Sidebar({
         </Dropdown>
       </div>
 
-      <ChangePasswordDialog
-        open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
-      />
-      <ProxySettingsDialog open={proxySettingsOpen} onClose={() => setProxySettingsOpen(false)} />
-      <UploadLimitsDialog open={uploadLimitsOpen} onClose={() => setUploadLimitsOpen(false)} />
-      <UpdateDialog
-        open={updateDialogOpen}
-        onClose={() => setUpdateDialogOpen(false)}
-        latestVersion={newVersion}
-        releaseUrl={update?.releaseUrl ?? null}
-        canUpdate={user?.isAdmin === true}
-        /* A finished self-update makes the reminder stale, and the row stops offering the
-           manual check while a newer release is known — so re-check here, or the row would
-           still read "New version vX available" after updating to exactly that version, with
-           no way back short of reloading the page. Silent: the row's own change is the
-           feedback, and a toast would fire while the user is closing the dialog. */
-        onRunFinished={() => void forceUpdateCheck().catch(() => undefined)}
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        initialSection={settingsSection}
       />
 
       {/* Client-update install consent: restarting interrupts running tasks, the same
@@ -2191,7 +1986,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={15} />
+      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }
@@ -2511,38 +2306,5 @@ function MenuRadioRow({
       </span>
       {checked && <CheckIcon className="shrink-0 text-gray-500 dark:text-gray-400" />}
     </button>
-  );
-}
-
-function SettingRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
-      {children}
-    </div>
-  );
-}
-
-/** Accent color picker: a row of swatches, with a ring on the selected one. */
-function AccentPicker({ value, onChange }: { value: Accent; onChange: (a: Accent) => void }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {ACCENT_SWATCHES.map((s) => (
-        <button
-          key={s.value}
-          type="button"
-          title={S.settings.accentNames[s.value]}
-          aria-label={S.settings.accentNames[s.value]}
-          aria-pressed={value === s.value}
-          onClick={() => onChange(s.value)}
-          className={`h-5 w-5 rounded-full border transition-transform duration-150 hover:scale-110 ${
-            value === s.value
-              ? "border-gray-500 ring-2 ring-gray-400/50 dark:border-gray-300"
-              : "border-transparent"
-          }`}
-          style={{ backgroundColor: s.color }}
-        />
-      ))}
-    </div>
   );
 }

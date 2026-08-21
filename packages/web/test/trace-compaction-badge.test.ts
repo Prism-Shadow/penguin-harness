@@ -28,25 +28,24 @@ describe("compactionBadgeLabel", () => {
     const summarize = { taskIndex: 1, compaction: true, compactionMode: "summarize" } as never;
     const discard = { taskIndex: 1, compaction: true, compactionMode: "discard" } as never;
 
-    expect(compactionBadgeLabel(summarize)).toBe("压缩");
-    expect(compactionBadgeLabel(discard)).toBe("清空");
-
-    setActiveStrings(en);
-    expect(compactionBadgeLabel(summarize)).toBe("Compaction");
-    expect(compactionBadgeLabel(discard)).toBe("Clear");
-  });
-
-  it("reuses the chat row's title rather than a second Trace-local pair of strings", () => {
-    const discard = { taskIndex: 1, compaction: true, compactionMode: "discard" } as never;
-    expect(compactionBadgeLabel(discard)).toBe(zh.chat.compactionTitle("discard"));
-    setActiveStrings(en);
-    expect(compactionBadgeLabel(discard)).toBe(en.chat.compactionTitle("discard"));
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      setActiveStrings(dict);
+      expect(compactionBadgeLabel(summarize), locale).toBe(dict.chat.compactionTitle("summarize"));
+      expect(compactionBadgeLabel(discard), locale).toBe(dict.chat.compactionTitle("discard"));
+      // Reuses the chat row's title rather than a second Trace-local pair of strings, and the
+      // two modes stay distinguishable.
+      expect(compactionBadgeLabel(discard), locale).not.toBe(compactionBadgeLabel(summarize));
+    }
   });
 
   it("falls back to the compaction title when the mode is absent (a round analyzed by an older server)", () => {
     const legacy = { taskIndex: 1, compaction: true } as never;
-    expect(compactionBadgeLabel(legacy)).toBe("压缩");
-    setActiveStrings(en);
-    expect(compactionBadgeLabel(legacy)).toBe("Compaction");
+    for (const dict of [zh, en]) {
+      setActiveStrings(dict);
+      expect(compactionBadgeLabel(legacy)).toBe(dict.chat.compactionTitle("summarize"));
+    }
   });
 });

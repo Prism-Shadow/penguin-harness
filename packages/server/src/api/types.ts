@@ -844,6 +844,8 @@ export interface MemoryScopeInfo {
   workspacePath?: string;
   /** Number of Markdown topic files in the directory (the `MEMORY.md` index not counted). */
   fileCount: number;
+  /** Whether the directory holds a `MEMORY.md` index, so an import confirmation can say whether one would be replaced. */
+  hasIndex: boolean;
   /** Most recent topic-file mtime in the directory (ISO 8601); unset when the directory holds no topic file. */
   updatedAt?: string;
 }
@@ -886,6 +888,69 @@ export interface MemoryFileResponse {
   scopeKey: string;
   file: MemoryFileInfo;
   content: string;
+}
+
+/** One topic file inside a transfer document: the name it had in its scope, and its whole text. */
+export interface MemoryTransferFile {
+  /** File name inside the scope directory, e.g. `prefers-pnpm.md` — a name, never a path. */
+  name: string;
+  /** The file's full Markdown text, frontmatter included. */
+  content: string;
+}
+
+/**
+ * GET …/memory/scopes/:key/export, and the body a POST …/import carries back: everything one
+ * scope holds, as one JSON document — the topic files and the scope's own `MEMORY.md`.
+ */
+export interface MemoryScopeExport {
+  /** Format marker, so a foreign JSON file is refused with a clear reason rather than half-imported. */
+  format: "penguin-memory-scope";
+  /** Document version. A reader accepts exactly this; a later format bumps it and states its own compatibility. */
+  version: 1;
+  /** The scope this was exported from. Informational: an import writes into the scope its URL names. */
+  scopeKey: string;
+  kind: MemoryScopeInfo["kind"];
+  /** The Workspace the source scope stood for, when it had a `.workspace` marker. */
+  workspacePath?: string;
+  /** When the document was produced (ISO 8601). */
+  exportedAt: string;
+  /** The scope's `MEMORY.md`, or null when the scope has none. Only the index reaches the model's context. */
+  index: string | null;
+  files: MemoryTransferFile[];
+}
+
+/**
+ * What an import does with a name the target scope already holds:
+ *   - `skip` — keep what is on disk, write only names the scope does not have (destroys nothing);
+ *   - `overwrite` — replace a same-named file's content;
+ *   - `replace` — additionally delete every topic file the document does not carry.
+ * The two destructive modes require `confirm`.
+ */
+export type MemoryImportMode = "skip" | "overwrite" | "replace";
+
+/** POST …/memory/scopes/:key/import */
+export interface MemoryImportRequest {
+  /** Defaults to `skip`. */
+  mode?: MemoryImportMode;
+  /** Required by `overwrite` and `replace`; without it they are refused with 409 `memory_import_confirm_required`. */
+  confirm?: boolean;
+  payload: MemoryScopeExport;
+}
+
+/** What one import did, name by name, so the UI can report it rather than claim success. */
+export interface MemoryImportResponse {
+  scopeKey: string;
+  mode: MemoryImportMode;
+  /** Names written that the scope did not have. */
+  added: string[];
+  /** Names whose existing content was replaced. */
+  overwritten: string[];
+  /** Names left untouched because the scope already had them (`skip` only). */
+  skipped: string[];
+  /** Names deleted because `replace` dropped everything the document did not carry. */
+  removed: string[];
+  /** Whether the scope's `MEMORY.md` was written or extended. */
+  indexWritten: boolean;
 }
 
 // ---------------------------------------------------------------------------

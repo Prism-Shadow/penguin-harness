@@ -154,6 +154,11 @@ export interface BuildDepsOverrides {
   titles?: TitleNotifier;
   /** Test double: update-check service with a stubbed fetch/clock (avoids real network calls). */
   updateCheck?: UpdateCheckService;
+  /**
+   * Test double: scrypt work factor for password hashes written through this app.
+   * Omitted in production, where the KDF runs at full strength.
+   */
+  passwordHashCost?: number;
   log?: (line: string) => void;
   now?: () => Date;
 }
@@ -297,6 +302,9 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     onPasswordChanged,
     sessionTtlMs: config.authSessionTtlMs,
     sessionRenewMs: config.authSessionRenewMs,
+    ...(overrides.passwordHashCost !== undefined
+      ? { passwordHashCost: overrides.passwordHashCost }
+      : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const adminService = new AdminService({
@@ -305,6 +313,9 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     projects: projectsRepo,
     projectService,
     onPasswordChanged,
+    ...(overrides.passwordHashCost !== undefined
+      ? { passwordHashCost: overrides.passwordHashCost }
+      : {}),
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   const sessionService = new SessionService({
