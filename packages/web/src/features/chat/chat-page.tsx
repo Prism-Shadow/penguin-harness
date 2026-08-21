@@ -110,6 +110,7 @@ import { DockPanel } from "../dock/dock-panel";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 import { adoptDockScope } from "../dock/dock-state";
+import { setDockCwd } from "../dock/dock-terminal";
 import {
   dockViews,
   dockVersion,
@@ -370,6 +371,17 @@ export function ChatPage() {
   const parkedDraftId = parkedDraftIdOf(routeSessionId);
   const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
   const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
+  // New shells start in this conversation's Workspace — its files are what a terminal
+  // opened here is for. While drafting, the Workspace is the one picked in the draft and
+  // DraftView publishes it instead (a child effect runs before this one, so this must
+  // yield rather than clobber it with null). Leaving the chat for another page keeps the
+  // last conversation's Workspace: it is a better default than home for the hotkey,
+  // which stays live everywhere.
+  useEffect(() => {
+    if (draft) return;
+    setDockCwd(selected?.workspace ?? null);
+  }, [draft, selected?.workspace]);
+
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
     ? { provider: selected.provider, modelId: selected.modelId }

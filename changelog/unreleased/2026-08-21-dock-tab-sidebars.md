@@ -41,6 +41,9 @@ the drawers.
 - Ctrl+` walks the conversation's terminal states: front when a panel covers it, hide
   when shown, restore — or adopt/create a shell when no terminal tab exists here. A
   failed shell create surfaces as an error toast.
+- A shell opened from a dock starts in the conversation's Workspace (the Workspace picked
+  in the draft, while drafting); a Workspace the server rejects falls back to the home
+  directory rather than leaving the user with no terminal.
 - Opening and closing a dock animates (a 200ms slide, contents pinned at their settled
   size so nothing reflows mid-transition); cross-dock moves and conversation switches
   apply instantly. The bottom surface's picker lays its choices out in a row, the right

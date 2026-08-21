@@ -23,21 +23,50 @@ import {
   type DockPosition,
 } from "./dock-state";
 
-/** The dock always opens new shells in the home directory (project cwd can come later). */
-const DOCK_CWD = "~";
+/** Where a new shell starts when no Workspace is known: the user's home directory. */
+const HOME_CWD = "~";
 
 /**
- * Creates a fresh shell and tabs it into `position` (the bottom dock by default).
+ * The Workspace a new shell should start in — the conversation's own directory, which is
+ * where its files are and what the agent has been working in. Published by the surface
+ * that knows it (the chat page for a Session, the draft page for the Workspace picked
+ * there) rather than read from a store, because the Ctrl+` hotkey creates shells from a
+ * module-scope listener with no React context to consult. Null = none known; the shell
+ * falls back to home.
+ */
+let workspaceCwd: string | null = null;
+
+/** Points new shells at this absolute Workspace path; null restores the home default. */
+export function setDockCwd(path: string | null): void {
+  workspaceCwd = path !== null && path.trim() !== "" ? path : null;
+}
+
+/** A rejected working directory (gone, replaced by a file, relative) — see resolveCwd server-side. */
+function isBadCwd(err: unknown): boolean {
+  return err instanceof HttpStatusError && err.status === 400 && err.message.includes("cwd_not_");
+}
+
+/**
+ * Creates a fresh shell and tabs it into `position` (the bottom dock by default). The
+ * shell starts in the current Workspace; a Workspace the server rejects (deleted since,
+ * or a path this server cannot see) falls back to home rather than leaving the user with
+ * no terminal at all.
  * Failures surface as a toast — with no tab created there is no surface of its own to
  * carry the error, and a swallowed create looks like nothing happened, which is exactly
  * how a server-side spawn failure used to present.
  */
 export async function createShellInDock(position?: DockPosition): Promise<void> {
+  const create = (cwd: string): Promise<TerminalInfo> =>
+    fetchJson<TerminalInfo>("/api/terminals", { method: "POST", body: JSON.stringify({ cwd }) });
   try {
-    const created = await fetchJson<TerminalInfo>("/api/terminals", {
-      method: "POST",
-      body: JSON.stringify({ cwd: DOCK_CWD }),
-    });
+    let created: TerminalInfo;
+    try {
+      created = await create(workspaceCwd ?? HOME_CWD);
+    } catch (err) {
+      if (workspaceCwd === null || !isBadCwd(err)) throw err;
+      console.warn(`[terminal] Workspace unusable as cwd, opening in ${HOME_CWD}:`, err);
+      created = await create(HOME_CWD);
+    }
     noteTerminalCreated(created);
     addTerminalTab(created.id, position);
   } catch (err) {

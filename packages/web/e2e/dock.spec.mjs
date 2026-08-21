@@ -13,6 +13,7 @@
  *   onto the drop targets;
  * - the arrangement is PER CONVERSATION (each one manages its own tabs, browser-window
  *   style) and survives a reload; the bottom dock's height ratio is a global preference;
+ * - a new shell starts in the conversation's Workspace, not the home directory;
  * - "Detach" hands the terminal off to /terminal?id=… in a new window and its tab leaves;
  * - a failed shell create surfaces as an error toast instead of silence.
  */
@@ -395,6 +396,37 @@ test("each conversation manages its own tabs: nothing leaks, and each side survi
   ).toBeVisible();
   await waitForShell(page, "STILL_SAME_SHELL");
   await expect(page.locator('[data-tab-id="memory"]')).toHaveCount(0);
+  await killAllTerminals(page.request);
+});
+
+test("a new shell starts in the conversation's Workspace, not at home", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  await killAllTerminals(page.request);
+  const res = await page.request.post(
+    `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,
+    { data: { provider: "custom", modelId: "claude-4-8" } },
+  );
+  expect(res.ok(), "create session").toBeTruthy();
+  const session = (await res.json()).session;
+  // The Workspace directory exists from session creation (a temp one is mkdir'd then),
+  // so the shell can really start there. Compared by directory NAME: the server resolves
+  // the path's realpath, which can differ from the reported one by a symlinked prefix.
+  const dirName = session.workspace.split(/[/\\]/).filter(Boolean).pop();
+
+  await page.goto(`${BASE}/chat/${session.sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+  await page.keyboard.press("Control+Backquote");
+  await expect(dockAt(page, "bottom")).toBeVisible({ timeout: 20000 });
+  await waitForShell(page, "WS_CWD");
+
+  await runInTerminal(page, "pwd");
+  await expect.poll(() => screenText(page), { timeout: 20000 }).toContain(dirName);
+  // The server names the shell after its directory, so the tab says where it opened.
+  const { terminals } = await (await page.request.get(`${BASE}/api/terminals`)).json();
+  expect(terminals.filter((t) => t.alive).map((t) => t.cwd.split(/[/\\]/).pop())).toContain(
+    dirName,
+  );
   await killAllTerminals(page.request);
 });
 
