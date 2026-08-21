@@ -51,12 +51,10 @@ Rules:
 
 ## Explanatory text: semantics disclose, formatting stays
 
-Two kinds of prose, and the split decides where each goes.
+Two kinds of prose, and the split decides *whether* it is disclosed.
 
 - **Semantics** — what a section is, what a field means, what it affects, when a change takes
-  effect. Read once, then in the way forever. Put it behind `InfoPopover`
-  (`components/ui/info-popover.tsx`): a circled "?" anchored on the section title, or on the field
-  label via `Field`/`Input`/`Textarea`/`PasswordInput`'s `info` prop.
+  effect. Read once, then in the way forever. It is disclosed on request.
 - **Formatting** — the shape the value must take: "one `KEY=value` per line", "one argument per
   line", "leave empty for unlimited", allowed characters, a `k`/`m` suffix. Read *while typing*.
   It stays on screen, in the field's `hint`. Hiding it turns a glance into a click and raises the
@@ -67,6 +65,39 @@ split it, keep it visible — a visible sentence is never a bug, a hidden format
 
 Already-disclosed text does not move: `title=` tooltips, `OptionMenu` row descriptions, confirm
 dialog bodies (the dialog *is* the disclosure), toasts, and empty states.
+
+### Which disclosure — the "?" or the fold
+
+Two forms, and **a title decides between them, not taste**:
+
+> **The circled "?" may only appear beside a title. It must never stand alone on its own line.
+> Where it would stand alone, use the fold.**
+
+- **A title is present** → `InfoPopover` (`components/ui/info-popover.tsx`). A circled "?"
+  immediately after the section heading, the table column header, or the field label — the last of
+  those via `Field`/`Input`/`Textarea`/`PasswordInput`'s `info` prop. The "?" is an *anchored*
+  mark: it reads as help only because it modifies the title it sits against, and it borrows that
+  title's meaning instead of restating it.
+- **No title on the surface** → `HelpFold` (`components/ui/help-fold.tsx`). A compact row that
+  names itself and expands its explanation inline underneath. This is the Agent settings tabs:
+  their name lives in the tab bar and the panel does not repeat it, so a "?" at the top of the
+  panel would be a mark modifying nothing. A neighbouring `<Button>` does not rescue it — a
+  control is not a title.
+
+The fold is **not** a popover in another shape: it is inline flow, so it takes no portal. Do not
+reach for `usePortalPanel` there for symmetry — that hook exists to keep a *floating* panel clear
+of an ancestor's overflow and to close it on outside click, Esc or scroll, and a fold does none of
+those things. It follows the WAI-ARIA disclosure pattern instead: the panel stays in the DOM and
+is `hidden` while collapsed, so its `aria-controls` always resolves.
+
+Both are collapsed by default, both are real `<button>`s with `aria-expanded` and `aria-controls`,
+and both fold the subject into the accessible name ("More info: Vault") rather than repeating it,
+so a "?" inside a heading does not make that heading announce its own title twice. The fold's
+visible text is a prefix of that name, so "label in name" holds.
+
+`test/disclosure-anchor.test.ts` enforces the rule: it parses the real JSX with the TypeScript
+parser and fails, naming file and line, on any `InfoPopover` with no title among its preceding
+siblings. Extend `TITLE_ELEMENTS` there if you add a component whose job is to be a title.
 
 **The HTML trap this forces.** A `<button>` is a labelable element, and a wrapping `<label>` names
 its first labelable descendant — so a "?" nested inside `Field`'s usual `<label>` would silently

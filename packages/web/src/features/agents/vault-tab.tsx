@@ -27,7 +27,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
-import { InfoPopover } from "../../components/ui/info-popover";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** Vault key naming rule (consistent with core/server): shell environment variable name. */
 const VAULT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -160,11 +160,12 @@ export function VaultTab({
   return (
     <div className="space-y-4">
       {/* What the vault is and when a value takes effect is read once and then in the way; the
-          table below is what the tab is for, so the prose lives behind the "?". */}
-      <InfoPopover label={S.agent.tabVault}>
+          table below is what the tab is for. The panel repeats no title — the tab bar carries it —
+          so the disclosure names itself instead of hanging a "?" off nothing. */}
+      <HelpFold label={S.agent.tabVault}>
         {S.vault.desc}
         {!isOwner && <span className="mt-1.5 block">{S.vault.readOnlyHint}</span>}
-      </InfoPopover>
+      </HelpFold>
 
       {toggleCard}
       {alertStrip}

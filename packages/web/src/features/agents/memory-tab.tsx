@@ -45,6 +45,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import { toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {
@@ -456,7 +457,8 @@ export function MemoryTab({
 
   return (
     <div className="space-y-5">
-      <InfoPopover label={S.agent.tabMemory}>{S.memory.desc}</InfoPopover>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>

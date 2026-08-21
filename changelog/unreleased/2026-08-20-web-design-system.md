@@ -38,16 +38,25 @@ size.
   tints are identities, not judgements, and must stay free to add a hue without it reading as a
   new severity.
 
-## Explanations behind a "?"
+## Explanations disclosed on request
+
+Two forms, and a title decides which a surface gets: the circled "?" only ever appears beside a
+title, and where there is no title the explanation names itself in a fold instead.
 
 - New `components/ui/info-popover.tsx`: a circled "?" whose panel is portaled and positioned by the
   shared `usePortalPanel`, so it is not clipped by an ancestor's overflow and closes on outside
   click, Esc, scroll or resize. The trigger is a real button with an accessible name and points at
   the panel it opens; while open the panel is also the trigger's description.
-- Paragraph-level section and tab descriptions moved behind it: the Vault, Memory, Schedules and
-  Skills tabs, the skill library page, the models page's read-only notice, the MCP servers section,
-  the Agent State transfer section, the tools table's `call_description` column, the four
-  placeholder prompt sections, and the Project dialog's new-chat defaults block.
+- New `components/ui/help-fold.tsx`: a compact self-naming row that expands its explanation inline
+  underneath, rotating the app's one collapse chevron. Inline flow, so no portal — it follows the
+  WAI-ARIA disclosure pattern, keeping the panel in the DOM and `hidden` while collapsed so its
+  `aria-controls` always resolves.
+- Section descriptions with a title of their own took the "?": the skill library page, the models
+  page's read-only notice, the MCP servers section, the Agent State transfer section, the tools
+  table's `call_description` column, the four placeholder prompt sections, and the Project dialog's
+  new-chat defaults block.
+- The four Agent settings tabs — Vault, Memory, Schedules, Skills — took the fold. Their name lives
+  in the tab bar and the panel does not repeat it, so there is nothing for a "?" to anchor to.
 - Field hints that explain *semantics* moved to a "?" beside their label — the per-request timeout,
   the two compaction thresholds, the model-group protocol note, the new-chat default model's
   provenance, and where the built-in admin's initial password is printed.
@@ -57,6 +66,9 @@ size.
 - `Field`, `Input`, `Textarea` and `PasswordInput` take an `info` prop for this. With it, the field
   associates its title by `htmlFor` instead of wrapping the control in a `<label>`: a button is a
   labelable element, so a nested trigger would take the title away from the input.
+- `test/disclosure-anchor.test.ts` enforces the anchoring rule by parsing the JSX with the
+  TypeScript parser: it fails, naming file and line, on any `InfoPopover` with no title among its
+  preceding siblings — a comment or a neighbouring `<Button>` does not count as one.
 
 ## One icon family
 
