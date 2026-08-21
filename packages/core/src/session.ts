@@ -776,6 +776,11 @@ export class Session {
     return this.pendingNotices.splice(0);
   }
 
+  /** Whether completion notices are still queued (hosts use it to keep a Session's runtime entry alive until they are delivered). */
+  hasPendingBackgroundNotices(): boolean {
+    return this.pendingNotices.length > 0;
+  }
+
   /**
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web

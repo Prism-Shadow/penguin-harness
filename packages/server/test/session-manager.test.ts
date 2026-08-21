@@ -8,23 +8,37 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
+  Environment,
+  Session,
   abortEvent,
   approvalDecision,
   assistantText,
   compactionBegin,
   compactionEnd,
+  emptyTokenCounts,
   requestBegin,
   requestEnd,
   sessionMeta,
   thinkingMessage,
+  tokenUsage,
   toolCall,
   toolCallOutput,
   userSteeringText,
   userText,
   withOrigin,
 } from "@prismshadow/penguin-core";
-import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
+import type {
+  ApproveFn,
+  GenerativeModelParameters,
+  LLMInterface,
+  LLMOutcome,
+  OmniMessage,
+  TextPayload,
+} from "@prismshadow/penguin-core";
 import { openDatabase } from "../src/db/database.js";
 import { HttpError } from "../src/http/errors.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
@@ -328,6 +342,107 @@ describe("session-manager", () => {
     noticeCb!();
     await new Promise((r) => setTimeout(r, 50));
     expect(runInputs).toHaveLength(2);
+  });
+
+  it("end-to-end: a run_in_background command finishing after idle reaches the event channel as a harness user message", async () => {
+    // Full production chain with the REAL core pieces — Session, engine, Environment and an
+    // actual OS process — under the real SessionManager (loaded via the loader, which is
+    // what registers the notice listener). Only the LLM is scripted. This is the frontend's
+    // exact feed: the channel events asserted on are what SSE relays byte-for-byte.
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bge2e-"));
+    const environment = new Environment({
+      workspaceDir: dir,
+      toolConfig: {
+        customTools: [
+          {
+            name: "exec_command",
+            description: "run",
+            permission: "rw",
+            timeoutMs: 120000,
+            maxOutputLength: 16000,
+          },
+        ],
+        mcpServers: [],
+      },
+    });
+    // Turn 1: launch a command that outlives the task; turn 2: final reply (task ends,
+    // session idle, process still running); turn 3 is the auto-started notice task.
+    const llm = new (class implements LLMInterface {
+      calls = 0;
+      inputs: OmniMessage[][] = [];
+      async *streamGenerate(
+        params: GenerativeModelParameters,
+      ): AsyncGenerator<OmniMessage, LLMOutcome> {
+        this.calls += 1;
+        this.inputs.push(params.newMessages);
+        if (this.calls === 1) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({
+              cmd: "printf 'serving'; sleep 1",
+              run_in_background: true,
+            }),
+            toolCallId: "tc_bg",
+            stopReason: "completed",
+          });
+        } else {
+          yield assistantText(`reply ${this.calls}`);
+        }
+        yield tokenUsage(emptyTokenCounts(), {
+          cache_read: 0,
+          cache_write: 0,
+          output: 1,
+          total: 2,
+        });
+        return { status: "completed" };
+      }
+    })();
+    const session = new Session({
+      meta: {
+        session_id: "session-1",
+        provider: "custom",
+        model_id: "m1",
+        model_context_window: 100000,
+        system_prompt: "sp",
+        agent_state: dir,
+        workspace: dir,
+      },
+      bootstrap: async () => ({ tools: await environment.listTools(), llm, mcp: [] }),
+      mcpServers: [],
+      environment,
+      imagesDir: path.join(dir, "images"),
+      modelHasVision: true,
+    });
+    try {
+      const manager = makeManager(loaderOf(session as unknown as RuntimeSession));
+      const events = capture("session-1");
+      await manager.startTask("session-1", [userText("start a dev server")]);
+      await waitFor(() => manager.statusOf("session-1") === "idle" && llm.calls === 2, 5000);
+      // The task is over, the background process is still alive, and no notice exists yet —
+      // what follows is genuinely the idle-arrival path.
+      expect(events.some((e) => e.data.includes("background_task_done"))).toBe(false);
+
+      // The process exits ~1s in: the completion report must land on the channel as a
+      // harness user message and auto-start a task the model answers.
+      await waitFor(() => events.some((e) => e.data.includes("background_task_done")), 8000);
+      const notice = events.find((e) => e.data.includes("background_task_done"))!;
+      expect(notice.data).toContain('"sender":"harness"');
+      expect(notice.data).toContain('"role":"user"');
+      expect(notice.data).toContain("serving");
+      await waitFor(() => llm.calls === 3 && manager.statusOf("session-1") === "idle", 5000);
+      const turn3 = llm.inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
+      expect(turn3.join("\n")).toContain("[background_task_done]");
+      // The auto task's state flips were broadcast too (the frontend's input gating):
+      // one running per task, so the notice task makes it at least two.
+      const running = events.filter(
+        (e) => e.data.includes('"type":"task_state"') && e.data.includes('"state":"running"'),
+      );
+      expect(running.length).toBeGreaterThan(1);
+    } finally {
+      session.dispose();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("a level pinned on the Session applies to later Tasks that carry none (a request's own level still wins)", async () => {

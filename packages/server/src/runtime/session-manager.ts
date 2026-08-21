@@ -149,6 +149,8 @@ export interface RuntimeSession {
   onBackgroundNotice?(listener: () => void): void;
   /** Takes the queued background completion notices as task input (core `Session.takeBackgroundNotices`). Optional, like onBackgroundNotice. */
   takeBackgroundNotices?(): OmniMessage[];
+  /** Whether completion notices are still queued (core `Session.hasPendingBackgroundNotices`); pins the entry against idle eviction. Optional, like onBackgroundNotice. */
+  hasPendingBackgroundNotices?(): boolean;
   /** Refreshes the listen-port probes behind the process list's `serviceUrl` (core `Session.probeBackgroundCommandServices`). Optional: test fakes may omit it. */
   probeBackgroundCommandServices?(): Promise<void>;
   /** Background command processes owned by the Session's environment (core `Session.listBackgroundCommands`). Optional: test fakes may omit it. */
@@ -1299,6 +1301,9 @@ export class SessionManager {
       // environment, so the process list and its stop control would go blind while the
       // OS process kept running. Exited-but-listed processes don't pin anything.
       if (entry.session.listBackgroundCommands?.().some((p) => p.running)) continue;
+      // Undelivered background completion notices pin the entry too: they live in the core
+      // Session object, so evicting it would silently drop them.
+      if (entry.session.hasPendingBackgroundNotices?.()) continue;
       if (now - entry.lastActivityMs <= idleMs) continue;
       this.entries.delete(key);
     }
@@ -1439,7 +1444,17 @@ export class SessionManager {
         const row = this.deps.sessions.findById(sessionId);
         if (row && this.deletingAgents.has(agentKey(row.projectId, row.agentId))) return;
         const entry = this.entries.get(sessionId);
-        if (!entry || entry.status !== "idle" || entry.followUps.length > 0) return;
+        if (!entry) {
+          // The runtime entry left the active table between the signal and this lock —
+          // the queued notices left with the released Session object. Say so instead of
+          // dropping the report invisibly (the sweep pins entries with pending notices,
+          // so this is a genuine anomaly worth a trace in the log).
+          this.log(`[background] notice for ${sessionId} dropped: runtime entry not loaded`);
+          return;
+        }
+        // Busy or queued-behind: not a loss — the running/next run's engine drains the
+        // same notice queue at its own input-assembly boundaries.
+        if (entry.status !== "idle" || entry.followUps.length > 0) return;
         const input = entry.session.takeBackgroundNotices?.() ?? [];
         if (input.length === 0) return;
         this.launchTask(entry, input);

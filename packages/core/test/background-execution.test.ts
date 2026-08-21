@@ -528,8 +528,13 @@ describe("Session background notices", () => {
     expect(parsed!.done).toMatchObject({ kind: "command", id: "proc-11aa22bb" });
     expect(parsed!.rest).toContain("`sleep 1`");
     expect(parsed!.rest).toContain("done!");
-    // Taking empties the queue.
+    // Taking empties the queue, and the pending flag (the host's eviction pin) tracks it.
+    expect(session.hasPendingBackgroundNotices()).toBe(false);
+    fire(DONE_EVENT);
+    expect(session.hasPendingBackgroundNotices()).toBe(true);
+    session.takeBackgroundNotices();
     expect(session.takeBackgroundNotices()).toHaveLength(0);
+    expect(session.hasPendingBackgroundNotices()).toBe(false);
   });
 
   it("delivers a queued notice on the next run without a host signal for running tasks", async () => {
