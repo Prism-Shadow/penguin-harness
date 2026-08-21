@@ -853,6 +853,7 @@ export function MemoryTab({
             </p>
             <Textarea
               label={S.memory.addContentLabel}
+              required
               size="sm"
               rows={4}
               value={addContent}

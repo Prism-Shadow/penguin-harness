@@ -112,6 +112,7 @@ export function UploadsSection() {
     >
       <Input
         label={S.settings.attachmentMaxMb}
+        required
         size="sm"
         type="number"
         inputMode="numeric"
@@ -130,6 +131,7 @@ export function UploadsSection() {
       />
       <Input
         label={S.settings.attachmentTotalMb}
+        required
         size="sm"
         type="number"
         inputMode="numeric"

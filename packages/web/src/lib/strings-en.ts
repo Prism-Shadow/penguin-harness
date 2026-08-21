@@ -293,9 +293,9 @@ export const en: Strings = {
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
     idPrefixHint:
       "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
-    name: "Display name (optional, defaults to the Project id)",
-    /** The display-name field in Project settings (required there, unlike the create dialog's optional one). */
     displayName: "Display name",
+    /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
+    displayNameHint: "Leave empty to use the Project id as the name",
     settings: "Project settings",
     settingsTitle: "Project settings",
     members: "Members",
@@ -334,7 +334,7 @@ export const en: Strings = {
     commandPolicyOff: "Disabled",
     commandPolicyRuleName: "Name",
     commandPolicyRulePattern: "Regular expression",
-    commandPolicyRuleDesc: "Description (optional)",
+    commandPolicyRuleDesc: "Description",
     commandPolicyInvalidPattern: "Invalid regular expression",
     deleteProject: "Delete Project",
     deleteConfirm:
@@ -946,7 +946,7 @@ export const en: Strings = {
     prompt: "Prompt",
     enabled: "Enabled",
     startAt: "Start at",
-    endAt: "End at (optional)",
+    endAt: "End at",
     period: "Period",
     periodPlaceholder: "30m / 12h / 7d; leave empty for a one-off task",
     target: "Target",
@@ -958,7 +958,8 @@ export const en: Strings = {
     sessionSearch: "Search title or Session id…",
     sessionNoMatch: "No matching Session",
     sessionEmpty: "This agent has no Sessions yet",
-    workspace: "Workspace (optional; a temporary workspace is created when empty)",
+    workspace: "Workspace",
+    workspaceHint: "Empty = a temporary workspace is created",
     model: "Model",
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
