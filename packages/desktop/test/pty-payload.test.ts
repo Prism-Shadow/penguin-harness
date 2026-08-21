@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   NODE_PTY_RELDIR,
+  hostBinding,
   nativeBindings,
   shipsNodePtyFile,
   stageNodePty,
@@ -38,6 +39,7 @@ function fakeNodePty(root: string): void {
   write("prebuilds/win32-x64/winpty.lib");
   write("prebuilds/win32-x64/conpty/OpenConsole.exe");
   write("src/unixTerminal.ts");
+  write("deps/winpty/LICENSE");
   write("deps/winpty/README.md");
   write("scripts/post-install.js");
   write("third_party/notice.txt");
@@ -45,7 +47,7 @@ function fakeNodePty(root: string): void {
 }
 
 describe("shipsNodePtyFile", () => {
-  it("keeps the manifest the require lands on, the license, the JavaScript and the binaries", () => {
+  it("keeps the manifest the require lands on, both licenses, the JavaScript and the binaries", () => {
     for (const rel of [
       "package.json",
       "LICENSE",
@@ -55,6 +57,7 @@ describe("shipsNodePtyFile", () => {
       "build/Release/spawn-helper",
       "prebuilds/darwin-arm64/pty.node",
       "prebuilds/win32-x64/conpty/OpenConsole.exe",
+      "deps/winpty/LICENSE",
     ]) {
       expect(shipsNodePtyFile(rel), rel).toBe(true);
     }
@@ -101,6 +104,7 @@ describe("stageNodePty", () => {
       "LICENSE",
       "build/Release/pty.node",
       "build/Release/spawn-helper",
+      "deps/winpty/LICENSE",
       "lib/index.js",
       "lib/worker/conoutSocketWorker.js",
       "package.json",
@@ -113,7 +117,7 @@ describe("stageNodePty", () => {
       expect(fs.existsSync(path.join(dest, ...rel.split("/"))), rel).toBe(true);
     }
     expect(fs.existsSync(path.join(dest, "src"))).toBe(false);
-    expect(fs.existsSync(path.join(dest, "deps"))).toBe(false);
+    expect(fs.existsSync(path.join(dest, "deps", "winpty", "README.md"))).toBe(false);
     expect(fs.existsSync(path.join(dest, "build", "Debug"))).toBe(false);
   });
 
@@ -153,6 +157,28 @@ describe("stageNodePty", () => {
       "prebuilds/win32-x64/pty.node",
     ]);
     expect(nativeBindings(["package.json", "lib/index.js"])).toEqual([]);
+  });
+});
+
+describe("hostBinding", () => {
+  const staged = [
+    "build/Release/pty.node",
+    "prebuilds/darwin-arm64/pty.node",
+    "prebuilds/win32-x64/pty.node",
+  ];
+
+  it("prefers the node-gyp build, then the platform prebuild — node-pty's own order", () => {
+    expect(hostBinding(staged, "linux", "x64")).toBe("build/Release/pty.node");
+    expect(hostBinding(staged.slice(1), "darwin", "arm64")).toBe("prebuilds/darwin-arm64/pty.node");
+    expect(hostBinding(staged.slice(1), "win32", "x64")).toBe("prebuilds/win32-x64/pty.node");
+  });
+
+  it("rejects a copy carrying only other platforms' bindings, which the count alone accepts", () => {
+    const prebuiltOnly = staged.slice(1);
+
+    expect(nativeBindings(prebuiltOnly)).toHaveLength(2);
+    expect(hostBinding(prebuiltOnly, "linux", "x64")).toBeUndefined();
+    expect(hostBinding(prebuiltOnly, "darwin", "x64")).toBeUndefined();
   });
 });
 

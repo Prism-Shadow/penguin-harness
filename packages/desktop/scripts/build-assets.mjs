@@ -60,14 +60,17 @@ try {
   console.error("[build-assets] node-pty is not installed — run `pnpm install` at the repo root.");
   process.exit(1);
 }
-const { stageNodePty, nativeBindings, NODE_PTY_RELDIR } = await import(
+const { stageNodePty, nativeBindings, hostBinding, NODE_PTY_RELDIR } = await import(
   pathToFileURL(path.join(distDir, "pty-payload.js")).href
 );
 const ptyFiles = stageNodePty(ptySrc, path.join(pkgDir, ...NODE_PTY_RELDIR));
 const bindings = nativeBindings(ptyFiles);
-if (bindings.length === 0) {
+// A pty.node for some other platform is not a payload: node-pty prebuilds darwin and win32,
+// so a Linux install whose node-gyp step was skipped still stages three of them.
+if (hostBinding(ptyFiles) === undefined) {
+  const carried = bindings.length === 0 ? "none at all" : `only ${bindings.join(", ")}`;
   console.error(
-    `[build-assets] the node-pty install at ${ptySrc} has no pty.node — reinstall it (pnpm-workspace.yaml allows its build script).`,
+    `[build-assets] the node-pty install at ${ptySrc} has no pty.node for ${process.platform}-${process.arch} (${carried}) — reinstall it so its build script runs (pnpm-workspace.yaml allows it).`,
   );
   process.exit(1);
 }

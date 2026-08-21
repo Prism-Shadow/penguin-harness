@@ -34,11 +34,11 @@ directories:
 files:
   - dist/**/*
   - "!dist/**/*.map"
-  # The staged node-pty package (scripts/build-assets.mjs, src/pty-payload.ts). Listing it
-  # explicitly is load-bearing twice over: electron-builder appends `!**/node_modules/**` to
-  # this list unless some non-negated pattern names node_modules, and when one does it
-  # inserts that exclusion BEFORE it — last match wins, so the app's only node_modules
-  # survives while nothing else can sneak one in.
+  # The staged node-pty package (scripts/build-assets.mjs, src/pty-payload.ts). electron-builder
+  # adds a `!**/node_modules/**` of its own: at the head of this list when no non-negated
+  # pattern names node_modules, or immediately BEFORE the first one that does. Naming it here
+  # is what moves that exclusion behind `dist/**/*` — last match wins, so this one node_modules
+  # ships and any other that appears under dist/ does not.
   - dist/node_modules/**/*
   - bin/**/*
   - skills/**/*
