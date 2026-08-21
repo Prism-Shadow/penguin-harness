@@ -13,13 +13,8 @@
  *   single-writer; the ServerConfig object — the listen callback writes the real port
  *   back into it and every reader must observe that write).
  *
- * A host that publishes none of this can build no business surface — the capability being
- * absent IS the signal. What the platform does with that signal depends on who is asking:
- * a bare kernel says so ({@link BARE_KERNEL_RESOURCE_ID}) and gets a terminals-only App,
- * while anything else is REFUSED (../hmr/platform.ts's create). A runtime too old to
- * publish capabilities is not a bare kernel: it still answers the business API out of its
- * own older routes, so a terminals-only App there would leave a freshly pushed frontend
- * talking to the previous version's API — one atomic push landing as half a version.
+ * What a booting platform does when the capabilities are missing or wrong — refuse, or
+ * run terminals-only for a declared bare kernel — is {@link RuntimeClaim}'s story, below.
  *
  * There is no reverse direction here: the runtime reaches the current App through the
  * instance `hmr.ensure()` already returns (in-process api members), never through the

@@ -127,33 +127,20 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
 };
 
 /**
- * How long a swap waits for aborted work to actually end (the successor awaits this via
- * PLATFORM_DRAIN_RESOURCE_ID). A cap, not a sleep: the drain resolves the moment the last
- * aborted run settles. Matches the process-exit grace, because "the old App is gone"
- * should mean the same thing on both paths.
+ * How long a swap or a process exit waits for aborted work to actually end (the kernel
+ * awaits api.drained() between dispose and the successor's boot). A cap, not a sleep: the
+ * drain resolves the moment the last aborted run settles.
  */
-const SWAP_DRAIN_MS = 5000;
+const DRAIN_GRACE_MS = 5000;
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
-    // The capability claim comes FIRST, before a single registry read is acted on, and a
-    // shortfall is a REFUSAL — not a degradation — unless the host declared itself a bare
-    // kernel. A platform that cannot claim the capabilities can only serve terminals, and a
-    // runtime old enough to publish none still answers the business API out of its own
-    // routes: the seam would hand /api/me back to the OLD build while the SAME push's web
-    // dist is already being served, so one atomic push lands as half a version and the
-    // browser crashes on a field the older API does not carry. The runtime already treats
-    // this as fatal when it starts (app.ts's bootAppDeps: "the packaged platform built no
-    // business surface"); making it fatal here too means a hot upgrade cannot land what a
-    // fresh start would refuse. It has to be HERE rather than in the runtime to be any use:
-    // the check travels inside the bundle, so it also protects installations whose runtime
-    // is already too old for any push to fix. Failing this early costs the operator nothing
-    // beyond an error — doUpgradeAll rolls the whole upgrade back (old instance keeps
-    // serving, the web is not committed, nothing is persisted). What it cannot undo is a
-    // half version committed BEFORE this check existed: that bundle carries no check, so a
-    // restart restores it degraded again — repairing such a machine means updating the
-    // installation (the committed bundle then claims successfully and serves whole) or
-    // clearing <root>/hmr/harness.json to fall back to the packaged default.
+    // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
+    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
+    // The check sits HERE, in the bundle, because the runtime that needs it is by
+    // definition too old to receive it; failing this early costs nothing — doUpgradeAll
+    // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
+    // would refuse (bootAppDeps treats a business-less platform as fatal too).
     const claim = claimRuntimeCapabilities(ctx.resources);
     if (claim.kind === "refused") {
       throw new Error(
@@ -268,7 +255,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        drains.push(business.manager.shutdown(SWAP_DRAIN_MS));
+        drains.push(business.manager.shutdown(DRAIN_GRACE_MS));
       }
       drained = Promise.allSettled(drains).then(() => undefined);
     });
@@ -293,7 +280,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
       // effect cannot await — exposed for index.ts's shutdown to call before disposing.
       shutdown: async () => {
-        if (business !== null) await business.manager.shutdown(5000);
+        if (business !== null) await business.manager.shutdown(DRAIN_GRACE_MS);
       },
       drained: () => drained,
     };
