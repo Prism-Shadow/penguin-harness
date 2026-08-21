@@ -606,9 +606,10 @@ export class ProjectConfigService {
    * and request failures collapse into `{ ok:false, message }`, an AgentHub
    * UnsupportedOperationError additionally sets `unsupported` so the dialog can point at
    * the manual path, and a listing that outlives LIST_MODELS_TIMEOUT_MS is reported as
-   * timed out (the abandoned promise is dropped — the SDK's own timeout bounds the
-   * socket). The listing is returned verbatim; dedup against the config is the caller's
-   * policy, exactly like the probe routes never write anything either.
+   * timed out. Nothing cancels the request behind it: the race only stops waiting, and a
+   * later rejection is already handled by the race itself. The listing is returned
+   * verbatim; dedup against the config is the caller's policy, exactly like the probe
+   * routes never write anything either.
    */
   async listEndpointModels(
     req: EndpointModelListRequest,
