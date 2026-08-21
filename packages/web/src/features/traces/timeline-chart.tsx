@@ -8,7 +8,9 @@
  *   leave large gaps if sharing one axis);
  * - Bars come in only five kinds, each with a fixed color (no gray/black/white):
  *   thinking, model reply, tool-call generation (model lane), approval wait,
- *   tool-call execution (each tool gets its own row);
+ *   tool-call execution (one row per tool name; same-name calls that don't
+ *   overlap in time share the row, overlapping ones split into extra rows —
+ *   see lane-packing.ts);
  * - Highlighting is always expressed as "fade out the rest", never an outline:
  *   hovering a segment highlights just that segment (by its unique key, so
  *   adjacent segments at the same timestamp aren't highlighted together), and
@@ -20,7 +22,7 @@
  *   Premiere's timeline navigator. Scroll-wheel zoom is deliberately
  *   unsupported — to avoid accidentally changing zoom while scrolling the page.
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import type {
   TraceModelSegment,
@@ -29,6 +31,8 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
+import { packToolLanes, toolSpanBounds } from "./lane-packing";
+import type { PackedLane } from "./lane-packing";
 
 /**
  * Linked highlighting: `ts` is the anchor shared by both sides; `key` /
@@ -132,11 +136,11 @@ interface PlacedSpan {
 interface TaskGroup {
   taskIndex: number;
   segs: PlacedSegment[];
-  spans: PlacedSpan[];
   others: PlacedOther[];
   t0: number;
   total: number;
-  toolNames: string[];
+  /** Tool rows after lane packing: one row per (name, lane), same-name lanes adjacent. */
+  toolRows: PackedLane<PlacedSpan>[];
 }
 
 /** A placed "other" bar (non-tool auxiliary phase, e.g. MCP connect): one lane per span. */
@@ -232,8 +236,8 @@ function buildGroups(
     const total = Math.max(1, tEnd - t0);
     spans.sort((a, b) => a.callMs - b.callMs);
     others.sort((a, b) => a.startMs - b.startMs);
-    const toolNames = [...new Set(spans.map((s) => s.name))];
-    groups.push({ taskIndex, segs, spans, others, t0, total, toolNames });
+    const toolRows = packToolLanes(spans.map((s) => ({ ...s, ...toolSpanBounds(s, t0 + total) })));
+    groups.push({ taskIndex, segs, others, t0, total, toolRows });
   }
   return groups;
 }
@@ -341,12 +345,16 @@ export function TimelineChart({
     };
     for (const g of groups) {
       g.segs.forEach((s, i) => put(s.ts, `s-${g.taskIndex}-${i}`));
-      for (const s of g.spans) {
-        if (s.approvalMs !== null && s.approvalMs > s.callMs) {
-          put(s.approvalTsRaw ?? s.callTs, `w-${s.toolCallId}`);
+      // Walked row by row, so "first bar at this timestamp" stays the topmost
+      // one on screen — packing reorders tool bars relative to their call order.
+      for (const row of g.toolRows) {
+        for (const s of row.spans) {
+          if (s.approvalMs !== null && s.approvalMs > s.callMs) {
+            put(s.approvalTsRaw ?? s.callTs, `w-${s.toolCallId}`);
+          }
+          if (s.approvalMs === null && s.outputMs === null) put(s.callTs, `p-${s.toolCallId}`);
+          else put(s.outputTsRaw ?? s.callTs, `e-${s.toolCallId}`);
         }
-        if (s.approvalMs === null && s.outputMs === null) put(s.callTs, `p-${s.toolCallId}`);
-        else put(s.outputTsRaw ?? s.callTs, `e-${s.toolCallId}`);
       }
       for (const o of g.others) put(o.ts, `o-${o.key}`);
     }
@@ -592,83 +600,89 @@ export function TimelineChart({
                   })}
                 </Lane>
 
-                {/* Each tool gets its own row: approval wait → execution */}
-                {g.spans.map((s) => {
-                  const execStart = s.approvalMs ?? s.callMs;
-                  const open = s.outputMs === null;
-                  const endMs = s.outputMs ?? g.t0 + g.total;
-                  const approvalTs = s.approvalTsRaw ?? s.callTs;
-                  const execTs = s.outputTsRaw ?? s.callTs;
-                  return (
-                    <div key={s.toolCallId} className="flex items-center">
-                      <span
-                        className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
-                        title={s.name}
-                      >
-                        <span className={LABEL_TEXT}>{s.name}</span>
-                      </span>
-                      <Track>
-                        {/* Approval-wait segment (positioned exactly, flush against the execution segment) */}
-                        {s.approvalMs !== null && s.approvalMs > s.callMs && (
-                          <span
-                            onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
-                            onMouseLeave={leave}
-                            onClick={() => onJump?.(approvalTs)}
-                            title={`${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`}
-                            className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${dimClass(
-                              isActive(`w-${s.toolCallId}`),
-                              legendKey === null || legendKey === "approvalWait",
-                            )}`}
-                            style={placeExact(s.callMs, s.approvalMs, g.t0, g.total)}
-                          />
-                        )}
-                        {/* Whole-segment pulse while approval is pending / execution segment */}
-                        {s.approvalMs === null && open
-                          ? (() => {
-                              // animate-pulse's keyframes override the static opacity: the pulse animation must be removed when fading out.
-                              const dim = dimClass(
-                                isActive(`p-${s.toolCallId}`),
-                                legendKey === null || legendKey === "approvalWait",
-                              );
-                              return (
-                                <span
-                                  onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
-                                  onMouseLeave={leave}
-                                  onClick={() => onJump?.(s.callTs)}
-                                  title={`${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`}
-                                  className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${
-                                    dim || "animate-pulse"
-                                  }`}
-                                  style={placeExact(s.callMs, endMs, g.t0, g.total)}
-                                />
-                              );
-                            })()
-                          : (() => {
-                              // Fade-out and the "running" translucency share the same opacity property: fade-out takes priority to avoid the two overriding each other.
-                              const dim = dimClass(
-                                isActive(`e-${s.toolCallId}`),
-                                legendKey === null || legendKey === "exec",
-                              );
-                              const running = open && !dim;
-                              return (
-                                <span
-                                  onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
-                                  onMouseLeave={leave}
-                                  onClick={() => onJump?.(execTs)}
-                                  title={`${s.name} · ${S.traces.legendToolExec} · ${
-                                    open ? S.traces.inProgress : humanizeDuration(endMs - execStart)
-                                  }${s.failed ? ` · ${s.status}` : ""}`}
-                                  className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.exec} ${
-                                    s.failed ? "ring-1 ring-red-500" : ""
-                                  } ${running ? "animate-pulse opacity-70" : dim}`}
-                                  style={placeExact(execStart, endMs, g.t0, g.total)}
-                                />
-                              );
-                            })()}
-                      </Track>
-                    </div>
-                  );
-                })}
+                {/* Tool rows: one per (name, lane) — non-overlapping same-name calls share the row, each rendered as approval wait → execution */}
+                {g.toolRows.map((row, rowIdx) => (
+                  <div key={`${rowIdx}-${row.name}`} className="flex items-center">
+                    <span
+                      className={`${LABEL_STICKY} text-gray-500 dark:text-gray-400`}
+                      title={row.name}
+                    >
+                      <span className={LABEL_TEXT}>{row.name}</span>
+                    </span>
+                    <Track>
+                      {row.spans.map((s) => {
+                        const execStart = s.approvalMs ?? s.callMs;
+                        const open = s.outputMs === null;
+                        const endMs = s.outputMs ?? g.t0 + g.total;
+                        const approvalTs = s.approvalTsRaw ?? s.callTs;
+                        const execTs = s.outputTsRaw ?? s.callTs;
+                        return (
+                          <Fragment key={s.toolCallId}>
+                            {/* Approval-wait segment (positioned exactly, flush against the execution segment) */}
+                            {s.approvalMs !== null && s.approvalMs > s.callMs && (
+                              <span
+                                onMouseEnter={() => enter(`w-${s.toolCallId}`, approvalTs)}
+                                onMouseLeave={leave}
+                                onClick={() => onJump?.(approvalTs)}
+                                title={`${s.name} · ${S.traces.legendApprovalWait}${s.decision ? ` (${s.decision})` : ""} · ${humanizeDuration(s.approvalMs - s.callMs)}`}
+                                className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${dimClass(
+                                  isActive(`w-${s.toolCallId}`),
+                                  legendKey === null || legendKey === "approvalWait",
+                                )}`}
+                                style={placeExact(s.callMs, s.approvalMs, g.t0, g.total)}
+                              />
+                            )}
+                            {/* Whole-segment pulse while approval is pending / execution segment */}
+                            {s.approvalMs === null && open
+                              ? (() => {
+                                  // animate-pulse's keyframes override the static opacity: the pulse animation must be removed when fading out.
+                                  const dim = dimClass(
+                                    isActive(`p-${s.toolCallId}`),
+                                    legendKey === null || legendKey === "approvalWait",
+                                  );
+                                  return (
+                                    <span
+                                      onMouseEnter={() => enter(`p-${s.toolCallId}`, s.callTs)}
+                                      onMouseLeave={leave}
+                                      onClick={() => onJump?.(s.callTs)}
+                                      title={`${s.name} · ${S.traces.legendApprovalWait} · ${S.traces.inProgress}`}
+                                      className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.approvalWait} ${
+                                        dim || "animate-pulse"
+                                      }`}
+                                      style={placeExact(s.callMs, endMs, g.t0, g.total)}
+                                    />
+                                  );
+                                })()
+                              : (() => {
+                                  // Fade-out and the "running" translucency share the same opacity property: fade-out takes priority to avoid the two overriding each other.
+                                  const dim = dimClass(
+                                    isActive(`e-${s.toolCallId}`),
+                                    legendKey === null || legendKey === "exec",
+                                  );
+                                  const running = open && !dim;
+                                  return (
+                                    <span
+                                      onMouseEnter={() => enter(`e-${s.toolCallId}`, execTs)}
+                                      onMouseLeave={leave}
+                                      onClick={() => onJump?.(execTs)}
+                                      title={`${s.name} · ${S.traces.legendToolExec} · ${
+                                        open
+                                          ? S.traces.inProgress
+                                          : humanizeDuration(endMs - execStart)
+                                      }${s.failed ? ` · ${s.status}` : ""}`}
+                                      className={`absolute inset-y-0 min-w-[2px] cursor-pointer ${COLORS.exec} ${
+                                        s.failed ? "ring-1 ring-red-500" : ""
+                                      } ${running ? "animate-pulse opacity-70" : dim}`}
+                                      style={placeExact(execStart, endMs, g.t0, g.total)}
+                                    />
+                                  );
+                                })()}
+                          </Fragment>
+                        );
+                      })}
+                    </Track>
+                  </div>
+                ))}
 
                 {/* Non-tool auxiliary phases (MCP connect): one lane each, own legend category */}
                 {g.others.map((o) => {

@@ -23,7 +23,8 @@
  * `structuredContent` is serialized only when no text block was present; `isError` →
  * `stopReason: "failed"`. Permission for the frontend's read-only mode comes from the
  * spec's `readOnlyHint` annotation (`true` → `"r"`, anything else → `"rw"` — hints are
- * untrusted, so the default is the restrictive direction).
+ * untrusted, so the default is the restrictive direction), unless the entry sets an
+ * explicit `permission`, which then applies to every tool of that server.
  * Docs: /docs/tools § "MCP servers".
  */
 import {
@@ -403,8 +404,10 @@ export class McpToolProvider {
     }
     const description =
       tool.description ?? tool.title ?? `MCP tool "${tool.name}" on server "${conn.server.name}".`;
-    // readOnlyHint is an untrusted hint: only an explicit true relaxes to "r".
-    const permission: ToolPermission = tool.annotations?.readOnlyHint === true ? "r" : "rw";
+    // The entry's own permission wins over the annotation for every tool of the server;
+    // without one, readOnlyHint is an untrusted hint and only an explicit true relaxes to "r".
+    const permission: ToolPermission =
+      conn.server.permission ?? (tool.annotations?.readOnlyHint === true ? "r" : "rw");
     const wrapper: BuiltinTool = {
       name,
       definition: {

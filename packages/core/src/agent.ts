@@ -14,6 +14,7 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   DEFAULT_COMPACTION_PROMPT,
+  DEFAULT_MAX_CONTEXT_LENGTH,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -924,7 +925,7 @@ export class Agent {
     const compactionConfig = this.state.systemConfig.compaction;
     const compaction: CompactionSettings = {
       maxContextLength: effectiveMaxContextLength(
-        compactionConfig?.max_context_length ?? 128000,
+        compactionConfig?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
         modelEntry.context_window,
       ),
       maxSessionTurns: compactionConfig?.max_session_turns ?? -1,

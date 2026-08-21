@@ -286,7 +286,7 @@ Each `tools.mcpServers` entry is `{ name, config }`: `name` is restricted to let
 - `http` — Streamable HTTP, the current spec's remote transport (`url` / `headers`).
 - `sse` — the legacy HTTP+SSE transport, kept for servers that have not migrated (`url` / `headers`).
 
-The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000) and `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
+The `transport` field may be omitted: an entry with `command` infers `stdio`, one with `url` infers `http`; `sse` must always be explicit. All three share the optional `connectTimeoutMs` (connect + tool-discovery budget, default 10000), `timeoutMs` / `maxOutputLength` (execution bounds applied to every tool of that Server; Environment defaults when unset) and `permission` (`auto` / `r` / `rw`, default `auto` — see the permission bullet below). `headers` are attached to every HTTP request to that Server (SSE stream included), so they can carry auth headers such as `Authorization`.
 
 ```yaml
 tools:
@@ -300,12 +300,14 @@ tools:
         transport: http
         url: https://mcp.linear.app/mcp
         headers: { Authorization: "Bearer ..." }
+        permission: r        # auto (default) | r | rw
 ```
 
 Behavior:
 
 - Connecting is **lazy**: Session creation returns instantly, and the first `run()` connects all Servers in parallel and discovers tools once — the wait streams as one `mcp_connect_begin` / `mcp_connect_end` pair (frontends show a connecting status; the end carries the overall status plus per-Server results), and the full tool definitions follow as a `tool_list_ready` event (see [OmniMessage](/omni-message)); in the Trace all three land after the run's input, inside the new turn. Aborting mid-connect **cancels** the attempt — the next `run()` reconnects. The result is a Session-lifetime snapshot and `tools/list_changed` notifications are ignored. An unreachable Server or invalid entry only produces a stderr warning and is skipped — **the session is never blocked**.
 - Discovered tools join the flat tool namespace as `mcp__<server>__<tool>` and go through the same [execution contract](#execution-contract) (timeout, truncation, interruption) and [approval](#approval) flow as builtin tools.
-- Permission mapping: a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction.
+- Permission mapping: under the default `permission: auto`, a tool the Server annotates `readOnlyHint: true` is `r` (auto-approved by the read-only approval mode); everything else is `rw` — annotations are untrusted hints, so the default takes the restrictive direction. Setting the entry's `permission` to `r` or `rw` overrides the annotation for **every** tool of that Server, which is the way in for the many Servers that never set `readOnlyHint` and so land on `rw` wholesale.
+- What `permission` is: it fixes the level each of that Server's tools reports, and exactly one approval mode reads that level. Under `read-only` an `r` tool is auto-approved and an `rw` tool needs manual confirmation; `allow-all`, `deny-all` and `always-ask` never consult it, so marking an entry `rw` adds no prompt there. Beyond that the key does nothing: it does not sandbox the Server, does not restrict what its tools do when they run, is never sent to or verified against the Server, and the Server keeps whatever capabilities its transport gives it. Marking a Server `r` that can in fact write removes the confirmation `read-only` would have asked for.
 - Result mapping: text blocks concatenate into the output text; image blocks ride along as images (data URLs); audio and binary resources collapse to placeholder lines; a result with only `structuredContent` is serialized as JSON; a Server-reported `isError` lands as `stop_reason: "failed"` with the Server's error text as the content.
 - Session teardown (`Environment.dispose`) closes every MCP client; stdio child processes exit with it.

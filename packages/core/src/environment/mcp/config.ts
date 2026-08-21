@@ -15,15 +15,28 @@
  * `transport` may be omitted when unambiguous: an entry with `command` resolves to `stdio`,
  * an entry with `url` resolves to `http`; `sse` must always be explicit.
  *
+ * `permission` sets the approval level PenguinHarness applies to every tool of the server —
+ * `"auto"` (the default) trusts each tool's own `readOnlyHint`, `"r"` or `"rw"` overrides it.
+ *
  * Invalid entries never break Session creation: each problem is reported as a warning and
  * the entry is skipped (the same stance Environment takes on unrecognized builtin tool
  * names), so one typo in a hand-edited YAML cannot take the whole Agent down.
  * Docs: /docs/tools § "MCP servers".
  */
-import type { MCPServerConfig } from "../../interfaces.js";
+import type { MCPServerConfig, ToolPermission } from "../../interfaces.js";
 
 /** Default per-server budget for connecting + initial handshake (ms). */
 export const DEFAULT_MCP_CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * How a server's tools get their permission: `"auto"` trusts each tool's `readOnlyHint`
+ * annotation, an explicit level applies to every tool of the server regardless of what it
+ * advertises.
+ */
+export type MCPServerPermissionMode = "auto" | ToolPermission;
+
+/** Permission mode of an entry that does not set one. */
+export const DEFAULT_MCP_PERMISSION: MCPServerPermissionMode = "auto";
 
 /** Typed transport description resolved from one `mcpServers` entry. */
 export type ResolvedMCPTransport =
@@ -50,6 +63,11 @@ export interface ResolvedMCPServer {
   timeoutMs?: number;
   /** Output cap applied to every tool of this server (Environment default when unset). */
   maxOutputLength?: number;
+  /**
+   * Permission forced onto every tool of this server. Unset means `"auto"`: each tool keeps
+   * the permission its own `readOnlyHint` annotation implies.
+   */
+  permission?: ToolPermission;
 }
 
 /** Result of resolving a full `mcpServers` list: valid servers plus human-readable warnings for the skipped rest. */
@@ -82,6 +100,17 @@ function readPositiveInt(value: unknown): number | undefined | null {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
   return Math.floor(value);
+}
+
+/**
+ * Reads the optional permission mode; `undefined` (absent or `"auto"`) leaves every tool to
+ * its own annotation, `null` = invalid.
+ */
+function readPermission(value: unknown): ToolPermission | undefined | null {
+  const mode: unknown = value === undefined ? DEFAULT_MCP_PERMISSION : value;
+  if (mode === "auto") return undefined;
+  if (mode === "r" || mode === "rw") return mode;
+  return null;
 }
 
 /**
@@ -172,6 +201,10 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
   if (timeoutMs === null) throw new Error(`"timeoutMs" must be a positive number of milliseconds`);
   const maxOutputLength = readPositiveInt(config["maxOutputLength"]);
   if (maxOutputLength === null) throw new Error(`"maxOutputLength" must be a positive number`);
+  const permission = readPermission(config["permission"]);
+  if (permission === null) {
+    throw new Error(`"permission" must be "auto", "r" or "rw"`);
+  }
 
   return {
     name,
@@ -179,6 +212,7 @@ export function resolveMCPServer(entry: MCPServerConfig): ResolvedMCPServer {
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_MCP_CONNECT_TIMEOUT_MS,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(maxOutputLength !== undefined ? { maxOutputLength } : {}),
+    ...(permission !== undefined ? { permission } : {}),
   };
 }
 

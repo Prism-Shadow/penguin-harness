@@ -3,7 +3,7 @@
  * auto-route, shared by core's default config, server's initial config, and web/cli display.
  * Data verified as of 2026-07-10 (Qwen Token Plan entries: 2026-07-20; MiniMax: 2026-08-03;
  * DeepSeek, Gemini 3.7, GLM-5.3 and the whole OpenAI line-up (direct + OpenRouter):
- * 2026-08-18, per each provider's docs).
+ * 2026-08-18; the direct Anthropic group: 2026-08-20 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1045,13 +1045,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.05, 0.5, 3),
     supportsVision: true,
   },
-  // -- Anthropic (official USD pricing; cache write = 1.25 x input) --
+  // -- Anthropic (official USD pricing; cache write = 1.25 x input). Re-read 2026-08-20 from
+  // platform.claude.com/docs/en/about-claude/pricing. Sonnet 5's $2 input / $10 output is its
+  // standard rate rather than an introductory one, so it prices below Sonnet 4.6 — that
+  // inversion is Anthropic's list, not a transcription slip. Anthropic bills the full 1M
+  // window at a single rate, so none of the long-context tiers named in the file header apply
+  // here, and the fast-mode premium on Opus 5 / Opus 4.8 ($10 input / $50 output) is a
+  // separate tier these rows do not record. --
   {
     modelId: "claude-fable-5",
     displayName: "Claude Fable 5",
     provider: "anthropic",
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
+    modelId: "claude-opus-5",
+    displayName: "Claude Opus 5",
+    provider: "anthropic",
+    contextWindow: 1000000,
+    pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
   },
   {
