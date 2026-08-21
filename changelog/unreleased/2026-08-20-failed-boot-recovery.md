@@ -17,7 +17,7 @@ parked document) instead of throwing, and the host answers it with a recovery bo
 version that was running before — the committed manifest still names it, since a failed
 push persists nothing — is re-booted from its own parked document. The park inventory is
 what makes that an ordinary load: the disposed App had already suspended, detached and
-registered its drain, so the recovered App consumes the drain, adopts the delivered
+left its drain on the current-App pointer, so the recovered App awaits it, adopts the delivered
 resources (ptys, tunnels) and restarts the suspended machinery like any successor.
 
 The pusher still gets the error — the push did fail — but the machine it failed on keeps

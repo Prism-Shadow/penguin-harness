@@ -25,6 +25,7 @@ The list is the contract rather than a description of today's services: a build 
 service with state of its own puts it on the right list, or the swap leaks it.
 
 The synchronous part runs at dispose; the asynchronous rest — waiting for aborted runs to
-actually end — is registered as a drain promise the successor awaits before building
+actually end — rides the current-App pointer as a `drained` promise the successor
+claims and awaits before building
 anything. The process is therefore clean between generations: the new App starts the
 suspended machinery and takes over the delivered resources, never racing the old one.

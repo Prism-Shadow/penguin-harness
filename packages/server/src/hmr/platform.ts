@@ -36,7 +36,6 @@ import {
   BARE_KERNEL_RESOURCE_ID,
   PENGUIN_FAMILY,
   PLATFORM_CURRENT_RESOURCE_ID,
-  PLATFORM_DRAIN_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
@@ -157,19 +156,16 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     }
     // LOAD, step one: wait until the predecessor is actually gone. The kernel's park and
     // dispose are synchronous, but suspending a business surface is not — aborted agent
-    // runs take real time to end. The previous App registered its drain on the way out
-    // (see the dispose effect below); awaiting it here is what makes "the process is
-    // clean" true before this App restarts the suspended machinery and adopts the
-    // delivered resources. Absent on the first boot, after a process restart (the
-    // registry is in-memory), and under a predecessor that predates the contract.
-    const drain = ctx.resources.claim<Promise<unknown>>(PLATFORM_DRAIN_RESOURCE_ID);
-    if (drain !== undefined) {
-      await drain;
-      // Released only AFTER it resolves: if this create() fails later, the (settled)
-      // drain stays claimable, so the host's recovery boot of the previous version
-      // consumes it and starts clean instead of finding nothing.
-      ctx.resources.release(PLATFORM_DRAIN_RESOURCE_ID);
-    }
+    // runs take real time to end. The previous App's dispose left its drain ON the
+    // current-App pointer it still holds (see PlatformCurrent.drained); this create()
+    // claims that pointer, awaits the drain, and later overwrites the registration with
+    // its own — takeover by claim, so no generation ever releases a slot a successor may
+    // own, and there is no separate "drain" id pretending to be a resource. Absent on the
+    // first boot, after a process restart (the registry is in-memory), and under a
+    // predecessor that predates the field. A recovery boot after a failed successor gets
+    // the same answer this way: the settled drain is still sitting on the pointer.
+    const predecessor = ctx.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID);
+    if (predecessor?.drained !== undefined) await predecessor.drained;
 
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
@@ -259,9 +255,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // the contract, not a description of today's services.
     //
     // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
-    // actually end) cannot — dispose is sync — so it is registered as a promise the
-    // successor's create() awaits before building: that handshake is what makes the
-    // process clean between generations.
+    // actually end) cannot — dispose is sync — so it is left as `drained` on the
+    // current-App pointer this App still holds, and the successor's create() claims the
+    // pointer and awaits it before building: that handshake is what makes the process
+    // clean between generations, paired by the resource itself.
     ctx.effect(() => {
       terminals.quiesce();
       const drains: Promise<unknown>[] = [];
@@ -269,21 +266,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         business.scheduler.stop();
         drains.push(business.manager.shutdown(SWAP_DRAIN_MS));
       }
-      ctx.resources.register(
-        PLATFORM_DRAIN_RESOURCE_ID,
-        Promise.allSettled(drains).then(() => undefined),
-      );
-      // Ownership-checked, because the registry does not pair register with release: both
-      // are unconditional writes to a shared slot, so a naked release here would be
-      // ordering-dependent — correct only while the kernel happens to dispose the old App
-      // before booting the new one. If generations ever overlap (tests boot two live Apps
-      // over one registry; recovery paths reorder things), an unconditional delete is a
-      // dead generation releasing the successor's live pointer — the exact bug-class the
-      // DETACHED list exists for. Releasing only what is provably ours makes the pair
-      // real instead of positional.
-      if (ctx.resources.claim(PLATFORM_CURRENT_RESOURCE_ID) === current) {
-        ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
-      }
+      // The async tail rides the object this App already owns — no registry write, no
+      // release: the successor (or a recovery boot) claims the pointer, awaits this, and
+      // overwrites the registration with its own. A dead generation therefore never
+      // touches the slot again, which is what makes the register/claim pair real.
+      current.drained = Promise.allSettled(drains).then(() => undefined);
     });
 
     const http = seamHttp(app);

@@ -203,17 +203,6 @@ export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
  */
 export const BARE_KERNEL_RESOURCE_ID = "bare-kernel";
 
-/**
- * The predecessor App's asynchronous suspension, left for its successor to await. The
- * kernel's park and dispose are synchronous, but suspending a business surface is not —
- * aborted agent runs take real time to actually end. The disposing App starts the drain
- * and registers the promise here; the NEXT create() awaits it before adopting anything,
- * so a new App never builds over a process still running the old one's work. Colon-free
- * like the other cross-swap declarations (never swept by disposeGroup), consumed
- * (released) by the successor that awaits it, and in-memory only — a process restart
- * needs no drain, because the old App's children died with the process.
- */
-export const PLATFORM_DRAIN_RESOURCE_ID = "platform-drain";
 /** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
 export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
 
@@ -246,6 +235,16 @@ export interface PlatformCurrent {
   app: { fetch(request: Request): Response | Promise<Response> };
   /** Process-exit graceful drain (manager ≤5s wrap-up); absent when no business runs. */
   shutdown?: () => Promise<void>;
+  /**
+   * Set by the dispose effect: the asynchronous tail of this App's suspension (aborted
+   * agent runs take real time to actually end; the kernel's dispose is synchronous). The
+   * successor claims this pointer, awaits `drained`, and then overwrites the registration
+   * with its own — the handover is paired by the resource itself: no separate id, no
+   * release call a dead generation could mis-aim at a successor's slot. Absent until
+   * dispose, on generations that predate the field, and after a process restart (the
+   * registry is in-memory; children died with the process).
+   */
+  drained?: Promise<void>;
 }
 
 /** Applies proxy settings to the RUNTIME's global dispatcher (see net/proxy.ts). */
