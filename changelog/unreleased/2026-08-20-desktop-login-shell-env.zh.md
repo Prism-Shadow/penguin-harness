@@ -16,5 +16,5 @@
 - `PATH` 是唯一做合并的键：登录 shell 的条目在前，启动环境独有的条目追加在后，并去重。
 - shell 的簿记变量（`_`、`SHLVL`、`PWD`、`OLDPWD`、`TERM`）与 `ELECTRON_RUN_AS_NODE` 永不导入。
 - 探测尽力而为，5 秒硬超时，任何失败都保持环境原样。从终端启动（`TERM` 已设置）与 Windows 完全跳过。设置 `PENGUIN_NO_LOGIN_SHELL_ENV` 可关闭导入。
-- 让环境变量回退可见：未配置存储 key 的模型，**模型**页卡片以状态 chip 显示它将读取的环境变量——服务进程中已检测到时为 success 色调加对勾，缺失时为 attention 色调加警示（该请求会鉴权失败），tooltip 解释两种状态。models API 在 `envKey` 旁新增 `envKeyPresent`——只报存在性，值绝不序列化。
+- 让环境变量回退可见，且仅限官方 first-party 条目（官方 vendor 分组、catalog 形态未被改动——网关、custom 与自定义分组一律排除，避免把官方 `OPENAI_API_KEY` 引向转售端点）：未配置存储 key 且检测到变量时，卡片的 key 槽位显示变量名，模型详情以与存储 key 相同的规则显示掩码值，「创建时间」位置改为「读取自环境变量」，且不提供清除项；存入 key 仍按既有优先级覆盖变量。models API 在 `envKey` 旁新增 `envKeyMasked`——只下发掩码预览，明文绝不序列化。
 - 已写入桌面版速上手与配置参考文档。

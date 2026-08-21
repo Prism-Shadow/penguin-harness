@@ -125,26 +125,57 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
   });
 
-  it("GET reports env-fallback presence (empty counts as absent) and never the value", async () => {
+  it("masks the env fallback for first-party official entries only, and never leaks the value", async () => {
     const saved = {
       anthropic: process.env.ANTHROPIC_API_KEY,
       deepseek: process.env.DEEPSEEK_API_KEY,
       openai: process.env.OPENAI_API_KEY,
     };
-    process.env.ANTHROPIC_API_KEY = "sk-test-env-presence-secret";
-    delete process.env.DEEPSEEK_API_KEY;
-    process.env.OPENAI_API_KEY = "";
+    const anthropicValue = "sk-ant-test-secret-value-123456";
+    const openaiValue = "sk-openai-test-secret-value-789";
+    process.env.ANTHROPIC_API_KEY = anthropicValue;
+    process.env.OPENAI_API_KEY = openaiValue;
+    // Empty counts as absent — it would not authenticate either.
+    process.env.DEEPSEEK_API_KEY = "";
     try {
-      const res = await api.get(url());
-      expect(res.status).toBe(200);
-      // Presence is a boolean; the value must never be serialized anywhere in the response.
-      const text = await res.text();
-      expect(text).not.toContain("sk-test-env-presence-secret");
+      const put = await api.put(url(), {
+        defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+        models: [
+          // First-party catalog preset, variable set: masked preview.
+          { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+          // First-party catalog preset, variable empty: no preview.
+          { provider: "deepseek", modelId: "deepseek-v4-pro" },
+          // Off-catalog id in a vendor group, pure auto-route: still first-party.
+          { provider: "anthropic", modelId: "claude-sonnet-4-6-preview" },
+          // Vendor group re-pointed at a generic protocol: not first-party.
+          { provider: "anthropic", modelId: "claude-via-gateway", clientType: "openai" },
+          // Gateway and custom groups never carry a preview, even with OPENAI_API_KEY set.
+          {
+            provider: "openrouter",
+            modelId: "xiaomi/mimo-v2.5",
+            clientType: "openai-chat",
+            baseUrl: "https://openrouter.ai/api/v1",
+          },
+          { provider: "custom", modelId: "my-model", clientType: "openai" },
+        ],
+      });
+      expect(put.status).toBe(200);
+      // The masked preview follows maskApiKey; the plaintext must never be serialized.
+      const text = await put.text();
+      expect(text).not.toContain(anthropicValue);
+      expect(text).not.toContain(openaiValue);
       const body = JSON.parse(text) as ModelsResponse;
-      expect(pick(body, "anthropic", "claude-sonnet-4-6").envKeyPresent).toBe(true);
-      expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyPresent).toBe(false);
-      // Empty string would not authenticate either, so it reports absent.
-      expect(pick(body, "openrouter", "xiaomi/mimo-v2.5").envKeyPresent).toBe(false);
+      const masked = `${anthropicValue.slice(0, 4)}…${anthropicValue.slice(-4)}`;
+      expect(pick(body, "anthropic", "claude-sonnet-4-6").envKeyMasked).toBe(masked);
+      expect(pick(body, "anthropic", "claude-sonnet-4-6-preview").envKeyMasked).toBe(masked);
+      expect(pick(body, "deepseek", "deepseek-v4-pro").envKeyMasked).toBeUndefined();
+      const rePointed = pick(body, "anthropic", "claude-via-gateway");
+      expect(rePointed.envKey).toBe("OPENAI_API_KEY");
+      expect(rePointed.envKeyMasked).toBeUndefined();
+      const gateway = pick(body, "openrouter", "xiaomi/mimo-v2.5");
+      expect(gateway.envKey).toBe("OPENAI_API_KEY");
+      expect(gateway.envKeyMasked).toBeUndefined();
+      expect(pick(body, "custom", "my-model").envKeyMasked).toBeUndefined();
     } finally {
       for (const [key, value] of [
         ["ANTHROPIC_API_KEY", saved.anthropic],

@@ -37,7 +37,7 @@ Get the installer for your platform from the [download page](https://penguin.ooo
 
 Open the app, go to the **Models** page in the sidebar, click "Add model" and fill in the Provider, model id and API key, then set it as the default.
 
-API keys already exported in your shell profile (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) work without re-entering them: on macOS and Linux the app imports the login shell's environment when launched from the Dock or desktop, filling only variables the launch itself did not set (the agent shell's `PATH` benefits the same way; set `PENGUIN_NO_LOGIN_SHELL_ENV` to opt out). For a model without a stored key, the Models page shows which environment variable would be read and whether it was detected.
+API keys already exported in your shell profile (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) work without re-entering them: on macOS and Linux the app imports the login shell's environment when launched from the Dock or desktop, filling only variables the launch itself did not set (the agent shell's `PATH` benefits the same way; set `PENGUIN_NO_LOGIN_SHELL_ENV` to opt out). For an official-provider model without a stored key, the Models page shows the detected environment variable on the card, and the model's dialog previews its value masked (gateway and custom groups are not matched against these variables).
 
 A model is always referenced as a `(provider, model_id)` pair — the Provider is never inferred from the model id. See [Models & Providers](/models) for the built-in groups.
 

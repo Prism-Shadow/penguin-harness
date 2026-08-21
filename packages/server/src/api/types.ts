@@ -377,11 +377,13 @@ export interface ModelInfo {
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
   /**
-   * Whether the server process currently holds a non-empty value for `envKey` — presence
-   * only, the value itself is never serialized. Reported exactly when `envKey` is, so the
-   * client can tell a fallback that will work from one that will fail to authenticate.
+   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
+   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
+   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
+   * entry is not first-party.
    */
-  envKeyPresent?: boolean;
+  envKeyMasked?: string;
   credential?: CredentialInfo;
   isDefault: boolean;
 }

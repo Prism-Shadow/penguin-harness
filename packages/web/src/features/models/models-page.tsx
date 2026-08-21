@@ -153,12 +153,6 @@ const EXTERNAL_LINK_ICON =
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
 const CLOCK_ICON = "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 7v5l3.5 2";
 const ZAP_ICON = "M13 2 3 14h9l-1 8 10-12h-9l1-8Z";
-
-/** Env-fallback chip glyphs (24x24 line paths): check = variable detected, alert triangle = missing. */
-const CHECK_ICON = "M20 6 9 17l-5-5";
-const ALERT_ICON =
-  "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4M12 17h.01";
-
 /** Metric tone -> text color classes for the card speed badges. */
 const TONE_CLASS: Record<SpeedTone, string> = {
   green: toneInk.success,
@@ -229,8 +223,8 @@ export interface RowState {
   vision: boolean;
   /** Environment variable name used as fallback when api_key is empty (given by the server based on catalog/protocol). */
   envKey?: string;
-  /** Whether the server process currently has a non-empty value for envKey (presence only; the value never leaves the server). */
-  envKeyPresent?: boolean;
+  /** Masked preview of the env-fallback value (first-party official entries only; the plaintext never leaves the server). */
+  envKeyMasked?: string;
   contextWindow: string;
   /** Per-model max output tokens ("" = inherit the Agent setting): caps output per request; user-only, never preset by the catalog. */
   maxTokens: string;
@@ -349,7 +343,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   };
   if (m.displayName !== undefined) row.displayName = m.displayName;
   if (m.envKey !== undefined) row.envKey = m.envKey;
-  if (m.envKeyPresent !== undefined) row.envKeyPresent = m.envKeyPresent;
+  if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
   return row;
 }
@@ -1050,23 +1044,21 @@ function ModelCard({
   onOpen: () => void;
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
-  // Env-fallback chip: only rows without a stored key show it — a stored key never
-  // consults the variable, so the chip would be noise there. Rows without a known
-  // fallback keep the plain "not configured" text.
-  const envChip = !hasKey(row) && row.envKey !== undefined ? row.envKey : undefined;
   const meta = [
     row.contextWindow ? humanizeTokens(Number(row.contextWindow)) : null,
     // Three prices (cache read / cache write / output); units are explained in the config dialog, not repeated on the card.
     priced
       ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
       : null,
-    // Key status: the mask when configured; rows on an env fallback carry the chip instead.
+    // Key status: the mask when configured; with no stored key, a detected first-party env
+    // fallback shows the variable's name (the server only reports envKeyMasked for official
+    // vendor entries), otherwise "not configured".
     row.credential?.apiKeyMasked && !row.clearApiKey
       ? row.credential.apiKeyMasked
       : hasKey(row)
         ? S.models.keyConfigured
-        : envChip !== undefined
-          ? null
+        : row.envKeyMasked !== undefined && row.envKey !== undefined
+          ? row.envKey
           : S.models.noKey,
   ].filter((v): v is string => v !== null);
 
@@ -1138,24 +1130,6 @@ function ModelCard({
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400 dark:text-gray-500">
           {meta.join(" · ")}
         </span>
-        {/* Env-fallback status, visible on the card itself (not tucked into the dialog):
-            success tone when the server sees the variable, attention tone when the key
-            would be read from a variable that is not set — that request will 401. */}
-        {envChip !== undefined && (
-          <span
-            className={`flex min-w-0 shrink items-center gap-1 font-mono text-[11px] font-medium ${
-              row.envKeyPresent ? toneInk.success : toneInk.attention
-            }`}
-            title={
-              row.envKeyPresent
-                ? S.models.envKeyPresentTitle(envChip)
-                : S.models.envKeyMissingTitle(envChip)
-            }
-          >
-            <GlyphIcon d={row.envKeyPresent ? CHECK_ICON : ALERT_ICON} size={11} />
-            <span className="truncate">env: {envChip}</span>
-          </span>
-        )}
         {speedBadges}
       </span>
     </button>
@@ -1986,6 +1960,20 @@ function ModelDialog({
             )}
           </div>
         )}
+        {/* Detected first-party env fallback, shown like a stored key (same slot, same mask
+            rule): the created-at position names the variable instead, and there is no clear
+            control — an environment variable cannot be cleared from here. Typing a new key
+            hides this like the stored block; once saved, the stored key takes priority and
+            the display switches to the stored form. */}
+        {!form.credential?.apiKeyMasked &&
+          form.envKeyMasked !== undefined &&
+          form.envKey !== undefined &&
+          !form.apiKeyInput && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+              <span className="font-mono">{form.envKeyMasked}</span>
+              <span className="text-gray-400">{S.models.readFromEnv(form.envKey)}</span>
+            </div>
+          )}
 
         {/* 2) base URL (required for custom / user-defined groups and explicit openai protocol — see
             baseUrlRequired). The in-field suffix at the right edge shows the protocol path the
