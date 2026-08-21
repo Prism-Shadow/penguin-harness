@@ -13,9 +13,13 @@
  *   single-writer; the ServerConfig object — the listen callback writes the real port
  *   back into it and every reader must observe that write).
  *
- * A platform booted by a runtime that publishes none of this (an older runtime, or a
- * bare kernel in tests) simply builds no business surface — the capability being absent
- * IS the signal, and terminals keep working regardless.
+ * A host that publishes none of this can build no business surface — the capability being
+ * absent IS the signal. What the platform does with that signal depends on who is asking:
+ * a bare kernel says so ({@link BARE_KERNEL_RESOURCE_ID}) and gets a terminals-only App,
+ * while anything else is REFUSED (../hmr/platform.ts's create). A runtime too old to
+ * publish capabilities is not a bare kernel: it still answers the business API out of its
+ * own older routes, so a terminals-only App there would leave a freshly pushed frontend
+ * talking to the previous version's API — one atomic push landing as half a version.
  *
  * The reverse direction is ONE entry: the pointer to the current App ({@link
  * PlatformCurrent}) — deps, route table and graceful wrap-up published together in a
@@ -186,6 +190,18 @@ export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
 export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
 /** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
+
+/**
+ * Published by a host that has no business runtime behind it at all and knows it — a bare
+ * kernel (the reconciliation and plugin tests). It makes a terminals-only platform legal:
+ * without it, a boot that cannot claim the capabilities is refused rather than degraded,
+ * because the shape it would otherwise silently produce on a too-old SERVER runtime is a
+ * new frontend in front of that runtime's older business routes.
+ *
+ * Deliberately colon-free, for the same reason the interface declaration is: an ID without
+ * a group is never swept by disposeGroup, so it survives every swap that reads it.
+ */
+export const BARE_KERNEL_RESOURCE_ID = "bare-kernel";
 /** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
 export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
 
@@ -236,9 +252,10 @@ export interface RuntimeCapabilities {
 }
 
 /**
- * Claims the full capability set, or null when any piece is missing — a partial claim
- * would build a business surface over half a runtime, which is worse than the honest
- * "this runtime publishes no business capabilities" degradation.
+ * Claims the full capability set, or null when any piece is missing — a partial claim would
+ * build a business surface over half a runtime, which is worse than not building one. Null
+ * is not a mode to run in unless the host declared itself a bare kernel; see the caller
+ * (../hmr/platform.ts's create).
  */
 export function claimRuntimeCapabilities(resources: Resources): RuntimeCapabilities | null {
   // The handshake first: a runtime speaking different interfaces (or one too old to

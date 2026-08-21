@@ -33,6 +33,7 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
+  BARE_KERNEL_RESOURCE_ID,
   PENGUIN_FAMILY,
   PLATFORM_CURRENT_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
@@ -119,6 +120,32 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
 
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
+    // The capability claim comes FIRST, before a single registry read is acted on, and a
+    // shortfall is a REFUSAL — not a degradation — unless the host declared itself a bare
+    // kernel. A platform that cannot claim the capabilities can only serve terminals, and a
+    // runtime old enough to publish none still answers the business API out of its own
+    // routes: the seam would hand /api/me back to the OLD build while the SAME push's web
+    // dist is already being served, so one atomic push lands as half a version and the
+    // browser crashes on a field the older API does not carry. The runtime already treats
+    // this as fatal when it starts (app.ts's bootAppDeps: "the packaged platform built no
+    // business surface"); making it fatal here too means a hot upgrade cannot land what a
+    // fresh start would refuse. It has to be HERE rather than in the runtime to be any use:
+    // the check travels inside the bundle, so it also protects installations whose runtime
+    // is already too old for any push to fix. Failing this early costs the operator nothing
+    // beyond an error — doUpgradeAll rolls the whole upgrade back (old instance keeps
+    // serving, the web is not committed, nothing is persisted). What it cannot undo is a
+    // half version committed BEFORE this check existed: that bundle carries no check, so a
+    // restart restores it degraded again — repairing such a machine means updating the
+    // installation (the committed bundle then claims successfully and serves whole) or
+    // clearing <root>/hmr/harness.json to fall back to the packaged default.
+    const caps = claimRuntimeCapabilities(ctx.resources);
+    if (caps === null && ctx.resources.claim(BARE_KERNEL_RESOURCE_ID) === undefined) {
+      throw new Error(
+        "this runtime publishes no business capabilities this platform can claim " +
+          "(too old for the resource-interface handshake, or speaking different interfaces) " +
+          "— update the installation itself; a push replaces the platform, never the runtime",
+      );
+    }
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -147,13 +174,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     const identity = identityFrom(ctx.resources);
 
     // The business deps, built per App over the runtime's published capabilities — see
-    // app.ts's buildAppDeps and ./capabilities.ts. A runtime that publishes nothing
-    // (an older runtime, a bare kernel) gets a terminals-only platform rather than a
-    // failed boot.
+    // app.ts's buildAppDeps and ./capabilities.ts. Null only for a declared bare kernel;
+    // every other capability-less host was refused above.
     let deps: AppDeps | null = null;
-    const caps = claimRuntimeCapabilities(ctx.resources);
     if (caps === null) {
-      console.warn("[platform] runtime publishes no business capabilities; terminals only");
+      console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
       const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
       deps = buildAppDeps(caps, overrides ?? {});

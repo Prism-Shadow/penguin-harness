@@ -755,8 +755,10 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
  * group and the business groups — registered together, so a swap replaces the whole route
  * table as a unit (routes + auth + error shaping; no listening, no logging).
  *
- * `deps` is null when the runtime published no business capabilities (an older runtime, a
- * bare kernel): the terminal group still serves, everything else declines.
+ * `deps` is null when the host published no business capabilities — a declared bare kernel:
+ * the terminal group still serves, everything else declines. A runtime merely too OLD to
+ * publish them never reaches here; the platform refuses to boot on one (hmr/platform.ts's
+ * create), because that runtime still answers the business API out of its own routes.
  */
 export function createApp(
   deps: AppDeps | null,

@@ -12,6 +12,7 @@ import { TerminalManager } from "../src/terminal/manager.js";
 import type { TerminalSession } from "../src/terminal/session.js";
 import { DECLARED_RESOURCES as PARKED, packagedPlatform } from "../src/hmr/platform.js";
 import {
+  BARE_KERNEL_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
   PENGUIN_FAMILY,
@@ -25,8 +26,13 @@ import {
   claimRuntimeCapabilities,
 } from "../src/hmr/capabilities.js";
 
-/** Boots the packaged platform against `r` (capability-less: terminals-only, quiet). */
+/**
+ * Boots the packaged platform against `r` as a BARE KERNEL: capability-less, terminals-only,
+ * quiet. The marker is what makes that legal — without it the boot is refused, which is the
+ * rule the last test in this file drives.
+ */
 async function bootPlatform(r: HotResources) {
+  r.register(BARE_KERNEL_RESOURCE_ID, true);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
     return await boot(
@@ -321,5 +327,37 @@ describe("runtime capability handshake", () => {
     stubCaps(r);
     r.register(RUNTIME_INTERFACES_RESOURCE_ID, { ...RUNTIME_INTERFACES, extra: ["x"] });
     expect(claimRuntimeCapabilities(r)).not.toBeNull();
+  });
+});
+
+describe("a runtime too old to publish capabilities", () => {
+  it("is refused, not degraded to terminals-only", async () => {
+    // The shape this rule exists for. A runtime that publishes nothing is NOT a bare
+    // kernel: it still answers the business API out of its own older routes, so a
+    // terminals-only App would leave the frontend this same push just shipped talking to
+    // the previous version's API — which is how `/api/me` came back without the fields the
+    // new frontend reads off it.
+    const r = new HotResources();
+    await expect(
+      boot(
+        packagedPlatform.impl,
+        packagedPlatform.iface,
+        initialDoc(packagedPlatform.iface, packagedPlatform.context),
+        r,
+      ),
+    ).rejects.toThrow(/no business capabilities/);
+    // Refused before the registry was touched at all: the running App's declaration and
+    // its parked groups are exactly as they were, so a rejected push costs it nothing.
+    expect(r.claim(RESOURCE_IFACES_RESOURCE_ID)).toBeUndefined();
+  });
+
+  it("boots terminals-only when the host declares itself a bare kernel", async () => {
+    const r = new HotResources();
+    const inst = await bootPlatform(r);
+    try {
+      expect(inst.api.info()).toMatchObject({ impl: "packaged" });
+    } finally {
+      inst.dispose();
+    }
   });
 });
