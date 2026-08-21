@@ -220,7 +220,7 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 Every complete `tool_call` triggers exactly one approval decision:
 
 ```ts
-type ApprovalOutcome = "allow" | "deny" | ApprovalRefusal; // a refusal states its reason
+type ApprovalOutcome = "allow" | "deny" | ApprovalRefusal; // a refusal names its source
 type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 ```
 
@@ -230,7 +230,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOut
 | CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
 | Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, so changes take effect immediately; manual decisions arrive via the API |
 
-A deny produces a synthetic `tool_call_output` for the model to react to: `aborted` with `Tool call denied by user.` for a bare `deny`, or the refusal's own message and stop reason when the approval boundary states one — which is how a [command policy](/configuration#command-policy) rejection reads as `failed` rather than as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto stamped `source: "policy"` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto stamped `source: "policy"` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
 
 ## Custom tools & MCP
 

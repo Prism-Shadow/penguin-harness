@@ -275,7 +275,7 @@ export const zh = {
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
     /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
     commandPolicyIntro:
-      "模型碰到 shell 的两条路都会先经过安全策略——exec_command 启动的命令，以及 input_command 敲进已运行命令的内容。命中任一启用的规则即被直接拒绝，即使审批模式为全部放行；拒绝时模型会收到命中的规则名，并被引导改用其他方式。匹配方式为对命令文本做空白与引号归一化后执行各规则的正则表达式。这是防事故的护栏，不能对抗刻意绕过：运行期才拼出来的命令（来自变量、eval 或解码出的字符串）不是模式能读懂的东西，也不在覆盖范围内。",
+      '模型碰到 shell 的两条路都会先经过安全策略——exec_command 启动的命令，以及 input_command 敲进已运行命令的内容。命中任一启用的规则即被直接拒绝，即使审批模式为全部放行；模型会收到固定的拒绝文案 "Tool call denied by policy." 并改用其他方式。匹配方式为对命令文本做空白与引号归一化后执行各规则的正则表达式。这是防事故的护栏，不能对抗刻意绕过：运行期才拼出来的命令（来自变量、eval 或解码出的字符串）不是模式能读懂的东西，也不在覆盖范围内。',
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",

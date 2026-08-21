@@ -71,7 +71,7 @@ Task 由若干连续的 Request(轮)组成，每轮：
 5. LLM 流结束时，先产出其最后一条 `token_usage`，随即产出 `request_end(status)`——**不等待工具**，仍在执行的工具输出可出现在 `request_end` 之后；
 6. 整批工具全部到达终态后，工具结果**按原始调用顺序**重排，作为下一轮输入——在此之前不会发起下一次 Request。
 
-某轮不再产生 `tool_call` 时，Task 结束。拒绝(deny)会生成一条合成的工具输出供模型据此继续：裸 `deny` 是 `aborted`(内容为 `Tool call denied by user.`)，审批边界给出理由时则用它自己的消息与 stop_reason(见 [ApproveFn](/interfaces#approvefn))。
+某轮不再产生 `tool_call` 时，Task 结束。拒绝(deny)会生成一条合成的 `aborted` 工具输出供模型据此继续——`Tool call denied by user.`，或当审批边界标注决定者为[命令策略](/configuration#沙箱安全策略)时为 `Tool call denied by policy.`(见 [ApproveFn](/interfaces#approvefn))。
 
 ## 中断与补发(carry-over)
 

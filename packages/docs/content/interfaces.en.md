@@ -220,9 +220,7 @@ The CLI wires terminal I/O onto this boundary; the Server wires HTTP requests an
 type ApprovalDecision = "allow" | "deny";
 interface ApprovalRefusal {
   decision: "deny";
-  message: string;                          // fed back to the model as the tool output
-  stopReason: "failed" | "aborted";         // "failed" = refused on the merits, change course
-  source?: "human" | "policy";              // recorded on the approval_decision event; absent = "human"
+  source: "human" | "policy";               // who denied; recorded on the approval_decision event
 }
 type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
 type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
@@ -230,7 +228,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOut
 
 Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.
 
-A denial may come back as an `ApprovalRefusal` instead of the bare `"deny"` when it has a reason to state: the message becomes the tool output verbatim and `stopReason` says how the model should read it. A bare `"deny"` still produces the `aborted` output "Tool call denied by user.", so an existing callback needs no change. `Session.run` uses this to enforce the [Project command policy](/configuration#command-policy): it wraps the injected callback, so a vetoed command is refused before the host is asked at all. Such a veto tags `source: "policy"`, and the engine stamps it onto the `approval_decision` event — the Trace names the decider without anyone parsing output text.
+A denial may come back as an `ApprovalRefusal` naming its source instead of the bare `"deny"`. The denial output is one fixed `aborted` line either way — "Tool call denied by user.", or "Tool call denied by policy." for `source: "policy"` — and the source rides the `approval_decision` event, so the Trace names the decider without anyone parsing output text. A bare `"deny"` stays a person's cancellation; an existing callback needs no change. `Session.run` uses this to enforce the [Project command policy](/configuration#command-policy): it wraps the injected callback, so a vetoed command is refused before the host is asked at all.
 
 ## Subagent interfaces
 

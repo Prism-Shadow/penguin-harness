@@ -240,11 +240,10 @@ describe("command policy config semantics", () => {
     expect(hit("curl http://x", policy)).toBe("no-curl");
   });
 
-  it("denial message names the rule and says approval cannot unblock it", () => {
+  it("a hit reports the matched rule's name", () => {
     const veto = evaluateCommandPolicy("rm -rf /");
     expect(veto).not.toBeNull();
-    expect(veto?.message).toContain("rm-recursive-force");
-    expect(veto?.message).toContain("approval mode");
+    expect(veto?.rule).toBe("rm-recursive-force");
   });
 });
 
@@ -310,8 +309,8 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
     // The host is never asked: that is what makes the policy outrank every approval mode.
     expect(asked).toBe(0);
-    expect(outcome).toMatchObject({ decision: "deny", stopReason: "failed", source: "policy" });
-    expect(typeof outcome === "string" ? "" : outcome.message).toContain("rm-recursive-force");
+    // The refusal carries only its source; the engine renders the fixed denial line from it.
+    expect(outcome).toEqual({ decision: "deny", source: "policy" });
   });
 
   it("passes everything else straight through, decision included", async () => {
@@ -337,9 +336,9 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
         toolCallId: "c2",
       });
 
-    expect(await guarded(typed("rm -rf /\n") as never)).toMatchObject({
+    expect(await guarded(typed("rm -rf /\n") as never)).toEqual({
       decision: "deny",
-      stopReason: "failed",
+      source: "policy",
     });
     expect(asked).toBe(0);
     expect(await guarded(typed("make build\n") as never)).toBe("allow");
@@ -429,11 +428,11 @@ describe("Session applies the policy at the approval boundary", () => {
     // The approval record itself names the decider, so the Trace separates a policy veto
     // from a human denial without parsing the output text.
     expect((decision.payload as { source?: string }).source).toBe("policy");
-    // "failed", not "aborted": nothing was manually canceled, and the model should read the
-    // message and change course rather than treat it as a user interruption.
+    // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
+    // change course instead of treating it as a person's cancellation; both read `aborted`.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("failed");
-    expect((output.payload as { output: string }).output).toContain("sandbox policy");
+    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
     // The denial is fed back to the model, so the next turn can route around it.
     expect(
       (secondInput as OmniMessage[] | null)?.some(

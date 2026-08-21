@@ -91,23 +91,19 @@ export interface ToolConfig {
 }
 
 /**
- * A denial that carries its own reason, returned in place of a bare `"deny"` when the
- * refusal did not come from a person canceling the call. `message` is fed back to the model
- * verbatim as the `tool_call_output`, and `stopReason` says how to read it: `"failed"` for a
- * call refused on its merits — the model should take in the message and change course —
- * against `"aborted"`, which means manually canceled. `source` names who refused and is
- * recorded on the `approval_decision` event, so the Trace separates a policy veto from a
- * human denial without parsing output text; absent means `"human"`. A bare `"deny"` still
- * reports `aborted`, so a Human implementation that knows nothing of this needs no change.
+ * A denial that names who denied, returned in place of the bare `"deny"` when the decision
+ * did not come from a person — today, the project command policy. The engine's denial
+ * output stays one fixed `aborted` line either way ("Tool call denied by user." /
+ * "Tool call denied by policy."): `source` only picks the wording and rides the
+ * `approval_decision` event, so the Trace records the decider. A bare `"deny"` remains a
+ * person's cancellation; a Human implementation that knows nothing of this needs no change.
  */
 export interface ApprovalRefusal {
   decision: "deny";
-  message: string;
-  stopReason: Extract<StopReason, "failed" | "aborted">;
-  source?: ApprovalSource;
+  source: ApprovalSource;
 }
 
-/** What an approval callback may answer: a bare decision, or a denial that states its reason. */
+/** What an approval callback may answer: a bare decision, or a denial that names its source. */
 export type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
 
 /**
@@ -123,17 +119,17 @@ export function approvalDecisionOf(outcome: ApprovalOutcome): ApprovalDecision {
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
- * A denial may come back as an {@link ApprovalRefusal} instead of the bare `"deny"` when it
- * has a reason to state — `Session.run` wraps the injected callback that way to enforce the
- * project sandbox command policy (see {@link CommandPolicyConfig}).
+ * A denial may come back as an {@link ApprovalRefusal} naming its source — `Session.run`
+ * wraps the injected callback that way to enforce the project sandbox command policy (see
+ * {@link CommandPolicyConfig}).
  * Docs: /docs/interfaces § "ApproveFn".
  */
 export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 
 /**
- * One command-policy deny rule — plain project-editable data: a name (echoed in the denial
- * so the model knows what it hit), a regex source tested against the whitespace-normalized
- * command, an optional free-text description, and a per-rule switch.
+ * One command-policy deny rule — plain project-editable data: a name (identifies the rule
+ * in the settings UI), a regex source tested against the whitespace-normalized command, an
+ * optional free-text description, and a per-rule switch.
  * Docs: /docs/configuration § "Command policy".
  */
 export interface CommandPolicyRule {

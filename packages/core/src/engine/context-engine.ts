@@ -1141,30 +1141,24 @@ export class ContextEngine {
             // approve is a callback; context_engine emits its decision as an approval_decision
             // OmniMessage: pushed to the stream for frontend rendering, and written to Trace.
             const decision = approvalDecisionOf(outcome);
-            const decisionMsg = approvalDecision(
-              decision,
-              toolCallId,
-              typeof outcome === "string" ? undefined : outcome.source,
-            );
+            const source = typeof outcome === "string" ? undefined : outcome.source;
+            const decisionMsg = approvalDecision(decision, toolCallId, source);
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {
-              // Denied: feed a terminal output back immediately, so the already-committed
-              // tool_use never dangles. A refusal states its own reason and stop_reason (the
-              // Session's command-policy wrapper answers "failed" — refused on the merits,
-              // change course); a bare "deny" is a person canceling the call.
-              const reason =
-                typeof outcome === "string"
-                  ? { message: "Tool call denied by user.", stopReason: "aborted" as const }
-                  : outcome;
-              const refused = toolCallOutput({
-                output: reason.message,
+              // Denied: feed back an aborted output immediately, so the already-committed
+              // tool_use never dangles. One fixed line either way — the wording names the
+              // decider (a person, or the project command policy via the Session wrapper),
+              // and `source` above puts the same fact on the approval_decision event.
+              const denied = toolCallOutput({
+                output:
+                  source === "policy" ? "Tool call denied by policy." : "Tool call denied by user.",
                 toolCallId,
-                stopReason: reason.stopReason,
+                stopReason: "aborted",
               });
-              queue.push(refused);
-              await this.write(refused);
-              toolOutputs.push(refused);
+              queue.push(denied);
+              await this.write(denied);
+              toolOutputs.push(denied);
               continue;
             }
             // Approved: run concurrently, without blocking further consumption of the LLM

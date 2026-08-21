@@ -107,7 +107,7 @@ export async function runTask(
   // already-rendered copy is idempotently de-duplicated inside note.
   const approve: ApproveFn = async (tc) => {
     // A refusal (the sandbox command policy answers with one) is forwarded whole: the
-    // renderer only needs the allow/deny, but the engine needs the reason it carries.
+    // renderer only needs the allow/deny, but the engine needs the source it carries.
     const outcome = await approveByMode(tc);
     opts.renderer.noteApprovalDecision(tc, approvalDecisionOf(outcome));
     return outcome;

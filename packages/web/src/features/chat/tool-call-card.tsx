@@ -233,22 +233,19 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
             : S.chat.decisionAuto
       }`
     : null;
-  // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
-  // decision — the icon reads "Denied" rather than falling through to the raw stop reason. A
-  // user-abort of a RUNNING tool carries no deny decision, so the label falls through to its
-  // stop reason below.
-  const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
-  // A command-policy veto reports "failed" instead (the model should change course, nothing
-  // was canceled): the icon keeps the failure tone, but the label names the decision
-  // ("Denied · policy") rather than falling through to the raw stop reason.
-  const deniedByPolicy = item.decision === "deny" && item.decisionSource === "policy";
+  // A denial reports stop_reason "aborted" on the output it feeds back — a person's and the
+  // command policy's alike; that abort IS the decision, so the icon reads "Denied · …" (the
+  // label's source half names the decider) rather than falling through to the raw stop
+  // reason. A user-abort of a RUNNING tool carries no deny decision, so the label falls
+  // through to its stop reason below.
+  const denied = item.decision === "deny" && item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
         ? (decisionText ?? S.chat.workDone)
-        : deniedByUser || deniedByPolicy
+        : denied
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
 

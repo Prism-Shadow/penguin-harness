@@ -93,14 +93,14 @@ output = 0.857143
 
 ### 沙箱安全策略
 
-`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，同时会告知模型命中了哪条规则以便换路。策略放在 Project 配置而不是 Agent State：Agent 改自己的配置改不到它，且每个 Session 在创建时读取快照，运行中改动要到下次加载才生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身。
+`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对两个能碰到 shell 的工具生效——`exec_command` 的 `cmd`（启动命令）与 `input_command` 的 `chars`（敲进已运行命令的内容）——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，模型收到固定文案 `Tool call denied by policy.`——与人工取消可区分——从而换路。策略放在 Project 配置而不是 Agent State：Agent 改自己的配置改不到它，且每个 Session 在创建时读取快照，运行中改动要到下次加载才生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身。
 
 规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集读回编辑区，由 Save 落盘。
 
 | 字段 | 说明 |
 | --- | --- |
 | `enabled` | 总开关；缺省 = **启用**（仅在关闭时落盘 `enabled = false`） |
-| `[[command_policy.rules]]` | 拒绝规则列表，按顺序匹配：`name`（拒绝信息中回显）+ `pattern`（JavaScript 正则源码，对空白归一化后的命令做匹配）+ 可选 `description` + 每条 `enabled`（缺省 = 启用）。存储空列表 = 没有规则；缺失列表 = 出厂集 |
+| `[[command_policy.rules]]` | 拒绝规则列表，按顺序匹配：`name`（在设置页标识该规则）+ `pattern`（JavaScript 正则源码，对空白归一化后的命令做匹配）+ 可选 `description` + 每条 `enabled`（缺省 = 启用）。存储空列表 = 没有规则；缺失列表 = 出厂集 |
 
 出厂规则集刻意保持很小——只收录一旦照原样执行就不可挽回的命令：同时带递归与强制标志的 `rm`、`mkfs`、`dd` 直写块设备、经典 fork bomb、以及重定向写入块设备（`/dev/null` 等仍然合法）。另有四条是同样这五条的 Windows 对应写法（`exec_command` 在 Windows 上会解析到 pwsh 或 cmd）：递归强制删除（`Remove-Item -Recurse -Force`、`rd /s /q`）、格式化卷（`format C:`、`Format-Volume`）、裸盘覆写（`\\.\PhysicalDriveN`、`Clear-Disk`）、以及 cmd 版 fork bomb。
 

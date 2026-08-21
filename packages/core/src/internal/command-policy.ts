@@ -47,10 +47,9 @@ import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js
 import { EXEC_COMMAND_NAME } from "../environment/tools/exec-command.js";
 import { INPUT_COMMAND_NAME, INTERRUPT } from "../environment/tools/input-command.js";
 
-/** A command-policy hit: the matched rule's name plus the denial text fed back to the model. */
+/** A command-policy hit: the matched rule's name. */
 export interface CommandPolicyVeto {
   rule: string;
-  message: string;
 }
 
 /** Collapses whitespace runs to single spaces (the only normalization rule patterns may assume). */
@@ -105,14 +104,7 @@ export function evaluateCommandPolicy(
     if (rule.enabled === false) continue;
     const re = compileRule(rule);
     if (re && variants.some((v) => re.test(v))) {
-      return {
-        rule: rule.name,
-        message:
-          `Command blocked by the project sandbox policy (rule: ${rule.name}). ` +
-          "The policy outranks the approval mode, so approving cannot unblock it. " +
-          "Do not retry the same command; take a safer approach, or ask the user to " +
-          "adjust the policy in Project Settings.",
-      };
+      return { rule: rule.name };
     }
   }
   return null;
@@ -158,17 +150,15 @@ export function vetoForToolCall(
 /**
  * Wraps an approval callback with the policy: a vetoed call is refused here and `approve`
  * is never reached, so no approval mode — and no Human implementation — can let it
- * through. The refusal carries its own reason, which is what keeps it distinguishable from
- * a person canceling the call: `failed` tells the model its request was rejected on its
- * merits and it should change course, where a human denial reports `aborted`. It also tags
- * itself `source: "policy"`, which the engine stamps onto the `approval_decision` event, so
- * the Trace records who denied without anyone parsing output text.
+ * through. The refusal is `{ decision: "deny", source: "policy" }`: the engine renders it
+ * as the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
+ * user."), and stamps the source onto the `approval_decision` event — the model's text and
+ * the Trace both name the decider.
  */
 export function withCommandPolicy(approve: ApproveFn, policy?: CommandPolicyConfig): ApproveFn {
   return async (toolCall) => {
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
-    if (veto)
-      return { decision: "deny", message: veto.message, stopReason: "failed", source: "policy" };
+    if (veto) return { decision: "deny", source: "policy" };
     return approve(toolCall);
   };
 }

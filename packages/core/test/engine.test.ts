@@ -485,23 +485,18 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     expect("source" in (humanDecision.payload as object)).toBe(false);
   });
 
-  it("a refusal from the approval boundary carries its own message and stop_reason", async () => {
-    // The approval callback may answer with a reason instead of a bare "deny" (Session wraps
-    // it that way for the sandbox command policy). The engine records the decision as any
-    // other and feeds the refusal's own text back, so the model can change course rather
-    // than read it as a user cancellation.
+  it('a denial naming source "policy" reads "denied by policy" and stamps the event', async () => {
+    // The approval callback may answer with a sourced denial instead of a bare "deny"
+    // (Session wraps it that way for the sandbox command policy). The engine records the
+    // decision as any other and picks the fixed denial line from the source, so the model
+    // sees a policy refusal rather than a user cancellation.
     const llm = new FakeLLM();
     const environment = new Environment({
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
     const engine = new ContextEngine({ llm, environment });
-    const refuse: ApproveFn = async () => ({
-      decision: "deny",
-      message: "Command blocked by the project sandbox policy (rule: rm-recursive-force).",
-      stopReason: "failed",
-      source: "policy",
-    });
+    const refuse: ApproveFn = async () => ({ decision: "deny", source: "policy" });
 
     const all = await collectRun(engine, [userText("clean up")], refuse);
 
@@ -513,8 +508,8 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     // The refusal's source rides on the approval record, so the Trace itself says who denied.
     expect((decision.payload as { source?: string }).source).toBe("policy");
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
-    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("failed");
-    expect((output.payload as { output: string }).output).toContain("sandbox policy");
+    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
     // Fed back to the model like any other tool result.
     const fedBack = llm.receivedSecondInput?.find(
       (m) => (m.payload as { type?: string }).type === "tool_call_output",
