@@ -127,14 +127,6 @@ export interface UpgradeAllTarget {
 }
 
 /**
- * Where the runtime publishes the unpacked assets directory for the booting platform.
- * The resource registry is the only runtime→platform channel the kernel offers (ctx
- * carries `resources`, nothing else), and it is kind-agnostic by design — see
- * ./resources.ts.
- */
-export const ASSETS_RESOURCE_ID = "runtime:assets-dir";
-
-/**
  * Written into an assets directory once every file in it is on disk. Its absence marks a
  * directory whose materialization was interrupted; no asset path can collide with it
  * (assets arrive as `node_modules/...` paths).
@@ -168,6 +160,8 @@ export class HmrHost {
 
   private instance: Instance<PlatformApi> | null = null;
   private implId = packagedPlatform.id;
+  /** Current version's materialized native assets dir (see assetsDir()). */
+  private assets: string | null = null;
   private readonly hmrDir: string;
   private readonly storeDir: string;
   private readonly manifestPath: string;
@@ -343,7 +337,7 @@ export class HmrHost {
     // Assets land BEFORE the boot: the platform's create() may load a native module out of
     // them. A failed boot puts the pointer back, so the surviving old platform keeps
     // claiming the assets it booted with.
-    const previousAssets = this.resources.claim<string>(ASSETS_RESOURCE_ID) ?? null;
+    const previousAssets = this.assets;
     const assetsDir = target.assets ? await this.materializeAssets(target.assets) : null;
     if (assetsDir !== null) this.publishAssets(assetsDir);
 
@@ -552,8 +546,17 @@ export class HmrHost {
 
   /** Points the registry at this version's assets (or clears it when a push has none). */
   private publishAssets(dir: string | null): void {
-    if (dir === null) this.resources.release(ASSETS_RESOURCE_ID);
-    else this.resources.register(ASSETS_RESOURCE_ID, dir);
+    this.assets = dir;
+  }
+
+  /**
+   * Where the current version's native-module assets live, or null when none were
+   * pushed. A declared member of the hmr capability (see RUNTIME_INTERFACES), read by
+   * the bundle's pty loader — not a registry key: the host is already the claimed
+   * object, so its per-push state belongs on it.
+   */
+  assetsDir(): string | null {
+    return this.assets;
   }
 
   private async persistVersion(

@@ -12,7 +12,7 @@ import { HotResources } from "../src/hmr/resources.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import type { PlatformApi } from "../src/hmr/platform.js";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
-import { BARE_KERNEL_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { TerminalManager } from "../src/terminal/manager.js";
 import type { TerminalSession } from "../src/terminal/session.js";
 import { waitFor } from "./helpers.js";
@@ -46,7 +46,9 @@ const asSession = (fake: ReturnType<typeof fakePty>): TerminalSession =>
 
 function bareKernel(): HotResources {
   const r = new HotResources();
-  r.register(BARE_KERNEL_RESOURCE_ID, true);
+  // The bare-kernel declaration IS an interface descriptor: right family, no
+  // capabilities offered — "there is no business runtime behind me".
+  r.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
   return r;
 }
 
@@ -173,7 +175,7 @@ describe("upgrade boot failure", () => {
 describe("TerminalManager quiesce", () => {
   it("runs pending reaps now instead of leaving timers to fire from a dead generation", () => {
     const r = new HotResources();
-    const manager = new TerminalManager(r, 10_000);
+    const manager = new TerminalManager(r, { graceMs: 10_000 });
     const pty = fakePty("t1");
     r.register("terminal:t1", asSession(pty));
     manager.adopt(["t1"]);
@@ -186,7 +188,7 @@ describe("TerminalManager quiesce", () => {
 
   it("adopt reaps a pty that died during the swap freeze (its exit fired into the old generation)", async () => {
     const r = new HotResources();
-    const manager = new TerminalManager(r, 5);
+    const manager = new TerminalManager(r, { graceMs: 5 });
     const pty = fakePty("t1");
     pty.alive = false; // died before this manager ever listened
     r.register("terminal:t1", asSession(pty));

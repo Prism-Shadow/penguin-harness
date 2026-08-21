@@ -31,6 +31,7 @@ import type { ServerConfig } from "../config.js";
 import type { AuthService } from "../auth/service.js";
 import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
+import type { BuildDepsOverrides } from "../app.js";
 import type { HmrHost } from "../hmr/host.js";
 import type { DesktopService } from "../services/desktop-service.js";
 
@@ -126,7 +127,11 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   ],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
-  hmr: ["resources", "ensure", "resolveWebSource", "dispose"],
+  hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
+  // The construction-override seam (BuildDepsOverrides): production publishes {}, tests
+  // publish live collaborators (loader fakes, clocks). Presence-only — its fields are all
+  // optional, so there are no members to verify.
+  overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
 };
 
@@ -192,18 +197,6 @@ export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
 export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
 
 /**
- * Published by a host that has no business runtime behind it at all and knows it — a bare
- * kernel (the reconciliation and plugin tests). It makes a terminals-only platform legal:
- * without it, a boot that cannot claim the capabilities is refused rather than degraded,
- * because the shape it would otherwise silently produce on a too-old SERVER runtime is a
- * new frontend in front of that runtime's older business routes.
- *
- * Deliberately colon-free, for the same reason the interface declaration is: an ID without
- * a group is never swept by disposeGroup, so it survives every swap that reads it.
- */
-export const BARE_KERNEL_RESOURCE_ID = "bare-kernel";
-
-/**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
  * live-object contracts it parks by ID-prefix group (`terminal` covers every `terminal:*`
  * entry). The NEXT App's create() compares it against its own compiled-in declaration and
@@ -241,35 +234,61 @@ export interface RuntimeCapabilities {
   hmr: HmrHost;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
+  /** The construction-override seam; {} outside tests. */
+  overrides: BuildDepsOverrides;
 }
 
 /**
- * Claims the full capability set, or null when any piece is missing — a partial claim would
- * build a business surface over half a runtime, which is worse than not building one. Null
- * is not a mode to run in unless the host declared itself a bare kernel; see the caller
- * (../hmr/platform.ts's create).
+ * The outcome of asking the host what it is, decided entirely by what it published:
+ *
+ * - `claimed` — a descriptor of this family offering the full capability set, with every
+ *   live object carrying the members the descriptor names.
+ * - `bare` — a descriptor of this family offering NONE of the capabilities: the host's
+ *   own declaration that there is no business runtime behind it (a bare kernel in
+ *   tests). Terminals-only is legal there. The declaration rides the descriptor the
+ *   handshake already reads — a host that offers nothing SAYS so, in the same document
+ *   every host describes itself in, rather than through a side-channel marker.
+ * - `refused` — everything else, with the reason: no descriptor (a runtime too old for
+ *   the handshake), a different family, a partial offer, or a live object that does not
+ *   carry what the descriptor promised. Booting a business platform over any of these
+ *   would put a new frontend in front of an older runtime's own routes.
  */
-export function claimRuntimeCapabilities(resources: Resources): RuntimeCapabilities | null {
-  // The handshake first: a runtime speaking different interfaces (or one too old to
-  // publish a descriptor at all) must not be claimed against — the members behind the IDs
-  // are exactly what the descriptor stands for.
-  const mismatch = interfaceMismatch(
-    resources.claim<Interfaces>(RUNTIME_INTERFACES_RESOURCE_ID),
-    RUNTIME_INTERFACES,
-  );
-  if (mismatch !== null) {
-    console.warn(`[platform] runtime interfaces: ${mismatch}; declining the claim`);
-    return null;
+export type RuntimeClaim =
+  | { kind: "claimed"; caps: RuntimeCapabilities }
+  | { kind: "bare" }
+  | { kind: "refused"; reason: string };
+
+export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
+  const offered = resources.claim<Interfaces>(RUNTIME_INTERFACES_RESOURCE_ID);
+  if (offered === undefined) {
+    return { kind: "refused", reason: "no interface descriptor published" };
   }
+  if (offered.family !== RUNTIME_INTERFACES.family) {
+    return {
+      kind: "refused",
+      reason: `family '${String(offered.family)}' != '${String(RUNTIME_INTERFACES.family)}'`,
+    };
+  }
+  // A family-matching descriptor that offers none of the required capabilities IS the
+  // bare-kernel declaration; offering SOME of them is a broken runtime, refused below.
+  const required = Object.keys(RUNTIME_INTERFACES).filter((name) => name !== "family");
+  if (required.every((name) => members(offered, name) === undefined)) {
+    return { kind: "bare" };
+  }
+  const mismatch = interfaceMismatch(offered, RUNTIME_INTERFACES);
+  if (mismatch !== null) return { kind: "refused", reason: mismatch };
   const config = resources.claim<ServerConfig>(RUNTIME_CONFIG_RESOURCE_ID);
   const db = resources.claim<DatabaseSync>(RUNTIME_DB_RESOURCE_ID);
   const authService = resources.claim<AuthService>(RUNTIME_AUTH_RESOURCE_ID);
   const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
   const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  if (!config || !db || !authService || !channels || !proxyControl || !hmr) return null;
+  if (!config || !db || !authService || !channels || !proxyControl || !hmr) {
+    return { kind: "refused", reason: "a declared capability was not actually published" };
+  }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
   const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
+  const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
   // …then the objects themselves. A descriptor is a claim about what is there; this is
   // the part that checks it, so an honest-but-wrong runtime is caught here rather than at
   // the first call site. `desktop` is exempt when null — that is a value, not a shortfall.
@@ -287,9 +306,11 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeCapabilit
     if (!Array.isArray(need)) continue;
     const lacking = lacksMembers(value, need);
     if (lacking.length > 0) {
-      console.warn(`[platform] runtime ${name} lacks ${lacking.join(", ")}; declining the claim`);
-      return null;
+      return { kind: "refused", reason: `runtime ${name} lacks ${lacking.join(", ")}` };
     }
   }
-  return { config, db, authService, channels, proxyControl, hmr, desktop };
+  return {
+    kind: "claimed",
+    caps: { config, db, authService, channels, proxyControl, hmr, desktop, overrides },
+  };
 }

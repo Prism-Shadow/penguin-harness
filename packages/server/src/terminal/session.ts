@@ -18,7 +18,6 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import xterm, { type Terminal } from "@xterm/headless";
 import type { IPty } from "node-pty";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
 import { loadNodePty } from "./pty-module.js";
 import { defaultTerminalShell, shellArgs } from "./shell.js";
 import { TerminalInputModeTracker } from "./input-mode.js";
@@ -78,10 +77,10 @@ export interface CreateTerminalSessionOptions {
   rows?: number;
   env?: Record<string, string>;
   /**
-   * Where node-pty comes from. The platform cannot import a native module directly (see
-   * pty-module.ts): the kernel's resource registry is how the runtime hands it over.
+   * Where a pushed bundle's node-pty assets live (the hmr capability's assetsDir);
+   * absent falls back to the packaged require (see pty-module.ts).
    */
-  resources: Resources;
+  assets?: () => string | null;
 }
 
 export interface TerminalSessionInfo {
@@ -171,7 +170,7 @@ export class TerminalSession {
     // Before the first spawn on macOS: node-pty's prebuilt spawn-helper ships without an
     // exec bit, and posix_spawnp refuses it (see spawn-helper.ts).
     ensureSpawnHelperExecutable();
-    this.ptyProcess = loadNodePty(options.resources).spawn(shell, shellArgs(shell), {
+    this.ptyProcess = loadNodePty(options.assets).spawn(shell, shellArgs(shell), {
       name: "xterm-256color",
       cols,
       rows,

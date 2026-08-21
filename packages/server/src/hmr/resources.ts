@@ -17,21 +17,23 @@ import type { Resources } from "@prismshadow/penguin-core/kernel";
 export class HotResources implements Resources {
   private readonly map = new Map<string, { resource: unknown; dispose?: () => void }>();
 
-  register(id: string, resource: unknown, dispose?: () => void): void {
+  register(id: string, resource: unknown, dispose?: () => void): () => void {
+    const entry = { resource, dispose };
     // Delete before set: Map.set on an existing key KEEPS its original insertion
     // position, so a re-registration (a successor adopting a pty, say) would still be
-    // disposed in the old owner's slot — and both sweeps below claim to run in reverse
-    // REGISTRATION order, which later entries depending on earlier ones rely on.
+    // swept in the old owner's slot — and both sweeps below promise reverse REGISTRATION
+    // order, which later entries depending on earlier ones rely on.
     this.map.delete(id);
-    this.map.set(id, { resource, dispose });
+    this.map.set(id, entry);
+    // The paired unregister: identity-checked, so it only ever removes THIS registration.
+    // An overwrite by a successor makes it a no-op — see the kernel interface's doc.
+    return () => {
+      if (this.map.get(id) === entry) this.map.delete(id);
+    };
   }
 
   claim<T = unknown>(id: string): T | undefined {
     return this.map.get(id)?.resource as T | undefined;
-  }
-
-  release(id: string): void {
-    this.map.delete(id);
   }
 
   /**

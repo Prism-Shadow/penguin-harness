@@ -33,10 +33,8 @@ import { bindTerminalStream } from "../terminal/stream.js";
 import { buildAppDeps, createApp, type AppDeps, type BuildDepsOverrides } from "../app.js";
 import { seamHttp } from "./hono-seam.js";
 import {
-  BARE_KERNEL_RESOURCE_ID,
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
-  RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
@@ -156,14 +154,15 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // restart restores it degraded again — repairing such a machine means updating the
     // installation (the committed bundle then claims successfully and serves whole) or
     // clearing <root>/hmr/harness.json to fall back to the packaged default.
-    const caps = claimRuntimeCapabilities(ctx.resources);
-    if (caps === null && ctx.resources.claim(BARE_KERNEL_RESOURCE_ID) === undefined) {
+    const claim = claimRuntimeCapabilities(ctx.resources);
+    if (claim.kind === "refused") {
       throw new Error(
-        "this runtime publishes no business capabilities this platform can claim " +
-          "(too old for the resource-interface handshake, or speaking different interfaces) " +
-          "— update the installation itself; a push replaces the platform, never the runtime",
+        `this runtime publishes no business capabilities this platform can claim ` +
+          `(${claim.reason}) — update the installation itself; a push replaces the ` +
+          `platform, never the runtime`,
       );
     }
+    const caps = claim.kind === "claimed" ? claim.caps : null;
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -185,7 +184,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // declaration, whatever generation it is.
     ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
 
-    const terminals = new TerminalManager(ctx.resources);
+    const terminals = new TerminalManager(ctx.resources, {
+      // A pushed bundle's node-pty binaries live where the host materialized them.
+      assets: () => caps?.hmr.assetsDir() ?? null,
+    });
     // Shells started before this instance existed are still running in the registry: claim
     // them back so a push is invisible to whoever was typing in one.
     terminals.adopt(context.terminals ?? []);
@@ -201,8 +203,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     if (caps === null) {
       console.warn("[platform] bare kernel: terminals only, no business surface");
     } else {
-      const overrides = ctx.resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID);
-      deps = buildAppDeps(caps, overrides ?? {});
+      deps = buildAppDeps(caps, caps.overrides);
       // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic
       // scan; only active while this App is.
       await deps.scheduler.start();
