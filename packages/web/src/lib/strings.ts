@@ -167,6 +167,10 @@ export const zh = {
     unknownError: "请求失败，请稍后重试",
     requiredField: "此项必填",
     copied: "已复制",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "说明",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `说明：${subject}`,
     name: "名称",
     username: "用户名",
     role: "角色",

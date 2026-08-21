@@ -9,17 +9,10 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { Sheet } from "../../components/ui/sheet";
+import { CloseIcon } from "../../components/ui/icons";
 import { SubagentsView } from "./subagents-view";
 import type { StreamRenderContext } from "./message-stream";
 import type { SubagentsPanelState } from "./use-subagents-panel";
-
-function CloseIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" aria-hidden>
-      <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export function SubagentsPanel({
   session,

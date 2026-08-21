@@ -18,6 +18,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { Button } from "../ui/button";
 import { Modal } from "../ui/modal";
+import { toneInk } from "../../lib/tone";
 
 type Phase = "confirm" | "running" | "done";
 
@@ -76,10 +77,10 @@ export function UpdateDialog({
     result === null
       ? null
       : result.status === "updated"
-        ? { text: S.update.updated, className: "text-green-600 dark:text-green-400" }
+        ? { text: S.update.updated, className: toneInk.success }
         : result.status === "unsupported"
-          ? { text: S.update.unsupported, className: "text-amber-600 dark:text-amber-400" }
-          : { text: S.update.failed, className: "text-red-600 dark:text-red-400" };
+          ? { text: S.update.unsupported, className: toneInk.attention }
+          : { text: S.update.failed, className: toneInk.danger };
 
   return (
     <Modal

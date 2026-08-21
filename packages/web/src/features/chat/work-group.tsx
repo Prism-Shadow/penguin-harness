@@ -28,6 +28,7 @@ import { LiveDuration } from "./live-duration";
 import { MessageItem } from "./message-item";
 import type { StreamRenderContext } from "./message-stream";
 import { summarizeWork } from "./work-summary";
+import { toneDot, toneInk, toneSurface } from "../../lib/tone";
 
 /** Item kinds that belong in the group: thinking and tool calls (subagent cards are nested inside the run_subagent tool card, not listed separately). */
 export function isWorkItem(item: ChatItem): boolean {
@@ -131,10 +132,10 @@ export function WorkGroup({
         }}
         className="sticky -top-4 z-[5] flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
-        <StatusIcon state={active ? "running" : "done"} size={12} />
+        <StatusIcon state={active ? "running" : "done"} />
         {/* The title doubles as status: "Running" while in progress, "Done" when finished. */}
         <span
-          className={`shrink-0 text-[11px] font-semibold uppercase tracking-wide ${active ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}`}
+          className={`shrink-0 text-[11px] font-semibold uppercase tracking-wide ${active ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
         >
           {active ? S.chat.workRunning : S.chat.workDone}
         </span>
@@ -173,14 +174,16 @@ export function WorkGroup({
                 the text pill would push the header past one line on phones. role="img", not a
                 live region — same non-live semantics as the text pill, so re-renders don't
                 chatter at screen readers. */}
-            <span className="hidden shrink-0 rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 sm:inline dark:bg-amber-950/50 dark:text-amber-300">
+            <span
+              className={`hidden shrink-0 rounded px-1 text-[10px] font-medium sm:inline ${toneSurface.attention}`}
+            >
               {S.chat.approvalWaiting}
             </span>
             <span
               role="img"
               title={S.chat.approvalWaiting}
               aria-label={S.chat.approvalWaiting}
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500 sm:hidden"
+              className={`h-1.5 w-1.5 shrink-0 rounded-full sm:hidden ${toneDot.attention}`}
             />
           </>
         )}

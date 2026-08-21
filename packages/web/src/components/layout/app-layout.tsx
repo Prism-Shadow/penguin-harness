@@ -17,7 +17,7 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
-import { NAV_ICONS } from "../ui/icons";
+import { CloseIcon, NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
@@ -38,6 +38,7 @@ import {
   visiblePanes,
   subscribeTerminalDock,
 } from "../../features/terminal/terminal-dock-state";
+import { toneStrip } from "../../lib/tone";
 
 /** "Last conversation" glyph (chat lines + resume arrow), used only by the rail. */
 const LAST_CHAT_ICON = "M8 10h8M8 14h5M21 12a9 9 0 1 1-4.2-7.6L21 4v5h-5";
@@ -336,7 +337,9 @@ export function AppLayout() {
             Permanently dismissible via the X on the right (per-user ui_prefs); only rendered once
             hydrated prefs confirm it was never dismissed, so it does not flash-then-vanish on load. */}
         {passwordBannerRelevant && passwordBannerDismissed === false && (
-          <div className="relative flex shrink-0 items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-8 py-1.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+          <div
+            className={`relative flex shrink-0 items-center justify-center gap-3 border-b px-8 py-1.5 text-xs ${toneStrip.attention}`}
+          >
             <span>{S.account.initialPasswordBanner}</span>
             <button
               type="button"
@@ -358,16 +361,7 @@ export function AppLayout() {
               onClick={dismissPasswordBanner}
               className="absolute inset-y-0.5 right-1.5 flex items-center rounded-md px-1 text-amber-500 transition-colors duration-150 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-100"
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="currentColor"
-                aria-hidden
-              >
-                <path d="M2 2l10 10M12 2L2 12" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <CloseIcon size={12} />
             </button>
           </div>
         )}
