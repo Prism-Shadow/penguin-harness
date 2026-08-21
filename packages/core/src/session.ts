@@ -39,10 +39,12 @@ import { goalFinishedOf } from "./goal/goal-stream.js";
 import type {
   BackgroundCommandInfo,
   BackgroundTaskDoneEvent,
+  CommandPolicyConfig,
   EnvironmentInterface,
   LLMInterface,
   ToolPermission,
 } from "./interfaces.js";
+import { withCommandPolicy } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
@@ -114,6 +116,15 @@ export interface SessionConfig {
    * (`run(input, { goal })`) is unavailable without it.
    */
   goalFilePath?: string;
+  /**
+   * Project sandbox command policy (`[command_policy]` of `.project_config.toml`): a
+   * snapshot taken when the Agent built this Session, so the Agent's own file tools cannot
+   * reach the effective copy. `run` wraps the injected approval callback with it — the
+   * refusal happens at the approval boundary, above every approval mode and below no
+   * Human implementation. Absent = the factory rule set applies; `{ enabled: false }` opts
+   * out. Docs: /docs/configuration § "Command policy".
+   */
+  commandPolicy?: CommandPolicyConfig;
 }
 
 /** Options of a goal-mode `run` (`opts.goal`): present = the input starts a goal loop. */
@@ -244,6 +255,7 @@ export class Session {
   private readonly imagesDir: string;
   private readonly modelHasVision: boolean;
   private readonly goalFile?: string;
+  private readonly commandPolicy?: CommandPolicyConfig;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -286,6 +298,7 @@ export class Session {
     this.imagesDir = config.imagesDir;
     this.modelHasVision = config.modelHasVision;
     if (config.goalFilePath) this.goalFile = config.goalFilePath;
+    if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     this.mcpServers = config.mcpServers;
@@ -345,6 +358,15 @@ export class Session {
    * Docs: /docs/goal-mode.
    */
   async *run(newMessages: OmniMessage[], opts?: SessionRunOptions): AsyncGenerator<OmniMessage> {
+    // The sandbox command policy is applied here, at the Human boundary itself: the
+    // injected callback is wrapped so a vetoed command is refused before the host is ever
+    // asked, which is what makes the policy outrank every approval mode — no host, and no
+    // approval mode, gets a say. Wrapped once for both a plain Task and every goal round;
+    // a child Session wraps its own forwarded callback again, harmlessly. With no callback
+    // at all the engine denies everything anyway, so there is nothing to guard.
+    if (opts?.approve) {
+      opts = { ...opts, approve: withCommandPolicy(opts.approve, this.commandPolicy) };
+    }
     if (opts?.goal) {
       // Rounds run with the caller's per-call options minus `goal` (each round is a plain Task).
       const { goal, ...roundOpts } = opts;

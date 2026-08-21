@@ -1188,10 +1188,15 @@ export class ContextEngine {
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {
-              // User denied: feed back an aborted output, indicating the tool call was
-              // manually canceled.
+              // Denied: feed back an aborted output immediately, so the already-committed
+              // tool_use never dangles. One fixed line either way — the wording names the
+              // decider ("forbidden" is the command policy's answer, via the Session
+              // wrapper), and the approval_decision event above carries the decision itself.
               const denied = toolCallOutput({
-                output: "Tool call denied by user.",
+                output:
+                  decision === "forbidden"
+                    ? "Tool call denied by policy."
+                    : "Tool call denied by user.",
                 toolCallId,
                 stopReason: "aborted",
               });

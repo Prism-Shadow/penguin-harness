@@ -27,7 +27,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import type { ThinkingLevelName } from "../interfaces.js";
+import type { CommandPolicyConfig, CommandPolicyRule, ThinkingLevelName } from "../interfaces.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 
@@ -178,6 +179,16 @@ export interface ProjectConfig {
    * absent = the pre-existing behavior). Loaded tolerantly: invalid values drop per key.
    */
   default_chat?: ProjectChatDefaults;
+  /**
+   * Sandbox command policy (`[command_policy]`): Project-owned deny rules for shell
+   * commands, threaded into every Session's Environment at creation and consulted ahead of
+   * the approval mode. The factory rule set is seeded at project creation like the model
+   * presets (copied in, never rewritten afterward); a config from before the seeding —
+   * absent block, or a block without a `rules` list — behaves as the factory set until the
+   * first saved edit materializes the list. Loaded tolerantly: an invalid value drops per
+   * key, and dropping `enabled` falls back to on.
+   */
+  command_policy?: CommandPolicyConfig;
   models: ModelEntry[];
 }
 
@@ -190,6 +201,10 @@ export interface ProjectConfig {
 export function defaultProjectConfig(): ProjectConfig {
   return {
     default_model: { provider: "deepseek", model_id: "deepseek-v4-flash" },
+    // The factory command-policy rules are seeded like the model presets: copied into the
+    // new project's config and owned by it from then on — later factory changes never
+    // rewrite an existing file. Spread to keep the module-level constant frozen.
+    command_policy: { rules: DEFAULT_COMMAND_POLICY_RULES.map((r) => ({ ...r })) },
     models: presetModelEntries(),
   };
 }
@@ -271,6 +286,45 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
 }
 
 /**
+ * Leniently parses the `[command_policy]` block (sandbox command policy): each key is
+ * validated independently and an invalid value drops that key rather than failing the
+ * load. A non-boolean `enabled` falls back to on (the safe direction); a `rules` value
+ * that is not an array reads as absent, i.e. the factory set. A present array is the
+ * literal list — invalid entries are dropped individually, which can narrow the deny set,
+ * but the write paths validate up front and the file is never hand-edited by design, so
+ * this only fires for hand-placed data.
+ *
+ * Exported for the server's ProjectConfigService, which holds a cached parse of the same
+ * file — the same sharing rule as projectConfigFromTable, so the two paths can never
+ * narrow the block differently.
+ */
+export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const t = value as Record<string, unknown>;
+  const out: CommandPolicyConfig = {};
+  if (typeof t.enabled === "boolean") out.enabled = t.enabled;
+  if (Array.isArray(t.rules)) {
+    const rules: CommandPolicyRule[] = [];
+    for (const entry of t.rules) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const r = entry as Record<string, unknown>;
+      if (typeof r.name !== "string" || r.name === "") continue;
+      if (typeof r.pattern !== "string" || r.pattern === "") continue;
+      rules.push({
+        name: r.name,
+        pattern: r.pattern,
+        ...(typeof r.description === "string" && r.description !== ""
+          ? { description: r.description }
+          : {}),
+        ...(typeof r.enabled === "boolean" ? { enabled: r.enabled } : {}),
+      });
+    }
+    out.rules = rules;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * Narrows an already-parsed `.project_config.toml` table into a typed `ProjectConfig`
  * (`file` is used in error messages only). Shared by `loadProjectConfig` and callers that
  * hold a cached parse of the same file (the server's ProjectConfigService), so the two
@@ -287,11 +341,13 @@ export function projectConfigFromTable(
   const defaultModel = parseRefField(file, "default_model", parsed.default_model);
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
   const defaultChat = parseDefaultChat(parsed.default_chat);
+  const commandPolicy = parseCommandPolicy(parsed.command_policy);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
+    ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }

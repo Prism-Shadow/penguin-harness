@@ -260,7 +260,7 @@ export interface Messages {
   /** Prompt for an invalid --approve mode. */
   approveModeInvalid(value: string): string;
   /** Render label for an approval decision (frontend renders the approval_decision event; one label each for allow/deny). */
-  approvalDecision(decision: "allow" | "deny"): string;
+  approvalDecision(decision: "allow" | "deny" | "forbidden"): string;
   /** run/chat given only one of --model-id / --provider: a model reference is always an explicit pair, never a lookup. */
   modelRefIncomplete(): string;
   /** --resume is mutually exclusive with --workspace/--model-id (neither can change once the Session is created). */
@@ -565,7 +565,12 @@ const en: Messages = {
   toolOutputElided: (hidden) => `… (+${hidden} lines, /verbose for full output)`,
   approveModeInvalid: (value) =>
     `Invalid approval mode "${value}". Use allow-all, deny-all, read-only, or always-ask.`,
-  approvalDecision: (decision) => (decision === "allow" ? "✓ [approved]" : "× [denied]"),
+  approvalDecision: (decision) =>
+    decision === "allow"
+      ? "✓ [approved]"
+      : decision === "forbidden"
+        ? "× [forbidden by policy]"
+        : "× [denied]",
   modelRefIncomplete: () =>
     "--model-id and --provider must be given together: a model reference is always an explicit (provider, model_id) pair. Omit both to use the Project default model.",
   resumeNoOverride: () =>
@@ -833,7 +838,8 @@ const zh: Messages = {
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
   approveModeInvalid: (value) =>
     `无效的审批模式 "${value}"。请使用 allow-all、deny-all、read-only 或 always-ask。`,
-  approvalDecision: (decision) => (decision === "allow" ? "✓ [已批准]" : "× [已拒绝]"),
+  approvalDecision: (decision) =>
+    decision === "allow" ? "✓ [已批准]" : decision === "forbidden" ? "× [策略禁止]" : "× [已拒绝]",
   modelRefIncomplete: () =>
     "--model-id 与 --provider 必须成对给出：模型引用始终是显式的 (provider, model_id) 组合。两者都不给则使用 Project 默认模型。",
   resumeNoOverride: () =>

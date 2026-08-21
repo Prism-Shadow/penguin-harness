@@ -58,7 +58,15 @@ export type StreamEventType = "start" | "delta" | "stop";
 export type MessageOrigin = string;
 
 /** The approval decision for a tool call. */
-export type ApprovalDecision = "allow" | "deny";
+/**
+ * Per-tool approval decision. `"allow"` and `"deny"` are the Human boundary's answers;
+ * `"forbidden"` is the project command policy's veto, produced by the `Session.run`
+ * wrapper without the host being asked. Every non-allow decision feeds the model one
+ * fixed `aborted` output line whose wording names the decider ("Tool call denied by
+ * user." / "Tool call denied by policy."), and the `approval_decision` event carries the
+ * decision itself — the Trace already says who denied.
+ */
+export type ApprovalDecision = "allow" | "deny" | "forbidden";
 
 /** Token counts (input/output/cache/total). */
 export interface TokenCounts {

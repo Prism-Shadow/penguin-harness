@@ -29,6 +29,9 @@ import { parse as parseToml } from "smol-toml";
 import {
   CHAT_APPROVAL_MODES,
   DEFAULT_CHAT_THINKING_LEVELS,
+  DEFAULT_COMMAND_POLICY_RULES,
+  effectiveCommandPolicyRules,
+  parseCommandPolicy,
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
@@ -42,9 +45,17 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
+import type {
+  CommandPolicyRule,
+  LLMOutcome,
+  ModelRef,
+  OmniMessage,
+  ProjectConfig,
+} from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
+  CommandPolicyDto,
+  CommandPolicyRuleDto,
   EndpointModelListRequest,
   EndpointModelListResponse,
   ModelInfo,
@@ -135,6 +146,16 @@ function optNum(v: unknown): number | undefined {
 
 function optStr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
+}
+
+/** Command-policy rules as DTOs: per-rule `enabled` made explicit (stored absence = on). */
+function toCommandPolicyRuleDtos(rules: readonly CommandPolicyRule[]): CommandPolicyRuleDto[] {
+  return rules.map((r) => ({
+    name: r.name,
+    pattern: r.pattern,
+    ...(r.description !== undefined ? { description: r.description } : {}),
+    enabled: r.enabled !== false,
+  }));
 }
 
 /** Leniently reads a paired reference table (default_model / vision_model); returns undefined on a shape mismatch (including the old string format). */
@@ -298,6 +319,9 @@ export class ProjectConfigService {
     await this.writeRaw(projectId, {
       name,
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
+      // The factory command-policy rules are seeded exactly like the model presets:
+      // copied in at creation, owned by the project from then on.
+      ...(preset.command_policy !== undefined ? { command_policy: preset.command_policy } : {}),
       models: preset.models,
     });
   }
@@ -416,6 +440,56 @@ export class ProjectConfigService {
     else delete next.default_chat;
     await this.writeRaw(projectId, next);
     return this.getChatDefaults(projectId);
+  }
+
+  /**
+   * Sandbox command policy (`[command_policy]`): read leniently, mirroring core's
+   * loadProjectConfig tolerance — a non-boolean `enabled` reads as true (the default), a
+   * rule missing name or pattern is dropped, and an absent (or non-array) `rules` value
+   * serves the factory set: a project from before the block was seeded behaves as the
+   * defaults until its first saved edit materializes them. The factory set also rides
+   * along as `defaultRules` for the settings UI's "restore defaults".
+   */
+  async getCommandPolicy(projectId: string): Promise<CommandPolicyDto> {
+    const raw = await this.readRaw(projectId);
+    // Core's shared narrowing + the single "absent = factory set" fallback: this GET can
+    // never disagree with what the Environment snapshot will enforce.
+    const policy = parseCommandPolicy(raw.command_policy);
+    return {
+      enabled: policy?.enabled !== false,
+      rules: toCommandPolicyRuleDtos(effectiveCommandPolicyRules(policy)),
+      defaultRules: toCommandPolicyRuleDtos(DEFAULT_COMMAND_POLICY_RULES),
+    };
+  }
+
+  /**
+   * Replaces the `[command_policy]` block (declarative PUT, validated at the route). A PUT
+   * always materializes the full rule list into the file — model-presets style: once
+   * written, later factory changes never rewrite it — storing per field only what departs
+   * from the defaults (`enabled = false`, a rule's `enabled = false`, a non-empty
+   * description). Read-modify-write like setChatDefaults, preserving every other key.
+   * Returns the block as re-read.
+   */
+  async setCommandPolicy(
+    projectId: string,
+    req: {
+      enabled?: boolean;
+      rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
+    },
+  ): Promise<CommandPolicyDto> {
+    const raw = await this.readRaw(projectId);
+    const block: RawTable = {};
+    if (req.enabled === false) block.enabled = false;
+    block.rules = req.rules.map((r) => ({
+      name: r.name,
+      pattern: r.pattern,
+      ...(r.description !== undefined && r.description !== ""
+        ? { description: r.description }
+        : {}),
+      ...(r.enabled === false ? { enabled: false } : {}),
+    }));
+    await this.writeRaw(projectId, { ...raw, command_policy: block });
+    return this.getCommandPolicy(projectId);
   }
 
   /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */

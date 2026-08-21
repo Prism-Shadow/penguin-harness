@@ -247,7 +247,8 @@ A background subagent's lifecycle is decoupled from the call that launched it: i
 Every complete `tool_call` triggers exactly one approval decision:
 
 ```ts
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "deny">;
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 | Surface | Behavior |
@@ -256,7 +257,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<"allow" | "
 | CLI | `--approve` takes four modes: allow-all (default) / deny-all / read-only / always-ask; read-only auto-approves `permission: "r"` tools and defers the rest to a human |
 | Web / Server | The same four modes, set per Session; the mode is re-read from the DB on every decision, so changes take effect immediately; manual decisions arrive via the API |
 
-A deny produces a synthetic aborted `tool_call_output` (`Tool call denied by user.`) for the model to react to. Every decision is written to the Trace as an `approval_decision` event, forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+A deny produces a synthetic `aborted` `tool_call_output` for the model to react to — `Tool call denied by user.`, or `Tool call denied by policy.` when the [command policy](/configuration#command-policy) denied it, so a policy hit never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event — a policy veto recorded as `forbidden` — forming a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
 
 ## Custom tools & MCP
 

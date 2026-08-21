@@ -51,6 +51,7 @@ The openrouter, fireworks, siliconflow, qwen-token-plan, qwen-pay-as-you-go, and
 | `name` | Project display name (the id is shown when unset) |
 | `default_model` | Paired reference `{ provider, model_id }` to the default model; must point to an entry in `models` |
 | `vision_model` | The vision model that reads images on behalf of text-only models (used by `describe_image`); a paired reference |
+| `[command_policy]` | Sandbox command policy: deny rules for shell commands, applied ahead of the approval mode — see [Command policy](#command-policy) |
 | `[[models]]` | The list of available model entries |
 
 Model entry (`[[models]]`) fields:
@@ -90,6 +91,46 @@ output = 0.857143
 `pricing.unit` is currently always `usd_per_mtok` (USD per million tokens); the three buckets map onto `token_usage`'s three counters.
 
 Edit this file via the CLI (`penguin config model …`) or the Web Models page — never by hand while the service is running, and never by the model itself, which has no right to read or write it.
+
+### Command policy
+
+The `[command_policy]` block is the Project's sandbox guardrail for shell commands: a deny-rule list applied at the approval boundary itself to both tools that reach a shell — `exec_command`'s `cmd` (the launch) and `input_command`'s `chars` (what gets typed into an already-running one) — `Session.run` wraps the injected approval callback with it, so a hit is rejected before the host is asked, under every approval mode, allow-all included. The model receives the fixed line `Tool call denied by policy.` — distinct from a person's cancellation — and changes course. The policy lives in the Project config rather than in Agent State: an Agent editing its own configuration cannot reach it, and each Session snapshots it at creation, so a mid-Session edit takes effect only from the next load. It is not a filesystem permission — a tool that writes arbitrary paths can still rewrite the config file itself.
+
+The rules are **plain data with no special tiers**: the factory set is seeded into each new project exactly like the model presets — copied in at creation, never rewritten afterward — and every rule can then be edited, disabled, deleted, or joined by new ones. A project from before the seeding (no `rules` list stored) behaves as the factory set until its first saved edit materializes the list; the settings page's "Restore defaults" loads the factory set back into the editor, and Save writes it.
+
+| Field | Description |
+| --- | --- |
+| `enabled` | Master switch; absent = **on** (stored only as `enabled = false`) |
+| `[[command_policy.rules]]` | The deny-rule list, matched in order: `name` (identifies the rule in the settings UI) + `pattern` (a JavaScript regex source, matched against the whitespace-normalized command) + optional `description` + per-rule `enabled` (absent = on). A stored empty list means no rules; an absent list means the factory set |
+
+The factory set is deliberately small — commands whose verbatim execution is destructive with no undo: `rm` carrying both a recursive and a force flag, `mkfs`, `dd` writing straight to a block device, the classic fork bomb, and shell redirection onto a block device (`/dev/null` and friends stay legal). Four more are the Windows counterparts of the same five, since `exec_command` will resolve pwsh or cmd there: a recursive force delete (`Remove-Item -Recurse -Force`, `rd /s /q`), a volume format (`format C:`, `Format-Volume`), a raw disk overwrite (`\\.\PhysicalDriveN`, `Clear-Disk`), and the cmd fork bomb.
+
+Matching normalizes ordinary spellings before the rules run, so plain typing does not slip through by accident: a leading path (`/bin/rm`), a wrapper (`sudo`, `env`, `command`, `nice`, `xargs`), quoting or a backslash escape of the command word (`"rm"`, `r''m`, `\rm`), and a literal `sh -c 'rm -rf /'` payload all match. Removing quote marks is all that happens — nothing is expanded, substituted, or decoded.
+
+```toml
+[command_policy]
+enabled = true
+
+[[command_policy.rules]]
+name = "rm-recursive-force"
+pattern = "…" # seeded from the factory set
+description = "rm with recursive + force flags in one command (rm -rf and friends)"
+
+[[command_policy.rules]]
+name = "no-force-push"
+pattern = "git push [^;|&]*--force"
+enabled = false
+```
+
+This is an **accident guardrail, not a security boundary**, and that is a statement about what pattern matching can do rather than modesty about this implementation. Shell is a programming language; deciding what a program will do by reading its text before it runs is not a problem more rules get closer to solving. So the policy covers the spellings people and models actually type, and stops there:
+
+- **A command computed at run time is not covered and will not be.** `$IFS` in place of spaces, a variable or alias (`X=rm; $X -rf /`), a command substitution, `eval`, base64 piped into a shell, `python -c`, an interpreter reached through a pipe. Each would take a pattern that costs maintenance forever and buys only the appearance of coverage. Anyone who wants the command to run can get it to run.
+- **MCP tools are a different surface.** This policy reads `exec_command` and `input_command` only. An MCP server's own `permission` level is the knob that exists there, but read what it does before relying on it: it fixes the level its tools report to the approval mode and nothing else — it does not sandbox the server or restrict what its tools do when they run (see [Tools & Approval](/tools)). Extending a shell-text matcher into arbitrary MCP arguments would be a second, weaker control over a surface that needs a real one.
+- **Commands not on the list.** `shred`, `wipefs`, `find -delete`, `git clean -xfd`, `chmod -R 000 /` match no factory rule — the list is deliberately small. Add your own rules for what your project cares about.
+
+What it does buy is that a destructive one-liner does not run by accident, in either of the two ways a model reaches a shell, in either the POSIX or the Windows spelling, under any approval mode. That is a speed bump, and a speed bump is worth having in front of an irreversible command. For an actual boundary — a process that *cannot* reach the rest of the filesystem regardless of what it runs — the mechanism is confinement (bubblewrap, dsh), which is a separate layer this policy complements rather than replaces.
+
+Manage it from the Security policy tab of Project Settings in the Web App (owner-only to edit; members see the effective policy).
 
 ## Agent config
 

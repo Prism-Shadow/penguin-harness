@@ -61,6 +61,7 @@ import {
   type SystemConfig,
 } from "../src/state/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;
@@ -1387,6 +1388,85 @@ describe("project-config round trip", () => {
     await expect(loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).rejects.toThrow(
       /legacy|separate fields/,
     );
+  });
+});
+
+describe("command_policy (sandbox command policy block)", () => {
+  it("the default config seeds the factory rules (model-presets philosophy)", () => {
+    const cfg = defaultProjectConfig();
+    expect(cfg.command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
+    // Seeding copies the list: mutating a seeded config must not touch the constant.
+    cfg.command_policy!.rules!.pop();
+    expect(defaultProjectConfig().command_policy?.rules).toEqual(DEFAULT_COMMAND_POLICY_RULES);
+  });
+
+  it("round-trips through save/load — a known key the CLI's literal rebuild keeps", async () => {
+    const block = {
+      enabled: false,
+      rules: [
+        {
+          name: "no-force-push",
+          pattern: "git push [^;|&]*--force",
+          description: "no force pushes",
+          enabled: false,
+        },
+        { name: "no-curl", pattern: "\\bcurl\\b" },
+      ],
+    };
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.command_policy = structuredClone(block);
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.command_policy).toEqual(block);
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, loaded);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toEqual(block);
+  });
+
+  it("a stored empty rules list survives the round trip (no rules ≠ factory rules)", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.command_policy = { rules: [] };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toEqual({
+      rules: [],
+    });
+  });
+
+  it("loads tolerantly: bad keys drop, a non-array rules value reads as absent (factory set)", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(
+      file,
+      [
+        "[command_policy]",
+        'enabled = "off"', // wrong type -> dropped -> defaults to enabled
+        "[[command_policy.rules]]",
+        'name = "ok-rule"',
+        'pattern = "\\\\bcurl\\\\b"',
+        "description = 3", // wrong type -> field dropped, entry kept
+        "[[command_policy.rules]]",
+        'name = ""', // empty name -> entry dropped
+        'pattern = "x"',
+        "[[command_policy.rules]]",
+        'name = "no-pattern"', // missing pattern -> entry dropped
+      ].join("\n") + "\n",
+      "utf8",
+    );
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.command_policy).toEqual({
+      rules: [{ name: "ok-rule", pattern: "\\bcurl\\b" }],
+    });
+
+    await fs.writeFile(file, '[command_policy]\nrules = "strict"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
+  });
+
+  it("drops the block entirely when it is not a table or nothing valid remains", async () => {
+    const file = projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'command_policy = "strict"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
+    await fs.writeFile(file, '[command_policy]\nenabled = "banana"\n', "utf8");
+    expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
   });
 });
 

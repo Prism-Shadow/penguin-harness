@@ -217,11 +217,13 @@ CLI 把终端输入输出接到这个边界上；Server 把 HTTP 请求与 SSE �
 ## ApproveFn
 
 ```ts
-type ApprovalDecision = "allow" | "deny";
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = 命令策略的拦截
 type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 约束：每个完整 `tool_call` 恰好被调用一次；回调抛出异常按 `deny` 处理；未注入时引擎默认全部拒绝(保守策略)。Subagent 继承父级的审批回调(调用时带 `origin` 标记)，审批策略天然贯穿整个委托树。
+
+`"forbidden"` 从不出自宿主之手：`Session.run` 用 [Project 命令策略](/configuration#沙箱安全策略)包装注入进来的回调，命中的命令在宿主被问到之前就以 `"forbidden"` 作答。两种拒绝的工具输出都是固定的 `aborted` 一句——`"deny"` 为 `Tool call denied by user.`，`"forbidden"` 为 `Tool call denied by policy.`——决定值本身随 `approval_decision` 事件落 Trace，无需额外字段即可分辨决定者。返回 `"allow"` / `"deny"` 的既有回调无需改动。
 
 ## Subagent 接口
 

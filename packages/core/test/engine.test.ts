@@ -477,6 +477,42 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         (m.payload as { stop_reason?: string }).stop_reason === "aborted",
     );
     expect(deniedMsg).toBeDefined();
+    // A human denial is the plain "deny"; its wire format is unchanged from before
+    // "forbidden" existed.
+    const humanDecision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((humanDecision.payload as { decision?: string }).decision).toBe("deny");
+  });
+
+  it('a "forbidden" decision reads "denied by policy" and rides the event as itself', async () => {
+    // "forbidden" is the third approval decision (Session answers it for the sandbox
+    // command policy). The engine records it like any other and picks the fixed denial
+    // line from it, so the model sees a policy refusal rather than a user cancellation.
+    const llm = new FakeLLM();
+    const environment = new Environment({
+      workspaceDir: workspace,
+      toolConfig: execCommandToolConfig(),
+    });
+    const engine = new ContextEngine({ llm, environment });
+    const refuse: ApproveFn = async () => "forbidden";
+
+    const all = await collectRun(engine, [userText("clean up")], refuse);
+
+    await expect(readFile(join(workspace, "hello.txt"), "utf8")).rejects.toThrow();
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    // The decision itself is the audit record: the Trace says who denied with no extra field.
+    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
+    expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
+    // Fed back to the model like any other tool result.
+    const fedBack = llm.receivedSecondInput?.find(
+      (m) => (m.payload as { type?: string }).type === "tool_call_output",
+    );
+    expect(fedBack).toBeDefined();
   });
 
   it("engine maxTurns fallback is -1 (unlimited) when the option is omitted (direct SDK construction)", () => {

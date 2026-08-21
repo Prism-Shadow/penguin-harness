@@ -87,7 +87,7 @@ import type { MemoryChangeEntry, MemoryChangeRow } from "./memory-changes";
 // View model types
 // ---------------------------------------------------------------------------
 
-/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). */
+/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). A policy veto needs no source — its decision value is "forbidden". */
 export type DecisionSource = "manual" | "remote";
 
 export interface UserTextItem {

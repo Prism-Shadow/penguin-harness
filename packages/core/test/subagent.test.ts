@@ -554,7 +554,7 @@ describe("run_subagent backgrounding + input_subagent", () => {
 
   it("aborts background subagents and denies pending approvals on dispose", async () => {
     let sawAbort = false;
-    let decision: string | null = null;
+    let decision: unknown = null;
     const runner = runnerOf(async function* ({ approve, signal }: RunInput) {
       yield withOrigin(partialText("delta", "working"), HOP);
       if (approve) {

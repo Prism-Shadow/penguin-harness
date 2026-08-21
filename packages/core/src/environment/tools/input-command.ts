@@ -28,8 +28,8 @@ import { clampYield } from "./background/index.js";
 /** Tool name constant. */
 export const INPUT_COMMAND_NAME = "input_command";
 
-/** Ctrl-C: the ETX control character (U+0003). Received alone, it sends SIGINT to the process group instead of writing the byte into stdin. */
-const INTERRUPT = String.fromCharCode(3); // U+0003 (ETX)
+/** Ctrl-C: the ETX control character (U+0003). Received alone, it sends SIGINT to the process group instead of writing the byte into stdin (so the command policy exempts it — it is not typed text). */
+export const INTERRUPT = String.fromCharCode(3); // U+0003 (ETX)
 
 export function createInputCommandTool(
   definition: ToolDefinitionConfig,

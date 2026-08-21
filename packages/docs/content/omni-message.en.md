@@ -248,7 +248,8 @@ interface RequestEndPayload {
 
 interface ApprovalDecisionPayload {
   type: "approval_decision";
-  decision: "allow" | "deny";
+  decision: "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto,
+                              // never asked of a human — the record itself names the decider
   tool_call_id: string;       // pairs with the approved tool_call — the audit record
 }
 

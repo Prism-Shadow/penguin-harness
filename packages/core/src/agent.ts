@@ -364,6 +364,12 @@ export class Agent {
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
         : {}),
+      // Sandbox command policy snapshot: Project-owned (never Agent State), read once per
+      // Session so the running Session's copy cannot be edited from inside it. Absent
+      // config means the factory rule set, on.
+      ...(this.projectConfig.command_policy !== undefined
+        ? { commandPolicy: this.projectConfig.command_policy }
+        : {}),
     });
   }
 
@@ -549,6 +555,11 @@ export class Agent {
       ),
       ...(this.state.systemConfig.max_turns !== undefined
         ? { maxTurns: this.state.systemConfig.max_turns }
+        : {}),
+      // Same policy snapshot as createSession: a resumed Session re-reads the current
+      // Project config, so a policy edit takes effect from the next load.
+      ...(this.projectConfig.command_policy !== undefined
+        ? { commandPolicy: this.projectConfig.command_policy }
         : {}),
       // session_meta is already in the original Trace file, so it isn't rewritten; on the first write after a compaction-triggered rotation, the file is split first.
       metaAlreadyWritten: true,
