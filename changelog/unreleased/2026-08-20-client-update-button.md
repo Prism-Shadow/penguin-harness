@@ -3,6 +3,7 @@
 - **Date:** 2026-08-20
 - **Type:** feature
 - **Scope:** `web`, `server`, `desktop`
+- **PR:** [#386](https://github.com/Prism-Shadow/penguin-harness/pull/386)
 
 [中文版](2026-08-20-client-update-button.zh.md)
 
