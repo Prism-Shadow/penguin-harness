@@ -164,8 +164,11 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // registry is in-memory), and under a predecessor that predates the contract.
     const drain = ctx.resources.claim<Promise<unknown>>(PLATFORM_DRAIN_RESOURCE_ID);
     if (drain !== undefined) {
-      ctx.resources.release(PLATFORM_DRAIN_RESOURCE_ID);
       await drain;
+      // Released only AFTER it resolves: if this create() fails later, the (settled)
+      // drain stays claimable, so the host's recovery boot of the previous version
+      // consumes it and starts clean instead of finding nothing.
+      ctx.resources.release(PLATFORM_DRAIN_RESOURCE_ID);
     }
 
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups

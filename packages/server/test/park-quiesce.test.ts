@@ -79,11 +79,15 @@ describe("the drain handshake", () => {
     // Give create() every chance to run ahead: it must be parked on the drain.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(booted).toBe(false);
-    // Consumed (released) before the await, so the registry is already clean.
-    expect(r.claim(PLATFORM_DRAIN_RESOURCE_ID)).toBeUndefined();
+    // Still registered while unsettled: released only after it resolves, so a boot
+    // that fails past this point leaves the settled drain claimable by the host's
+    // recovery boot of the previous version.
+    expect(r.claim(PLATFORM_DRAIN_RESOURCE_ID)).toBeDefined();
     resolveDrain();
     const inst = await bootP;
     expect(booted).toBe(true);
+    // Consumed now that the successor is up.
+    expect(r.claim(PLATFORM_DRAIN_RESOURCE_ID)).toBeUndefined();
     inst.dispose();
   });
 
@@ -109,6 +113,37 @@ describe("the drain handshake", () => {
     // A detached (quiesce), B adopted and re-listened: exactly one listener, B's.
     expect(pty.listenerCount()).toBe(1);
     if (result.status === "ok") result.instance.dispose();
+  });
+});
+
+describe("upgrade boot failure", () => {
+  it("returns status failed with the parked doc instead of throwing", async () => {
+    const r = bareKernel();
+    const instA = await quietBoot(r);
+    const boom = {
+      create() {
+        throw new Error("boom: create failed");
+      },
+    };
+    const result = await upgrade({
+      current: instA,
+      impl: boom as never,
+      iface: packagedPlatform.iface,
+      resources: r,
+    });
+    expect(result.status).toBe("failed");
+    if (result.status === "failed") {
+      expect(String(result.error)).toMatch(/boom/);
+      // The parked doc is intact — the caller re-boots the previous impl from it.
+      const rebooted = (await boot(
+        packagedPlatform.impl,
+        packagedPlatform.iface,
+        result.doc as never,
+        r,
+      )) as Instance<PlatformApi>;
+      expect(rebooted.api.info()).toMatchObject({ impl: "packaged" });
+      rebooted.dispose();
+    }
   });
 });
 

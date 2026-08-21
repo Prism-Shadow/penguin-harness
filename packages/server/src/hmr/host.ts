@@ -370,6 +370,21 @@ export class HmrHost {
         invalid: result.invalid,
       };
     }
+    if (result.status === "failed") {
+      // The pushed platform's boot threw AFTER the old tree was disposed
+      // (validate-then-swap disposes first so the new tree can adopt what the old one
+      // delivered). Without recovery the process is half-dead: `this.instance` still
+      // answers HTTP out of closures, but its manager is closed and the current-App
+      // pointer is released — until a restart. So re-boot the PREVIOUS platform from the
+      // parked document the kernel handed back. The park-by-inventory contract is what
+      // makes this an ordinary load: the old App's dispose suspended and detached
+      // everything, so the recovered App adopts the delivered resources and restarts the
+      // suspended machinery like any successor. The pusher still gets an error — the
+      // push DID fail — but the machine it failed on keeps working.
+      this.publishAssets(previousAssets);
+      await this.recoverPrevious(result.doc);
+      throw new Error(`the pushed platform failed to boot: ${errMsg(result.error)}`);
+    }
 
     // Boot succeeded: commit web to memory too, then persist platform + cli + web
     // as one atomic version — never a platform that's newer (or older) than the
@@ -397,6 +412,38 @@ export class HmrHost {
       web: { rev: digest.slice(0, 12) },
       persisted,
     };
+  }
+
+  /**
+   * Boot-failure recovery: re-boot the version that was running before the failed
+   * upgrade, from its own parked document. The committed manifest still names that
+   * version (a failed push persists nothing), so the bundle comes from there — or it is
+   * the packaged default when nothing was ever pushed. Best-effort by design: a double
+   * fault only warns and leaves the disposed instance in place, because /api/hmr is
+   * runtime-owned and therefore still reachable for a follow-up push, and a process
+   * restart restores the committed version regardless.
+   */
+  private async recoverPrevious(doc: Json): Promise<void> {
+    try {
+      let bundle: PlatformBundle = packagedPlatform;
+      if (this.implId !== packagedPlatform.id) {
+        const manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
+        if (manifest.platform === undefined) throw new Error("harness.json has no `platform`");
+        bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
+      }
+      this.instance = (await boot(
+        bundle.impl,
+        bundle.iface,
+        doc,
+        this.resources,
+      )) as Instance<PlatformApi>;
+      // implId unchanged: the previous version is the running version again.
+    } catch (err) {
+      this.warn(
+        `boot-failure recovery failed too — the process serves a half-stopped App until ` +
+          `a successful push or a restart: ${errMsg(err)}`,
+      );
+    }
   }
 
   /** Layer (a) core: import one JS file, cache-busted so re-imports load fresh code. */
