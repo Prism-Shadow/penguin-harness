@@ -1319,12 +1319,9 @@ function AddGroupDialog({
                 picker — the add-model dialog's idiom, so the two flows read as one. */}
             <div className="block">
               <span className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                <FieldLabel required block={false}>
                   {S.models.baseUrl}
-                  <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
-                    *
-                  </span>
-                </span>
+                </FieldLabel>
                 <button
                   type="button"
                   disabled={detecting || busy}
@@ -2012,13 +2009,9 @@ function ModelDialog({
     <>
       <label className="block">
         <span className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+          <FieldLabel required block={false}>
             {S.models.modelId}
-            {/* Required mark, hand-placed: this label row is custom (link on the right), so FieldLabel's asterisk doesn't apply. */}
-            <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
-              *
-            </span>
-          </span>
+          </FieldLabel>
           <span className="flex shrink-0 items-baseline gap-2.5">
             {/* The model-homepage entry lives in the dialog header (top-right button); only the "get model ids" provider link stays here. */}
             {dialogProvider?.modelsUrl && (
@@ -2291,9 +2284,7 @@ function ModelDialog({
             own <label> wrapper, so this outer container is a <div> (a nested <label> is invalid). */}
         <div className="block">
           <span className="mb-1 flex items-baseline justify-between gap-2">
-            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-              {S.models.apiKey}
-            </span>
+            <FieldLabel block={false}>{S.models.apiKey}</FieldLabel>
             {dialogProvider?.apiKeyUrl && (
               <a
                 href={dialogProvider.apiKeyUrl}
@@ -2374,14 +2365,9 @@ function ModelDialog({
         <div className="block">
           {showProtocolPicker ? (
             <span className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+              <FieldLabel required={baseUrlRequired} block={false}>
                 {S.models.baseUrl}
-                {baseUrlRequired && (
-                  <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
-                    *
-                  </span>
-                )}
-              </span>
+              </FieldLabel>
               {/* Always live: no API key is needed (the server falls back to the stored key
                   and then to the protocol's env var), and anything that does go wrong is
                   explained in a popup. `detecting` only guards re-entrancy. */}

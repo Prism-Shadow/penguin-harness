@@ -25,6 +25,23 @@ export const controlBase =
 export const menuRowClass = "w-full px-3 py-1.5 text-left transition-colors duration-150";
 
 /**
+ * The red "*" that marks a field as required, and the only place it is spelled. A field is
+ * required when submitting without it is refused — never because its label sounds mandatory —
+ * and an optional field carries no counterpart mark: the absence of the asterisk is what says
+ * "optional", so no surface writes that word into a label or a placeholder.
+ *
+ * `aria-hidden` because the mark is decorative to assistive tech: the controls set
+ * `aria-required` from the same flag, which is what a screen reader announces.
+ */
+export function RequiredMark() {
+  return (
+    <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
+      *
+    </span>
+  );
+}
+
+/**
  * The field's title. Renders as a real `<label htmlFor>` when the caller supplies the control's
  * id, and as a plain span otherwise — the span form is for the `<label>`-wrapped layout below,
  * where a second label element would compete for the same control.
@@ -45,11 +62,7 @@ export function FieldLabel({
   const content = (
     <>
       {children}
-      {required && (
-        <span className="ml-0.5 text-red-500 dark:text-red-400" aria-hidden>
-          *
-        </span>
-      )}
+      {required && <RequiredMark />}
     </>
   );
   return htmlFor !== undefined ? (
@@ -109,7 +122,7 @@ export function Field({
   error?: ReactNode;
   /** id for the error text — the control passes the same id in aria-describedby. */
   errorId?: string;
-  /** Renders a red "*" after the label to mark the field as required. */
+  /** Renders a red "*" after the label. An optional field passes nothing — no counterpart mark, and no "optional" in the label. */
   required?: boolean;
   /** Semantic explanation, disclosed by a "?" beside the label. Formatting rules belong in `hint`, which stays visible. */
   info?: ReactNode;
