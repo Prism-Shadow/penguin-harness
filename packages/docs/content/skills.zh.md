@@ -66,7 +66,7 @@ Skill 库以 npm 包 `@prismshadow/penguin-skills` 发布，tarball 直接携带
 | 软件开发 | `web-design` | 生成网页与应用界面的 Penguin 视觉语言：设计令牌、组件配方、明暗主题与聊天布局 |
 | | `software-engineering` | 完成软件工程任务：调查与审查代码，以最小改动实现修复、特性与重构，验证改动并报告经过确认的结果 |
 | | `remote-claude-code` | 通过 SSH 在远程主机上驱动 Claude Code：expect 持久会话、headless `-p` 的 stdin 修正、tmux 驱动的交互 TUI（逐个按键并截屏确认，用户消息原样转发）与多轮续接（不预装，按需从技能库安装） |
-| AI 应用开发 | `penguin-sdk` | 基于 SDK 构建智能体、AI 与 RAG 应用：createSession/run 流式循环、以 CLI 形式接入用户已有工具，外加带可溯源引用的完整检索配方 |
+| AI 应用开发 | `penguin-sdk` | 基于 SDK 构建智能体应用、AI 与 RAG 应用（写应用代码，而非配置 Agent State）：createSession/run 流式循环、以 CLI 形式接入用户已有工具，外加带可溯源引用的完整检索配方 |
 | | `penguin-cli` | 用 penguin CLI 管理模型 API Key、默认模型与各 Agent 的 Vault 密钥 |
 | | `agenthub-models` | 经 `@prismshadow/agenthub` 调用模型 API：流式文本、图像生成、语音合成与 Embedding |
 | | `vllm` | 用 vLLM 部署与服务 LLM，提供 OpenAI 兼容端点，并为 Agent 负载启用工具调用 |

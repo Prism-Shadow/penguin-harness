@@ -1,10 +1,10 @@
 ---
 name: penguin-sdk
-description: Use whenever the user wants to build an agent, AI app, or any agentic application. Covers the Penguin Harness SDK — self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
-short_description: Build agents, AI and RAG apps on the Penguin Harness SDK.
-short_description_zh: 基于 Penguin SDK 构建智能体、AI 与 RAG 应用。
-version: 20
-updated: 2026-08-20T00:00:00Z
+description: Use whenever the user wants to build an agent application — their own program with an embedded agent, such as an AI app, an agentic app or a RAG app. This is writing application code on the Penguin Harness SDK, not configuring an Agent State inside PenguinHarness. Covers self-contained projects, the createSession/run streaming loop with thinking and image messages, wiring the user's existing tools in as CLI commands, and a complete RAG recipe that ingests documents into a knowledge base and answers with citations behind a web UI.
+short_description: Build agent, AI and RAG applications on the Penguin Harness SDK.
+short_description_zh: 基于 Penguin SDK 构建智能体应用、AI 与 RAG 应用。
+version: 21
+updated: 2026-08-21T00:00:00Z
 ---
 
 # Penguin Harness SDK
