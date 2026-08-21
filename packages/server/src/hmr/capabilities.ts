@@ -21,9 +21,9 @@
  * own older routes, so a terminals-only App there would leave a freshly pushed frontend
  * talking to the previous version's API — one atomic push landing as half a version.
  *
- * The reverse direction is ONE entry: the pointer to the current App ({@link
- * PlatformCurrent}) — deps, route table and graceful wrap-up published together in a
- * single registry write.
+ * There is no reverse direction here: the runtime reaches the current App through the
+ * instance `hmr.ensure()` already returns (in-process api members), never through the
+ * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
@@ -33,7 +33,6 @@ import type { ChannelHub } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
 import type { HmrHost } from "../hmr/host.js";
 import type { DesktopService } from "../services/desktop-service.js";
-import type { AppDeps } from "../app.js";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -123,8 +122,9 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
     "changePassword",
     "loginDesktop",
     "setPasswordDesktop",
+    "setProvisioner",
   ],
-  channels: ["get", "peek", "broadcast", "dispose"],
+  channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
   hmr: ["resources", "ensure", "resolveWebSource", "dispose"],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
@@ -203,9 +203,6 @@ export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
  */
 export const BARE_KERNEL_RESOURCE_ID = "bare-kernel";
 
-/** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
-export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
-
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
  * live-object contracts it parks by ID-prefix group (`terminal` covers every `terminal:*`
@@ -220,32 +217,16 @@ export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
  */
 export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
 
-/**
- * The one object a swap publishes — deps, route table and wrap-up together, so flipping
- * to a new App is a single registry write and no reader can ever see a half-swapped pair
- * (new deps with the old routes, or the reverse). Everything runtime-side that needs the
- * current App resolves this pointer at use time: the seam middleware dispatches into
- * `app`, auth late-binds provisioning through `deps`, index.ts's shutdown awaits
- * `shutdown`.
+/*
+ * There is deliberately NO reverse-direction registry entry. The runtime already holds
+ * the current App — it is `hmr.ensure()`'s instance — and everything it needs from the
+ * business side is an in-process member on that instance's api (`business()`,
+ * `shutdown()`, `drained()`) or a hook the App installs over a claimed capability
+ * (ChannelHub.setActivityProbe, AuthService.setProvisioner). A "current App" pointer in
+ * the registry was a duplicate of the host's own instance field, and the registry should
+ * carry only what has no other channel: resources, capabilities, and the contract
+ * declarations about them.
  */
-export interface PlatformCurrent {
-  /** The business deps this App built, or null when the runtime published no capabilities. */
-  deps: AppDeps | null;
-  /** The App's whole Hono route table (terminal + business), fetch-shaped for cross-bundle safety. */
-  app: { fetch(request: Request): Response | Promise<Response> };
-  /** Process-exit graceful drain (manager ≤5s wrap-up); absent when no business runs. */
-  shutdown?: () => Promise<void>;
-  /**
-   * Set by the dispose effect: the asynchronous tail of this App's suspension (aborted
-   * agent runs take real time to actually end; the kernel's dispose is synchronous). The
-   * successor claims this pointer, awaits `drained`, and then overwrites the registration
-   * with its own — the handover is paired by the resource itself: no separate id, no
-   * release call a dead generation could mis-aim at a successor's slot. Absent until
-   * dispose, on generations that predate the field, and after a process restart (the
-   * registry is in-memory; children died with the process).
-   */
-  drained?: Promise<void>;
-}
 
 /** Applies proxy settings to the RUNTIME's global dispatcher (see net/proxy.ts). */
 export type ProxyControl = (settings: ProxySettings) => void;

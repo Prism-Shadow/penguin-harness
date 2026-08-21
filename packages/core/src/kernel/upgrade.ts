@@ -151,6 +151,12 @@ export async function upgrade<A extends Park, C extends Json>(opts: {
     };
   }
   opts.current.dispose();
+  // A disposed tree may have an asynchronous tail — work its dispose effects aborted but
+  // could not await (effects are synchronous). An implementation exposes it as an optional
+  // in-process `drained` member; awaiting it HERE, between dispose and boot, is what makes
+  // a successor never race its predecessor — and a failed boot below cannot lose it,
+  // because it has already been awaited.
+  await (opts.current.api as { drained?: () => Promise<void> | undefined }).drained?.();
   let instance: Instance<A>;
   try {
     instance = await boot(opts.impl, opts.iface, doc, opts.resources);

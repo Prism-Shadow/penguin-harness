@@ -18,7 +18,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
+import { bootAppDeps, createRuntimeApp, type RuntimeDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import {
@@ -29,8 +29,6 @@ import {
 } from "./initial-password.js";
 import { applyProxySettings, installGlobalProxyDispatcher } from "./net/proxy.js";
 import { attachTerminalWebSocket } from "./terminal/ws.js";
-import { PLATFORM_CURRENT_RESOURCE_ID } from "./hmr/capabilities.js";
-import type { PlatformCurrent } from "./hmr/capabilities.js";
 import { loopbackHostRoles } from "./services/preview-token.js";
 import { acquireServerLock, liveServerLock, releaseServerLock } from "./lock.js";
 import { shellPortOf, wireShellUpdatePort } from "./services/desktop-update-port.js";
@@ -66,7 +64,7 @@ class PenguinServer {
   /** Assigned by readConfig(); every later step reads it. */
   private config!: ServerConfig;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
-  private deps!: AppDeps;
+  private deps!: RuntimeDeps;
   /** Assigned by buildApp(). */
   private app!: ReturnType<typeof createRuntimeApp>;
   /** Assigned by listen(). */
@@ -312,10 +310,9 @@ class PenguinServer {
     this.shuttingDown = true;
     console.log(`Received ${signal}, shutting down…`);
     // The CURRENT App's graceful drain (manager: interrupt runs, deny approvals, wait ≤5s
-    // for wrap-up) — claimed through the registry rather than deps, which after a hot swap
-    // would point at an already-disposed business incarnation.
-    const current = this.deps.hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID);
-    if (current?.shutdown !== undefined) await current.shutdown();
+    // for wrap-up) — through the instance the host holds, which a hot swap keeps current;
+    // no registry pointer needed.
+    await (await this.deps.hmr.ensure()).api.shutdown();
     // Disposing the host drains the App's effects (scheduler stop, manager hard-stop) and
     // sweeps the resource registry (live ptys).
     this.deps.hmr.dispose();

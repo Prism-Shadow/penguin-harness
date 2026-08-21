@@ -26,7 +26,6 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  PLATFORM_CURRENT_RESOURCE_ID,
   RUNTIME_INTERFACES,
   RUNTIME_INTERFACES_RESOURCE_ID,
   RUNTIME_AUTH_RESOURCE_ID,
@@ -39,7 +38,7 @@ import {
   RUNTIME_PROXY_RESOURCE_ID,
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
-import type { PlatformCurrent, ProxyControl } from "./hmr/capabilities.js";
+import type { ProxyControl } from "./hmr/capabilities.js";
 import { openDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
@@ -202,10 +201,28 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  */
+/**
+ * What the RUNTIME app serves with — mechanism only. Business deps (AppDeps) are built
+ * inside the platform's create() and never cross back to this side; where the runtime
+ * needs a sliver of the database (the request body cap, error recording), it constructs
+ * its own thin repo over the handle it owns rather than borrowing a business object.
+ */
+export interface RuntimeDeps {
+  config: ServerConfig;
+  db: DatabaseSync;
+  authService: AuthService;
+  channels: ChannelHub;
+  hmr: HmrHost;
+  desktop: DesktopService | null;
+  serverSettingsRepo: ServerSettingsRepo;
+  errors: ErrorRecorder;
+  log: (line: string) => void;
+}
+
 export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
-): Promise<AppDeps> {
+): Promise<RuntimeDeps> {
   const db = openDatabase(config.dbPath);
 
   const usersRepo = new UsersRepo(db);
@@ -215,17 +232,11 @@ export async function bootAppDeps(
   // against it.
   const hmr = new HmrHost(config.root);
 
-  // Channel idle reclamation skips active Sessions (running/compacting can go a long time
-  // without a publish, e.g. while waiting for approval). The manager lives platform-side
-  // and is rebuilt by every swap: resolve the CURRENT one through the registry at sweep
-  // time rather than capturing any one incarnation.
-  const channels = new ChannelHub({
-    isActive: (key) => {
-      const manager = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps
-        ?.manager;
-      return manager !== undefined && manager.statusOf(key) !== "idle";
-    },
-  });
+  // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
+  // business question: the App installs the answer itself via setActivityProbe at every
+  // create (see hmr/platform.ts) — ordinary use of the claimed capability, re-installed
+  // by each generation. Until the first App boots, nothing is active.
+  const channels = new ChannelHub();
 
   // Any password update for the built-in admin makes the persisted initial-password
   // plaintext stale (either the password is no longer initial, or a reset replaced it
@@ -238,13 +249,11 @@ export async function bootAppDeps(
     users: usersRepo,
     authSessions: authSessionsRepo,
     // Auth is runtime mechanism, but WHAT a fresh user is provisioned with is business
-    // policy — late-bound through the registry so it always reaches the current App.
-    provisionInitialProject: (user, isAdmin) => {
-      const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
-      if (deps == null) {
-        throw new Error("no business platform is running to provision the initial Project");
-      }
-      return deps.projectService.provisionInitialProject(user, isAdmin);
+    // policy: the App installs the real provisioner via setProvisioner at every create
+    // (see hmr/platform.ts). This constructor fallback only answers before the first
+    // boot, which the startup order below makes unreachable in practice.
+    provisionInitialProject: () => {
+      throw new Error("no business platform is running to provision the initial Project");
     },
     seedAdminPassword: config.seedAdminPassword,
     onPasswordChanged,
@@ -271,30 +280,41 @@ export async function bootAppDeps(
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
 
   // Boot the platform now rather than on the first request: the business surface —
-  // services, routes, the scheduler — is assembled inside its create().
-  await hmr.ensure();
-  const deps = hmr.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID)?.deps;
-  if (deps == null) {
+  // services, routes, the scheduler — is assembled inside its create(). The check reads
+  // the in-process api member, not a registry entry: the instance IS the current App.
+  const instance = await hmr.ensure();
+  if (instance.api.business() === null) {
     throw new Error("the packaged platform built no business surface");
   }
-  return deps;
+
+  const log = overrides.log ?? ((line: string) => console.log(line));
+  return {
+    config,
+    db,
+    authService,
+    channels,
+    hmr,
+    desktop,
+    // The runtime's OWN thin readers over its own handle — the body cap and error
+    // recording must not depend on a business object surviving a swap.
+    serverSettingsRepo: new ServerSettingsRepo(db),
+    errors: new ErrorRecorder(new ErrorsRepo(db), overrides.now ?? (() => new Date())),
+    log,
+  };
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
+export function createRuntimeApp(deps: RuntimeDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
   // pure function with unchanged behavior (HttpError is mapped as-is, unknown
   // exceptions are logged with a stack trace and collapsed to 500), and recording
-  // to the DB is just a side-effect layered on top.
+  // to the DB is just a side-effect layered on top. No Project attribution here: the
+  // runtime's own routes (auth, desktop, hmr) carry no :projectId, and business routes
+  // record through the platform app's onError, which attributes.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, deps);
-    deps.errors.record({
-      source: "http",
-      err,
-      ...(projectId !== undefined ? { ctx: { projectId } } : {}),
-    });
+    deps.errors.record({ source: "http", err });
     return handleError(err, c);
   });
   app.notFound((c) => c.json(errorBody("not_found", "Endpoint does not exist."), 404));

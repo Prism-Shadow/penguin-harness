@@ -80,14 +80,18 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = await bootAppDeps(
+  const runtime = await bootAppDeps(
     { ...testConfig(root), ...config },
     { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
   );
+  // Tests exercise the BUSINESS surface, which lives on the platform instance — reached
+  // through the in-process api member, the same way the runtime itself checks it.
+  const deps = (await runtime.hmr.ensure()).api.business();
+  if (deps === null) throw new Error("test app built no business surface");
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
   const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;
-  const app = createRuntimeApp(deps);
+  const app = createRuntimeApp(runtime);
   return {
     app,
     deps,

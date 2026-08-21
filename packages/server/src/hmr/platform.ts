@@ -35,12 +35,11 @@ import { seamHttp } from "./hono-seam.js";
 import {
   BARE_KERNEL_RESOURCE_ID,
   PENGUIN_FAMILY,
-  PLATFORM_CURRENT_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
 } from "./capabilities.js";
-import type { Interfaces, MembersOf, PlatformCurrent } from "./capabilities.js";
+import type { Interfaces, MembersOf } from "./capabilities.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -57,6 +56,20 @@ export interface PlatformApi extends Park {
    */
   terminals(): TerminalManager;
   attachStream(ws: WebSocket, session: TerminalSession, url: URL, log: (l: string) => void): void;
+  /**
+   * The business deps this App built (null on a declared bare kernel). In-process member,
+   * NOT a registry entry: the runtime holds this instance already (hmr.ensure()), so a
+   * "current App" pointer in the registry would be a duplicate channel.
+   */
+  business(): AppDeps | null;
+  /** Process-exit graceful drain (manager ≤5s wrap-up, workflow park); no-op without business. */
+  shutdown(): Promise<void>;
+  /**
+   * The asynchronous tail of this App's dispose — set by the dispose effect, awaited by
+   * the KERNEL between dispose and the successor's boot (see core kernel/upgrade.ts), so
+   * a new App never races the old one's aborted work. Undefined until disposed.
+   */
+  drained(): Promise<void> | undefined;
 }
 
 /**
@@ -85,7 +98,6 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
 interface ParkedInterfaces extends Interfaces {
   family: string;
   terminal: MembersOf<TerminalSession>;
-  platform: MembersOf<PlatformCurrent>;
 }
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
@@ -114,8 +126,6 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
     "kill",
     "dispose",
   ],
-  // The current-App pointer (see PlatformCurrent).
-  platform: ["deps", "app"],
 };
 
 /**
@@ -154,19 +164,6 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
           "— update the installation itself; a push replaces the platform, never the runtime",
       );
     }
-    // LOAD, step one: wait until the predecessor is actually gone. The kernel's park and
-    // dispose are synchronous, but suspending a business surface is not — aborted agent
-    // runs take real time to end. The previous App's dispose left its drain ON the
-    // current-App pointer it still holds (see PlatformCurrent.drained); this create()
-    // claims that pointer, awaits the drain, and later overwrites the registration with
-    // its own — takeover by claim, so no generation ever releases a slot a successor may
-    // own, and there is no separate "drain" id pretending to be a resource. Absent on the
-    // first boot, after a process restart (the registry is in-memory), and under a
-    // predecessor that predates the field. A recovery boot after a failed successor gets
-    // the same answer this way: the settled drain is still sitting on the pointer.
-    const predecessor = ctx.resources.claim<PlatformCurrent>(PLATFORM_CURRENT_RESOURCE_ID);
-    if (predecessor?.drained !== undefined) await predecessor.drained;
-
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -222,14 +219,17 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // wrap-up as a single registry write, so no reader can observe a half-swapped pair.
     const app = createApp(deps, terminals, identity);
     const business = deps;
-    const current: PlatformCurrent = {
-      deps,
-      app,
-      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
-      // effect cannot await — carried on the pointer for index.ts's shutdown to call.
-      ...(business === null ? {} : { shutdown: () => business.manager.shutdown(5000) }),
-    };
-    ctx.resources.register(PLATFORM_CURRENT_RESOURCE_ID, current);
+    // The runtime's two mid-request needs of the CURRENT App are hooks installed over the
+    // claimed capabilities — ordinary capability use, overwrite-only across swaps (a dead
+    // generation's hook is replaced, never removed, so nothing ever un-installs a
+    // successor's): "is this session busy" for channel sweep, and "what does a fresh user
+    // get" for login provisioning.
+    if (caps !== null && business !== null) {
+      caps.channels.setActivityProbe((key) => business.manager.statusOf(key) !== "idle");
+      caps.authService.setProvisioner((user, isAdmin) =>
+        business.projectService.provisionInitialProject(user, isAdmin),
+      );
+    }
     // PARK — the App's complete resource inventory, split by fate. Everything stateful
     // this App creates is on one of these three lists; a new resource must pick its list
     // when it is added, or the swap leaks it.
@@ -258,10 +258,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     // the contract, not a description of today's services.
     //
     // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
-    // actually end) cannot — dispose is sync — so it is left as `drained` on the
-    // current-App pointer this App still holds, and the successor's create() claims the
-    // pointer and awaits it before building: that handshake is what makes the process
-    // clean between generations, paired by the resource itself.
+    // actually end) cannot — dispose is sync — so it is exposed as api.drained(), which
+    // the KERNEL awaits between dispose and the successor's boot (kernel/upgrade.ts).
+    // Nothing about the handover touches the registry.
+    let drained: Promise<void> | undefined;
     ctx.effect(() => {
       terminals.quiesce();
       const drains: Promise<unknown>[] = [];
@@ -269,11 +269,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
         business.scheduler.stop();
         drains.push(business.manager.shutdown(SWAP_DRAIN_MS));
       }
-      // The async tail rides the object this App already owns — no registry write, no
-      // release: the successor (or a recovery boot) claims the pointer, awaits this, and
-      // overwrites the registration with its own. A dead generation therefore never
-      // touches the slot again, which is what makes the register/claim pair real.
-      current.drained = Promise.allSettled(drains).then(() => undefined);
+      drained = Promise.allSettled(drains).then(() => undefined);
     });
 
     const http = seamHttp(app);
@@ -292,6 +288,13 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       http,
       terminals: () => terminals,
       attachStream: (ws, session, url, log) => bindTerminalStream(ws, session, url, log),
+      business: () => business,
+      // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
+      // effect cannot await — exposed for index.ts's shutdown to call before disposing.
+      shutdown: async () => {
+        if (business !== null) await business.manager.shutdown(5000);
+      },
+      drained: () => drained,
     };
   },
 };

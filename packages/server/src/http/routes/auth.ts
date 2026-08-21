@@ -10,7 +10,7 @@ import { HttpError } from "../errors.js";
 import { SESSION_COOKIE } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { RuntimeDeps } from "../../app.js";
 
 /** Session cookie attributes: HttpOnly, SameSite=Lax, 7 days. */
 function cookieOptions(c: { req: { header(name: string): string | undefined } }) {
@@ -24,7 +24,7 @@ function cookieOptions(c: { req: { header(name: string): string | undefined } })
   };
 }
 
-export function authRoutes(deps: AppDeps): Hono<AppEnv> {
+export function authRoutes(deps: RuntimeDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/login", async (c) => {

@@ -170,13 +170,25 @@ export class ChannelHub {
   private readonly channels = new Map<string, Channel>();
   private readonly timer: NodeJS.Timeout;
   private readonly idleMs: number;
-  private readonly isActive: (key: string) => boolean;
+  private isActive: (key: string) => boolean;
 
   constructor(opts: ChannelHubOptions = {}) {
     this.idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
     this.isActive = opts.isActive ?? (() => false);
     this.timer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
     this.timer.unref?.();
+  }
+
+  /**
+   * Replaces the activity probe. "Is this session busy" is a business question the hub
+   * (runtime mechanism) cannot answer itself; the App installs its answer at create over
+   * the claimed hub — ordinary capability use, not a registry entry. Overwrite-only, the
+   * cross-generation discipline: a successor installs its own probe and a dead
+   * generation's is simply left behind (its manager has drained, so it reports idle —
+   * never wrong, only replaced).
+   */
+  setActivityProbe(probe: (key: string) => boolean): void {
+    this.isActive = probe;
   }
 
   get(key: string): Channel {
