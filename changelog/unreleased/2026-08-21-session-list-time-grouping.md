@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#389](https://github.com/Prism-Shadow/penguin-harness/pull/389)
 
 [中文版](2026-08-21-session-list-time-grouping.zh.md)
 
