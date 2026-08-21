@@ -3,10 +3,11 @@
  *
  * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
  * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `bootAppDeps(config)` builds the runtime core (database, auth, channels, HmrHost),
- * publishes its capabilities into the resource registry (see hmr/capabilities.ts), and
- * boots the platform — which returns the merged view. Neither listens on a port: tests
- * inject requests via `app.request()`, and the startup entry point is index.ts.
+ * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
+ * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
+ * platform — which builds the business surface over those capabilities — and returns that
+ * App's deps, read off the booted instance. Neither app listens on a port: tests inject
+ * requests via `app.request()`, and the startup entry point is index.ts.
  *
  * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
  * file — is what a hot push replaces. Both are called from `platformImpl.create`
@@ -201,28 +202,10 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  */
-/**
- * What the RUNTIME app serves with — mechanism only. Business deps (AppDeps) are built
- * inside the platform's create() and never cross back to this side; where the runtime
- * needs a sliver of the database (the request body cap, error recording), it constructs
- * its own thin repo over the handle it owns rather than borrowing a business object.
- */
-export interface RuntimeDeps {
-  config: ServerConfig;
-  db: DatabaseSync;
-  authService: AuthService;
-  channels: ChannelHub;
-  hmr: HmrHost;
-  desktop: DesktopService | null;
-  serverSettingsRepo: ServerSettingsRepo;
-  errors: ErrorRecorder;
-  log: (line: string) => void;
-}
-
 export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
-): Promise<RuntimeDeps> {
+): Promise<AppDeps> {
   const db = openDatabase(config.dbPath);
 
   const usersRepo = new UsersRepo(db);
@@ -283,38 +266,34 @@ export async function bootAppDeps(
   // services, routes, the scheduler — is assembled inside its create(). The check reads
   // the in-process api member, not a registry entry: the instance IS the current App.
   const instance = await hmr.ensure();
-  if (instance.api.business() === null) {
+  const business = instance.api.business();
+  if (business === null) {
     throw new Error("the packaged platform built no business surface");
   }
-
-  const log = overrides.log ?? ((line: string) => console.log(line));
-  return {
-    config,
-    db,
-    authService,
-    channels,
-    hmr,
-    desktop,
-    // The runtime's OWN thin readers over its own handle — the body cap and error
-    // recording must not depend on a business object surviving a swap.
-    serverSettingsRepo: new ServerSettingsRepo(db),
-    errors: new ErrorRecorder(new ErrorsRepo(db), overrides.now ?? (() => new Date())),
-    log,
-  };
+  // The App's own deps, read off the booted instance — the same bag every caller of this
+  // function always received. Callers that outlive swaps (index.ts, the runtime app) may
+  // only touch its swap-stable members: the runtime singletons published above, and the
+  // stateless repos over this process's own db handle. The business machinery on it
+  // (manager, services, scheduler) belongs to THIS generation and goes stale at the next
+  // push — per-request business dispatch rides the seam, never this reference.
+  return business;
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(deps: RuntimeDeps): Hono<AppEnv> {
+export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Error recording is layered in a lambda wrapping onError: handleError stays a
   // pure function with unchanged behavior (HttpError is mapped as-is, unknown
   // exceptions are logged with a stack trace and collapsed to 500), and recording
-  // to the DB is just a side-effect layered on top. No Project attribution here: the
-  // runtime's own routes (auth, desktop, hmr) carry no :projectId, and business routes
-  // record through the platform app's onError, which attributes.
+  // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    deps.errors.record({ source: "http", err });
+    const projectId = attributedProjectId(c, deps);
+    deps.errors.record({
+      source: "http",
+      err,
+      ...(projectId !== undefined ? { ctx: { projectId } } : {}),
+    });
     return handleError(err, c);
   });
   app.notFound((c) => c.json(errorBody("not_found", "Endpoint does not exist."), 404));

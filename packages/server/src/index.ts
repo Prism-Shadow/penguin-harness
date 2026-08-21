@@ -18,7 +18,7 @@ import path from "node:path";
 import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
-import { bootAppDeps, createRuntimeApp, type RuntimeDeps } from "./app.js";
+import { bootAppDeps, createRuntimeApp, type AppDeps } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
 import {
@@ -64,7 +64,7 @@ class PenguinServer {
   /** Assigned by readConfig(); every later step reads it. */
   private config!: ServerConfig;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
-  private deps!: RuntimeDeps;
+  private deps!: AppDeps;
   /** Assigned by buildApp(). */
   private app!: ReturnType<typeof createRuntimeApp>;
   /** Assigned by listen(). */
