@@ -103,12 +103,43 @@ export interface GitSource {
  * manifest. All three travel in the SAME request — there is no partial-target
  * upgrade.
  */
+/**
+ * Files a push needs on DISK rather than in memory. The web dist is only ever served as
+ * bytes, so it stays in RAM; an asset is something the platform hands to the OS — a
+ * native `.node` whose loader resolves it by path, a helper binary it execs — and a
+ * bundle cannot carry those: it is imported from the data root, where neither a relative
+ * `build/Release/pty.node` nor a bare specifier resolves (verified: node-pty's binding
+ * fails to load from a bundle placed outside the server's own module graph).
+ */
+export interface UpgradeAssets {
+  /** relPath → base64 content. */
+  files: Record<string, string>;
+  /** relPaths that must land executable (a helper binary the platform spawns). */
+  exec?: string[];
+}
+
 export interface UpgradeAllTarget {
   platform: string;
   cli: string;
   web: Record<string, string>;
+  assets?: UpgradeAssets;
   source?: GitSource;
 }
+
+/**
+ * Where the runtime publishes the unpacked assets directory for the booting platform.
+ * The resource registry is the only runtime→platform channel the kernel offers (ctx
+ * carries `resources`, nothing else), and it is kind-agnostic by design — see
+ * ./resources.ts.
+ */
+export const ASSETS_RESOURCE_ID = "runtime:assets-dir";
+
+/**
+ * Written into an assets directory once every file in it is on disk. Its absence marks a
+ * directory whose materialization was interrupted; no asset path can collide with it
+ * (assets arrive as `node_modules/...` paths).
+ */
+const MATERIALIZED = ".materialized";
 
 export type UpgradeOutcome =
   | {
@@ -251,6 +282,15 @@ export class HmrHost {
       if (!fs.existsSync(cliPath)) {
         throw new Error(`cli bundle '${manifest.cli.bundle}' does not exist`);
       }
+      // Republished before boot, same ordering as an upgrade: a resumed platform loads its
+      // native modules out of the assets the version was committed with.
+      if (manifest.assets !== undefined) {
+        const assetsDir = path.join(this.hmrDir, manifest.assets.dir);
+        if (!fs.existsSync(assetsDir)) {
+          throw new Error(`assets dir '${manifest.assets.dir}' does not exist`);
+        }
+        this.publishAssets(assetsDir);
+      }
       const bundle = await this.importBundleFile(path.join(this.hmrDir, manifest.platform.bundle));
       const gz = await fsp.readFile(path.join(this.hmrDir, manifest.web.manifest));
       const webMem = filesMapFromGzip(gz);
@@ -300,13 +340,27 @@ export class HmrHost {
     const bundle = await this.importBundleFile(platformPath);
     const source = target.source ?? null;
 
-    const result = await upgrade({
-      current,
-      impl: bundle.impl,
-      iface: bundle.iface,
-      resources: this.resources,
-    });
+    // Assets land BEFORE the boot: the platform's create() may load a native module out of
+    // them. A failed boot puts the pointer back, so the surviving old platform keeps
+    // claiming the assets it booted with.
+    const previousAssets = this.resources.claim<string>(ASSETS_RESOURCE_ID) ?? null;
+    const assetsDir = target.assets ? await this.materializeAssets(target.assets) : null;
+    if (assetsDir !== null) this.publishAssets(assetsDir);
+
+    let result;
+    try {
+      result = await upgrade({
+        current,
+        impl: bundle.impl,
+        iface: bundle.iface,
+        resources: this.resources,
+      });
+    } catch (err) {
+      this.publishAssets(previousAssets);
+      throw err;
+    }
     if (result.status === "blocked") {
+      this.publishAssets(previousAssets);
       // Old instance + web untouched; the doc + path lists are the input for the
       // upper upgrade-ladder rungs (auto-upgrader / agent / human).
       return {
@@ -332,6 +386,7 @@ export class HmrHost {
       target.cli,
       gz,
       digest.slice(0, 16),
+      assetsDir,
     );
 
     return {
@@ -412,11 +467,54 @@ export class HmrHost {
    * (`persisted` in UpgradeOutcome) so a live swap that could not be written to disk
    * is visibly at risk of reverting on the next restart, rather than silently ok.
    */
+  /**
+   * Unpacks a push's assets under store/assets/<sha>/, content-addressed like every other
+   * artifact so an unchanged set reuses its directory. Modes are restored from the push's
+   * `exec` list: an asset arrives as base64 with no mode of its own, and a helper binary
+   * without its exec bit is exactly the failure this whole path exists to avoid.
+   *
+   * An identical set is NOT re-written. That is a correctness requirement, not a saving:
+   * these assets are native modules, and on Windows the copies from the last push are
+   * mapped into this very process — reopening one for writing fails with EBUSY and takes
+   * the whole upgrade down with it. The directory name already proves the content
+   * matches; MATERIALIZED, written last, is what proves the directory is complete, so a
+   * push interrupted halfway is repaired rather than trusted.
+   */
+  private async materializeAssets(assets: UpgradeAssets): Promise<string> {
+    const sha = filesDigest(assets.files).slice(0, 16);
+    const dir = path.join(this.storeDir, "assets", sha);
+    const marker = path.join(dir, MATERIALIZED);
+    if (fs.existsSync(marker)) return dir;
+
+    const exec = new Set(assets.exec ?? []);
+    for (const [rel, b64] of Object.entries(assets.files)) {
+      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+      const file = path.join(dir, rel);
+      const content = Buffer.from(b64, "base64");
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      // Repairing an incomplete directory: whatever already matches is left alone, for the
+      // same reason the whole directory is skipped above.
+      if (!(await sameFileContent(file, content))) await fsp.writeFile(file, content);
+      // Explicit chmod: writeFile's mode is masked by umask, and ignored outright when
+      // the file already exists (a reused, content-addressed directory).
+      await fsp.chmod(file, exec.has(rel) ? 0o755 : 0o644);
+    }
+    await fsp.writeFile(marker, sha);
+    return dir;
+  }
+
+  /** Points the registry at this version's assets (or clears it when a push has none). */
+  private publishAssets(dir: string | null): void {
+    if (dir === null) this.resources.release(ASSETS_RESOURCE_ID);
+    else this.resources.register(ASSETS_RESOURCE_ID, dir);
+  }
+
   private async persistVersion(
     platformContent: string,
     cliContent: string,
     webGz: Buffer,
     webSha: string,
+    assetsDir: string | null,
   ): Promise<boolean> {
     try {
       const platformSha = sha1(platformContent).slice(0, 16);
@@ -437,6 +535,9 @@ export class HmrHost {
         platform: { bundle: `store/platform/${platformSha}.mjs` },
         cli: { bundle: `store/cli/${cliSha}.mjs` },
         web: { manifest: `store/web/${webSha}.webz` },
+        ...(assetsDir === null
+          ? {}
+          : { assets: { dir: path.relative(this.hmrDir, assetsDir).split(path.sep).join("/") } }),
       }));
       return true;
     } catch (err) {
@@ -522,6 +623,16 @@ export class HmrHost {
       webRef,
       (sha) => fsp.rm(path.join(webDir, `${sha}.webz`), { force: true }),
     );
+
+    // Assets are directories, not single files; otherwise the same keep-newest rule.
+    const assetsRoot = path.join(this.storeDir, "assets");
+    const assetsRef = manifest.assets?.dir.match(/([0-9a-f]+)$/)?.[1] ?? null;
+    await keepNewest(
+      assetsRoot,
+      (name) => (/^[0-9a-f]+$/.test(name) ? name : null),
+      assetsRef,
+      (sha) => fsp.rm(path.join(assetsRoot, sha), { recursive: true, force: true }),
+    );
   }
 
   /** Process-exit sweep only; never part of an upgrade. */
@@ -548,6 +659,17 @@ function filesDigest(files: Record<string, string>): string {
 }
 
 /** No absolute paths, no `..` segments — the map is looked up by exact key, but a malformed key must never be stored. */
+/** Whether `file` already holds exactly these bytes (missing/unreadable counts as no). */
+async function sameFileContent(file: string, content: Buffer): Promise<boolean> {
+  try {
+    const stat = await fsp.stat(file);
+    if (!stat.isFile() || stat.size !== content.length) return false;
+    return (await fsp.readFile(file)).equals(content);
+  } catch {
+    return false;
+  }
+}
+
 function isSafeRelPath(rel: string): boolean {
   if (rel === "" || rel.startsWith("/") || rel.includes("\\")) return false;
   return rel.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");

@@ -42,7 +42,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { ACCENT_SWATCHES, useTheme } from "../../state/theme";
-import type { Accent, Currency, FontScale, ThemeMode } from "../../state/theme";
+import type { Accent, Currency, FontScale, TerminalThemeMode, ThemeMode } from "../../state/theme";
 import { agentDisplayName, projectDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import {
@@ -148,6 +148,7 @@ import { ProxySettingsDialog } from "../account/proxy-settings-dialog";
 import { UploadLimitsDialog } from "../account/upload-limits-dialog";
 import { UpdateDialog } from "../account/update-dialog";
 import { forceUpdateCheck, updateCheckOutcome, useVersionInfo } from "../../lib/use-version-info";
+import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -287,8 +288,18 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const { user, logout, desktopMode, sessionVia } = useAuth();
-  const { mode, setMode, fontScale, setFontScale, accent, setAccent, currency, setCurrency } =
-    useTheme();
+  const {
+    mode,
+    setMode,
+    fontScale,
+    setFontScale,
+    accent,
+    setAccent,
+    currency,
+    setCurrency,
+    terminalMode,
+    setTerminalMode,
+  } = useTheme();
   const { lang, locale, setLang } = useLocale();
   const {
     projects,
@@ -1128,6 +1139,13 @@ export function Sidebar({
     { value: "zh", label: S.settings.langZh },
     { value: "system", label: S.settings.followSystem },
   ];
+  // The terminal keeps its own light/dark rather than inheriting the app's — see
+  // TerminalThemeMode. "跟随主题" is the opt-in that couples them.
+  const terminalThemeOptions: ReadonlyArray<{ value: TerminalThemeMode; label: string }> = [
+    { value: "light", label: S.settings.themeLight },
+    { value: "dark", label: S.settings.themeDark },
+    { value: "app", label: S.settings.followAppTheme },
+  ];
   const fontOptions: ReadonlyArray<{ value: FontScale; label: string }> = [
     { value: "sm", label: S.settings.fontSmall },
     { value: "md", label: S.settings.fontMedium },
@@ -1506,7 +1524,7 @@ export function Sidebar({
               onToggle={() => toggleGroup(DRAFTS_GROUP_KEY)}
               icon={
                 <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                  <Icon d={NEW_CHAT_ICON} size={14} />
+                  <Icon d={NEW_CHAT_ICON} size={ICON_SIZE.groupHeaderGlyph} />
                 </span>
               }
               label={S.chat.draftGroup}
@@ -1569,7 +1587,7 @@ export function Sidebar({
                           onClick={() => newChat(agent.agentId)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         <button
                           type="button"
@@ -1577,7 +1595,7 @@ export function Sidebar({
                           onClick={() => go(`/agents/${agent.agentId}`)}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d={GEAR_ICON} size={16} />
+                          <Icon d={GEAR_ICON} size={ICON_SIZE.groupHeaderAction} />
                         </button>
                       </>
                     }
@@ -1634,7 +1652,10 @@ export function Sidebar({
                     icon={
                       /* Folder opens and closes with the group */
                       <span className="shrink-0 text-gray-400 dark:text-gray-500">
-                        <Icon d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON} size={15} />
+                        <Icon
+                          d={collapsed ? FOLDER_ICON : FOLDER_OPEN_ICON}
+                          size={ICON_SIZE.groupHeaderGlyph}
+                        />
                       </span>
                     }
                     label={group.temp ? S.chat.tempWorkspaces : group.label}
@@ -1655,7 +1676,7 @@ export function Sidebar({
                           onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         >
-                          <Icon d="M12 5v14M5 12h14" size={18} />
+                          <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
                         </button>
                         {/* Manually-added (registry-backed) Workspaces only: rename-alias /
                             remove-from-sidebar overflow, to the right of the "+" (session-
@@ -1738,6 +1759,13 @@ export function Sidebar({
           <div className="space-y-2.5 px-3 py-2">
             <SettingRow label={S.settings.theme}>
               <Segmented options={themeOptions} value={mode} onChange={setMode} />
+            </SettingRow>
+            <SettingRow label={S.settings.terminalTheme}>
+              <Segmented
+                options={terminalThemeOptions}
+                value={terminalMode}
+                onChange={setTerminalMode}
+              />
             </SettingRow>
             <SettingRow label={S.settings.fontSize}>
               <Segmented options={fontOptions} value={fontScale} onChange={setFontScale} />
@@ -2139,7 +2167,7 @@ function GroupPinButton({ pinned, onToggle }: { pinned: boolean; onToggle: () =>
           : "text-gray-400 opacity-0 focus-visible:opacity-100 group-hover/header:opacity-100 dark:text-gray-500"
       }`}
     >
-      <Icon d={PIN_ICON} size={15} />
+      <Icon d={PIN_ICON} size={ICON_SIZE.groupHeaderAction} />
     </button>
   );
 }
@@ -2270,6 +2298,8 @@ function SessionRow({
       >
         <button
           type="button"
+          data-testid="session-row"
+          data-session-id={s.sessionId}
           // A press-and-hold that opened the context menu must not also open the Session:
           // touch screens replay the held press as a click once the finger lifts.
           onClick={() => {

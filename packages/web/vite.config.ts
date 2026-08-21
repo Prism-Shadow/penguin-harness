@@ -40,6 +40,9 @@ export default defineConfig({
       "/api": {
         target: apiProxyTarget(),
         changeOrigin: false,
+        // The terminal stream (/api/terminals/:id/stream) is a WebSocket upgrade; without
+        // this the proxy answers the handshake itself and the terminal never connects.
+        ws: true,
       },
     },
   },

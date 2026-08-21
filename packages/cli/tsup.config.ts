@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/penguin.ts", "src/penguin-hmr.ts"],
   format: ["esm"],
-  target: "node20",
+  target: "node24",
   platform: "node",
   clean: true,
   sourcemap: true,

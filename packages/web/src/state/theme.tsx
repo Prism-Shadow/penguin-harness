@@ -6,6 +6,10 @@
  * - Font size: scales the root font-size (rem-based text-* utilities scale along with it).
  * - Theme color: html[data-accent] overrides --accent-bg/--accent-fg; defaults to neutral
  *   (gray/white, follows light/dark).
+ * - Terminal theme: its own light/dark/follow-the-app setting, defaulting to dark — see
+ *   TerminalThemeMode. It drives no class or variable here; the terminal reads
+ *   `terminalDark` and paints itself, because Tailwind's dark: variant is anchored on
+ *   html.dark and cannot express a light subtree inside a dark app.
  * All preferences persist to localStorage.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
@@ -14,6 +18,13 @@ import type { ReactNode } from "react";
 export type ThemeMode = "light" | "dark" | "system";
 export type FontScale = "sm" | "md" | "lg";
 export type Accent = "neutral" | "blue" | "green" | "violet" | "rose" | "amber";
+/**
+ * The terminal's appearance, which is its own preference rather than a slice of the app's.
+ * A terminal is where people keep prompts, colour schemes and TUIs tuned for a dark
+ * screen, and plenty of them want exactly that inside an otherwise light app — so the
+ * default is "dark" regardless of the app, and "app" is the opt-in that couples the two.
+ */
+export type TerminalThemeMode = "light" | "dark" | "app";
 /** Display currency (prices are always stored as USD/million Tokens; conversion happens only for display and input). */
 export type Currency = "USD" | "CNY";
 /** 1 USD ≈ 7 CNY (fixed conversion rate). */
@@ -23,6 +34,7 @@ const MODE_KEY = "penguin.theme";
 const FONT_KEY = "penguin.fontScale";
 const ACCENT_KEY = "penguin.accent";
 const CURRENCY_KEY = "penguin.currency";
+const TERMINAL_KEY = "penguin.terminal.theme";
 
 /** Font size tier → root font-size (px): overall slightly larger than the system default for readability. */
 const FONT_PX: Record<FontScale, string> = { sm: "16px", md: "18px", lg: "20px" };
@@ -39,6 +51,10 @@ interface ThemeContextValue {
   /** Display currency for prices (shared by Cost Center and Model Library; always stored as USD). */
   currency: Currency;
   setCurrency: (currency: Currency) => void;
+  terminalMode: TerminalThemeMode;
+  setTerminalMode: (mode: TerminalThemeMode) => void;
+  /** Resolved terminal appearance ("app" already resolved against the app's own). */
+  terminalDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -70,6 +86,12 @@ function initialAccent(): Accent {
   return "neutral";
 }
 
+function initialTerminalMode(): TerminalThemeMode {
+  const stored = localStorage.getItem(TERMINAL_KEY);
+  if (stored === "light" || stored === "dark" || stored === "app") return stored;
+  return "dark";
+}
+
 function initialCurrency(): Currency {
   return localStorage.getItem(CURRENCY_KEY) === "CNY" ? "CNY" : "USD";
 }
@@ -84,8 +106,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [fontScale, setFontScaleState] = useState<FontScale>(initialFontScale);
   const [accent, setAccentState] = useState<Accent>(initialAccent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
+  const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
 
   const dark = mode === "system" ? sysDark : mode === "dark";
+  const terminalDark = terminalMode === "app" ? dark : terminalMode === "dark";
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -131,6 +155,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setCurrencyState(next);
   }, []);
 
+  const setTerminalMode = useCallback((next: TerminalThemeMode) => {
+    localStorage.setItem(TERMINAL_KEY, next);
+    setTerminalModeState(next);
+  }, []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -143,6 +172,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setAccent,
         currency,
         setCurrency,
+        terminalMode,
+        setTerminalMode,
+        terminalDark,
       }}
     >
       {children}

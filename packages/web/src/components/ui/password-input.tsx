@@ -20,11 +20,14 @@ const EYE_OFF =
 export function PasswordInput({
   label,
   hint,
+  info,
+  infoLabel,
   error,
   invalid,
   required,
   size = "base",
   className,
+  id,
   ...rest
 }: Omit<InputProps, "type">) {
   const [visible, setVisible] = useState(false);
@@ -33,11 +36,24 @@ export function PasswordInput({
   // association is wired here too: the inner Input only gets `invalid` and points its
   // aria-describedby at the outer FieldError.
   const errorId = useId();
+  // Same reason as Input: an info field's label sits outside the wrapper and needs htmlFor.
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
   return (
-    <Field label={label} hint={hint} error={error} errorId={errorId} required={required}>
+    <Field
+      label={label}
+      hint={hint}
+      error={error}
+      errorId={errorId}
+      required={required}
+      info={info}
+      infoLabel={infoLabel}
+      controlId={controlId}
+    >
       <div className="relative">
         <Input
           {...rest}
+          id={info !== undefined ? controlId : id}
           required={required}
           size={size}
           type={visible ? "text" : "password"}

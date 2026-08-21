@@ -29,6 +29,34 @@ export const en: Strings = {
     unpinGroup: "Unpin group",
   },
 
+  /** Server-side terminal (the in-app dock and the standalone /terminal page). */
+  terminal: {
+    title: "Terminal",
+    newShell: "New shell",
+    /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
+    killShell: "Kill this terminal",
+    /** Boundary drag handle between the dock and the main content (double-click resets). */
+    resize: "Resize terminal panel",
+    /** Hover menu when the user has no live terminal yet. */
+    noTerminals: "No terminals",
+    /** Pane body when creating/attaching a shell failed (the server message follows). */
+    createFailed: "Could not start a terminal",
+    /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
+    noTerminalApi:
+      "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
+    /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
+    detach: "Open in new window",
+    close: "Close",
+    status: {
+      connecting: "connecting",
+      ready: "ready",
+      exited: "exited",
+      error: "error",
+    },
+    /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
+    exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
   settings: {
     language: "Language",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
@@ -58,6 +86,8 @@ export const en: Strings = {
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
+    terminalTheme: "Terminal theme",
+    followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
@@ -138,6 +168,10 @@ export const en: Strings = {
     unknownError: "Request failed, please try again later",
     requiredField: "This field is required",
     copied: "Copied",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "More info",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `More info: ${subject}`,
     name: "Name",
     username: "Username",
     role: "Role",
@@ -1241,6 +1275,11 @@ Scenarios:
     removeImage: "Remove image",
     openWorkspace: "Open workspace",
     openAgents: "Agents panel",
+    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
+    panelsCreate: "Create",
+    workspacePanel: "Workspace",
+    pinPanel: "Pin to toolbar",
+    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",

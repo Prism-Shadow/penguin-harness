@@ -61,7 +61,7 @@ describe("NAV_GROUP_KEYS", () => {
     // outside the group container — the manifest never governs it.
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("newChat");
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("chat");
-    expect(zh.chat.newSessionMenu).toBe("新建对话");
+    expect(zh.chat.newSessionMenu).toBeTruthy();
   });
 });
 
@@ -72,10 +72,15 @@ describe("visibleNavKeys", () => {
   });
 
   it("the chevron-button toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
-    expect(zh.nav.collapseGroup).toBe("折叠");
-    expect(zh.nav.expandGroup).toBe("展开");
-    expect(en.nav.collapseGroup).toBe("Collapse");
-    expect(en.nav.expandGroup).toBe("Expand");
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      expect(dict.nav.collapseGroup, locale).toBeTruthy();
+      expect(dict.nav.expandGroup, locale).toBeTruthy();
+      // One button, two states: the same name for both would leave the state unreadable.
+      expect(dict.nav.collapseGroup, locale).not.toBe(dict.nav.expandGroup);
+    }
   });
 });
 

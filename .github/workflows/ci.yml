@@ -1,7 +1,7 @@
 # CI: build -> style (Prettier) -> typecheck (tsc) -> unit tests (vitest) -> live e2e (DeepSeek).
 # Build first: core's exports point at dist/, and cli's type resolution and runtime imports both need core's build output.
 # e2e needs the repo secret DEEPSEEK_API_KEY; when absent (e.g. forks) that step self-skips and the other checks run as usual.
-# A second job repeats build/typecheck/test on windows-latest (see ci-windows below).
+# Two more jobs repeat build/typecheck/test on macos-latest and windows-latest (ci-macos / ci-windows below).
 name: CI
 
 # Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
@@ -60,14 +60,15 @@ jobs:
           fi
           pnpm test:e2e
 
-  # Windows: the same build/typecheck/test gates on windows-latest (the ubuntu job above stays the
-  # required one). The runner ships Git-Bash on PATH, so core's exec_command tests run through the
-  # shell resolver's bash pick; genuinely POSIX-only tests skip themselves via process.platform
-  # guards (not CI filters), so local Windows devs see the same behavior. Line endings come from
-  # .gitattributes (LF working tree), keeping build outputs and fixtures byte-identical.
-  # No format:check (same files as ubuntu) and no live-LLM e2e here (ubuntu-only budget).
-  ci-windows:
-    runs-on: windows-latest
+  # macOS: the same build/typecheck/test gates on macos-latest (arm64). This is the only job
+  # where the terminal's pty suites run on darwin — node-pty compiles against the runner's
+  # toolchain and its darwin-only spawn-helper actually executes — and the standalone
+  # terminal smoke script then re-runs node-pty under Electron's own Node
+  # (ELECTRON_RUN_AS_NODE), the runtime the packaged app's server really uses. A macOS
+  # terminal regression that once shipped as a silently empty panel fails here instead.
+  # No format:check (same files as ubuntu) and no live-LLM e2e (ubuntu-only budget).
+  ci-macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -91,9 +92,61 @@ jobs:
       - name: Unit tests (vitest)
         run: pnpm test
 
+      - name: Terminal smoke (node-pty under Electron's Node)
+        run: node packages/desktop/scripts/terminal-smoke.mjs
+
+  # Windows: the same build/test gates on windows-latest (the ubuntu job above stays the
+  # required one), split into two shards so the process-heavy suites don't share a small
+  # runner: `server` gives the pty-streaming suites the whole machine and carries the
+  # installer checks, while `packages` runs core alone first (its exec_command suites spawn
+  # real shells and read their output under timeouts, races they lose when oversubscribed)
+  # and the remaining packages together after it. Every package's tests run exactly once
+  # across the two shards. The runner ships Git-Bash on PATH, so core's exec_command tests
+  # run through the shell resolver's bash pick; genuinely POSIX-only tests skip themselves
+  # via process.platform guards (not CI filters), so local Windows devs see the same
+  # behavior. Line endings come from .gitattributes (LF working tree), keeping build
+  # outputs and fixtures byte-identical. No format:check and no typecheck (same files as
+  # ubuntu, and both results are platform-independent, so the ubuntu job gates them); no
+  # live-LLM e2e here (ubuntu-only budget).
+  ci-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: server
+            tests: pnpm --filter @prismshadow/penguin-server test
+            installer: true
+          - shard: packages
+            tests: >-
+              pnpm --filter @prismshadow/penguin-core test &&
+              pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
+            installer: false
+    name: ci-windows (${{ matrix.shard }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm version comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (tsup)
+        run: pnpm build
+
+      - name: Unit tests (vitest)
+        run: ${{ matrix.tests }}
+
       # The Linux job cannot validate PowerShell syntax; parse (never execute) the installer
       # scripts with the real PowerShell parser so a broken install.ps1 cannot ship.
       - name: Parse installer scripts (PowerShell)
+        if: matrix.installer
         shell: pwsh
         run: |
           $failed = $false
@@ -113,6 +166,7 @@ jobs:
           if ($failed) { exit 1 }
 
       - name: Windows installer tests
+        if: matrix.installer
         shell: pwsh
         run: ./scripts/test-installer.ps1
 
@@ -155,11 +209,6 @@ jobs:
 
       - run: pnpm build
 
-      # Stage the self-contained app tree (packages/desktop/stage/app) that
-      # electron-builder packages — the same explicit step desktop-build.yml runs.
-      - name: Stage the app tree
-        run: node packages/desktop/scripts/stage.mjs
-
       - name: Build unpacked runtime
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -172,8 +221,8 @@ jobs:
           if-no-files-found: error
           # Each OS produces exactly one of these unpacked trees.
           path: |
-            packages/desktop/stage/out/linux-unpacked
-            packages/desktop/stage/out/win-unpacked
-            packages/desktop/stage/out/mac
-            packages/desktop/stage/out/mac-arm64
-            packages/desktop/stage/out/mac-x64
+            packages/desktop/out/linux-unpacked
+            packages/desktop/out/win-unpacked
+            packages/desktop/out/mac
+            packages/desktop/out/mac-arm64
+            packages/desktop/out/mac-x64

@@ -99,7 +99,7 @@ export interface InstallerCandidate {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** How this copy of the CLI was installed, which decides how it can be upgraded. */
-export type InstallKind = "tarball" | "npm" | "source" | "unknown";
+export type InstallKind = "tarball" | "npm" | "source" | "desktop" | "unknown";
 
 export interface InstallInfo {
   kind: InstallKind;
@@ -123,6 +123,8 @@ function segments(p: string): string[] {
  * Pure and shape-based on purpose: it touches neither the filesystem nor the environment beyond
  * what is passed in, so every branch is unit-testable. The three layouts are unambiguous:
  *
+ * - desktop app — the CLI bundled into the PenguinHarness desktop app, which runs it on the
+ *   app's own Electron runtime as Node and updates it with the app;
  * - source checkout — `…/packages/cli/{src,dist}/index.{ts,js}` (also how a `pnpm link`-ed dev
  *   build looks once the bin symlink is resolved);
  * - npm global — the path runs through `node_modules/@prismshadow/penguin-cli/`;
@@ -131,7 +133,11 @@ function segments(p: string): string[] {
  * Order matters: a checkout is checked first so a repo that happens to live under a directory
  * called `lib` cannot be mistaken for an install.
  */
-export function detectInstall(modulePath: string): InstallInfo {
+export function detectInstall(modulePath: string, runtime?: { electron: boolean }): InstallInfo {
+  // The desktop app has no npm layout to match: it ships one bundled CLI file and is the only
+  // form that runs on Electron, so the runtime answers this before any path shape does.
+  if (runtime?.electron === true) return { kind: "desktop" };
+
   const parts = segments(modulePath);
   const sep = modulePath.includes("\\") && !modulePath.includes("/") ? "\\" : path.sep;
   const join = (upto: number) => {
@@ -473,6 +479,7 @@ export type UpdatePlan =
   | { action: "report"; current: string; target: string; comparison: number }
   | { action: "up-to-date"; current: string }
   | { action: "refuse"; reason: "source" }
+  | { action: "refuse"; reason: "desktop" }
   | { action: "refuse"; reason: "unknown-install"; modulePath: string }
   | { action: "refuse"; reason: "unknown-manager"; globalRoot: string; target: string }
   | { action: "refuse"; reason: "windows-global"; command: string }
@@ -509,6 +516,7 @@ export function planUpdate(input: {
   if (comparison === 0) return { action: "up-to-date", current };
 
   if (install.kind === "source") return { action: "refuse", reason: "source" };
+  if (install.kind === "desktop") return { action: "refuse", reason: "desktop" };
   if (install.kind === "unknown")
     return { action: "refuse", reason: "unknown-install", modulePath: input.modulePath };
 
@@ -535,6 +543,8 @@ function refusalMessage(plan: Extract<UpdatePlan, { action: "refuse" }>, t: Mess
   switch (plan.reason) {
     case "source":
       return t.update.sourceCheckout();
+    case "desktop":
+      return t.update.desktopApp();
     case "unknown-install":
       return t.update.unknownInstall(plan.modulePath);
     case "unknown-manager":
@@ -565,7 +575,7 @@ export function registerUpdateCommand(program: Command, t: Messages): void {
         current,
         target,
         ...(opts.check !== undefined ? { check: opts.check } : {}),
-        install: detectInstall(modulePath),
+        install: detectInstall(modulePath, { electron: process.versions.electron !== undefined }),
         modulePath,
         platform: process.platform,
         defaultInstallDir,

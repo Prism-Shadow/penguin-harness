@@ -1,4 +1,5 @@
 import { S } from "../../lib/strings";
+import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
 
 type Activity = Exclude<SessionActivity, null>;
@@ -6,43 +7,45 @@ type Activity = Exclude<SessionActivity, null>;
 /**
  * Session-level activity glyphs (sidebar rows + chat header).
  *
- * Three states, two shapes:
+ * Three states, three marks — each state is legible from its shape and its motion alone, with
+ * colour carrying only the severity every reader shares:
  *
- * - **busy** — an hourglass, turning over on a loop, the motion a real hourglass makes.
- *   Compaction is busy work like any other, so it reuses the hourglass rather than owning a
- *   third shape; it keeps the amber tone compaction already carries elsewhere in the app (the
- *   stream's compaction banner), so the two live states differ by colour alone.
+ * - **running** — an hourglass, turning over on a loop, the motion a real hourglass makes.
+ * - **compacting** — a bar with a chevron closing on it from each side, squeezing on a loop.
+ *   Compaction is busy work like any other, so it takes the same `attention` tone as running;
+ *   what it does not share is the shape, because two live states that differ only in colour are
+ *   two states a reader has to have been told apart in advance.
  * - **finished, unread** — a small green dot. It is a notification, not a status: it says
  *   "there is a reply here you have not seen".
  * - **finished, read** — nothing. The dot is removed rather than muted, so the only marks left
  *   in the list are the ones worth acting on. A Session that has never run renders nothing for
  *   the same reason (see sessionActivity), which makes the two visually identical by design.
  *
- * The colour-only split between the live states is a deliberate exception, not the house style:
- * each glyph names its exact state in its accessible name and tooltip, so nothing here is
+ * Every glyph also names its exact state in its accessible name and tooltip, so nothing here is
  * legible only to a sighted user with full colour vision. The read state announces nothing
  * because it renders nothing, which is correct — there is no state to report.
+ *
+ * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
+ * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
+ * header (white / gray-950).
  */
 export const ACTIVITY_GLYPH: Record<"running" | "compacting", string> = {
   // Hourglass: frame top and bottom, sand funnelling to the waist.
   running: "M6 3h12M6 21h12M8 3v3.5L12 10l4-3.5V3M8 21v-3.5L12 14l4 3.5V21",
-  compacting: "M6 3h12M6 21h12M8 3v3.5L12 10l4-3.5V3M8 21v-3.5L12 14l4 3.5V21",
+  // Compress: a centre bar with a chevron bearing down on it from above and up from below.
+  compacting: "M4 12h16M8 7l4 3 4-3M8 17l4-3 4 3",
 };
 
 /**
- * Ink for the two busy states, measured against the surfaces they actually sit on — white and
- * gray-950 — as WCAG 2.x ratios:
- *
- * - running    gray-500 / gray-400 …… 4.83 : 1 light, 7.93 : 1 dark
- * - compacting amber-600 / amber-400 … 3.19 : 1 light, 12.06 : 1 dark
- *
- * The unread dot takes the emerald the Session status dot has always used — `bg-emerald-500`,
- * one tone in both themes (sidebar.tsx's StatusDot, and its twin in the chat header). It is the
- * same kind of marker in the same place, so it stays the same green.
+ * Ink and motion per live state. Both are `attention` — unfinished work waiting on time — and
+ * each pairs its tone with the animation that reads as its own kind of work: the hourglass turns
+ * over, the compress mark squeezes. The unread dot takes the `success` dot fill, one tone in
+ * both themes, exactly as the Session status dot beside it does (sidebar.tsx's StatusDot and its
+ * twin in the chat header). It is the same kind of marker in the same place.
  */
 const APPEARANCE: Record<"running" | "compacting", string> = {
-  running: "hourglass-turn text-gray-500 dark:text-gray-400",
-  compacting: "hourglass-turn text-amber-600 dark:text-amber-400",
+  running: `hourglass-turn ${toneInk.attention}`,
+  compacting: `compact-squeeze ${toneInk.attention}`,
 };
 
 /** Localized status label (read at render time: `S` is a live binding swapped per locale). */
@@ -74,7 +77,7 @@ export function SessionActivityIcon({
         style={{ width: size, height: size }}
         className="flex shrink-0 items-center justify-center"
       >
-        <span className="block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <span className={`block h-1.5 w-1.5 rounded-full ${toneDot.success}`} />
       </span>
     );
   }

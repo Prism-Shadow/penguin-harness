@@ -14,7 +14,7 @@ export default defineConfig({
     "src/kernel/index.ts",
   ],
   format: ["esm"],
-  target: "node20",
+  target: "node24",
   dts: true,
   clean: true,
   sourcemap: true,
