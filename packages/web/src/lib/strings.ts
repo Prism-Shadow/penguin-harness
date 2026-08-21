@@ -275,7 +275,7 @@ export const zh = {
     deleteProjectDesc: "项目目录将被递归删除，不可恢复。",
     /** Security-policy page (Project settings): deny rules enforced ahead of the approval mode. */
     commandPolicyIntro:
-      "每条 shell 命令在进入审批之前都会先经过安全策略：命中任一启用的规则即被直接拒绝，即使审批模式为全部放行；拒绝时模型会收到命中的规则名，并被引导改用其他方式。匹配方式为对空白归一化后的命令文本执行各规则的正则表达式。这是防事故的护栏，不能对抗刻意绕过。",
+      "每条经 exec_command 启动的命令在进入审批之前都会先经过安全策略：命中任一启用的规则即被直接拒绝，即使审批模式为全部放行；拒绝时模型会收到命中的规则名，并被引导改用其他方式。匹配方式为对空白归一化后的命令文本执行各规则的正则表达式。这是防事故的护栏，不能对抗刻意绕过：嵌套 shell、引号技巧、以及向已运行命令发送的按键都能从旁边走过去。",
     commandPolicyEnable: "启用策略",
     commandPolicyEnableDesc: "关闭后所有规则都不再拦截。",
     commandPolicyRules: "规则",

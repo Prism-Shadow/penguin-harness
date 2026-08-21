@@ -93,16 +93,16 @@ output = 0.857143
 
 ### 沙箱安全策略
 
-`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批回调**之前**对每次 `exec_command` 启动求值——命中即拒绝，任何审批模式（包括全部放行）都不能放过它，同时会告知模型命中了哪条规则以便换路。策略特意放在 Project 配置里：安全策略归 Project 所有，处在 Agent 自有工具改不到的位置，且每个 Session 在创建时读取快照。
+`[command_policy]` 块是 Project 级的 shell 命令沙箱护栏：一组拒绝规则，在审批边界本身对每次 `exec_command` 启动生效——`Session.run` 用它包装注入进来的审批回调，命中即在宿主被问到之前拒绝，任何审批模式（包括全部放行）都不能放过它，同时会告知模型命中了哪条规则以便换路。策略放在 Project 配置而不是 Agent State：Agent 改自己的配置改不到它，且每个 Session 在创建时读取快照，运行中改动要到下次加载才生效。它不是文件系统权限——能写任意路径的工具照样能改写配置文件本身。
 
-规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集写回。
+规则是**纯数据，没有特殊层级**：出厂规则集像模型预设一样播种进每个新项目——创建时拷入、之后绝不自动改写——此后每条规则都可编辑、停用、删除，也可新增。播种之前的存量项目（未存 `rules` 列表）在首次保存编辑前按出厂集生效，首次保存即把列表物化进文件；设置页的「恢复默认」把出厂集读回编辑区，由 Save 落盘。
 
 | 字段 | 说明 |
 | --- | --- |
 | `enabled` | 总开关；缺省 = **启用**（仅在关闭时落盘 `enabled = false`） |
 | `[[command_policy.rules]]` | 拒绝规则列表，按顺序匹配：`name`（拒绝信息中回显）+ `pattern`（JavaScript 正则源码，对空白归一化后的命令做匹配）+ 可选 `description` + 每条 `enabled`（缺省 = 启用）。存储空列表 = 没有规则；缺失列表 = 出厂集 |
 
-出厂规则集刻意保持很小——只收录一旦照原样执行就不可挽回的命令：任意写法的 `rm` 递归+强制、`mkfs`、`dd` 直写块设备、经典 fork bomb、以及重定向写入块设备（`/dev/null` 等仍然合法）。
+出厂规则集刻意保持很小——只收录一旦照原样执行就不可挽回的命令：同时带递归与强制标志的 `rm`、`mkfs`、`dd` 直写块设备、经典 fork bomb、以及重定向写入块设备（`/dev/null` 等仍然合法）。每条都覆盖常规写法，包括带路径（`/bin/rm`）与 `sudo`。
 
 ```toml
 [command_policy]
@@ -111,7 +111,7 @@ enabled = true
 [[command_policy.rules]]
 name = "rm-recursive-force"
 pattern = "…" # 播种自出厂集
-description = "rm with recursive + force flags, in any spelling (rm -rf and friends)"
+description = "rm with recursive + force flags in one command (rm -rf and friends)"
 
 [[command_policy.rules]]
 name = "no-force-push"
@@ -119,7 +119,15 @@ pattern = "git push [^;|&]*--force"
 enabled = false
 ```
 
-这是**防事故的护栏，不是安全边界**：匹配只是对启动命令做归一化正则。它能拦下照原样执行的经典毁灭性命令，但不试图对抗刻意混淆；通过 `input_command` 敲进已运行交互式 shell 的按键也不在其范围内。在 Web App Project 设置的「安全策略」页管理（仅 owner 可改；成员只读展示生效策略）。
+这是**防事故的护栏，不是安全边界**：匹配只是对单个工具的启动命令做归一化正则，而正则挡不住 shell 语法。以下缺口是已知且接受的，规则并不试图堵上：
+
+- **嵌套解释器。** `sh -c 'rm -rf /'`、`eval`、管道喂给 `bash`、`python -c` 都把命令藏进了带引号的参数里。
+- **`input_command`。** 策略覆盖的是启动路径而非键入：先起一个没有规则匹配的 `bash`，再把 `rm -rf /\n` 写进它的 stdin 即可绕开。护栏的纵深恰好是一次解释器启动。
+- **shell 层的间接。** 给命令词加引号或转义（`\rm`、`"rm"`、`r''m`）、用 `$IFS` 代替空格、走变量或别名（`X=rm; $X -rf /`）、命令替换。
+- **MCP 工具。** 只检查 `exec_command`；MCP Server 暴露出来的 shell 不在其列。
+- **不在名单上的一切。** `shred`、`wipefs`、`find -delete`、`git clean -xfd`、`chmod -R 000 /` 以及 Windows 上的对应写法（`Remove-Item -Recurse -Force`、`format`）都不匹配任何出厂规则。项目在意什么，就自己加规则。
+
+它拦下的是直接敲进 `exec_command`、没有加引号的毁灭性单行命令——这正是它要防的事故。在 Web App Project 设置的「安全策略」页管理（仅 owner 可改；成员只读展示生效策略）。
 
 ## Agent 配置
 

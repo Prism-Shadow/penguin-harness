@@ -915,9 +915,10 @@ function RuleEditor({
  * Security-policy page: the `[command_policy]` block. One unified, fully editable rule
  * list — the factory rules are seeded data with no special status (edit / disable /
  * delete / add all apply), and "restore defaults" re-buffers the factory set served by the
- * API. Owner edits buffer locally with ONE explicit Save (dialog convention: failures
- * toast, success toasts saved); members see the effective state read-only. The list dims
- * while the master switch is off, but Save stays live so the toggle itself can be saved.
+ * API (buffered like every other edit — Save is what writes it). Owner edits buffer
+ * locally with ONE explicit Save (dialog convention: failures toast, success toasts
+ * saved); members see the effective state read-only. The list dims AND disables while the
+ * master switch is off, but Save stays live so the toggle itself can be saved.
  */
 function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
   const [saved, setSaved] = useState<CommandPolicyDto | null>(null);
@@ -930,6 +931,11 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
 
   useEffect(() => {
     let cancelled = false;
+    // Cleared first: the effect re-fires per project, and the error branch renders ahead of
+    // the loaded one — a stale error would outlive a later successful load.
+    setSaved(null);
+    setLoadError(null);
+    setEditing(null);
     api
       .getCommandPolicy(projectId)
       .then((res) => {
@@ -991,7 +997,9 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
               )}
             </SettingRow>
           </div>
-          <div className={enabled ? "" : "pointer-events-none opacity-50"}>
+          {/* The list is inert while the master switch is off. `opacity` alone would leave
+              every control focusable, so each one below disables on `!enabled` as well. */}
+          <div className={enabled ? "" : "opacity-50"}>
             <div className="flex items-center justify-between gap-2 border-t border-gray-100 py-1.5 dark:border-gray-800/60">
               <p className="text-xs font-medium text-gray-500">
                 {S.project.commandPolicyRules} ·{" "}
@@ -1002,7 +1010,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || editing !== null}
+                    disabled={busy || !enabled || editing !== null}
                     onClick={() => setRules(saved.defaultRules.map((r) => ({ ...r })))}
                   >
                     {S.project.commandPolicyRestore}
@@ -1010,7 +1018,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy || editing !== null}
+                    disabled={busy || !enabled || editing !== null}
                     onClick={() => setEditing("new")}
                   >
                     {S.project.commandPolicyAddRule}
@@ -1051,7 +1059,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                       <div className="flex shrink-0 items-center gap-1.5">
                         <Switch
                           checked={r.enabled}
-                          disabled={busy}
+                          disabled={busy || !enabled}
                           onChange={(v) =>
                             setRules(rules.map((x, j) => (j === i ? { ...x, enabled: v } : x)))
                           }
@@ -1059,7 +1067,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={busy || editing !== null}
+                          disabled={busy || !enabled || editing !== null}
                           onClick={() => setEditing(i)}
                         >
                           {S.project.commandPolicyEditRule}
@@ -1067,7 +1075,7 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={busy || editing !== null}
+                          disabled={busy || !enabled || editing !== null}
                           onClick={() => setRules(rules.filter((_, j) => j !== i))}
                         >
                           {S.common.delete}
@@ -1098,7 +1106,14 @@ function SecurityPolicySection({ projectId, isOwner }: { projectId: string; isOw
           </div>
           {isOwner && (
             <div className="mt-2 flex justify-end border-t border-gray-100 pt-3 dark:border-gray-800/60">
-              <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>
+              {/* Blocked while a rule editor is open, like every other control here: the
+                  editor is keyed by index, so a save that replaced the list underneath it
+                  would leave a stale draft that Apply then writes over the wrong rule. */}
+              <Button
+                size="sm"
+                disabled={busy || !dirty || editing !== null}
+                onClick={() => void save()}
+              >
                 {S.common.save}
               </Button>
             </div>

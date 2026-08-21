@@ -2,7 +2,7 @@
  * Sandbox command-policy routes: GET|PUT /api/projects/:p/command-policy (the
  * `[command_policy]` block of .project_config.toml). Any member can read (the settings
  * dialog shows the effective policy); only the owner can replace it — it is Project-owned
- * security config, deliberately outside anything the Agent can rewrite. The rules are
+ * security config, deliberately outside the Agent State an Agent edits for itself. The rules are
  * plain data: the factory set is seeded into new projects (and served to pre-seeding
  * projects that store none), and a PUT always carries the full rule list, materializing it
  * into the file model-presets style.
