@@ -435,6 +435,7 @@ describe("model-catalog", () => {
     ]).toEqual([0.5, 2, 6]);
     expect(MODEL_CATALOG.filter((m) => m.provider === "anthropic").map((m) => m.modelId)).toEqual([
       "claude-fable-5",
+      "claude-opus-5",
       "claude-opus-4-8",
       "claude-opus-4-7",
       "claude-sonnet-5",
@@ -458,6 +459,20 @@ describe("model-catalog", () => {
       sonnet5.pricing!.cache_write,
       sonnet5.pricing!.output,
     ]).toEqual([0.2, 2.5, 10]);
+    // Opus 5 sits at the Opus tier ($5 input -> 6.25 cache write, $0.50 cache hit, $25
+    // output) and carries the same 1M window and vision support as its gateway twin.
+    const opus5 = catalogEntryFor("anthropic", "claude-opus-5")!;
+    expect([opus5.contextWindow, opus5.supportsVision]).toEqual([1000000, true]);
+    expect([opus5.pricing!.cache_read, opus5.pricing!.cache_write, opus5.pricing!.output]).toEqual([
+      0.5, 6.25, 25,
+    ]);
+    // Sonnet 5 prices below Sonnet 4.6 because that is Anthropic's list, not a slip.
+    expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")!.pricing).toEqual({
+      unit: "usd_per_mtok",
+      cache_read: 0.3,
+      cache_write: 3.75,
+      output: 15,
+    });
     // The same model resold by a gateway keeps one display name across groups. The bare
     // `gpt-5.6` id is the same tier OpenRouter spells `openai/gpt-5.6-sol`, so it displays
     // that codename too rather than leaving the variant unnamed.
@@ -466,6 +481,7 @@ describe("model-catalog", () => {
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
       ["openai", "gpt-5.6-terra", "openrouter", "openai/gpt-5.6-terra"],
       ["anthropic", "claude-fable-5", "openrouter", "anthropic/claude-fable-5"],
+      ["anthropic", "claude-opus-5", "openrouter", "anthropic/claude-opus-5"],
       ["anthropic", "claude-sonnet-5", "openrouter", "anthropic/claude-sonnet-5"],
       ["google", "gemini-3.5-flash-lite", "openrouter", "google/gemini-3.5-flash-lite"],
       ["moonshot", "kimi-k3", "openrouter", "moonshotai/kimi-k3"],
@@ -629,6 +645,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("gemini-3.7-flash")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash-lite")?.envKey).toBe("GEMINI_API_KEY");
     expect(resolveModelEnv("claude-fable-5")?.envKey).toBe("ANTHROPIC_API_KEY");
+    expect(resolveModelEnv("claude-opus-5")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-5")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("MiniMax-M3")?.envKey).toBe("MINIMAX_API_KEY");
     expect(resolveModelEnv("MiniMax-M3")?.envBaseUrlKey).toBe("MINIMAX_BASE_URL");
@@ -739,6 +756,7 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
 
   it("Anthropic-protocol clients carry it as speed=fast", () => {
     expect(fastModeProtocol("claude-fable-5")).toBe("anthropic");
+    expect(fastModeProtocol("claude-opus-5")).toBe("anthropic");
     expect(fastModeProtocol("claude-sonnet-5")).toBe("anthropic");
     expect(fastModeProtocol("claude-opus-4-8")).toBe("anthropic");
     expect(fastModeProtocol("some-proxy-id", "ant-messages")).toBe("anthropic");
@@ -812,6 +830,7 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
       return fastModeProtocol(m.modelId, m.clientType, m.baseUrl);
     };
     expect(verdictOf("anthropic", "claude-fable-5")).toBe("anthropic");
+    expect(verdictOf("anthropic", "claude-opus-5")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-sonnet-5")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-8")).toBe("anthropic");
     expect(verdictOf("anthropic", "claude-opus-4-7")).toBe("anthropic");

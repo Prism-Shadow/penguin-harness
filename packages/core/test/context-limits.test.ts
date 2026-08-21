@@ -16,6 +16,7 @@ import {
   effectiveMaxOutputTokens,
   resolveContextWindow,
 } from "../src/llm/context-limits.js";
+import { DEFAULT_MAX_CONTEXT_LENGTH } from "../src/state/default-config.js";
 import { toolCallOutput, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 
@@ -168,8 +169,7 @@ describe("effectiveMaxOutputTokens (per-request output clamp)", () => {
 
 describe("effectiveMaxContextLength (window-derived compaction threshold)", () => {
   it("caps the configured threshold at context_window − COMPACTION_HEADROOM", () => {
-    // 32k window: compaction now fires at ~30.7k instead of never (the 128000 default was
-    // unreachable inside the window).
+    // A 32k window compacts at ~30.7k rather than at a configured threshold it can never reach.
     expect(effectiveMaxContextLength(128000, 32768)).toBe(32768 - COMPACTION_HEADROOM);
     expect(effectiveMaxContextLength(128000, 200000)).toBe(128000); // ample window: unchanged
     expect(effectiveMaxContextLength(8000, 32768)).toBe(8000); // tighter user setting wins
@@ -180,7 +180,7 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
     );
   });
 
-  it("derives from the 128000 default when the window is unconfigured or implausible", () => {
+  it("derives from DEFAULT_CONTEXT_WINDOW when the window is unconfigured or implausible", () => {
     expect(effectiveMaxContextLength(128000, undefined)).toBe(
       DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
     );
@@ -193,6 +193,35 @@ describe("effectiveMaxContextLength (window-derived compaction threshold)", () =
     expect(effectiveMaxContextLength(128000, 2048)).toBe(
       DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
     );
+  });
+
+  // The effective threshold is the smaller of the seeded value and the window's cap, so the
+  // window decides on anything too small to hold it and the seeded value decides above that.
+  // Covers the shipped constant rather than a stand-in literal.
+  it("backstops the seeded default threshold with the model's context window", () => {
+    // Windows smaller than the seeded threshold: the window decides, and always leaves
+    // COMPACTION_HEADROOM for the summary request itself.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 32768)).toBe(
+      32768 - COMPACTION_HEADROOM,
+    );
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 200000)).toBe(
+      200000 - COMPACTION_HEADROOM,
+    );
+    // No usable window on the entry: the assumed window backstops it just the same, which is
+    // where the two 128000s must not be confused — this is DEFAULT_CONTEXT_WINDOW, not a
+    // threshold default.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, undefined)).toBe(
+      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
+    );
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 2048)).toBe(
+      DEFAULT_CONTEXT_WINDOW - COMPACTION_HEADROOM,
+    );
+    // A window roomier than the threshold leaves it alone — the only case where the
+    // configured number is what fires.
+    expect(effectiveMaxContextLength(DEFAULT_MAX_CONTEXT_LENGTH, 1_000_000)).toBe(
+      DEFAULT_MAX_CONTEXT_LENGTH,
+    );
+    expect(DEFAULT_MAX_CONTEXT_LENGTH).toBeGreaterThan(DEFAULT_CONTEXT_WINDOW);
   });
 
   it("keeps <=0 as 'compaction disabled'", () => {
