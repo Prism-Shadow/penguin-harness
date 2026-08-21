@@ -151,8 +151,20 @@ describe("session_title on the user channel", () => {
 
   it("ignores a Session no loaded page holds instead of inventing a row", () => {
     const store = storeWith(session("a"));
+    const before = store.getState().sessions;
     applyUserEvent(store, titleEvent("not-loaded", "whatever"), neverReload);
     expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["a"]);
+    // The user channel carries every Session this user can see, most of them absent from this
+    // list: an unlisted id must not churn the array and re-render every row.
+    expect(store.getState().sessions).toBe(before);
+  });
+
+  it("is a no-op when the row already carries that title (both channels deliver it)", () => {
+    const store = storeWith(session("a"));
+    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
+    const after = store.getState().sessions;
+    applyUserEvent(store, titleEvent("a", "Login page bug"), neverReload);
+    expect(store.getState().sessions).toBe(after);
   });
 });
 
