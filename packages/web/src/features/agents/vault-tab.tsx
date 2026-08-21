@@ -24,6 +24,7 @@ import { Input } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { usePromptInjection } from "./prompt-injection-controls";
@@ -173,8 +174,7 @@ export function VaultTab({
       {entries === null ? (
         <SkeletonList rows={4} />
       ) : entries.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.vault.empty}</p>
+        <SettingsEmpty>{S.vault.empty}</SettingsEmpty>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full min-w-[420px] text-left text-sm">
