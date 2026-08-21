@@ -97,11 +97,26 @@ export const SCHEDULES_PLACEHOLDER = "{{SCHEDULES}}";
 export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
 
 /**
+ * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
+ * start with. Set high on purpose, because the model's own `context_window` is the backstop:
+ * the effective threshold is the smaller of this value and the window minus
+ * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
+ * this value plus that headroom therefore decides the trigger point, so a small-window model
+ * still compacts inside its window rather than never; on a roomier window — nearly every
+ * built-in catalog entry — this value is what fires. A model entry with no usable
+ * `context_window` falls back to the assumed window (128000), which is a different number
+ * from this one and must not be conflated with it.
+ *
+ * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
+ */
+export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
+
+/**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
  * Docs: /docs/configuration § "Agent config".
  */
 export interface CompactionConfig {
-  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to 128000, <=0 disables. */
+  /** Context Token threshold (taken from the most recent token_usage's request.total); defaults to {@link DEFAULT_MAX_CONTEXT_LENGTH}, <=0 disables. */
   max_context_length?: number;
   /** Session cumulative turn threshold (counted in LLM Requests, across Tasks); defaults to -1, <=0 means no limit. */
   max_session_turns?: number;
@@ -353,7 +368,7 @@ export interface SystemConfig {
     thinking_level?: ThinkingLevelName;
     timeoutMs?: number;
   };
-  /** Context compaction (enabled by default, max_context_length 128k, mode summarize). */
+  /** Context compaction (enabled by default, max_context_length 256k, mode summarize). */
   compaction?: CompactionConfig;
   /** Memory (enabled by default; only reaches the prompt through the template's `{{MEMORY}}` placeholder). */
   memory?: MemoryConfig;
@@ -885,7 +900,7 @@ export function defaultSystemConfig(): SystemConfig {
       timeoutMs: 120000,
     },
     compaction: {
-      max_context_length: 128000,
+      max_context_length: DEFAULT_MAX_CONTEXT_LENGTH,
       max_session_turns: -1,
       mode: "summarize",
       prompt: DEFAULT_COMPACTION_PROMPT,
