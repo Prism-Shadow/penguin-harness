@@ -707,6 +707,7 @@ export const en: Strings = {
     readOnlyHint: "Members have read-only access; only owners can change models and credentials",
     empty: "No models configured yet",
     noKey: "No key",
+    readFromEnv: "Read from environment variable",
     showModelsWithoutKey: (n: number): string =>
       `Show model${n === 1 ? "" : "s"} without a key (${n})`,
     modelIdExists: "This model id already exists",

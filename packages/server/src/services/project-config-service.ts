@@ -41,6 +41,7 @@ import {
   resolveModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
+import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { LLMOutcome, ModelRef, OmniMessage, ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
@@ -82,6 +83,42 @@ type RawTable = Record<string, unknown>;
 export function maskApiKey(key: string): string {
   if (key.length <= 12) return "***";
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
+/**
+ * Whether a model's env fallback is *first-party*: the entry points at the provider's own
+ * official endpoint, so consulting the vendor variable (ANTHROPIC_API_KEY, …) is the intended
+ * configuration and its value may be previewed masked. Excluded — no detection, no preview:
+ *
+ * - gateway groups (they resell through generic OpenAI-protocol clients whose fallback is
+ *   OPENAI_API_KEY, the *official OpenAI* variable; steering it to a reseller endpoint is
+ *   exactly the misconfiguration the preview must not encourage) and the custom group;
+ * - user-defined groups (not in MODEL_PROVIDERS at all);
+ * - any entry re-pointed away from the official shape: a catalog preset whose client_type or
+ *   base_url differs from the catalog's own values, or an off-catalog vendor-group entry that
+ *   pins either (a bare auto-routed id targets the vendor's first-party client and stays in).
+ *
+ * `envKey` itself is still reported for every routable entry — this gate governs only the
+ * presence preview.
+ */
+export function envFallbackFirstParty(entry: {
+  provider: string;
+  modelId: string;
+  clientType: string | undefined;
+  baseUrl: string | undefined;
+}): boolean {
+  const group = providerInfo(entry.provider);
+  if (group === undefined || group.id === "custom" || group.gatewayBaseUrl !== undefined) {
+    return false;
+  }
+  const cat = catalogEntryFor(entry.provider, entry.modelId);
+  if (cat !== undefined) {
+    return (
+      canonicalClientType(entry.clientType) === canonicalClientType(cat.clientType) &&
+      entry.baseUrl === cat.baseUrl
+    );
+  }
+  return entry.clientType === undefined && entry.baseUrl === undefined;
 }
 
 function asTable(v: unknown): RawTable {
@@ -694,6 +731,17 @@ export class ProjectConfigService {
         const apiKey = optStr(m.api_key);
         const credBaseUrl = optStr(m.base_url);
         const createdAt = optStr(m.created_at);
+        // Masked env-fallback preview, first-party entries only (see envFallbackFirstParty):
+        // presence is implied by the field, the plaintext never leaves the server, and an
+        // empty variable counts as absent — it would not authenticate either. Read from this
+        // process's env, which on the desktop already includes the imported login-shell
+        // variables.
+        const envValue =
+          envKey !== undefined &&
+          envFallbackFirstParty({ provider, modelId, clientType, baseUrl: credBaseUrl })
+            ? (process.env[envKey] ?? "")
+            : "";
+        const envKeyMasked = envValue !== "" ? maskApiKey(envValue) : undefined;
         const info: ModelInfo = {
           provider,
           modelId,
@@ -710,6 +758,7 @@ export class ProjectConfigService {
           ...(maxTokens !== undefined ? { maxTokens } : {}),
           ...(fastMode !== undefined ? { fastMode } : {}),
           ...(envKey ? { envKey } : {}),
+          ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {

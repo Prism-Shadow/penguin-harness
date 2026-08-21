@@ -376,6 +376,14 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
+  /**
+   * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
+   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
+   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
+   * entry is not first-party.
+   */
+  envKeyMasked?: string;
   credential?: CredentialInfo;
   isDefault: boolean;
 }
