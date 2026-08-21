@@ -62,11 +62,13 @@ jobs:
 
   # macOS: the same build/typecheck/test gates on macos-latest (arm64). This is the only job
   # where the terminal's pty suites run on darwin — node-pty compiles against the runner's
-  # toolchain and its darwin-only spawn-helper actually executes — and the standalone
-  # terminal smoke script then re-runs node-pty under Electron's own Node
-  # (ELECTRON_RUN_AS_NODE), the runtime the packaged app's server really uses. A macOS
-  # terminal regression that once shipped as a silently empty panel fails here instead.
-  # No format:check (same files as ubuntu) and no live-LLM e2e (ubuntu-only budget).
+  # toolchain and its darwin-only spawn-helper actually executes — and the terminal smoke
+  # script then re-runs node-pty under Electron's own Node (ELECTRON_RUN_AS_NODE), resolved
+  # from the built desktop bundle: the same module lookup, on the same runtime, that the
+  # packaged app's server performs. It runs after the build because that staged copy is a
+  # build output. A macOS terminal regression that once shipped as a silently empty panel
+  # fails here instead. No format:check (same files as ubuntu) and no live-LLM e2e
+  # (ubuntu-only budget).
   ci-macos:
     runs-on: macos-latest
     steps:
