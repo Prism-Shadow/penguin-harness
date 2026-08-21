@@ -39,6 +39,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Modal } from "../../components/ui/modal";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { SettingsEmpty } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { FormPicker } from "../../components/ui/form-picker";
 import { FieldError, FieldLabel } from "../../components/ui/field";
@@ -445,8 +446,7 @@ export function SchedulesTab({
       {data === null ? (
         <SkeletonList rows={4} />
       ) : schedules.length === 0 ? (
-        // Plain-text empty state (settings area doesn't use the penguin-icon EmptyState, keeps the same gray level as the table area).
-        <p className="py-2 text-xs text-gray-400 dark:text-gray-500">{S.schedule.empty}</p>
+        <SettingsEmpty>{S.schedule.empty}</SettingsEmpty>
       ) : (
         <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
           <table className="w-full min-w-[720px] text-left text-sm">
