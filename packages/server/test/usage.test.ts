@@ -461,6 +461,18 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
     // The pre-window row is outside the ts bounds everywhere the range applies.
     expect(res.summary.total.requests).toBe(2);
     expect(res.series.reduce((s, p) => s + p.requests, 0)).toBe(2);
+    // The per-entity series are index-aligned with the same minute skeleton, so the
+    // charts can read entity[i] against series[i] without carrying bucket keys of their own.
+    for (const entity of [...res.byAgentSeries, ...res.byModelSeries]) {
+      expect(entity.requests).toHaveLength(res.series.length);
+      expect(entity.completed).toHaveLength(res.series.length);
+      expect(entity.denominator).toHaveLength(res.series.length);
+      expect(entity.requests.filter((n) => n > 0)).toHaveLength(2);
+      const at = (bucket: string) =>
+        entity.requests[res.series.findIndex((p) => p.bucket === bucket)];
+      expect(at(`${dateStr}T09:58`)).toBe(1);
+      expect(at(`${dateStr}T10:20`)).toBe(1);
+    }
   });
 
   it("minute granularity without a timestamp window is rejected", async () => {
