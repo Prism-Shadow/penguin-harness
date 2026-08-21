@@ -9,7 +9,7 @@
  * pricing, its consumption is excluded from cost and hasUncosted is flagged).
  * Summary cards (today / last 7 days / cumulative), grouped aggregation (date /
  * agent / model / session, with the session dimension supporting agentId drill-down
- * filtering), and a 30-day trend.
+ * filtering), and the zero-filled time series the cost center's charts draw.
  * Server-side error statistics (error_records) ride along on the same response:
  * the statistics center fetches everything in one request, and filters are
  * naturally shared; unattributed errors (login failures, process crashes, and other
@@ -17,21 +17,33 @@
  * file header.
  */
 import type {
+  UsageAgentSeries,
   UsageBucket,
   UsageErrors,
   UsageErrorsPage,
+  UsageGranularity,
   UsageGroupBy,
   UsageGroupRow,
+  UsageModelSeries,
   UsageResponse,
+  UsageSeriesPoint,
 } from "../api/types.js";
 import type { ErrorFilter, ErrorsRepo } from "../db/repos/errors.js";
 import type {
   UsageRepo,
   UsageModelSums,
   UsageGroupModelSums,
+  UsageSeriesModelSums,
+  UsageAgentBucketCount,
   UsageFilter,
 } from "../db/repos/usage.js";
-import { formatLocalDate, localDateMinusDays } from "../internal/dates.js";
+import {
+  enumerateBuckets,
+  enumerateTsBuckets,
+  formatLocalDate,
+  localDateMinusDays,
+} from "../internal/dates.js";
+import { badRequest } from "../http/validate.js";
 
 /**
  * Number of most-recent entries kept in the error detail table. Also the page size the whole
@@ -39,7 +51,7 @@ import { formatLocalDate, localDateMinusDays } from "../internal/dates.js";
  * whenever a second page exists, so the client derives its page size from the response instead
  * of holding a constant that could drift out of step with this one.
  */
-const ERROR_RECENT_N = 20;
+const ERROR_RECENT_N = 10;
 
 /** The three pricing buckets (usd_per_mtok convention), returned by the pricing lookup callback. */
 export interface PricingRates {
@@ -65,6 +77,16 @@ export interface UsageQuery {
   modelId?: string;
   /** Whether to include unattributed errors: admin only (the route passes user.isAdmin), defaults to false. */
   includeGlobalErrors?: boolean;
+  /** Time-series precision for `series` / `byAgentSeries` / `byModelSeries`; defaults to day. The route validates the value; the bucket count is capped here. */
+  granularity?: UsageGranularity;
+  /**
+   * Timestamp window bounds (ISO UTC), for the trailing "last hour" / "last 24
+   * hours" ranges whose edges are instants rather than calendar dates: they
+   * refine every range-scoped aggregate down to the window, and minute/hour
+   * series buckets are enumerated between them. `minute` requires them.
+   */
+  fromTs?: string;
+  toTs?: string;
 }
 
 /** One page of the error detail table (see {@link UsageService.queryErrors}). */
@@ -115,26 +137,78 @@ export class UsageService {
       ...(to !== undefined ? { to } : {}),
     });
 
+    // Timestamp window bounds ride alongside the date range wherever the
+    // selected range applies; the calendar-fixed today / last-7-days cards
+    // deliberately stay date-only.
+    const ts: UsageFilter = {
+      ...(q.fromTs !== undefined ? { fromTs: q.fromTs } : {}),
+      ...(q.toTs !== undefined ? { toTs: q.toTs } : {}),
+    };
     const todayRows = this.usage.bucketByModel(projectId, win(today, today));
     const last7dRows = this.usage.bucketByModel(projectId, win(localDateMinusDays(this.now(), 6)));
-    const totalRows = this.usage.bucketByModel(projectId, win(q.from, q.to));
-    const groupRows = this.usage.groupsByModel(projectId, q.groupBy, win(q.from, q.to));
-    // Fixed 30-day window; affected by the agent/model filter.
-    const trendFrom = localDateMinusDays(this.now(), 29);
-    const trendRows = this.usage.groupsByModel(projectId, "date", win(trendFrom));
-    // Agent call-count chart: not affected by the agent filter (shows all agents), but still affected by the date + model filter.
-    const agentRows = this.usage.groupsByModel(projectId, "agent", {
+    const totalRows = this.usage.bucketByModel(projectId, { ...win(q.from, q.to), ...ts });
+    const groupRows = this.usage.groupsByModel(projectId, q.groupBy, {
+      ...win(q.from, q.to),
+      ...ts,
+    });
+    // Time series at the requested precision, zero-filled over the requested
+    // range, defaulting to the last 30 days when no range is given.
+    const granularity = q.granularity ?? "day";
+    const seriesFrom = q.from ?? localDateMinusDays(this.now(), 29);
+    const seriesTo = q.to ?? today;
+    // The series is zero-filled over the whole effective range: cap the bucket
+    // count so an arbitrary range × precision combination cannot materialize an
+    // unbounded response. 500 comfortably covers every range the Web App offers
+    // (90 days daily = 90, 14 days hourly = 336, a trailing hour by minute = 61).
+    // Minute buckets only make sense inside a timestamp window — the trailing
+    // ranges — and hour buckets switch to the window when one is given.
+    let bucketKeys: string[];
+    if (granularity === "minute" || (granularity === "hour" && ts.fromTs !== undefined)) {
+      if (ts.fromTs === undefined || ts.toTs === undefined) {
+        throw badRequest(
+          "fromTs and toTs must be given together, and minute granularity requires them.",
+        );
+      }
+      bucketKeys = enumerateTsBuckets(new Date(ts.fromTs), new Date(ts.toTs), granularity, 500);
+    } else {
+      bucketKeys = enumerateBuckets(seriesFrom, seriesTo, granularity, 500);
+    }
+    if (bucketKeys.length > 500) {
+      throw badRequest(
+        "Date range too wide for this granularity; narrow the range or coarsen the granularity.",
+      );
+    }
+    const seriesRows = this.usage.seriesByModel(projectId, granularity, {
+      ...win(seriesFrom, seriesTo),
+      ...ts,
+    });
+    // Per-Agent and per-Model series: each drops its own dimension's filter (its
+    // chart draws that dimension's whole breakdown) but honors the other
+    // dimension plus the selected range.
+    const agentFree: UsageFilter = {
       ...(q.provider !== undefined ? { provider: q.provider } : {}),
       ...(q.modelId !== undefined ? { modelId: q.modelId } : {}),
       ...(q.from !== undefined ? { from: q.from } : {}),
       ...(q.to !== undefined ? { to: q.to } : {}),
+      ...ts,
+    };
+    const agentBucketRows = this.usage.agentSeries(projectId, granularity, {
+      ...agentFree,
+      from: seriesFrom,
+      to: seriesTo,
     });
-    // Model success-rate chart: not affected by the model filter (shows all models), but still affected by the date + agent filter.
-    const statusRows = this.usage.statusByModel(projectId, {
-      ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
-      ...(q.from !== undefined ? { from: q.from } : {}),
-      ...(q.to !== undefined ? { to: q.to } : {}),
-    });
+    // With no model filter set, dropping the model filter leaves exactly the
+    // query `seriesRows` already ran: reuse its rows instead of running the
+    // heaviest query on this route (bucket x model) a second time.
+    const modelFiltered = q.provider !== undefined || q.modelId !== undefined;
+    const modelBucketRows = modelFiltered
+      ? this.usage.seriesByModel(projectId, granularity, {
+          ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+          from: seriesFrom,
+          to: seriesTo,
+          ...ts,
+        })
+      : seriesRows;
     // Error statistics: likewise not affected by the model filter (HTTP / process errors have no Model dimension), but still affected by the date + agent filter.
     const errorFilter: ErrorFilter = {
       ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
@@ -147,19 +221,11 @@ export class UsageService {
     // Each paired reference that occurs is looked up for its current price only once.
     const rates = new Map<string, PricingRates | undefined>();
     const allRefs = new Map<string, { provider: string; modelId: string }>();
-    for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...trendRows]) {
+    for (const r of [...todayRows, ...last7dRows, ...totalRows, ...groupRows, ...seriesRows]) {
       allRefs.set(refKey(r.provider, r.modelId), { provider: r.provider, modelId: r.modelId });
     }
     for (const [key, ref] of allRefs) {
       rates.set(key, await this.lookupPricing(projectId, ref.provider, ref.modelId));
-    }
-
-    const byAgentMap = new Map<string, { requests: number; total: number }>();
-    for (const r of agentRows) {
-      const acc = byAgentMap.get(r.key) ?? { requests: 0, total: 0 };
-      acc.requests += r.requests;
-      acc.total += r.total;
-      byAgentMap.set(r.key, acc);
     }
 
     return {
@@ -170,11 +236,10 @@ export class UsageService {
       },
       groupBy: q.groupBy,
       groups: this.foldGroups(groupRows, rates, q.groupBy),
-      trend: this.foldTrend(trendRows, rates),
-      byAgent: [...byAgentMap.entries()]
-        .map(([agentId, v]) => ({ agentId, requests: v.requests, total: v.total }))
-        .sort((a, b) => b.requests - a.requests),
-      success: statusRows.sort((a, b) => b.total - a.total),
+      granularity,
+      series: this.foldSeries(bucketKeys, seriesRows, rates),
+      byAgentSeries: foldAgentSeries(bucketKeys, agentBucketRows),
+      byModelSeries: foldModelSeries(bucketKeys, modelBucketRows),
       errors: this.foldErrors(projectId, errorFilter),
       agentIds: this.usage.distinctAgentIds(projectId),
       models: this.usage.distinctModels(projectId),
@@ -276,39 +341,107 @@ export class UsageService {
     return out;
   }
 
-  private foldTrend(
-    rows: UsageGroupModelSums[],
+  /**
+   * Fold the per-Model series rows onto the zero-filled bucket skeleton: every
+   * enumerated bucket appears exactly once, in order, so line charts never
+   * connect across a silent gap. A row whose key falls outside the skeleton
+   * cannot happen for day/week/month (keys derive from the filtered date
+   * column) and is dropped defensively for minute/hour, whose keys come from
+   * `ts` and can therefore fall outside a skeleton built from `date` if a row
+   * was recorded under a different clock.
+   */
+  private foldSeries(
+    keys: string[],
+    rows: UsageSeriesModelSums[],
     rates: Map<string, PricingRates | undefined>,
-  ): UsageResponse["trend"] {
-    const byDate = new Map<
-      string,
-      { total: number; cacheRead: number; cacheWrite: number; output: number; cost: number | null }
-    >();
+  ): UsageSeriesPoint[] {
+    const byKey = new Map<string, UsageSeriesPoint>(
+      keys.map((bucket) => [
+        bucket,
+        {
+          bucket,
+          cacheRead: 0,
+          cacheWrite: 0,
+          output: 0,
+          total: 0,
+          cost: null,
+          requests: 0,
+          completed: 0,
+          denominator: 0,
+        },
+      ]),
+    );
     for (const r of rows) {
-      const acc = byDate.get(r.key) ?? {
-        total: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        output: 0,
-        cost: null,
-      };
-      acc.total += r.total;
+      const acc = byKey.get(r.key);
+      if (!acc) continue;
       acc.cacheRead += r.cacheRead;
       acc.cacheWrite += r.cacheWrite;
       acc.output += r.output;
+      acc.total += r.total;
+      acc.requests += r.requests;
+      acc.completed += r.completed;
+      acc.denominator += r.denominator;
       const rate = rates.get(refKey(r.provider, r.modelId));
       if (rate) acc.cost = (acc.cost ?? 0) + costOf(r, rate);
-      byDate.set(r.key, acc);
     }
-    return [...byDate.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({
-        date,
-        total: v.total,
-        cacheRead: v.cacheRead,
-        cacheWrite: v.cacheWrite,
-        output: v.output,
-        cost: v.cost,
-      }));
+    return keys.map((k) => byKey.get(k)!);
   }
+}
+
+const sumOf = (a: number[]) => a.reduce((s, v) => s + v, 0);
+
+const zeros = (n: number) => new Array<number>(n).fill(0);
+
+/**
+ * Per-Agent counts aligned index-for-index with the bucket skeleton, sorted by
+ * total requests descending (the requests chart takes the head and folds the
+ * tail into an "other" series client-side).
+ */
+function foldAgentSeries(keys: string[], rows: UsageAgentBucketCount[]): UsageAgentSeries[] {
+  const idx = new Map(keys.map((k, i) => [k, i]));
+  const byAgent = new Map<string, UsageAgentSeries>();
+  for (const r of rows) {
+    const i = idx.get(r.key);
+    if (i === undefined) continue;
+    let s = byAgent.get(r.agentId);
+    if (!s) {
+      s = {
+        agentId: r.agentId,
+        requests: zeros(keys.length),
+        completed: zeros(keys.length),
+        denominator: zeros(keys.length),
+      };
+      byAgent.set(r.agentId, s);
+    }
+    s.requests[i]! += r.requests;
+    s.completed[i]! += r.completed;
+    s.denominator[i]! += r.denominator;
+  }
+  return [...byAgent.values()].sort((a, b) => sumOf(b.requests) - sumOf(a.requests));
+}
+
+/** Per-Model counts aligned with the bucket skeleton (entity identity is the (provider, modelId) pair), sorted by total requests descending. */
+function foldModelSeries(keys: string[], rows: UsageSeriesModelSums[]): UsageModelSeries[] {
+  const idx = new Map(keys.map((k, i) => [k, i]));
+  const byModel = new Map<string, UsageModelSeries>();
+  for (const r of rows) {
+    const i = idx.get(r.key);
+    if (i === undefined) continue;
+    const key = refKey(r.provider, r.modelId);
+    let s = byModel.get(key);
+    if (!s) {
+      s = {
+        provider: r.provider,
+        modelId: r.modelId,
+        requests: zeros(keys.length),
+        completed: zeros(keys.length),
+        denominator: zeros(keys.length),
+      };
+      byModel.set(key, s);
+    }
+    s.requests[i]! += r.requests;
+    s.completed[i]! += r.completed;
+    s.denominator[i]! += r.denominator;
+  }
+  return [...byModel.values()].sort((a, b) => sumOf(b.requests) - sumOf(a.requests));
 }

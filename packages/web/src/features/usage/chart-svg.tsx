@@ -23,6 +23,11 @@
  * necessary x-position indicator, while on the bar chart the bar itself
  * already indicates the x position — an extra vertical line would just be
  * noise, so the bar chart passes hoverLine={false} to turn it off.
+ *
+ * The usage charts drop the buckets that recorded nothing before they get
+ * here, so their x axis covers unequal spans of time; axisBreaks draws the
+ * "//" between two points that are not neighbours, which is what keeps the
+ * axis from being read as a continuous one.
  */
 import {
   useEffect,
@@ -36,11 +41,62 @@ import {
   bubblePosition,
   CHART_H,
   PAD_L,
-  PAD_R,
   PAD_T,
   sparseLabelIdx,
   type ChartGeom,
 } from "./chart-geom";
+
+/** Height (CSS px) of the invisible band laid over a line series so it can be hovered: a 2px stroke is too thin to aim at. */
+export const LINE_HIT_H = 10;
+
+/**
+ * Stroke width of every data line on the page — the cost line, the
+ * success-rate lines, the cache-hit-rate curve. One weight for all of them,
+ * so no line reads as more important than another just because it was written
+ * later. Chrome (grid lines, the hover indicator, axis-break marks) stays at
+ * 1 and is deliberately not this.
+ */
+export const DATA_STROKE_W = 2;
+
+/** Cell width (CSS px) below which axis-break marks are dropped: any narrower and successive marks sit closer together than they are wide, smearing into a hatched baseline. */
+const AXIS_BREAK_MIN_STEP = 8;
+
+/**
+ * Hover bands for a line series, one per bucket: a transparent rect the width
+ * of the cell, centred on that bucket's point. Put these in ChartFrame's
+ * `hitLayer` **after** the bar hits, so a line stays reachable where it runs
+ * across a tall segment — the lines draw above the bars, and they answer the
+ * pointer above them too.
+ *
+ * Per bucket rather than one band along the whole path, so entering anywhere
+ * on the line reports which bucket the pointer is over as well as which
+ * series it belongs to.
+ */
+export function LineHits({
+  geom,
+  values,
+  onEnter,
+  onLeave,
+}: {
+  geom: ChartGeom;
+  values: readonly number[];
+  onEnter: (i: number) => void;
+  onLeave?: () => void;
+}) {
+  return values.map((v, i) => (
+    <rect
+      key={i}
+      x={geom.x(i) - geom.step / 2}
+      y={geom.y(v) - LINE_HIT_H / 2}
+      width={geom.step}
+      height={LINE_HIT_H}
+      fill="transparent"
+      className="cursor-pointer"
+      onMouseEnter={() => onEnter(i)}
+      onMouseLeave={onLeave}
+    />
+  ));
+}
 
 /**
  * Measure the available width inside the chart card (CSS pixels, rounded
@@ -76,9 +132,11 @@ export function ChartFrame({
   bubble,
   hitLayer,
   labels,
+  fmtX,
   yTicks,
+  rightAxis,
   hoverLine = true,
-  scrollToEnd = false,
+  axisBreaks,
   children,
 }: {
   geom: ChartGeom;
@@ -96,12 +154,16 @@ export function ChartFrame({
   hitLayer?: ReactNode;
   /** Indices for x-axis labels (omit for the default first/middle/last sparse labeling): the bar chart's cells are each wide, so it can label more via autoLabelIdx. */
   labels?: number[];
+  /** x-axis label formatting. Defaults to dropping a date's year (`slice(5)` → `mm-dd`); series charts pass their own granularity-aware short form. */
+  fmtX?: (d: string) => string;
   /** Explicit y-axis ticks. Omit to divide the geom's min..max range into four equal intervals. */
   yTicks?: number[];
+  /** Right-hand axis for an overlay drawn on its own scale (the Token chart's cache-hit-rate curve): tick values, their y mapping, and label formatting. Give the geom PAD_R_AXIS so the labels have room. */
+  rightAxis?: { y: (v: number) => number; ticks: number[]; fmt: (v: number) => string };
   /** Hover vertical indicator line (drawn by default): the bar chart turns it off — the bar itself already indicates the x position, so an extra line is just noise. */
   hoverLine?: boolean;
-  /** Scroll to the far right by default when the canvas is wider than the container: the daily chart shows the most recent days first (scroll left for earlier ones). */
-  scrollToEnd?: boolean;
+  /** Indices after which the x axis skips at least one interval (the usage charts drop the buckets that recorded nothing): a break mark is drawn between that point and the next, so a compressed axis never reads as a continuous one. */
+  axisBreaks?: number[];
   /** Data marks: bars / line / area, drawn between the grid and the hit area. */
   children?: ReactNode;
 }) {
@@ -110,15 +172,6 @@ export function ChartFrame({
     yTicks ?? [0, 0.25, 0.5, 0.75, 1].map((fraction) => min + (max - min) * fraction);
   const labelIdx = labels ?? sparseLabelIdx(dates.length);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // The daily chart defaults to sitting on the most recent day (there's only
-  // room to scroll when the canvas is wider than the container). It
-  // re-snaps whenever the data or canvas width changes, without disturbing a position the user has manually scrolled to in the meantime.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!scrollToEnd || !el) return;
-    el.scrollLeft = el.scrollWidth - el.clientWidth;
-  }, [scrollToEnd, w, dates.length]);
 
   // The bubble follows the pointer **imperatively** (lower-right, flipping
   // at the edges — see chart-geom's bubblePosition): mousemove only records
@@ -170,9 +223,9 @@ export function ChartFrame({
   useLayoutEffect(placeBubble, [bubble, hover]);
 
   return (
-    // Horizontal scroll when the canvas is wider than the container (bar
-    // width has a pixel floor, so 30 days won't fit in a half-width panel);
-    // the bubble is this container's absolutely-positioned child element and scrolls along with the content, so anchoring it to the pointer in content pixels is enough.
+    // The canvas is measured from this container and bars shrink to fit it, so
+    // there is nothing to scroll; the box stays scroll-aware because the bubble
+    // is its absolutely-positioned child and is anchored in content pixels.
     <div ref={scrollRef} className="relative overflow-x-auto">
       <svg
         ref={svgRef}
@@ -197,7 +250,7 @@ export function ChartFrame({
           <g key={i}>
             <line
               x1={PAD_L}
-              x2={w - PAD_R}
+              x2={w - geom.padR}
               y1={y(v)}
               y2={y(v)}
               className="stroke-gray-200 dark:stroke-gray-800"
@@ -215,6 +268,20 @@ export function ChartFrame({
           </g>
         ))}
 
+        {/* Right-hand axis ticks (an overlay's own scale, e.g. a percentage) */}
+        {rightAxis?.ticks.map((v) => (
+          <text
+            key={`r${v}`}
+            x={w - geom.padR + 6}
+            y={rightAxis.y(v) + 3}
+            textAnchor="start"
+            className="fill-gray-400 dark:fill-gray-500"
+            fontSize={9}
+          >
+            {rightAxis.fmt(v)}
+          </text>
+        ))}
+
         {/* Hover vertical indicator line (line-chart-only: the bar chart's bar itself is the x indicator, see hoverLine) */}
         {hoverLine && hover !== null && dates[hover] && (
           <line
@@ -230,6 +297,34 @@ export function ChartFrame({
         {/* Data marks (provided by the caller) */}
         {children}
 
+        {/* Axis breaks: the "//" that says the two points either side of it are
+            not neighbours in time. Drawn over the marks (the cost chart's area
+            fill reaches the baseline) but never hoverable — the hit layer below
+            owns the pointer. */}
+        {step >= AXIS_BREAK_MIN_STEP &&
+          axisBreaks?.map((i) =>
+            i + 1 < geom.n ? (
+              <g
+                key={`break-${i}`}
+                className="pointer-events-none stroke-gray-400 dark:stroke-gray-500"
+                strokeWidth={1}
+              >
+                {[-2, 2].map((dx) => {
+                  const cx = (x(i) + x(i + 1)) / 2 + dx / 2;
+                  return (
+                    <line
+                      key={dx}
+                      x1={cx - 2}
+                      y1={PAD_T + innerH + 3}
+                      x2={cx + 2}
+                      y2={PAD_T + innerH - 3}
+                    />
+                  );
+                })}
+              </g>
+            ) : null,
+          )}
+
         {/* x-axis dates */}
         {labelIdx.map((i) => {
           const d = dates[i];
@@ -243,7 +338,7 @@ export function ChartFrame({
               className="fill-gray-400 dark:fill-gray-500"
               fontSize={9}
             >
-              {d.slice(5)}
+              {(fmtX ?? ((v: string) => v.slice(5)))(d)}
             </text>
           );
         })}

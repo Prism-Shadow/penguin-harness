@@ -137,6 +137,9 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
+import { DesktopUpdateRow } from "../account/desktop-update-row";
+import { offersClientUpdate } from "../../lib/desktop-update";
+import { requestClientInstall, useDesktopUpdate } from "../../lib/use-desktop-update";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { SettingsDialog } from "../../features/settings/settings-dialog";
 import type { SettingsSectionKey } from "../../lib/settings-sections";
@@ -279,7 +282,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode } = useAuth();
+  const { user, logout, desktopMode, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
     projects,
@@ -312,6 +315,13 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Page the settings dialog lands on: the update reminder row jumps straight to Updates. */
   const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("general");
+  // Client update (desktop shell window only): the snapshot and the armed-check flag live
+  // at module level in use-desktop-update.ts; this always-mounted hook instance drives the
+  // polling, so a check armed in the menu still settles after the menu closes.
+  const clientUpdateOffered = offersClientUpdate({ desktopMode, sessionVia });
+  const clientUpdate = useDesktopUpdate(clientUpdateOffered, userOpen);
+  /** Install confirmation (restarting interrupts running tasks — same consent as the shell's native prompt). */
+  const [clientInstallOpen, setClientInstallOpen] = useState(false);
   // Update reminder: nothing is fetched until the dropdown first opens.
   const { update } = useVersionInfo(userOpen);
   const updateAvailable = update?.updateAvailable === true;
@@ -1700,6 +1710,24 @@ export function Sidebar({
                 <span className="min-w-0 truncate">{S.update.newVersion(newVersion)}</span>
               </button>
             )}
+            {/* Desktop stand-in for the reminder row above, in the shell's own window only:
+                the same slot updates the CLIENT through the shell's own updater (relayed
+                via /api/desktop/update) — which is what "updating is the shell's job"
+                means for someone sitting in front of the app. A browser signed into the
+                same desktop-mode server gets neither row: it can't run the CLI self-update
+                there, nor restart someone else's GUI app (offersClientUpdate mirrors the
+                gate the routes enforce). */}
+            {clientUpdateOffered && (
+              <DesktopUpdateRow
+                status={clientUpdate.status}
+                checkPending={clientUpdate.checkPending}
+                menuItemClass={menuItemClass}
+                onInstallRequest={() => {
+                  setUserOpen(false);
+                  setClientInstallOpen(true);
+                }}
+              />
+            )}
             {/* Hidden in desktop mode: the window IS the session — logging out would
                 strand the user on a login page whose password was never shown. */}
             {!desktopMode && (
@@ -1723,6 +1751,25 @@ export function Sidebar({
         onClose={() => setSettingsOpen(false)}
         initialSection={settingsSection}
       />
+
+      {/* Client-update install consent: restarting interrupts running tasks, the same
+          warning the shell's native prompt carries — the web row must not be the one
+          path that kills work without asking. */}
+      <ConfirmModal
+        open={clientInstallOpen}
+        title={S.update.clientInstallConfirmTitle}
+        onClose={() => setClientInstallOpen(false)}
+        onConfirm={() => {
+          setClientInstallOpen(false);
+          void requestClientInstall();
+        }}
+        confirmLabel={S.update.clientInstallConfirmAction}
+        tone="primary"
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.update.clientInstallConfirmBody}
+        </p>
+      </ConfirmModal>
 
       <CreateProjectDialog
         open={createProjectOpen}

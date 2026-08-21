@@ -215,11 +215,10 @@ const server = http.createServer((req, res) => {
     messageStart(res, msgCount);
 
     if (isTitle) {
-      // The child session's title request carries **the child session's own answer** as
-      // assistant material; respond with a distinguishable title based on that, so the E2E
-      // test can prove the child session's title really comes from its own conversation,
-      // not from the run_subagent prompt.
-      const forSubagent = flat.includes("Subagent report");
+      // A subagent's title request carries **the run_subagent prompt that spawned it** and
+      // nothing else (the parent's own title request never contains that prompt); respond
+      // with a distinguishable title so the E2E test can tell the two titles apart.
+      const forSubagent = flat.includes(SUBAGENT_PROMPT);
       block(res, 0, { type: "text", text: "" }, [
         {
           type: "text_delta",

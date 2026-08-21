@@ -39,8 +39,9 @@ export function extractFilePaths(markdown: string): string[] {
 
 /** Path split into segments: directory prefix faded, filename bold (Codex-style). The directory
  *  segment has shrink-[9999] and collapses first, the filename segment truncates only after —
- *  both segments are truncatable, so the row never overflows its container on a narrow panel. */
-function PathLabel({ path }: { path: string }) {
+ *  both segments are truncatable, so the row never overflows its container on a narrow panel.
+ *  Shared with the memory-changes card, which renders the same row family. */
+export function PathLabel({ path }: { path: string }) {
   const slash = path.lastIndexOf("/");
   const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
   const name = slash >= 0 ? path.slice(slash + 1) : path;

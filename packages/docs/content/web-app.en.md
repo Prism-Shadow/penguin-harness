@@ -109,10 +109,11 @@ A per-Project model table grouped by provider. Models can be added and edited: i
 
 ## Usage (/usage)
 
-- Filters: Agent, model, date range;
+- Filters: Agent, model, and date range (trailing last hour / last 24 hours, last 7 / 30 / 90 days, or a custom pair). The range decides the precision the charts are drawn at — per minute for the last hour, hourly for the last 24 hours, daily for the calendar presets, week or month for a long custom range — so there is no separate precision control;
 - Summary cards: today / last 7 days / cumulative;
-- Charts: per-Agent share, per-model success rates, daily Token and cost trends;
-- A server error panel summarizing recent server-side error records.
+- Charts, all time series over the selected range: requests + success rate broken down by Agent and, beside it, the same by Model (a bucket's requests stacked one segment per entity on the left axis, each entity's success rate as its own dashed line on a right 0–100% axis, drawn above the bars; the top few entities are named and the rest fold into a neutral series labelled with how many), Token trend (three-segment stacked bars with a dashed cache-hit-rate line in front), and cost trend (line + points + area). Every chart takes the same hovers: a column for its bubble, one bar segment to single that segment out, a line to single the line out. Lines are straight segments, never smoothed, all at the same stroke width. Charts fit their card and never scroll;
+- Two things a chart cannot draw. A bucket with **no rate** — an entity that made no request in it, or a bucket with no cache traffic — has its line carried across at the top of the axis so the stroke stays continuous; the hover table prints a dash there, never a percentage, and a real 0% (requests were made and all of them failed) still prints 0%. A bucket that recorded **nothing at all** is not plotted: every chart drops it and packs the rest left to right, so all four share one x axis that skips the quiet intervals and carries a break mark at each skip. Emptiness is judged per bucket, never per entity — an interval anything ran in stays, with the entities that were idle in it showing their zeros and dashes;
+- A server error panel: summary stats plus an errors table paged at a fixed page size (no scrolling).
 
 ## Trace Browser (/traces)
 
@@ -159,6 +160,8 @@ Two numbers are deliberately not exposed. The per-message file **count** stays a
 ## Version and Updates
 
 System settings → **Updates** carries the manual "Check for updates" action; the running version sits muted beside it, and its release date — stamped into the build by the release workflow, displayed without any network access — appears as the row's localized "Last updated Jul 26"-style hint (dev builds and releases that predate the stamping, v0.1.2 and earlier, have no date). The new-chat page shows the same identity as a version line under the brand. The app checks GitHub for a newer release once the sidebar user menu has first been opened, and immediately — bypassing the cached result — when the manual action is clicked; the latter reports "You're on the latest version" when nothing newer exists. When a newer release is found, a dot appears on the user button, the draft page's version line gains a small superscript "New version available" badge linking to the release, and the menu gains a "New version available" row that opens the Updates page, whose dialog carries the release-notes link, plus an "Update now" action for admins that runs `penguin update` on the server (the data directory is untouched). The service must be restarted afterwards for the update to take effect. Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely — see the [Configuration Reference](/configuration).
+
+**In the desktop app** the Updates page is absent — the shell updates itself — and the sidebar user menu carries a client-update row instead, in the shell's own window only. It drives the app's own updater end to end: "Check for updates", then a background download with its percentage in the label, then "Restart to install vX", which asks for confirmation first because restarting interrupts running Tasks. The installed client version sits muted on the right, and the app also checks on its own schedule, so the row may already offer the restart when you open the menu. A browser signed into the same desktop-mode server with a password gets no such row: it can neither read that machine's updater state nor restart its window. Forms that cannot replace themselves — a Linux install owned by the system package manager (`.deb`), and a development run — render the row disabled with the reason as its tooltip; the [Desktop app guide](/quickstart-desktop) covers the installers.
 
 ## Projects and Members
 

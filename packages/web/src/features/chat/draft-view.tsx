@@ -627,7 +627,12 @@ export function DraftView({
         const created = await api.createSession(projectId, agentId, body);
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
-        add(created.session);
+        // Re-fetch the row before listing it: the server persisted the fallback title at
+        // Task start (inside the postTask call), and its session_title push may have gone
+        // out before this row existed in the list, where it patched nothing. The fresh row
+        // also carries the post-self-heal id, matching where we navigate.
+        const fresh = await api.getSession(res.sessionId).catch(() => null);
+        add(fresh?.session ?? created.session);
         if (!keepDraft) discardDraft();
         // The draft now has an id of its own, so its terminals move with it: every draft
         // shares one dock scope, and anything left behind under that key would surface in

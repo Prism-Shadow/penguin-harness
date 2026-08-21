@@ -1,6 +1,6 @@
 /**
  * Whether this running form can update itself (pure; no Electron import, so it unit-tests
- * directly). See design § "桌面端原型 · 自动更新".
+ * directly).
  *
  * electron-updater can only replace the forms it installed: the NSIS installer on
  * Windows, the app bundle on macOS, and an AppImage on Linux. A `.deb` belongs to the

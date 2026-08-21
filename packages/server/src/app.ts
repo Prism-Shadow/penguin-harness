@@ -31,6 +31,7 @@ import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsageRepo } from "./db/repos/usage.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
+import type { ServerEvent } from "./api/types.js";
 import { authMiddleware, jsonOnlyWrites, SESSION_COOKIE } from "./auth/middleware.js";
 import { IDENTITY_RESOURCE_ID } from "./platform/terminal/identity.js";
 import type { AppEnv } from "./auth/middleware.js";
@@ -70,7 +71,7 @@ import type { TitleNotifier } from "./runtime/title-generator.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
-import { desktopRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -238,9 +239,34 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
   });
   const recorder = new UsageRecorder(usageRepo, overrides.now ?? (() => new Date()));
   const errors = new ErrorRecorder(errorsRepo, overrides.now ?? (() => new Date()));
+  // Shared by SessionManager (run-state flips) and TitleGenerator (title updates): both are
+  // list-row facts that must reach tabs not subscribed to the Session's own channel.
+  //
+  // Audience = the Project's owner plus its members, i.e. exactly who
+  // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session they
+  // cannot open changed state or gained a title.
+  //
+  // `peek`, deliberately not `get`: a user who has never opened an event stream has no
+  // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
+  // (their next connection fetches the list, which carries the same statuses anyway).
+  const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
+    const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
+    if (ownerUserId === undefined) return;
+    const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
+    for (const userId of audience) {
+      channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+    }
+  };
   const titles =
     overrides.titles ??
-    new TitleGenerator({ sessions: sessionsRepo, channels, recorder, errors, log });
+    new TitleGenerator({
+      sessions: sessionsRepo,
+      channels,
+      recorder,
+      errors,
+      log,
+      notifyProjectUsers,
+    });
   const manager = new SessionManager({
     sessions: sessionsRepo,
     channels,
@@ -252,21 +278,8 @@ export function buildAppDeps(config: ServerConfig, overrides: BuildDepsOverrides
     log,
     goals: goalsRepo,
     // Run-state flips reach the whole login session, not just the tab watching that one
-    // conversation. Audience = the Project's owner plus its members, i.e. exactly who
-    // ProjectsRepo.listAccessible would grant the Project to — nobody learns that a Session
-    // they cannot open changed state.
-    //
-    // `peek`, deliberately not `get`: a user who has never opened an event stream has no
-    // channel, and conjuring one to buffer badge updates nobody is listening to is pure waste
-    // (their next connection fetches the list, which carries the same statuses anyway).
-    notifyProjectUsers: (projectId, event) => {
-      const ownerUserId = projectsRepo.findById(projectId)?.ownerUserId;
-      if (ownerUserId === undefined) return;
-      const audience = new Set([ownerUserId, ...membersRepo.list(projectId).map((m) => m.userId)]);
-      for (const userId of audience) {
-        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
-      }
-    },
+    // conversation (see the shared publisher above for the audience).
+    notifyProjectUsers,
     ...(overrides.now ? { now: overrides.now } : {}),
   });
   managerRef = manager;
@@ -509,6 +522,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const auth = authMiddleware(deps.authService);
   app.use("/api/*", auth);
   app.route("/api/me", meRoutes(deps));
+  // Cookie-authed (unlike the Bearer-token shutdown above): the page reads updater state
+  // and posts check/install here, gated to the shell's own window inside the routes.
+  if (deps.desktop) {
+    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+  }
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));

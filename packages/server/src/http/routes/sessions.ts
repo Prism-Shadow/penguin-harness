@@ -554,7 +554,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     let updated: SessionRow = { ...row };
     if (title !== undefined) {
-      // Manual renaming takes priority over auto-generation: TitleGenerator only persists a title while it's still NULL.
+      // Manual renaming takes priority over auto-generation: TitleGenerator only ever replaces the fallback title it wrote itself, never a manual rename.
       deps.sessionsRepo.updateTitle(row.sessionId, title);
       updated = { ...updated, title };
     }

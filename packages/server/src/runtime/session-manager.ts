@@ -381,16 +381,6 @@ interface RuntimeEntry {
 const ENTRY_IDLE_MS = 30 * 60 * 1000;
 const ENTRY_SWEEP_INTERVAL_MS = 60 * 1000;
 
-/** Cap on collected model text for title material (accumulation stops beyond this; the generator side also truncates further). */
-const TITLE_EXCERPT_LIMIT = 4000;
-/**
- * Early title trigger: once this many characters of main-session body text have streamed,
- * title generation starts right away instead of waiting for the Task to finish — the core
- * Session has captured its (capped) material by then, and a long answer would only overrun
- * it. Short conversations are still covered by the completion trigger in drive's finally.
- */
-const EARLY_TITLE_BODY_CHARS = 1000;
-
 /** Composite Agent key (used as a Set key, avoiding projectId/agentId concatenation ambiguity). */
 function agentKey(projectId: string, agentId: string): string {
   return `${projectId}\0${agentId}`;
@@ -451,11 +441,8 @@ function settledToolCallId(msg: OmniMessage): string | null {
 interface ChildSession {
   sessionId: string;
   agentId: string;
-  modelId: string;
   /** The prompt of the run_subagent call that spawned it (user material for title generation, and the fallback title). */
   prompt: string;
-  /** The model text the subagent itself produced (assistant material for title generation). */
-  assistantExcerpt: string;
 }
 
 /** Predicate for a plain-text message on the main session (no origin): title material is drawn only from user/model text. */
@@ -469,14 +456,6 @@ function isPlainText(role: "user" | "assistant") {
       (!msg.origin || msg.origin.length === 0)
     );
   };
-}
-
-/** For a nested message, the owning Session (end of the origin chain) and text of the model reply; null if it isn't model text. */
-function nestedAssistantText(msg: OmniMessage): { sessionId: string; text: string } | null {
-  const p = msg.payload as { type?: string; role?: string; text?: string };
-  if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "assistant") return null;
-  if (!msg.origin || msg.origin.length === 0 || typeof p.text !== "string") return null;
-  return { sessionId: msg.origin[msg.origin.length - 1]!, text: p.text };
 }
 
 export class SessionManager {
@@ -976,9 +955,9 @@ export class SessionManager {
       signal: ac.signal,
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
     });
-    // Title material is collected by the core Session itself during run; here we only
-    // keep this call's input user text, used both as the "material present → attempt
-    // generation" criterion and as the fallback title source if the LLM call fails.
+    // This call's input user text is the whole title source: drive persists its first
+    // words as the immediate fallback and hands it to the LLM as the generation material
+    // (user input only — generation never waits for model output).
     const userExcerpt = input
       .filter(isPlainText("user"))
       .map((m) => m.payload.text)
@@ -1514,15 +1493,13 @@ export class SessionManager {
    * Drive the output stream in the background: publish each message + persist usage +
    * persist LLM/tool errors; on completion (including errors) resets to idle and pushes
    * the status. `titleSource` is passed only for Task runs (compaction doesn't generate
-   * a title): it collects model text for automatic title generation.
+   * a title): its user text drives automatic title generation at run start.
    */
   private async drive(
     entry: RuntimeEntry,
     gen: AsyncGenerator<OmniMessage>,
     titleSource?: { userExcerpt: string },
   ): Promise<void> {
-    let earlyTitleFired = false;
-    let mainBodyChars = 0;
     const ctx: UsageContext = {
       projectId: entry.projectId,
       agentId: entry.agentId,
@@ -1530,6 +1507,16 @@ export class SessionManager {
       provider: entry.provider,
       modelId: entry.modelId,
     };
+    // Title policy fires at run start, from the user input alone: the generator persists
+    // the input's first words as an immediate fallback and issues the LLM replacement
+    // request without waiting for any model output (maybeGenerate self-guards: manual
+    // renames are final, one generation in flight per session).
+    if (titleSource?.userExcerpt.trim()) {
+      this.deps.titles?.maybeGenerate(ctx, entry.session, {
+        fallbackText: titleSource.userExcerpt,
+        material: { userText: titleSource.userExcerpt, assistantText: "" },
+      });
+    }
     // Every driven run (a Task, a compaction, or a whole goal loop — startGoal hands all of
     // its rounds to ONE drive) writes Trace lines: flip the row's has_trace cache here, the
     // single choke point, so listing can serve it from the DB without a directory walk (see
@@ -1560,7 +1547,7 @@ export class SessionManager {
     // yields it), so we can't rely on the subagent's first user message; instead we use
     // the run_subagent tool_call arguments immediately preceding it on the parent stream
     // (depth limited to 1, spawned in order, so taking the most recent one suffices).
-    /** Subagents registered during this run (keyed by session id); titles are generated for each on completion. */
+    /** Subagents registered during this run (keyed by session id); each gets its title generated at registration, from its spawning prompt alone. */
     const children = new Map<string, ChildSession>();
     // Unclaimed run_subagent prompts, queued in call order: a single round may spawn
     // multiple subagents in parallel, and a subagent's session_meta only carries the
@@ -1605,6 +1592,24 @@ export class SessionManager {
                 child.prompt = subagentPrompts.get(pendingId) ?? "";
                 subagentPrompts.delete(pendingId); // Consumed by this session_meta
               }
+              // The subagent's title is generated right here at registration, from the
+              // spawning prompt alone (its "user input") — never waiting for the
+              // subagent's own output. It piggybacks a one-shot request on the parent
+              // Session's bare LLM (the child Session object never leaves the SDK):
+              // Session/Agent record the subagent (the title belongs to it), but the
+              // model reference keeps ctx's parent-Session (provider, modelId) pair —
+              // a subagent may switch models via run_subagent's model_id.
+              if (child.prompt.trim()) {
+                this.deps.titles?.maybeGenerate(
+                  { ...ctx, agentId: child.agentId, sessionId: child.sessionId },
+                  entry.session,
+                  {
+                    fallbackText: child.prompt,
+                    material: { userText: child.prompt, assistantText: "" },
+                    notifyOn: entry.sessionId, // Notify the frontend via the parent Session's SSE channel
+                  },
+                );
+              }
             }
           } catch (err) {
             this.log(
@@ -1616,35 +1621,6 @@ export class SessionManager {
               ctx,
               code: "subagent_register_failed",
             });
-          }
-        } else {
-          // A subagent's model text: its title is generated from the subagent's **own
-          // conversation**, so the material is accumulated here.
-          const nested = nestedAssistantText(msg);
-          const child = nested ? children.get(nested.sessionId) : undefined;
-          if (nested && child && child.assistantExcerpt.length < TITLE_EXCERPT_LIMIT) {
-            child.assistantExcerpt += (child.assistantExcerpt ? "\n" : "") + nested.text;
-          }
-        }
-        // Early title trigger (see EARLY_TITLE_BODY_CHARS): fire as soon as enough main-
-        // session body text has streamed; maybeGenerate self-guards (NULL title, single
-        // flight), so the completion trigger in finally stays as the short-answer fallback.
-        if (!earlyTitleFired && titleSource?.userExcerpt.trim()) {
-          const p = msg.payload as { type?: string; role?: string; text?: string };
-          if (
-            (!msg.origin || msg.origin.length === 0) &&
-            msg.type === "model_msg" &&
-            p.type === "text" &&
-            p.role === "assistant" &&
-            p.text
-          ) {
-            mainBodyChars += p.text.length;
-            if (mainBodyChars >= EARLY_TITLE_BODY_CHARS) {
-              earlyTitleFired = true;
-              this.deps.titles?.maybeGenerate(ctx, entry.session, {
-                fallbackText: titleSource.userExcerpt,
-              });
-            }
           }
         }
         // Bootstrap records (first-run MCP connect + toolset): held for GET /messages
@@ -1708,23 +1684,13 @@ export class SessionManager {
       entry.pendingSteering = [];
       entry.lastActivityMs = Date.now();
       // Run-end stamp (see the run-start counterpart at the top of drive). Guarded like
-      // every other write in this finally: what follows — the idle broadcast, title
-      // generation, and the auto-start of queued follow-ups (this is its only call site) —
-      // must not be skippable by a DB failure, or SSE clients would sit on "running"
-      // forever with their queue stranded. A no-op UPDATE when the row is already gone:
-      // deletion normally awaits the drive first, so that only happens once its 5s wait
-      // times out.
+      // every other write in this finally: what follows — the idle broadcast and the
+      // auto-start of queued follow-ups (this is its only call site) — must not be
+      // skippable by a DB failure, or SSE clients would sit on "running" forever with
+      // their queue stranded. A no-op UPDATE when the row is already gone: deletion
+      // normally awaits the drive first, so that only happens once its 5s wait times out.
       this.touchRow(ctx, (repo, at) => repo.touchLastActive(ctx.sessionId, at));
       this.publishState(entry, "idle");
-      if (titleSource && titleSource.userExcerpt.trim()) {
-        // Attempt generation whenever there's user material; whether generation is
-        // actually needed (title still NULL, etc.) is decided by the generator itself.
-        // Material is collected by the core Session during run; here we only pass the
-        // fallback text.
-        this.deps.titles?.maybeGenerate(ctx, entry.session, {
-          fallbackText: titleSource.userExcerpt,
-        });
-      }
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
@@ -1733,41 +1699,18 @@ export class SessionManager {
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
       else void this.startBackgroundNoticeTask(entry.sessionId);
-      // A subagent's title is likewise generated by the model, with material being the
-      // subagent's **own conversation**: the prompt that spawned it plus its own reply
-      // (material the parent Session collects belongs to the parent, hence the explicit
-      // override here). It piggybacks a one-shot request on the parent Session's bare
-      // LLM (the child Session object never leaves the SDK); on failure/empty result the
-      // generator falls back to the prompt's first line.
-      for (const child of children.values()) {
-        if (!child.prompt.trim()) continue;
-        this.deps.titles?.maybeGenerate(
-          // Bookkeeping: Session/Agent record the subagent (the title belongs to it),
-          // but the model reference still uses ctx's **parent-Session** pair
-          // (provider, modelId) — this one-shot request really does run on the parent
-          // Session's bare LLM (a subagent may switch models via run_subagent's
-          // model_id).
-          { ...ctx, agentId: child.agentId, sessionId: child.sessionId },
-          entry.session,
-          {
-            fallbackText: child.prompt,
-            material: { userText: child.prompt, assistantText: child.assistantExcerpt },
-            notifyOn: entry.sessionId, // Notify the frontend via the parent Session's SSE channel
-          },
-        );
-      }
     }
   }
 
   /**
    * Register a subagent: persisted only when the origin message is session_meta
    * (agentId is derived from the agent_state path: `<…>/<agentId>/agent_state`).
-   * **The title is left blank** — it's generated at the end of this run by the model
-   * from the subagent's own conversation (see drive's finally), falling back to the
-   * first line of the run_subagent prompt if generation fails. Idempotent (children
-   * dedup + insertOrIgnore); a subagent has its own Trace, so it's visible in both the
-   * list and the trace view. On successful registration, the entry is put into
-   * `children` and returned; a duplicate session_meta returns null.
+   * **The title is left blank here** — the registration site in drive generates it
+   * right away from the spawning prompt (fallback first words + LLM replacement), so
+   * it never waits for the subagent's own output. Idempotent (children dedup +
+   * insertOrIgnore); a subagent has its own Trace, so it's visible in both the list
+   * and the trace view. On successful registration, the entry is put into `children`
+   * and returned; a duplicate session_meta returns null.
    */
   private registerChildSession(
     entry: RuntimeEntry,
@@ -1817,9 +1760,7 @@ export class SessionManager {
     const child: ChildSession = {
       sessionId: childSid,
       agentId,
-      modelId: p.model_id,
       prompt: "",
-      assistantExcerpt: "",
     };
     children.set(childSid, child);
     return child;
