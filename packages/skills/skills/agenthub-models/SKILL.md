@@ -3,8 +3,8 @@ name: agenthub-models
 description: Call model APIs through @prismshadow/agenthub — streaming text generation, image generation, speech synthesis, embeddings and the supported-model registry with one client.
 short_description: Call model APIs with one AgentHub client.
 short_description_zh: 用一个 AgentHub 客户端调用模型 API。
-version: 12
-updated: 2026-08-18T21:40:00Z
+version: 13
+updated: 2026-08-20T00:00:00Z
 ---
 
 # AgentHub Model APIs
@@ -55,7 +55,7 @@ Use exact model ids. If an id is not in the table below and the user has not giv
 | Gemini 3 image   | `gemini-3.1-flash-image`, `gemini-3-pro-image-preview`                | —                                                                                                                                               |
 | Gemini 3 TTS     | `gemini-3.1-flash-tts-preview`                                        | —                                                                                                                                               |
 | Gemini embedding | `gemini-embedding-2`                                                  | —                                                                                                                                               |
-| Claude 5         | `claude-fable-5`, `claude-sonnet-5`                                   | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
+| Claude 5         | `claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`                  | OpenRouter `anthropic/claude-fable-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`                                                   |
 | Claude 4         | `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-opus-4-8`             | OpenRouter `anthropic/claude-opus-4.8`, `anthropic/claude-opus-4.7`                                                                             |
 | GPT-5.6          | `gpt-5.6` (routes to sol), `gpt-5.6-terra`, `gpt-5.6-luna`            | OpenRouter `openai/gpt-5.6-sol`, `openai/gpt-5.6-terra`, `openai/gpt-5.6-luna`                                                                  |
 | GPT-5.5 / 5.4    | `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`                  | OpenRouter `openai/gpt-5.5`, `openai/gpt-5.5-pro`, `openai/gpt-5.4`, `openai/gpt-5.4-mini`, `openai/gpt-5.4-nano`, `openai/gpt-5.4-pro`         |
@@ -97,7 +97,7 @@ for (const m of listSupportedModels()) {
 - Modalities are `"Text" | "Image" | "Video" | "Audio" | "Embed"`. Coverage includes the official vendor endpoints plus the OpenRouter and SiliconFlow gateways; `context_window` and `pricing` are omitted where the platform publishes no authoritative value (image and TTS models, for instance).
 - `pricing` is per million tokens, keyed by the same usage buckets as `usage_metadata`: `prompt_tokens` (non-cached input), `thoughts_tokens` / `response_tokens` (both the output price) and optional `cached_tokens` (cache-hit price). Values are stored in USD; pass `listSupportedModels("CNY")` to convert at 7 CNY/USD.
 
-The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is narrower than the routing rules: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine but no longer appear in it.
+The registry is the curated current line-up, so prefer it when picking a model or estimating cost. It is not the routing table, and it lags in both directions: older ids in the table above (`gpt-5.4`, `claude-opus-4-7`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`) still route fine without appearing in it, and AgentHub 0.4.4 lists neither `claude-opus-5` nor `anthropic/claude-opus-5` although both route. For an id the registry omits, take the context window and price from the vendor's own page.
 
 ## Routing and credentials
 
