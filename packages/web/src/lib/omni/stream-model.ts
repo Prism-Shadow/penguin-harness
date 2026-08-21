@@ -56,6 +56,7 @@ import {
 } from "@prismshadow/penguin-core/omnimessage";
 import type {
   ApprovalDecision,
+  ApprovalSource,
   CompactionMode,
   CompactionReason,
   CompleteModelPayload,
@@ -85,8 +86,8 @@ import type { TaskStats, TaskStatsTracker } from "./task-stats";
 // View model types
 // ---------------------------------------------------------------------------
 
-/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end). */
-export type DecisionSource = "manual" | "remote";
+/** Source of an approval decision: clicked on this end (manual) / other (automatic judgment or submitted by another end) / vetoed by the project command policy before any human was asked. */
+export type DecisionSource = "manual" | "remote" | "policy";
 
 export interface UserTextItem {
   kind: "user_text";
@@ -415,8 +416,8 @@ export interface StreamModel {
   subagents: Map<string, StreamModel>;
   /** toolCallIds whose approval was clicked on this end (shares the reference with nested models, labeled "manual"). */
   localDecisions: Set<string>;
-  /** Approval decisions that arrived before their tool card (backfilled when the card is created). */
-  pendingDecisions: Map<string, ApprovalDecision>;
+  /** Approval decisions that arrived before their tool card (backfilled when the card is created), with the event's source when it named one. */
+  pendingDecisions: Map<string, { decision: ApprovalDecision; source?: ApprovalSource }>;
   /** Approval timestamps that arrived before their tool card (backfilled into approvalAtMs when the card is created, used to deduct the approval duration). */
   pendingDecisionTs: Map<string, number>;
   /** Timestamp of the most recent message (used to approximate the start time when history's thinking has no fragments). */
@@ -1395,8 +1396,8 @@ function createToolCard(
   // An approval decision that arrived before the card: backfilled at creation time.
   const pending = model.pendingDecisions.get(init.toolCallId);
   if (pending !== undefined) {
-    item.decision = pending;
-    item.decisionSource = model.localDecisions.has(init.toolCallId) ? "manual" : "remote";
+    item.decision = pending.decision;
+    item.decisionSource = decisionSourceOf(model, init.toolCallId, pending.source);
     model.pendingDecisions.delete(init.toolCallId);
     const pendingTs = model.pendingDecisionTs.get(init.toolCallId);
     if (pendingTs !== undefined) {
@@ -1413,18 +1414,31 @@ function createToolCard(
 // Events
 // ---------------------------------------------------------------------------
 
+/** How a decision was made: the event's own source wins (a policy veto never saw a click), else local-click tracking separates manual from remote. */
+function decisionSourceOf(
+  model: StreamModel,
+  toolCallId: string,
+  source?: ApprovalSource,
+): DecisionSource {
+  if (source === "policy") return "policy";
+  return model.localDecisions.has(toolCallId) ? "manual" : "remote";
+}
+
 function handleEvent(model: StreamModel, p: EventPayload, tsMs?: number, nowMs?: number): void {
   switch (p.type) {
     case "approval_decision": {
       const card = model.toolCards.get(p.tool_call_id);
       if (card) {
         card.decision = p.decision;
-        card.decisionSource = model.localDecisions.has(p.tool_call_id) ? "manual" : "remote";
+        card.decisionSource = decisionSourceOf(model, p.tool_call_id, p.source);
         // Approval-granted timestamp: execution timing starts from here (deducting the approval wait).
         if (tsMs !== undefined && card.approvalAtMs === undefined) card.approvalAtMs = tsMs;
         noteApprovalWait(model, card); // Normal order: approval arrives later, both timestamps are already available here
       } else {
-        model.pendingDecisions.set(p.tool_call_id, p.decision);
+        model.pendingDecisions.set(p.tool_call_id, {
+          decision: p.decision,
+          ...(p.source !== undefined ? { source: p.source } : {}),
+        });
         if (tsMs !== undefined) model.pendingDecisionTs.set(p.tool_call_id, tsMs);
       }
       return;

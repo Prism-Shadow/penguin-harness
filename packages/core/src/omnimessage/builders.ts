@@ -8,6 +8,7 @@ import type {
   AbortPayload,
   ApprovalDecision,
   ApprovalDecisionPayload,
+  ApprovalSource,
   CompactionBeginPayload,
   CompactionEndPayload,
   CompactionMode,
@@ -264,8 +265,16 @@ export function partialToolCallOutput(args: {
 export function approvalDecision(
   decision: ApprovalDecision,
   toolCallId: string,
+  source?: ApprovalSource,
 ): OmniMessage<ApprovalDecisionPayload> {
-  return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
+  // "human" is what an absent field already means, so only the non-default is stamped —
+  // the human path's wire format stays byte-identical to before the field existed.
+  return event({
+    type: "approval_decision",
+    decision,
+    ...(source !== undefined && source !== "human" ? { source } : {}),
+    tool_call_id: toolCallId,
+  });
 }
 
 export function abortEvent(reason: string | null = null): OmniMessage<AbortPayload> {

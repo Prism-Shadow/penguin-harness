@@ -160,12 +160,15 @@ export function vetoForToolCall(
  * is never reached, so no approval mode — and no Human implementation — can let it
  * through. The refusal carries its own reason, which is what keeps it distinguishable from
  * a person canceling the call: `failed` tells the model its request was rejected on its
- * merits and it should change course, where a human denial reports `aborted`.
+ * merits and it should change course, where a human denial reports `aborted`. It also tags
+ * itself `source: "policy"`, which the engine stamps onto the `approval_decision` event, so
+ * the Trace records who denied without anyone parsing output text.
  */
 export function withCommandPolicy(approve: ApproveFn, policy?: CommandPolicyConfig): ApproveFn {
   return async (toolCall) => {
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
-    if (veto) return { decision: "deny", message: veto.message, stopReason: "failed" };
+    if (veto)
+      return { decision: "deny", message: veto.message, stopReason: "failed", source: "policy" };
     return approve(toolCall);
   };
 }

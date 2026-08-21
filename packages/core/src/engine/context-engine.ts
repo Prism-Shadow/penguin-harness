@@ -1141,7 +1141,11 @@ export class ContextEngine {
             // approve is a callback; context_engine emits its decision as an approval_decision
             // OmniMessage: pushed to the stream for frontend rendering, and written to Trace.
             const decision = approvalDecisionOf(outcome);
-            const decisionMsg = approvalDecision(decision, toolCallId);
+            const decisionMsg = approvalDecision(
+              decision,
+              toolCallId,
+              typeof outcome === "string" ? undefined : outcome.source,
+            );
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {

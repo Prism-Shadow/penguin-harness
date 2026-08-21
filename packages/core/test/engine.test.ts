@@ -477,6 +477,12 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         (m.payload as { stop_reason?: string }).stop_reason === "aborted",
     );
     expect(deniedMsg).toBeDefined();
+    // A bare "deny" is a human decision: no source is stamped, and the wire format of the
+    // human path stays byte-identical to before the field existed.
+    const humanDecision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect("source" in (humanDecision.payload as object)).toBe(false);
   });
 
   it("a refusal from the approval boundary carries its own message and stop_reason", async () => {
@@ -494,6 +500,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       decision: "deny",
       message: "Command blocked by the project sandbox policy (rule: rm-recursive-force).",
       stopReason: "failed",
+      source: "policy",
     });
 
     const all = await collectRun(engine, [userText("clean up")], refuse);
@@ -503,6 +510,8 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     )!;
     expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    // The refusal's source rides on the approval record, so the Trace itself says who denied.
+    expect((decision.payload as { source?: string }).source).toBe("policy");
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { stop_reason?: string }).stop_reason).toBe("failed");
     expect((output.payload as { output: string }).output).toContain("sandbox policy");

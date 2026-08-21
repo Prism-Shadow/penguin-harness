@@ -1277,6 +1277,7 @@ Scenarios:
     decisionDeny: "Denied",
     decisionManual: "manual",
     decisionAuto: "auto",
+    decisionPolicy: "policy",
     thinking: "Thinking",
     subagent: "Subagent",
     subagentRunning: "Running",

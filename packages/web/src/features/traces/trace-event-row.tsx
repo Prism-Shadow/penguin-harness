@@ -98,7 +98,8 @@ export function summarizeEvent(msg: OmniMessage): string {
     case "request_end":
       return `status=${String(p["status"])}`;
     case "approval_decision":
-      return `${String(p["decision"])} · ${String(p["tool_call_id"])}`;
+      // `source` separates a policy veto from a human decision; absent means human and is not shown.
+      return `${String(p["decision"])}${p["source"] ? ` · ${String(p["source"])}` : ""} · ${String(p["tool_call_id"])}`;
     case "compaction_begin":
     case "compaction_end":
       return `${String(p["mode"])} (${String(p["reason"])})${p["status"] ? ` · ${String(p["status"])}` : ""}`;

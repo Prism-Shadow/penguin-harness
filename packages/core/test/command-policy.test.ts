@@ -310,7 +310,7 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
     // The host is never asked: that is what makes the policy outrank every approval mode.
     expect(asked).toBe(0);
-    expect(outcome).toMatchObject({ decision: "deny", stopReason: "failed" });
+    expect(outcome).toMatchObject({ decision: "deny", stopReason: "failed", source: "policy" });
     expect(typeof outcome === "string" ? "" : outcome.message).toContain("rm-recursive-force");
   });
 
@@ -426,6 +426,9 @@ describe("Session applies the policy at the approval boundary", () => {
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     )!;
     expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    // The approval record itself names the decider, so the Trace separates a policy veto
+    // from a human denial without parsing the output text.
+    expect((decision.payload as { source?: string }).source).toBe("policy");
     // "failed", not "aborted": nothing was manually canceled, and the model should read the
     // message and change course rather than treat it as a user interruption.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;

@@ -226,7 +226,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   // breakpoint; the icon is the single source of truth for how the call was decided.
   const decisionText = item.decision
     ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
-        item.decisionSource === "manual" ? S.chat.decisionManual : S.chat.decisionAuto
+        item.decisionSource === "policy"
+          ? S.chat.decisionPolicy
+          : item.decisionSource === "manual"
+            ? S.chat.decisionManual
+            : S.chat.decisionAuto
       }`
     : null;
   // A user denial reports stop_reason "aborted" on the output it feeds back; that abort IS the
@@ -234,13 +238,17 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   // user-abort of a RUNNING tool carries no deny decision, so the label falls through to its
   // stop reason below.
   const deniedByUser = item.decision === "deny" && item.outputStopReason === "aborted";
+  // A command-policy veto reports "failed" instead (the model should change course, nothing
+  // was canceled): the icon keeps the failure tone, but the label names the decision
+  // ("Denied · policy") rather than falling through to the raw stop reason.
+  const deniedByPolicy = item.decision === "deny" && item.decisionSource === "policy";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
       ? S.chat.workRunning
       : state === "done"
         ? (decisionText ?? S.chat.workDone)
-        : deniedByUser
+        : deniedByUser || deniedByPolicy
           ? (decisionText ?? undefined)
           : (item.outputStopReason ?? item.callStopReason);
 

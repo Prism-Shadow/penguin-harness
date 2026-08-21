@@ -16,6 +16,7 @@
  */
 import type {
   ApprovalDecision,
+  ApprovalSource,
   OmniMessage,
   StopReason,
   ToolCallPayload,
@@ -94,13 +95,16 @@ export interface ToolConfig {
  * refusal did not come from a person canceling the call. `message` is fed back to the model
  * verbatim as the `tool_call_output`, and `stopReason` says how to read it: `"failed"` for a
  * call refused on its merits — the model should take in the message and change course —
- * against `"aborted"`, which means manually canceled. A bare `"deny"` still reports
- * `aborted`, so a Human implementation that knows nothing of this needs no change.
+ * against `"aborted"`, which means manually canceled. `source` names who refused and is
+ * recorded on the `approval_decision` event, so the Trace separates a policy veto from a
+ * human denial without parsing output text; absent means `"human"`. A bare `"deny"` still
+ * reports `aborted`, so a Human implementation that knows nothing of this needs no change.
  */
 export interface ApprovalRefusal {
   decision: "deny";
   message: string;
   stopReason: Extract<StopReason, "failed" | "aborted">;
+  source?: ApprovalSource;
 }
 
 /** What an approval callback may answer: a bare decision, or a denial that states its reason. */

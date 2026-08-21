@@ -222,6 +222,7 @@ interface ApprovalRefusal {
   decision: "deny";
   message: string;                          // fed back to the model as the tool output
   stopReason: "failed" | "aborted";         // "failed" = refused on the merits, change course
+  source?: "human" | "policy";              // recorded on the approval_decision event; absent = "human"
 }
 type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
 type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
@@ -229,7 +230,7 @@ type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOut
 
 Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.
 
-A denial may come back as an `ApprovalRefusal` instead of the bare `"deny"` when it has a reason to state: the message becomes the tool output verbatim and `stopReason` says how the model should read it. A bare `"deny"` still produces the `aborted` output "Tool call denied by user.", so an existing callback needs no change. `Session.run` uses this to enforce the [Project command policy](/configuration#command-policy): it wraps the injected callback, so a vetoed command is refused before the host is asked at all.
+A denial may come back as an `ApprovalRefusal` instead of the bare `"deny"` when it has a reason to state: the message becomes the tool output verbatim and `stopReason` says how the model should read it. A bare `"deny"` still produces the `aborted` output "Tool call denied by user.", so an existing callback needs no change. `Session.run` uses this to enforce the [Project command policy](/configuration#command-policy): it wraps the injected callback, so a vetoed command is refused before the host is asked at all. Such a veto tags `source: "policy"`, and the engine stamps it onto the `approval_decision` event — the Trace names the decider without anyone parsing output text.
 
 ## Subagent interfaces
 

@@ -1233,6 +1233,7 @@ Benchmark：
     decisionDeny: "已拒绝",
     decisionManual: "手动",
     decisionAuto: "自动",
+    decisionPolicy: "策略",
     thinking: "思考",
     subagent: "子会话",
     subagentRunning: "运行中",

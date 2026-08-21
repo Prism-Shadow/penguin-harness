@@ -60,6 +60,13 @@ export type MessageOrigin = string;
 /** The approval decision for a tool call. */
 export type ApprovalDecision = "allow" | "deny";
 
+/**
+ * Who answered an approval: a person (or the host's approval mode) at the Human boundary,
+ * or the project command policy refusing ahead of it. Absent on the wire reads as
+ * `"human"` — every decision predating the field was one.
+ */
+export type ApprovalSource = "human" | "policy";
+
 /** Token counts (input/output/cache/total). */
 export interface TokenCounts {
   cache_read: number;
@@ -255,6 +262,8 @@ export interface PartialToolCallOutputPayload {
 export interface ApprovalDecisionPayload {
   type: "approval_decision";
   decision: ApprovalDecision;
+  /** Who decided; stamped only when it is not the Human boundary (absent = "human"). */
+  source?: ApprovalSource;
   tool_call_id: string;
 }
 
