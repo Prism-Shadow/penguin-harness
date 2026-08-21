@@ -51,6 +51,8 @@ import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { TokenDonut } from "../../components/ui/token-donut";
 import { TimelineChart } from "./timeline-chart";
+import type { TimelineUserMark } from "./timeline-chart";
+import { parseBackgroundTaskDoneMessage } from "../chat/agent-handoff";
 import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
 
@@ -80,6 +82,52 @@ interface Buckets {
   output: number;
 }
 const zeroBuckets = (): Buckets => ({ cacheRead: 0, cacheWrite: 0, output: 0 });
+
+/**
+ * Display-layer round merge: a round whose FIRST main-stream user message is a
+ * `[background_task_done]` harness notice is the automatic continuation of the round that
+ * launched the background work — it re-targets onto the previous round instead of standing
+ * alone. Classification reads the loaded events page; a notice round beyond the page keeps
+ * its own card (truthful fallback). The Trace file and the server analysis are untouched.
+ */
+export function noticeTaskRemap(
+  tasks: readonly TraceTaskStats[],
+  events: readonly OmniMessage[],
+  eventsOffset: number,
+): Map<number, number> {
+  const remap = new Map<number, number>();
+  if (tasks.length < 2) return remap;
+  const sorted = [...tasks].sort((a, b) => a.taskIndex - b.taskIndex);
+  const firstUser = new Map<number, string>();
+  for (let i = 0; i < events.length; i++) {
+    const msg = events[i]!;
+    if (msg.origin && msg.origin.length > 0) continue;
+    const p = msg.payload as { type?: string; role?: string; text?: string };
+    if (msg.type !== "model_msg" || p.type !== "text" || p.role !== "user" || !p.text) continue;
+    const gi = eventsOffset + i;
+    const t = sorted.find((x) => gi >= x.messageFrom && gi <= x.messageTo);
+    if (t && !firstUser.has(t.taskIndex)) firstUser.set(t.taskIndex, p.text);
+  }
+  for (let idx = 1; idx < sorted.length; idx++) {
+    const t = sorted[idx]!;
+    const text = firstUser.get(t.taskIndex);
+    if (text === undefined || parseBackgroundTaskDoneMessage(text) === null) continue;
+    const prev = sorted[idx - 1]!.taskIndex;
+    remap.set(t.taskIndex, remap.get(prev) ?? prev);
+  }
+  return remap;
+}
+
+/** Timeline user marks of one (merged) round: main-stream user texts, machine = a sender-marked injection (harness report, scheduler trigger, parent-agent prompt). */
+export function userMarksOf(messages: readonly OmniMessage[]): TimelineUserMark[] {
+  const marks: TimelineUserMark[] = [];
+  for (const m of messages) {
+    const p = m.payload as { type?: string; role?: string; sender?: string };
+    if (m.type !== "model_msg" || p.type !== "text" || p.role !== "user") continue;
+    marks.push({ ts: m.timestamp, machine: p.sender !== undefined && p.sender !== "user" });
+  }
+  return marks;
+}
 
 interface TaskData {
   taskIndex: number;
@@ -292,6 +340,10 @@ export function TraceFileView({
       }
     }
 
+    // Round re-targeting for background completion notices (see noticeTaskRemap).
+    const remap = noticeTaskRemap(analysis.tasks, events, eventsOffset);
+    const resolve = (ti: number): number => remap.get(ti) ?? ti;
+
     const map = new Map<number, TaskData>();
     const ensure = (ti: number): TaskData => {
       let d = map.get(ti);
@@ -310,16 +362,22 @@ export function TraceFileView({
       }
       return d;
     };
-    for (const t of analysis.tasks) ensure(t.taskIndex); // empty rounds still need to appear in the list
-    for (const s of analysis.modelSegments) ensure(s.taskIndex).segments.push(s);
+    for (const t of analysis.tasks) ensure(resolve(t.taskIndex)); // empty rounds still need to appear in the list
+    // A merged round's duration is the SUM of its parts' active spans — not the wall span
+    // across them, which would count the idle wait between launch and completion as work.
+    for (const [from, to] of remap) {
+      const b = boundsByTask.get(from);
+      if (b) ensure(to).durationMs += Math.max(0, b.max - b.min);
+    }
+    for (const s of analysis.modelSegments) ensure(resolve(s.taskIndex)).segments.push(s);
     for (const s of analysis.toolSpans) {
-      const d = ensure(s.taskIndex);
+      const d = ensure(resolve(s.taskIndex));
       d.spans.push(s);
       d.toolCalls += 1;
     }
     // Non-tool auxiliary phases (MCP connect); pre-otherSpans analysis payloads (cached
     // responses) may omit the field.
-    for (const s of analysis.otherSpans ?? []) ensure(s.taskIndex).otherSpans.push(s);
+    for (const s of analysis.otherSpans ?? []) ensure(resolve(s.taskIndex)).otherSpans.push(s);
     // Message attribution: **by the server-given index range**, never guessed
     // from timestamps. The same millisecond can be crowded with "the previous
     // round's last reply, compaction_begin, the compaction prompt, the next
@@ -341,7 +399,7 @@ export function TraceFileView({
       const msg = events[i]!;
       if (msg.origin && msg.origin.length > 0) continue; // sub-session messages don't enter this file's grouping
       const ti = taskOfIndex(eventsOffset + i); // events is fetched starting at offset; recover the global index within the file
-      if (ti !== null) ensure(ti).messages.push(msg);
+      if (ti !== null) ensure(resolve(ti)).messages.push(msg);
     }
     g.toolCalls = analysis.toolSpans.length;
     // Numeric values always come from analysis.tasks, computed by the server
@@ -353,7 +411,31 @@ export function TraceFileView({
     // The global summary and the per-round cards below share **the same
     // scope** (including compaction rounds): every global figure is the sum
     // across rounds, and they must add up.
-    const statsByTask = new Map(analysis.tasks.map((t) => [t.taskIndex, t]));
+    // Per-card stats follow the same re-targeting: a merged notice round's ledger figures
+    // add onto its launcher's (tokens/llmMs sum, message range extends, the later context
+    // snapshot wins); snapshots and ranges of unmerged rounds pass through unchanged.
+    const statsByTask = new Map<number, TraceTaskStats>();
+    for (const t of [...analysis.tasks].sort((a, b) => a.taskIndex - b.taskIndex)) {
+      const target = resolve(t.taskIndex);
+      const prev = statsByTask.get(target);
+      if (!prev) {
+        statsByTask.set(target, t.taskIndex === target ? t : { ...t, taskIndex: target });
+        continue;
+      }
+      statsByTask.set(target, {
+        ...prev,
+        tokens: {
+          cacheRead: prev.tokens.cacheRead + t.tokens.cacheRead,
+          cacheWrite: prev.tokens.cacheWrite + t.tokens.cacheWrite,
+          output: prev.tokens.output + t.tokens.output,
+        },
+        llmMs: prev.llmMs + t.llmMs,
+        messageTo: Math.max(prev.messageTo, t.messageTo),
+        ...(t.endTs ? { endTs: t.endTs } : {}),
+        ...(prev.startTs ? {} : t.startTs ? { startTs: t.startTs } : {}),
+        ...(t.context ? { context: t.context } : {}),
+      });
+    }
     for (const t of analysis.tasks) {
       g.buckets.cacheRead += t.tokens.cacheRead;
       g.buckets.cacheWrite += t.tokens.cacheWrite;
@@ -566,6 +648,7 @@ export function TraceFileView({
                       segments={t.segments}
                       toolSpans={t.spans}
                       otherSpans={t.otherSpans}
+                      userMarks={userMarksOf(t.messages)}
                       highlight={highlight}
                       onHighlight={onHighlight}
                       onJump={jumpTo}

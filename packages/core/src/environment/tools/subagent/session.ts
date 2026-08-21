@@ -83,6 +83,11 @@ export class ManagedSubagentSession {
     return this.handle.sessionId;
   }
 
+  /** One-shot take of the child's origin-tagged session_meta (see SubagentHandle.takeMeta); null when the handle predates the seam or the meta already went out. */
+  takeMeta(): OmniMessage | null {
+    return this.handle.takeMeta?.() ?? null;
+  }
+
   /** Whether a round of the task is currently running. */
   get running(): boolean {
     return this.isRunning;

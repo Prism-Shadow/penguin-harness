@@ -1466,6 +1466,10 @@ Benchmark：
     title: "轨迹观测",
     timeline: "执行时间线",
     laneLLM: "模型",
+    /** User lane of the round timeline: point events for user-side messages. */
+    laneUser: "用户",
+    markUser: "用户消息",
+    markHarness: "自动注入",
     kindThinking: "思考",
     kindModelReply: "模型回复",
     kindToolGen: "工具调用生成",

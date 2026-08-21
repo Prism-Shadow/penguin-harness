@@ -344,6 +344,39 @@ describe("session-manager", () => {
     expect(runInputs).toHaveLength(2);
   });
 
+  it("adopt registers the notice listener too (a freshly created session, no loader involved)", async () => {
+    // Regression guard: POST /sessions enters the active table through adopt, not
+    // ensureEntry — a listener registered only on the loader path left brand-new sessions
+    // unable to deliver idle-arrival completion reports (the real-app no-notification bug).
+    sessions.updateApprovalMode("session-1", "allow-all");
+    let noticeCb: (() => void) | null = null;
+    const queue: OmniMessage[] = [];
+    const runInputs: OmniMessage[][] = [];
+    const fake: RuntimeSession = {
+      sessionId: "session-1",
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      onBackgroundNotice: (cb) => (noticeCb = cb),
+      takeBackgroundNotices: () => queue.splice(0),
+      async *run(input: OmniMessage[]) {
+        runInputs.push(input);
+        yield assistantText("ok");
+      },
+      async *compact(): AsyncGenerator<OmniMessage> {},
+    };
+    const manager = makeManager(loaderOf(fake));
+    const row = sessions.findById("session-1")!;
+    manager.adopt(row, fake);
+    expect(noticeCb).not.toBeNull();
+    queue.push(userText("[background_task_done]\nkind: command\n[/background_task_done]"));
+    noticeCb!();
+    await waitFor(() => manager.statusOf("session-1") === "idle" && runInputs.length === 1);
+    expect(queue).toHaveLength(0);
+  });
+
   it("end-to-end: a run_in_background command finishing after idle reaches the event channel as a harness user message", async () => {
     // Full production chain with the REAL core pieces — Session, engine, Environment and an
     // actual OS process — under the real SessionManager (loaded via the loader, which is

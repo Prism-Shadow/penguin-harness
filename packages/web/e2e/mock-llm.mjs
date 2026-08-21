@@ -302,6 +302,35 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Background-notify test case (background-notify.spec): turn 1 launches a command with
+    // run_in_background (returns a process_id immediately); turn 2 closes the task while
+    // the command is still running; ~2s later the command exits and the harness injects a
+    // [background_task_done] user message that auto-starts a task — whose turn is keyed on
+    // the LAST message (the whole-history flags can't shadow it) and acknowledges.
+    const lastText = JSON.stringify(messages[messages.length - 1] ?? {});
+    if (lastText.includes("background_task_done")) {
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Acknowledged: the background command finished (bg-ack)." },
+      ]);
+      messageStop(res, "end_turn", 9);
+      return;
+    }
+    if (flat.includes("background notify test")) {
+      if (!hasToolResult) {
+        block(res, 0, { type: "tool_use", id: "toolu_bgn_1", name: "exec_command", input: {} }, [
+          { type: "input_json_delta", partial_json: '{"cmd": "echo bg-notify; sleep 6",' },
+          { type: "input_json_delta", partial_json: ' "run_in_background": true}' },
+        ]);
+        messageStop(res, "tool_use", 14);
+        return;
+      }
+      block(res, 0, { type: "text", text: "" }, [
+        { type: "text_delta", text: "Started in the background; the report will follow." },
+      ]);
+      messageStop(res, "end_turn", 11);
+      return;
+    }
+
     // Background-process test case (processes.spec): an exec_command that outlives its
     // yield window — the engine promotes it to a background process with a process_id,
     // which the session's process list (details popover) must surface and be able to stop.

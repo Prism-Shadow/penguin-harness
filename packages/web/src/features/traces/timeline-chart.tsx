@@ -287,10 +287,18 @@ function Ticks({ total }: { total: number }) {
   );
 }
 
+/** One point event on the user lane: a main-stream user message, split by who wrote it. */
+export interface TimelineUserMark {
+  ts: string;
+  /** Machine-injected (harness/server/parent-agent sender) rather than typed by the human. */
+  machine: boolean;
+}
+
 export function TimelineChart({
   segments,
   toolSpans,
   otherSpans = [],
+  userMarks = [],
   highlight,
   onHighlight,
   onJump,
@@ -300,6 +308,8 @@ export function TimelineChart({
   toolSpans: TraceToolSpan[];
   /** Non-tool auxiliary phases (MCP connect): rendered in their own lanes under the "other" legend. */
   otherSpans?: TraceOtherSpan[];
+  /** User-lane point events (the round's user/harness messages); rendered on the first group — the grouped-by-Task view embeds one round per chart. */
+  userMarks?: TimelineUserMark[];
   highlight?: TraceHighlight | null;
   onHighlight?: (h: TraceHighlight | null) => void;
   /** Click a bar: jump to and briefly highlight the message at that moment. */
@@ -340,8 +350,9 @@ export function TimelineChart({
       }
       for (const o of g.others) put(o.ts, `o-${o.key}`);
     }
+    userMarks.forEach((u, i) => put(u.ts, `u-${i}`));
     return { firstBarKeyByTs: m, barKeys: keys };
-  }, [groups]);
+  }, [groups, userMarks]);
   // Hovering the legend highlights matching segments; null = none.
   const [legendKey, setLegendKey] = useState<string | null>(null);
   // Time-axis zoom multiplier + visible window (derived from scroll).
@@ -529,6 +540,35 @@ export function TimelineChart({
                       {humanizeDuration(g.total)}
                     </span>
                   </div>
+                )}
+
+                {/* User lane: point events for the round's user-side messages — the human's
+                    prompt as a filled dot, machine injections (harness completion reports,
+                    scheduler triggers) as a ring; tooltip names which. First group only —
+                    the grouped-by-Task view embeds exactly one round per chart. */}
+                {g === groups[0] && userMarks.length > 0 && (
+                  <Lane label={S.traces.laneUser}>
+                    {userMarks.map((u, i) => {
+                      const key = `u-${i}`;
+                      const active = isActive(key);
+                      const left = clamp(((Date.parse(u.ts) - g.t0) / g.total) * 100, 0, 100);
+                      return (
+                        <span
+                          key={key}
+                          onMouseEnter={() => enter(key, u.ts)}
+                          onMouseLeave={leave}
+                          onClick={() => onJump?.(u.ts)}
+                          title={`${u.machine ? S.traces.markHarness : S.traces.markUser} · ${new Date(u.ts).toLocaleTimeString()}`}
+                          className={`absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full ${
+                            u.machine
+                              ? "border border-gray-400 bg-transparent dark:border-gray-500"
+                              : "bg-gray-400 dark:bg-gray-500"
+                          } ${dimClass(active, legendKey === null)}`}
+                          style={{ left: `${left}%` }}
+                        />
+                      );
+                    })}
+                  </Lane>
                 )}
 
                 {/* Model lane: serial segments (thinking / model reply / tool-call generation) */}

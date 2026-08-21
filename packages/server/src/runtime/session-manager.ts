@@ -585,6 +585,20 @@ export class SessionManager {
       pendingSteering: [],
       lastActivityMs: Date.now(),
     });
+    // Same wiring as ensureEntry: adopt IS the entry path for a session created in this
+    // process (POST /sessions), and a listener registered only on the loader path left
+    // freshly created sessions unable to deliver idle-arrival completion reports.
+    this.registerNoticeListener(row.sessionId, session);
+  }
+
+  /**
+   * Subscribes the idle-arrival signal for background completion notices on a runtime
+   * Session entering the active table — every insertion path must call it (ensureEntry's
+   * loads, adopt's fresh creations): mid-run arrivals are delivered inside the run by
+   * core, and this signal is the only trigger left when the session sits idle.
+   */
+  private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
+    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
   }
 
   /**
@@ -1423,10 +1437,7 @@ export class SessionManager {
       lastActivityMs: Date.now(),
     };
     this.entries.set(currentId, entry);
-    // Background completion notices that arrive while the session is idle start their own
-    // task (mid-run arrivals are delivered inside the run by core). Fire-and-forget — the
-    // starter revalidates everything under the session lock.
-    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(currentId));
+    this.registerNoticeListener(currentId, session);
     return entry;
   }
 

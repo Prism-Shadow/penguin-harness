@@ -698,6 +698,14 @@ export class Agent {
         let metaSent = false;
         return {
           sessionId: hop,
+          // One-shot upfront meta for background launches (see SubagentHandle.takeMeta):
+          // shares metaSent with run, so the meta reaches the parent stream exactly once
+          // whichever side sends it first.
+          takeMeta() {
+            if (metaSent) return null;
+            metaSent = true;
+            return withOrigin(childSession.metaMessage, hop);
+          },
           async *run({ prompt, signal, approve }) {
             if (!metaSent) {
               metaSent = true;

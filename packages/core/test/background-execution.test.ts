@@ -270,7 +270,22 @@ type RunInput = { prompt: string; signal?: AbortSignal; approve?: ApproveFn };
 function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): SubagentRunner {
   return {
     async spawn() {
-      const handle: SubagentHandle = { sessionId: HOP, run, dispose() {} };
+      // Mirrors the composition layer's one-shot meta seam (SubagentHandle.takeMeta).
+      let metaSent = false;
+      const handle: SubagentHandle = {
+        sessionId: HOP,
+        takeMeta() {
+          if (metaSent) return null;
+          metaSent = true;
+          return withHop({
+            timestamp: new Date().toISOString(),
+            type: "session_meta",
+            payload: { session_id: HOP },
+          } as unknown as OmniMessage);
+        },
+        run,
+        dispose() {},
+      };
       return handle;
     },
   };
@@ -279,15 +294,17 @@ function runnerOf(run: (input: RunInput) => AsyncGenerator<OmniMessage>): Subage
 async function drive(
   tool: ReturnType<typeof createSubagentTool>,
   args: Record<string, unknown>,
-): Promise<{ output: string; stopReason?: string; note: string }> {
+): Promise<{ output: string; stopReason?: string; note: string; yielded: OmniMessage[] }> {
   const gen = tool.execute(args, CTX);
   let output = "";
+  const yielded: OmniMessage[] = [];
   for (;;) {
     const res = await gen.next();
     if (res.done) {
       const r = res.value ?? undefined;
-      return { output, stopReason: r?.stopReason, note: r?.note ?? "" };
+      return { output, stopReason: r?.stopReason, note: r?.note ?? "", yielded };
     }
+    yielded.push(res.value);
     const p = res.value.payload as { type?: string; event_type?: string; output?: string };
     if (p.type === "partial_tool_call_output" && p.event_type === "delta" && p.output) {
       output += p.output;
@@ -325,6 +342,11 @@ describe("run_subagent run_in_background", () => {
     expect(res.stopReason).toBe("completed");
     const id = extractSubagentId(res.note);
     expect(res.note).toContain("will arrive as a user message");
+    // The child's session_meta is forwarded at launch (origin-tagged), so the frontend's
+    // subagents panel and the server's registry learn of it before any poll.
+    const metas = res.yielded.filter((m) => m.type === "session_meta");
+    expect(metas).toHaveLength(1);
+    expect(metas[0]!.origin).toEqual([HOP]);
     expect(events).toHaveLength(0); // still running behind the gate
     await waitFor(() => gates.has("long analysis task"));
     gates.get("long analysis task")!();

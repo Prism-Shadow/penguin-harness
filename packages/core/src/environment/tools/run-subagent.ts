@@ -155,6 +155,11 @@ export function createSubagentTool(
       if (background) {
         const id = manager.register(session);
         armSubagentDoneReport(session, id, prompt, services);
+        // Forward the child's session_meta upfront (run skips its own copy): the frontend's
+        // subagents panel and the server's subagent registry learn of the child at launch,
+        // not at the first input_subagent access.
+        const meta = session.takeMeta();
+        if (meta) yield meta;
         session.startRun(prompt);
         return {
           stopReason: "completed",

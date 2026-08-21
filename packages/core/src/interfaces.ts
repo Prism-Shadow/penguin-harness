@@ -239,6 +239,14 @@ export interface SubagentHandle {
   /** The child Session's id: the origin hop of messages produced by run; `subagent_id` is derived from its tail for the frontend to correlate. */
   sessionId: string;
   /**
+   * One-shot take of the child's origin-tagged `session_meta`: a background launch
+   * (run_subagent with `run_in_background`) forwards it synchronously so hosts learn of the
+   * child before any collect window runs; `run` then skips its own meta forwarding. Null
+   * once taken (or once `run` already sent it). Optional — older embedders' handles simply
+   * leave background launches without an upfront meta.
+   */
+  takeMeta?(): OmniMessage | null;
+  /**
    * Runs one turn of a task on the child Session. Emitted child-session messages **all already
    * carry the origin marker** (the child Session id); the first message of the first run is the
    * child Session's `session_meta`, and tool_calls received by the forwarded approval callback

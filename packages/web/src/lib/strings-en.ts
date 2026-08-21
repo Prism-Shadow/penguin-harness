@@ -1511,6 +1511,10 @@ Scenarios:
     title: "Traces",
     timeline: "Execution timeline",
     laneLLM: "Model",
+    /** User lane of the round timeline: point events for user-side messages. */
+    laneUser: "User",
+    markUser: "User message",
+    markHarness: "Automatic injection",
     kindThinking: "thinking",
     kindModelReply: "model reply",
     kindToolGen: "tool call gen",
