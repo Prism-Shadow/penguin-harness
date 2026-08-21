@@ -237,8 +237,7 @@ interface RequestEndPayload {
 
 interface ApprovalDecisionPayload {
   type: "approval_decision";
-  decision: "allow" | "deny";
-  source?: "human" | "policy"; // 决定者；缺省即 "human"——命令策略的拦截记 "policy"，
+  decision: "allow" | "deny" | "forbidden"; // "forbidden" = 命令策略的拦截，从未征询人——
                               // 记录自身即可说明是谁拒绝的
   tool_call_id: string;       // 与被审批的 tool_call 配对,构成审计记录
 }

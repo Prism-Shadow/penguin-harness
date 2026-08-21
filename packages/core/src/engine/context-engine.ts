@@ -72,9 +72,7 @@ import type {
   ToolCallOutputPayload,
   ToolCallPayload,
 } from "../omnimessage/index.js";
-import { approvalDecisionOf } from "../interfaces.js";
 import type {
-  ApprovalOutcome,
   ApproveFn,
   EnvironmentInterface,
   LLMInterface,
@@ -1129,30 +1127,30 @@ export class ContextEngine {
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,
             // leaving the already-committed tool_use unanswered.
-            let outcome: ApprovalOutcome;
+            let decision: ApprovalDecision;
             try {
-              outcome = await approve(tc);
+              decision = await approve(tc);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-              outcome = "deny";
+              decision = "deny";
             }
             if (signal?.aborted) continue;
             // approve is a callback; context_engine emits its decision as an approval_decision
             // OmniMessage: pushed to the stream for frontend rendering, and written to Trace.
-            const decision = approvalDecisionOf(outcome);
-            const source = typeof outcome === "string" ? undefined : outcome.source;
-            const decisionMsg = approvalDecision(decision, toolCallId, source);
+            const decisionMsg = approvalDecision(decision, toolCallId);
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {
               // Denied: feed back an aborted output immediately, so the already-committed
               // tool_use never dangles. One fixed line either way — the wording names the
-              // decider (a person, or the project command policy via the Session wrapper),
-              // and `source` above puts the same fact on the approval_decision event.
+              // decider ("forbidden" is the command policy's answer, via the Session
+              // wrapper), and the approval_decision event above carries the decision itself.
               const denied = toolCallOutput({
                 output:
-                  source === "policy" ? "Tool call denied by policy." : "Tool call denied by user.",
+                  decision === "forbidden"
+                    ? "Tool call denied by policy."
+                    : "Tool call denied by user.",
                 toolCallId,
                 stopReason: "aborted",
               });

@@ -217,18 +217,13 @@ The CLI wires terminal I/O onto this boundary; the Server wires HTTP requests an
 ## ApproveFn
 
 ```ts
-type ApprovalDecision = "allow" | "deny";
-interface ApprovalRefusal {
-  decision: "deny";
-  source: "human" | "policy";               // who denied; recorded on the approval_decision event
-}
-type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 ```
 
 Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.
 
-A denial may come back as an `ApprovalRefusal` naming its source instead of the bare `"deny"`. The denial output is one fixed `aborted` line either way — "Tool call denied by user.", or "Tool call denied by policy." for `source: "policy"` — and the source rides the `approval_decision` event, so the Trace names the decider without anyone parsing output text. A bare `"deny"` stays a person's cancellation; an existing callback needs no change. `Session.run` uses this to enforce the [Project command policy](/configuration#command-policy): it wraps the injected callback, so a vetoed command is refused before the host is asked at all.
+`"forbidden"` is never a host's answer: `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), and a vetoed command answers `"forbidden"` before the host is asked at all. The denial output is one fixed `aborted` line either way — "Tool call denied by user." for `"deny"`, "Tool call denied by policy." for `"forbidden"` — and the decision value itself rides the `approval_decision` event, so the Trace names the decider with no extra field. An existing callback returning `"allow"` / `"deny"` needs no change.
 
 ## Subagent interfaces
 

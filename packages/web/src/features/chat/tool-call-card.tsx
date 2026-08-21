@@ -226,19 +226,21 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   // breakpoint; the icon is the single source of truth for how the call was decided.
   const decisionText = item.decision
     ? `${item.decision === "allow" ? S.chat.decisionAllow : S.chat.decisionDeny} · ${
-        item.decisionSource === "policy"
+        item.decision === "forbidden"
           ? S.chat.decisionPolicy
           : item.decisionSource === "manual"
             ? S.chat.decisionManual
             : S.chat.decisionAuto
       }`
     : null;
-  // A denial reports stop_reason "aborted" on the output it feeds back — a person's and the
-  // command policy's alike; that abort IS the decision, so the icon reads "Denied · …" (the
-  // label's source half names the decider) rather than falling through to the raw stop
-  // reason. A user-abort of a RUNNING tool carries no deny decision, so the label falls
-  // through to its stop reason below.
-  const denied = item.decision === "deny" && item.outputStopReason === "aborted";
+  // A denial reports stop_reason "aborted" on the output it feeds back — a person's "deny"
+  // and the command policy's "forbidden" alike; that abort IS the decision, so the icon
+  // reads "Denied · …" (the label's second half names the decider) rather than falling
+  // through to the raw stop reason. A user-abort of a RUNNING tool carries no deny
+  // decision, so the label falls through to its stop reason below.
+  const denied =
+    (item.decision === "deny" || item.decision === "forbidden") &&
+    item.outputStopReason === "aborted";
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"

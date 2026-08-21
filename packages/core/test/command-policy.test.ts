@@ -309,8 +309,8 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
 
     // The host is never asked: that is what makes the policy outrank every approval mode.
     expect(asked).toBe(0);
-    // The refusal carries only its source; the engine renders the fixed denial line from it.
-    expect(outcome).toEqual({ decision: "deny", source: "policy" });
+    // "forbidden" is the whole answer; the engine renders the fixed denial line from it.
+    expect(outcome).toBe("forbidden");
   });
 
   it("passes everything else straight through, decision included", async () => {
@@ -336,10 +336,7 @@ describe("withCommandPolicy (the approval-boundary wrapper)", () => {
         toolCallId: "c2",
       });
 
-    expect(await guarded(typed("rm -rf /\n") as never)).toEqual({
-      decision: "deny",
-      source: "policy",
-    });
+    expect(await guarded(typed("rm -rf /\n") as never)).toBe("forbidden");
     expect(asked).toBe(0);
     expect(await guarded(typed("make build\n") as never)).toBe("allow");
     expect(asked).toBe(1);
@@ -424,10 +421,8 @@ describe("Session applies the policy at the approval boundary", () => {
     const decision = all.find(
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     )!;
-    expect((decision.payload as { decision?: string }).decision).toBe("deny");
-    // The approval record itself names the decider, so the Trace separates a policy veto
-    // from a human denial without parsing the output text.
-    expect((decision.payload as { source?: string }).source).toBe("policy");
+    // The decision value itself separates a policy veto from a human denial in the Trace.
+    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
     // The denial is the fixed line: "by policy" (not "by user") is what tells the model to
     // change course instead of treating it as a person's cancellation; both read `aborted`.
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;

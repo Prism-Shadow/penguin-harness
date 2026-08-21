@@ -30,7 +30,7 @@
  */
 import type { OmniMessage } from "../../../omnimessage/index.js";
 import type { ApprovalDecision, ToolCallPayload } from "../../../omnimessage/index.js";
-import type { ApprovalOutcome, ApproveFn, SubagentHandle } from "../../../interfaces.js";
+import type { ApproveFn, SubagentHandle } from "../../../interfaces.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 
@@ -49,7 +49,7 @@ export interface SubagentExit {
 interface PendingApproval {
   toolCall: OmniMessage<ToolCallPayload>;
   settled: boolean;
-  resolve: (outcome: ApprovalOutcome) => void;
+  resolve: (decision: ApprovalDecision) => void;
 }
 
 export class ManagedSubagentSession {
@@ -252,7 +252,7 @@ export class ManagedSubagentSession {
   /** Approval callback handed to the child Session: the request is queued and waits for some parent tool call to consult Human and give a decision. */
   private readonly childApprove: ApproveFn = (toolCall) => {
     if (this.killed) return Promise.resolve("deny");
-    return new Promise<ApprovalOutcome>((resolve) => {
+    return new Promise<ApprovalDecision>((resolve) => {
       this.approvals.push({ toolCall, settled: false, resolve });
       this.wakeSignal.notify(); // Wake the parent tool call waiting within the window, so it can consult as soon as possible
       void this.pumpApprovals();
@@ -260,12 +260,12 @@ export class ManagedSubagentSession {
   };
 
   /** Settles an approval decision: first to arrive wins, late/duplicate decisions are ignored. */
-  private settle(req: PendingApproval, outcome: ApprovalOutcome): void {
+  private settle(req: PendingApproval, decision: ApprovalDecision): void {
     if (req.settled) return;
     req.settled = true;
     const idx = this.approvals.indexOf(req);
     if (idx >= 0) this.approvals.splice(idx, 1);
-    req.resolve(outcome);
+    req.resolve(decision);
     this.wakeSignal.notify();
   }
 

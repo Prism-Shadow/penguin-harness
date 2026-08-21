@@ -148,17 +148,17 @@ export function vetoForToolCall(
 }
 
 /**
- * Wraps an approval callback with the policy: a vetoed call is refused here and `approve`
- * is never reached, so no approval mode — and no Human implementation — can let it
- * through. The refusal is `{ decision: "deny", source: "policy" }`: the engine renders it
- * as the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
- * user."), and stamps the source onto the `approval_decision` event — the model's text and
- * the Trace both name the decider.
+ * Wraps an approval callback with the policy: a vetoed call answers `"forbidden"` here and
+ * `approve` is never reached, so no approval mode — and no Human implementation — can let
+ * it through. `"forbidden"` is the decision's own third value: the engine renders it as
+ * the fixed aborted line "Tool call denied by policy." (a person's denial reads "by
+ * user."), and the `approval_decision` event carries it — the model's text and the Trace
+ * both name the decider.
  */
 export function withCommandPolicy(approve: ApproveFn, policy?: CommandPolicyConfig): ApproveFn {
   return async (toolCall) => {
     const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
-    if (veto) return { decision: "deny", source: "policy" };
+    if (veto) return "forbidden";
     return approve(toolCall);
   };
 }

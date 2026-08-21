@@ -16,7 +16,6 @@
  */
 import type {
   ApprovalDecision,
-  ApprovalSource,
   OmniMessage,
   StopReason,
   ToolCallPayload,
@@ -91,40 +90,15 @@ export interface ToolConfig {
 }
 
 /**
- * A denial that names who denied, returned in place of the bare `"deny"` when the decision
- * did not come from a person — today, the project command policy. The engine's denial
- * output stays one fixed `aborted` line either way ("Tool call denied by user." /
- * "Tool call denied by policy."): `source` only picks the wording and rides the
- * `approval_decision` event, so the Trace records the decider. A bare `"deny"` remains a
- * person's cancellation; a Human implementation that knows nothing of this needs no change.
- */
-export interface ApprovalRefusal {
-  decision: "deny";
-  source: ApprovalSource;
-}
-
-/** What an approval callback may answer: a bare decision, or a denial that names its source. */
-export type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
-
-/**
- * The bare decision of an approval outcome — a refusal narrows to `"deny"`. Anything that
- * reads a callback's answer (rendering it, building the `approval_decision` event) goes
- * through here rather than switching on the shape itself.
- */
-export function approvalDecisionOf(outcome: ApprovalOutcome): ApprovalDecision {
-  return typeof outcome === "string" ? outcome : outcome.decision;
-}
-
-/**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
- * A denial may come back as an {@link ApprovalRefusal} naming its source — `Session.run`
- * wraps the injected callback that way to enforce the project sandbox command policy (see
- * {@link CommandPolicyConfig}).
+ * The third decision, `"forbidden"`, is never a host's answer: `Session.run` wraps the
+ * injected callback with the project sandbox command policy (see {@link CommandPolicyConfig}),
+ * and a vetoed call answers `"forbidden"` without the wrapped callback being consulted.
  * Docs: /docs/interfaces § "ApproveFn".
  */
-export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
+export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
 
 /**
  * One command-policy deny rule — plain project-editable data: a name (identifies the rule

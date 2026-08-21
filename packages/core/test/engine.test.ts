@@ -477,26 +477,25 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
         (m.payload as { stop_reason?: string }).stop_reason === "aborted",
     );
     expect(deniedMsg).toBeDefined();
-    // A bare "deny" is a human decision: no source is stamped, and the wire format of the
-    // human path stays byte-identical to before the field existed.
+    // A human denial is the plain "deny"; its wire format is unchanged from before
+    // "forbidden" existed.
     const humanDecision = all.find(
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     )!;
-    expect("source" in (humanDecision.payload as object)).toBe(false);
+    expect((humanDecision.payload as { decision?: string }).decision).toBe("deny");
   });
 
-  it('a denial naming source "policy" reads "denied by policy" and stamps the event', async () => {
-    // The approval callback may answer with a sourced denial instead of a bare "deny"
-    // (Session wraps it that way for the sandbox command policy). The engine records the
-    // decision as any other and picks the fixed denial line from the source, so the model
-    // sees a policy refusal rather than a user cancellation.
+  it('a "forbidden" decision reads "denied by policy" and rides the event as itself', async () => {
+    // "forbidden" is the third approval decision (Session answers it for the sandbox
+    // command policy). The engine records it like any other and picks the fixed denial
+    // line from it, so the model sees a policy refusal rather than a user cancellation.
     const llm = new FakeLLM();
     const environment = new Environment({
       workspaceDir: workspace,
       toolConfig: execCommandToolConfig(),
     });
     const engine = new ContextEngine({ llm, environment });
-    const refuse: ApproveFn = async () => ({ decision: "deny", source: "policy" });
+    const refuse: ApproveFn = async () => "forbidden";
 
     const all = await collectRun(engine, [userText("clean up")], refuse);
 
@@ -504,9 +503,8 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
     const decision = all.find(
       (m) => (m.payload as { type?: string }).type === "approval_decision",
     )!;
-    expect((decision.payload as { decision?: string }).decision).toBe("deny");
-    // The refusal's source rides on the approval record, so the Trace itself says who denied.
-    expect((decision.payload as { source?: string }).source).toBe("policy");
+    // The decision itself is the audit record: the Trace says who denied with no extra field.
+    expect((decision.payload as { decision?: string }).decision).toBe("forbidden");
     const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
     expect((output.payload as { stop_reason?: string }).stop_reason).toBe("aborted");
     expect((output.payload as { output: string }).output).toBe("Tool call denied by policy.");
