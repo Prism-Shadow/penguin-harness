@@ -241,6 +241,8 @@ updated_at: <YYYY-MM-DD>
 
 Worth saving: who the user is (role, expertise, preferences) and how they want you to work, with the why; ongoing work, goals and constraints not derivable from the code; pointers to external resources.
 
+Watch for the moments that produce them: the user asks for the same thing again, or is dissatisfied with what you produced — save what they wanted instead, and why; states a habit, convention or development practice more than once; or hands you reusable details you would otherwise ask for again (names, addresses, identifiers, endpoints — anything that reads like filling in a form). A repeat is a strong signal, not a requirement: one clear statement of a standing preference is enough. When you cannot tell whether something is worth keeping, ask.
+
 Each directory's \`MEMORY.md\` is its index, injected below: one line per memory, under ~150 characters (\`- [Title](file.md) — hook\`), no content, updated in the same round as the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines of an index are injected — keep it well under that: merge overlapping entries, drop stale ones, move detail into the topic files. Before saving, check the index and update the file that already covers the subject instead of duplicating; delete memories that prove wrong. Never save what code, config or git history already states, task progress, secrets, unconfirmed guesses, or transcript excerpts — if asked to, save the non-obvious part instead. Memory is readable by everyone who can reach this agent: no sensitive personal data.
 
 ## User memory
