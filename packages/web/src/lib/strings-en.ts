@@ -177,6 +177,10 @@ export const en: Strings = {
     unknownError: "Request failed, please try again later",
     requiredField: "This field is required",
     copied: "Copied",
+    /** Accessible name of the circled "?" that discloses a section or field explanation. */
+    moreInfo: "More info",
+    /** The same, named for what it explains — so the trigger never repeats the heading it sits in. */
+    moreInfoAbout: (subject: string) => `More info: ${subject}`,
     name: "Name",
     username: "Username",
     role: "Role",

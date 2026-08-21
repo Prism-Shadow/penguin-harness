@@ -9,6 +9,7 @@ import {
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
 import { S } from "../src/lib/strings";
+import { toneInk } from "../src/lib/tone";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -57,8 +58,10 @@ describe("SessionActivityIcon", () => {
   const render = (activity: Activity) =>
     renderToStaticMarkup(createElement(SessionActivityIcon, { activity }));
 
-  it("draws one hourglass for both busy states", () => {
-    expect(ACTIVITY_GLYPH.compacting).toBe(ACTIVITY_GLYPH.running);
+  it("draws a different shape for each busy state", () => {
+    // Running and compacting share one tone, so the shape is what separates them: with the same
+    // path they would be one glyph in two states nobody can tell apart.
+    expect(ACTIVITY_GLYPH.compacting).not.toBe(ACTIVITY_GLYPH.running);
     for (const activity of ["running", "compacting"] as const) {
       expect(render(activity)).toContain(`d="${ACTIVITY_GLYPH[activity]}"`);
     }
@@ -75,8 +78,8 @@ describe("SessionActivityIcon", () => {
     expect(sessionActivityLabel("running")).toBe(S.chat.statusRunning);
     expect(sessionActivityLabel("compacting")).toBe(S.chat.statusCompacting);
     expect(sessionActivityLabel("completedUnread")).toBe(S.chat.statusCompletedUnread);
-    // Three states, three different names: the compacting/running pair differs only in colour
-    // on screen, so nothing may be distinguishable by colour alone to a screen reader.
+    // Three states, three different names: the on-screen marks carry no text, so nothing may be
+    // distinguishable by shape or colour alone to a screen reader.
     expect(new Set(ACTIVITIES.map(sessionActivityLabel)).size).toBe(ACTIVITIES.length);
     for (const activity of ACTIVITIES) {
       expect(render(activity)).toContain(`aria-label="${sessionActivityLabel(activity)}"`);
@@ -99,17 +102,21 @@ describe("SessionActivityIcon", () => {
     expect(render("completedUnread")).toContain('role="img"');
   });
 
-  it("turns the hourglass while busy and leaves the dot still", () => {
+  it("gives each busy state its own motion and leaves the dot still", () => {
     expect(render("running")).toContain("hourglass-turn");
-    expect(render("compacting")).toContain("hourglass-turn");
-    expect(render("completedUnread")).not.toContain("hourglass-turn");
+    expect(render("compacting")).toContain("compact-squeeze");
+    expect(render("compacting")).not.toContain("hourglass-turn");
+    const unread = render("completedUnread");
+    expect(unread).not.toContain("hourglass-turn");
+    expect(unread).not.toContain("compact-squeeze");
   });
 
-  it("keeps the two busy states apart by ink, since shape cannot separate them", () => {
-    expect(render("running")).toContain("text-gray-500");
-    expect(render("running")).toContain("dark:text-gray-400");
-    expect(render("compacting")).toContain("text-amber-600");
-    expect(render("compacting")).toContain("dark:text-amber-400");
+  it("inks both busy states with the shared attention tone", () => {
+    // Unfinished work waiting on time is one meaning, so it is one colour app-wide; the split
+    // between running and compacting is carried by shape and motion, asserted above.
+    for (const activity of ["running", "compacting"] as const) {
+      expect(render(activity)).toContain(toneInk.attention);
+    }
   });
 
   it("draws the dot in the Session status dot's own emerald and geometry", () => {

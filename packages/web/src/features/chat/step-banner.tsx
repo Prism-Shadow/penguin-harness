@@ -17,6 +17,7 @@ import { Chevron } from "../../components/ui/chevron";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { LiveDuration } from "./live-duration";
+import { toneInk } from "../../lib/tone";
 
 export function StepBanner({
   state,
@@ -45,9 +46,9 @@ export function StepBanner({
 
   const header = (
     <>
-      <StatusIcon state={state} size={12} />
+      <StatusIcon state={state} />
       <span
-        className={`shrink-0 text-[11px] font-semibold tracking-wide uppercase ${running ? "text-emerald-600 dark:text-emerald-400" : "text-gray-500 dark:text-gray-400"}`}
+        className={`shrink-0 text-[11px] font-semibold tracking-wide uppercase ${running ? toneInk.busy : "text-gray-500 dark:text-gray-400"}`}
       >
         {title}
       </span>

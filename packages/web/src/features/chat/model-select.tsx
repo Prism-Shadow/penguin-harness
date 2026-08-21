@@ -17,6 +17,8 @@ import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
 import { FormPicker } from "../../components/ui/form-picker";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { ChevronDown } from "../../components/ui/icons";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
@@ -336,22 +338,7 @@ export function ModelSelect({
           {logo}
           {/* When the card is narrower than @md, only the provider logo remains (title shows the full name). */}
           <span className="hidden min-w-0 truncate @md:block">{label}</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path
-              d="M3 4.5l3 3 3-3"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >

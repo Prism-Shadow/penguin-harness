@@ -43,6 +43,9 @@ import { Md } from "../chat/md";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
+import { toneStrip } from "../../lib/tone";
+import { InfoPopover } from "../../components/ui/info-popover";
+import { HelpFold } from "../../components/ui/help-fold";
 
 /** The body without its frontmatter block: the drawer's metadata header already shows those fields, so rendering the raw YAML too would only repeat them. */
 function bodyWithoutFrontmatter(content: string): string {
@@ -454,7 +457,8 @@ export function MemoryTab({
 
   return (
     <div className="space-y-5">
-      <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{S.memory.desc}</p>
+      {/* Tab-level description: no title in the panel to anchor a "?" to (see help-fold.tsx). */}
+      <HelpFold label={S.agent.tabMemory}>{S.memory.desc}</HelpFold>
 
       <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-800">
         <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{S.memory.enable}</p>
@@ -462,8 +466,10 @@ export function MemoryTab({
       </div>
 
       {!templateHasMemory && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-700 dark:bg-amber-950/40">
-          <p className="text-xs text-amber-800 dark:text-amber-300">{S.memory.templateMissing}</p>
+        <div
+          className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 ${toneStrip.attention}`}
+        >
+          <p className="text-xs">{S.memory.templateMissing}</p>
           <Button size="sm" onClick={() => void insertPlaceholder()}>
             {S.memory.insertPlaceholder}
           </Button>
@@ -545,14 +551,10 @@ export function MemoryTab({
       )}
 
       <section className="space-y-2.5 rounded-lg border border-gray-200 p-3.5 dark:border-gray-800">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-            {S.memory.promptSection}
-          </h3>
-          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-            {S.memory.promptSectionHint}
-          </p>
-        </div>
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-200">
+          {S.memory.promptSection}
+          <InfoPopover label={S.memory.promptSection}>{S.memory.promptSectionHint}</InfoPopover>
+        </h3>
         <Textarea
           ref={mainPromptRef}
           label={S.memory.promptLabel}

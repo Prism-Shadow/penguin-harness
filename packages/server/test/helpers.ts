@@ -30,6 +30,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Fixed seeded-admin password injected into every test app (in production the seed generates a random one). */
 export const TEST_ADMIN_PASSWORD = "penguin-0000";
 
+/**
+ * scrypt work factor for test apps: the lowest legal one. Nearly every case here seeds an
+ * admin, provisions users and logs them in, and at production strength those derivations
+ * cost more than everything else the suite does combined. The stored format, the recorded
+ * parameters and the verification path are unchanged — only the derivation is cheap — and
+ * the production strength itself is asserted in password.test.ts, which uses the default.
+ */
+const TEST_PASSWORD_HASH_COST = 2;
+
 export function testConfig(root: string): ServerConfig {
   return {
     root,
@@ -71,7 +80,10 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   const { beforeSeed, config, ...overrides } = options;
   const root = await makeTempRoot();
   if (beforeSeed) await beforeSeed(root);
-  const deps = buildAppDeps({ ...testConfig(root), ...config }, { log: () => {}, ...overrides });
+  const deps = buildAppDeps(
+    { ...testConfig(root), ...config },
+    { log: () => {}, passwordHashCost: TEST_PASSWORD_HASH_COST, ...overrides },
+  );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project),
   // keeping the password it returns (only null if a beforeSeed hook ever pre-created users).
   const adminPassword = (await deps.authService.seedAdmin()) ?? TEST_ADMIN_PASSWORD;

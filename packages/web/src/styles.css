@@ -338,11 +338,11 @@
   animation: title-scroll-reveal var(--title-scroll-ms, 0ms) linear 0.3s forwards;
 }
 
-/* Busy hourglass (session-activity-icon.tsx: the running and compacting glyphs). An hourglass
-   does not spin — it gets turned over — so this holds the glyph still, flips it 180 degrees in
-   ~360ms, holds again, and flips back. The long dwell is what makes it legible at the 12px the
-   sidebar renders it at: a continuous spin at that size reads as a smudge, while two deliberate
-   turns per cycle read as "still working" even out of the corner of the eye.
+/* Busy hourglass (session-activity-icon.tsx: the running glyph). An hourglass does not spin —
+   it gets turned over — so this holds the glyph still, flips it 180 degrees in ~360ms, holds
+   again, and flips back. The long dwell is what makes it legible at the 12px the sidebar renders
+   it at: a continuous spin at that size reads as a smudge, while two deliberate turns per cycle
+   read as "still working" even out of the corner of the eye.
 
    `transform` is the only thing the keyframes touch and the at-rest glyph has none, so the
    global `animation: none !important` below is a free no-op here: the hourglass simply stands
@@ -362,6 +362,24 @@
 }
 .hourglass-turn {
   animation: hourglass-turn 3s ease-in-out infinite;
+}
+
+/* Compacting squeeze (session-activity-icon.tsx: the compress glyph). Compaction pushes a
+   context down to a summary, so its mark closes on its own centre bar and springs back rather
+   than turning: the two live session states then differ by motion as well as by shape, which is
+   what lets them share one tone. Same reduced-motion property as the hourglass — `transform`
+   only, so disabling animation leaves the mark at full size and fully legible. */
+@keyframes compact-squeeze {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.62);
+  }
+}
+.compact-squeeze {
+  animation: compact-squeeze 1.8s ease-in-out infinite;
 }
 
 /* Login page circuit traces (login-circuit.tsx): pathLength=1 normalization, draw-in -> hold -> fade-out
@@ -434,8 +452,9 @@
      entirely by the `title-scroll-reveal` keyframes above — including the inline-block
      that makes the text transformable at all — so `animation: none` leaves the title
      exactly as it renders at rest, ellipsis and `title` tooltip included. */
-  /* Nor does the busy hourglass (#291): its keyframes only rotate, so disabling them
-     leaves the glyph upright and fully visible — still present, just not turning. */
+  /* Nor do the two busy session glyphs (#291): their keyframes only rotate and scale, so
+     disabling them leaves the hourglass upright and the compress mark at full height — both
+     still present, just not moving. */
 }
 
 /* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */

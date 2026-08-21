@@ -37,6 +37,7 @@ import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
 import type { ProtocolClientType } from "./protocol-types";
+import { toneInk } from "../../lib/tone";
 
 /** Whether the last detection run left something to warn about (drives the amber trigger). */
 export type ProtocolDetectTone = "ok" | "warn" | null;
@@ -86,7 +87,7 @@ export function ProtocolSuffixMenu({
             "flex items-center gap-1 rounded px-1 py-0.5 font-mono text-xs transition-colors duration-150 " +
             "hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:hover:bg-gray-800 " +
             (tone === "warn"
-              ? "text-amber-600 hover:text-amber-700 dark:text-amber-500 dark:hover:text-amber-400"
+              ? `${toneInk.attention} hover:text-amber-700 dark:hover:text-amber-300`
               : "text-gray-400 hover:text-gray-700 dark:hover:text-gray-200")
           }
         >

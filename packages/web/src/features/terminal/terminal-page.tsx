@@ -149,10 +149,10 @@ export function TerminalPage() {
           data-status={status}
           className={
             status === "ready"
-              ? "text-emerald-400"
+              ? chrome.success
               : status === "connecting"
-                ? "text-amber-400"
-                : "text-red-400"
+                ? chrome.attention
+                : chrome.danger
           }
         >
           ● {statusText}

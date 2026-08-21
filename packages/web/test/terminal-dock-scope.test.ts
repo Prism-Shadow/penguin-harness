@@ -135,18 +135,22 @@ describe("the scope-less dock", () => {
 });
 
 describe("the side, shared with the chat panels", () => {
-  it("displaces left and right panes while a panel holds it, and gives them back", () => {
+  it("closes a side pane when a panel takes the side, and closing the panel leaves it closed", () => {
     dock.setDockScope("session-side");
     dock.assignTerminalToPane("term-right", "right");
-    expect(dock.visiblePanes()).toEqual(["right"]);
+    expect(dock.isTerminalDockOpen()).toBe(true);
 
     dock.setChatSidePanelOpen(true);
-    expect(dock.visiblePanes()).toEqual([]);
-    // Displaced, not closed: the arrangement still holds it, which is what lets it return.
+    expect(dock.isTerminalDockOpen()).toBe(false);
+    // Closed, not parked behind the panel: closing the panel must not conjure it back,
+    // because opening the panel is what the user saw close the terminal.
+    dock.setChatSidePanelOpen(false);
+    expect(dock.isTerminalDockOpen()).toBe(false);
+
+    // The arrangement survives, so reopening returns it to the edge it was on.
     expect(dock.openPanes()).toEqual(["right"]);
     expect(dock.paneOfTerminal("term-right")).toBe("right");
-
-    dock.setChatSidePanelOpen(false);
+    dock.setTerminalDockOpen(true);
     expect(dock.visiblePanes()).toEqual(["right"]);
   });
 
@@ -154,7 +158,27 @@ describe("the side, shared with the chat panels", () => {
     dock.setDockScope("session-bottom");
     dock.assignTerminalToPane("term-bottom", "bottom");
     dock.setChatSidePanelOpen(true);
+    expect(dock.isTerminalDockOpen()).toBe(true);
     expect(dock.visiblePanes()).toEqual(["bottom"]);
+  });
+
+  it("is not on screen away from a conversation, and comes back on return", () => {
+    dock.setChatSidePanelOpen(false); // no panel holding the side, so no handover to wait out
+    dock.setDockScope("session-away");
+    dock.assignTerminalToPane("term-away", "right");
+    expect(dock.isTerminalDockOpen()).toBe(true);
+
+    // Agents, user management, settings: no Session, so the placeholder scope. Asserted on
+    // this conversation's pane rather than on the dock as a whole — the placeholder can hold
+    // an arrangement of its own (a terminal opened while on one of those pages), and what
+    // matters is that the conversation's does not follow the user there.
+    dock.setDockScope(null);
+    expect(dock.paneOfTerminal("term-away")).toBeNull();
+    expect(dock.openPanes()).not.toContain("right");
+
+    dock.setDockScope("session-away");
+    expect(dock.isTerminalDockOpen()).toBe(true);
+    expect(dock.paneOfTerminal("term-away")).toBe("right");
   });
 
   it("hands the side back the moment a terminal is put on screen", async () => {
@@ -190,8 +214,9 @@ describe("the side, shared with the chat panels", () => {
       dock.setChatSidePanelOpen(true); // …and the user reopens the panel mid-retraction
 
       vi.advanceTimersByTime(200);
-      // The handover's timer must not fire the pane back on: the panel holds the side now.
-      expect(dock.visiblePanes()).toEqual([]);
+      // The handover's timer must not fire the pane back on: the panel holds the side now,
+      // which closed the pane again on its way in.
+      expect(dock.isTerminalDockOpen()).toBe(false);
       expect(dock.chatSidePanelOpen()).toBe(true);
     } finally {
       vi.useRealTimers();

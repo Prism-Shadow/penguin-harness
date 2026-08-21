@@ -120,21 +120,11 @@ import type { SubagentsPanelState } from "./use-subagents-panel";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
-
-const STAT_ICONS = {
-  // Tokens (database / stacked cylinders)
-  tokens:
-    "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
-  // Cost (circled dollar sign)
-  cost: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-15v12m2.6-9.3c-.5-.8-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.7 5.4 1.3 5.4 4 0 1.2-1.2 2-2.7 2-1.2 0-2.2-.5-2.7-1.4",
-  // Elapsed time (clock)
-  elapsed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
-  // Files (folder)
-  folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
-  // Running services (server rack: two stacked units with an indicator dot each)
-  services:
-    "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm0 11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3zM7 6.5h.01M7 17.5h.01",
-} as const;
+import { toneDot, toneInk } from "../../lib/tone";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { STAT_ICONS } from "../../lib/stat-icons";
+import { INFO_ICON } from "../../components/ui/icons";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -151,21 +141,9 @@ function StatChip({ icon, value, label }: { icon: string; value: ReactNode; labe
   return (
     <span
       title={label}
-      className="flex shrink-0 items-center gap-1 font-mono text-xs text-gray-500 dark:text-gray-400"
+      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs text-gray-500 dark:text-gray-400`}
     >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d={icon} />
-      </svg>
+      <GlyphIcon d={icon} />
       {value}
     </span>
   );
@@ -1712,41 +1690,16 @@ export function ChatPage() {
                   {runningProcessCount > 0 && (
                     <span
                       title={S.chat.runningServices(runningProcessCount)}
-                      className="flex shrink-0 items-center gap-1 font-mono text-xs text-emerald-600 dark:text-emerald-400"
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden
-                      >
-                        <path d={STAT_ICONS.services} />
-                      </svg>
+                      <GlyphIcon d={STAT_ICONS.services} />
                       {runningProcessCount}
                     </span>
                   )}
                 </span>
                 {/* Narrow: the info icon alone (the chips would crowd the title out). */}
                 <span className="flex h-7 w-7 items-center justify-center text-gray-500 sm:hidden dark:text-gray-400">
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden
-                  >
-                    <circle cx="12" cy="12" r="9" />
-                    <path d="M12 11v5m0-8h.01" />
-                  </svg>
+                  <GlyphIcon d={INFO_ICON} size={ICON_SIZE.navRow} />
                 </span>
               </button>
             }
@@ -1820,7 +1773,7 @@ export function ChatPage() {
                           aria-hidden
                           className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                             p.running
-                              ? "animate-pulse bg-emerald-500"
+                              ? `animate-pulse ${toneDot.busy}`
                               : "bg-gray-300 dark:bg-gray-600"
                           }`}
                         />

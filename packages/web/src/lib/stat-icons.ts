@@ -25,6 +25,9 @@ export const STAT_ICONS = {
   tps: "M5 18a8 8 0 1 1 14 0M12 12l4-3",
   /** Elapsed time (clock) */
   elapsed: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2",
+  /** Running background services (server rack: two stacked units, each with an indicator dot) */
+  services:
+    "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm0 11a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3zM7 6.5h.01M7 17.5h.01",
   /** Cost (dollar sign in a circle) */
   cost: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-15v12m2.6-9.3c-.5-.8-1.5-1.2-2.6-1.2-1.5 0-2.7.8-2.7 2 0 2.7 5.4 1.3 5.4 4 0 1.2-1.2 2-2.7 2-1.2 0-2.2-.5-2.7-1.4",
   /** Copy */
