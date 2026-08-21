@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** change
 - **Scope:** `core`, `docs`
+- **PR:** [#397](https://github.com/Prism-Shadow/penguin-harness/pull/397)
 
 [中文版](2026-08-21-memory-save-signals.zh.md)
 
