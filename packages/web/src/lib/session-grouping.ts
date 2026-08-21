@@ -1,5 +1,6 @@
 /**
- * Pure grouping logic for the chat sidebar's "by Workspace" mode.
+ * Pure grouping logic for the chat sidebar's Session groups — the "by Workspace" mode
+ * (below), and the time buckets of the "by time" mode (TIME_BUCKETS, near the bottom).
  *
  * There is no Workspace entity on the server: a Session only carries the plain
  * filesystem path locked in at creation (SessionInfo.workspace), so grouping works
@@ -235,6 +236,91 @@ export function groupSessionsByWorkspace<T extends { workspace: string; createdA
     return byCreatedDesc(a.sessions[0]?.createdAt ?? "", b.sessions[0]?.createdAt ?? "");
   });
   return groups;
+}
+
+/**
+ * The sidebar's time buckets, in render order: last day, last month, everything older.
+ * Bucketing is on `lastActiveAt` — the same key the recency sort and each row's compact
+ * timestamp already use, so a row labelled "3m ago" can never sit under "Earlier".
+ */
+export const TIME_BUCKETS = ["day", "month", "earlier"] as const;
+export type TimeBucket = (typeof TIME_BUCKETS)[number];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** "Last month" is a rolling 30-day window, not a calendar month — the boundary a user reads off a relative timestamp. */
+const MONTH_MS = 30 * DAY_MS;
+
+/** Group key of a time bucket (collapse state / React key); "\0" can never appear in a Workspace path or an Agent id, so these never collide with the other modes' keys. */
+export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
+
+/**
+ * Group key the folders (Subagents / Scheduled / Archived) hang off in time mode. They are
+ * NOT bucketed: their rows load only when a folder is first expanded, so an unloaded
+ * Session's bucket is unknown and no bucket could honestly advertise a share of them. One
+ * shared, Project-wide set below the buckets is what the sidebar renders instead.
+ */
+export const TIME_FOLDERS_GROUP_KEY = "\0time-folders";
+
+/** The bucket an activity timestamp falls in, against `nowMs`. An unparseable stamp counts as the oldest bucket rather than jumping to the top. */
+export function timeBucketOf(lastActiveAt: string, nowMs: number): TimeBucket {
+  const t = Date.parse(lastActiveAt);
+  if (!Number.isFinite(t)) return "earlier";
+  const age = nowMs - t;
+  if (age < DAY_MS) return "day";
+  return age < MONTH_MS ? "month" : "earlier";
+}
+
+export interface TimeGroup<T = SessionInfo> {
+  /** Stable group key (timeGroupKey of the bucket). */
+  key: string;
+  bucket: TimeBucket;
+  /** Member Sessions, newest activity first. */
+  sessions: T[];
+}
+
+/**
+ * Buckets Sessions by their last activity into the three time groups, in TIME_BUCKETS
+ * order. Empty buckets are dropped — a "Last day" header over nothing states an absence
+ * the list is not asked to report. Members are sorted by `lastActiveAt` desc (the flat
+ * store list concatenates per-Agent responses, so its order isn't globally chronological);
+ * the sidebar re-orders them again for pins and manual sort.
+ */
+export function groupSessionsByTime<T extends { lastActiveAt: string }>(
+  sessions: readonly T[],
+  nowMs: number,
+): TimeGroup<T>[] {
+  const byBucket = new Map<TimeBucket, T[]>();
+  for (const s of sessions) {
+    const bucket = timeBucketOf(s.lastActiveAt, nowMs);
+    const list = byBucket.get(bucket);
+    if (list) list.push(s);
+    else byBucket.set(bucket, [s]);
+  }
+  const groups: TimeGroup<T>[] = [];
+  for (const bucket of TIME_BUCKETS) {
+    const rows = byBucket.get(bucket);
+    if (rows === undefined) continue;
+    rows.sort((a, b) =>
+      a.lastActiveAt < b.lastActiveAt ? 1 : a.lastActiveAt > b.lastActiveAt ? -1 : 0,
+    );
+    groups.push({ key: timeGroupKey(bucket), bucket, sessions: rows });
+  }
+  return groups;
+}
+
+/** Sums per-Agent category totals into one Project-wide set (time mode's shared folders and its whole-list "More" read their share from it). */
+export function totalCategoryCounts(
+  byAgent: ReadonlyMap<string, SessionCategoryCounts>,
+): SessionCategoryCounts {
+  const totals: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  for (const counts of byAgent.values()) {
+    for (const category of ALL_CATEGORIES) {
+      const n = counts[category];
+      // Same guard as aggregateWorkspaceCounts: a missing key must not poison the sum with NaN.
+      if (n > 0) totals[category] += n;
+    }
+  }
+  return totals;
 }
 
 /**
