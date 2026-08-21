@@ -202,6 +202,18 @@ export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
  * a group is never swept by disposeGroup, so it survives every swap that reads it.
  */
 export const BARE_KERNEL_RESOURCE_ID = "bare-kernel";
+
+/**
+ * The predecessor App's asynchronous suspension, left for its successor to await. The
+ * kernel's park and dispose are synchronous, but suspending a business surface is not —
+ * aborted agent runs take real time to actually end. The disposing App starts the drain
+ * and registers the promise here; the NEXT create() awaits it before adopting anything,
+ * so a new App never builds over a process still running the old one's work. Colon-free
+ * like the other cross-swap declarations (never swept by disposeGroup), consumed
+ * (released) by the successor that awaits it, and in-memory only — a process restart
+ * needs no drain, because the old App's children died with the process.
+ */
+export const PLATFORM_DRAIN_RESOURCE_ID = "platform-drain";
 /** Reverse direction: THE pointer to the current App (see {@link PlatformCurrent}). */
 export const PLATFORM_CURRENT_RESOURCE_ID = "platform:current";
 

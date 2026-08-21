@@ -50,6 +50,8 @@ export class TerminalManager {
 
   private readonly sessions = new Map<string, TerminalSession>();
   private readonly reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Exit-listener unsubscribers, so quiesce() can detach this manager from delivered ptys. */
+  private readonly exitUnsubs = new Set<() => void>();
 
   async create(request: CreateTerminalRequest): Promise<TerminalSession> {
     const cwd = await resolveCwd(request.cwd);
@@ -118,7 +120,7 @@ export class TerminalManager {
    */
   private track(session: TerminalSession): void {
     this.sessions.set(session.id, session);
-    session.onExit(() => this.scheduleReap(session.id));
+    this.exitUnsubs.add(session.onExit(() => this.scheduleReap(session.id)));
     this.resources.register(resourceId(session.id), session, () => session.dispose());
   }
 
@@ -132,8 +134,32 @@ export class TerminalManager {
       const session = this.resources.claim<TerminalSession>(resourceId(id));
       if (session === undefined) continue;
       this.sessions.set(session.id, session);
-      session.onExit(() => this.scheduleReap(session.id));
+      this.exitUnsubs.add(session.onExit(() => this.scheduleReap(session.id)));
+      // Died during the swap freeze: its exit fired into the PREVIOUS generation (whose
+      // listeners are detached by then), so this listener will never fire — reap it here
+      // or nobody ever releases its registry entry.
+      if (!session.alive) this.scheduleReap(session.id);
     }
+  }
+
+  /**
+   * Park-side detach (hot swap only — never process exit): the ptys are DELIVERED to the
+   * next App through the registry, so this manager must stop acting on them. Exit
+   * listeners are unsubscribed (the successor adopts and re-listens), and every pending
+   * reap — each targeting an already-dead session that was therefore NOT parked for
+   * adoption — runs immediately instead of firing later from a dead generation, where it
+   * would release a registry id out from under whoever owns it next.
+   */
+  quiesce(): void {
+    for (const unsub of this.exitUnsubs) unsub();
+    this.exitUnsubs.clear();
+    for (const [id, timer] of this.reapTimers) {
+      clearTimeout(timer);
+      this.sessions.get(id)?.dispose();
+      this.sessions.delete(id);
+      this.resources.release(resourceId(id));
+    }
+    this.reapTimers.clear();
   }
 
   /** Handle ids for the parked context document — live sessions only. */

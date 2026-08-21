@@ -36,6 +36,7 @@ import {
   BARE_KERNEL_RESOURCE_ID,
   PENGUIN_FAMILY,
   PLATFORM_CURRENT_RESOURCE_ID,
+  PLATFORM_DRAIN_RESOURCE_ID,
   RESOURCE_IFACES_RESOURCE_ID,
   RUNTIME_OVERRIDES_RESOURCE_ID,
   claimRuntimeCapabilities,
@@ -118,6 +119,14 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   platform: ["deps", "app"],
 };
 
+/**
+ * How long a swap waits for aborted work to actually end (the successor awaits this via
+ * PLATFORM_DRAIN_RESOURCE_ID). A cap, not a sleep: the drain resolves the moment the last
+ * aborted run settles. Matches the process-exit grace, because "the old App is gone"
+ * should mean the same thing on both paths.
+ */
+const SWAP_DRAIN_MS = 5000;
+
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
     // The capability claim comes FIRST, before a single registry read is acted on, and a
@@ -146,6 +155,19 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
           "— update the installation itself; a push replaces the platform, never the runtime",
       );
     }
+    // LOAD, step one: wait until the predecessor is actually gone. The kernel's park and
+    // dispose are synchronous, but suspending a business surface is not — aborted agent
+    // runs take real time to end. The previous App registered its drain on the way out
+    // (see the dispose effect below); awaiting it here is what makes "the process is
+    // clean" true before this App restarts the suspended machinery and adopts the
+    // delivered resources. Absent on the first boot, after a process restart (the
+    // registry is in-memory), and under a predecessor that predates the contract.
+    const drain = ctx.resources.claim<Promise<unknown>>(PLATFORM_DRAIN_RESOURCE_ID);
+    if (drain !== undefined) {
+      ctx.resources.release(PLATFORM_DRAIN_RESOURCE_ID);
+      await drain;
+    }
+
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -206,14 +228,48 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       ...(business === null ? {} : { shutdown: () => business.manager.shutdown(5000) }),
     };
     ctx.resources.register(PLATFORM_CURRENT_RESOURCE_ID, current);
+    // PARK — the App's complete resource inventory, split by fate. Everything stateful
+    // this App creates is on one of these three lists; a new resource must pick its list
+    // when it is added, or the swap leaks it.
+    //
+    // DELIVERED (survives the swap; the successor adopts it at load):
+    //   - pty sessions        registry `terminal:*` + parked handle ids → terminals.adopt
+    //   - runtime singletons  db / auth / channels / config / proxy / desktop —
+    //                         runtime-owned, re-claimed by every App; not this App's to park
+    // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
+    //   - scheduler           stop() now; successor start() reconciles missed fires
+    //   - agent runs          approvals → deny, drives → abort; goal rows reconciled by
+    //                         the successor's abortOrphanedActive
+    //   - session environments dispose() after the drive settles — kills background
+    //                         commands (dev servers etc.) that would otherwise run on
+    //                         orphaned and invisible to the successor's fresh Session
+    //   - reap timers         TerminalManager.quiesce runs them now (dead ptys only)
+    // DETACHED (the object survives, this App's grip on it does not):
+    //   - pty exit listeners  unsubscribed, so a dead generation never releases a
+    //                         registry id the successor owns
+    // Known exceptions, accepted with reasons: an in-flight self-update child (rare,
+    // bounded by its own 10-minute cap, and a successful update restarts the process
+    // anyway) and SSE subscriber closures (they serve the old generation's stream until
+    // the client reloads on web_updated — the channel hub itself is runtime-owned).
+    // A build that adds a service with state of its own (sandbox settings, workflow
+    // refs, ssh tunnels, an in-flight job) adds it to the right list here — the list is
+    // the contract, not a description of today's services.
+    //
+    // The synchronous part runs here; the ASYNC part (waiting for aborted runs to
+    // actually end) cannot — dispose is sync — so it is registered as a promise the
+    // successor's create() awaits before building: that handshake is what makes the
+    // process clean between generations.
     ctx.effect(() => {
-      // Swap semantics for unparked state: HARD STOP. Pending approvals converge to
-      // deny, active runs abort, the scheduler's timer dies with this App; the next
-      // App rebuilds all of it. Only parked resources (terminals) ride across.
+      terminals.quiesce();
+      const drains: Promise<unknown>[] = [];
       if (business !== null) {
         business.scheduler.stop();
-        void business.manager.shutdown(0);
+        drains.push(business.manager.shutdown(SWAP_DRAIN_MS));
       }
+      ctx.resources.register(
+        PLATFORM_DRAIN_RESOURCE_ID,
+        Promise.allSettled(drains).then(() => undefined),
+      );
       ctx.resources.release(PLATFORM_CURRENT_RESOURCE_ID);
     });
 

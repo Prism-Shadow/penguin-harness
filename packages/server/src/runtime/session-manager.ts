@@ -1293,11 +1293,20 @@ export class SessionManager {
     clearInterval(this.sweepTimer);
     const pending: Promise<void>[] = [];
     for (const entry of this.entries.values()) {
-      if (!entry.abort) continue;
       entry.approvals.denyAll();
-      entry.abort.abort();
+      entry.abort?.abort();
       if (entry.running) pending.push(entry.running);
+      // Suspend means the environment too: dispose kills the Session's remaining
+      // background processes (a dev server the conversation started, etc.). Without
+      // this, a hot swap orphans them — the OS process keeps running while the next
+      // App's freshly resumed Session starts with an empty process list, so the stop
+      // control has gone blind. Sequenced after the in-flight drive settles, the same
+      // ordering disposeRemoved uses.
+      const dispose = (): void => entry.session.dispose?.();
+      if (entry.running) void entry.running.then(dispose, dispose);
+      else dispose();
     }
+    this.entries.clear();
     if (pending.length === 0) return;
     await Promise.race([
       Promise.allSettled(pending).then(() => undefined),
