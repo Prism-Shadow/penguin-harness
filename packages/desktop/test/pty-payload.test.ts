@@ -13,6 +13,9 @@ import {
 
 const pkgDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/** Tests whose assertion reads a POSIX file mode, which Windows does not carry. */
+const itPosix = it.skipIf(process.platform === "win32");
+
 /** A node-pty install with one of everything its npm tarball and node-gyp actually produce. */
 function fakeNodePty(root: string): void {
   const write = (rel: string, mode?: number) => {
@@ -121,7 +124,11 @@ describe("stageNodePty", () => {
     expect(fs.existsSync(path.join(dest, "build", "Debug"))).toBe(false);
   });
 
-  it("restores the exec bit node-pty's tarball leaves off spawn-helper", () => {
+  // Windows has no POSIX exec bit: chmod there drives the read-only attribute alone, so
+  // stat().mode & 0o111 always reads back 0. The staging call still runs on win32 (a
+  // harmless no-op) and spawn-helper is a darwin-only side binary, so what is skipped here
+  // is the assertion's platform, not the behaviour it guards.
+  itPosix("restores the exec bit node-pty's tarball leaves off spawn-helper", () => {
     const src = tmpdir();
     const dest = path.join(tmpdir(), "node-pty");
     fakeNodePty(src);
