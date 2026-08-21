@@ -156,14 +156,14 @@ export function PickerList<T>({
  * viewport no matter how many models there are.
  * Dropdown order mirrors the model library page (visibleChatModels): a top quick-search box
  * (the model page's rule — filters by id / display name / provider name); by default only
- * models with a configured API key are listed (stored masked key — the same standard as the
- * model page's key status; `envKey` is merely the NAME of a fallback env var and doesn't
- * count), with the selected and the default model always visible even without a key; a muted
- * bottom row reveals the remaining key-less models (marked by a struck-through key icon, with
- * the "no key" text in its title) without closing the menu or changing the selection — when
- * no model has a key at all, everything is listed directly. Rows carry the provider logo, the
- * light-yellow "Free" badge for zero-cost models (same as the model library card), the
- * project-default marker, and the selected checkmark.
+ * models with an API key are listed (hasConfiguredKey — a stored masked key or a masked env
+ * fallback, the same standard as the model page's key status; `envKey` is merely the NAME of a
+ * fallback env var and doesn't count on its own), with the selected and the default model
+ * always visible even without a key; a muted bottom row reveals the remaining key-less models
+ * (marked by a struck-through key icon, with the "no key" text in its title) without closing
+ * the menu or changing the selection — when no model has a key at all, everything is listed
+ * directly. Rows carry the provider logo, the light-yellow "Free" badge for zero-cost models
+ * (same as the model library card), the project-default marker, and the selected checkmark.
  */
 export function ModelMenuList({
   models,

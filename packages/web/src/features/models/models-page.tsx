@@ -75,7 +75,13 @@ import {
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
-import { groupModelRows, isFreeModel, sameModelRef, userProviderInfo } from "./model-grouping";
+import {
+  groupModelRows,
+  hasConfiguredKey,
+  isFreeModel,
+  sameModelRef,
+  userProviderInfo,
+} from "./model-grouping";
 import { protocolPathForModel } from "./protocol-path";
 import { ProtocolSuffixMenu } from "./protocol-suffix";
 import {
@@ -321,11 +327,31 @@ function isPreset(row: RowState): boolean {
   );
 }
 
-/** Whether this row already has (or will have, after this edit) an API key configured. */
-function hasKey(row: RowState): boolean {
-  return (
-    !row.clearApiKey && (Boolean(row.apiKeyInput.trim()) || Boolean(row.credential?.apiKeyMasked))
-  );
+/**
+ * Whether this row already has (or will have, after this edit) an API key: the shared
+ * hasConfiguredKey rule — a stored key or an env fallback the server proved is set — plus the two
+ * edit-only notions the DTO shape cannot carry. A key typed into the dialog counts before it is
+ * saved, and `clearApiKey` drops the **stored** key only: an environment variable cannot be
+ * cleared from here, so an env-backed row keeps its key through a clear.
+ */
+export function hasKey(row: RowState): boolean {
+  if (row.clearApiKey) return hasConfiguredKey({ ...row, credential: undefined });
+  return row.apiKeyInput.trim() !== "" || hasConfiguredKey(row);
+}
+
+/**
+ * The model card's key status line, most specific first: a stored key (not being cleared) shows
+ * its mask; a key typed but not yet saved has no mask of its own and just reads as configured;
+ * otherwise a detected first-party env fallback shows that variable's value under the same mask
+ * (the server reports envKeyMasked for official vendor entries only), so an env-backed row reads
+ * like a configured one. hasKey guards the whole ladder, so the card and the chat model picker can
+ * never disagree about which rows count as "not configured".
+ */
+export function keyStatusText(row: RowState): string {
+  if (!hasKey(row)) return S.models.noKey;
+  if (row.credential?.apiKeyMasked && !row.clearApiKey) return row.credential.apiKeyMasked;
+  if (row.apiKeyInput.trim() !== "") return S.models.keyConfigured;
+  return row.envKeyMasked ?? S.models.keyConfigured;
 }
 
 /** DTO -> row edit state (exported for unit tests): provider and modelId are both entry fields, never decomposed. */
@@ -1416,15 +1442,9 @@ function ModelCard({
     priced
       ? `${displayPrice(row.cacheRead, currency)} / ${displayPrice(row.cacheWrite, currency)} / ${displayPrice(row.output, currency)}`
       : null,
-    // Key status: the mask when configured; with no stored key, a detected first-party env
-    // fallback shows that variable's value under the same mask (the server only reports
-    // envKeyMasked for official vendor entries), so the row reads like a configured one;
-    // otherwise "not configured".
-    row.credential?.apiKeyMasked && !row.clearApiKey
-      ? row.credential.apiKeyMasked
-      : hasKey(row)
-        ? S.models.keyConfigured
-        : (row.envKeyMasked ?? S.models.noKey),
+    // Key status (see keyStatusText): the stored mask, a detected env fallback's mask, a plain
+    // "configured" for a key typed but not yet saved, or "not configured".
+    keyStatusText(row),
   ].filter((v): v is string => v !== null);
 
   const speedBadges =

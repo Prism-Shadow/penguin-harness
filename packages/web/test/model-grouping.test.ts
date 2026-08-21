@@ -7,8 +7,9 @@
  * group, sorted by name and appended after custom; empty groups are hidden, except the
  * custom group, which is always shown when there's no search query, hosting the generic
  * "add model" entry point. Also covers the chat dropdown's visibility rule (visibleChatModels):
- * key-configured models only by default (a stored masked key, judged by hasConfiguredKey),
- * selected/default always visible, everything listed when nothing is configured or on showAll.
+ * models with a key only by default (a stored masked key or a masked env fallback, judged by
+ * hasConfiguredKey), selected/default always visible, everything listed when nothing is
+ * configured or on showAll.
  */
 import { describe, expect, it } from "vitest";
 import { MODEL_PROVIDERS } from "@prismshadow/penguin-core/model-catalog";
@@ -145,7 +146,7 @@ describe("groupModelRows", () => {
 });
 
 describe("hasConfiguredKey", () => {
-  it("only a stored (masked) key counts as configured", () => {
+  it("a stored (masked) key counts as configured", () => {
     expect(
       hasConfiguredKey({
         provider: "anthropic",
@@ -155,7 +156,24 @@ describe("hasConfiguredKey", () => {
     ).toBe(true);
     expect(hasConfiguredKey({ provider: "anthropic", modelId: "m" })).toBe(false);
     expect(hasConfiguredKey({ provider: "anthropic", modelId: "m", credential: {} })).toBe(false);
-    // envKey is merely the NAME of a fallback env var (nothing says the var is actually set): never counts.
+  });
+
+  it("a masked env fallback counts too: the server reports it only for a variable that holds a value", () => {
+    expect(
+      hasConfiguredKey({ provider: "anthropic", modelId: "m", envKeyMasked: "sk-a\u20263456" }),
+    ).toBe(true);
+    // Stored key absent but the environment behind it: still configured, same as the model card shows.
+    expect(
+      hasConfiguredKey({
+        provider: "anthropic",
+        modelId: "m",
+        credential: {},
+        envKeyMasked: "sk-a\u20263456",
+      }),
+    ).toBe(true);
+  });
+
+  it("envKey alone is merely the NAME of a fallback var (nothing says it is set): never counts", () => {
     const envOnly = { provider: "anthropic", modelId: "m", envKey: "ANTHROPIC_API_KEY" };
     expect(hasConfiguredKey(envOnly)).toBe(false);
   });
@@ -184,6 +202,37 @@ describe("visibleChatModels", () => {
       "claude-sonnet-4-6",
       "kimi-k2.6",
     ]);
+  });
+
+  it("an env-backed model is listed like a stored-key one, not hidden behind show-all", () => {
+    const envBacked: ModelCredentialRowLike = {
+      provider: "anthropic",
+      modelId: "claude-opus-4-8",
+      envKeyMasked: "sk-a\u20263456",
+    };
+    const withEnv = [...pool.filter((m) => m.modelId !== "claude-opus-4-8"), envBacked];
+    expect(visibleChatModels(withEnv, { showAll: false, query: "" }).map((m) => m.modelId)).toEqual(
+      [
+        "claude-sonnet-4-6",
+        "claude-opus-4-8", // env fallback only — still counts as having a key
+        "kimi-k2.6",
+      ],
+    );
+    // The "show models without key" expander counts only the two genuinely key-less rows.
+    expect(
+      visibleChatModels(withEnv, { showAll: true, query: "" }).length -
+        visibleChatModels(withEnv, { showAll: false, query: "" }).length,
+    ).toBe(2);
+    // Knowing the variable's NAME is not knowing it is set: such a row stays hidden.
+    const nameOnly = {
+      provider: "anthropic",
+      modelId: "claude-opus-4-8",
+      envKey: "ANTHROPIC_API_KEY",
+    };
+    const withNameOnly = [...pool.filter((m) => m.modelId !== "claude-opus-4-8"), nameOnly];
+    expect(
+      visibleChatModels(withNameOnly, { showAll: false, query: "" }).map((m) => m.modelId),
+    ).toEqual(["claude-sonnet-4-6", "kimi-k2.6"]);
   });
 
   it("showAll lists everything, still in library order", () => {
