@@ -1,16 +1,16 @@
 /**
- * Factory command-policy rules — split from command-policy.ts so that state/project-config
- * (which seeds them into new projects) can import the data without pulling the tool chain:
- * command-policy.ts imports tools/exec-command.js, and reaching that chain from the state
- * barrel mid-evaluation is an import cycle. This module imports types only.
+ * Factory command-policy rules — the seed data for a new project's `[command_policy]`
+ * block, kept next to the other seeded catalogs (model-catalog.ts, default-config.ts):
+ * `defaultProjectConfig` copies them into every new project, and the enforcement side
+ * reads the same constant as its "absent = factory set" fallback. Types only, no
+ * behavior — so nothing here can drag the tool chain into the state module.
  *
- * Seeded into every new project's `[command_policy]` (and the effective set wherever no
- * `rules` list is stored). Kept deliberately small — every entry is a command whose
- * verbatim execution is destructive with no undo, so a false negative is worse than the
- * occasional false positive. Each pattern assumes the command has been
- * whitespace-normalized (runs collapsed to single spaces) and never crosses a `;`, `|` or
- * `&` separator. Descriptions are stored data (project-editable after seeding), so they
- * are plain English like the rest of the config file.
+ * Kept deliberately small — every entry is a command whose verbatim execution is
+ * destructive with no undo, so a false negative is worse than the occasional false
+ * positive. Each pattern assumes the command has been whitespace-normalized (runs
+ * collapsed to single spaces) and never crosses a `;`, `|` or `&` separator.
+ * Descriptions are stored data (project-editable after seeding), so they are plain
+ * English like the rest of the config file.
  */
 import type { CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
 

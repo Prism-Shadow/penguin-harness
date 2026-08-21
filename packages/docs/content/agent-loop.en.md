@@ -74,7 +74,7 @@ A Task consists of consecutive Requests (turns). Each turn:
 5. when the LLM stream ends, its final `token_usage` is emitted and `request_end(status)` follows at once — **without waiting for tools**: still-running tools may emit output after `request_end`;
 6. once the whole batch is terminal, tool results are **reordered to the original call order** and become the next turn's input — the next Request never fires before that.
 
-The Task ends when a turn produces no `tool_call`. A denial produces a synthetic `aborted` tool output ("Tool call denied by user.") that the model reacts to.
+The Task ends when a turn produces no `tool_call`. A denial produces a synthetic tool output the model reacts to: `aborted` with "Tool call denied by user." for a plain `deny`, or the refusal's own message and stop reason when the approval boundary states one (see [ApproveFn](/interfaces#approvefn)).
 
 ## Interruption and carry-over
 

@@ -73,13 +73,13 @@ import type {
   ToolCallPayload,
 } from "../omnimessage/index.js";
 import type {
+  ApprovalRefusal,
   ApproveFn,
   EnvironmentInterface,
   LLMInterface,
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces.js";
-import { vetoForToolCall } from "../environment/command-policy.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
 export interface TraceSink {
@@ -1124,53 +1124,38 @@ export class ContextEngine {
             // Already interrupted: stop dispatching new tools, but keep consuming until the LLM
             // returns its outcome (the LLM will close out quickly and return aborted).
             if (signal?.aborted) continue;
-            // Either denial (policy or human) feeds a terminal output back immediately, so
-            // the already-committed tool_use never dangles.
-            const denyOutput = async (output: string, stopReason: StopReason) => {
-              const denied = toolCallOutput({ output, toolCallId, stopReason });
-              queue.push(denied);
-              await this.write(denied);
-              toolOutputs.push(denied);
-            };
-            // Project sandbox policy: the environment's pure-data rule snapshot, run through
-            // the shared matcher before the approval callback — a vetoed command never
-            // reaches the Human boundary, so the policy outranks every approval mode,
-            // allow-all included. The denial is a "failed" output (not "aborted"): nothing
-            // was manually canceled, and the model should read the message and change
-            // course rather than treat it as a user interruption.
-            const veto = vetoForToolCall(
-              tc.payload.name,
-              tc.payload.arguments,
-              this.deps.environment.commandPolicy,
-            );
-            if (veto) {
-              const decisionMsg = approvalDecision("deny", toolCallId, veto.rule);
-              queue.push(decisionMsg);
-              await this.write(decisionMsg);
-              await denyOutput(veto.message, "failed");
-              continue;
-            }
             // The approval callback is injected externally (RunOptions.approve): any throw
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,
             // leaving the already-committed tool_use unanswered.
-            let decision: ApprovalDecision;
+            let outcome: ApprovalDecision | ApprovalRefusal;
             try {
-              decision = await approve(tc);
+              outcome = await approve(tc);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               process.stderr.write(`[penguin] approve callback threw: ${message}; denying.\n`);
-              decision = "deny";
+              outcome = "deny";
             }
             if (signal?.aborted) continue;
             // approve is a callback; context_engine emits its decision as an approval_decision
             // OmniMessage: pushed to the stream for frontend rendering, and written to Trace.
+            const decision = typeof outcome === "string" ? outcome : outcome.decision;
             const decisionMsg = approvalDecision(decision, toolCallId);
             queue.push(decisionMsg);
             await this.write(decisionMsg);
             if (decision !== "allow") {
-              // User denied: an "aborted" output, indicating the tool call was manually canceled.
-              await denyOutput("Tool call denied by user.", "aborted");
+              // Denied: feed a terminal output back immediately, so the already-committed
+              // tool_use never dangles. A refusal states its own reason and stop_reason (the
+              // Session's command-policy wrapper answers "failed" — refused on the merits,
+              // change course); a bare "deny" is a person canceling the call.
+              const refused = toolCallOutput({
+                output: typeof outcome === "string" ? "Tool call denied by user." : outcome.message,
+                toolCallId,
+                stopReason: typeof outcome === "string" ? "aborted" : outcome.stopReason,
+              });
+              queue.push(refused);
+              await this.write(refused);
+              toolOutputs.push(refused);
               continue;
             }
             // Approved: run concurrently, without blocking further consumption of the LLM

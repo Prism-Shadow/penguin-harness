@@ -61,7 +61,7 @@ import {
   type SystemConfig,
 } from "../src/state/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../src/interfaces.js";
-import { DEFAULT_COMMAND_POLICY_RULES } from "../src/environment/command-policy-defaults.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
 import { sessionEnvironment } from "../src/internal/session-support.js";
 
 let tmpRoot: string;

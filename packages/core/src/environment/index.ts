@@ -2,13 +2,6 @@
  * Environment module barrel — exports the environment interface implementation and builtin tool abstractions.
  */
 export { Environment } from "./environment.js";
-// The policy matcher itself (evaluateCommandPolicy / vetoForToolCall) is engine-internal
-// plumbing with no consumer outside this package — only the factory data and the single
-// "absent = factory set" fallback are part of the SDK surface (the server serves both).
-export {
-  DEFAULT_COMMAND_POLICY_RULES,
-  effectiveCommandPolicyRules,
-} from "./command-policy-defaults.js";
 export type { BuiltinTool, ToolExecutionContext } from "./tools/types.js";
 export { BUILTIN_TOOL_FACTORIES } from "./tools/registry.js";
 export type { BuiltinToolFactory } from "./tools/registry.js";

@@ -1,29 +1,35 @@
 /**
  * Command policy — the project-level sandbox guardrail for shell commands.
  *
- * A deny-rule list evaluated against every `exec_command` launch **before** the approval
- * callback is consulted (see context_engine): a hit is denied outright, so the policy
- * outranks every approval mode, including allow-all. The config lives in
- * `.project_config.toml` (`[command_policy]`) — Project-owned on purpose: security policy
- * belongs to the Project, not to Agent State the Agent itself can rewrite. The Environment
- * receives a parsed snapshot at Session creation, so the running Session's policy cannot
+ * A deny-rule list the Session applies to the **injected approval callback**: `Session.run`
+ * wraps `RunOptions.approve` with `withCommandPolicy`, so a matching `exec_command` launch
+ * answers "deny" without the human being consulted, and the policy therefore outranks every
+ * approval mode, allow-all included. Nothing about it reaches `context_engine`, which keeps
+ * doing what it always did — ask the approval boundary, record the decision, feed a denied
+ * call its terminal output.
+ *
+ * The config lives in `.project_config.toml` (`[command_policy]`) — Project-owned on purpose:
+ * security policy belongs to the Project, not to Agent State the Agent itself can rewrite.
+ * The Session receives a parsed snapshot at creation, so the running Session's policy cannot
  * be edited from inside the Session.
  *
  * The rules are **data, not code**: every rule (name / pattern / description / enabled) is
- * project-editable, and the factory set below is *seeded* into new projects' config the
- * same way model presets are — copied in at creation, never rewritten afterward. A config
- * without a `rules` list behaves as the factory set (pre-seeding projects); the first
- * saved edit materializes the list into the file.
+ * project-editable, and the factory set (state/command-policy-defaults.ts) is *seeded* into
+ * new projects' config the same way model presets are — copied in at creation, never
+ * rewritten afterward. A config without a `rules` list behaves as the factory set
+ * (pre-seeding projects); the first saved edit materializes the list into the file.
  *
  * This is an **accident guardrail, not a security boundary**: matching is normalized-text
- * regex over the launch command (`exec_command`'s `cmd`). It stops the model from running
- * the classic destructive one-liners verbatim; it does not try to defeat deliberate
- * obfuscation (base64, variable indirection, typing into an interactive shell via
- * `input_command`). Docs: /docs/configuration § "Command policy".
+ * regex over the launch command (`exec_command`'s `cmd`), so it stops the classic
+ * destructive one-liners typed verbatim and little else. A path (`/bin/rm -rf /`), a quoted
+ * or `$IFS`-spliced spelling, `sh -c`, `xargs`, base64, a second command after `;`, or
+ * typing into an already-running shell via `input_command` all walk straight past it — a
+ * pattern matcher over shell syntax cannot be made to hold, and this one does not try.
+ * Docs: /docs/configuration § "Command policy".
  */
-import type { CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
-import { effectiveCommandPolicyRules } from "./command-policy-defaults.js";
-import { EXEC_COMMAND_NAME } from "./tools/exec-command.js";
+import type { ApproveFn, CommandPolicyConfig, CommandPolicyRule } from "../interfaces.js";
+import { effectiveCommandPolicyRules } from "../state/command-policy-defaults.js";
+import { EXEC_COMMAND_NAME } from "../environment/tools/exec-command.js";
 
 /** A command-policy hit: the matched rule's name plus the denial text fed back to the model. */
 export interface CommandPolicyVeto {
@@ -103,4 +109,19 @@ export function vetoForToolCall(
   const cmd = (args as Record<string, unknown>)["cmd"];
   if (typeof cmd !== "string") return null;
   return evaluateCommandPolicy(cmd, policy);
+}
+
+/**
+ * Wraps an approval callback with the policy: a vetoed call is refused here and `approve`
+ * is never reached, so no approval mode — and no Human implementation — can let it
+ * through. The refusal carries its own reason, which is what keeps it distinguishable from
+ * a person canceling the call: `failed` tells the model its request was rejected on its
+ * merits and it should change course, where a human denial reports `aborted`.
+ */
+export function withCommandPolicy(approve: ApproveFn, policy?: CommandPolicyConfig): ApproveFn {
+  return async (toolCall) => {
+    const veto = vetoForToolCall(toolCall.payload.name, toolCall.payload.arguments, policy);
+    if (veto) return { decision: "deny", message: veto.message, stopReason: "failed" };
+    return approve(toolCall);
+  };
 }

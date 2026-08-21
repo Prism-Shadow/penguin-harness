@@ -30,7 +30,6 @@ import { partialToolCallOutput, toolCallOutput } from "../omnimessage/index.js";
 import type { McpServerConnectResult, OmniMessage, StopReason } from "../omnimessage/index.js";
 import type {
   BackgroundCommandInfo,
-  CommandPolicyConfig,
   EnvironmentConfig,
   EnvironmentInterface,
   ToolConfig,
@@ -104,13 +103,10 @@ export class Environment implements EnvironmentInterface {
   private readonly commandSessions: CommandSessionManager;
   /** Background subagent session registry: constructed within this Environment and shared between run_subagent / input_subagent. */
   private readonly subagentSessions: SubagentSessionManager;
-  /** Project sandbox command policy snapshot (EnvironmentInterface.commandPolicy): pure data the engine matches against; absent = factory rules apply. */
-  readonly commandPolicy?: CommandPolicyConfig;
 
   constructor(config: EnvironmentConfig) {
     this.workspaceDir = config.workspaceDir;
     this.toolConfig = config.toolConfig;
-    if (config.commandPolicy !== undefined) this.commandPolicy = config.commandPolicy;
     this.truncatedToolOutputArchive = config.sessionScratchpadDir
       ? new TruncatedToolOutputArchive({
           rootDir: path.join(config.sessionScratchpadDir, "truncated-tool-output"),

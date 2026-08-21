@@ -28,7 +28,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type { CommandPolicyConfig, CommandPolicyRule, ThinkingLevelName } from "../interfaces.js";
-import { DEFAULT_COMMAND_POLICY_RULES } from "../environment/command-policy-defaults.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
 

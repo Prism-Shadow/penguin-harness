@@ -264,15 +264,8 @@ export function partialToolCallOutput(args: {
 export function approvalDecision(
   decision: ApprovalDecision,
   toolCallId: string,
-  /** Matched sandbox-policy rule name — only for policy denials (see ApprovalDecisionPayload.policy_rule). */
-  policyRule?: string,
 ): OmniMessage<ApprovalDecisionPayload> {
-  return event({
-    type: "approval_decision",
-    decision,
-    tool_call_id: toolCallId,
-    ...(policyRule !== undefined ? { policy_rule: policyRule } : {}),
-  });
+  return event({ type: "approval_decision", decision, tool_call_id: toolCallId });
 }
 
 export function abortEvent(reason: string | null = null): OmniMessage<AbortPayload> {

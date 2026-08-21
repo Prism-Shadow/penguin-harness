@@ -216,10 +216,19 @@ CLI 把终端输入输出接到这个边界上；Server 把 HTTP 请求与 SSE �
 
 ```ts
 type ApprovalDecision = "allow" | "deny";
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+interface ApprovalRefusal {
+  decision: "deny";
+  message: string;                          // 作为工具输出回馈模型
+  stopReason: "failed" | "aborted";         // "failed" = 按理由拒绝,模型应改换思路
+}
+type ApproveFn = (
+  toolCall: OmniMessage<ToolCallPayload>,
+) => Promise<ApprovalDecision | ApprovalRefusal>;
 ```
 
 约束：每个完整 `tool_call` 恰好被调用一次；回调抛出异常按 `deny` 处理；未注入时引擎默认全部拒绝(保守策略)。Subagent 继承父级的审批回调(调用时带 `origin` 标记)，审批策略天然贯穿整个委托树。
+
+拒绝可以不返回裸的 `"deny"`，而返回带理由的 `ApprovalRefusal`：`message` 原样成为工具输出，`stopReason` 告诉模型该如何理解这次拒绝。裸 `"deny"` 仍然产出 `aborted` 输出 `Tool call denied by user.`，既有回调无需改动。`Session.run` 正是借此执行 [Project 命令策略](/configuration#沙箱安全策略)：它包装注入进来的回调，命中的命令在宿主被问到之前就已被拒绝。
 
 ## Subagent 接口
 

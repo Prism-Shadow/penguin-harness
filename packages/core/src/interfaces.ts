@@ -90,12 +90,66 @@ export interface ToolConfig {
 }
 
 /**
+ * A denial that carries its own reason, returned in place of a bare `"deny"` when the
+ * refusal did not come from a person canceling the call. `message` is fed back to the model
+ * verbatim as the `tool_call_output`, and `stopReason` says how to read it: `"failed"` for a
+ * call refused on its merits — the model should take in the message and change course —
+ * against `"aborted"`, which means manually canceled. A bare `"deny"` still reports
+ * `aborted`, so a Human implementation that knows nothing of this needs no change.
+ */
+export interface ApprovalRefusal {
+  decision: "deny";
+  message: string;
+  stopReason: Extract<StopReason, "failed" | "aborted">;
+}
+
+/**
  * Per-tool approval callback: the Human boundary gives allow/deny for each complete `tool_call`.
  * `context_engine` calls it once per tool call within a turn. Subagents forward the parent's
  * approval callback, so the child Agent **inherits the parent Agent's approval mode**.
+ * A denial may come back as an {@link ApprovalRefusal} instead of the bare `"deny"` when it
+ * has a reason to state — `Session.run` wraps the injected callback that way to enforce the
+ * project sandbox command policy (see {@link CommandPolicyConfig}).
  * Docs: /docs/interfaces § "ApproveFn".
  */
-export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+export type ApproveFn = (
+  toolCall: OmniMessage<ToolCallPayload>,
+) => Promise<ApprovalDecision | ApprovalRefusal>;
+
+/**
+ * One command-policy deny rule — plain project-editable data: a name (echoed in the denial
+ * so the model knows what it hit), a regex source tested against the whitespace-normalized
+ * command, an optional free-text description, and a per-rule switch.
+ * Docs: /docs/configuration § "Command policy".
+ */
+export interface CommandPolicyRule {
+  name: string;
+  /** JavaScript regex source (no flags). */
+  pattern: string;
+  /** What the rule catches (free text, shown in the settings UI). */
+  description?: string;
+  /** Per-rule switch; absent = true. */
+  enabled?: boolean;
+}
+
+/**
+ * The project sandbox command policy (the `[command_policy]` block of
+ * `.project_config.toml`, threaded into every Session the Agent creates). `Session.run`
+ * wraps the injected approval callback with it, so a hit is denied without the human being
+ * asked — under every approval mode. It is Project-owned security config, deliberately
+ * outside Agent State so the Agent cannot rewrite it. The factory rule set is seeded into
+ * new projects like model presets (copied at creation, never rewritten); an absent config
+ * or an absent `rules` list means the factory set applies, and `enabled: false` switches
+ * the whole policy off. An accident guardrail, not a security boundary — see
+ * internal/command-policy.ts for what walks past it.
+ * Docs: /docs/configuration § "Command policy".
+ */
+export interface CommandPolicyConfig {
+  /** Master switch; absent = true. */
+  enabled?: boolean;
+  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
+  rules?: CommandPolicyRule[];
+}
 
 // ---------------------------------------------------------------------------
 // LLM interface
@@ -333,39 +387,6 @@ export interface EnvironmentServices {
   subagentSessions?: SubagentSessionManager;
 }
 
-/**
- * One command-policy deny rule — plain project-editable data: a name (echoed in the denial
- * so the model knows what it hit), a regex source tested against the whitespace-normalized
- * command, an optional free-text description, and a per-rule switch.
- * Docs: /docs/configuration § "Command policy".
- */
-export interface CommandPolicyRule {
-  name: string;
-  /** JavaScript regex source (no flags). */
-  pattern: string;
-  /** What the rule catches (free text, shown in the settings UI). */
-  description?: string;
-  /** Per-rule switch; absent = true. */
-  enabled?: boolean;
-}
-
-/**
- * The project sandbox command policy (the `[command_policy]` block of
- * `.project_config.toml`, threaded into the Environment at Session creation). The policy
- * is a deny gate consulted **before** the approval callback, so a hit is denied under
- * every approval mode — it is Project-owned security config, deliberately outside Agent
- * State so the Agent cannot rewrite it. The factory rule set is seeded into new projects
- * like model presets (copied at creation, never rewritten); an absent config or an absent
- * `rules` list means the factory set applies, and `enabled: false` switches the whole
- * policy off. Docs: /docs/configuration § "Command policy".
- */
-export interface CommandPolicyConfig {
-  /** Master switch; absent = true. */
-  enabled?: boolean;
-  /** The deny-rule list, evaluated in order; absent = the factory set (a stored empty list means no rules). */
-  rules?: CommandPolicyRule[];
-}
-
 /** Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig". */
 export interface EnvironmentConfig {
   workspaceDir: string;
@@ -394,12 +415,6 @@ export interface EnvironmentConfig {
    * for SDK/CLI standalone use).
    */
   proxyEnv?: () => ProxyEnvPolicy | null;
-  /**
-   * Project sandbox command policy (see {@link CommandPolicyConfig}). A parsed snapshot
-   * taken at Session creation — the Agent's file tools cannot edit the effective copy.
-   * Absent = the factory rule set applies (the policy defaults on).
-   */
-  commandPolicy?: CommandPolicyConfig;
 }
 
 /**
@@ -461,14 +476,6 @@ export interface EnvironmentInterface {
   executeTool(request: ToolExecutionRequest): AsyncGenerator<OmniMessage>;
   /** Looks up a tool's permission level (for frontend permission-mode decisions); returns undefined for unknown tools. */
   toolPermission(name: string): ToolPermission | undefined;
-  /**
-   * Sandbox command policy snapshot — pure data, no behavior: context_engine runs the
-   * shared matcher over it (command-policy.ts) for every exec-class tool_call **before**
-   * the approval callback, so a hit is denied under every approval mode. Absent = the
-   * factory rule set applies (the policy defaults on, uniformly for every implementation);
-   * an embedder opts out with `{ enabled: false }`.
-   */
-  readonly commandPolicy?: CommandPolicyConfig;
   /** Background command processes this environment currently owns (host UI process list). Optional — standalone embedders may not track any. */
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */

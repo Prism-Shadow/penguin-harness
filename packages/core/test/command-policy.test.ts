@@ -1,7 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { evaluateCommandPolicy, vetoForToolCall } from "../src/environment/command-policy.js";
-import { DEFAULT_COMMAND_POLICY_RULES } from "../src/environment/command-policy-defaults.js";
-import type { CommandPolicyConfig } from "../src/interfaces.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  evaluateCommandPolicy,
+  vetoForToolCall,
+  withCommandPolicy,
+} from "../src/internal/command-policy.js";
+import { DEFAULT_COMMAND_POLICY_RULES } from "../src/state/command-policy-defaults.js";
+import { Session } from "../src/session.js";
+import { assistantText, toolCall, userText } from "../src/omnimessage/index.js";
+import type { OmniMessage, SessionMetaPayload } from "../src/omnimessage/index.js";
+import type {
+  ApproveFn,
+  CommandPolicyConfig,
+  EnvironmentInterface,
+  LLMInterface,
+  LLMOutcome,
+} from "../src/interfaces.js";
 
 /** Shorthand: the matched rule name, or null. */
 function hit(cmd: string, policy?: CommandPolicyConfig): string | null {
@@ -152,5 +168,179 @@ describe("factory rule metadata", () => {
       expect(() => new RegExp(rule.pattern)).not.toThrow();
       expect(rule.description?.length ?? 0).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("withCommandPolicy (the approval-boundary wrapper)", () => {
+  const call = (cmd: string, name = "exec_command"): OmniMessage =>
+    toolCall({ name, arguments: JSON.stringify({ cmd }), toolCallId: "c1" });
+
+  it("refuses a vetoed call without consulting the wrapped callback", async () => {
+    let asked = 0;
+    const guarded = withCommandPolicy(async () => {
+      asked += 1;
+      return "allow";
+    });
+
+    const outcome = await guarded(call("rm -rf /tmp/x") as never);
+
+    // The host is never asked: that is what makes the policy outrank every approval mode.
+    expect(asked).toBe(0);
+    expect(outcome).toMatchObject({ decision: "deny", stopReason: "failed" });
+    expect(typeof outcome === "string" ? "" : outcome.message).toContain("rm-recursive-force");
+  });
+
+  it("passes everything else straight through, decision included", async () => {
+    const guarded = withCommandPolicy(async () => "allow");
+    expect(await guarded(call("ls -la") as never)).toBe("allow");
+    // A non-exec tool is not the policy's business, even with a command-shaped argument.
+    expect(await guarded(call("rm -rf /", "write_file") as never)).toBe("allow");
+
+    const denying = withCommandPolicy(async () => "deny");
+    expect(await denying(call("ls") as never)).toBe("deny");
+  });
+
+  it("a disabled policy delegates every call, vetoed or not", async () => {
+    const guarded = withCommandPolicy(async () => "allow", { enabled: false });
+    expect(await guarded(call("rm -rf /") as never)).toBe("allow");
+  });
+});
+
+describe("Session applies the policy at the approval boundary", () => {
+  let tmp: string;
+  beforeEach(async () => {
+    tmp = await mkdtemp(path.join(tmpdir(), "penguin-cmdpolicy-"));
+  });
+  afterEach(async () => {
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const meta = (): SessionMetaPayload => ({
+    session_id: "session-1",
+    provider: "custom",
+    model_id: "m1",
+    model_context_window: 1000,
+    system_prompt: "sp",
+    agent_state: tmp,
+    workspace: tmp,
+  });
+
+  it("denies a vetoed command under allow-all, and the tool never reaches the Environment", async () => {
+    let approveCalls = 0;
+    let executed = 0;
+    let secondInput: OmniMessage[] | null = null;
+    let turn = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(params): AsyncGenerator<OmniMessage, LLMOutcome> {
+        if (turn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "rm -rf /tmp/definitely-not-run" }),
+            toolCallId: "call_veto",
+            stopReason: "completed",
+          });
+          return { status: "completed" };
+        }
+        secondInput = params.newMessages;
+        yield assistantText("Understood, choosing another approach.");
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      // eslint-disable-next-line require-yield
+      executeTool: async function* () {
+        executed += 1;
+        throw new Error("a vetoed command must never be executed");
+      },
+      toolPermission: () => undefined,
+    };
+    const allowAll: ApproveFn = async () => {
+      approveCalls += 1;
+      return "allow";
+    };
+    // No commandPolicy in the config: the factory rule set applies, on.
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
+      mcpServers: [],
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+    });
+
+    const all: OmniMessage[] = [];
+    for await (const msg of session.run([userText("clean up")], { approve: allowAll })) {
+      all.push(msg);
+    }
+
+    expect(approveCalls).toBe(0);
+    expect(executed).toBe(0);
+    const decision = all.find(
+      (m) => (m.payload as { type?: string }).type === "approval_decision",
+    )!;
+    expect((decision.payload as { decision?: string }).decision).toBe("deny");
+    // "failed", not "aborted": nothing was manually canceled, and the model should read the
+    // message and change course rather than treat it as a user interruption.
+    const output = all.find((m) => (m.payload as { type?: string }).type === "tool_call_output")!;
+    expect((output.payload as { stop_reason?: string }).stop_reason).toBe("failed");
+    expect((output.payload as { output: string }).output).toContain("sandbox policy");
+    // The denial is fed back to the model, so the next turn can route around it.
+    expect(
+      (secondInput as OmniMessage[] | null)?.some(
+        (m) => (m.payload as { type?: string }).type === "tool_call_output",
+      ),
+    ).toBe(true);
+  });
+
+  it("a project policy switched off lets the same command through to execution", async () => {
+    let approveCalls = 0;
+    let executedCmd: string | null = null;
+    let turn = 0;
+    const llm: LLMInterface = {
+      async *streamGenerate(): AsyncGenerator<OmniMessage, LLMOutcome> {
+        if (turn++ === 0) {
+          yield toolCall({
+            name: "exec_command",
+            arguments: JSON.stringify({ cmd: "rm -rf ./build" }),
+            toolCallId: "call_ok",
+            stopReason: "completed",
+          });
+          return { status: "completed" };
+        }
+        yield assistantText("done");
+        return { status: "completed" };
+      },
+    };
+    const environment: EnvironmentInterface = {
+      listTools: async () => [],
+      async *executeTool(request) {
+        const args = JSON.parse(request.toolCall.payload.arguments) as { cmd: string };
+        executedCmd = args.cmd;
+        yield { type: "event", payload: { type: "noop" } } as unknown as OmniMessage;
+      },
+      toolPermission: () => undefined,
+    };
+    const session = new Session({
+      meta: meta(),
+      bootstrap: async () => ({ tools: [], llm, mcp: [] }),
+      mcpServers: [],
+      environment,
+      imagesDir: path.join(tmp, "images"),
+      modelHasVision: true,
+      commandPolicy: { enabled: false },
+    });
+
+    for await (const _ of session.run([userText("clean up")], {
+      approve: async () => {
+        approveCalls += 1;
+        return "allow";
+      },
+    })) {
+      // consume
+    }
+
+    expect(approveCalls).toBe(1);
+    expect(executedCmd).toBe("rm -rf ./build");
   });
 });
