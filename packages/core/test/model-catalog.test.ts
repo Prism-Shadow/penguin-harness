@@ -131,6 +131,13 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("zhipu", "glm-5.2")?.contextWindow).toBe(1000000);
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
+    // The vision revision is a model of its own in both the direct group and on OpenRouter,
+    // and it is the only vision-capable DeepSeek row in either.
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
+    expect(
+      catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
+    ).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
@@ -167,6 +174,7 @@ describe("model-catalog", () => {
       "anthropic/claude-sonnet-5",
       "deepseek/deepseek-v4-flash-0731",
       "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-flash-vision-exp",
       "deepseek/deepseek-v4-pro-0813",
       "deepseek/deepseek-v4-pro",
       "google/gemini-3.7-flash",
