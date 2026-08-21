@@ -221,9 +221,8 @@ interface ApprovalRefusal {
   message: string;                          // 作为工具输出回馈模型
   stopReason: "failed" | "aborted";         // "failed" = 按理由拒绝,模型应改换思路
 }
-type ApproveFn = (
-  toolCall: OmniMessage<ToolCallPayload>,
-) => Promise<ApprovalDecision | ApprovalRefusal>;
+type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 ```
 
 约束：每个完整 `tool_call` 恰好被调用一次；回调抛出异常按 `deny` 处理；未注入时引擎默认全部拒绝(保守策略)。Subagent 继承父级的审批回调(调用时带 `origin` 标记)，审批策略天然贯穿整个委托树。

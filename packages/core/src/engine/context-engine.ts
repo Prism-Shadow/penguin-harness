@@ -74,7 +74,7 @@ import type {
 } from "../omnimessage/index.js";
 import { approvalDecisionOf } from "../interfaces.js";
 import type {
-  ApprovalRefusal,
+  ApprovalOutcome,
   ApproveFn,
   EnvironmentInterface,
   LLMInterface,
@@ -1129,7 +1129,7 @@ export class ContextEngine {
             // collapses to deny (conservative), so the exception never escapes the engine —
             // otherwise it would propagate through session.run without building carry-over,
             // leaving the already-committed tool_use unanswered.
-            let outcome: ApprovalDecision | ApprovalRefusal;
+            let outcome: ApprovalOutcome;
             try {
               outcome = await approve(tc);
             } catch (err) {

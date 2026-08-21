@@ -223,9 +223,8 @@ interface ApprovalRefusal {
   message: string;                          // fed back to the model as the tool output
   stopReason: "failed" | "aborted";         // "failed" = refused on the merits, change course
 }
-type ApproveFn = (
-  toolCall: OmniMessage<ToolCallPayload>,
-) => Promise<ApprovalDecision | ApprovalRefusal>;
+type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 ```
 
 Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.

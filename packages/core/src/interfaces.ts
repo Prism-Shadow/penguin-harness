@@ -103,12 +103,15 @@ export interface ApprovalRefusal {
   stopReason: Extract<StopReason, "failed" | "aborted">;
 }
 
+/** What an approval callback may answer: a bare decision, or a denial that states its reason. */
+export type ApprovalOutcome = ApprovalDecision | ApprovalRefusal;
+
 /**
  * The bare decision of an approval outcome — a refusal narrows to `"deny"`. Anything that
  * reads a callback's answer (rendering it, building the `approval_decision` event) goes
  * through here rather than switching on the shape itself.
  */
-export function approvalDecisionOf(outcome: ApprovalDecision | ApprovalRefusal): ApprovalDecision {
+export function approvalDecisionOf(outcome: ApprovalOutcome): ApprovalDecision {
   return typeof outcome === "string" ? outcome : outcome.decision;
 }
 
@@ -121,9 +124,7 @@ export function approvalDecisionOf(outcome: ApprovalDecision | ApprovalRefusal):
  * project sandbox command policy (see {@link CommandPolicyConfig}).
  * Docs: /docs/interfaces § "ApproveFn".
  */
-export type ApproveFn = (
-  toolCall: OmniMessage<ToolCallPayload>,
-) => Promise<ApprovalDecision | ApprovalRefusal>;
+export type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalOutcome>;
 
 /**
  * One command-policy deny rule — plain project-editable data: a name (echoed in the denial
