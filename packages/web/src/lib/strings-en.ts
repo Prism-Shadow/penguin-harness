@@ -59,21 +59,34 @@ export const en: Strings = {
 
   settings: {
     language: "Language",
+    languageHint: "Interface language; can follow the browser",
+    /** Sidebar user-menu row opening the System settings dialog. */
+    systemSettings: "System settings",
+    /** Rail headings: the viewer's own preferences vs. the whole server's. */
+    groupPersonal: "Personal",
+    groupServer: "Server",
+    /** Personal pages of the settings dialog. */
+    generalTitle: "General",
+    appearanceTitle: "Appearance",
+    accountTitle: "Account",
+    updatesTitle: "Updates",
     /** Sidebar Session list: also show CLI-created Sessions (default off — the list then never scans the Trace directories). */
     showCliSessions: "Show CLI sessions",
-    /** Admin-only user-menu row opening the proxy options dialog. */
-    proxyMenu: "Proxy options…",
-    proxyDialogTitle: "Proxy options",
-    /** The dialog's two switches: the server's own outbound traffic / agent command subprocess environments. */
+    showCliSessionsHint:
+      "Off, the conversation list holds only Sessions created in the Web App and is served straight from the database. On, the Trace directories are scanned too and CLI-created Sessions are listed alongside them. Applies to this account only.",
+    /** Admin-only sub-page (server-global). */
+    proxyTitle: "Proxy options",
+    proxyHint:
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+    /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only user-menu row opening the upload-limits dialog. */
-    uploadLimitsMenu: "Upload limits…",
-    uploadLimitsDialogTitle: "Upload limits",
-    /** The dialog's two number fields, both in whole MB. */
+    /** Admin-only sub-page (server-global). */
+    uploadLimitsTitle: "Upload limits",
+    /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
     attachmentTotalMb: "Max total per message (MB)",
     /** Explains what the numbers govern and what stays fixed, so the form needs no separate docs trip. */
@@ -83,18 +96,24 @@ export const en: Strings = {
       `${imageMb}MB limit that this setting does not raise — an inline image enters the ` +
       `conversation and the Trace, where its size is paid again on every history page and resume.`,
     theme: "Theme",
+    themeHint: "Light or dark look of the app",
     themeLight: "Light",
     themeDark: "Dark",
     followSystem: "System",
     terminalTheme: "Terminal theme",
+    terminalThemeHint: "Colors of the terminal panel; follows the app theme by default",
     followAppTheme: "App",
     langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
+    fontSizeHint: "Overall interface font size",
     fontSmall: "S",
     fontMedium: "M",
     fontLarge: "L",
     accent: "Accent",
+    accentHint: "Interface accent color",
+    currencyHint: "Display currency for prices; storage is always USD",
+    changePasswordHint: "Change this account's sign-in password",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
