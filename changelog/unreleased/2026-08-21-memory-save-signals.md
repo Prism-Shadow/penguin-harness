@@ -24,6 +24,8 @@ told to ask in the conversation.
 
 ## Details
 
+- The prohibitions no longer name task progress, credentials or personal data. They are things a user sometimes does want kept, and a blanket refusal made the Agent argue with a direct request. What stays barred is what memory cannot usefully hold — facts the code, config or Git history already states, unconfirmed guesses, transcript excerpts. The visibility line stays as a fact rather than a rule: anyone who can reach the Agent reads all of it, which is what a user needs to know before asking for something sensitive to be saved.
+
 - The block was tightened while the guidance went in: what to save, when, what never to, and the index rules are now four labelled lines rather than dense paragraphs. Despite carrying the new signals, the whole prompt is slightly shorter than it was before this change (1739 → 1719 characters), so no session pays for the addition.
 
 - The prompt is a kernel-managed config leaf. The `2026-08-21` generation's `memory.prompt` hash was

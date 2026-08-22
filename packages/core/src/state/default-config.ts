@@ -243,7 +243,7 @@ updated_at: <YYYY-MM-DD>
 
 **When:** a request repeated, a correction that outlives the task (with what they wanted instead), a habit or convention stated more than once, a reusable working detail you would otherwise ask for again. One clear statement is enough; a repeat only makes it obvious. Unsure? Ask.
 
-**Never** what code, config or git history states, task progress, credentials, personal data, guesses, transcript excerpts — asked anyway, save the non-obvious part. Anyone who reaches this agent reads it all.
+**Never** what code, config or git history states, unconfirmed guesses, transcript excerpts — asked anyway, save the non-obvious part. Anything else is savable if the user wants it; anyone who reaches this agent reads it all.
 
 **Index:** each \`MEMORY.md\` lists its memories one line each (\`- [Title](file.md) — hook\`, ~150 chars, no content), updated with the file — deletions included. Only the first ${MEMORY_INDEX_MAX_LINES} lines are injected: merge overlaps, drop stale entries. Before saving, check the index and extend the file that covers the subject; delete memories that prove wrong.
 
