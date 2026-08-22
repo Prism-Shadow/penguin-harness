@@ -9,7 +9,7 @@ PenguinHarness 中的自我进化由 Skill 编排普通的 Agent 机制完成：
 
 | 角色 | 职责 |
 | --- | --- |
-| Builder | 顶层 Agent，依次直接执行 `agent-creation` 和 `benchmark-design` |
+| Builder | 顶层 Agent，依次直接执行 `agent-initialization` 和 `benchmark-design` |
 | Target Agent | 被改进的 Agent，只在自己的 Workspace 里执行评测任务 |
 | Evaluator | `run_subagent` 创建的叶子 Worker，执行并评分一次 Benchmark Case 运行 |
 | Optimizer | 新顶层 Agent，直接执行 `agent-optimization` |
@@ -18,7 +18,7 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。E
 
 ## 两个独立步骤
 
-第一个顶层 Session 创建 Agent 和能力评测。Builder 先使用 `agent-creation`，再使用 `benchmark-design` 构建多 Case Benchmark。初版 Cases 可以一次建好并形成完整 Pilot 1；后续每轮可以同时调整多个 Case 或难度维度。评测契约和私有标准必须明确、固定，公开 Statement 则不必唯一决定 Gold。Benchmark 可以通过公开信息不足、冲突信号和固定的私有决策标准形成信息差，只要该标准表达可复用的策略、优先级或推断边界，而且不会根据本次答案改写。
+第一个顶层 Session 创建 Agent 和能力评测。Builder 先使用 `agent-initialization`，再使用 `benchmark-design` 构建多 Case Benchmark。初版 Cases 可以一次建好并形成完整 Pilot 1；后续每轮可以同时调整多个 Case 或难度维度。评测契约和私有标准必须明确、固定，公开 Statement 则不必唯一决定 Gold。Benchmark 可以通过公开信息不足、冲突信号和固定的私有决策标准形成信息差，只要该标准表达可复用的策略、优先级或推断边界，而且不会根据本次答案改写。
 
 每个新增或修改后的 Case 在首次派发前都要检查 Statement 自洽、Rubric 与当前 Statement 和固定私有标准一致，并确认评分项只依赖已定义、已提供或明确属于私有标准的前提；这不要求公开材料足以复现私有标准。Freeze 前再对所有 Case 完整检查一次。大部分分数应落在目标行为与合理捷径会产生不同结果的决定或简洁产物上，避免格式、证据罗列和分析完整度形成过高的保底分。
 
@@ -80,7 +80,7 @@ benchmarks/<id>/
 
 | Skill | 用途 |
 | --- | --- |
-| `agent-creation` | 把需求变成可用的 Agent：撰写其 `AGENTS.md`、安装所需 Skill |
+| `agent-initialization` | 把需求变成可用的 Agent：撰写其 `AGENTS.md`、安装所需 Skill |
 | `benchmark-design` | 设计并校准多 Case 的能力 Benchmark |
 | `agent-evaluation` | 隔离执行并评分一次 Benchmark Case 运行 |
 | `agent-optimization` | 根据 Benchmark 结果改进 Agent |

@@ -133,7 +133,7 @@ The default recipe when the user wants an app that answers questions over a docu
 ```
 my-app/
   package.json       # "type": "module"; scripts: ingest / start
-  persona.md         # the embedded agent's role — write it per the agent-creation skill
+  persona.md         # the embedded agent's role — write it per the agent-initialization skill
   ingest.ts          # corpus/ → data/index.json; initializes penguin_data/, installs persona
   rag.ts             # BM25 retrieval over the chunk index
   server.ts          # POST /api/ask streams SSE; serves public/
@@ -346,7 +346,7 @@ http.createServer(async (req, res) => {
 - **No Markdown pipeline — set the output format instead**: instruct the embedded agent (in `persona.md` and the per-request prompt) to answer in plain text — short paragraphs separated by blank lines, citations as bare `[n]`, no Markdown syntax. The UI then only escapes the text, splits paragraphs and styles the `[n]` markers; there is no renderer to build. When richer structure genuinely matters, have the model emit a small whitelisted HTML subset (`<p> <ul> <li> <strong> <code>`) and sanitize to exactly that whitelist before inserting — never inject unsanitized model output.
 - **Cross-language retrieval**: the corpus and the user often speak different languages (English docs, Chinese questions), and BM25 is purely lexical — a Chinese question scores zero against English chunks. At ingest time derive a small bilingual keyword map for the corpus's core vocabulary (10–20 domain terms, e.g. `权限 → permissions / allow / deny`, `钩子 → hooks`) and expand query tokens through it in `search()` before scoring; keep the per-character CJK tokenizer. The persona already pins the answer language to the question's language.
 
-**Persona** (`persona.md`) — the embedded agent's role, written per the agent-creation skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
+**Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
 ## Verify before you hand over
 

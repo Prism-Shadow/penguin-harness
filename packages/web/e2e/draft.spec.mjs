@@ -80,7 +80,7 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   // the same prefix, matching the installed `/agent-*` skills — which is what makes the absent
   // command row a real assertion rather than a menu that simply never appeared.
   await ta.fill("/agent");
-  await expect(page.getByRole("button", { name: /^\/agent-creation/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^\/agent-initialization/ })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "/agent 交给其他 Agent，发送时开启新会话" }),
   ).toHaveCount(0);

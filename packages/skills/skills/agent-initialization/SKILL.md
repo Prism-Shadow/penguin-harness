@@ -1,19 +1,19 @@
 ---
-name: agent-creation
-description: Create or configure an Agent State from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.
-short_description: Turn a requirement into a working agent.
-short_description_zh: 把需求变成可用的 Agent。
-version: 7
-updated: 2026-08-03T04:03:59Z
+name: agent-initialization
+description: Initialize an Agent's settings from a user requirement by writing AGENTS.md, setting identity metadata, and installing only needed Skills.
+short_description: Initialize an agent from a requirement.
+short_description_zh: 依据需求初始化一个 Agent 的设置。
+version: 8
+updated: 2026-08-21T00:00:00Z
 ---
 
-# Agent Creation
+# Agent Initialization
 
-This skill turns a user requirement into a working agent configuration — plain files in the target agent's directory.
+This skill initializes an agent's settings from a user requirement — plain files in the target agent's directory.
 
 ## Before you start
 
-If the user's message only invokes this skill (e.g. "use agent-creation skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
+If the user's message only invokes this skill (e.g. "use agent-initialization skill") without a concrete requirement, ask the user what agent they want and what it should do. But when the requirement is already concrete — even a single sentence like "an expert that answers questions about X" — do **not** ask follow-up questions: derive the role and rules from that sentence, apply the defaults below, and list your assumptions in the final reply.
 
 ## Resolve the inherited runtime
 

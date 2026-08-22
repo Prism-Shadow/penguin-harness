@@ -1230,7 +1230,7 @@ When done, open index.html in a browser and self-test once.`,
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
         desc: "Create a general decision Agent and test it on football, after-sales, and investment tasks",
-        prompt: `Use \`agent-creation\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
+        prompt: `Use \`agent-initialization\` followed by \`benchmark-design\` to create a decision Agent and produce a frozen Benchmark with a Formal Baseline.
 
 Agent:
 - id: \`finite_choice_agent\`

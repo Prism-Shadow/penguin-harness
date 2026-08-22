@@ -9,10 +9,10 @@ import { buildSkillsMessage, parseSkillsMessage } from "../src/features/chat/ski
 
 describe("skill-use re-exports the core [use_skills] marker helpers", () => {
   it("builds the square-bracket block and parses it back (round-trip through the feature module)", () => {
-    const text = buildSkillsMessage(["agent-creation", "penguin-cli"], "use them\nline2");
+    const text = buildSkillsMessage(["agent-initialization", "penguin-cli"], "use them\nline2");
     expect(text.startsWith("[use_skills]\n")).toBe(true);
     expect(parseSkillsMessage(text)).toEqual({
-      skills: ["agent-creation", "penguin-cli"],
+      skills: ["agent-initialization", "penguin-cli"],
       rest: "use them\nline2",
     });
   });

@@ -84,7 +84,7 @@ Four Skill groups ship in the box ([docs](https://penguin.ooo/docs/skills)); age
 | Office Productivity  | `data-analysis`, `firecrawl`                                                      |
 | Software Development | `web-design`, `software-engineering`                                              |
 | AI App Development   | `penguin-sdk`, `penguin-cli`, `agenthub-models`, `vllm`, `ollama`, `llamafactory` |
-| Agent Tuning         | `agent-creation`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
+| Agent Tuning         | `agent-initialization`, `benchmark-design`, `agent-evaluation`, `agent-optimization`    |
 
 ## Supported Models
 

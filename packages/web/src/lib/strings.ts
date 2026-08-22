@@ -1187,7 +1187,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",
         desc: "创建一个通用决策 Agent，并用足球、售后和投资任务检验它",
-        prompt: `请依次使用 \`agent-creation\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
+        prompt: `请依次使用 \`agent-initialization\` 和 \`benchmark-design\`，创建决策 Agent，并产出 Frozen Benchmark 与 Formal Baseline。
 
 Agent：
 - id：\`finite_choice_agent\`

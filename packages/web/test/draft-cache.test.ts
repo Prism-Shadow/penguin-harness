@@ -52,7 +52,7 @@ describe("parseDraft (field-by-field validation)", () => {
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
       switchModelRef: { provider: "openai", modelId: "gpt-5" },
-      skills: ["agent-creation", "penguin-sdk"],
+      skills: ["agent-initialization", "penguin-sdk"],
     });
     expect(parseDraft(raw)).toEqual({
       text: "Write me a script",
@@ -62,7 +62,7 @@ describe("parseDraft (field-by-field validation)", () => {
       modelRef: { provider: "anthropic", modelId: "claude-opus-4-8" },
       handoffAgentId: "agent_helper",
       switchModelRef: { provider: "openai", modelId: "gpt-5" },
-      skills: ["agent-creation", "penguin-sdk"],
+      skills: ["agent-initialization", "penguin-sdk"],
     });
   });
 
@@ -121,7 +121,7 @@ describe("parseDraft (field-by-field validation)", () => {
 
   it("skills: non-arrays dropped, non-string elements filtered out, the whole field dropped when empty after filtering", () => {
     // Non-arrays are always discarded
-    expect(parseDraft(JSON.stringify({ skills: "agent-creation" }))).toEqual({});
+    expect(parseDraft(JSON.stringify({ skills: "agent-initialization" }))).toEqual({});
     expect(parseDraft(JSON.stringify({ skills: { 0: "x" } }))).toEqual({});
     expect(parseDraft(JSON.stringify({ skills: 42 }))).toEqual({});
     // Validate each element individually: strings are kept, everything else is filtered out
@@ -142,7 +142,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
       {
         text: "Draft A",
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
-        skills: ["agent-creation"],
+        skills: ["agent-initialization"],
       },
       s,
     );
@@ -150,7 +150,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({
       text: "Draft A",
       modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
-      skills: ["agent-creation"],
+      skills: ["agent-initialization"],
     });
     expect(loadDraft(sessionDraftKey("user-a1", "session-1"), s)).toEqual({
       text: "session draft",
@@ -195,7 +195,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
         text: "keep me",
         agentId: "default_agent",
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
-        skills: ["agent-creation"],
+        skills: ["agent-initialization"],
       },
       s,
     );
@@ -203,7 +203,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
     expect(loadDraft(draftKey("user-a1", "project-a"), s)).toEqual({
       text: "keep me",
       agentId: "default_agent",
-      skills: ["agent-creation"],
+      skills: ["agent-initialization"],
     });
     // No cached pick (or no draft at all): a no-op, never an errant write.
     clearDraftModelRef("user-a1", "project-a", s);
@@ -238,7 +238,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
         modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
         handoffAgentId: "agent_helper",
         switchModelRef: { provider: "openai", modelId: "gpt-5" },
-        skills: ["agent-creation"],
+        skills: ["agent-initialization"],
       },
       s,
     );
@@ -248,7 +248,7 @@ describe("load / save / clear (key isolation, errors silenced)", () => {
       modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       handoffAgentId: "agent_helper",
       switchModelRef: { provider: "openai", modelId: "gpt-5" },
-      skills: ["agent-creation"],
+      skills: ["agent-initialization"],
     });
   });
 
