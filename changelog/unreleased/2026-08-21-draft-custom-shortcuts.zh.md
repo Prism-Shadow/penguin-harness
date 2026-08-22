@@ -3,6 +3,7 @@
 - **Date:** 2026-08-21
 - **Type:** feature
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#401](https://github.com/Prism-Shadow/penguin-harness/pull/401)
 
 [English](2026-08-21-draft-custom-shortcuts.md)
 
