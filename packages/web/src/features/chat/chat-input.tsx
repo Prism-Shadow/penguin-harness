@@ -118,7 +118,6 @@ import {
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
 import { buildExampleFill } from "./example-fill";
-import type { ExampleFill } from "./example-fill";
 import {
   caretOnFirstLine,
   caretOnLastLine,
@@ -1445,27 +1444,21 @@ export function ChatInput({
 
   /**
    * Fill from a draft-screen example card, without sending (see ComposerControl): the prompt
-   * lands as plain text and the example's installed skills join the selection, so pressing
-   * Send builds exactly the `[use_skills]` message the card used to submit on its own. Where
-   * the prompt goes when text is already typed, and which skills survive, is buildExampleFill.
+   * REPLACES the text body — any draft is cleared first — and the example's installed skills
+   * join the selection, so pressing Send builds exactly the `[use_skills]` message the card
+   * used to submit on its own. Why text replaces while skills merge is buildExampleFill.
    */
-  /** The last fill, so a second example can swap an untouched one instead of stacking onto it. */
-  const lastFillRef = useRef<ExampleFill | null>(null);
   const fillExample = useCallback(
     (prompt: string, exampleSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
-        // The live textarea value, not this closure's render-time `text` — same reason as applyRecalled.
-        currentText: textareaRef.current?.value ?? textRef.current,
-        lastFill: lastFillRef.current,
         exampleSkills,
         installedSkills: skills.map((s) => s.name),
         selectedSkills,
       });
-      lastFillRef.current = fill;
       setText(fill.text);
       onTextChange?.(fill.text);
-      setCaret(fill.insertAt);
+      setCaret(0);
       // The merge only ever appends, so an unchanged length means an unchanged selection —
       // and calling back for nothing would rewrite the cached draft on every repeat click.
       if (fill.skills.length !== selectedSkills.length) {
@@ -1478,12 +1471,10 @@ export function ChatInput({
         const el = textareaRef.current;
         if (!el) return;
         el.focus();
-        // Show the prompt from its FIRST line rather than its last, which reads as broken:
-        // parking at the bottom first makes the caret reveal below scroll UP to the insertion
-        // point, and a prompt that took an empty box is simply the top of the box.
-        el.scrollTop = el.scrollHeight;
-        el.setSelectionRange(fill.insertAt, fill.insertAt);
-        if (fill.insertAt === 0) el.scrollTop = 0;
+        // The prompt owns the box, so its first line is the top of it — a long prompt showing
+        // only its last line reads as broken.
+        el.setSelectionRange(0, 0);
+        el.scrollTop = 0;
       });
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],

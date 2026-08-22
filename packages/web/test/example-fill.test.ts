@@ -2,10 +2,10 @@
  * Clicking a draft-screen example FILLS the composer and sends nothing.
  *
  * Two halves. buildExampleFill decides what the composer becomes — the plain prompt (never a
- * `[use_skills]` block, which the send path builds and a user cannot sensibly edit), appended
- * behind a typed draft rather than over it but swapped in over an untouched previous fill,
- * with the example's installed skills joining the selection so that pressing Send produces
- * exactly the message the card used to submit itself.
+ * `[use_skills]` block, which the send path builds and a user cannot sensibly edit), taking the
+ * text body outright so a typed draft is cleared rather than appended to, with the example's
+ * installed skills joining the selection so that pressing Send produces exactly the message the
+ * card used to submit itself.
  * And the click path in draft-view.tsx, checked with the TypeScript parser the way
  * test/command-policy-add-rule.test.ts checks JSX structure: a regex cannot tell which handler
  * an onClick names, and "the card no longer submits" is precisely a claim about that handler.
@@ -23,8 +23,6 @@ const PROMPT = "Build a cute penguin sledding game.";
 const fill = (over: Partial<Parameters<typeof buildExampleFill>[0]> = {}) =>
   buildExampleFill({
     prompt: PROMPT,
-    currentText: "",
-    lastFill: null,
     exampleSkills: [],
     installedSkills: [],
     selectedSkills: [],
@@ -33,9 +31,7 @@ const fill = (over: Partial<Parameters<typeof buildExampleFill>[0]> = {}) =>
 
 describe("buildExampleFill — what lands in the text body", () => {
   it("puts the plain prompt in an empty composer", () => {
-    const f = fill();
-    expect(f.text).toBe(PROMPT);
-    expect(f.insertAt).toBe(0);
+    expect(fill().text).toBe(PROMPT);
   });
 
   it("never writes the [use_skills] block into the textarea", () => {
@@ -47,48 +43,17 @@ describe("buildExampleFill — what lands in the text body", () => {
     expect(f.text).not.toBe(buildSkillsMessage(["web-design"], PROMPT));
   });
 
-  it("keeps a typed draft, appending the prompt behind it after a blank line", () => {
-    const f = fill({ currentText: "already typed" });
-    expect(f.text).toBe(`already typed\n\n${PROMPT}`);
-    // insertAt is where the prompt begins, so the caller can park the caret and the scroll there.
-    expect(f.text.slice(f.insertAt)).toBe(PROMPT);
+  it("clears a typed draft rather than appending behind it", () => {
+    // A click asks for THIS prompt; leaving the old text in front made the user find and
+    // delete the leftover half themselves.
+    expect(fill({ prompt: PROMPT }).text).toBe(PROMPT);
   });
 
-  it("does not stack blank lines on a draft that already ends in newlines", () => {
-    expect(fill({ currentText: "already typed\n\n\n" }).text).toBe(`already typed\n\n${PROMPT}`);
-  });
-
-  it("treats a whitespace-only draft as empty", () => {
-    const f = fill({ currentText: "  \n\t " });
-    expect(f.text).toBe(PROMPT);
-    expect(f.insertAt).toBe(0);
-  });
-
-  it("swaps an untouched previous fill instead of stacking a second prompt onto it", () => {
-    // Browsing the examples is normal; two canned prompts glued together is not what the
-    // second click asked for.
-    const first = fill();
-    const second = fill({ currentText: first.text, lastFill: first, prompt: "Other prompt." });
+  it("leaves nothing of a previous example behind when a second one is clicked", () => {
+    // Browsing the list must not stack one canned prompt behind another.
+    const second = fill({ prompt: "Other prompt." });
     expect(second.text).toBe("Other prompt.");
-    expect(second.insertAt).toBe(0);
-  });
-
-  it("keeps the typed draft the swapped-out fill was sitting behind", () => {
-    const first = fill({ currentText: "already typed" });
-    const second = fill({ currentText: first.text, lastFill: first, prompt: "Other prompt." });
-    expect(second.text).toBe("already typed\n\nOther prompt.");
-  });
-
-  it("appends once the fill has been edited — by then the whole draft is the user's", () => {
-    const first = fill();
-    const edited = `${first.text} and make it blue`;
-    const second = fill({ currentText: edited, lastFill: first, prompt: "Other prompt." });
-    expect(second.text).toBe(`${edited}\n\nOther prompt.`);
-  });
-
-  it("does not double an example clicked twice in a row", () => {
-    const first = fill();
-    expect(fill({ currentText: first.text, lastFill: first }).text).toBe(PROMPT);
+    expect(second.text).not.toContain(PROMPT);
   });
 
   it("carries the dictionary prompt through verbatim, newlines and all", () => {
