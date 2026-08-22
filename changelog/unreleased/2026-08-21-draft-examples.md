@@ -13,7 +13,7 @@ Each of the five is a one- or two-sentence request rather than a full working br
 
 ## The new examples
 
-- **Rhythm runner mini game** (Build web apps, `web-design`) — a Muse Dash-style rhythm runner: the character runs forward on its own, notes travel in with the music, and they are hit on the beat, with audio and visuals kept tightly in sync.
+- **Rhythm runner mini game** (Build web apps, `web-design`) — a Muse Dash-style rhythm runner: a penguin runs forward on its own, notes drawn as music-note icons fly in locked to the beat, and each hit is graded Perfect / Great / Miss with a combo score.
 - **Conversational investment analyst** (Build and optimize agents, `penguin-sdk` + `web-design`) — a stock-market Copilot on the Penguin SDK, modelled on perplexity.ai/finance, that pulls live market data every five minutes from startup and lists the strongest-trending stocks and sector comparison on its home page, with the evidence behind every call. Its stock-lookup tool takes a company name rather than only a ticker, and says so when a company has no match or is not listed instead of inventing a quote. Framed as analysis of public data, not investment advice.
 - **Create scheduled tasks** (new folder, no pinned skills) — three schedules, each saying when it fires:
   - *A 9am daily planning check-in* — every day at 9am, in the same conversation, planning the day and reviewing yesterday's progress.

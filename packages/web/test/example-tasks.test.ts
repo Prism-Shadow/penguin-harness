@@ -180,8 +180,8 @@ describe("short example prompts", () => {
   const shortExamples = [
     {
       id: "rhythmRunner",
-      zhMarkers: ["喵斯快跑", "音乐", "节拍"],
-      enMarkers: ["Muse Dash", "music", "beat"],
+      zhMarkers: ["喵斯快跑", "企鹅", "音符图标", "节拍", "Perfect", "Great", "Miss"],
+      enMarkers: ["Muse Dash", "penguin", "music-note icons", "beat", "Perfect", "Great", "Miss"],
     },
     {
       id: "investmentCopilot",

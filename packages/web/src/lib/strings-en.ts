@@ -1217,12 +1217,12 @@ When done, open index.html in a browser and self-test once.`,
       },
       rhythmRunner: {
         label: "Rhythm runner mini game",
-        desc: "A Muse Dash-style rhythm runner: notes ride in with the music, hit them on the beat",
+        desc: "A Muse Dash-style rhythm runner: a penguin lead, notes locked to the beat, graded Perfect / Great / Miss",
         prompt:
-          "Build a Muse Dash-style rhythm runner: the character runs forward on its own, notes " +
-          "travel in with the music, and I hit them on the beat — audio and visuals have to stay " +
-          "tightly in sync. Grade each hit perfect/good/miss, score combos, and let the difficulty " +
-          "climb as the track goes on. Pure front end, one file, playable straight from file://.",
+          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes — " +
+          "drawn as music-note icons — fly in locked to the beat for me to hit. Show Perfect / " +
+          "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
+          "on. Pure front end, one file, playable straight from file://.",
       },
       investmentCopilot: {
         label: "Conversational investment analyst",
