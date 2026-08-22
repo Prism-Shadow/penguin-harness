@@ -1188,7 +1188,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
         label: "对话式投资分析助理",
         desc: "用 Penguin SDK 做能看盘的 Copilot：启动即周期刷新大盘与板块，每个判断都给出依据",
         prompt:
-          "用 Penguin SDK 做一个股市 Copilot：启动后每 5 分钟实时抓取大盘行情，" +
+          "用 Penguin SDK 做一个股市 Copilot，形态参考 perplexity.ai/finance：启动后每 5 分钟实时抓取大盘行情，" +
           "分析板块强弱、挑出走势较好的股票，每个判断都给出依据（数据、指标、时间区间），" +
           "只做分析不是投资建议；另配一个 CLI，可以查询特定股票的行情与同样的分析。",
       },

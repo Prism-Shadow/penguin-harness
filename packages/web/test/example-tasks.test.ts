@@ -185,9 +185,19 @@ describe("short example prompts", () => {
     },
     {
       id: "investmentCopilot",
-      zhMarkers: ["Penguin SDK", "启动后", "实时抓取", "板块", "股票", "依据", "CLI"],
+      zhMarkers: [
+        "Penguin SDK",
+        "perplexity.ai/finance",
+        "启动后",
+        "实时抓取",
+        "板块",
+        "股票",
+        "依据",
+        "CLI",
+      ],
       enMarkers: [
         "Penguin SDK",
+        "perplexity.ai/finance",
         "from startup",
         "live market",
         "sector",
@@ -202,8 +212,10 @@ describe("short example prompts", () => {
   ] as const;
 
   it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
-    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(140);
-    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(420);
+    // investmentCopilot sits highest: it carries four requirements plus a reference URL, which
+    // is ~21 characters of literal that no rewording can compress.
+    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(170);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(460);
   });
 
   // What is left after the cut: what to build, and the constraints without which the result

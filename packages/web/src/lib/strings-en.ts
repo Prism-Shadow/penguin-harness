@@ -1228,7 +1228,8 @@ When done, open index.html in a browser and self-test once.`,
         label: "Conversational investment analyst",
         desc: "A market-watching Copilot on the Penguin SDK: refreshes the market view on a cycle from startup, with the evidence behind every call",
         prompt:
-          "Build a stock-market Copilot on the Penguin SDK: from startup it pulls live market data " +
+          "Build a stock-market Copilot on the Penguin SDK, along the lines of perplexity.ai/finance: " +
+          "from startup it pulls live market data " +
           "every 5 minutes, weighs the sectors against each other and picks out the stocks trending " +
           "strongest, giving the evidence behind every call — the data, the indicators, the window it " +
           "read. Analysis of public data, not investment advice. Add a CLI that looks up one ticker " +
