@@ -82,8 +82,8 @@ describe("draft example tasks", () => {
 
       // The build draft names both skills, in the order it runs them; the scenario copy each
       // one is described with is free to change.
-      expect(normalizedBuild).toContain("`agent-creation`");
-      expect(normalizedBuild.indexOf("`agent-creation`")).toBeLessThan(
+      expect(normalizedBuild).toContain("`agent-initialization`");
+      expect(normalizedBuild.indexOf("`agent-initialization`")).toBeLessThan(
         normalizedBuild.indexOf("`benchmark-design`"),
       );
       expect(normalizedOptimization).toContain("`agent-optimization`");

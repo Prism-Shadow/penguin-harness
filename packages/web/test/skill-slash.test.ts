@@ -74,7 +74,7 @@ describe("localizedShortText (short description first, falling back to the full 
 describe("skillSlashItems (slash skill command item assembly)", () => {
   const skills: SkillMetadataItem[] = [
     {
-      name: "agent-creation",
+      name: "agent-initialization",
       description: "Create agents from requirements",
       version: 1,
       updated: "2026-07-01",
@@ -84,11 +84,19 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
 
   it("one item per skill: cmd is /<skill_name>, desc follows the UI language (falling back to English without a Chinese short description)", () => {
     expect(skillSlashItems(skills, "zh")).toEqual([
-      { name: "agent-creation", cmd: "/agent-creation", desc: "Create agents from requirements" },
+      {
+        name: "agent-initialization",
+        cmd: "/agent-initialization",
+        desc: "Create agents from requirements",
+      },
       { name: "penguin-sdk", cmd: "/penguin-sdk", desc: "Develop with the Penguin SDK" },
     ]);
     expect(skillSlashItems(skills, "en")).toEqual([
-      { name: "agent-creation", cmd: "/agent-creation", desc: "Create agents from requirements" },
+      {
+        name: "agent-initialization",
+        cmd: "/agent-initialization",
+        desc: "Create agents from requirements",
+      },
       { name: "penguin-sdk", cmd: "/penguin-sdk", desc: "Develop with the Penguin SDK" },
     ]);
   });
@@ -108,7 +116,7 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
   it("desc prefers the short description (falling back to the full one when missing)", () => {
     const withShort: SkillMetadataItem[] = [
       {
-        name: "agent-creation",
+        name: "agent-initialization",
         description: "Create agents from requirements",
         shortDescription: "Create agents",
         shortDescriptionZh: "创建 Agent",
@@ -127,8 +135,8 @@ describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en di
       ["zh", zh],
       ["en", en],
     ] as const) {
-      expect(dict.skills.quickInvokeText("agent-creation"), locale).toBe(
-        dict.chat.skillsAutoMessage(["agent-creation"]),
+      expect(dict.skills.quickInvokeText("agent-initialization"), locale).toBe(
+        dict.chat.skillsAutoMessage(["agent-initialization"]),
       );
     }
   });
@@ -137,7 +145,7 @@ describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en di
 describe("filterSkills (search filter for the skill dropdown)", () => {
   const skills: SkillMetadataItem[] = [
     {
-      name: "agent-creation",
+      name: "agent-initialization",
       description: "Create agents from requirements",
       version: 1,
       updated: "2026-07-01",
@@ -157,10 +165,10 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
 
   it("filters by display copy: zh matches the Chinese short description, en always uses English", () => {
     const withZh = [{ ...skills[0]!, shortDescriptionZh: "把需求变成 Agent" }, skills[1]!];
-    expect(filterSkills(withZh, "zh", "需求").map((s) => s.name)).toEqual(["agent-creation"]);
+    expect(filterSkills(withZh, "zh", "需求").map((s) => s.name)).toEqual(["agent-initialization"]);
     expect(filterSkills(withZh, "en", "需求")).toEqual([]);
     expect(filterSkills(skills, "en", "requirements").map((s) => s.name)).toEqual([
-      "agent-creation",
+      "agent-initialization",
     ]);
   });
 
@@ -171,12 +179,16 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
 
 describe("skillsAutoMessage (auto-invoke text for empty-body sends, zh/en dictionaries)", () => {
   it("zh: skill names joined with 、, same wording for singular and plural", () => {
-    expect(zh.chat.skillsAutoMessage(["agent-creation"])).toBe("使用 agent-creation 技能");
+    expect(zh.chat.skillsAutoMessage(["agent-initialization"])).toBe(
+      "使用 agent-initialization 技能",
+    );
     expect(zh.chat.skillsAutoMessage(["a", "b"])).toBe("使用 a、b 技能");
   });
 
   it("en: singular use the <name> skill, plural comma-joined + skills", () => {
-    expect(en.chat.skillsAutoMessage(["agent-creation"])).toBe("use the agent-creation skill");
+    expect(en.chat.skillsAutoMessage(["agent-initialization"])).toBe(
+      "use the agent-initialization skill",
+    );
     expect(en.chat.skillsAutoMessage(["a", "b"])).toBe("use the a, b skills");
   });
 });
