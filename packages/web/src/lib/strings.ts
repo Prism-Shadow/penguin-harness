@@ -1109,11 +1109,6 @@ export const zh = {
     /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
     shortcuts: {
       folder: "我的快捷指令",
-      /**
-       * Empty folder. Says what a shortcut is for and what it does, because the row below it is
-       * the only way in — the folder is otherwise blank and would read as broken.
-       */
-      empty: "把常用的提示词存下来，下次点一下就填进输入框。",
       new: "新建快捷指令",
       /**
        * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the

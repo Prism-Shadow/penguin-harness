@@ -172,11 +172,6 @@ export function ShortcutsFolder({
         <div className="mt-0.5 overflow-y-auto pl-4" style={{ height: bodyHeight }}>
           {loaded && (
             <ul className="space-y-0.5">
-              {shortcuts.length === 0 && (
-                <li className="px-2 py-1.5 text-sm text-gray-400 dark:text-gray-500">
-                  {S.chat.shortcuts.empty}
-                </li>
-              )}
               {shortcuts.map((shortcut) => (
                 <li key={shortcut.id} className="flex items-center gap-1">
                   <button

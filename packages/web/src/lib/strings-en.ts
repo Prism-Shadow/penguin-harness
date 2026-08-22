@@ -1152,7 +1152,6 @@ export const en: Strings = {
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
     shortcuts: {
       folder: "My shortcuts",
-      empty: "Save a prompt you use often — one click drops it back into the composer.",
       new: "New shortcut",
       newFromComposer: "Starts from whatever is in the composer",
       full: (max: number) => `At most ${max} shortcuts`,
