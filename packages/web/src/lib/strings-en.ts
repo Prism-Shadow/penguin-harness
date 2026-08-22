@@ -1217,64 +1217,19 @@ When done, open index.html in a browser and self-test once.`,
       },
       rhythmRunner: {
         label: "Rhythm runner mini game",
-        desc: "A Muse Dash-style two-lane rhythm runner: timed hits and dodges, graded judgments, combo and a results screen",
-        prompt: `Build a Muse Dash-style side-scrolling rhythm runner: the character runs forward on its own, notes travel in from the right with the music, and the player hits them on the judgment line. Pure frontend, a single HTML file that plays straight from file://, with no CDN assets.
-
-## How it plays
-- Two lanes, air and ground: F or ↑ for the upper lane, J or ↓ for the lower one; on phones, the left and right halves of the screen own one lane each.
-- Three kinds of object: plain notes (hit them at the judgment line), hold notes (hold to the tail), and hazards (do not hit — switch lanes to dodge).
-- Three judgments — Perfect / Great / Miss (suggest ±45ms / ±90ms) — with live combo, accuracy and score; a Miss breaks the combo.
-- At least two difficulties: Easy is plain notes at low density; Hard adds holds and hazards and packs them tighter.
-- A 3-second countdown at the start, plus pause and one-click restart.
-
-## Music and sync (this is where the feel lives — do not cut it)
-- Synthesize the track live with the Web Audio API (oscillators plus noise percussion). No external audio files: fetching a local file is blocked under file://, and CDNs are off the table.
-- Generate the chart from the same beat grid as the music: fix a BPM, then place notes on beat positions, so audio and visuals line up by construction.
-- Take every judgment timestamp from AudioContext.currentTime — never a requestAnimationFrame accumulator and never audio.currentTime; requestAnimationFrame only draws.
-- Ship latency calibration: an offset (in milliseconds) in the settings, plus a "tap along with the beat" calibration screen that measures a suggested value.
-- Include 2–3 tracks at different BPMs (say 100 / 128 / 160), switchable from a song-select screen.
-
-## Feel and results
-- Cute cartoon look, dark by default, following the web-design skill: particles and a judgment word pop on each hit, the combo counter scales up, and the background pulses gently on the beat.
-- The results screen shows Perfect / Great / Miss counts, max combo, accuracy and a grade (S / A / B / C), with restart and song-select.
-
-## Wrap-up
-- Self-test from file:// in a browser: clear at least one full track, and confirm judgments are still accurate after 30 seconds of play (no audio/visual drift), that pause and restart work, and that a narrow screen does not collapse.
-- Tell me how to open it, what the keys are, and where the latency calibration lives.`,
+        desc: "A Muse Dash-style rhythm runner: notes ride in with the music, hit them on the beat",
+        prompt:
+          "Build a Muse Dash-style rhythm runner: the character runs forward on its own, notes " +
+          "travel in with the music, and I hit them on the beat — audio and visuals have to stay " +
+          "tightly in sync.",
       },
       investmentCopilot: {
         label: "Conversational investment analyst",
         desc: "A market-watching Copilot on the Penguin SDK: refreshes the market view on a cycle from startup, with the evidence behind every call",
-        prompt: `Build a conversational investment analyst — a stock-market Copilot — on the Penguin SDK: it fetches live market data, analyzes the broad market on a recurring cycle, says which sectors and trends look strong, and states the evidence behind every call.
-
-## Data layer
-- Pick a free public quote source that needs no key, or one whose key is trivial to get — the Stooq CSV endpoints or the Yahoo Finance chart endpoint, for instance. Before writing any code, hit it with curl to confirm it is alive and to read the real field names; if it is dead, switch sources rather than coding against a remembered shape.
-- Wrap it in one data module: latest quotes and historical candles for indices, sectors and individual tickers, with a local cache and retry on failure. Every fetch records its timestamp and its source URL.
-- The browser never calls the upstream source directly — all fetching goes through this app's backend, so there is no key exposure and no CORS surprise.
-
-## Periodic analysis, running from startup
-- On startup the app immediately runs one full fetch and analysis, then keeps refreshing the home page's market view on a fixed cycle (default 5 minutes, configurable) — it updates on its own, not only when someone asks.
-- Each cycle produces: the major indices with their moves and volume, a sector leaderboard, the leading and lagging names, and a trend read built from indicators you can actually compute (moving averages, percentage change, volume change).
-- The home page shows the last-updated time and a countdown to the next refresh. When a fetch fails, keep the last good data on screen and mark it stale with the reason — never blank the page or drop to an empty state.
-- Persist each cycle's result (JSON or SQLite, your call) so the chat and the CLI read the same analysis instead of each computing its own.
-
-## Conversation (Penguin SDK)
-- Embed an agent with @prismshadow/penguin-core: createSession + session.run() streaming, behind a web chat UI following the web-design skill.
-- Expose the data layer as small command-line tools under tools/ and describe them in the embedded agent's AGENTS.md, so it reaches market data through exec_command rather than answering from memory.
-- It should handle questions like "how did the market do today", "which sectors are strong", "what is AAPL doing right now", "keep an eye on semiconductors for me".
-
-## CLI
-- Ship a command-line entry for single-ticker lookups, e.g. \`npm run stock -- AAPL\` / \`node cli.ts 600519\`: print the latest price, change, volume, the day's and the period's range, how its sector is doing, and the same trend read the web surface gives, with its evidence underneath.
-- The CLI imports the same data layer and the same analysis module as the web app — do not reimplement the logic. Support \`--json\` so it can be piped.
-
-## Evidence and framing (non-negotiable)
-- Every conclusion carries its evidence: the numbers, their timestamp, the source URL, and which indicator produced it. A call you cannot support that way does not get printed.
-- Say so plainly when data is missing, delayed or self-contradictory. Never fill a gap with a guess.
-- Everything is framed as analysis of public data, not investment advice — state that in the UI and in the CLI output, and do not emit action instructions like "buy" or "sell".
-
-## Wrap-up
-- Run it and self-test: confirm the home page really refreshed at least twice with nobody touching it, that the CLI returns real data for one ticker, and that a chat question streams an answer carrying its evidence.
-- Tell me how to start it, how to use the CLI, and where to change the refresh interval.`,
+        prompt:
+          "Build a stock-market Copilot on the Penguin SDK: from startup it refreshes the market " +
+          "and sector picture every 5 minutes and states the evidence behind each trend call — " +
+          "analysis of public data, not investment advice. Add a CLI that looks up one ticker.",
       },
       rag: {
         label: "Build a Claude Code docs RAG agent",
@@ -1325,64 +1280,23 @@ Scenarios:
       dailyPlan: {
         label: "A 9am daily planning check-in",
         desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
-        prompt: `Set up a scheduled task: every day at 9am my local time, talk through the day's work plan with me — right here in this conversation, so the progress review has context to work from.
-
-## Before you start
-- Check that your system prompt has a "Scheduled Tasks" section. If it does not, stop and tell me to open Agent settings → Schedules and insert the {{SCHEDULES}} placeholder into the template first.
-- Run \`date\` for the server's current date and UTC offset — computing the first trigger needs both. Ask me if my timezone differs from the server's.
-
-## The task file
-- Scheduled tasks are TOML files in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\`, one file per task (create the directory if it is missing).
-- Write one \`daily-plan.toml\`: \`enabled = true\`, \`period = "24h"\`, and \`start_at\` at the next 09:00 local, written as an ISO 8601 instant with the offset.
-- Put this conversation's Session ID (it is in your Environment section) in \`session_id\`, so each morning lands back here instead of opening a new chat.
-- If my timezone observes DST, flag it: a fixed 24h period drifts by an hour across the switch, and \`start_at\` needs a nudge then.
-
-## What it says each morning
-The \`prompt\` field is the message that arrives every morning. Have it: read back over this conversation for yesterday's plan and say what got done, what slipped and where it is stuck; then ask what today needs, offering an ordered shortlist with one line of reasoning per item rather than an open question; and once I confirm, write today's plan out as a checklist. Keep it short — this is a morning check-in, not a report.
-
-## Wrap-up
-- Scheduled tasks only fire while the web service is running, and the server picks up a new file within about 30 seconds — there is nothing to register.
-- Tell me the file name, its first trigger time and the Session it is bound to, and that Agent settings → Schedules is where I can view, edit or disable it.`,
+        prompt:
+          "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
+          "with me and review yesterday's progress.",
       },
       githubDigest: {
         label: "Daily GitHub project digest",
         desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
-        prompt: `Set up a scheduled task that summarizes one GitHub project every day and ends in prioritized recommendations.
-
-## Before you start
-- Ask me which repository (owner/repo) and what time of day; default to 09:30 local if I have no preference.
-- Check that your system prompt has a "Scheduled Tasks" section — if not, tell me to insert the {{SCHEDULES}} placeholder from Agent settings → Schedules first.
-- Confirm \`gh auth status\` is healthy and that \`gh\` can reach the repo; if it cannot, tell me how to log in and stop there.
-
-## The task file
-- Write \`github-digest.toml\` in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it is missing): \`enabled = true\`, \`period = "24h"\`, and \`start_at\` at the next occurrence of the agreed time, as an ISO 8601 instant with the offset.
-- Leave \`session_id\` out: every run should open its own Session, so each day is a self-contained digest rather than one conversation that grows forever. If I have a local checkout, point \`workspace\` at it.
-
-## What the digest contains
-Each run starts in a fresh Session with no context, so the \`prompt\` field has to carry the whole job. Have it gather with the gh CLI: issues and PRs opened, closed and merged in the last 24 hours; open PRs awaiting review and how long they have been waiting; failed CI runs on the default branch; milestones and anything near a due date; issues with no activity for a long time. Then report a short state paragraph, a list of what changed, and the risks. It must end with a "Recommendations" section graded P0 / P1 / P2, each item saying what to do, why, and which issue or PR it refers to, with links. Anything gh could not retrieve gets said out loud, never guessed.
-
-## Wrap-up
-- Before handing over, run that prompt body yourself once so we know every gh command in it actually works, and show me the output.
-- Tell me the file name, the next trigger time, and that Agent settings → Schedules is where to edit or disable it.`,
+        prompt:
+          "Set up a scheduled task: every morning, digest one GitHub repo's issues, PRs and CI, " +
+          "ending with recommendations ranked by priority.",
       },
       memoryReview: {
         label: "Friday memory review",
         desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
-        prompt: `Set up a scheduled task: every Friday evening, go through what is worth remembering from the week with me, and record it in Memory yourself.
-
-## Before you start
-- Check that your system prompt has both a "Memory" section and a "Scheduled Tasks" section. If either is missing, stop and tell me to insert {{MEMORY}} / {{SCHEDULES}} into the template from Agent settings → Memory and Schedules.
-- Run \`date\` for the server's current date, weekday and UTC offset, then ask what time on Friday suits me; default to 18:00 local if I have no preference.
-
-## The task file
-- Write \`weekly-memory-review.toml\` in \`<app_data_dir>/agents/<agent_id>/agent_state/schedule/\` (create the directory if it is missing): \`enabled = true\`, \`period = "7d"\`, and \`start_at\` at the next Friday at the agreed hour, as an ISO 8601 instant with the offset.
-- Set \`session_id\` to this conversation's Session ID (see your Environment section): the review needs me to answer, so it should land in a chat I am already in rather than opening a new one every week.
-
-## What the review does
-Have the \`prompt\` field walk you through it: read the \`MEMORY.md\` index in the user memory directory first and list what is already recorded, so nothing gets written twice; then ask me about the week with concrete questions rather than "anything to remember?" — new preferences and ways of working, decisions and the reasoning behind them, traps hit and how to avoid them, goals and constraints that will still hold next month, where a resource lives. For each item I confirm, write one file in the format the Memory section specifies: one fact per file, \`name\` / \`description\` / \`updated_at\` in the frontmatter, **Why:** and **How to apply:** in the body, \`[[name]]\` links to related entries — and update that directory's \`MEMORY.md\` index in the same round, additions, merges and deletions alike. Where the week contradicts an existing memory, rewrite or delete that entry instead of stacking a second one. Never record what the code, config or git history already states, task progress, secrets, unconfirmed guesses, or chunks of transcript. Finish by listing what was added, changed and removed.
-
-## Wrap-up
-- Tell me the file name, the first trigger time, the Session it is bound to, and that Agent settings → Schedules is where to edit or disable it.`,
+        prompt:
+          "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
+          "what is worth remembering from the week with me, and write what I confirm into Memory.",
       },
     },
     sessionList: "Sessions",

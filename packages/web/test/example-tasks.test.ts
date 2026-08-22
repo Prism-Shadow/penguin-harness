@@ -114,7 +114,7 @@ describe("draft example catalog", () => {
         const copy = dict.chat.exampleTasks[id];
         expect(copy.label).not.toBe("");
         expect(copy.desc).not.toBe("");
-        // The submitted prompt is the working brief, not a longer version of the row tooltip.
+        // The prompt is the request; the description is only the row's tooltip for it.
         expect(copy.prompt.length).toBeGreaterThan(copy.desc.length);
       }
     }
@@ -136,22 +136,82 @@ describe("scheduled-task examples", () => {
     expect(folder?.tasks.map((task) => task.id)).toEqual([...scheduleIds]);
   });
 
-  it.each(scheduleIds)("%s describes the real schedule mechanism in both locales", (id) => {
-    for (const dict of [zh, en]) {
-      const prompt = dict.chat.exampleTasks[id].prompt;
-      // A schedule is a TOML file in this directory, explicitly enabled, with a first trigger
-      // time — a prompt missing any of the three is instructing against an API that does not
-      // exist. `period` is a fixed interval (30m / 12h / 7d); there is no cron syntax to reach for.
-      expect(prompt).toContain("agent_state/schedule/");
-      expect(prompt).toContain("enabled = true");
-      expect(prompt).toContain("start_at");
-      expect(prompt).not.toContain("cron");
+  // Two things a shortened schedule brief cannot lose. WHEN it fires: a schedule with no time
+  // in it is not a schedule, and the Agent has nothing to ask about it that would not be a
+  // guess. And, for the two check-ins that need the user to answer, that they run in the
+  // conversation the user is already in — the default is a fresh Session per run, which for
+  // those two would be wrong. How the schedule is written (TOML under agent_state/schedule/,
+  // `enabled`, `start_at`) is in the Agent's own Scheduled Tasks section; the prompt no longer
+  // repeats it. `period` is a fixed interval (30m / 12h / 7d), so cron syntax is always wrong.
+  it.each([
+    {
+      id: "dailyPlan",
+      zhMarkers: ["每天", "9 点", "这个会话"],
+      enMarkers: ["every day", "9am", "this same conversation"],
+    },
+    { id: "githubDigest", zhMarkers: ["每天"], enMarkers: ["every morning"] },
+    {
+      id: "memoryReview",
+      zhMarkers: ["每周五", "这个会话"],
+      enMarkers: ["every Friday", "this same conversation"],
+    },
+  ] as const)("$id says when it fires in both locales", ({ id, zhMarkers, enMarkers }) => {
+    const zhPrompt = zh.chat.exampleTasks[id].prompt;
+    const enPrompt = en.chat.exampleTasks[id].prompt;
+    for (const marker of zhMarkers) {
+      expect(zhPrompt).toContain(marker);
+    }
+    for (const marker of enMarkers) {
+      expect(enPrompt).toContain(marker);
+    }
+    expect(zhPrompt).not.toContain("cron");
+    expect(enPrompt).not.toContain("cron");
+  });
+});
+
+/**
+ * These five are written to be read by the user before they run, so each is a sentence or two
+ * carrying only what the request would be wrong without. The caps below are a ceiling against
+ * re-inflation, not a target. Only these five are covered: the older briefs in the catalog are
+ * still long and are being shortened separately.
+ */
+describe("short example prompts", () => {
+  const shortExamples = [
+    {
+      id: "rhythmRunner",
+      zhMarkers: ["喵斯快跑", "音乐", "节拍"],
+      enMarkers: ["Muse Dash", "music", "beat"],
+    },
+    {
+      id: "investmentCopilot",
+      zhMarkers: ["Penguin SDK", "启动后", "板块", "依据", "CLI"],
+      enMarkers: ["Penguin SDK", "from startup", "sector", "evidence", "CLI"],
+    },
+    { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
+    { id: "githubDigest", zhMarkers: ["GitHub", "优先级"], enMarkers: ["GitHub", "priority"] },
+    { id: "memoryReview", zhMarkers: ["Memory"], enMarkers: ["Memory"] },
+  ] as const;
+
+  it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
+    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(90);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(280);
+  });
+
+  // What is left after the cut: what to build, and the constraints without which the result
+  // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
+  // is a Penguin SDK app that refreshes from startup and ships a single-ticker CLI).
+  it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
+    for (const marker of zhMarkers) {
+      expect(zh.chat.exampleTasks[id].prompt).toContain(marker);
+    }
+    for (const marker of enMarkers) {
+      expect(en.chat.exampleTasks[id].prompt).toContain(marker);
     }
   });
 });
 
 describe("investment copilot example", () => {
-  // The brief is analysis with stated evidence, never a recommendation to act.
+  // Short as it is, the brief stays analysis with stated evidence, never a call to act.
   it.each([
     { locale: "zh", prompt: zh.chat.exampleTasks.investmentCopilot.prompt, marker: "不是投资建议" },
     {
