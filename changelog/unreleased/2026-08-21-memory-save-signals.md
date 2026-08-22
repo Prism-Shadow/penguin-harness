@@ -25,10 +25,10 @@ told to ask in the conversation.
 ## Details
 
 - The prompt is a kernel-managed config leaf. The `2026-08-21` generation's `memory.prompt` hash was
-  revised in place (that generation is unreleased); the five frozen older generations keep the
-  previous hash, so an Agent whose stored prompt is still an old default is recognized as such and
-  advanced by the kernel update. An Agent whose prompt was edited by hand keeps that edit and does
-  not receive the new guidance; the only way to adopt it is Agent settings → Kernel → Restore
+  revised in place rather than appended to, that generation having shipped in no release. The five
+  frozen older generations keep their previous hashes, so an Agent whose stored prompt is still an
+  old default is recognized as such and advanced by the kernel update. An Agent whose prompt was
+  edited by hand keeps that edit and does not receive the new guidance; the only way to adopt it is Agent settings → Kernel → Restore
   default configuration, which replaces the whole config and is not scoped to the prompt.
 - The Configuration guide's Memory chapter gained one sentence covering the same ground, in both
   languages.
