@@ -33,6 +33,10 @@
     "./hmr/manifest": {
       "types": "./dist/hmr/manifest.d.ts",
       "import": "./dist/hmr/manifest.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin-sdk.d.ts",
+      "import": "./dist/plugin-sdk.js"
     }
   },
   "main": "./dist/index.js",
