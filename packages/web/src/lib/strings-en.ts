@@ -1150,6 +1150,26 @@ export const en: Strings = {
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "Click to fill the composer — edit it if you like, then send",
+    shortcuts: {
+      folder: "My shortcuts",
+      empty: "Save a prompt you use often — one click drops it back into the composer.",
+      new: "New shortcut",
+      newFromComposer: "Starts from whatever is in the composer",
+      full: (max: number) => `At most ${max} shortcuts`,
+      createTitle: "New shortcut",
+      editTitle: "Edit shortcut",
+      titleLabel: "Name",
+      titleHint: (max: number) => `At most ${max} characters`,
+      promptLabel: "Prompt",
+      promptHint: (max: number) => `At most ${max} characters`,
+      promptInfo:
+        "Clicking this shortcut puts the text into the composer verbatim and sends nothing; Skills stay a separate pick in the composer.",
+      titleTooLong: (max: number) => `The name may be at most ${max} characters`,
+      promptTooLong: (max: number) => `The prompt may be at most ${max} characters`,
+      deleteTitle: "Delete shortcut",
+      deleteConfirm: (title: string) =>
+        `Delete "${title}"? The shortcut disappears from every device you use.`,
+    },
     exampleTasks: {
       game: {
         label: "2D penguin sled game",

@@ -1106,6 +1106,36 @@ export const zh = {
     },
     /** Second tooltip line on an example row: the click fills the composer, it does not send. */
     exampleFillHint: "点击填入输入框，可修改后自行发送",
+    /** The examples block's last folder: prompts the user wrote and saved, stored per user on the server. */
+    shortcuts: {
+      folder: "我的快捷指令",
+      /**
+       * Empty folder. Says what a shortcut is for and what it does, because the row below it is
+       * the only way in — the folder is otherwise blank and would read as broken.
+       */
+      empty: "把常用的提示词存下来，下次点一下就填进输入框。",
+      new: "新建快捷指令",
+      /**
+       * Tooltip on the new-shortcut row. Unconditional, and worded to hold either way: the
+       * editor opens on whatever the composer holds, which is a blank draft when it holds
+       * nothing — saving what was just typed is the path this folder exists to shorten.
+       */
+      newFromComposer: "以输入框中的内容作为起点",
+      full: (max: number) => `最多保存 ${max} 条快捷指令`,
+      createTitle: "新建快捷指令",
+      editTitle: "编辑快捷指令",
+      titleLabel: "名称",
+      titleHint: (max: number) => `最多 ${max} 个字符`,
+      promptLabel: "提示词",
+      promptHint: (max: number) => `最多 ${max} 个字符`,
+      /** Semantics behind the prompt field's "?": what the saved text does when clicked. */
+      promptInfo:
+        "点击这条快捷指令时，这段文字会原样填入输入框，不会自动发送；需要的 Skill 仍在输入框里自行勾选。",
+      titleTooLong: (max: number) => `名称最多 ${max} 个字符`,
+      promptTooLong: (max: number) => `提示词最多 ${max} 个字符`,
+      deleteTitle: "删除快捷指令",
+      deleteConfirm: (title: string) => `确定删除「${title}」？该快捷指令会从你的所有设备上消失。`,
+    },
     /**
      * Example task cards on the draft screen: one click fills the composer with the canned
      * prompt, which the user then sends. These are the FULL working prompts — descriptions stay
