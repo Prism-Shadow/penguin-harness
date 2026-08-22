@@ -1226,15 +1226,16 @@ When done, open index.html in a browser and self-test once.`,
       },
       investmentCopilot: {
         label: "Conversational investment analyst",
-        desc: "A market-watching Copilot on the Penguin SDK: refreshes the market view on a cycle from startup, with the evidence behind every call",
+        desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
         prompt:
-          "Build a stock-market Copilot on the Penguin SDK, along the lines of perplexity.ai/finance: " +
-          "from startup it pulls live market data every 5 minutes, and the home page lists the stocks " +
-          "trending strongest lately alongside how the sectors compare, with the evidence behind every " +
-          "call — the data, the indicators, the window it read. Analysis of public data, not investment " +
-          "advice. Give the assistant a stock-lookup tool that handles questions like \"look up Zhipu's " +
-          'stock for me": resolve a company name to its ticker itself, and when there is no match or ' +
-          "the company is not listed, say so rather than inventing a quote.",
+          "Build a conversational stock-market Copilot on the Penguin SDK, along the lines of " +
+          "perplexity.ai/finance: from startup it pulls live market data every 5 minutes, and the " +
+          "home page lists the stocks trending strongest lately alongside how the sectors compare. " +
+          "Every call has to name the market factors behind it — policy, sector news, fund flows, " +
+          "earnings, macro data — rather than technical indicators. Analysis of public data, not " +
+          "investment advice. Its stock-lookup tool has to handle questions like \"look up Zhipu's " +
+          'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
+          "or the company is not listed, say so rather than inventing a quote.",
       },
       rag: {
         label: "Build a Claude Code docs RAG agent",
