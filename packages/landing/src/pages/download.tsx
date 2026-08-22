@@ -1,13 +1,16 @@
 /**
  * Desktop download page. The buttons are static GitHub `releases/latest/download/<name>`
  * links by default — always valid because installer names are version-less — and swap to
- * the OSS mirror's immutable per-tag URLs once the bucket's `latest.json` pointer
- * resolves (validated the same way the installers validate it; any failure, e.g. CORS
- * not configured on the bucket or the mirror unreachable, silently keeps the GitHub
- * links). Plain-anchor downloads are never CORS-gated — only this version lookup is.
- * Below the cards, a first-launch FAQ covers the unsigned builds — one collapsible item
- * per platform (macOS quarantine removal, SmartScreen, AppImage execute bit), with the
- * visitor's own platform pre-expanded.
+ * the OSS mirror's immutable per-tag URLs only when the mirror earns them: the bucket's
+ * `latest.json` pointer has to resolve (validated the same way the installers validate
+ * it), and the speed probe in lib/download-source.ts has to find the mirror clearly
+ * faster than GitHub here, by the same rule install.sh and install.ps1 apply. Any failure
+ * along the way — CORS not configured on the bucket, the mirror unreachable, Data Saver
+ * on — silently keeps the free GitHub links. Plain-anchor downloads are never CORS-gated;
+ * only the version lookup and the probe are. Whatever the probe decides, the visitor can
+ * still switch sources by hand below the cards. Below that, a first-launch FAQ covers the
+ * unsigned builds — one collapsible item per platform (macOS quarantine removal,
+ * SmartScreen, AppImage execute bit), with the visitor's own platform pre-expanded.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -25,6 +28,8 @@ import {
 } from "../lib/links";
 import { detectPlatform } from "../lib/platform";
 import type { Platform } from "../lib/platform";
+import { fetchLargeProbe, probeDownloadSource, probingAllowed } from "../lib/download-source";
+import type { DownloadSource } from "../lib/download-source";
 import { Section } from "../components/section";
 import { CodeCard } from "../components/code-card";
 import { ChevronDownIcon, DownloadIcon, ExternalLinkIcon } from "../components/icons";
@@ -78,26 +83,47 @@ function parseMirror(value: unknown): Mirror | null {
 
 export function DownloadPage() {
   const [mirror, setMirror] = useState<Mirror | null>(null);
-  const [forceGithub, setForceGithub] = useState(false);
+  /** What the probe settled on; null while it is still running or never ran. */
+  const [probed, setProbed] = useState<DownloadSource | null>(null);
+  /** The visitor's own choice, which outranks the probe for the rest of the visit. */
+  const [override, setOverride] = useState<DownloadSource | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    fetch(OSS_LATEST_JSON_URL, { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: unknown) => {
-        const parsed = parseMirror(body);
-        if (parsed) setMirror(parsed);
-      })
-      .catch(() => {}) // The GitHub links already work; the mirror is a progressive upgrade.
-      .finally(() => clearTimeout(timer));
+    const lookupTimer = setTimeout(() => controller.abort(), 5000);
+    let cancelled = false;
+    // Resolve the mirror, then measure. Every failure lands on GitHub, which the buttons already
+    // point at — nothing here can leave the page without a working download.
+    void (async () => {
+      let found: Mirror | null = null;
+      try {
+        const res = await fetch(OSS_LATEST_JSON_URL, { signal: controller.signal });
+        found = res.ok ? parseMirror(await res.json()) : null;
+      } catch {
+        found = null;
+      }
+      clearTimeout(lookupTimer);
+      if (cancelled || !found) return;
+      setMirror(found);
+      if (!probingAllowed()) return;
+      const probe = await fetchLargeProbe(found.base, found.tag, controller.signal);
+      if (cancelled || !probe) return;
+      const source = await probeDownloadSource(
+        { githubBase: GITHUB_LATEST_DOWNLOAD, ossBase: found.base },
+        probe,
+        controller.signal,
+      );
+      if (!cancelled) setProbed(source);
+    })();
     return () => {
-      clearTimeout(timer);
+      cancelled = true;
+      clearTimeout(lookupTimer);
       controller.abort();
     };
   }, []);
 
   const detected = detectPlatform();
-  const viaMirror = mirror !== null && !forceGithub;
+  const selected: DownloadSource = override ?? probed ?? "github";
+  const viaMirror = mirror !== null && selected === "oss";
   const hrefFor = (file: string) =>
     viaMirror ? `${mirror.base}/${file}` : `${GITHUB_LATEST_DOWNLOAD}/${file}`;
 
@@ -149,8 +175,12 @@ export function DownloadPage() {
         <p>
           {viaMirror ? S.download.statusOss(mirror.tag) : S.download.statusGithub}{" "}
           {mirror !== null && (
-            <button type="button" className={textLink} onClick={() => setForceGithub(!forceGithub)}>
-              {forceGithub ? S.download.altOss : S.download.altGithub}
+            <button
+              type="button"
+              className={textLink}
+              onClick={() => setOverride(viaMirror ? "github" : "oss")}
+            >
+              {viaMirror ? S.download.altGithub : S.download.altOss}
             </button>
           )}
         </p>

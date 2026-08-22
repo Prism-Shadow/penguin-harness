@@ -85,8 +85,14 @@ function global:Invoke-WebRequest {
   if ($f.Mode -eq "speed-probe-missing-manifest" -and $Uri -like "*/release-download-manifest.tsv") {
     throw "fixture missing release download manifest"
   }
-  if ($f.Mode -eq "speed-probe-github-below-threshold" -and $Uri -like "https://github.com/*/probe-1m.bin") {
-    Start-Sleep -Milliseconds 4300
+  # 1 MiB in 6.0s is ~175 KB/s, under the 200 KB/s minimum; the mirror answering the same probe in
+  # 5.0s is ~210 KB/s — faster than GitHub, but only 1.2x, short of the 1.5x switch ratio.
+  if ($f.Mode -in @("speed-probe-oss-clearly-faster", "speed-probe-oss-not-worth-switching") -and
+      $Uri -like "https://github.com/*/probe-1m.bin") {
+    Start-Sleep -Milliseconds 6000
+  }
+  if ($f.Mode -eq "speed-probe-oss-not-worth-switching" -and $Uri -like "*aliyuncs.com/*/probe-1m.bin") {
+    Start-Sleep -Milliseconds 5000
   }
   switch -Wildcard ($Uri) {
     "*/latest.json" {
@@ -102,8 +108,8 @@ function global:Invoke-WebRequest {
       }
     }
     "*/release-download-manifest.tsv" {
-      if ($f.Mode -in @("speed-probe-small", "speed-probe-github-fast", "speed-probe-github-below-threshold")) {
-        $AssetSize = if ($f.Mode -eq "speed-probe-small") { 16777216 } else { 104857600 }
+      if ($f.Mode -like "speed-probe-*") {
+        $AssetSize = 104857600
         @(
           "penguin-release-download-manifest`t1`tv0.0.0-test"
           "probe`tsmall`tprobe-64k.bin`t65536`t$($f.Probe64Hash)"
@@ -314,25 +320,30 @@ try {
   Assert-True ($stampedFallback.Requests[1] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "stamped installer did not fall back to the same GitHub version"
 
-  $speedProbeSmall = Invoke-OnlineCase "speed-probe-small" "speed-probe-small" "" $true 5 $StampedInstaller "1"
-  Assert-True (($speedProbeSmall.Requests | Out-String) -match 'release-download-manifest\.tsv') `
-    "speed probe did not request the release download manifest"
-  Assert-True (($speedProbeSmall.Requests | Out-String) -match 'probe-64k\.bin') `
-    "speed probe did not request the small probe"
-  Assert-True ($speedProbeSmall.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
-    "small speed probe path did not keep the default OSS source"
-
   $speedProbeGitHubFast = Invoke-OnlineCase "speed-probe-github-fast" "speed-probe-github-fast" "" $true 6 $StampedInstaller "1"
+  Assert-True (($speedProbeGitHubFast.Requests | Out-String) -match 'release-download-manifest\.tsv') `
+    "speed probe did not request the release download manifest"
+  Assert-True (($speedProbeGitHubFast.Requests | Out-String) -match 'probe-64k\.bin') `
+    "speed probe did not request the small probe"
   Assert-True ($speedProbeGitHubFast.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "speed probe did not select GitHub when it met the minimum speed"
+  Assert-True (-not (($speedProbeGitHubFast.Requests | Out-String) -match 'aliyuncs\.com/[^\r\n]*probe-1m\.bin')) `
+    "speed probe spent the paid mirror's bandwidth even though GitHub already met the minimum"
 
   $speedProbeDefaultOn = Invoke-OnlineCase "speed-probe-default-on" "speed-probe-github-fast" "" $true 6 $StampedInstaller "__unset"
   Assert-True ($speedProbeDefaultOn.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
     "speed probe was not enabled by default"
 
-  $speedProbeGitHubBelowThreshold = Invoke-OnlineCase "speed-probe-github-below-threshold" "speed-probe-github-below-threshold" "" $true 6 $StampedInstaller "1"
-  Assert-True ($speedProbeGitHubBelowThreshold.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
-    "speed probe did not keep OSS when GitHub was below the minimum speed"
+  # Below the minimum the mirror is measured too, which is the seventh request of these two cases.
+  $speedProbeOssFaster = Invoke-OnlineCase "speed-probe-oss-clearly-faster" "speed-probe-oss-clearly-faster" "" $true 7 $StampedInstaller "1"
+  Assert-True (($speedProbeOssFaster.Requests | Out-String) -match 'aliyuncs\.com/[^\r\n]*probe-1m\.bin') `
+    "speed probe did not measure the OSS mirror once GitHub was below the minimum speed"
+  Assert-True ($speedProbeOssFaster.Requests[-2] -like "https://penguin-harness-releases.oss-cn-beijing.aliyuncs.com/*/penguin-win32-x64.zip") `
+    "speed probe did not switch to OSS when it was clearly faster than a slow GitHub"
+
+  $speedProbeOssMarginal = Invoke-OnlineCase "speed-probe-oss-not-worth-switching" "speed-probe-oss-not-worth-switching" "" $true 7 $StampedInstaller "1"
+  Assert-True ($speedProbeOssMarginal.Requests[-2] -like "https://github.com/*/releases/download/v0.0.0-test/penguin-win32-x64.zip") `
+    "speed probe left GitHub even though OSS was not faster by the switch ratio"
 
   $speedProbeMissing = Invoke-OnlineCase "speed-probe-missing-manifest" "speed-probe-missing-manifest" "" $true 4 $StampedInstaller "1"
   Assert-True (($speedProbeMissing.Output | Out-String) -match 'Download source test was inconclusive') `

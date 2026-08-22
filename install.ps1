@@ -7,7 +7,8 @@
 #                                         installer defaults to its own version, an unstamped source copy to latest
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
-#   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto (OSS, then same-version GitHub)
+#   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto
+#                                         (speed-probed, with the same-version other source as fallback)
 #   $env:PENGUIN_DOWNLOAD_SPEED_PROBE = "0" disable same-version OSS/GitHub probe timing in auto mode
 #   $env:PENGUIN_DOWNLOAD_BASE_URL = "https://..." exact online asset directory selected by the stable forwarder
 #   $env:PENGUIN_DOWNLOAD_FALLBACK_BASE_URL = "https://..." fallback for PENGUIN_DOWNLOAD_BASE_URL
@@ -43,11 +44,29 @@ $OssReleaseRoot = "$OssOrigin/releases"
 $GitHubReleaseRoot = "$Repo/releases/download"
 $GitHubLatestBase = "$Repo/releases/latest/download"
 $Asset = "penguin-win32-x64.zip"
-$SpeedProbeTotalTimeoutSeconds = 16
+# Auto-mode source selection, one rule shared by install.ps1, install.sh and the download page on
+# penguin.ooo (packages/landing/src/lib/download-source.ts):
+#
+#   1. Measure GitHub on the release's large probe file. At or above
+#      $SpeedProbeGitHubMinBytesPerSecond it wins outright and OSS is never touched.
+#   2. Only below that is OSS measured, and it takes over only when it is more than
+#      $SpeedProbeOssSwitchRatio of GitHub — a mirror that is merely a little quicker does not
+#      justify its bandwidth bill, and a slow GitHub download still resumes.
+#
+# GitHub is the free source, so every tie and every unmeasurable comparison stays there. The two
+# constants are duplicated because these three implementations cannot import from each other — an
+# installer is a standalone file fetched over the network. Change them in all three at once, which
+# scripts/test-installer.sh pins.
+#
+# The total budget covers the whole probe: manifest, the small reachability pair, and up to two
+# large probes. It is deliberately the sum of their caps, so the second large probe always gets its
+# full window rather than being squeezed into declaring a healthy mirror unreachable.
 $SpeedProbeManifestTimeoutSeconds = 5
 $SpeedProbeSmallTimeoutSeconds = 5
 $SpeedProbeLargeTimeoutSeconds = 8
-$SpeedProbeGitHubMinBytesPerSecond = 262144
+$SpeedProbeTotalTimeoutSeconds = 26
+$SpeedProbeGitHubMinBytesPerSecond = 204800
+$SpeedProbeOssSwitchRatio = 1.5
 $PayloadName = "payload.zip"
 # The release workflow replaces this token with the immutable tag before publishing both the
 # standalone installer and the copy sealed inside the Windows bundle.
@@ -197,6 +216,8 @@ function Read-ReleaseDownloadManifest([string]$Tag, [string]$ManifestPath, [Date
       if ($Fields[1] -eq "small") { $SmallProbe = $Probe }
       if ($Fields[1] -eq "large") { $LargeProbe = $Probe }
     } elseif ($Fields[0] -eq "asset" -and $Fields.Count -eq 4 -and $Fields[1] -eq $Asset) {
+      # Not part of the decision — an integrity check that this manifest belongs to a release which
+      # actually carries this target's bundle, so a mismatched manifest cannot steer the probe.
       if (-not [Int64]::TryParse([string]$Fields[2], [ref]$AssetSize) -or $AssetSize -le 0) { return $null }
     }
   }
@@ -246,15 +267,19 @@ function Invoke-ProbeDownload(
   [PSCustomObject]@{ Ok = $true; Seconds = $Seconds }
 }
 
-function Select-SpeedProbeSource(
-  [object]$GitHubProbe,
-  [Int64]$ProbeSize
-) {
-  if ($GitHubProbe.Ok) {
-    $GitHubBytesPerSecond = [double]$ProbeSize / [Math]::Max([double]$GitHubProbe.Seconds, 0.001)
-    if ($GitHubBytesPerSecond -ge $SpeedProbeGitHubMinBytesPerSecond) { return "github" }
-  }
-  return "oss"
+# Throughput a completed probe measured, in bytes per second; 0 when it did not complete, which
+# sorts it below any real measurement in the comparison below.
+function Get-ProbeBytesPerSecond([object]$Probe, [Int64]$ProbeSize) {
+  if (-not $Probe.Ok) { return 0.0 }
+  return [double]$ProbeSize / [Math]::Max([double]$Probe.Seconds, 0.001)
+}
+
+# The shared rule, in one place: GitHub clears the minimum and wins outright, otherwise the mirror
+# has to beat it by the switch ratio to take over.
+function Select-SpeedProbeSource([double]$GitHubBytesPerSecond, [double]$OssBytesPerSecond) {
+  if ($GitHubBytesPerSecond -ge $SpeedProbeGitHubMinBytesPerSecond) { return "github" }
+  if ($OssBytesPerSecond -gt ($GitHubBytesPerSecond * $SpeedProbeOssSwitchRatio)) { return "oss" }
+  return "github"
 }
 
 function Select-SpeedProbeDownloadSources([string]$Tag, [string]$Tmp) {
@@ -278,22 +303,29 @@ function Select-SpeedProbeDownloadSources([string]$Tag, [string]$Tmp) {
   }
   if (-not $OssSmall.Ok -and -not $GitHubSmall.Ok) { return $null }
 
-  if ($Manifest.AssetSize -lt 33554432) {
-    Write-Host "Selected OSS mirror (download source test did not need throughput probing)."
-    return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
+  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline $SpeedProbeLargeTimeoutSeconds
+  $GitHubBytesPerSecond = Get-ProbeBytesPerSecond $GitHubLarge $Manifest.LargeProbe.Size
+
+  # OSS is measured only once GitHub has failed the minimum: above it GitHub has already won, and
+  # the mirror's bandwidth is not spent on a probe that could not change the answer. Probing runs
+  # one source at a time on purpose — two concurrent transfers share the link and would each read
+  # as half as fast, which an absolute threshold cannot tolerate.
+  $OssBytesPerSecond = 0.0
+  if ($GitHubBytesPerSecond -lt $SpeedProbeGitHubMinBytesPerSecond) {
+    $OssLarge = Invoke-ProbeDownload $OssBase $Manifest.LargeProbe $Tmp "oss-large" $Deadline $SpeedProbeLargeTimeoutSeconds
+    $OssBytesPerSecond = Get-ProbeBytesPerSecond $OssLarge $Manifest.LargeProbe.Size
   }
 
-  $GitHubLarge = Invoke-ProbeDownload $GitHubBase $Manifest.LargeProbe $Tmp "github-large" $Deadline $SpeedProbeLargeTimeoutSeconds
-  $Choice = Select-SpeedProbeSource $GitHubLarge $Manifest.LargeProbe.Size
-  if ($Choice -eq "github") {
-    Write-Host "Selected GitHub (meets minimum download speed)."
+  if ((Select-SpeedProbeSource $GitHubBytesPerSecond $OssBytesPerSecond) -eq "github") {
+    if ($GitHubBytesPerSecond -ge $SpeedProbeGitHubMinBytesPerSecond) {
+      Write-Host "Selected GitHub (meets minimum download speed)."
+    } else {
+      Write-Host "Selected GitHub (the OSS mirror was not enough faster to be worth switching)."
+    }
     return [PSCustomObject]@{ BaseUrl = $GitHubBase; FallbackBaseUrl = $OssBase }
   }
-  if ($Choice -eq "oss") {
-    Write-Host "Selected OSS mirror (GitHub did not meet minimum download speed)."
-    return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
-  }
-  return $null
+  Write-Host "Selected OSS mirror (clearly faster than GitHub here)."
+  return [PSCustomObject]@{ BaseUrl = $OssBase; FallbackBaseUrl = $GitHubBase }
 }
 
 function Restore-PreviousInstall(
