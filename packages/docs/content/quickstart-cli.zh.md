@@ -84,7 +84,7 @@ penguin chat
 
 脚本按平台下载 `penguin-{linux,darwin}-{x64,arm64}.tar.gz`——即标准安装包：包内封入程序负载（捆绑官方 Node.js 运行时）、负载的 SHA256 校验文件与同一个安装器。下载后先对照 Release 发布的 `.sha256` 校验外层，再校验包内封入的负载 checksum，然后才进入暂存安装。其他 POSIX 平台**不会自动回退**：脚本会退出并提示先安装 Node.js >= 24、再携带 `--universal` 重新执行，改用不含运行时的 `penguin-universal.tar.gz` 安装包（Windows 使用专属安装器，而不是 `--universal`）。
 
-稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：优先选择已完整上传并验证的 OSS 不可变版本目录；元数据或下载不可用时，回退到同一版本的 GitHub Release。也可以将该变量设为 `oss` 或 `github` 来强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
+稳定入口默认使用 `PENGUIN_DOWNLOAD_SOURCE=auto`：先经已完整上传并验证的 OSS 不可变版本目录确定目标版本，元数据不可用时回退到同一版本的 GitHub Release。至于由哪个源提供安装包，则由实测决定，而非预设：安装器先对 GitHub 上的测速文件计时，达到 200 KB/s 即保持 GitHub；只有低于该值时才测量 OSS 镜像，且仅当镜像快出 1.5 倍以上才切换——仅快一点的镜像不值得其带宽成本，而较慢的 GitHub 下载仍可续传。设置 `PENGUIN_DOWNLOAD_SPEED_PROBE=0` 可跳过测速，设置 `PENGUIN_DOWNLOAD_SOURCE` 为 `oss` 或 `github` 可强制指定来源。安装器只显示来源名称，不在常规输出中打印镜像的完整 URL。
 
 `penguin.ooo` 稳定入口每次执行时都会解析当前稳定版本。从 GitHub 或 OSS 的版本化 Release 中直接下载的独立安装脚本会写入该 Release tag，并默认安装同一版本，确保安装器与安装包格式匹配；如需覆盖，可显式设置 `PENGUIN_VERSION`（POSIX 也可使用 `--version`）。Windows 上固定版本，在运行安装器前设置环境变量：
 
@@ -129,7 +129,7 @@ pnpm install && pnpm build
 | 安装目录 | 默认 `~/.penguin`，可用环境变量 `PENGUIN_INSTALL_DIR` 覆盖 |
 | 命令入口 | 创建符号链接 `~/.local/bin/penguin`（若 `~/.local/bin` 不在 PATH 上，脚本会给出提示） |
 | 版本选择 | 环境变量 `PENGUIN_VERSION=vX.Y.Z`，或脚本参数 `--version vX.Y.Z`；稳定入口默认安装最新 Release，版本化 Release 安装器默认安装自身 tag |
-| 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式优先 OSS，并按同一版本回退到 GitHub |
+| 下载来源 | `PENGUIN_DOWNLOAD_SOURCE=auto`（默认）、`oss` 或 `github`；自动模式对测速文件计时，除非 OSS 镜像明显更快，否则保持免费的 GitHub 下载，并按同一版本回退到另一个源（`PENGUIN_DOWNLOAD_SPEED_PROBE=0` 可跳过测速） |
 | 本地压缩包 | `PENGUIN_ARCHIVE=<file>` 或 `--archive <file>`；接受 Release 安装包（凭包内封入的负载 checksum 自校验），或旁边带 `<file>.sha256` 的负载 / 旧版程序压缩包（重命名的旧版文件可用平台标准名称的 `.sha256`） |
 | 完整性校验 | 始终进行：在线下载对照发布的 `.sha256` 校验，安装包负载对照包内封入的 checksum 校验 |
 | 升级 | 重新执行安装脚本即可，文件原子替换 |
