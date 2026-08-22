@@ -70,14 +70,17 @@ platformImpl.create
 │
 ├─ new TerminalManager(resources)    # 接管上一实例寄存的 pty
 ├─ plugins = pluginHostFrom(resources)  # 认领运行时在 ④ 加载好的那个 host（未发布则为空 host）
-├─ iface = { workflow: new Map(), tool: new Map() }   # 每个 App 全新的定义视图
+├─ iface = { workflow, tool, sandbox }   # 每个 App 全新的定义视图
 ├─ plugins.emit("initialize", iface) # 定义视图，按激活顺序投递给每个 handler
+├─ sandbox = new SandboxService(已注册的后端)   # 由寄存的设置重新水合
 ├─ plugins.emit("create", {          # 实例视图，注册关闭后组装
 │    workflows: instantiateWorkflows(iface.workflow),  # 全部 factory 在此被急切调用
 │    terminals,
+│    sandbox: { configure, settings },
 │  })
 ├─ caps = claimRuntimeCapabilities(resources)   # db/auth/channels/config/proxy/desktop
-└─ 业务面组装（caps 齐全时）：buildAppDeps → scheduler.start() → 孤儿 Goal 回收
+└─ 业务面组装（caps 齐全时）：buildAppDeps——sandbox confiner 作为普通参数传入，
+   进入 session loader 的 spawn 路径 → scheduler.start() → 孤儿 Goal 回收
    → createApp（终端组 + 业务组注册进同一个 Hono app）
    → 一次注册表写入发布 {deps, app, shutdown} 指针 → ctx.effect 注册 swap 硬中止
 ```
@@ -87,9 +90,9 @@ platformImpl.create
 | 时机           | 频率        | 发生什么                                                                                             |
 | -------------- | ----------- | ---------------------------------------------------------------------------------------------------- |
 | 加载 + `activate(ctx)` | 每进程一次 | 启动步骤 ④ `loadPlugins`：解析 `plugins.json` 里的 specifier、import、执行其导出的 `activate`——`ctx.on(...)` 订阅与 `ctx.disposables` 登记只在这个窗口内有效。单条失败被隔离并记日志，不阻断启动 |
-| `"initialize"` 事件 | 每 App 一次 | handler 向全新的 `iface` 注册 workflow factory（`tool` 槽位保留未用）                               |
+| `"initialize"` 事件 | 每 App 一次 | handler 向全新的 `iface` 注册 workflow factory 与 sandbox 后端（`tool` 槽位保留未用）               |
 | workflow 实例化 | 每 App 一次 | `instantiateWorkflows` 在 emit 之前同步调用**全部** factory——实例随 App 创建整批诞生，不是首次调用时 |
-| `"create"`     | 每 App 一次 | 插件拿到实例视图 `ctx`（`workflows` + `terminals`）                                                  |
+| `"create"`     | 每 App 一次 | 插件拿到实例视图 `ctx`（`workflows` + `terminals` + `sandbox`）                                      |
 | `workflows.run` | 每次调用    | 纯函数调用：无 Session、无审批、无流式                                                               |
 
 由此可以读出几条行为事实：
@@ -99,6 +102,7 @@ platformImpl.create
 - **订阅窗口就是 `activate`，返回即封闭**：handler 里再调 `ctx.on(...)` 会每次热 swap 累积一份，所以它直接抛错——在打包启动时就大声失败，而不是变成慢泄漏。disposables 与订阅同窗封闭，理由相同。
 - **handler 同步且不被包裹**：插件*加载*失败（import 或 `activate` 抛错）按条目隔离，但事件 handler 没有 try/catch——抛错会使该次平台启动失败。
 - **事件词汇表有类型且只有一处**：`PluginEvents` 把每个事件名映射到它的载荷——加一个事件，平台的 emit 端和所有 handler 同时获得类型。
+- **约束是同代接线**：confiner 作为 `buildAppDeps` 的普通参数进入 core，经它 spawn 的 session 随所属 App 硬停——跨过 swap 的是寄存上下文上的生效设置，因此一次推送无法悄悄解除一个部署的约束。
 
 插件的类型面（`Plugin` / `PluginContext` / `PluginEvents` / `PenguinInterface` / `PenguinContext`）经包子路径 `@prismshadow/penguin-server/plugin` 导出，只导出类型；哪些插件存在由部署的 `<root>/plugins.json` 决定，harness 自身不 import 任何插件。
 
@@ -119,6 +123,7 @@ platformImpl.create
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
 | 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | `activate(ctx: PluginContext)` + `PluginEvents` 事件表；配置面是 `<root>/plugins.json`                       |
+| 沙盒                 | `sandbox/service.ts`——**App 级**（create 内基于插件注册的后端构建） | `iface.sandbox.registerProvider` / `ctx.sandbox.{configure,settings}`；约束经 core 的 spawn seam 落到命令上，后端是 `plugins.json` 里点名的插件包 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
 
 请求期还有一条固定路径值得知道：平台的 HTTP seam 把每个请求先交给当前 App 的 `http(request)`，返回 `null` 才落到运行时自己的路由；热更新进行中时请求在 seam 上排队等新 App 就绪，而不是打到半旧的实例上。
