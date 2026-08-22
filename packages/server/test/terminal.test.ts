@@ -12,20 +12,20 @@ import os from "node:os";
 import path from "node:path";
 import xterm from "@xterm/headless";
 import { createTestApp, loginAdmin, apiClient } from "./helpers.js";
-import { TerminalManager, MAX_TERMINALS_PER_USER } from "../src/platform/terminal/manager.js";
-import { expandHomePath } from "../src/platform/terminal/session.js";
+import { TerminalManager, MAX_TERMINALS_PER_USER } from "../src/terminal/manager.js";
+import { expandHomePath } from "../src/terminal/session.js";
 import { repairSpawnHelpers } from "../src/terminal/spawn-helper.js";
-import { TerminalInputModeTracker } from "../src/platform/terminal/input-mode.js";
-import { TerminalOutputCoalescer } from "../src/platform/terminal/output-coalescer.js";
-import { applyTerminalSize, releaseTerminalSize } from "../src/platform/terminal/size-ownership.js";
-import { captureLines, renderRestoreAnsi } from "../src/platform/terminal/snapshot.js";
-import { resolveKeys } from "../src/platform/terminal/routes.js";
+import { TerminalInputModeTracker } from "../src/terminal/input-mode.js";
+import { TerminalOutputCoalescer } from "../src/terminal/output-coalescer.js";
+import { applyTerminalSize, releaseTerminalSize } from "../src/terminal/size-ownership.js";
+import { captureLines, renderRestoreAnsi } from "../src/terminal/snapshot.js";
+import { resolveKeys } from "../src/terminal/routes.js";
 import {
   TerminalStreamOpcode,
   decodeTerminalFrame,
   encodeTerminalFrame,
   parseResizePayload,
-} from "../src/platform/terminal/frames.js";
+} from "../src/terminal/frames.js";
 
 const { Terminal } = xterm;
 

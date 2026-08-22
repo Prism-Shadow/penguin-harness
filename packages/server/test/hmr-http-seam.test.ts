@@ -75,9 +75,13 @@ describe("platform HTTP seam", () => {
 
   it("routes the platform declines still reach the runtime's own", async () => {
     await pushPlatform(t.app, cookie, bundle);
-    const me = await api.get("/api/me");
-    expect(me.status).toBe(200);
-    expect(((await me.json()) as { user: { userId: string } }).user.userId).toBe("admin");
+    // The runtime's own routes are the mechanism surface (auth, hmr, desktop, static):
+    // login still works with a fixture platform in place, because the fixture declines
+    // /api/auth and the runtime serves it. Business routes are NOT runtime fallbacks —
+    // /api/me travels with the business platform, which this push replaced.
+    const login = await loginAdmin(t.app);
+    expect(login.user.userId).toBe("admin");
+    expect((await api.get("/api/me")).status).toBe(404);
   });
 
   it("cannot claim the upgrade channel — one bad push must not lock the box out", async () => {
@@ -101,9 +105,9 @@ describe("platform HTTP seam", () => {
     expect(body.error.message).toContain("deliberate platform failure");
   });
 
-  it("a platform with no http handler leaves every runtime route as it was", async () => {
-    // The packaged stub has none: this is the state every installation starts in, and the
-    // state an older pushed bundle stays in.
+  it("the packaged platform serves the business surface out of the box", async () => {
+    // This is the state every installation starts in: no push has happened, and the
+    // packaged platform's business routes answer through the seam.
     expect((await api.get("/api/me")).status).toBe(200);
     expect((await api.get("/api/demo/ping")).status).toBe(404);
   });
@@ -181,21 +185,23 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
   const PROBED = ["/api/demo/ping", "/api/demo/pong", "/api/me"];
 
   it("adding, swapping and removing routes changes what the server answers", async () => {
-    // Baseline: the runtime knows /api/me and nothing about the demo endpoints.
+    // Baseline: the packaged business platform serves /api/me; nothing serves the demo
+    // endpoints. ("runtime" below just means "no servedBy field in the body".)
     expect(await reachable(PROBED)).toEqual({
       "/api/demo/ping": "404",
       "/api/demo/pong": "404",
       "/api/me": "200 runtime",
     });
 
-    // Push #1 ADDS one endpoint.
+    // Push #1 ADDS one endpoint — and, because the business surface travels WITH the
+    // platform, replaces the packaged business wholesale: /api/me is gone with it.
     expect(
       (await pushPlatform(t.app, cookie, platformServing(["/api/demo/ping"], "v1"))).status,
     ).toBe(200);
     expect(await reachable(PROBED)).toEqual({
       "/api/demo/ping": "200 v1",
       "/api/demo/pong": "404",
-      "/api/me": "200 runtime",
+      "/api/me": "404",
     });
 
     // Push #2 SWAPS the route set: the first endpoint is gone, a different one appears.
@@ -205,26 +211,31 @@ describe("platform HTTP seam: the reachable API changes with each push", () => {
     expect(await reachable(PROBED)).toEqual({
       "/api/demo/ping": "404",
       "/api/demo/pong": "200 v2",
-      "/api/me": "200 runtime",
+      "/api/me": "404",
     });
 
-    // Push #3 REMOVES both: the API is back to exactly what the runtime serves.
+    // Push #3 REMOVES both: only the runtime's mechanism surface remains reachable.
     expect((await pushPlatform(t.app, cookie, platformServing([], "v3"))).status).toBe(200);
     expect(await reachable(PROBED)).toEqual({
       "/api/demo/ping": "404",
       "/api/demo/pong": "404",
-      "/api/me": "200 runtime",
+      "/api/me": "404",
     });
   });
 
-  it("a route the platform takes over goes back to the runtime's own when it stops serving it", async () => {
-    const runtimeVersion = (await (await api.get("/api/version")).json()) as { version: string };
+  it("a route the platform stops serving vanishes with it — the runtime holds no business fallback", async () => {
+    // The packaged business platform serves /api/version…
+    expect((await api.get("/api/version")).status).toBe(200);
 
+    // …a pushed platform can take the path over…
     await pushPlatform(t.app, cookie, platformServing(["/api/version"], "takeover"));
     expect(await (await api.get("/api/version")).json()).toMatchObject({ servedBy: "takeover" });
 
+    // …and a push that drops it leaves the path unserved: business routes live and die
+    // with the platform version, never as a runtime copy that could answer with stale
+    // semantics.
     await pushPlatform(t.app, cookie, platformServing([], "released"));
-    expect(await (await api.get("/api/version")).json()).toEqual(runtimeVersion);
+    expect((await api.get("/api/version")).status).toBe(404);
   });
 });
 

@@ -14,8 +14,8 @@
 import fsp from "node:fs/promises";
 import type { Resources } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
-import { HttpError } from "../../http/errors.js";
-import { spawnHelperHint } from "../../terminal/spawn-helper.js";
+import { HttpError } from "../http/errors.js";
+import { spawnHelperHint } from "../terminal/spawn-helper.js";
 import {
   TerminalSession,
   expandHomePath,

@@ -26,6 +26,18 @@ export interface Resources {
   register(id: string, resource: unknown, dispose?: () => void): void;
   claim<T = unknown>(id: string): T | undefined;
   release(id: string): void;
+  /**
+   * Disposes and removes every entry whose id belongs to the group (`terminal` covers
+   * `terminal:*`), in reverse registration order — later entries may depend on earlier
+   * ones, same convention as effects.
+   *
+   * A hook for IMPLEMENTATIONS, not a kernel mechanism: the kernel never calls it, and
+   * upgrade() has no opinion about resource compatibility. An impl's create() uses it to
+   * hard-stop the groups it cannot adopt from its predecessor (penguin does this over a
+   * declaration it leaves in the registry itself — see server hmr/platform.ts). Optional,
+   * so a registry that does not offer it simply carries every group across unchecked.
+   */
+  disposeGroup?(group: string): void;
 }
 
 export interface NodeCtx {
