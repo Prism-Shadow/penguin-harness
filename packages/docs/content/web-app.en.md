@@ -37,6 +37,8 @@ A new conversation starts as a draft: pick the Agent, the Workspace (via a serve
 
 There are four approval modes: `allow-all`, `deny-all`, `read-only` (only read-only tools pass), and `always-ask`. See [Tools and Approvals](/tools).
 
+Below the composer the draft page files example prompts into folders, exactly one of them open at a time; clicking a row fills the composer with that prompt and sends nothing, so it can be read and edited before Send. The last folder, **My shortcuts**, is your own: **New shortcut** opens an editor already holding whatever is in the composer, with its first line suggested as the name, and saving files it under that folder — a saved shortcut is a name plus a prompt, pins no Skills, and is stored per user on the server, so it follows you to another browser or machine. Rows carry edit and delete, and up to 20 shortcuts are kept (a name is at most 40 characters, a prompt at most 4000).
+
 ### The Conversation List
 
 The sidebar's conversation list groups by Workspace or by Agent. Grouping and sort order are switched in the **List options** menu (the sliders icon in the section header), where each option carries its own icon: a folder for Workspace grouping, the Agent glyph for Agent grouping, a clock for most-recent order, and up/down arrows for the drag-reordered manual order.
