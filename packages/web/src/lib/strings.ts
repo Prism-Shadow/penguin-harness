@@ -1126,11 +1126,15 @@ export const zh = {
     exampleFolders: {
       webapps: "搭建网页应用",
       agents: "搭建和优化智能体",
+      schedules: "创建定时任务",
     },
     /**
-     * Example task cards on the draft screen: one click auto-submits the canned prompt. These
-     * are the FULL working prompts — descriptions stay short, but the submitted instructions
-     * remain detailed because execution quality depends on them.
+     * Example task cards on the draft screen: one click loads the canned prompt for the user.
+     * Keep a prompt SHORT — a short paragraph, around 100 Chinese characters, carrying what to
+     * build plus the constraints the result would be wrong without. File layouts, field lists,
+     * step-by-step headings and self-test instructions are what the Agent works out or asks
+     * about, so they stay out; the older briefs below are still far longer and are being trimmed
+     * to match.
      */
     exampleTasks: {
       game: {
@@ -1195,6 +1199,24 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
 
 完成后在浏览器打开 index.html 自测一次。`,
       },
+      rhythmRunner: {
+        label: "音乐节奏跑酷小游戏",
+        desc: "喵斯快跑式的音乐节奏跑酷：企鹅主角，音符踩着节拍飞来，判定分 Perfect / Great / Miss",
+        prompt:
+          "做一个喵斯快跑（Muse Dash）式的音乐节奏跑酷小游戏：主角是一只企鹅，自动向前跑；" +
+          "音符画成音符图标，严格踩着节拍飞来，玩家按键击打，判定显示 Perfect / Great / Miss 三档，" +
+          "连击计分，难度随曲子推进。纯前端单文件，file:// 直接打开即玩。",
+      },
+      investmentCopilot: {
+        label: "对话式投资分析助理",
+        desc: "用 Penguin SDK 做对话式看盘 Copilot：首页列出近期走势较好的股票，每个判断都说清市场因素",
+        prompt:
+          "用 Penguin SDK 做一个对话式的股市 Copilot，形态参考 perplexity.ai/finance：启动后每 5 分钟实时抓取大盘行情，" +
+          "首页直接列出近期走势较好的股票和板块强弱，每个判断都要说清背后的市场因素——政策、行业消息、" +
+          "资金流向、财报或宏观数据，而不是技术指标，" +
+          "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
+          "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
+      },
       rag: {
         label: "构建 Claude Code 文档 RAG 智能体",
         desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
@@ -1239,6 +1261,28 @@ Benchmark：
 - runs：\`3\`
 - desired_score：\`>=95\`
 - candidate_round_limit：\`5\``,
+      },
+      dailyPlan: {
+        label: "每天早 9 点的计划对话",
+        desc: "每天 09:00 在同一个会话里聊当天计划，并回顾昨天的进展",
+        prompt:
+          "建一个定时任务：每天早上 9 点在这个会话里和我聊今天的计划。" +
+          "先回看上文说清昨天定的事做完了多少、哪些卡住，再给我一份排好序的今日候选、每条一句理由，" +
+          "我确认后写成清单。",
+      },
+      githubDigest: {
+        label: "每天汇总 GitHub 项目状态",
+        desc: "定时跑一遍仓库的 Issue、PR 与 CI，日报结尾给出按优先级排序的建议",
+        prompt:
+          "建一个定时任务：每天早上用 gh 汇总一个 GitHub 仓库的 Issue、PR 与 CI 状态，" +
+          "挑出停滞的、待评审的和挂掉的，结尾给出按优先级排序的建议，每条说清为什么排在这个位置。",
+      },
+      memoryReview: {
+        label: "每周五晚回顾并记录 Memory",
+        desc: "周五傍晚一起过一遍这周值得长期记住的事，确认后由你写进 Memory",
+        prompt:
+          "建一个定时任务：每周五傍晚在这个会话里和我过一遍这周值得长期记住的事。" +
+          "先看已有记忆索引避免重复，再逐条问我该记什么、要不要改已有的，我确认后你写进 Memory。",
       },
     },
     sessionList: "Session",

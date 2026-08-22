@@ -1164,6 +1164,7 @@ export const en: Strings = {
     exampleFolders: {
       webapps: "Build web apps",
       agents: "Build and optimize agents",
+      schedules: "Create scheduled tasks",
     },
     exampleTasks: {
       game: {
@@ -1231,6 +1232,28 @@ Penguin visual style (see the web-design skill), dark by default. On phones the 
 
 When done, open index.html in a browser and self-test once.`,
       },
+      rhythmRunner: {
+        label: "Rhythm runner mini game",
+        desc: "A Muse Dash-style rhythm runner: a penguin lead, notes locked to the beat, graded Perfect / Great / Miss",
+        prompt:
+          "Build a Muse Dash-style rhythm runner: a penguin runs forward on its own, and notes — " +
+          "drawn as music-note icons — fly in locked to the beat for me to hit. Show Perfect / " +
+          "Great / Miss for each hit, score combos, and let the difficulty climb as the track goes " +
+          "on. Pure front end, one file, playable straight from file://.",
+      },
+      investmentCopilot: {
+        label: "Conversational investment analyst",
+        desc: "A conversational market Copilot on the Penguin SDK: the home page lists what is trending, with the market factors behind every call",
+        prompt:
+          "Build a conversational stock-market Copilot on the Penguin SDK, along the lines of " +
+          "perplexity.ai/finance: from startup it pulls live market data every 5 minutes, and the " +
+          "home page lists the stocks trending strongest lately alongside how the sectors compare. " +
+          "Every call has to name the market factors behind it — policy, sector news, fund flows, " +
+          "earnings, macro data — rather than technical indicators. Analysis of public data, not " +
+          "investment advice. Its stock-lookup tool has to handle questions like \"look up Zhipu's " +
+          'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
+          "or the company is not listed, say so rather than inventing a quote.",
+      },
       rag: {
         label: "Build a Claude Code docs RAG agent",
         desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
@@ -1276,6 +1299,32 @@ Scenarios:
 - runs: \`3\`
 - desired_score: \`>=95\`
 - candidate_round_limit: \`5\``,
+      },
+      dailyPlan: {
+        label: "A 9am daily planning check-in",
+        desc: "09:00 every day: talk through the day's plan in this same chat, and review yesterday's progress",
+        prompt:
+          "Set up a scheduled task: every day at 9am, in this same conversation, plan today's work " +
+          "with me. Read back over the conversation first and say what yesterday's plan got done and " +
+          "where it stuck, then offer an ordered shortlist for today with a line of reasoning each, " +
+          "and write up what I confirm as a checklist.",
+      },
+      githubDigest: {
+        label: "Daily GitHub project digest",
+        desc: "A daily pass over one repo's issues, PRs and CI, ending in prioritized recommendations",
+        prompt:
+          "Set up a scheduled task: every morning, use gh to digest one GitHub repo's issues, PRs " +
+          "and CI — surface what has stalled, what is waiting on review and what is failing — and " +
+          "end with recommendations ranked by priority, each saying why it sits where it does.",
+      },
+      memoryReview: {
+        label: "Friday memory review",
+        desc: "Friday evening: go through what is worth remembering from the week and write it into Memory",
+        prompt:
+          "Set up a scheduled task: every Friday evening, in this same conversation, go through " +
+          "what is worth remembering from the week with me. Check the existing memory index first so " +
+          "nothing is duplicated, then take it item by item — what to record, what to revise — and " +
+          "write what I confirm into Memory.",
       },
     },
     sessionList: "Sessions",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
+import { EXAMPLE_FOLDERS, EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
@@ -100,4 +100,156 @@ describe("draft example tasks", () => {
       expect(normalizedOptimization).not.toContain("Phase 3");
     },
   );
+});
+
+describe("draft example catalog", () => {
+  it("gives every folder and every example copy in both dictionaries", () => {
+    const ids = EXAMPLE_TASKS.map((task) => task.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const dict of [zh, en]) {
+      for (const folder of EXAMPLE_FOLDERS) {
+        expect(dict.chat.exampleFolders[folder.id]).not.toBe("");
+      }
+      for (const id of ids) {
+        const copy = dict.chat.exampleTasks[id];
+        expect(copy.label).not.toBe("");
+        expect(copy.desc).not.toBe("");
+        // The prompt is the request; the description is only the row's tooltip for it.
+        expect(copy.prompt.length).toBeGreaterThan(copy.desc.length);
+      }
+    }
+  });
+
+  // The draft page reserves no scroll area: its height is the folder rows plus the open
+  // folder's rows, so a folder much longer than its siblings makes that height jump.
+  it("keeps the folders within one row of each other", () => {
+    const sizes = EXAMPLE_FOLDERS.map((folder) => folder.tasks.length);
+    expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("scheduled-task examples", () => {
+  const scheduleIds = ["dailyPlan", "githubDigest", "memoryReview"] as const;
+
+  it("files them all in the schedules folder", () => {
+    const folder = EXAMPLE_FOLDERS.find((candidate) => candidate.id === "schedules");
+    expect(folder?.tasks.map((task) => task.id)).toEqual([...scheduleIds]);
+  });
+
+  // Two things a shortened schedule brief cannot lose. WHEN it fires: a schedule with no time
+  // in it is not a schedule, and the Agent has nothing to ask about it that would not be a
+  // guess. And, for the two check-ins that need the user to answer, that they run in the
+  // conversation the user is already in — the default is a fresh Session per run, which for
+  // those two would be wrong. How the schedule is written (TOML under agent_state/schedule/,
+  // `enabled`, `start_at`) is in the Agent's own Scheduled Tasks section; the prompt no longer
+  // repeats it. `period` is a fixed interval (30m / 12h / 7d), so cron syntax is always wrong.
+  it.each([
+    {
+      id: "dailyPlan",
+      zhMarkers: ["每天", "9 点", "这个会话"],
+      enMarkers: ["every day", "9am", "this same conversation"],
+    },
+    { id: "githubDigest", zhMarkers: ["每天"], enMarkers: ["every morning"] },
+    {
+      id: "memoryReview",
+      zhMarkers: ["每周五", "这个会话"],
+      enMarkers: ["every Friday", "this same conversation"],
+    },
+  ] as const)("$id says when it fires in both locales", ({ id, zhMarkers, enMarkers }) => {
+    const zhPrompt = zh.chat.exampleTasks[id].prompt;
+    const enPrompt = en.chat.exampleTasks[id].prompt;
+    for (const marker of zhMarkers) {
+      expect(zhPrompt).toContain(marker);
+    }
+    for (const marker of enMarkers) {
+      expect(enPrompt).toContain(marker);
+    }
+    expect(zhPrompt).not.toContain("cron");
+    expect(enPrompt).not.toContain("cron");
+  });
+});
+
+/**
+ * These five are written to be read by the user before they run, so each is a short paragraph —
+ * around 100 Chinese characters — carrying what to build plus the constraints the result would be
+ * wrong without, and none of the step-by-step detail the Agent works out or asks about. The caps
+ * below are a ceiling against re-inflation, not a target. Only these five are covered: the older
+ * briefs in the catalog are still far longer and are being shortened separately.
+ */
+describe("short example prompts", () => {
+  const shortExamples = [
+    {
+      id: "rhythmRunner",
+      zhMarkers: ["喵斯快跑", "企鹅", "音符图标", "节拍", "Perfect", "Great", "Miss"],
+      enMarkers: ["Muse Dash", "penguin", "music-note icons", "beat", "Perfect", "Great", "Miss"],
+    },
+    {
+      id: "investmentCopilot",
+      zhMarkers: [
+        "Penguin SDK",
+        "perplexity.ai/finance",
+        "对话式",
+        "启动后",
+        "实时抓取",
+        "首页",
+        "走势较好的股票",
+        "市场因素",
+        "查股工具",
+        "公司名",
+        "不要编",
+      ],
+      enMarkers: [
+        "Penguin SDK",
+        "perplexity.ai/finance",
+        "conversational",
+        "from startup",
+        "live market",
+        "home page",
+        "trending strongest",
+        "market factors",
+        "stock-lookup tool",
+        "company name",
+        "not listed",
+      ],
+    },
+    { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
+    { id: "githubDigest", zhMarkers: ["GitHub", "优先级"], enMarkers: ["GitHub", "priority"] },
+    { id: "memoryReview", zhMarkers: ["Memory"], enMarkers: ["Memory"] },
+  ] as const;
+
+  it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
+    // investmentCopilot sits highest by a wide margin: seven requirements plus a reference URL and
+    // a quoted sample question, both literals no rewording compresses. The English ceiling is the
+    // wider one because English runs about three times the character count of the same Chinese,
+    // not because the English is allowed to say more.
+    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(230);
+    expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(700);
+  });
+
+  // What is left after the cut: what to build, and the constraints without which the result
+  // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
+  // is a Penguin SDK app that refreshes from startup, surfaces trending stocks on its home page,
+  // and gives the assistant a name-resolving stock-lookup tool).
+  it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
+    for (const marker of zhMarkers) {
+      expect(zh.chat.exampleTasks[id].prompt).toContain(marker);
+    }
+    for (const marker of enMarkers) {
+      expect(en.chat.exampleTasks[id].prompt).toContain(marker);
+    }
+  });
+});
+
+describe("investment copilot example", () => {
+  // Short as it is, the brief stays analysis with stated evidence, never a call to act.
+  it.each([
+    { locale: "zh", prompt: zh.chat.exampleTasks.investmentCopilot.prompt, marker: "不是投资建议" },
+    {
+      locale: "en",
+      prompt: en.chat.exampleTasks.investmentCopilot.prompt,
+      marker: "not investment advice",
+    },
+  ])("$locale keeps the not-advice framing", ({ prompt, marker }) => {
+    expect(prompt).toContain(marker);
+  });
 });
