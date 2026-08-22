@@ -1,14 +1,14 @@
 /**
- * Chat page (refactored version):
- * a thin top toolbar (Session title / status / iconized stats / Agents + Files toggles /
- * details popup) + the message stream and input area (input box vertically centered when there
- * are no messages).
- * Files is no longer a mutually exclusive tab — it's a persistent, closable, resizable docked
- * panel on the right (use-files-panel.ts), and each message's trailing file summary card jumps to
- * and locates the file in the tree via onOpenFile. The subagents panel docks the same way
- * (use-subagents-panel.ts): subagent chips in the stream open it focused via onOpenSubagent,
- * and the three docked panels — files, subagents and Memory (use-memory-panel.ts) — are
- * mutually exclusive (coordinated here, not in the hooks).
+ * Chat page:
+ * a thin top toolbar (Session title / status / iconized stats / panel switcher / details
+ * popup) + the message stream and input area (input box vertically centered when there
+ * are no messages), with the dock surfaces beside and below (features/dock): every side
+ * element — subagents, Workspace files, Memory, Trace, terminals — is a tab in the right
+ * or bottom dock, arranged by the user and persisted globally. This page contributes the
+ * panel BODIES (they need its session/stream state) through DockPanel's renderPanel, and
+ * the stream's jump commands: a message file card opens the Workspace tab on that file
+ * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a
+ * memory-change row opens the Memory tab located (onLocateMemoryChange).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -33,15 +33,6 @@ import type {
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
-import {
-  adoptDockScope,
-  chatSidePanelOpen,
-  dockStateVersion,
-  SIDE_SLOT_TRANSITION_MS,
-  setChatSidePanelOpen,
-  subscribeTerminalDock,
-  visiblePanes,
-} from "../terminal/terminal-dock-state";
 import { apiErrorText } from "../../lib/api-error";
 import { pathFileName } from "../../lib/file-path";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -63,6 +54,7 @@ import {
 } from "../../lib/omni/stream-model";
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
+import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
 import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
@@ -108,22 +100,29 @@ import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
 import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
-import { FilesPanel } from "./files-panel";
-import { useFilesPanel } from "./use-files-panel";
-import type { FilesPanelState } from "./use-files-panel";
-import { MemoryPanel } from "./memory-panel";
-import { useMemoryPanel } from "./use-memory-panel";
-import type { MemoryPanelState } from "./use-memory-panel";
+import { WorkspaceBrowser } from "./workspace-browser";
+import { ChatMemoryView } from "./memory-view";
 import { useMemoryListing } from "./use-memory-listing";
 import { deletedChangeKeys } from "./memory-nav";
-import { SubagentsPanel } from "./subagents-panel";
-import { TerminalDockSlot } from "../terminal/terminal-dock-slot";
+import { SubagentsView } from "./subagents-view";
+import { TracePanel } from "../traces/trace-panel";
+import { DockPanel } from "../dock/dock-panel";
+import { useDockMount } from "../dock/use-dock-mount";
+import { panelLabel } from "../dock/panel-meta";
+import { adoptDockScope } from "../dock/dock-state";
+import { setDockCwd } from "../dock/dock-terminal";
 import {
-  advancePanelTaskScope,
-  createPanelTaskScope,
-  useSubagentsPanel,
-} from "./use-subagents-panel";
-import type { SubagentsPanelState } from "./use-subagents-panel";
+  dockViews,
+  dockVersion,
+  isTabShown,
+  openPanel,
+  panelDock,
+  subscribeDock,
+  type PanelKind,
+} from "../dock/dock-state";
+import "../dock/dock-terminal"; // registers the global Ctrl+` hotkey with the app bundle
+import { terminalApiSupported, subscribeTerminals } from "../terminal/terminal-list";
+import { advancePanelTaskScope, createPanelTaskScope } from "./panel-task-scope";
 import { useSessionDraft } from "./use-session-draft";
 import { useSessionStream } from "./use-session-stream";
 import { PanelsToolbar } from "./panels-toolbar";
@@ -135,13 +134,6 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
-
-/**
- * Docked panel swap sequencing: how long the outgoing panel gets to retract before the
- * incoming one slides in. Matches the panels' own `transition-[width] duration-200`
- * (files-panel.tsx / subagents-panel.tsx) — shorter would cut the retract off, longer
- * would leave a dead gap.
- */
 
 /** Iconized stat item: a symbol + a value, with the title giving the full meaning. */
 function StatChip({ icon, value, label }: { icon: string; value: ReactNode; label: string }) {
@@ -320,144 +312,76 @@ export function ChatPage() {
   const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
 
   const routeSessionId = params.sessionId ?? null;
-  const filesPanelRaw = useFilesPanel(routeSessionId);
-  const memoryPanelRaw = useMemoryPanel(routeSessionId);
-  const subagentsPanelRaw = useSubagentsPanel(routeSessionId);
-  // The three docked panels are MUTUALLY EXCLUSIVE — side by side they'd crush the chat column at
-  // the 1024px breakpoint (and stacked Sheets on mobile would be worse). Exclusivity is
-  // enforced here, on the panel objects every consumer receives, rather than at each call site:
-  // ANY path that opens one panel (toolbar toggles, message file cards via onOpenFile, subagent
-  // chips via onOpenSubagent, memory-changes card rows via onLocateMemoryChange, or a future
-  // caller) closes the other two as a side effect of setOpen(true). Closing never cascades. The
-  // hooks stay uncoordinated on purpose — they don't know about each other; only this page,
-  // which owns all three, does.
-  //
-  // Docked swaps are SEQUENCED, not simultaneous: with both width transitions running at
-  // once the total width is constant, so the closing panel's left-anchored content never
-  // moves — the incoming panel just wipes over it, which reads as "the old panel never
-  // retracted". Closing the old one fully first (its width animates while the chat column
-  // takes the space back), then sliding the new one in, makes both motions legible. A new
-  // swap/toggle cancels the pending open; mobile Sheets keep the instant switch — they
-  // overlay rather than share width, so the sequencing would only add dead time.
-  const panelSwapTimer = useRef<number | null>(null);
-  const cancelPanelSwap = () => {
-    if (panelSwapTimer.current !== null) {
-      window.clearTimeout(panelSwapTimer.current);
-      panelSwapTimer.current = null;
-    }
-  };
-  useEffect(() => cancelPanelSwap, []);
+  // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
+  // sizes, all global and persisted. This page re-renders on any dock change and owns only
+  // the stream-driven JUMP COMMANDS the panel bodies consume: each is a fresh object per
+  // call (identity-compared, so repeating the same jump still re-triggers the view's
+  // effect), and each resets on a Session switch because it pointed into the old session's
+  // stream. The tabs themselves deliberately survive the switch — the panels re-bind to
+  // the conversation on screen.
+  useSyncExternalStore(subscribeDock, dockVersion);
+  useSyncExternalStore(subscribeTerminals, terminalApiSupported);
+  /** Workspace tab: locate this file in the tree (a message file card's click). */
+  const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
+  /** Memory tab: land on this memory's detail (a card row), or the list (null target). */
+  const [memoryRequest, setMemoryRequest] = useState<{
+    target: MemoryLocateTarget | null;
+  } | null>(null);
+  /** Agents tab: select this child conversation (a subagent chip's click; the chain ends with the child's own id). */
+  const [subagentFocus, setSubagentFocus] = useState<{
+    sessionId: string;
+    origin: string[];
+  } | null>(null);
   /**
-   * Opens `open` after retracting `closeFirst` when a docked swap needs sequencing; instant
-   * otherwise. `retractingPane` extends the same courtesy to a side terminal pane the open
-   * is displacing: it collapses on the same 200ms a closing panel takes, and opening over
-   * it mid-collapse is the wipe the sequencing exists to avoid.
+   * Which Task's topology the agents tab displays. Null = the LATEST Task; a chip click
+   * pins the graph to the Task containing that chip instead — `anchorSessionId` is the
+   * clicked child's TOP-LEVEL ancestor, which the view resolves to its Task slice.
    */
-  const swapPanels = (
-    closeFirst: { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
-    open: (v: boolean) => void,
-    retractingPane = false,
-  ) => {
-    closeFirst.setOpen(false);
-    if ((closeFirst.open && closeFirst.isDocked) || retractingPane) {
-      panelSwapTimer.current = window.setTimeout(() => {
-        panelSwapTimer.current = null;
-        open(true);
-      }, SIDE_SLOT_TRANSITION_MS);
-    } else {
-      open(true);
-    }
-  };
-  // The exclusivity above extends to the terminal dock's LEFT and RIGHT panes, which want the
-  // same horizontal half of the content area: opening a panel displaces them, and opening a
-  // side pane retracts the panels. Whichever the user asked for last is what they get. The
-  // dock only learns that a panel is up (setChatSidePanelOpen); it keeps its arrangement, so
-  // closing the panel brings the pane back where it was. Top/bottom panes are unaffected —
-  // they cost height, not width.
-  /** A visible left/right terminal pane — read BEFORE the flag below starts hiding it. */
-  const sidePaneShowing = () => visiblePanes().some((p) => p === "left" || p === "right");
-  /**
-   * Tri-panel exclusivity: at most one of the three docked panels is open, so opening one
-   * hard-closes the sibling that is already closed (a no-op) and hands the OPEN sibling to
-   * swapPanels for the sequenced close→open (the collapse-transition dance above). Closing
-   * asks the two siblings whether the side is still held — this panel's own `open` is the
-   * render-time value and still reads true here.
-   */
-  const exclusiveOpen = (
-    self: { setOpen: (v: boolean) => void },
-    siblings: [
-      { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
-      { open: boolean; isDocked: boolean; setOpen: (v: boolean) => void },
-    ],
-  ) => {
-    const retracting = sidePaneShowing();
-    setChatSidePanelOpen(true);
-    const [a, b] = siblings;
-    const openSibling = a.open ? a : b;
-    const otherSibling = openSibling === a ? b : a;
-    otherSibling.setOpen(false);
-    swapPanels(openSibling, self.setOpen, retracting);
-  };
-  const filesPanel: FilesPanelState = {
-    ...filesPanelRaw,
-    setOpen: (next: boolean) => {
-      cancelPanelSwap();
-      if (next) {
-        exclusiveOpen(filesPanelRaw, [subagentsPanelRaw, memoryPanelRaw]);
-      } else {
-        filesPanelRaw.setOpen(false);
-        setChatSidePanelOpen(subagentsPanelRaw.open || memoryPanelRaw.open);
-      }
-    },
-  };
-  const subagentsPanel: SubagentsPanelState = {
-    ...subagentsPanelRaw,
-    setOpen: (next: boolean) => {
-      cancelPanelSwap();
-      if (next) {
-        exclusiveOpen(subagentsPanelRaw, [filesPanelRaw, memoryPanelRaw]);
-      } else {
-        subagentsPanelRaw.setOpen(false);
-        setChatSidePanelOpen(filesPanelRaw.open || memoryPanelRaw.open);
-      }
-    },
-  };
-  const memoryPanel: MemoryPanelState = {
-    ...memoryPanelRaw,
-    setOpen: (next: boolean) => {
-      cancelPanelSwap();
-      if (next) {
-        exclusiveOpen(memoryPanelRaw, [filesPanelRaw, subagentsPanelRaw]);
-      } else {
-        memoryPanelRaw.setOpen(false);
-        setChatSidePanelOpen(filesPanelRaw.open || subagentsPanelRaw.open);
-      }
-    },
-  };
-  // The other direction. The store flips this the moment anything puts a terminal on screen
-  // (see terminalTakesTheSide), which is the only signal the page needs: retract every panel
-  // and let the pane render. Edge-triggered, so a panel the user opens is not immediately
-  // closed again — it sets the flag back on its way up.
-  useSyncExternalStore(subscribeTerminalDock, dockStateVersion);
-  const terminalHasTheSide = !chatSidePanelOpen();
+  const [subagentTaskScope, setSubagentTaskScope] = useState<{
+    anchorSessionId: string;
+  } | null>(null);
   useEffect(() => {
-    if (!terminalHasTheSide) return;
-    // A sequenced open still waiting on its timer must die with the panels it belongs to:
-    // firing after the terminal reclaimed the side would open a panel over the pane with
-    // the exclusion flag already false — visibly both at once, and nothing to clear it.
-    cancelPanelSwap();
-    filesPanelRaw.setOpen(false);
-    subagentsPanelRaw.setOpen(false);
-    memoryPanelRaw.setOpen(false);
-    // Panel objects are recreated every render; the raw hooks' setters are stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terminalHasTheSide]);
+    setFileOpenRequest(null);
+    setMemoryRequest(null);
+    setSubagentFocus(null);
+    setSubagentTaskScope(null);
+  }, [routeSessionId]);
+  // A command also resets when its panel's TAB closes: the tab body unmounts with the tab,
+  // so a re-added tab is a fresh mount that would otherwise replay the stale command —
+  // reopening the Workspace would re-locate a long-clicked file, and reopening the agents
+  // tab would come back pinned to an old Task instead of the latest.
+  const workspaceTabExists = panelDock("workspace") !== null;
+  const memoryTabExists = panelDock("memory") !== null;
+  const agentsTabExists = panelDock("agents") !== null;
+  useEffect(() => {
+    if (!workspaceTabExists) setFileOpenRequest(null);
+  }, [workspaceTabExists]);
+  useEffect(() => {
+    if (!memoryTabExists) setMemoryRequest(null);
+  }, [memoryTabExists]);
+  useEffect(() => {
+    if (!agentsTabExists) {
+      setSubagentFocus(null);
+      setSubagentTaskScope(null);
+    }
+  }, [agentsTabExists]);
   // Parked draft conversations (`/chat/draft-…`) render the same DraftView as `/chat/new`,
   // just bound to their own stored entry — every "this is a draft, not a Session" branch
   // below treats the two alike.
   const parkedDraftId = parkedDraftIdOf(routeSessionId);
   const draft = routeSessionId === DRAFT_SESSION_ID || parkedDraftId !== null;
   const selected = draft ? null : (sessions.find((s) => s.sessionId === routeSessionId) ?? null);
+  // New shells start in this conversation's Workspace — its files are what a terminal
+  // opened here is for. While drafting, the Workspace is the one picked in the draft and
+  // DraftView publishes it instead (a child effect runs before this one, so this must
+  // yield rather than clobber it with null). Leaving the chat for another page keeps the
+  // last conversation's Workspace: it is a better default than home for the hotkey,
+  // which stays live everywhere.
+  useEffect(() => {
+    if (draft) return;
+    setDockCwd(selected?.workspace ?? null);
+  }, [draft, selected?.workspace]);
+
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
     ? { provider: selected.provider, modelId: selected.modelId }
@@ -551,12 +475,13 @@ export function ChatPage() {
     memoryChangesRef.current = rawMemoryChanges;
   }
   const sessionMemoryChanges = memoryChangesRef.current;
-  // The Agent's memory listing, fetched once memory is on screen or this conversation has
-  // changes to mark; shared by the Memory panel and the card's deleted-row marking.
+  // The Agent's memory listing, fetched once the Memory tab exists (its body is mounted
+  // even behind another tab) or this conversation has changes to mark; shared by the
+  // Memory panel and the card's deleted-row marking.
   const memoryListing = useMemoryListing(
     projectId,
     selected?.agentId ?? null,
-    memoryPanelRaw.open || sessionMemoryChanges.length > 0,
+    panelDock("memory") !== null || sessionMemoryChanges.length > 0,
     sessionMemoryChanges,
   );
   // Changed files the loaded listing no longer carries: the card drops those rows
@@ -595,31 +520,10 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, selectedAgentId, setCurrentAgentId]);
 
-  // A NEW chat starts with every panel closed: a panel opened for an earlier conversation must
-  // not carry into a freshly created one. The draft is the reset point — it renders no panels
-  // itself, so the Session created from it (first send navigates to /chat/:id) begins closed,
-  // while a plain conversation switch keeps whatever the user had open. This effect owns the
-  // ONLY automatic close of any of them.
-  useEffect(() => {
-    if (!draft) return;
-    // A swap's pending delayed open must not fire into the fresh draft after this reset.
-    cancelPanelSwap();
-    filesPanelRaw.setOpen(false);
-    subagentsPanelRaw.setOpen(false);
-    memoryPanelRaw.setOpen(false);
-    setChatSidePanelOpen(false); // nothing holds the side any more: side panes come back
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
-
-  // Subagents panel AUTO-OPEN (the one visibility rule this panel has beyond the Files panel's):
-  // the pure tracker (advancePanelTaskScope, unit-tested) opens it on the CURRENT task's first
-  // live spawn, re-armed at every task boundary so a manual close is respected until the next
-  // one. Boundaries themselves no longer close anything — an open panel now survives Session
-  // switches and new Tasks alike, matching the Files panel.
-  // The auto-open applies only when docked (a mobile Sheet sliding over the conversation
-  // uninvited would be worse than staying discoverable via the row), never over an open Files
-  // panel (an automatic open must not steal an explicit one — the row and the toolbar's amber
-  // dot still signal), and never re-triggers an already-open panel (that would yank a pinned
+  // Agents tab AUTO-OPEN (the one automatic tab action): the pure tracker
+  // (advancePanelTaskScope, unit-tested) brings the agents tab to the front on the CURRENT
+  // task's first live spawn, re-armed at every task boundary so a manual close is respected
+  // until the next one. It never re-triggers an already-shown tab (that would yank a pinned
   // historical graph back to the latest Task); the tracker consumes the attempt regardless.
   const panelTaskScopeRef = useRef(createPanelTaskScope());
   // Deliberately the LIVE model's items only (never the backfilled prefix): the tracker
@@ -634,18 +538,8 @@ export function ChatPage() {
       taskCount,
       liveSpawn,
     });
-    if (
-      action === "autoOpen" &&
-      subagentsPanelRaw.isDocked &&
-      !subagentsPanelRaw.open &&
-      !filesPanelRaw.open &&
-      !memoryPanelRaw.open
-    ) {
-      setChatSidePanelOpen(true);
-      subagentsPanelRaw.setOpen(true);
-    }
-    // The panel objects are rebuilt every render; the tracker only acts on real transitions of
-    // these three observed values.
+    if (action === "autoOpen" && !isTabShown("agents")) openPanel("agents");
+    // The tracker only acts on real transitions of these three observed values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSessionId, taskCount, liveSpawn]);
 
@@ -796,9 +690,8 @@ export function ChatPage() {
   // thinking-level switch staged behind its dialog (per-session UI state — a compaction
   // that self-heals to a new session id routes through here too and drops the held pick),
   // and the popover's per-session data (process list / token buckets / trace path),
-  // avoiding stale data from the previous Session (Files panel state resets itself keyed
-  // on sessionId inside use-files-panel, and the cost hold re-keys itself inside
-  // advanceCostStat). The thinking level itself needs no reset — it is read off the
+  // avoiding stale data from the previous Session (the panel jump commands reset in their
+  // own effect above, and the cost hold re-keys itself inside advanceCostStat). The thinking level itself needs no reset — it is read off the
   // selected Session row, so it changes with the session by construction.
   useEffect(() => {
     usageAppliedRef.current = null;
@@ -1058,7 +951,7 @@ export function ChatPage() {
     async (currentId: string, respondedId: string) => {
       if (respondedId === currentId) return;
       await reloadSessions();
-      // Same conversation under a new id: its terminals follow, or they are stranded under
+      // Same conversation under a new id: its docks follow, or they are stranded under
       // an id nothing routes to again.
       adoptDockScope(respondedId);
       navigate(`/chat/${respondedId}`, { replace: true });
@@ -1520,30 +1413,31 @@ export function ChatPage() {
     },
     onOpenFile: (path) => {
       // The file card has already normalized the text path to a Workspace-relative path
-      // (toWorkspaceRelative, including stripping absolute-path prefixes and converting Windows
-      // separators), so this just opens the panel and navigates to it directly (the wrapped
-      // setOpen already closes the sibling panels — see the exclusivity block above).
-      filesPanel.setOpen(true);
-      filesPanel.browsePath(path);
+      // (toWorkspaceRelative, including stripping absolute-path prefixes and converting
+      // Windows separators), so this just brings the Workspace tab up and navigates to it.
+      openPanel("workspace");
+      setFileOpenRequest({ path });
     },
     onOpenSubagent: (sessionId, origin) => {
-      // Chip click: open the panel focused on that child (the focus chain ends with the child's
-      // own id; the wrapped setOpen closes the sibling panels). focusSubagent after setOpen: the
-      // open resets the Task scope to "latest", and the focus then pins it to this chip's Task.
-      subagentsPanel.setOpen(true);
-      subagentsPanel.focusSubagent(sessionId, [...origin, sessionId]);
+      // Chip click: the agents tab focused on that child (the focus chain ends with the
+      // child's own id), with the graph pinned to this chip's Task.
+      openPanel("agents");
+      setSubagentTaskScope({ anchorSessionId: origin[0] ?? sessionId });
+      setSubagentFocus({ sessionId, origin: [...origin, sessionId] });
     },
     onOpenMemory: () => {
-      // The Memory panel on its list (the wrapped setOpen closes the sibling panels).
-      memoryPanel.setOpen(true);
-      memoryPanelRaw.openMemory(null);
+      // The Memory tab on its list.
+      openPanel("memory");
+      setMemoryRequest({ target: null });
     },
     onLocateMemoryChange: (row) => {
-      memoryPanel.setOpen(true);
-      memoryPanelRaw.openMemory({
-        scope: row.scope,
-        ...(row.scopeKey !== undefined ? { scopeKey: row.scopeKey } : {}),
-        file: row.file,
+      openPanel("memory");
+      setMemoryRequest({
+        target: {
+          scope: row.scope,
+          ...(row.scopeKey !== undefined ? { scopeKey: row.scopeKey } : {}),
+          file: row.file,
+        },
       });
     },
     ...(deletedMemoryKeys !== undefined ? { deletedMemoryKeys } : {}),
@@ -1556,6 +1450,63 @@ export function ChatPage() {
   // main-session keys start with a space): surfaces an amber dot on the toolbar button so a
   // nested approval stays discoverable while the panel is closed.
   const anySubagentPending = [...stream.pendingApprovals.keys()].some((k) => !k.startsWith(" "));
+
+  // The docks to render: right beside the chat row, bottom below it (the narrow merged
+  // view arrives as a bottom view). They render on the draft page too — the arrangement is
+  // the user's workbench, and a terminal opened while drafting must be visible — with the
+  // session-bound panels showing a placeholder until the first send creates the Session.
+  // useDockMount keeps a closing dock mounted through its collapse transition and skips
+  // the animation for instant changes (scope switches, cross-dock moves).
+  const views = dockViews();
+  const rightMount = useDockMount(views.find((view) => view.position === "right") ?? null);
+  const bottomMount = useDockMount(views.find((view) => view.position === "bottom") ?? null);
+  const terminalSupported = terminalApiSupported();
+
+  /**
+   * The panel tabs' bodies. Keyed by Session where the view starts over per conversation
+   * (agents / memory / trace); the Workspace browser instead re-binds through its props —
+   * its own handled-once request guard is what the conversation-switch e2e covers.
+   */
+  const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
+    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
+    switch (kind) {
+      case "agents":
+        return (
+          <SubagentsView
+            key={selected.sessionId}
+            session={selected}
+            // The merged view (backfilled windows included): a chip on an older turn keeps
+            // its historical graph and child conversation reachable after pagination.
+            model={panelModel}
+            version={stream.version}
+            taskRunning={stream.taskState !== "idle"}
+            ctx={ctx}
+            focusRequest={subagentFocus}
+            taskScope={subagentTaskScope}
+          />
+        );
+      case "workspace":
+        return (
+          <WorkspaceBrowser session={selected} openRequest={fileOpenRequest} active={active} />
+        );
+      case "memory":
+        return (
+          <ChatMemoryView
+            key={selected.sessionId}
+            session={selected}
+            changes={sessionMemoryChanges}
+            scopes={memoryListing.scopes}
+            listingError={memoryListing.error}
+            request={memoryRequest}
+            active={active}
+            // Management (add / edit / delete) lives on the agent-settings memory tab.
+            onOpenSettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
+          />
+        );
+      case "trace":
+        return <TracePanel key={selected.sessionId} session={selected} active={active} />;
+    }
+  };
 
   if (!projectId || !agentId) {
     return (
@@ -1698,7 +1649,9 @@ export function ChatPage() {
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
 
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-gray-950">
+    // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
+    // ratio all measure this column (dock-drag.tsx / dock-panel.tsx).
+    <div data-dock-host className="flex h-full flex-col bg-white dark:bg-gray-950">
       {/* Thin top toolbar */}
       {selected && (
         <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-200 px-3 py-2 md:px-4 dark:border-gray-800">
@@ -1722,29 +1675,11 @@ export function ChatPage() {
             )}
           </div>
 
-          {/* Panel switcher (icon-only): pinned panel triggers + the "all panels" dropdown
-              with per-panel pin toggles. Subagents panel docks the latest-Task call graph
-              (use-subagents-panel.ts), Workspace docks the files panel (use-files-panel.ts),
-              Memory docks the two-level memory view (use-memory-panel.ts) — opening any of the
-              three closes the other two (wrapped setOpen) — and the terminal toggles the
-              app-wide dock (terminal-dock.tsx). */}
-          <PanelsToolbar
-            agentsOpen={subagentsPanel.open}
-            onToggleAgents={() => subagentsPanel.setOpen(!subagentsPanel.open)}
-            agentsPending={anySubagentPending}
-            workspaceOpen={filesPanel.open}
-            onToggleWorkspace={() => filesPanel.setOpen(!filesPanel.open)}
-            memoryOpen={memoryPanel.open}
-            onToggleMemory={() => {
-              if (memoryPanel.open) {
-                memoryPanel.setOpen(false);
-              } else {
-                // Toolbar entry lands on the list level (memory-nav entry routing).
-                memoryPanel.setOpen(true);
-                memoryPanelRaw.openMemory(null);
-              }
-            }}
-          />
+          {/* Panel switcher (icon-only): pinned triggers + the "create" dropdown with
+              placement actions and pin toggles. Every entry is a dock tab (features/dock)
+              — the toolbar reads and drives the dock store directly; this page only feeds
+              the pending-approval dot. */}
+          <PanelsToolbar agentsPending={anySubagentPending} />
 
           {/* Conversation index fallback: exactly when the gutter tick rail can't show
               (phones without a hover pointer; a desktop window whose gutter a docked panel
@@ -2020,13 +1955,11 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Body: chat column + the docked panels on the right (message file cards jump to and
-          locate a file in the tree via onOpenFile), and the dock's side panes, which share
-          that slot and so belong on this row rather than around <main> — otherwise they
-          squeeze the header above. data-dock-side-row is what the drop preview measures for
-          a left/right landing. */}
-      <div data-dock-side-row className="flex min-h-0 flex-1">
-        <TerminalDockSlot position="left" />
+      {/* Body: chat column + the right dock on this row (below the toolbar — a dock
+          beside the whole page would squeeze the header), with the bottom dock after the
+          row spanning the full page width. data-dock-row is what the drag preview
+          measures for a right landing. */}
+      <div data-dock-row className="flex min-h-0 flex-1">
         {/* The chat area, and the only region a dragged file may be dropped on (#311): it
             covers the conversation and the composer in both branches below, and nothing else
             — the sidebar, the mobile top bar, the toolbar above and the docked panels beside
@@ -2139,32 +2072,28 @@ export function ChatPage() {
           )}
         </ChatDropRegion>
 
-        {selected && (
-          <SubagentsPanel
-            session={selected}
-            panel={subagentsPanel}
-            // The merged view (backfilled windows included): a chip on an older turn keeps
-            // its historical graph and child conversation reachable after pagination.
-            model={panelModel}
-            version={stream.version}
-            taskRunning={stream.taskState !== "idle"}
-            ctx={ctx}
+        {rightMount.view && (
+          <DockPanel
+            view={rightMount.view}
+            open={rightMount.open}
+            animateEntrance={rightMount.animateEntrance}
+            renderPanel={renderPanel}
+            panelBadges={{ agents: anySubagentPending }}
+            terminalSupported={terminalSupported}
           />
         )}
-        {selected && <FilesPanel session={selected} panel={filesPanel} />}
-        {selected && (
-          <MemoryPanel
-            session={selected}
-            panel={memoryPanel}
-            memoryChanges={sessionMemoryChanges}
-            scopes={memoryListing.scopes}
-            listingError={memoryListing.error}
-            // Management (add / edit / delete) lives on the agent-settings memory tab.
-            onOpenMemorySettings={() => navigate(`/agents/${selected.agentId}?tab=memory`)}
-          />
-        )}
-        <TerminalDockSlot position="right" />
       </div>
+
+      {bottomMount.view && (
+        <DockPanel
+          view={bottomMount.view}
+          open={bottomMount.open}
+          animateEntrance={bottomMount.animateEntrance}
+          renderPanel={renderPanel}
+          panelBadges={{ agents: anySubagentPending }}
+          terminalSupported={terminalSupported}
+        />
+      )}
 
       <Modal
         open={credentialGuide}

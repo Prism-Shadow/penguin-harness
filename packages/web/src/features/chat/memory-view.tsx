@@ -1,5 +1,5 @@
 /**
- * The Memory side panel's content (see memory-panel.tsx for the shell): two levels, modeled
+ * The Memory tab's content (the dock provides the shell — features/dock): two levels, modeled
  * by memory-nav.ts. The list shows both scopes' topic lists — the same server routes the
  * agent-settings memory tab reads — with a marker on topics this conversation changed; a
  * topic's detail is the memory's content rendered like the file viewer (Markdown,

@@ -37,10 +37,6 @@ export const zh = {
     newShell: "新建 Shell",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
-    /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "调整终端面板大小",
-    /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "暂无终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "终端创建失败",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -48,7 +44,6 @@ export const zh = {
       "该服务端没有终端接口：运行中的 runtime 早于该功能。热更新只替换平台与前端，终端接口属于 runtime，需更新 runtime 本身（重启无效）",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "在新窗口打开",
-    close: "关闭",
     status: {
       connecting: "连接中",
       ready: "已连接",
@@ -57,6 +52,35 @@ export const zh = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `退出码 ${code}`,
+  },
+
+  /** The dock surfaces (right / bottom) every side element renders in as a tab. */
+  dock: {
+    /** The dock header's "+" menu: panels and shells this dock can take a tab for. */
+    addTab: "添加面板",
+    /** A panel tab's × (its content closes; terminal tabs use terminal.killShell instead). */
+    closeTab: "关闭面板",
+    /** The dock header's ×: the dock hides, its tabs stay for the next open. */
+    hideDock: "收起侧边栏",
+    moveToRight: "移到右侧",
+    moveToBottom: "移到下方",
+    /** Boundary drag handle between a dock and the chat content (double-click resets). */
+    resize: "调整面板大小",
+    /** The toolbar's two pull-open buttons (aria-expanded carries the open state). */
+    rightDock: "右侧栏",
+    bottomDock: "下侧栏",
+    /** A session-bound panel's body on the draft page, where no Session exists yet. */
+    draftEmpty: "发送第一条消息后可用",
+    /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
+    killConfirmTitle: "关闭此终端？",
+    killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+  },
+
+  /** The Trace dock panel (the current conversation's Trace files). */
+  tracePanel: {
+    empty: "暂无轨迹",
+    emptyHint: "该会话还没有产生 Trace 文件",
+    loadFailed: "轨迹加载失败",
   },
 
   settings: {
@@ -198,12 +222,12 @@ export const zh = {
   common: {
     save: "保存",
     cancel: "取消",
+    close: "关闭",
     create: "创建",
     delete: "删除",
     edit: "编辑",
     settings: "设置",
     confirm: "确认",
-    close: "关闭",
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
@@ -1377,13 +1401,8 @@ Benchmark：
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",
     removeImage: "移除图片",
-    openWorkspace: "打开工作区",
     openAgents: "智能体面板",
-    /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "创建",
     workspacePanel: "工作区",
-    pinPanel: "置顶到栏目",
-    unpinPanel: "取消置顶",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -1398,7 +1417,6 @@ Benchmark：
     memoryViewTitle: "记忆",
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
-    openMemoryPanel: "打开记忆",
     memoryRowOpen: "查看内容",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
@@ -1557,12 +1575,13 @@ Benchmark：
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "智能体面板",
     topologyLabel: "调用关系",
     mainSessionNote: "主会话请在对话区查看",
     empty: "本次任务尚未派生子智能体",
     nodeRunning: "运行中",
     nodeDone: "已完成",
+    /** Identity-strip jump: opens the selected subagent's own Session in the chat area. */
+    openAsSession: "跳转到该会话",
   },
 
   files: {
@@ -1587,7 +1606,6 @@ Benchmark：
     htmlRendered: "渲染视图",
     htmlSource: "源码",
     backToList: "返回列表",
-    resizeHandle: "拖拽调整宽度，双击恢复默认",
   },
 
   usage: {

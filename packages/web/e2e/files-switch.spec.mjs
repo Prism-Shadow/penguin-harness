@@ -1,14 +1,12 @@
 /**
  * Regression: switching conversations while a Files-panel HTML preview is open must
- * return the panel to the NEW session's file list — not resurrect the old session's
- * preview against the new session.
+ * never resurrect the old session's preview against the new session.
  *
- * The trap this guards: the panel stays mounted across a sidebar switch (client-side
- * navigation, `session` prop flips), and the openRequest locate effect also re-runs when
- * previewPath's identity changes with session.sessionId. The parent clears openRequest
- * only after child effects, so without a handled-once guard the old request replays
- * against the new session — with the isolated iframe that committed a preview-redirect
- * URL for a file the new Workspace doesn't have, i.e. a raw 404 page in the panel.
+ * Under per-conversation docks the guard is structural: B has no workspace tab of its
+ * own, so switching shows NO dock at all — nothing to replay A's preview into — and B's
+ * own workspace (opened via the toolbar toggle and the picker) starts on B's empty list.
+ * Switching back to A remounts A's workspace tab fresh, on A's file list (the preview
+ * state does not survive the scope switch — the tab's body unmounted with it).
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -70,21 +68,25 @@ test("switching conversations closes the old session's HTML preview and shows th
   await cardRow.click();
   await expect(page.frameLocator("iframe").getByText("Session A page")).toBeVisible();
 
-  // --- switch to B via the sidebar (client-side navigation, the panel stays mounted) ---
+  // --- switch to B via the sidebar (client-side navigation) ---
   const sidebar = page.getByRole("complementary");
   // Wait for A's generated title so "新对话" uniquely identifies B.
-  await expect(sidebar.getByText("Configure Tailwind theme")).toBeVisible();
+  await expect(sidebar.getByText("Configure Tailwind theme").first()).toBeVisible();
   await sidebar.getByText("新对话").first().click();
   await expect(page).toHaveURL(new RegExp(sidB));
 
-  // The panel must be back on the (empty) list of B: no preview header, no iframe kept
-  // or re-created for A's demo.html.
-  await expect(page.getByRole("button", { name: "返回列表" })).toHaveCount(0);
+  // B manages its own tabs: no dock carried over, no iframe kept or re-created for A's
+  // demo.html. B's own workspace then opens on B's (empty) list.
+  await expect(page.locator('[data-testid="dock"]')).toHaveCount(0);
   await expect(page.locator("iframe")).toHaveCount(0);
+  await page.getByTestId("dock-toggle-right").click();
+  await page.getByTestId("dock-pick-workspace").click();
+  await expect(page.getByRole("button", { name: "返回列表" })).toHaveCount(0);
   await expect(page.getByText("空目录")).toBeVisible();
 
-  // --- switching back to A keeps the panel usable: the list shows A's file again ---
+  // --- switching back to A restores A's own workspace tab, fresh on A's file list ---
   await sidebar.getByText("Configure Tailwind theme").first().click();
   await expect(page).toHaveURL(new RegExp(sidA));
   await expect(page.getByText("demo.html").first()).toBeVisible();
+  await expect(page.locator("iframe")).toHaveCount(0);
 });

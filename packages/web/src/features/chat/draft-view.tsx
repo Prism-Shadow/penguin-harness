@@ -48,7 +48,6 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { adoptDockScope } from "../terminal/terminal-dock-state";
 import { S } from "../../lib/strings";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
@@ -63,6 +62,8 @@ import { PenguinLogo } from "../../components/ui/penguin-logo";
 import { toastError } from "../../components/ui/toast";
 import { useVersionInfo } from "../../lib/use-version-info";
 import { ChatInput } from "./chat-input";
+import { adoptDockScope } from "../dock/dock-state";
+import { setDockCwd } from "../dock/dock-terminal";
 import { buildSkillsMessage } from "./skill-use";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
 import type { ExampleFolderId, ExampleTask, ExampleTaskId } from "./example-tasks";
@@ -177,6 +178,12 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
+  // A terminal opened while drafting starts in the Workspace chosen here; "" is the
+  // temporary Workspace, whose directory the server only creates with the Session, so
+  // that case falls back to home (setDockCwd's null).
+  useEffect(() => {
+    setDockCwd(workspace || null);
+  }, [workspace]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -634,9 +641,9 @@ export function DraftView({
         const fresh = await api.getSession(res.sessionId).catch(() => null);
         add(fresh?.session ?? created.session);
         if (!keepDraft) discardDraft();
-        // The draft now has an id of its own, so its terminals move with it: every draft
-        // shares one dock scope, and anything left behind under that key would surface in
-        // the NEXT new conversation instead (terminal-dock-state.ts).
+        // The draft now has an id of its own, so its docks move with it: anything left
+        // behind under the draft's scope would surface in the NEXT new conversation
+        // instead (dock-state.ts).
         adoptDockScope(res.sessionId);
         navigate(`/chat/${res.sessionId}`, { replace: true });
         return true;

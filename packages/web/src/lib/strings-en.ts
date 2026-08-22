@@ -36,9 +36,7 @@ export const en: Strings = {
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
-    resize: "Resize terminal panel",
     /** Hover menu when the user has no live terminal yet. */
-    noTerminals: "No terminals",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
     createFailed: "Could not start a terminal",
     /** A create that 404s: the server predates the terminal API (or the shell attached to an older one). */
@@ -46,7 +44,6 @@ export const en: Strings = {
       "this server has no terminal API: the running runtime predates it. A hot push replaces the platform and Web App, but the terminal endpoints are runtime-owned — the runtime itself has to be updated (restarting will not help)",
     /** Codex-style handoff: opens /terminal?id=… in a new window, the dock lets go. */
     detach: "Open in new window",
-    close: "Close",
     status: {
       connecting: "connecting",
       ready: "ready",
@@ -55,6 +52,27 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+  },
+
+  dock: {
+    addTab: "Add panel",
+    closeTab: "Close panel",
+    hideDock: "Hide sidebar",
+    moveToRight: "Move to the right",
+    moveToBottom: "Move to the bottom",
+    resize: "Resize panel",
+    rightDock: "Right sidebar",
+    bottomDock: "Bottom panel",
+    draftEmpty: "Available once the conversation starts",
+    killConfirmTitle: "Close this terminal?",
+    killConfirmBody: (name: string): string =>
+      `This ends the shell "${name}" — it cannot be restored.`,
+  },
+
+  tracePanel: {
+    empty: "No traces yet",
+    emptyHint: "This session has not produced a Trace file yet",
+    loadFailed: "Failed to load traces",
   },
 
   settings: {
@@ -205,12 +223,12 @@ export const en: Strings = {
   common: {
     save: "Save",
     cancel: "Cancel",
+    close: "Close",
     create: "Create",
     delete: "Delete",
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
-    close: "Close",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -1425,13 +1443,9 @@ Scenarios:
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
     removeImage: "Remove image",
-    openWorkspace: "Open workspace",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    panelsCreate: "Create",
     workspacePanel: "Workspace",
-    pinPanel: "Pin to toolbar",
-    unpinPanel: "Unpin",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1444,7 +1458,6 @@ Scenarios:
     memoryViewTitle: "Memory",
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
-    openMemoryPanel: "Open memory",
     memoryRowOpen: "View content",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
@@ -1604,12 +1617,12 @@ Scenarios:
 
   /** Subagents side panel: call-graph of the latest Task + the selected child conversation. */
   subagentPanel: {
-    title: "Agents panel",
     topologyLabel: "Call graph",
     mainSessionNote: "The main conversation stays in the chat area",
     empty: "No subagents in the current task yet",
     nodeRunning: "running",
     nodeDone: "done",
+    openAsSession: "Jump to this session",
   },
 
   files: {
@@ -1635,7 +1648,6 @@ Scenarios:
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
-    resizeHandle: "Drag to resize, double-click to reset",
   },
 
   usage: {
