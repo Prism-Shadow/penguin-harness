@@ -1,10 +1,10 @@
 # `agent-creation` renamed to `agent-initialization`
 
 - **Date:** 2026-08-21
-- **Type:** change
+- **Type:** refactor
 - **Scope:** `skills`, `web`, `docs`
 - **PR:** [#400](https://github.com/Prism-Shadow/penguin-harness/pull/400)
-- **Breaking:** the library Skill `agent-creation` no longer exists under that name
+- **Breaking:** yes — the library Skill `agent-creation` no longer exists under that name
 
 [中文版](2026-08-21-agent-initialization-skill.zh.md)
 
@@ -21,7 +21,7 @@ screen's example task that pins it, the SDK Skill's cross-reference, the READMEs
 Published blog posts and the frozen changelog entries of released versions keep the old name: they record
 what was true when they were written.
 
-## 兼容性
+## Compatibility
 
 An Agent that already installed `agent-creation` keeps its copy at `agent_state/skills/agent-creation/`.
 That copy still works — it is a self-contained directory — but it no longer corresponds to any library
