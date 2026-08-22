@@ -51,7 +51,8 @@
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
- * selects it.
+ * selects it. The draft screen's example cards reach in through `controlRef` to fill the text
+ * body and preselect their skills — a fill, never a send: the user presses Send.
  * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
  * an empty composer shows Stop (abort), and typing turns that same button into Send, which
  * follows the remembered mid-run send mode — steer (delivered between turns as a
@@ -64,7 +65,15 @@
  * Renders only the card body itself: outer positioning such as bottom-docking or vertical
  * centering is decided by the page.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ChangeEvent, ClipboardEvent, KeyboardEvent, ReactNode, RefObject } from "react";
 import type {
   AgentSummary,
@@ -108,6 +117,7 @@ import {
 } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
 import { mergeRecalledDraft } from "./recall-draft";
+import { buildExampleFill } from "./example-fill";
 import {
   caretOnFirstLine,
   caretOnLastLine,
@@ -852,6 +862,20 @@ function appendAttachmentParts(
   }
 }
 
+/**
+ * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
+ * One entry so far: the draft screen's example cards fill this composer instead of submitting
+ * on their own.
+ */
+export interface ComposerControl {
+  /**
+   * Put an example's prompt in the text body and preselect the skills it pins — without
+   * sending anything. `exampleSkills` is the example's full list; names the current Agent
+   * has not installed are dropped here, where the installed list already lives.
+   */
+  fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
+}
+
 export function ChatInput({
   status,
   onSend,
@@ -899,6 +923,7 @@ export function ChatInput({
   onOpenModels,
   onRetryModelAuth,
   onNewSession,
+  controlRef,
 }: {
   status: SessionStatus;
   /**
@@ -1091,6 +1116,15 @@ export function ChatInput({
   onRetryModelAuth?: () => void;
   /** Navigates to a fresh draft (`/chat/new`); renders the notice's "New Session" button when supplied. */
   onNewSession?: () => void;
+  /**
+   * Handle for the one thing a parent reaches in and does: the draft screen's example cards
+   * fill this composer (see ComposerControl). A ref rather than a `fill` prop because it is a
+   * one-shot action, not state — the same example clicked twice has to land twice, which a
+   * prop can only express by carrying a nonce. Lifting the body text and the skill selection
+   * out of here instead would drag every other writer of them (slash commands, the recall
+   * restore, ↑/↓ history, the post-send clear) out with them.
+   */
+  controlRef?: RefObject<ComposerControl | null>;
 }) {
   const { locale } = useLocale();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
@@ -1407,6 +1441,45 @@ export function ChatInput({
     },
     [selectedSkills, onSkillsChange],
   );
+
+  /**
+   * Fill from a draft-screen example card, without sending (see ComposerControl): the prompt
+   * REPLACES the text body — any draft is cleared first — and the example's installed skills
+   * join the selection, so pressing Send builds exactly the `[use_skills]` message the card
+   * used to submit on its own. Why text replaces while skills merge is buildExampleFill.
+   */
+  const fillExample = useCallback(
+    (prompt: string, exampleSkills: readonly string[]) => {
+      const fill = buildExampleFill({
+        prompt,
+        exampleSkills,
+        installedSkills: skills.map((s) => s.name),
+        selectedSkills,
+      });
+      setText(fill.text);
+      onTextChange?.(fill.text);
+      setCaret(0);
+      // The merge only ever appends, so an unchanged length means an unchanged selection —
+      // and calling back for nothing would rewrite the cached draft on every repeat click.
+      if (fill.skills.length !== selectedSkills.length) {
+        setSelectedSkills(fill.skills);
+        onSkillsChange?.(fill.skills);
+      }
+      // After the commit: the textarea is controlled, so the value and its new height only
+      // exist once React has rendered them (same rAF convention as applyRecalled/applyHistory).
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        // The prompt owns the box, so its first line is the top of it — a long prompt showing
+        // only its last line reads as broken.
+        el.setSelectionRange(0, 0);
+        el.scrollTop = 0;
+      });
+    },
+    [skills, selectedSkills, onTextChange, onSkillsChange],
+  );
+  useImperativeHandle(controlRef, () => ({ fillExample }), [fillExample]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);

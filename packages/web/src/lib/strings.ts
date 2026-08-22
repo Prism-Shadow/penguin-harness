@@ -1128,13 +1128,15 @@ export const zh = {
       agents: "搭建和优化智能体",
       schedules: "创建定时任务",
     },
+    /** Second tooltip line on an example row: the click fills the composer, it does not send. */
+    exampleFillHint: "点击填入输入框，可修改后自行发送",
     /**
-     * Example task cards on the draft screen: one click loads the canned prompt for the user.
-     * Keep a prompt SHORT — a short paragraph, around 100 Chinese characters, carrying what to
-     * build plus the constraints the result would be wrong without. File layouts, field lists,
-     * step-by-step headings and self-test instructions are what the Agent works out or asks
-     * about, so they stay out; the older briefs below are still far longer and are being trimmed
-     * to match.
+     * Example task cards on the draft screen: one click fills the composer with the canned
+     * prompt, which the user reads, edits and sends. That is why a prompt is SHORT — a short
+     * paragraph, around 100 Chinese characters, carrying what to build plus the constraints the
+     * result would be wrong without. File layouts, field lists, step-by-step headings and
+     * self-test instructions are what the Agent works out or asks about, so they stay out; the
+     * older briefs below are still far longer and are being trimmed to match.
      */
     exampleTasks: {
       game: {
